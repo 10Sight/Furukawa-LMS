@@ -24,9 +24,11 @@ const EmailReports = () => {
     const [saving, setSaving] = useState(false);
     const [savingDailySchedule, setSavingDailySchedule] = useState(false);
     const [savingManagementSchedule, setSavingManagementSchedule] = useState(false);
+    const [savingMonthlySchedule, setSavingMonthlySchedule] = useState(false);
     const [scheduleTimes, setScheduleTimes] = useState({
         dailyTime: '',
-        managementDailyTime: ''
+        managementDailyTime: '',
+        monthlyTime: ''
     });
 
     const [form, setForm] = useState({
@@ -50,7 +52,8 @@ const EmailReports = () => {
 
             setScheduleTimes({
                 dailyTime: savedSchedule?.dailyTime || '',
-                managementDailyTime: savedSchedule?.managementDailyTime || ''
+                managementDailyTime: savedSchedule?.managementDailyTime || '',
+                monthlyTime: savedSchedule?.monthlyTime || ''
             });
 
             if (Array.isArray(list)) {
@@ -127,19 +130,23 @@ const EmailReports = () => {
 
     const handleSaveSchedule = async (scheduleType) => {
         const isDaily = scheduleType === 'daily';
+        const isMonthly = scheduleType === 'monthly';
+        const setSavingFlag = isDaily
+            ? setSavingDailySchedule
+            : isMonthly
+                ? setSavingMonthlySchedule
+                : setSavingManagementSchedule;
 
         try {
-            if (isDaily) {
-                setSavingDailySchedule(true);
-            } else {
-                setSavingManagementSchedule(true);
-            }
+            setSavingFlag(true);
 
             const payload = {
                 action: 'updateSchedule',
                 ...(isDaily
                     ? { dailyTime: scheduleTimes.dailyTime }
-                    : { managementDailyTime: scheduleTimes.managementDailyTime })
+                    : isMonthly
+                        ? { monthlyTime: scheduleTimes.monthlyTime }
+                        : { managementDailyTime: scheduleTimes.managementDailyTime })
             };
 
             const res = await axiosInstance.post(
@@ -154,13 +161,16 @@ const EmailReports = () => {
 
             setScheduleTimes({
                 dailyTime: savedSchedule?.dailyTime || '',
-                managementDailyTime: savedSchedule?.managementDailyTime || ''
+                managementDailyTime: savedSchedule?.managementDailyTime || '',
+                monthlyTime: savedSchedule?.monthlyTime || ''
             });
 
             toast.success(
                 isDaily
                     ? "Daily Manpower Report send time saved successfully"
-                    : "Management Daily Report send time saved successfully"
+                    : isMonthly
+                        ? "Monthly Headcount Report send time saved successfully"
+                        : "Management Daily Report send time saved successfully"
             );
         } catch (err) {
             console.error("Failed to save email report schedule", err);
@@ -169,11 +179,7 @@ const EmailReports = () => {
                 "Failed to update report send time"
             );
         } finally {
-            if (isDaily) {
-                setSavingDailySchedule(false);
-            } else {
-                setSavingManagementSchedule(false);
-            }
+            setSavingFlag(false);
         }
     };
 
@@ -223,6 +229,7 @@ const EmailReports = () => {
             const nextReportTypes = [];
             if (nextFreq.includes('Daily')) nextReportTypes.push('Manpower');
             if (nextFreq.includes('Management Daily')) nextReportTypes.push('Management Daily');
+            if (nextFreq.includes('Monthly')) nextReportTypes.push('Monthly');
 
             return {
                 ...prev,
@@ -367,6 +374,37 @@ const EmailReports = () => {
                                         </button>
                                     </div>
 
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                            Monthly Headcount Report
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={scheduleTimes.monthlyTime}
+                                            onChange={(e) =>
+                                                setScheduleTimes(prev => ({
+                                                    ...prev,
+                                                    monthlyTime: e.target.value
+                                                }))
+                                            }
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all text-slate-900"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSaveSchedule('monthly')}
+                                            disabled={savingMonthlySchedule}
+                                            className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                                                savingMonthlySchedule
+                                                    ? 'bg-slate-400 cursor-not-allowed text-white'
+                                                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                                            }`}
+                                        >
+                                            {savingMonthlySchedule
+                                                ? 'Saving Monthly Time...'
+                                                : 'Save Monthly Time'}
+                                        </button>
+                                    </div>
+
                                     <p className="text-[11px] leading-5 text-slate-500">
                                         Leave a time empty to disable automatic sending for that report.
                                         Manual report sending remains unchanged.
@@ -406,7 +444,7 @@ const EmailReports = () => {
                                     <Clock size={14} />
                                     Report Frequency
                                 </label>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-3 gap-3">
                                     <div
                                         onClick={() => toggleFrequency('Daily')}
                                         className={`cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 text-center ${form.frequency.includes('Daily')
@@ -433,6 +471,20 @@ const EmailReports = () => {
                                         </div>
                                         <span className={`text-sm font-bold ${form.frequency.includes('Management Daily') ? 'text-green-700' : 'text-slate-900'}`}>Management Daily</span>
                                         <span className="text-[10px] text-slate-500">Attendance Data</span>
+                                    </div>
+
+                                    <div
+                                        onClick={() => toggleFrequency('Monthly')}
+                                        className={`cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 text-center ${form.frequency.includes('Monthly')
+                                            ? 'border-purple-500 bg-purple-50'
+                                            : 'border-transparent bg-slate-100 hover:bg-slate-200'
+                                            }`}
+                                    >
+                                        <div className={`p-1.5 rounded-full ${form.frequency.includes('Monthly') ? 'bg-purple-100 text-purple-600' : 'bg-slate-200 text-slate-500'}`}>
+                                            <FileSpreadsheet size={16} />
+                                        </div>
+                                        <span className={`text-sm font-bold ${form.frequency.includes('Monthly') ? 'text-purple-700' : 'text-slate-900'}`}>Monthly</span>
+                                        <span className="text-[10px] text-slate-500">Headcount Report</span>
                                     </div>
                                 </div>
                             </div>
@@ -469,6 +521,21 @@ const EmailReports = () => {
                                         </div>
                                         <div className="ml-auto">
                                             <CheckCircle2 size={18} className="text-green-500" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {form.frequency.includes('Monthly') && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                                            <FileSpreadsheet size={20} />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold text-slate-900">Monthly Headcount Report</div>
+                                            <div className="text-xs text-slate-500">Associates Headcount Excel Format (.xlsx)</div>
+                                        </div>
+                                        <div className="ml-auto">
+                                            <CheckCircle2 size={18} className="text-purple-500" />
                                         </div>
                                     </div>
                                 )}
@@ -559,6 +626,12 @@ const EmailReports = () => {
                                                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-green-100 text-green-700">
                                                                 <FileSpreadsheet size={10} />
                                                                 Management Daily
+                                                            </span>
+                                                        )}
+                                                        {freqArr.includes('Monthly') && (
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 bg-purple-100 text-purple-700">
+                                                                <FileSpreadsheet size={10} />
+                                                                Monthly Report
                                                             </span>
                                                         )}
                                                         {hasBoth && (

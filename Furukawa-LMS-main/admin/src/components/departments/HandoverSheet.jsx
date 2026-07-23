@@ -912,6 +912,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                                 includeTemporary="only"
                                                                 dojoHandoverPassedOnly={dojoHandoverPassedOnly}
                                                                 includeHandoverMarks={true}
+                                                                includeLeft={true}
+                                                                includeDeleted={true}
                                                                 options={eligibleUsers.length > 0 ? eligibleUsers : null}
                                                                 className="w-full"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
@@ -977,6 +979,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                                 includeTemporary="only"
                                                                 dojoHandoverPassedOnly={dojoHandoverPassedOnly}
                                                                 includeHandoverMarks={true}
+                                                                includeLeft={true}
+                                                                includeDeleted={true}
                                                                 options={eligibleUsers.length > 0 ? eligibleUsers : null}
                                                                 className="min-w-[150px]"
                                                                 inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"

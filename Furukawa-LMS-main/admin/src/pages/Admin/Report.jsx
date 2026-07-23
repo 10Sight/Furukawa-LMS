@@ -18,7 +18,6 @@ import axiosInstance from '@/Helper/axiosInstance';
 import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
 const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual"];
-const ZERO_DEFAULT_ROWS = ["Hiring Plan", "Handover Plan", "Handover Actual"];
 
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -475,9 +474,9 @@ const Report = () => {
                                                 const key = `${row.dataKey || row.label}_${cellKey}`;
                                                 const isSyncedReadOnly = SYNCED_READONLY_ROWS.includes(row.label);
                                                 const rawValue = tableData[key];
-                                                const value = ZERO_DEFAULT_ROWS.includes(row.label)
-                                                    ? (rawValue ?? '0')
-                                                    : (rawValue ?? '');
+                                                const value = (rawValue === undefined || rawValue === null || rawValue === '')
+                                                    ? '0'
+                                                    : rawValue;
                                                 const isPrevMonthCol = colIndex === 0;
 
                                                 return (

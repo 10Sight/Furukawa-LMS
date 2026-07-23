@@ -117,7 +117,7 @@ const CertificateTemplates = () => {
                 <h2>THIS IS TO CERTIFY THAT</h2>
             </div>
             <div class="brand-logo">
-                <img src="/fme_transparent.png" alt="Marelli Motherson" />
+                <img src="/fme_transparent.png" alt="Furukawa Minda Electric" />
             </div>
         </div>
     

@@ -26,6 +26,8 @@ const UserAutocomplete = ({
   includeTemporary = false,
   dojoHandoverPassedOnly = false,
   includeHandoverMarks = false,
+  includeLeft = false,
+  includeDeleted = false,
   onTextChange = null,
   options = null // when provided, filter locally instead of querying backend
 }) => {
@@ -57,6 +59,9 @@ const UserAutocomplete = ({
         if (passedDate) searchParams.passedDate = passedDate;
       }
 
+      if (includeLeft) searchParams.includeLeft = "true";
+      if (includeDeleted) searchParams.includeDeleted = "true";
+
       if (mode === "all") {
         if (excludeTrainers) searchParams.excludeTrainers = "true";
         if (excludeAdmins) searchParams.excludeAdmins = "true";
@@ -71,7 +76,7 @@ const UserAutocomplete = ({
         triggerStudents(searchParams);
       }
     }
-  }, [debouncedSearch, departmentId, sectionId, passedDate, passedTestPaperOnly, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, includeHandoverMarks, options]);
+  }, [debouncedSearch, departmentId, sectionId, passedDate, passedTestPaperOnly, open, triggerAll, triggerStudents, mode, excludeTrainers, excludeAdmins, includeTemporary, dojoHandoverPassedOnly, includeHandoverMarks, includeLeft, includeDeleted, options]);
 
   // Sync internal search state with external value when it changes externally
   useEffect(() => {

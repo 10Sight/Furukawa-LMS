@@ -1478,17 +1478,35 @@ export const addRequirements = asyncHandler(async (req, res) => {
             ...new Set(rowsToProcess.map((r) => safeTrim(r.sectionCode)).filter(Boolean)),
         ];
         const placeholdersYears = yearsToUpdate.map(() => "?").join(",");
+        const placeholdersSectionCodes = sectionCodesToReplace.map(() => "?").join(",");
+
+        // Captured BEFORE the delete below so the upload history log can show
+        // what each section/month/year requirement looked like beforehand.
+        let priorRequirementRows = [];
 
         if (yearsToUpdate.length > 0 && sectionCodesToReplace.length > 0) {
-            const replaceParams = [...yearsToUpdate, ...sectionCodesToReplace];
+            const scopeParams = [...yearsToUpdate, ...sectionCodesToReplace];
+
+            const [priorRows] = await executeSql(
+                `
+                SELECT *
+                FROM requirements WITH (NOLOCK)
+                WHERE year IN (${placeholdersYears})
+                  AND sectionCode IN (${placeholdersSectionCodes})
+                `,
+                scopeParams,
+                transaction
+            );
+
+            priorRequirementRows = priorRows || [];
 
             await executeSql(
                 `
                 DELETE FROM requirements
                 WHERE year IN (${placeholdersYears})
-                  AND sectionCode IN (${sectionCodesToReplace.map(() => "?").join(",")})
+                  AND sectionCode IN (${placeholdersSectionCodes})
                 `,
-                replaceParams,
+                scopeParams,
                 transaction
             );
         }
@@ -1583,13 +1601,22 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 VALUES ${placeholders}
             `;
 
-            const [, meta] = await executeSql(
+            const [insertedRows, meta] = await executeSql(
                 insertQuery,
                 paramsArray,
                 transaction
             );
 
             totalInsertedRows += meta?.affectedRows || chunk.length;
+
+            const insertedIdByKey = new Map();
+            (insertedRows || []).forEach((ir) => {
+                insertedIdByKey.set(makeKey(ir), ir.id);
+            });
+            chunk.forEach((row) => {
+                const insertedId = insertedIdByKey.get(makeKey(row));
+                if (insertedId) row.id = insertedId;
+            });
         }
 
         let updateCount = 0;
@@ -1663,6 +1690,77 @@ export const addRequirements = asyncHandler(async (req, res) => {
             });
         } catch (logErr) {
             console.error("Failed to log requirement upload:", logErr.message);
+        }
+
+        // Granular per-row history log for the Excel upload, mirroring the manual-edit
+        // log so both origins show up in RequirementUpdateLogs with the same shape.
+        try {
+            const priorMap = new Map();
+            priorRequirementRows.forEach((r) => priorMap.set(makeKey(r), r));
+
+            const processedKeys = new Set(rowsToProcess.map((r) => makeKey(r)));
+            const logUser = await resolveRequirementLogUser(req);
+            const ZERO_BASELINE = { salesPlan: 0, prodPlan: 0, prodPlanFN01: 0, prodPlanFN02: 0 };
+
+            for (const row of rowsToProcess) {
+                const priorRow = priorMap.get(makeKey(row)) || null;
+                const oldReqForDiff = priorRow || {
+                    sectionName: row.sectionName,
+                    lineDescription: row.lineDescription,
+                    monthName: row.monthName,
+                    year: row.year,
+                    ...ZERO_BASELINE,
+                };
+
+                const { oldValues, newValues, changedKeys } =
+                    getChangedRequirementLogValues(oldReqForDiff, row);
+
+                if (changedKeys.length === 0) continue;
+
+                await RequirementLog.create({
+                    requirement_id: row.id || priorRow?.id || null,
+                    section_id: validSectionsMap.get(normalizeUnicode(row.sectionCode))?.id || null,
+                    action_type: "UPLOAD",
+                    old_values: oldValues,
+                    new_values: newValues,
+                    employee_id: logUser.employeeId,
+                    employee_role: logUser.employeeRole,
+                    updated_by_name: logUser.updatedByName,
+                });
+            }
+
+            // Section/month/year requirements that existed before this upload but were not
+            // re-supplied by the sheet (e.g. a 6-month sheet uploaded over an annual one)
+            // get wiped by the DELETE above. Log that drop too so it isn't invisible in history.
+            for (const [key, priorRow] of priorMap.entries()) {
+                if (processedKeys.has(key)) continue;
+
+                const newReqForDiff = {
+                    sectionName: priorRow.sectionName,
+                    lineDescription: priorRow.lineDescription,
+                    monthName: priorRow.monthName,
+                    year: priorRow.year,
+                    ...ZERO_BASELINE,
+                };
+
+                const { oldValues, newValues, changedKeys } =
+                    getChangedRequirementLogValues(priorRow, newReqForDiff);
+
+                if (changedKeys.length === 0) continue;
+
+                await RequirementLog.create({
+                    requirement_id: priorRow.id,
+                    section_id: validSectionsMap.get(normalizeUnicode(priorRow.sectionCode))?.id || null,
+                    action_type: "UPLOAD",
+                    old_values: oldValues,
+                    new_values: newValues,
+                    employee_id: logUser.employeeId,
+                    employee_role: logUser.employeeRole,
+                    updated_by_name: logUser.updatedByName,
+                });
+            }
+        } catch (logErr) {
+            console.error("Failed to log requirement upload changes:", logErr.message);
         }
 
         try {

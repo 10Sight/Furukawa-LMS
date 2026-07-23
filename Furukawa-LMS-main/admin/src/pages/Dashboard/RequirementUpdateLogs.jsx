@@ -174,6 +174,7 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
                 flattened.push({
                     id: `${log.log_id || log.id || createdDate.getTime()}-${key}`,
                     originalLogId: log.log_id || log.id || null,
+                    actionType: log.action_type || log.actionType || "UPDATE",
                     user: {
                         name: userName,
                         avatar: userAvatar,
@@ -404,9 +405,22 @@ const RequirementUpdateLogs = ({ requirementId = null }) => {
 
                                                 <TableCell>
                                                     <div className="flex flex-col gap-1">
-                                                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                                            {log.action?.field || "Updated"}
-                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                                                {log.action?.field || "Updated"}
+                                                            </span>
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className={cn(
+                                                                    "text-[10px] px-1.5 py-0 h-4",
+                                                                    log.actionType === "UPLOAD"
+                                                                        ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400"
+                                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                                                                )}
+                                                            >
+                                                                {log.actionType === "UPLOAD" ? "Excel Upload" : "Manual Update"}
+                                                            </Badge>
+                                                        </div>
                                                         <div className="flex items-center gap-2 text-sm">
                                                             <span className="text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-950/30 px-1.5 rounded border border-rose-100 dark:border-rose-900/50">
                                                                 {log.action?.oldValue ?? "-"}

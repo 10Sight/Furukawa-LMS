@@ -849,280 +849,280 @@ const InstructorSkillMatrix = () => {
 
                     <TabsContent value="skillMatrix" className="space-y-4">
                         <div id="printable-matrix" className="bg-white text-xs text-black border-2 border-black">
-                    {/* Header Section */}
-                    <div className="flex border-b border-black">
-                        <div className="w-[150px] border-r border-black p-2 flex items-center justify-center">
-                            <img src="/fme_transparent.png" alt="Logo" className="h-10" />
-                            <div className="flex flex-col ml-2">
-                                <span className="font-bold text-xs text-red-600">motherson</span>
-                                <span className="font-bold text-xs text-blue-600">MARELLI</span>
-                            </div>
-                        </div>
-                        <div className="flex-1 border-r border-black flex items-center justify-center">
-                            <h1 className="text-2xl font-bold">Skill Matrix - {lineName}</h1>
-                        </div>
-                        <div className="w-[200px] text-[10px]">
-                            {['Format no.', 'Rev.No.', 'Rev. Date', 'Page No.'].map((label, idx) => (
-                                <div key={label} className="flex border-b border-black last:border-b-0">
-                                    <div className="w-20 border-r border-black p-1 font-semibold">{label}</div>
-                                    <div className="flex-1 p-0 text-center">
-                                        <input
-                                            type="text"
-                                            className="w-full h-full text-center bg-transparent border-none focus:ring-0 p-1 font-medium"
-                                            value={headerInfo[Object.keys(headerInfo)[idx]] || ""}
-                                            onChange={(e) => handleHeaderInfoChange(Object.keys(headerInfo)[idx], e.target.value)}
-                                        />
+                            {/* Header Section */}
+                            <div className="flex border-b border-black">
+                                <div className="w-[150px] border-r border-black p-2 flex items-center justify-center">
+                                    <img src="/fme_transparent.png" alt="Logo" className="h-10" />
+                                    <div className="flex flex-col ml-2">
+                                        <span className="font-bold text-xs text-red-600">motherson</span>
+                                        <span className="font-bold text-xs text-blue-600">Furukawa Minda Electric</span>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="flex border-b border-black text-xs font-semibold bg-gray-50">
-                        <div className="w-[30%] border-r border-black p-1">Plant : MMLI,Pune</div>
-                        <div className="flex-1 p-1 text-right pr-10">Department : <span className="ml-4">{selectedDeptName}</span></div>
-                    </div>
-
-                    {/* Table Header */}
-                    <div className="flex border-b border-black text-[10px] font-bold bg-gray-200 text-center">
-                        <div className="w-8 border-r border-black p-2 flex items-center justify-center">Sr.No.</div>
-                        <div className="w-32 border-r border-black p-2 flex items-center justify-center">OPERATOR NAME</div>
-                        <div className="w-12 border-r border-black p-2 flex items-center justify-center">TNR/EMP</div>
-                        <div className="w-16 border-r border-black p-2 flex items-center justify-center">DET/CAS</div>
-                        <div className="w-20 border-r border-black p-2 flex items-center justify-center">DOJ</div>
-                        <div className="w-32 border-r border-black p-2 flex items-center justify-center bg-gray-100">Station / Machine Name</div>
-                        <div className="w-24 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Critical & Non Critical</div>
-                        <div className="w-16 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Minimum Skill Level Required</div>
-                        <div className="w-16 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Current Skill Level</div>
-
-                        <div className="flex-1 flex overflow-x-auto">
-                            {matrixEntries[0]?.stations?.map((station) => (
-                                <div key={String(station._id)} className="w-20 border-r border-black p-1 flex items-center justify-center text-[9px] font-bold break-words text-center min-w-[60px]">
-                                    {station.name}
+                                <div className="flex-1 border-r border-black flex items-center justify-center">
+                                    <h1 className="text-2xl font-bold">Skill Matrix - {lineName}</h1>
                                 </div>
-                            ))}
-                            <div className="w-16 p-1 flex items-center justify-center text-[9px] font-bold">EOSH & EnMS</div>
-                        </div>
-                    </div>
-
-                    {/* Data Rows */}
-                    {matrixEntries.map((row, idx) => (
-                        <div key={row._id} className="flex border-b border-black text-[10px] text-center min-h-[50px]">
-                            <div className="w-8 border-r border-black p-2 flex items-center justify-center font-bold">{row.srNo}</div>
-                            <div className="w-32 border-r border-black p-2 flex items-center justify-start font-bold text-left min-w-[128px]">
-                                {row.isManual ? (
-                                    <Select onValueChange={(val) => handleUserSelect(idx, val)}>
-                                        <SelectTrigger className="w-full h-8 text-[10px]">
-                                            <SelectValue placeholder="Select Operator" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {departmentUsers.map(u => (
-                                                <SelectItem key={String(u._id)} value={String(u._id)}>{u.fullName}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                ) : (
-                                    <button
-                                        onClick={() => {
-                                            setEvalDepartment(selectedDepartment);
-                                            setEvalLine(selectedLine);
-                                            setSelectedOperatorForEval(row._id);
-                                            setActiveTab("evaluation");
-                                        }}
-                                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full"
-                                        title="Click to view/edit Skill Matrix Evaluation Certificate"
-                                    >
-                                        {row.name}
-                                    </button>
-                                )}
-                            </div>
-                            <div className="w-12 border-r border-black p-2 flex items-center justify-center font-bold">{row.type}</div>
-                            <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">
-                                <input
-                                    type="text"
-                                    className="w-full h-full text-center bg-transparent border-none focus:ring-0 p-0 text-[10px] font-bold"
-                                    value={row.detCas}
-                                    onChange={(e) => handleDetCasChange(idx, e.target.value)}
-                                />
-                            </div>
-                            <div className="w-20 border-r border-black p-2 flex items-center justify-center font-bold">{row.doj}</div>
-
-                            {/* Assigned Station Details */}
-                            {(() => {
-                                const assignedStation = row.stations.find(s => s._id === row.assignedStationId) || row.stations[0];
-                                return (
-                                    <>
-                                        <div className="w-32 border-r border-black p-1 flex items-center justify-center">
-                                            {row.type === 'TNR' ? (
-                                                <span className="text-[9px] font-bold">Team Leader</span>
-                                            ) : (
-                                                <Select value={String(row.assignedStationId || "")} onValueChange={(val) => handleAssignedStationChange(idx, val)}>
-                                                    <SelectTrigger className="w-full h-full border-none p-1 text-[9px] font-bold bg-transparent">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {row.stations.map(s => (
-                                                            <SelectItem key={String(s._id)} value={String(s._id)} className="text-xs">{s.name}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            )}
+                                <div className="w-[200px] text-[10px]">
+                                    {['Format no.', 'Rev.No.', 'Rev. Date', 'Page No.'].map((label, idx) => (
+                                        <div key={label} className="flex border-b border-black last:border-b-0">
+                                            <div className="w-20 border-r border-black p-1 font-semibold">{label}</div>
+                                            <div className="flex-1 p-0 text-center">
+                                                <input
+                                                    type="text"
+                                                    className="w-full h-full text-center bg-transparent border-none focus:ring-0 p-1 font-medium"
+                                                    value={headerInfo[Object.keys(headerInfo)[idx]] || ""}
+                                                    onChange={(e) => handleHeaderInfoChange(Object.keys(headerInfo)[idx], e.target.value)}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="w-24 border-r border-black p-2 flex items-center justify-center font-bold text-[9px]">
-                                            {row.type === 'TNR' ? (
-                                                <span className="text-[9px] font-bold">Not Applicable</span>
-                                            ) : (
-                                                <Select value={assignedStation?.critical || ""} onValueChange={(val) => {
-                                                    // Find the index of the assigned station in the stations array
-                                                    const sIdx = row.stations.findIndex(s => String(s._id) === String(row.assignedStationId));
-                                                    if (sIdx !== -1) handleCriticalityChange(idx, sIdx, val);
-                                                }}>
-                                                    <SelectTrigger className="w-full h-full border-none p-0 text-[9px] font-bold bg-transparent">
-                                                        <div className="truncate">{assignedStation?.critical || "-"}</div>
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="Critical">Critical</SelectItem>
-                                                        <SelectItem value="Non-Critical">Non-Critical</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            )}
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex border-b border-black text-xs font-semibold bg-gray-50">
+                                <div className="w-[30%] border-r border-black p-1">Plant : MMLI,Pune</div>
+                                <div className="flex-1 p-1 text-right pr-10">Department : <span className="ml-4">{selectedDeptName}</span></div>
+                            </div>
+
+                            {/* Table Header */}
+                            <div className="flex border-b border-black text-[10px] font-bold bg-gray-200 text-center">
+                                <div className="w-8 border-r border-black p-2 flex items-center justify-center">Sr.No.</div>
+                                <div className="w-32 border-r border-black p-2 flex items-center justify-center">OPERATOR NAME</div>
+                                <div className="w-12 border-r border-black p-2 flex items-center justify-center">TNR/EMP</div>
+                                <div className="w-16 border-r border-black p-2 flex items-center justify-center">DET/CAS</div>
+                                <div className="w-20 border-r border-black p-2 flex items-center justify-center">DOJ</div>
+                                <div className="w-32 border-r border-black p-2 flex items-center justify-center bg-gray-100">Station / Machine Name</div>
+                                <div className="w-24 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Critical & Non Critical</div>
+                                <div className="w-16 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Minimum Skill Level Required</div>
+                                <div className="w-16 border-r border-black p-2 flex items-center justify-center bg-gray-100 text-[9px] leading-tight">Current Skill Level</div>
+
+                                <div className="flex-1 flex overflow-x-auto">
+                                    {matrixEntries[0]?.stations?.map((station) => (
+                                        <div key={String(station._id)} className="w-20 border-r border-black p-1 flex items-center justify-center text-[9px] font-bold break-words text-center min-w-[60px]">
+                                            {station.name}
                                         </div>
-                                        <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">{assignedStation?.min || "-"}</div>
-                                        <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">{assignedStation?.curr || "-"}</div>
-                                    </>
-                                );
-                            })()}
+                                    ))}
+                                    <div className="w-16 p-1 flex items-center justify-center text-[9px] font-bold">EOSH & EnMS</div>
+                                </div>
+                            </div>
 
-                            <div className="flex-1 flex overflow-x-auto">
-                                {row.stations.map((station, sIdx) => {
-                                    const currentLevelStr = station.curr || "L-0";
-                                    const level = parseLevel(currentLevelStr);
-
-                                    return (
-                                        <div key={String(station._id)} className="w-20 border-r border-black flex items-center justify-center min-w-[60px] p-1">
-                                            <Select
-                                                value={currentLevelStr}
-                                                onValueChange={(val) => handleLevelChange(idx, sIdx, val)}
-                                            >
-                                                <SelectTrigger className="w-full h-full border-none p-0 flex justify-center bg-transparent focus:ring-0 select-trigger">
-                                                    <div>
-                                                        {level > 0 ? <SkillIcon level={level} size={20} /> : <div className="h-5 w-5 rounded-full border border-gray-300"></div>}
-                                                    </div>
+                            {/* Data Rows */}
+                            {matrixEntries.map((row, idx) => (
+                                <div key={row._id} className="flex border-b border-black text-[10px] text-center min-h-[50px]">
+                                    <div className="w-8 border-r border-black p-2 flex items-center justify-center font-bold">{row.srNo}</div>
+                                    <div className="w-32 border-r border-black p-2 flex items-center justify-start font-bold text-left min-w-[128px]">
+                                        {row.isManual ? (
+                                            <Select onValueChange={(val) => handleUserSelect(idx, val)}>
+                                                <SelectTrigger className="w-full h-8 text-[10px]">
+                                                    <SelectValue placeholder="Select Operator" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {availableLevels.map((lvl) => (
-                                                        <SelectItem key={String(lvl.name)} value={String(lvl.name)}>
-                                                            <div className="flex items-center gap-2">
-                                                                <SkillIcon level={parseLevel(lvl.name)} size={16} />
-                                                                <span>{lvl.name}</span>
-                                                            </div>
-                                                        </SelectItem>
+                                                    {departmentUsers.map(u => (
+                                                        <SelectItem key={String(u._id)} value={String(u._id)}>{u.fullName}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                        ) : (
+                                            <button
+                                                onClick={() => {
+                                                    setEvalDepartment(selectedDepartment);
+                                                    setEvalLine(selectedLine);
+                                                    setSelectedOperatorForEval(row._id);
+                                                    setActiveTab("evaluation");
+                                                }}
+                                                className="text-blue-600 hover:text-blue-800 hover:underline font-bold text-left w-full"
+                                                title="Click to view/edit Skill Matrix Evaluation Certificate"
+                                            >
+                                                {row.name}
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="w-12 border-r border-black p-2 flex items-center justify-center font-bold">{row.type}</div>
+                                    <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">
+                                        <input
+                                            type="text"
+                                            className="w-full h-full text-center bg-transparent border-none focus:ring-0 p-0 text-[10px] font-bold"
+                                            value={row.detCas}
+                                            onChange={(e) => handleDetCasChange(idx, e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="w-20 border-r border-black p-2 flex items-center justify-center font-bold">{row.doj}</div>
+
+                                    {/* Assigned Station Details */}
+                                    {(() => {
+                                        const assignedStation = row.stations.find(s => s._id === row.assignedStationId) || row.stations[0];
+                                        return (
+                                            <>
+                                                <div className="w-32 border-r border-black p-1 flex items-center justify-center">
+                                                    {row.type === 'TNR' ? (
+                                                        <span className="text-[9px] font-bold">Team Leader</span>
+                                                    ) : (
+                                                        <Select value={String(row.assignedStationId || "")} onValueChange={(val) => handleAssignedStationChange(idx, val)}>
+                                                            <SelectTrigger className="w-full h-full border-none p-1 text-[9px] font-bold bg-transparent">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {row.stations.map(s => (
+                                                                    <SelectItem key={String(s._id)} value={String(s._id)} className="text-xs">{s.name}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                </div>
+                                                <div className="w-24 border-r border-black p-2 flex items-center justify-center font-bold text-[9px]">
+                                                    {row.type === 'TNR' ? (
+                                                        <span className="text-[9px] font-bold">Not Applicable</span>
+                                                    ) : (
+                                                        <Select value={assignedStation?.critical || ""} onValueChange={(val) => {
+                                                            // Find the index of the assigned station in the stations array
+                                                            const sIdx = row.stations.findIndex(s => String(s._id) === String(row.assignedStationId));
+                                                            if (sIdx !== -1) handleCriticalityChange(idx, sIdx, val);
+                                                        }}>
+                                                            <SelectTrigger className="w-full h-full border-none p-0 text-[9px] font-bold bg-transparent">
+                                                                <div className="truncate">{assignedStation?.critical || "-"}</div>
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="Critical">Critical</SelectItem>
+                                                                <SelectItem value="Non-Critical">Non-Critical</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                </div>
+                                                <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">{assignedStation?.min || "-"}</div>
+                                                <div className="w-16 border-r border-black p-2 flex items-center justify-center font-bold">{assignedStation?.curr || "-"}</div>
+                                            </>
+                                        );
+                                    })()}
+
+                                    <div className="flex-1 flex overflow-x-auto">
+                                        {row.stations.map((station, sIdx) => {
+                                            const currentLevelStr = station.curr || "L-0";
+                                            const level = parseLevel(currentLevelStr);
+
+                                            return (
+                                                <div key={String(station._id)} className="w-20 border-r border-black flex items-center justify-center min-w-[60px] p-1">
+                                                    <Select
+                                                        value={currentLevelStr}
+                                                        onValueChange={(val) => handleLevelChange(idx, sIdx, val)}
+                                                    >
+                                                        <SelectTrigger className="w-full h-full border-none p-0 flex justify-center bg-transparent focus:ring-0 select-trigger">
+                                                            <div>
+                                                                {level > 0 ? <SkillIcon level={level} size={20} /> : <div className="h-5 w-5 rounded-full border border-gray-300"></div>}
+                                                            </div>
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {availableLevels.map((lvl) => (
+                                                                <SelectItem key={String(lvl.name)} value={String(lvl.name)}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <SkillIcon level={parseLevel(lvl.name)} size={16} />
+                                                                        <span>{lvl.name}</span>
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            );
+                                        })}
+                                        <div className="w-16 p-2 flex items-center justify-center">
+                                            <SkillIcon level={1} />
                                         </div>
-                                    );
-                                })}
-                                <div className="w-16 p-2 flex items-center justify-center">
-                                    <SkillIcon level={1} />
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Footer Legend */}
-                    <div className="flex border-t border-black min-h-[100px]">
-                        <div className="w-[350px] border-r border-black p-2 text-[10px]">
-                            <div className="font-bold mb-1">Level Legend:</div>
-                            {availableLevels.map((lvl) => (
-                                <div key={lvl.name} className="flex items-center gap-2 mb-2">
-                                    <SkillIcon level={parseLevel(lvl.name)} size={20} />
-                                    <div className="flex flex-col">
-                                        <span className="font-bold">{lvl.name}</span>
-                                        <span className="text-[9px] text-gray-600 leading-tight">{lvl.description || ""}</span>
                                     </div>
                                 </div>
                             ))}
-                        </div>
-                        <div className="flex-1 p-2 text-[10px] flex flex-col">
-                            <div className="font-bold underline mb-1">Note:</div>
-                            <textarea
-                                className="w-full h-full text-[10px] resize-none border-none outline-none bg-transparent whitespace-pre-wrap"
-                                value={legendNote}
-                                onChange={(e) => setLegendNote(e.target.value)}
-                            />
-                        </div>
-                    </div>
 
-                    {/* Notes & GuideLine + Revision History Section */}
-                    <div className="flex border-t border-black min-h-[150px]">
-                        {/* Notes / Guidelines (Editable) */}
-                        <div className="w-[60%] border-r border-black p-2 flex flex-col">
-                            <div className="font-bold text-[10px] mb-1">Note/ Guideline :-</div>
-                            <textarea
-                                className="w-full h-full text-[9px] leading-tight resize-none border-none outline-none bg-transparent whitespace-pre-wrap"
-                                value={guidelines}
-                                onChange={(e) => setGuidelines(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Revision History (Editable) */}
-                        <div className="w-[40%] text-[9px]">
-                            {/* Header */}
-                            <div className="flex bg-yellow-300 font-bold border-b border-black text-center">
-                                <div className="w-16 border-r border-black p-1">Rev Date</div>
-                                <div className="w-10 border-r border-black p-1">Rev no</div>
-                                <div className="flex-1 border-r border-black p-1">What Change</div>
-                                <div className="w-20 p-1">Why Change</div>
-                            </div>
-                            {/* Rows */}
-                            {revisions.map((rev, idx) => (
-                                <div key={`${rev.revNo}-${idx}`} className="flex border-b border-black text-center h-[30px]">
-                                    <div className="w-16 border-r border-black p-0 h-full">
-                                        <input
-                                            value={rev.date}
-                                            onChange={(e) => handleRevisionChange(idx, 'date', e.target.value)}
-                                            className="w-full h-full text-center bg-transparent border-none outline-none p-1"
-                                        />
-                                    </div>
-                                    <div className="w-10 border-r border-black p-0 h-full">
-                                        <input
-                                            value={rev.revNo}
-                                            onChange={(e) => handleRevisionChange(idx, 'revNo', e.target.value)}
-                                            className="w-full h-full text-center bg-transparent border-none outline-none p-1"
-                                        />
-                                    </div>
-                                    <div className="flex-1 border-r border-black p-0 h-full">
-                                        <input
-                                            value={rev.change}
-                                            onChange={(e) => handleRevisionChange(idx, 'change', e.target.value)}
-                                            className="w-full h-full text-center bg-transparent border-none outline-none p-1"
-                                        />
-                                    </div>
-                                    <div className="w-20 p-0 h-full">
-                                        <input
-                                            value={rev.reason}
-                                            onChange={(e) => handleRevisionChange(idx, 'reason', e.target.value)}
-                                            className="w-full h-full text-center bg-transparent border-none outline-none p-1"
-                                        />
-                                    </div>
+                            {/* Footer Legend */}
+                            <div className="flex border-t border-black min-h-[100px]">
+                                <div className="w-[350px] border-r border-black p-2 text-[10px]">
+                                    <div className="font-bold mb-1">Level Legend:</div>
+                                    {availableLevels.map((lvl) => (
+                                        <div key={lvl.name} className="flex items-center gap-2 mb-2">
+                                            <SkillIcon level={parseLevel(lvl.name)} size={20} />
+                                            <div className="flex flex-col">
+                                                <span className="font-bold">{lvl.name}</span>
+                                                <span className="text-[9px] text-gray-600 leading-tight">{lvl.description || ""}</span>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
-                    </div>
+                                <div className="flex-1 p-2 text-[10px] flex flex-col">
+                                    <div className="font-bold underline mb-1">Note:</div>
+                                    <textarea
+                                        className="w-full h-full text-[10px] resize-none border-none outline-none bg-transparent whitespace-pre-wrap"
+                                        value={legendNote}
+                                        onChange={(e) => setLegendNote(e.target.value)}
+                                    />
+                                </div>
+                            </div>
 
-                    {/* Footer Info / Signatures */}
-                    <div className="border-t border-black">
-                        <div className="p-1 text-[10px] font-bold border-b border-black pl-2">
-                            Rev. History - Rev-06- Operation wise Minimum Skill define
+                            {/* Notes & GuideLine + Revision History Section */}
+                            <div className="flex border-t border-black min-h-[150px]">
+                                {/* Notes / Guidelines (Editable) */}
+                                <div className="w-[60%] border-r border-black p-2 flex flex-col">
+                                    <div className="font-bold text-[10px] mb-1">Note/ Guideline :-</div>
+                                    <textarea
+                                        className="w-full h-full text-[9px] leading-tight resize-none border-none outline-none bg-transparent whitespace-pre-wrap"
+                                        value={guidelines}
+                                        onChange={(e) => setGuidelines(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Revision History (Editable) */}
+                                <div className="w-[40%] text-[9px]">
+                                    {/* Header */}
+                                    <div className="flex bg-yellow-300 font-bold border-b border-black text-center">
+                                        <div className="w-16 border-r border-black p-1">Rev Date</div>
+                                        <div className="w-10 border-r border-black p-1">Rev no</div>
+                                        <div className="flex-1 border-r border-black p-1">What Change</div>
+                                        <div className="w-20 p-1">Why Change</div>
+                                    </div>
+                                    {/* Rows */}
+                                    {revisions.map((rev, idx) => (
+                                        <div key={`${rev.revNo}-${idx}`} className="flex border-b border-black text-center h-[30px]">
+                                            <div className="w-16 border-r border-black p-0 h-full">
+                                                <input
+                                                    value={rev.date}
+                                                    onChange={(e) => handleRevisionChange(idx, 'date', e.target.value)}
+                                                    className="w-full h-full text-center bg-transparent border-none outline-none p-1"
+                                                />
+                                            </div>
+                                            <div className="w-10 border-r border-black p-0 h-full">
+                                                <input
+                                                    value={rev.revNo}
+                                                    onChange={(e) => handleRevisionChange(idx, 'revNo', e.target.value)}
+                                                    className="w-full h-full text-center bg-transparent border-none outline-none p-1"
+                                                />
+                                            </div>
+                                            <div className="flex-1 border-r border-black p-0 h-full">
+                                                <input
+                                                    value={rev.change}
+                                                    onChange={(e) => handleRevisionChange(idx, 'change', e.target.value)}
+                                                    className="w-full h-full text-center bg-transparent border-none outline-none p-1"
+                                                />
+                                            </div>
+                                            <div className="w-20 p-0 h-full">
+                                                <input
+                                                    value={rev.reason}
+                                                    onChange={(e) => handleRevisionChange(idx, 'reason', e.target.value)}
+                                                    className="w-full h-full text-center bg-transparent border-none outline-none p-1"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Footer Info / Signatures */}
+                            <div className="border-t border-black">
+                                <div className="p-1 text-[10px] font-bold border-b border-black pl-2">
+                                    Rev. History - Rev-06- Operation wise Minimum Skill define
+                                </div>
+                                <div className="flex justify-between text-[8px] p-2 pt-8 pb-2">
+                                    <div>Prepared by ( DOSJO ) :-</div>
+                                    <div>Checked by ( Supervisor ) :-</div>
+                                    <div>Approved Vy ( HOD ) :-</div>
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex justify-between text-[8px] p-2 pt-8 pb-2">
-                            <div>Prepared by ( DOSJO ) :-</div>
-                            <div>Checked by ( Supervisor ) :-</div>
-                            <div>Approved Vy ( HOD ) :-</div>
-                        </div>
-                    </div>
-                </div>
                     </TabsContent>
 
                     <TabsContent value="evaluation" className="space-y-6">
@@ -1137,7 +1137,7 @@ const InstructorSkillMatrix = () => {
                                     Back to Matrix Grid
                                 </Button>
                             </div>
-                            
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase font-bold text-gray-500">Department</label>
@@ -1154,7 +1154,7 @@ const InstructorSkillMatrix = () => {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                
+
                                 <div className="flex flex-col gap-1">
                                     <label className="text-[10px] uppercase font-bold text-gray-500">Line</label>
                                     <Select value={evalLine} onValueChange={(val) => {
@@ -1169,7 +1169,7 @@ const InstructorSkillMatrix = () => {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                
+
                                 <div className="flex flex-col gap-1 sm:col-span-2">
                                     <label className="text-[10px] uppercase font-bold text-gray-500">Search User</label>
                                     <Input
@@ -1184,7 +1184,7 @@ const InstructorSkillMatrix = () => {
                                     />
                                 </div>
                             </div>
-                            
+
                         </div>
 
                         {selectedOperatorForEval ? (

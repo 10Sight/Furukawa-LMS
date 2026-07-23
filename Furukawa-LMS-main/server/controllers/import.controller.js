@@ -397,6 +397,24 @@ const processSingleEmployeeRow = async ({
         return { status: "FAILED", rowNumber, error };
     }
 
+    if (!normalizedRow.contractor) {
+        const error = "Missing required field: Contractor is mandatory.";
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "FAILED", error]
+        );
+        return { status: "FAILED", rowNumber, error };
+    }
+
+    if (!contractorId) {
+        const error = `Contractor '${normalizedRow.contractor}' does not exist in the database. Please add it first or match the name exactly.`;
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "FAILED", error]
+        );
+        return { status: "FAILED", rowNumber, error };
+    }
+
     try {
         // Helper for date comparison
         const safeDate = (val) => normalizeDate(val);
@@ -1461,7 +1479,7 @@ export const importDojoUsers = async (req, res) => {
             throw new ApiError(400, "No data found in Excel file");
         }
 
-        const { deptMap, sectionMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
+        const { deptMap, sectionMap, contractorMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
 
         const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
 
@@ -1506,6 +1524,15 @@ export const importDojoUsers = async (req, res) => {
                 if (!normalizedRow.empId || !normalizedRow.fullName) {
                     if (!normalizedRow.empId && !normalizedRow.fullName) continue;
                     throw new Error("Missing required fields: Employee Code and Name are mandatory.");
+                }
+
+                if (!normalizedRow.contractor) {
+                    throw new Error("Missing required field: Contractor is mandatory.");
+                }
+
+                const contractorId = contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null;
+                if (!contractorId) {
+                    throw new Error(`Contractor '${normalizedRow.contractor}' does not exist in the database. Please add it first or match the name exactly.`);
                 }
 
                 // Check for duplicate username (Employee Code)
@@ -1563,7 +1590,8 @@ export const importDojoUsers = async (req, res) => {
                     busRoute: normalizedRow.busRoute,
                     unit: "UNIT_1",
                     expectedHandover: normalizedRow.expectedHandover || null,
-                    contractor: normalizedRow.contractor || null,
+                    contractor: normalizedRow.contractor,
+                    contractorId,
                     dojoShift: ["A", "B", "C", "G"].includes(normalizedRow.dojoShift) ? normalizedRow.dojoShift : null,
                 };
 

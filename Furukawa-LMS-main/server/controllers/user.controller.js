@@ -474,9 +474,10 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 10000);
   const offset = (page - 1) * limit;
 
-  let whereClauses = [
-    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
-  ];
+  let whereClauses = [];
+  if (req.query.includeDeleted !== "true") {
+    whereClauses.push("(u.isDeleted = 0 OR u.isDeleted IS NULL)");
+  }
   let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(
@@ -1709,9 +1710,11 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   let whereClauses = [
     "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))",
-    "(u.isTrainer = 0 OR u.isTrainer IS NULL)",
-    "(u.isDeleted = 0 OR u.isDeleted IS NULL)"
+    "(u.isTrainer = 0 OR u.isTrainer IS NULL)"
   ];
+  if (req.query.includeDeleted !== "true") {
+    whereClauses.push("(u.isDeleted = 0 OR u.isDeleted IS NULL)");
+  }
   let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(

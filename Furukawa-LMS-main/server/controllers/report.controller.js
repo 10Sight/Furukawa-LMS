@@ -1094,8 +1094,21 @@ const ensureEmailReportScheduleTable = async () => {
                 id INT NOT NULL PRIMARY KEY,
                 dailyTime NVARCHAR(5) NULL,
                 managementDailyTime NVARCHAR(5) NULL,
+                monthlyTime NVARCHAR(5) NULL,
                 updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
             )
+        END
+    `, []);
+
+    await executeQuery(`
+        IF NOT EXISTS (
+            SELECT 1
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID('dbo.email_report_schedule_settings')
+              AND name = 'monthlyTime'
+        )
+        BEGIN
+            ALTER TABLE dbo.email_report_schedule_settings ADD monthlyTime NVARCHAR(5) NULL
         END
     `, []);
 
@@ -1109,9 +1122,10 @@ const ensureEmailReportScheduleTable = async () => {
             INSERT INTO dbo.email_report_schedule_settings (
                 id,
                 dailyTime,
-                managementDailyTime
+                managementDailyTime,
+                monthlyTime
             )
-            VALUES (1, NULL, NULL)
+            VALUES (1, NULL, NULL, NULL)
         END
     `, []);
 };
@@ -1134,7 +1148,8 @@ const getEmailReportScheduleSettings = async () => {
     const [rows] = await executeQuery(`
         SELECT
             dailyTime,
-            managementDailyTime
+            managementDailyTime,
+            monthlyTime
         FROM dbo.email_report_schedule_settings
         WHERE id = 1
     `, []);
@@ -1142,6 +1157,7 @@ const getEmailReportScheduleSettings = async () => {
     return {
         dailyTime: String(rows?.[0]?.dailyTime || '').trim(),
         managementDailyTime: String(rows?.[0]?.managementDailyTime || '').trim(),
+        monthlyTime: String(rows?.[0]?.monthlyTime || '').trim(),
         timezone: 'Asia/Kolkata'
     };
 };
@@ -1149,7 +1165,8 @@ const getEmailReportScheduleSettings = async () => {
 const updateEmailReportScheduleSettings = async (settings = {}) => {
     const {
         dailyTime,
-        managementDailyTime
+        managementDailyTime,
+        monthlyTime
     } = settings;
 
     await ensureEmailReportScheduleTable();
@@ -1164,6 +1181,9 @@ const updateEmailReportScheduleSettings = async (settings = {}) => {
     const hasManagementDailyTime =
         Object.prototype.hasOwnProperty.call(settings, 'managementDailyTime');
 
+    const hasMonthlyTime =
+        Object.prototype.hasOwnProperty.call(settings, 'monthlyTime');
+
     const normalizedDailyTime = hasDailyTime
         ? normalizeReportTime(dailyTime)
         : normalizeReportTime(currentSchedule.dailyTime);
@@ -1172,16 +1192,22 @@ const updateEmailReportScheduleSettings = async (settings = {}) => {
         ? normalizeReportTime(managementDailyTime)
         : normalizeReportTime(currentSchedule.managementDailyTime);
 
+    const normalizedMonthlyTime = hasMonthlyTime
+        ? normalizeReportTime(monthlyTime)
+        : normalizeReportTime(currentSchedule.monthlyTime);
+
     await executeQuery(`
         UPDATE dbo.email_report_schedule_settings
         SET
             dailyTime = ?,
             managementDailyTime = ?,
+            monthlyTime = ?,
             updatedAt = GETDATE()
         WHERE id = 1
     `, [
         normalizedDailyTime,
-        normalizedManagementDailyTime
+        normalizedManagementDailyTime,
+        normalizedMonthlyTime
     ]);
 
     return getEmailReportScheduleSettings();
@@ -1210,6 +1236,7 @@ export const getMails = asyncHandler(async (req, res) => {
         let freqs = [];
         if (m.isDailyReport) freqs.push('Daily');
         if (m.isManagementDailyReport) freqs.push('Management Daily');
+        if (m.isMonthlyReport) freqs.push('Monthly');
 
         const frequencyStr = freqs.join(', ') || 'Daily';
         const reportTypesArr = m.reportTypes ? m.reportTypes.split(', ') : ['Manpower'];
@@ -1262,6 +1289,10 @@ export const createMail = asyncHandler(async (req, res) => {
                 schedulePayload.managementDailyTime = req.body.managementDailyTime;
             }
 
+            if (Object.prototype.hasOwnProperty.call(req.body || {}, 'monthlyTime')) {
+                schedulePayload.monthlyTime = req.body.monthlyTime;
+            }
+
             const schedule = await updateEmailReportScheduleSettings(schedulePayload);
 
             return res.status(200).json({
@@ -1287,7 +1318,8 @@ export const createMail = asyncHandler(async (req, res) => {
                 : ['daily']);
 
         const isDailyReport = freqArr.includes('daily');
-        const isManagementDailyReport = freqArr.includes('management daily') || freqArr.includes('managementdaily') || freqArr.includes('monthly');
+        const isManagementDailyReport = freqArr.includes('management daily') || freqArr.includes('managementdaily');
+        const isMonthlyReport = freqArr.includes('monthly');
 
         const typesStr = Array.isArray(reportTypes)
             ? reportTypes.join(', ')
@@ -1297,6 +1329,7 @@ export const createMail = asyncHandler(async (req, res) => {
             email,
             isDailyReport,
             isManagementDailyReport,
+            isMonthlyReport,
             reportTypes: typesStr
         });
 
@@ -1358,10 +1391,28 @@ export const triggerManualReport = asyncHandler(async (req, res) => {
 
         await sendBothReports(emailList);
 
+        // Also (best-effort) force-send the Monthly Associates Headcount Report to its own
+        // subscriber list, same as the dedicated "Resend Email" button on /admin/report.
+        // This is independent of sendBothReports above — it must not fail the Daily/Management
+        // response if there's simply no saved headcount data yet or no Monthly recipients.
+        let headcountResult = null;
+        try {
+            headcountResult = await headcountReportScheduler.runNow();
+        } catch (hcErr) {
+            console.error("[Report Controller] Monthly headcount report send failed:", hcErr);
+        }
+
+        const messageParts = [`Combined Excel reports sent to ${emailList.length} recipients successfully.`];
+        if (headcountResult?.sent) {
+            messageParts.push("Monthly Headcount Report sent successfully.");
+        } else if (headcountResult?.message) {
+            messageParts.push(`Monthly Headcount Report: ${headcountResult.message}`);
+        }
+
         res.status(200).json({
             success: true,
-            data: { recipientCount: emailList.length, sent: emailList.length, failed: 0 },
-            message: `Combined Excel reports sent to ${emailList.length} recipients successfully.`
+            data: { recipientCount: emailList.length, sent: emailList.length, failed: 0, headcountReport: headcountResult },
+            message: messageParts.join(' ')
         });
     } catch (err) {
         console.error("[Report Controller] Failed to trigger manual report:", err);

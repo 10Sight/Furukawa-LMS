@@ -127,82 +127,123 @@ const applyFiltersNoDate = (ops, f) => {
     return r;
 };
 
-const buildGroupData = (opsAll, opsAtt, getIdFn, getNameFn, effectiveShifts, allGroupKeys = []) => {
-    const isMulti = effectiveShifts.length > 1;
+// Shapes a rollup row into the flat item contract consumed by the charts/summary capsules.
+const shapeGroupRow = (row) => {
+    const allEff = row.allEfficiency ?? 0;
+    const presEff = row.presEfficiency ?? 0;
+    const absEff = row.absEfficiency ?? 0;
+    return {
+        id: row.id, name: row.name, displayName: row.name,
+        allEfficiency: allEff, presEfficiency: presEff, absEfficiency: absEff,
+        allTotal: allEff, presTotal: presEff, absTotal: absEff,
+    };
+};
+
+// Ensures every filter-selected group key is represented (as 0%) even when it has no active children.
+const withAllGroupKeys = (rows, allGroupKeys) => {
     const map = {};
-    if (allGroupKeys && allGroupKeys.length > 0) {
-        allGroupKeys.forEach(gk => {
-            if (gk.id && gk.name) {
-                map[gk.id] = { id: gk.id, name: gk.name, allArr: [], presArr: [], absArr: [], shiftData: {} };
-            }
-        });
-    }
-
-    // Populate Total Efficiency using opsAll (unfiltered by date)
-    opsAll.forEach(op => {
-        const gId = getIdFn(op);
-        const gName = getNameFn(op);
-        if (!gId || !gName) return;
-        const eff = calculateUserEfficiency(op);
-        const shift = String(op.shift || op.shiftName || 'General');
-
-        if (!map[gId]) map[gId] = { id: gId, name: gName, allArr: [], presArr: [], absArr: [], shiftData: {} };
-
-        map[gId].allArr.push(eff);
-
-        if (isMulti) {
-            if (!map[gId].shiftData[shift]) map[gId].shiftData[shift] = { allArr: [], presArr: [], absArr: [] };
-            map[gId].shiftData[shift].allArr.push(eff);
+    rows.forEach(r => { map[r.id] = r; });
+    (allGroupKeys || []).forEach(gk => {
+        if (gk.id && gk.name && !map[gk.id]) {
+            map[gk.id] = { id: gk.id, name: gk.name, allEfficiency: 0, presEfficiency: 0, absEfficiency: 0 };
         }
     });
+    return Object.values(map).map(shapeGroupRow).sort((a, b) => b.allEfficiency - a.allEfficiency);
+};
 
-    // Populate Attendance-based metrics using opsAtt (filtered by date)
+// Averages a list of child rows' three efficiency metrics into a parent row, keyed by parent id/name.
+const rollUp = (childRows, getParentId, getParentName) => {
+    const map = {};
+    childRows.forEach(child => {
+        const pId = getParentId(child);
+        if (!pId) return;
+        if (!map[pId]) map[pId] = { id: pId, name: getParentName(child), allArr: [], presArr: [], absArr: [] };
+        map[pId].allArr.push(child.allEfficiency);
+        map[pId].presArr.push(child.presEfficiency);
+        map[pId].absArr.push(child.absEfficiency);
+    });
+    return Object.values(map).map(row => ({
+        ...row,
+        allEfficiency: getAvg(row.allArr),
+        presEfficiency: getAvg(row.presArr),
+        absEfficiency: getAvg(row.absArr),
+        headcount: row.allArr.length,
+    }));
+};
+
+// Hierarchical rollup: Sub-Section = avg of its users; Line = avg of its active sub-sections;
+// Section = avg of its active lines; Department = avg of its active sections.
+const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = []) => {
+    const ssMap = {};
+    const ensureSS = (op) => {
+        const ssId = String(op.subSectionId || op.subSectionName || '');
+        if (!ssId) return null;
+        if (!ssMap[ssId]) {
+            ssMap[ssId] = {
+                id: ssId, name: op.subSectionName,
+                lineId: String(op.lineId || op.lineName || ''), lineName: op.lineName,
+                sectionId: String(op.sectionId || op.sectionName || ''),
+                sectionName: op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName,
+                deptId: String(op.departmentId || op.departmentName || ''), deptName: op.departmentName,
+                allArr: [], presArr: [], absArr: [],
+            };
+        }
+        return ssMap[ssId];
+    };
+
+    // Base: Total Efficiency per sub-section using opsAll (unfiltered by date)
+    opsAll.forEach(op => {
+        const row = ensureSS(op);
+        if (!row) return;
+        row.allArr.push(calculateUserEfficiency(op));
+    });
+
+    // Base: Attendance-based metrics per sub-section using opsAtt (filtered by date)
     opsAtt.forEach(op => {
-        const gId = getIdFn(op);
-        const gName = getNameFn(op);
-        if (!gId || !gName) return;
+        const row = ensureSS(op);
+        if (!row) return;
         const eff = calculateUserEfficiency(op);
-
         const hasLogStatus = op.logStatus != null && op.logStatus !== '';
         const isPres = hasLogStatus && PRESENT_STATUSES.has(op.logStatus);
         const isAbs = hasLogStatus && !PRESENT_STATUSES.has(op.logStatus);
-
-        const shift = String(op.shift || op.shiftName || 'General');
-        if (!map[gId]) map[gId] = { id: gId, name: gName, allArr: [], presArr: [], absArr: [], shiftData: {} };
-
-        if (isPres) map[gId].presArr.push(eff);
-        if (isAbs) map[gId].absArr.push(eff);
-
-        if (isMulti) {
-            if (!map[gId].shiftData[shift]) map[gId].shiftData[shift] = { allArr: [], presArr: [], absArr: [] };
-            if (isPres) map[gId].shiftData[shift].presArr.push(eff);
-            if (isAbs) map[gId].shiftData[shift].absArr.push(eff);
-        }
+        if (isPres) row.presArr.push(eff);
+        if (isAbs) row.absArr.push(eff);
     });
 
-    return Object.values(map).map(g => {
-        const allAvg = getAvg(g.allArr);
-        const total = g.allArr.length;
-        let presAvg = total ? Math.round((getSum(g.presArr) / total) * 100) / 100 : 0;
-        let absAvg = total ? Math.round((getSum(g.absArr) / total) * 100) / 100 : 0;
-        const tAll = total;
-        const item = { id: g.id, name: g.name, displayName: g.name, allEfficiency: allAvg, presEfficiency: presAvg, absEfficiency: absAvg, allTotal: allAvg, presTotal: presAvg, absTotal: absAvg };
-        if (isMulti) {
-            effectiveShifts.forEach(s => {
-                const sd = g.shiftData[s] || { allArr: [], presArr: [], absArr: [] };
-                const sA = getAvg(sd.allArr);
-                const sP = total > 0 ? Math.round((getSum(sd.presArr) / total) * 100) / 100 : 0;
-                const sAb = total > 0 ? Math.round((getSum(sd.absArr) / total) * 100) / 100 : 0;
-                item[`all_${s}`] = tAll > 0 ? (sd.allArr.length / tAll) * sA : 0;
-                item[`pres_${s}`] = sP;
-                item[`abs_${s}`] = sAb;
-                item[`allLabel_${s}`] = sA;
-                item[`presLabel_${s}`] = sP;
-                item[`absLabel_${s}`] = sAb;
-            });
-        }
-        return item;
-    }).sort((a, b) => b.allEfficiency - a.allEfficiency);
+    const ssRows = Object.values(ssMap).map(row => {
+        const total = row.allArr.length;
+        return {
+            ...row,
+            allEfficiency: getAvg(row.allArr),
+            presEfficiency: total ? Math.round((getSum(row.presArr) / total) * 100) / 100 : 0,
+            absEfficiency: total ? Math.round((getSum(row.absArr) / total) * 100) / 100 : 0,
+            headcount: total,
+        };
+    });
+
+    if (level === 'subsection') return withAllGroupKeys(ssRows, allGroupKeys);
+
+    const lineRows = rollUp(ssRows.filter(r => r.headcount > 0), r => r.lineId, r => r.lineName);
+    if (level === 'line') return withAllGroupKeys(lineRows, allGroupKeys);
+
+    // Line rows carry sectionId/sectionName/deptId/deptName from their active sub-sections
+    const lineToParent = {};
+    ssRows.forEach(r => { if (r.lineId && !lineToParent[r.lineId]) lineToParent[r.lineId] = r; });
+    const sectionRows = rollUp(
+        lineRows.filter(r => r.headcount > 0),
+        r => lineToParent[r.id]?.sectionId,
+        r => lineToParent[r.id]?.sectionName
+    );
+    if (level === 'section') return withAllGroupKeys(sectionRows, allGroupKeys);
+
+    const sectionToParent = {};
+    ssRows.forEach(r => { if (r.sectionId && !sectionToParent[r.sectionId]) sectionToParent[r.sectionId] = r; });
+    const deptRows = rollUp(
+        sectionRows.filter(r => r.headcount > 0),
+        r => sectionToParent[r.id]?.deptId,
+        r => sectionToParent[r.id]?.deptName
+    );
+    return withAllGroupKeys(deptRows, allGroupKeys);
 };
 
 // ─── MultiSelectDropdown ──────────────────────────────────────────────────────
@@ -663,10 +704,6 @@ const EfficiencyChart = () => {
         return [...s].sort();
     };
 
-    const sh1 = useMemo(() => effShifts(opsAll1, f1.shifts), [opsAll1, f1.shifts]);
-    const sh2 = useMemo(() => effShifts(opsAll2, f2.shifts), [opsAll2, f2.shifts]);
-    const sh3 = useMemo(() => effShifts(opsAll3, f3.shifts), [opsAll3, f3.shifts]);
-    const sh4 = useMemo(() => effShifts(opsAll4, f4.shifts), [opsAll4, f4.shifts]);
     const sh5 = useMemo(() => effShifts(opsAll5, f5.shifts), [opsAll5, f5.shifts]);
 
     // Master lists ignoring date filters but keeping other dropdown selectors:
@@ -747,40 +784,33 @@ const EfficiencyChart = () => {
         return Object.values(m);
     }, [uniqueOps, f6.deptIds, f6.sectionIds, f6.lineIds]);
 
-    // Chart data
+    // Chart data — hierarchical rollups (Sub-Section ← users; Line ← sub-sections; Section ← lines; Department ← sections)
     const d1 = useMemo(() => {
-        const base = buildGroupData(opsAll1, opsAtt1, op => String(op.departmentId || op.departmentName || ''), op => op.departmentName, sh1, allDepts);
+        const base = buildHierarchicalData(opsAll1, opsAtt1, 'department', allDepts);
         return base.map(item => {
             const tgt = targetsByDept[item.id] || {};
             return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
-    }, [opsAll1, opsAtt1, sh1, targetsByDept, allDepts]);
+    }, [opsAll1, opsAtt1, targetsByDept, allDepts]);
 
     const d2 = useMemo(() => {
-        const base = buildGroupData(
-            opsAll2,
-            opsAtt2,
-            op => String(op.sectionId || op.sectionName || ''),
-            op => op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName,
-            sh2,
-            allSections
-        );
+        const base = buildHierarchicalData(opsAll2, opsAtt2, 'section', allSections);
         return base.map(item => {
             const tgt = targetsBySection[item.id] || {};
             return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
-    }, [opsAll2, opsAtt2, sh2, targetsBySection, allSections]);
+    }, [opsAll2, opsAtt2, targetsBySection, allSections]);
 
     const d3 = useMemo(() => {
-        const base = buildGroupData(opsAll3, opsAtt3, op => String(op.lineId || op.lineName || ''), op => op.lineName, sh3, allLines);
+        const base = buildHierarchicalData(opsAll3, opsAtt3, 'line', allLines);
         return base.map(item => {
             const tgt = targetsByLine[item.id] || {};
             return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
         });
-    }, [opsAll3, opsAtt3, sh3, targetsByLine, allLines]);
+    }, [opsAll3, opsAtt3, targetsByLine, allLines]);
 
     const d4 = useMemo(() => {
-        const base = buildGroupData(opsAll4, opsAtt4, op => String(op.subSectionId || op.subSectionName || ''), op => op.subSectionName, sh4, allSubSections);
+        const base = buildHierarchicalData(opsAll4, opsAtt4, 'subsection', allSubSections);
         return base.map(item => {
             const ss = subSections.find(s => String(s.id) === String(item.id));
             return {
@@ -789,7 +819,7 @@ const EfficiencyChart = () => {
                 maxEffTarget: ss?.maxEfficiency != null ? Math.round(parseFloat(ss.maxEfficiency)) : null,
             };
         });
-    }, [opsAll4, opsAtt4, sh4, subSections, allSubSections]);
+    }, [opsAll4, opsAtt4, subSections, allSubSections]);
 
     // Helper to calculate dynamic target based on hierarchy filters
     const getFilteredMinTarget = (filter) => {

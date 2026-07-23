@@ -305,7 +305,7 @@ export function HomeLayout() {
           {!collapsed && (
             <img
               src="/fme_transparent.png"
-              alt="Marelli Motherson"
+              alt="Furukawa Minda Electric"
               className="ml-4 h-8 w-auto object-contain"
             />
           )}

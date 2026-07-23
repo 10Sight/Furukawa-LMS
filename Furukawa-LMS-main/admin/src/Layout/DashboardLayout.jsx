@@ -218,7 +218,7 @@ const DashboardLayout = () => {
                         <div className="ml-4 flex items-center gap-2">
                             <img
                                 src="/fme_transparent.png"
-                                alt="Marelli Motherson"
+                                alt="Furukawa Minda Electric"
                                 className="h-12 w-auto object-contain"
                             />
                             {/* <span className="font-bold text-lg">FURUKAWA</span> */}

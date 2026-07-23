@@ -19,9 +19,11 @@ class Mail {
         this.isDailyReport = dailyVal === true || dailyVal === 1 || dailyVal === '1' || String(dailyVal).toLowerCase() === 'true';
 
         const mgmtVal = getVal(data, 'isManagementDailyReport');
+        this.isManagementDailyReport =
+            mgmtVal === true || mgmtVal === 1 || mgmtVal === '1' || String(mgmtVal).toLowerCase() === 'true';
+
         const monthlyVal = getVal(data, 'isMonthlyReport');
-        this.isManagementDailyReport = 
-            mgmtVal === true || mgmtVal === 1 || mgmtVal === '1' || String(mgmtVal).toLowerCase() === 'true' ||
+        this.isMonthlyReport =
             monthlyVal === true || monthlyVal === 1 || monthlyVal === '1' || String(monthlyVal).toLowerCase() === 'true';
 
         this.reportTypes = getVal(data, 'reportTypes') || "";
@@ -59,26 +61,34 @@ class Mail {
                     await executeQuery("ALTER TABLE email_report_recipients ADD isManagementDailyReport BIT DEFAULT 0");
                 } catch (e2) { }
             }
+            try {
+                await executeQuery("SELECT TOP 1 isMonthlyReport FROM email_report_recipients");
+            } catch (e) {
+                try {
+                    await executeQuery("ALTER TABLE email_report_recipients ADD isMonthlyReport BIT DEFAULT 0");
+                } catch (e2) { }
+            }
         } catch (error) {
             logger.error("Failed to initialize Mail table", error);
         }
     }
 
     static async create(data) {
-        const { email, isDailyReport, isManagementDailyReport, reportTypes } = data;
+        const { email, isDailyReport, isManagementDailyReport, isMonthlyReport, reportTypes } = data;
 
         const daily = isDailyReport ? 1 : 0;
         const managementDaily = isManagementDailyReport ? 1 : 0;
+        const monthly = isMonthlyReport ? 1 : 0;
         const types = reportTypes || "";
 
         const query = `
-            INSERT INTO email_report_recipients (email, isDailyReport, isManagementDailyReport, reportTypes)
+            INSERT INTO email_report_recipients (email, isDailyReport, isManagementDailyReport, isMonthlyReport, reportTypes)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         `;
 
-        const [rows] = await executeQuery(query, [email, daily, managementDaily, types]);
-        return new Mail({ id: rows[0].id, email, isDailyReport: !!daily, isManagementDailyReport: !!managementDaily, reportTypes: types });
+        const [rows] = await executeQuery(query, [email, daily, managementDaily, monthly, types]);
+        return new Mail({ id: rows[0].id, email, isDailyReport: !!daily, isManagementDailyReport: !!managementDaily, isMonthlyReport: !!monthly, reportTypes: types });
     }
 
     static async findAll(query = {}) {

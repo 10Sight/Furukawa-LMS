@@ -51,19 +51,17 @@ class HeadcountReportScheduler {
         try {
             const { currentTime, month, year } = this._getISTTime();
 
-            const [configs] = await executeQuery(`
-                SELECT id FROM email_configurations
-                WHERE formName = 'Associates Headcount Report'
-                  AND isActive = 1
-                  AND scheduledTime = ?
-                  AND toEmails IS NOT NULL
+            const [rows] = await executeQuery(`
+                SELECT monthlyTime FROM dbo.email_report_schedule_settings
+                WHERE id = 1
+                  AND monthlyTime = ?
             `, [currentTime]);
 
-            if (!configs || configs.length === 0) {
+            if (!rows || rows.length === 0) {
                 return;
             }
 
-            logger.info(`[HeadcountReportScheduler] Time ${currentTime} — found ${configs.length} active config(s) scheduled.`);
+            logger.info(`[HeadcountReportScheduler] Time ${currentTime} — matches configured monthly send time.`);
             const result = await this._sendReport(month, year);
             logger.info(`[HeadcountReportScheduler] ${result.message}`);
         } catch (error) {

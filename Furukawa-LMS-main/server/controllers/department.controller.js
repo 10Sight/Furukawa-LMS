@@ -1190,8 +1190,6 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                       AND ${quizFilterSql}
                       AND (aq.status = 'PASSED' OR aq.status = 'PASS')
                       AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
-                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-                      AND (u.status IS NULL OR u.status != 'LEFT')
                 `, [departmentId, ...quizFilterParams, date]);
 
             const quizSuggested = passedUsers.map(user => {
@@ -1261,8 +1259,6 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     WHERE eta.isHandoverEligible = 1
                       AND CAST(eta.passedDate AS DATE) <= CAST(? AS DATE)
                       AND u.targetDeptId = ?
-                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-                      AND (u.status IS NULL OR u.status != 'LEFT')
                 `, [...legacyEvalOuterApplyParams, date, departmentId]);
 
             const evalSuggested = evalUsers.map(user => {
@@ -1363,8 +1359,6 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     ) tp
                     WHERE u.isTemporary = 1
                       AND u.targetDeptId = ?
-                      AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-                      AND (u.status IS NULL OR u.status != 'LEFT')
                       AND eta1.isHandoverEligible = 1
                       AND eta1.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
                       ${dateCondition}

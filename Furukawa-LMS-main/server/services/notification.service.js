@@ -12,6 +12,7 @@ import logger from "../logger/winston.logger.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import ENV from "../configs/env.config.js";
 import emailTemplates from "../utils/emailTemplates.js";
+import Mail from "../models/mail.model.js";
 
 class NotificationService {
     /**
@@ -30,31 +31,55 @@ class NotificationService {
                 departmentId = await this._resolveDepartmentId(studentId);
             }
 
-            // 1. Fetch Email Configuration
-            const config = await EmailConfiguration.findByFormDeptAndSection(formName, departmentId || null, sectionId || formData?.sectionId || null);
-            if (!config) {
-                logger.info(`[NotificationService] No active email configuration for ${formName}, dept ${departmentId}, and section ${sectionId}. Skipping.`);
-                return false;
-            }
+            // The Associates Headcount Report is subscribed to via the MPS Portal's global
+            // Email Report recipients (like the Daily Manpower/Management Daily reports),
+            // not the per-department email_configurations table.
+            const isMonthlyHeadcountReport = formName === "Associates Headcount Report";
 
-            // 2. Resolve Recipients
-            const toRecipients = config.toEmails ? config.toEmails.split(',').map(e => e.trim()).filter(Boolean) : [];
-            const ccRecipients = config.ccEmails ? config.ccEmails.split(',').map(e => e.trim()).filter(Boolean) : [];
+            let toRecipients = [];
+            let ccRecipients = [];
+            let config = null;
 
-            // 3. Include Trainer if enabled
-            if (config.includeTrainer) {
-                const department = await Department.findById(departmentId);
-                if (department && department.instructor) {
-                    const instructor = await User.findById(department.instructor);
-                    if (instructor && instructor.email && !toRecipients.includes(instructor.email) && !ccRecipients.includes(instructor.email)) {
-                        ccRecipients.push(instructor.email);
+            if (isMonthlyHeadcountReport) {
+                const monthlyMails = await Mail.findAll({ isMonthlyReport: 1 });
+                toRecipients = [...new Set(
+                    monthlyMails
+                        .flatMap(m => String(m.email || '').split(/[,;]/))
+                        .map(e => e.trim())
+                        .filter(Boolean)
+                )];
+
+                if (toRecipients.length === 0) {
+                    logger.info(`[NotificationService] No Monthly Report recipients configured for ${formName}. Skipping.`);
+                    return false;
+                }
+            } else {
+                // 1. Fetch Email Configuration
+                config = await EmailConfiguration.findByFormDeptAndSection(formName, departmentId || null, sectionId || formData?.sectionId || null);
+                if (!config) {
+                    logger.info(`[NotificationService] No active email configuration for ${formName}, dept ${departmentId}, and section ${sectionId}. Skipping.`);
+                    return false;
+                }
+
+                // 2. Resolve Recipients
+                toRecipients = config.toEmails ? config.toEmails.split(',').map(e => e.trim()).filter(Boolean) : [];
+                ccRecipients = config.ccEmails ? config.ccEmails.split(',').map(e => e.trim()).filter(Boolean) : [];
+
+                // 3. Include Trainer if enabled
+                if (config.includeTrainer) {
+                    const department = await Department.findById(departmentId);
+                    if (department && department.instructor) {
+                        const instructor = await User.findById(department.instructor);
+                        if (instructor && instructor.email && !toRecipients.includes(instructor.email) && !ccRecipients.includes(instructor.email)) {
+                            ccRecipients.push(instructor.email);
+                        }
                     }
                 }
-            }
 
-            if (toRecipients.length === 0) {
-                logger.warn(`[NotificationService] No recipients found for ${formName} after resolving. Skipping.`);
-                return false;
+                if (toRecipients.length === 0) {
+                    logger.warn(`[NotificationService] No recipients found for ${formName} after resolving. Skipping.`);
+                    return false;
+                }
             }
 
             // 4. Resolve Metadata Names
@@ -2142,7 +2167,8 @@ class NotificationService {
             const rowData = { particulars: item.label };
             headerDates.forEach(dateObj => {
                 const dateKey = toDateKey(dateObj);
-                rowData[dateKey] = tableData[`${rowKey}_${dateKey}`] || '';
+                const cellVal = tableData[`${rowKey}_${dateKey}`];
+                rowData[dateKey] = (cellVal === undefined || cellVal === null || cellVal === '') ? 0 : cellVal;
             });
 
             const row = worksheet.addRow(rowData);

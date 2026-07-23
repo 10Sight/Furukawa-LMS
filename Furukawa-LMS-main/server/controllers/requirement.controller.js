@@ -776,7 +776,7 @@ const sendRequirementEditApprovalMail = async ({
         );
 
         const token = crypto.randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
 
         await createRequirementTokenSafe({
             token,
@@ -1956,7 +1956,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                         sectionName: secName,
                         recipientEmail: getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "",
                         senderEmail: req.user?.email || "admin@furukawa.com",
-                        expiresAt: new Date(Date.now() + 24 * 3600000),
+                        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes expiration
                         status: "pending",
                     });
                 }

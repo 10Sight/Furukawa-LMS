@@ -3,6 +3,263 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 import { getDesignationShutterExclusionSql, getEligibleUserSql } from "../utils/userEligibility.js";
+import logger from "../logger/winston.logger.js";
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard Holiday Model (embedded here to avoid separate Holiday.js file)
+|--------------------------------------------------------------------------
+*/
+class Holiday {
+    static async init() {
+        const createTable = `
+            IF OBJECT_ID('dbo.dashboard_holidays', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.dashboard_holidays (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    holidayDate DATE NOT NULL,
+                    holidayName NVARCHAR(100) NOT NULL,
+                    shortCode NVARCHAR(10) NOT NULL,
+                    holidayType NVARCHAR(30) NOT NULL
+                        CONSTRAINT DF_dashboard_holidays_holidayType DEFAULT 'CUSTOM',
+                    description NVARCHAR(255) NULL,
+                    isActive BIT NOT NULL
+                        CONSTRAINT DF_dashboard_holidays_isActive DEFAULT 1,
+                    createdBy INT NULL,
+                    createdAt DATETIME2 NOT NULL
+                        CONSTRAINT DF_dashboard_holidays_createdAt DEFAULT SYSDATETIME(),
+                    updatedAt DATETIME2 NOT NULL
+                        CONSTRAINT DF_dashboard_holidays_updatedAt DEFAULT SYSDATETIME()
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = 'IX_dashboard_holidays_holidayDate'
+                  AND object_id = OBJECT_ID('dbo.dashboard_holidays')
+            )
+            BEGIN
+                CREATE INDEX IX_dashboard_holidays_holidayDate
+                ON dbo.dashboard_holidays(holidayDate);
+            END;
+        `;
+
+        try {
+            await executeQuery(createTable);
+            logger.info("[Holiday Model] Checked/Created dashboard_holidays table");
+            return true;
+        } catch (error) {
+            logger.error(
+                "[Holiday Model] Failed to initialize dashboard_holidays table",
+                error
+            );
+            throw error;
+        }
+    }
+
+    static async getAll({ startDate, endDate } = {}) {
+        await this.init();
+
+        let query = `
+            SELECT TOP (500)
+                id,
+                CONVERT(VARCHAR(10), holidayDate, 23) AS holidayDate,
+                holidayName,
+                shortCode,
+                holidayType,
+                description,
+                isActive,
+                createdBy,
+                createdAt,
+                updatedAt
+            FROM dbo.dashboard_holidays
+            WHERE ISNULL(isActive, 1) = 1
+        `;
+
+        const params = [];
+
+        if (startDate) {
+            query += ` AND holidayDate >= CONVERT(DATE, ?, 23)`;
+            params.push(String(startDate).slice(0, 10));
+        }
+
+        if (endDate) {
+            query += ` AND holidayDate <= CONVERT(DATE, ?, 23)`;
+            params.push(String(endDate).slice(0, 10));
+        }
+
+        query += ` ORDER BY holidayDate DESC`;
+
+        const [rows] = await executeQuery(query, params);
+
+        return rows || [];
+    }
+
+    static async getForRange(startDate, endDate) {
+        if (!startDate || !endDate) {
+            return [];
+        }
+
+        await this.init();
+
+        const query = `
+            SELECT
+                id,
+                CONVERT(VARCHAR(10), holidayDate, 23) AS holidayDate,
+                holidayName,
+                shortCode,
+                holidayType,
+                description,
+                isActive,
+                createdBy,
+                createdAt,
+                updatedAt
+            FROM dbo.dashboard_holidays
+            WHERE ISNULL(isActive, 1) = 1
+              AND holidayDate >= CONVERT(DATE, ?, 23)
+              AND holidayDate <= CONVERT(DATE, ?, 23)
+            ORDER BY holidayDate ASC
+        `;
+
+        const [rows] = await executeQuery(
+            query,
+            [startDate, endDate]
+        );
+
+        return rows || [];
+    }
+
+    static async create({
+        holidayDate,
+        holidayName,
+        shortCode,
+        holidayType = "CUSTOM",
+        description = "",
+        createdBy = null,
+    }) {
+        await this.init();
+
+        const query = `
+            MERGE dbo.dashboard_holidays AS target
+
+            USING (
+                SELECT
+                    CONVERT(DATE, ?, 23) AS holidayDate,
+                    CAST(? AS NVARCHAR(100)) AS holidayName,
+                    CAST(? AS NVARCHAR(10)) AS shortCode,
+                    CAST(? AS NVARCHAR(30)) AS holidayType,
+                    CAST(? AS NVARCHAR(255)) AS description,
+                    CAST(? AS INT) AS createdBy
+            ) AS source
+
+            ON target.holidayDate = source.holidayDate
+
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.holidayName = source.holidayName,
+                    target.shortCode = source.shortCode,
+                    target.holidayType = source.holidayType,
+                    target.description = NULLIF(source.description, ''),
+                    target.isActive = 1,
+                    target.updatedAt = SYSDATETIME()
+
+            WHEN NOT MATCHED THEN
+                INSERT (
+                    holidayDate,
+                    holidayName,
+                    shortCode,
+                    holidayType,
+                    description,
+                    isActive,
+                    createdBy,
+                    createdAt,
+                    updatedAt
+                )
+                VALUES (
+                    source.holidayDate,
+                    source.holidayName,
+                    source.shortCode,
+                    source.holidayType,
+                    NULLIF(source.description, ''),
+                    1,
+                    source.createdBy,
+                    SYSDATETIME(),
+                    SYSDATETIME()
+                )
+
+            OUTPUT
+                inserted.id,
+                CONVERT(VARCHAR(10), inserted.holidayDate, 23) AS holidayDate,
+                inserted.holidayName,
+                inserted.shortCode,
+                inserted.holidayType,
+                inserted.description,
+                inserted.isActive,
+                inserted.createdBy,
+                inserted.createdAt,
+                inserted.updatedAt;
+        `;
+
+        const [rows] = await executeQuery(query, [
+            holidayDate,
+            holidayName,
+            shortCode,
+            holidayType,
+            description || "",
+            createdBy ? Number(createdBy) : null,
+        ]);
+
+        return rows?.[0] || null;
+    }
+
+    static async delete(id) {
+        await this.init();
+
+        const holidayId = Number(id);
+
+        if (!Number.isInteger(holidayId) || holidayId <= 0) {
+            return null;
+        }
+
+        const query = `
+            UPDATE dbo.dashboard_holidays
+
+            SET
+                isActive = 0,
+                updatedAt = SYSDATETIME()
+
+            OUTPUT
+                inserted.id,
+                CONVERT(VARCHAR(10), inserted.holidayDate, 23) AS holidayDate,
+                inserted.holidayName,
+                inserted.shortCode,
+                inserted.holidayType,
+                inserted.description,
+                inserted.isActive,
+                inserted.createdBy,
+                inserted.createdAt,
+                inserted.updatedAt
+
+            WHERE id = ?
+        `;
+
+        const [rows] = await executeQuery(
+            query,
+            [holidayId]
+        );
+
+        return rows?.[0] || null;
+    }
+}
+
+Holiday.init().catch((error) => {
+    console.error(
+        "[Holiday Model] Initialization error:",
+        error
+    );
+});
+
 
 const parseMultiParam = (value) => {
     if (!value) return [];
@@ -18,6 +275,244 @@ const parseMultiParam = (value) => {
             return upper !== "ALL" && upper !== "UNDEFINED" && upper !== "NULL" && item !== "";
         });
 };
+
+
+const normalizeDashboardHolidayRow = (row = {}) => ({
+    id: Number(row.id || 0),
+    holidayDate: row.holidayDate
+        ? String(row.holidayDate).slice(0, 10)
+        : row.fullDate
+            ? String(row.fullDate).slice(0, 10)
+            : null,
+    holidayName: String(row.holidayName || "Holiday").trim(),
+    shortCode: String(row.shortCode || "H").trim().toUpperCase(),
+    holidayType: String(row.holidayType || "CUSTOM").trim().toUpperCase(),
+    description: row.description ? String(row.description).trim() : "",
+    isActive: row.isActive === undefined ? true : Boolean(row.isActive),
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null,
+});
+
+const getDashboardHolidaysForRange = async (startDate, endDate) => {
+    if (!startDate || !endDate) return [];
+
+    // Ensure holiday table exists before dashboard holiday lookup.
+    await Holiday.init();
+
+    try {
+        const [rows] = await executeQuery(
+            `
+                SELECT
+                    id,
+                    CONVERT(VARCHAR(10), holidayDate, 23) AS holidayDate,
+                    holidayName,
+                    shortCode,
+                    holidayType,
+                    description,
+                    isActive,
+                    createdAt,
+                    updatedAt
+                FROM dashboard_holidays
+                WHERE ISNULL(isActive, 1) = 1
+                  AND holidayDate >= CONVERT(DATE, ?, 23)
+                  AND holidayDate <= CONVERT(DATE, ?, 23)
+                ORDER BY holidayDate ASC
+            `,
+            [startDate, endDate]
+        );
+
+        return (rows || []).map(normalizeDashboardHolidayRow);
+    } catch (error) {
+        // Dashboard must continue working even before the migration is run.
+        console.warn("[DASHBOARD] Holiday lookup skipped:", error.message);
+        return [];
+    }
+};
+
+export const getDashboardHolidays = asyncHandler(async (req, res) => {
+    // Ensure holiday table exists before reading holidays.
+    await Holiday.init();
+
+    const { startDate, endDate } = req.query;
+    const conditions = ["ISNULL(isActive, 1) = 1"];
+    const params = [];
+
+    if (startDate) {
+        conditions.push("holidayDate >= CONVERT(DATE, ?, 23)");
+        params.push(String(startDate).slice(0, 10));
+    }
+
+    if (endDate) {
+        conditions.push("holidayDate <= CONVERT(DATE, ?, 23)");
+        params.push(String(endDate).slice(0, 10));
+    }
+
+    const [rows] = await executeQuery(
+        `
+            SELECT TOP (500)
+                id,
+                CONVERT(VARCHAR(10), holidayDate, 23) AS holidayDate,
+                holidayName,
+                shortCode,
+                holidayType,
+                description,
+                isActive,
+                createdAt,
+                updatedAt
+            FROM dashboard_holidays
+            WHERE ${conditions.join(" AND ")}
+            ORDER BY holidayDate DESC
+        `,
+        params
+    );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            { holidays: (rows || []).map(normalizeDashboardHolidayRow) },
+            "Dashboard holidays fetched successfully"
+        )
+    );
+});
+
+export const saveDashboardHoliday = asyncHandler(async (req, res) => {
+    // Ensure holiday table exists before saving.
+    await Holiday.init();
+
+    const holidayDate = String(req.body?.holidayDate || "").trim();
+    const holidayName = String(req.body?.holidayName || "").trim();
+    const shortCode = String(req.body?.shortCode || "").trim().toUpperCase();
+    const holidayType = String(req.body?.holidayType || "CUSTOM").trim().toUpperCase();
+    const description = String(req.body?.description || "").trim();
+    const createdBy = Number(req.user?.id || req.user?.userId || 0) || null;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(holidayDate)) {
+        return res.status(400).json(
+            new ApiResponse(400, null, "holidayDate must be in YYYY-MM-DD format")
+        );
+    }
+
+    if (!holidayName) {
+        return res.status(400).json(
+            new ApiResponse(400, null, "Holiday name is required")
+        );
+    }
+
+    if (!shortCode || shortCode.length > 10) {
+        return res.status(400).json(
+            new ApiResponse(400, null, "Short code is required and must be 10 characters or fewer")
+        );
+    }
+
+    const [rows] = await executeQuery(
+        `
+            MERGE dashboard_holidays AS target
+            USING (
+                SELECT
+                    CONVERT(DATE, ?, 23) AS holidayDate,
+                    CAST(? AS NVARCHAR(100)) AS holidayName,
+                    CAST(? AS NVARCHAR(10)) AS shortCode,
+                    CAST(? AS NVARCHAR(30)) AS holidayType,
+                    CAST(? AS NVARCHAR(255)) AS description,
+                    CAST(? AS INT) AS createdBy
+            ) AS source
+            ON target.holidayDate = source.holidayDate
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.holidayName = source.holidayName,
+                    target.shortCode = source.shortCode,
+                    target.holidayType = source.holidayType,
+                    target.description = NULLIF(source.description, ''),
+                    target.isActive = 1,
+                    target.updatedAt = SYSDATETIME()
+            WHEN NOT MATCHED THEN
+                INSERT (
+                    holidayDate,
+                    holidayName,
+                    shortCode,
+                    holidayType,
+                    description,
+                    isActive,
+                    createdBy,
+                    createdAt,
+                    updatedAt
+                )
+                VALUES (
+                    source.holidayDate,
+                    source.holidayName,
+                    source.shortCode,
+                    source.holidayType,
+                    NULLIF(source.description, ''),
+                    1,
+                    source.createdBy,
+                    SYSDATETIME(),
+                    SYSDATETIME()
+                )
+            OUTPUT
+                inserted.id,
+                CONVERT(VARCHAR(10), inserted.holidayDate, 23) AS holidayDate,
+                inserted.holidayName,
+                inserted.shortCode,
+                inserted.holidayType,
+                inserted.description,
+                inserted.isActive,
+                inserted.createdAt,
+                inserted.updatedAt;
+        `,
+        [holidayDate, holidayName, shortCode, holidayType, description, createdBy]
+    );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            { holiday: normalizeDashboardHolidayRow(rows?.[0] || {}) },
+            "Dashboard holiday saved successfully"
+        )
+    );
+});
+
+export const deleteDashboardHoliday = asyncHandler(async (req, res) => {
+    // Ensure holiday table exists before deleting.
+    await Holiday.init();
+
+    const holidayId = Number(req.params?.id);
+
+    if (!Number.isInteger(holidayId) || holidayId <= 0) {
+        return res.status(400).json(
+            new ApiResponse(400, null, "Valid holiday id is required")
+        );
+    }
+
+    const [rows] = await executeQuery(
+        `
+            UPDATE dashboard_holidays
+            SET isActive = 0,
+                updatedAt = SYSDATETIME()
+            OUTPUT
+                inserted.id,
+                CONVERT(VARCHAR(10), inserted.holidayDate, 23) AS holidayDate,
+                inserted.holidayName,
+                inserted.shortCode,
+                inserted.holidayType,
+                inserted.description,
+                inserted.isActive,
+                inserted.createdAt,
+                inserted.updatedAt
+            WHERE id = ?
+        `,
+        [holidayId]
+    );
+
+    if (!rows?.length) {
+        return res.status(404).json(
+            new ApiResponse(404, null, "Holiday not found")
+        );
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, { id: holidayId }, "Dashboard holiday deleted successfully")
+    );
+});
 
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
@@ -181,22 +676,50 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const getSectionHierarchyMatchSql = (alias = "u") => {
         if (!numericSectionIds.length && !sectionNames.length) return "";
 
-        const directMatchSql = numericSectionIds.length
-            ? `${alias}.sectionId IN (${numericSectionIds.join(",")})`
-            : `UPPER(LTRIM(RTRIM(CAST(${alias}.[section] AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
+        const selectedDirectSectionSql = numericSectionIds.length
+            ? `directSection.id IN (${numericSectionIds.join(",")})`
+            : `UPPER(LTRIM(RTRIM(CAST(directSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
 
-        const resolvedSectionSelectionSql = numericSectionIds.length
+        const selectedResolvedSectionSql = numericSectionIds.length
             ? `resolvedSection.id IN (${numericSectionIds.join(",")})`
             : `UPPER(LTRIM(RTRIM(CAST(resolvedSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
 
-        const jsonSectionSelectionSql = numericSectionIds.length
+        const selectedJsonSectionSql = numericSectionIds.length
             ? `jsonSection.id IN (${numericSectionIds.join(",")})`
             : `UPPER(LTRIM(RTRIM(CAST(jsonSection.name AS NVARCHAR(510))))) IN (${sectionNames.map(name => `UPPER('${safeName(name)}')`).join(",")})`;
 
         return `(
-            ${directMatchSql}
+            /*
+             * CANONICAL ONE-SECTION RULE — used by Dashboard first graph and reports.
+             *
+             * Priority 1: a valid users.sectionId is the employee's section.
+             * Priority 2: only when no valid direct section exists, resolve section from line/sub-section.
+             * Priority 3: only when neither direct nor line-resolved section exists, use sections.users JSON.
+             *             If stale JSON contains the same employee in multiple sections, the lowest
+             *             active section id in the employee's department wins.
+             *
+             * Result: one employee can belong to at most one section, so section totals do not
+             * duplicate the same employee across Direct / Indirect rows.
+             */
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM sections directSection
+                    WHERE directSection.id = ${alias}.sectionId
+                      AND directSection.departmentId = ${alias}.departmentId
+                      AND ISNULL(directSection.isActive, 1) = 1
+                      AND ${selectedDirectSectionSql}
+                )
+            )
+
             OR (
-                ${alias}.sectionId IS NULL
+                NOT EXISTS (
+                    SELECT 1
+                    FROM sections directSection
+                    WHERE directSection.id = ${alias}.sectionId
+                      AND directSection.departmentId = ${alias}.departmentId
+                      AND ISNULL(directSection.isActive, 1) = 1
+                )
                 AND EXISTS (
                     SELECT 1
                     FROM [lines] resolvedLine
@@ -204,22 +727,64 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                         ON resolvedSubSection.id = ${alias}.subSectionId
                     INNER JOIN sections resolvedSection
                         ON resolvedSection.id = resolvedLine.sectionId
+                       AND resolvedSection.departmentId = ${alias}.departmentId
+                       AND ISNULL(resolvedSection.isActive, 1) = 1
                     WHERE resolvedLine.id = COALESCE(${alias}.lineId, resolvedSubSection.lineId)
-                      AND ${resolvedSectionSelectionSql}
+                      AND ISNULL(resolvedLine.isActive, 1) = 1
+                      AND ${selectedResolvedSectionSql}
                 )
             )
-            OR EXISTS (
-                SELECT 1
-                FROM sections jsonSection
-                CROSS APPLY OPENJSON(
-                    CASE
-                        WHEN ISJSON(CAST(jsonSection.[users] AS NVARCHAR(MAX))) = 1
-                        THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
-                        ELSE N'[]'
-                    END
-                ) jsonSectionUser
-                WHERE ${jsonSectionSelectionSql}
-                  AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+
+            OR (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM sections directSection
+                    WHERE directSection.id = ${alias}.sectionId
+                      AND directSection.departmentId = ${alias}.departmentId
+                      AND ISNULL(directSection.isActive, 1) = 1
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM [lines] anyResolvedLine
+                    LEFT JOIN sub_sections anyResolvedSubSection
+                        ON anyResolvedSubSection.id = ${alias}.subSectionId
+                    INNER JOIN sections anyResolvedSection
+                        ON anyResolvedSection.id = anyResolvedLine.sectionId
+                       AND anyResolvedSection.departmentId = ${alias}.departmentId
+                       AND ISNULL(anyResolvedSection.isActive, 1) = 1
+                    WHERE anyResolvedLine.id = COALESCE(${alias}.lineId, anyResolvedSubSection.lineId)
+                      AND ISNULL(anyResolvedLine.isActive, 1) = 1
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM sections jsonSection
+                    CROSS APPLY OPENJSON(
+                        CASE
+                            WHEN ISJSON(CAST(jsonSection.[users] AS NVARCHAR(MAX))) = 1
+                            THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                            ELSE N'[]'
+                        END
+                    ) jsonSectionUser
+                    WHERE jsonSection.departmentId = ${alias}.departmentId
+                      AND ISNULL(jsonSection.isActive, 1) = 1
+                      AND ${selectedJsonSectionSql}
+                      AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM sections earlierJsonSection
+                          CROSS APPLY OPENJSON(
+                              CASE
+                                  WHEN ISJSON(CAST(earlierJsonSection.[users] AS NVARCHAR(MAX))) = 1
+                                  THEN CAST(earlierJsonSection.[users] AS NVARCHAR(MAX))
+                                  ELSE N'[]'
+                              END
+                          ) earlierJsonUser
+                          WHERE earlierJsonSection.departmentId = ${alias}.departmentId
+                            AND ISNULL(earlierJsonSection.isActive, 1) = 1
+                            AND earlierJsonSection.id < jsonSection.id
+                            AND TRY_CAST(earlierJsonUser.[value] AS INT) = ${alias}.id
+                      )
+                )
             )
         )`;
     };
@@ -308,6 +873,21 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const yearsInRange = [...new Set(loopDates.map((d) => d.getFullYear()))];
 
+
+    // Holiday calendar is checked before attendance values are used.
+    // Other dashboard calculations remain unchanged.
+    const topHolidayRows = await getDashboardHolidaysForRange(sqlStartDate, sqlEndDate);
+    const holidayByDate = new Map(
+        topHolidayRows
+            .filter(item => item.holidayDate)
+            .map(item => [item.holidayDate, item])
+    );
+    const topHolidayDateSqlList = topHolidayRows
+        .map(item => item.holidayDate)
+        .filter(Boolean)
+        .map(date => `'${String(date).replace(/'/g, "''")}'`)
+        .join(",");
+
     // Attrition date parser for users table nvarchar date columns.
     // leavingDate/joiningDate users table me nvarchar hai, isliye safe TRY_CONVERT multiple formats ke saath use karna zaroori hai.
     const userDateToDateSql = (columnSql) => `
@@ -352,6 +932,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const buildDailyAttritionDataFromUsers = async () => {
         const leaveDateSql = userDateToDateSql("u.leavingDate");
+
+        // NORMAL ATTRITION:
+        // Use the same dashboard date range as the upper graphs.
+        // Default = last 30 days; selected startDate/endDate = selected range.
         let attritionHeadcountTotal = 0;
 
         try {
@@ -405,10 +989,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const attrParams = [];
 
-        // IMPORTANT:
-        // Normal Attrition graph default me current date se previous 30 days show karega.
-        // Agar date range select ki gayi hai to selected date range show hogi.
-        // Isse frontend ka old scroll behavior same rahega.
+        // NORMAL ATTRITION:
+        // Follow the dashboard date range filter.
         attrSql += `
                   AND ${leaveDateSql} >= ?
                   AND ${leaveDateSql} <= ?
@@ -424,6 +1006,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const [attrRows] = await executeQuery(attrSql, attrParams);
 
+        // NORMAL ATTRITION:
+        // Return one point for every date in the dashboard date range.
         return loopDates
             .map((iterDateRaw) => {
                 const iterDate = new Date(iterDateRaw);
@@ -469,6 +1053,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u ON al.userId = u.id
                 WHERE al.[date] >= '${sqlStartDate}'
                   AND al.[date] <= '${sqlEndDate}'
+                  ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
                   AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
                   ${getEligibleUserSql("u")}
@@ -482,6 +1067,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             console.warn("[DASHBOARD] Attendance availability check failed:", e.message);
             attendanceDateAvailable = false;
         }
+    }
+
+    if (!attendanceDateAvailable && topHolidayRows.length > 0) {
+        attendanceDateAvailable = true;
     }
 
     let reqResults = [];
@@ -907,6 +1496,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE 1=1
               AND al.[date] >= '${sqlStartDate}'
               AND al.[date] <= '${sqlEndDate}'
+              ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
               ${hierCondition}
               ${getEligibleUserSql("u")}
         `;
@@ -933,6 +1523,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE UPPER(LTRIM(RTRIM(unm.status))) IN ('P','PRESENT')
               AND CONVERT(DATE, unm.[date]) >= '${sqlStartDate}'
               AND CONVERT(DATE, unm.[date]) <= '${sqlEndDate}'
+              ${topHolidayDateSqlList ? `AND CONVERT(DATE, unm.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
         `;
         const unmappedParams = [];
         unmappedSql = addShiftFilter(unmappedSql, unmappedParams, "unm");
@@ -950,6 +1541,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const day = iterDate.getDate();
         const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
         const dateStr = formatDateLocal(iterDate);
+        const holiday = holidayByDate.get(dateStr) || null;
+        const isHoliday = Boolean(holiday);
 
         const attItem = dailyAttendance.find((a) => a.fullDate === dateStr);
         const unmappedItem = dailyUnmapped.find((u) => u.fullDate === dateStr);
@@ -971,9 +1564,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // Total Manpower intentionally remains an all-shift users-table count.
         const correctedAbsent = isFuture
             ? null
-            : selectedShiftValue
-                ? explicitAbsent
-                : Math.max(totalManpower - mappedPresent, 0);
+            : isHoliday
+                ? 0
+                : selectedShiftValue
+                    ? explicitAbsent
+                    : Math.max(totalManpower - mappedPresent, 0);
 
         return {
             month: `${day} ${monthShort}`,
@@ -983,13 +1578,19 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             // Current Headcount = total active employees from users table
             current: isFuture ? null : totalManpower,
 
-            // Actual / Present = attendance present count
-            present: isFuture ? null : mappedPresent,
-            unmappedPresent: isFuture ? null : unmappedCount,
-            totalPresent: isFuture ? null : (mappedPresent + unmappedCount),
+            // Holiday date: attendance value is suppressed and frontend shows shortCode.
+            // Non-holiday dates keep the original attendance calculation.
+            present: isFuture ? null : (isHoliday ? 0 : mappedPresent),
+            rawPresent: isFuture ? null : mappedPresent,
+            unmappedPresent: isFuture ? null : (isHoliday ? 0 : unmappedCount),
+            totalPresent: isFuture ? null : (isHoliday ? 0 : (mappedPresent + unmappedCount)),
 
-            // Absent = explicit absent + active employees whose attendance is missing
+            // Holiday must never be treated as full-day absenteeism.
             absent: correctedAbsent,
+            isHoliday,
+            holidayName: holiday?.holidayName || null,
+            holidayShortCode: holiday?.shortCode || null,
+            holidayType: holiday?.holidayType || null,
         };
     });
 
@@ -1027,10 +1628,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
                 return {
                     day: manpowerItem.month,
-                    actual: absenteeismPercentage,
-                    absent,
+                    actual: manpowerItem?.isHoliday ? 0 : absenteeismPercentage,
+                    absent: manpowerItem?.isHoliday ? 0 : absent,
                     total,
                     limit: 10,
+                    isHoliday: Boolean(manpowerItem?.isHoliday),
+                    holidayName: manpowerItem?.holidayName || null,
+                    holidayShortCode: manpowerItem?.holidayShortCode || null,
+                    holidayType: manpowerItem?.holidayType || null,
                 };
             })
             .filter(Boolean);
@@ -1068,6 +1673,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const masterSqlStartDate = formatDateLocal(masterRangeStart);
     const masterSqlEndDate = formatDateLocal(masterRangeEnd);
+
+
+    const masterHolidayRows = await getDashboardHolidaysForRange(
+        masterSqlStartDate,
+        masterSqlEndDate
+    );
+    const masterHoliday = masterSqlStartDate === masterSqlEndDate
+        ? (masterHolidayRows.find(item => item.holidayDate === masterSqlStartDate) || null)
+        : null;
 
     // Attendance bars continue to use the selected date/range.
     // Every Users Total / Total Manpower comparison bar must always use
@@ -1193,6 +1807,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
           AND al.status IN ('P', 'PRESENT', 'Present')
+          ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
     `;
 
     // IMPORTANT SHIFT/ALL FIX:
@@ -2137,11 +2752,44 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         pieCharts.contractorPrefix = [];
     }
 
+    if (masterHoliday) {
+        const holidayKeys = [
+            "skillLevels",
+            "gender",
+            "state",
+            "district",
+            "designation",
+            "leaderExpert",
+            "contractorPrefix",
+            "education",
+        ];
+
+        holidayKeys.forEach((key) => {
+            if (!Array.isArray(pieCharts?.[key])) return;
+
+            pieCharts[key] = pieCharts[key].map((item) => ({
+                ...item,
+                value: 0,
+                rawValue: 0,
+                actualPresent: 0,
+                attendanceValue: 0,
+                attendanceCount: 0,
+                percentage: 0,
+                attendancePercentage: 0,
+                isHoliday: true,
+                holidayName: masterHoliday.holidayName,
+                holidayShortCode: masterHoliday.shortCode,
+                holidayType: masterHoliday.holidayType,
+            }));
+        });
+    }
+
     return res.status(200).json(
         new ApiResponse(
             200,
             {
                 manpowerData,
+                holidays: topHolidayRows,
                 absenteeismData,
                 attritionData,
                 skillGapData: [],
@@ -2160,6 +2808,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     masterAttendanceMode: "YES",
                     masterAttendanceDate: yesterdaySqlDate,
                     attendanceDateAvailable,
+                    masterHoliday,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
                         "Dashboard Total Manpower/Users Total bars use the original correct users-table eligibility plus date-wise joiningDate and leavingDate. Blank/invalid joiningDate remains included. Valid joiningDate adds from that date; valid leavingDate is counted in attrition and removes the employee from Total Manpower on the same date. Attendance absence never hides manpower data.",
@@ -2605,7 +3254,14 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     const sqlStartDate = formatDateLocal(rangeStart);
     const sqlEndDate = formatDateLocal(rangeEnd);
 
-    // Attendance/absenteeism/attrition continue to use the selected date.
+
+    const tenureHolidayRows = await getDashboardHolidaysForRange(sqlStartDate, sqlEndDate);
+    const tenureHoliday = sqlStartDate === sqlEndDate
+        ? (tenureHolidayRows.find(item => item.holidayDate === sqlStartDate) || null)
+        : null;
+
+    // Attendance and absenteeism continue to use the previous/selected attendance date.
+    // Tenure Attrition uses the current India date independently.
     // Tenure Users Total buckets always use the current India date so their
     // Total Manpower values match all other dashboard comparison graphs.
     const usersTotalAsOfDate = formatDateLocal(indiaNow);
@@ -2680,8 +3336,9 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     `;
 
     // Attrition tenure bucket joiningDate se hi calculate hoga.
+    // Tenure Attrition ke liye leavingDate employee-left marker hai; users.status mandatory nahi hai.
     // Agar joiningDate blank/invalid hai to employee tenure attrition graph me skip hoga,
-    // lekin Daily Attrition graph me valid leavingDate hone par count ho sakta hai.
+    // lekin Daily Attrition graph ka existing logic unchanged rahega.
     const attritionJoinDateSQL = joinDateSQL;
 
     const bucketCaseSQL = `
@@ -2814,6 +3471,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     AND ISNULL(u.isTemporary, 0) = 0
                 WHERE al.[date] >= ?
                   AND al.[date] <= ?
+                  ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
@@ -2854,6 +3512,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     AND ISNULL(u.isTemporary, 0) = 0
                 WHERE al.[date] >= ?
                   AND al.[date] <= ?
+                  ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
@@ -2884,6 +3543,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     AND ISNULL(u.isTemporary, 0) = 0
                 WHERE al.[date] >= ?
                   AND al.[date] <= ?
+                  ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
@@ -2907,6 +3567,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     AND ISNULL(u.isTemporary, 0) = 0
                 WHERE al.[date] >= ?
                   AND al.[date] <= ?
+                  ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
@@ -3031,6 +3692,17 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     }
 
     try {
+        // TENURE ATTRITION ONLY:
+        // This graph is permanently locked to the current India date.
+        // It does not use selected startDate/endDate, yesterday, attendance date or shift.
+        // Attendance, absenteeism, master tenure, normal attrition and every other graph remain unchanged.
+        const tenureAttritionTodaySql = `
+            CONVERT(
+                DATE,
+                (SYSUTCDATETIME() AT TIME ZONE 'UTC') AT TIME ZONE 'India Standard Time'
+            )
+        `;
+
         let attritionSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
@@ -3041,26 +3713,29 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) AS tenureDays
                 FROM users u
                 WHERE
-                  -- First mandatory condition: employee must be LEFT.
+                  -- TENURE ATTRITION ONLY:
+                  -- Employee must be LEFT and leavingDate must equal today's India date.
                   UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
-
-                  -- After LEFT confirmation, joiningDate and leavingDate decide
-                  -- the employee's tenure bucket.
                   AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
-
-                  -- Count only employees who left on the selected attendance date.
-                  -- When no date is selected, existing endpoint default is yesterday.
-                  AND ${leaveDateSQL} = ?
+                  AND ${leaveDateSQL} = ${tenureAttritionTodaySql}
 
                   ${attritionHierCondition}
-                  ${getEligibleUserSql("u")}
-                  -- NOTE: Tenure Attrition now uses the same common dashboard eligibility:
-                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
+
+                  -- IMPORTANT: Do not use getEligibleUserSql() here.
+                  -- In some deployments that shared helper still requires the employee
+                  -- to exist in user_hierarchy_snapshots. LEFT employees can be removed
+                  -- from that snapshot immediately, which incorrectly hides valid attrition.
+                  -- Tenure Attrition therefore uses users-table eligibility only.
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  ${getDesignationShutterExclusionSql("u")}
                   -- Shift behavior remains unchanged.
         `;
 
-        const attritionParams = [sqlEndDate];
+        const attritionParams = [];
 
         attritionSql += `
             ) parsed
@@ -3081,18 +3756,24 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS leftCount
                 FROM users u
                 WHERE
+                  -- Custom Tenure Attrition follows the same LEFT + India-today rule.
                   UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
                   AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
-                  AND ${leaveDateSQL} = ?
+                  AND ${leaveDateSQL} = ${tenureAttritionTodaySql}
                   AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
                   ${attritionHierCondition}
-                  ${getEligibleUserSql("u")}
-                  -- NOTE: Custom Tenure Attrition also uses the same common dashboard eligibility.
+
+                  -- Snapshot-independent eligibility, only for Tenure Attrition.
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isTemporary, 0) = 0
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                  ${getDesignationShutterExclusionSql("u")}
                   -- Shift behavior remains unchanged.
             `;
 
-            const customAttritionParams = [sqlEndDate, customFromDays, customToDays];
+            const customAttritionParams = [customFromDays, customToDays];
 
             const [rows] = await executeQuery(customAttritionSql, customAttritionParams);
             attrition.CUSTOM = Number(rows?.[0]?.leftCount || 0);
@@ -3129,13 +3810,14 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 filters: {
                     startDate: sqlStartDate,
                     endDate: sqlEndDate,
+                    holiday: tenureHoliday,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
                         "Tenure Attendance selected date attendance_logs se calculate hoga aur selected shift attendance_logs.shift par apply hoga. Tenure Absenteeism same selected date aur hierarchy se calculate hoga, lekin shift ko ignore karega.",
                     masterLogic:
                         "Grey/dark yellow Users Total bar current India date ke active employee rule se calculate hota hai. Blank/invalid joiningDate 3y & others me count hogi; leavingDate employee ko sirf status LEFT hone par remove karegi. Selected attendance date aur shift is bar ko change nahi karenge.",
                     attritionLogic:
-                        "Tenure Attrition me pehle users.status = LEFT mandatory check hoga. Sirf selected attendance date ke exact leavingDate wale employees count honge. LEFT employee ki valid joiningDate aur leavingDate se tenure bucket decide hoga. Department/section/line filters users table se apply honge aur shift ignore hoga.",
+                        "Tenure Attrition me users.leavingDate authoritative left marker hai; users.status = LEFT mandatory nahi hai. Sirf current India date (today) ke exact leavingDate aur valid joiningDate wale eligible employees count honge. JoiningDate aur leavingDate se tenure bucket decide hoga. Department/section/line filters users table se apply honge aur shift ignore hoga.",
                     matchingLogic:
                         "attendance_logs.userId = users.id and users.joiningDate se tenure bucket calculate hota hai.",
                     customTenureFrom: hasCustomTenureRange ? customFromDays : null,

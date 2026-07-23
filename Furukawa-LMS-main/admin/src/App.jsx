@@ -227,6 +227,7 @@ const App = () => {
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="role-manager" element={<RoleManager />} />
             <Route path="manage-role/:roleId" element={<RoleUserManager />} />
+
           </Route>
 
           {/* Admin routes */}

@@ -22,7 +22,8 @@ const EmailReports = () => {
     const [recipients, setRecipients] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [savingSchedule, setSavingSchedule] = useState(false);
+    const [savingDailySchedule, setSavingDailySchedule] = useState(false);
+    const [savingManagementSchedule, setSavingManagementSchedule] = useState(false);
     const [scheduleTimes, setScheduleTimes] = useState({
         dailyTime: '',
         managementDailyTime: ''
@@ -124,15 +125,27 @@ const EmailReports = () => {
         }
     };
 
-    const handleSaveSchedule = async () => {
-        try {
-            setSavingSchedule(true);
+    const handleSaveSchedule = async (scheduleType) => {
+        const isDaily = scheduleType === 'daily';
 
-            const res = await axiosInstance.post('/api/reports/recipients', {
+        try {
+            if (isDaily) {
+                setSavingDailySchedule(true);
+            } else {
+                setSavingManagementSchedule(true);
+            }
+
+            const payload = {
                 action: 'updateSchedule',
-                dailyTime: scheduleTimes.dailyTime,
-                managementDailyTime: scheduleTimes.managementDailyTime
-            });
+                ...(isDaily
+                    ? { dailyTime: scheduleTimes.dailyTime }
+                    : { managementDailyTime: scheduleTimes.managementDailyTime })
+            };
+
+            const res = await axiosInstance.post(
+                '/api/reports/recipients',
+                payload
+            );
 
             const savedSchedule =
                 res?.data?.schedule ||
@@ -145,17 +158,22 @@ const EmailReports = () => {
             });
 
             toast.success(
-                res?.data?.message ||
-                "Email report send times updated successfully"
+                isDaily
+                    ? "Daily Manpower Report send time saved successfully"
+                    : "Management Daily Report send time saved successfully"
             );
         } catch (err) {
             console.error("Failed to save email report schedule", err);
             toast.error(
                 err?.response?.data?.message ||
-                "Failed to update report send times"
+                "Failed to update report send time"
             );
         } finally {
-            setSavingSchedule(false);
+            if (isDaily) {
+                setSavingDailySchedule(false);
+            } else {
+                setSavingManagementSchedule(false);
+            }
         }
     };
 
@@ -302,6 +320,20 @@ const EmailReports = () => {
                                             }
                                             className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900"
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSaveSchedule('daily')}
+                                            disabled={savingDailySchedule}
+                                            className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                                                savingDailySchedule
+                                                    ? 'bg-slate-400 cursor-not-allowed text-white'
+                                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                            }`}
+                                        >
+                                            {savingDailySchedule
+                                                ? 'Saving Daily Time...'
+                                                : 'Save Daily Time'}
+                                        </button>
                                     </div>
 
                                     <div className="space-y-2">
@@ -319,22 +351,21 @@ const EmailReports = () => {
                                             }
                                             className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all text-slate-900"
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSaveSchedule('managementDaily')}
+                                            disabled={savingManagementSchedule}
+                                            className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                                                savingManagementSchedule
+                                                    ? 'bg-slate-400 cursor-not-allowed text-white'
+                                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                                            }`}
+                                        >
+                                            {savingManagementSchedule
+                                                ? 'Saving Management Time...'
+                                                : 'Save Management Time'}
+                                        </button>
                                     </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={handleSaveSchedule}
-                                        disabled={savingSchedule}
-                                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
-                                            savingSchedule
-                                                ? 'bg-slate-400 cursor-not-allowed text-white'
-                                                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                                        }`}
-                                    >
-                                        {savingSchedule
-                                            ? 'Saving Time...'
-                                            : 'Save Send Time'}
-                                    </button>
 
                                     <p className="text-[11px] leading-5 text-slate-500">
                                         Leave a time empty to disable automatic sending for that report.

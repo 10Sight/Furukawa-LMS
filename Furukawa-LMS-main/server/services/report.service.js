@@ -221,59 +221,95 @@ const getEligibleAttendanceUserSql = (alias = "u") => `
 // 3) user id exists in sections.users JSON
 
 const getDashboardSectionMatchSql = (userAlias = "u", sectionAlias = "s") => `
-
     (
+        /* PRIORITY 1: a valid users.sectionId always wins */
+        (
+            ${userAlias}.sectionId = ${sectionAlias}.id
+        )
 
-        ${userAlias}.sectionId = ${sectionAlias}.id
+        OR
 
-        OR (
-
-            ${userAlias}.sectionId IS NULL
-
-            AND EXISTS (
-
+        /* PRIORITY 2: use line/sub-section only when no valid direct section exists */
+        (
+            NOT EXISTS (
                 SELECT 1
-
-                FROM [lines] resolvedLine
-
-                LEFT JOIN sub_sections resolvedSubSection
-
-                    ON resolvedSubSection.id = ${userAlias}.subSectionId
-
-                WHERE resolvedLine.id = COALESCE(${userAlias}.lineId, resolvedSubSection.lineId)
-
-                  AND resolvedLine.sectionId = ${sectionAlias}.id
-
+                FROM sections directSection
+                WHERE directSection.id = ${userAlias}.sectionId
+                  AND directSection.departmentId = ${userAlias}.departmentId
+                  AND ISNULL(directSection.isActive, 1) = 1
             )
-
+            AND EXISTS (
+                SELECT 1
+                FROM [lines] resolvedLine
+                LEFT JOIN sub_sections resolvedSubSection
+                    ON resolvedSubSection.id = ${userAlias}.subSectionId
+                INNER JOIN sections resolvedSection
+                    ON resolvedSection.id = resolvedLine.sectionId
+                   AND resolvedSection.departmentId = ${userAlias}.departmentId
+                   AND ISNULL(resolvedSection.isActive, 1) = 1
+                WHERE resolvedLine.id = COALESCE(${userAlias}.lineId, resolvedSubSection.lineId)
+                  AND ISNULL(resolvedLine.isActive, 1) = 1
+                  AND resolvedLine.sectionId = ${sectionAlias}.id
+            )
         )
 
-        OR EXISTS (
+        OR
 
-            SELECT 1
-
-            FROM OPENJSON(
-
-                CASE
-
-                    WHEN ISJSON(CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))) = 1
-
-                    THEN CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))
-
-                    ELSE N'[]'
-
-                END
-
-            ) jsonSectionUser
-
-            WHERE TRY_CAST(jsonSectionUser.[value] AS INT) = ${userAlias}.id
-
+        /*
+         * PRIORITY 3: sections.users JSON is only a fallback.
+         * It is ignored when a valid direct section or valid line-resolved section exists.
+         * If stale JSON lists the same user in multiple sections, the lowest active section id
+         * is selected so the employee can never be counted twice.
+         */
+        (
+            NOT EXISTS (
+                SELECT 1
+                FROM sections directSection
+                WHERE directSection.id = ${userAlias}.sectionId
+                  AND directSection.departmentId = ${userAlias}.departmentId
+                  AND ISNULL(directSection.isActive, 1) = 1
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM [lines] anyResolvedLine
+                LEFT JOIN sub_sections anyResolvedSubSection
+                    ON anyResolvedSubSection.id = ${userAlias}.subSectionId
+                INNER JOIN sections anyResolvedSection
+                    ON anyResolvedSection.id = anyResolvedLine.sectionId
+                   AND anyResolvedSection.departmentId = ${userAlias}.departmentId
+                   AND ISNULL(anyResolvedSection.isActive, 1) = 1
+                WHERE anyResolvedLine.id = COALESCE(${userAlias}.lineId, anyResolvedSubSection.lineId)
+                  AND ISNULL(anyResolvedLine.isActive, 1) = 1
+            )
+            AND EXISTS (
+                SELECT 1
+                FROM OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(${sectionAlias}.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) jsonSectionUser
+                WHERE TRY_CAST(jsonSectionUser.[value] AS INT) = ${userAlias}.id
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM sections earlierJsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(earlierJsonSection.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(earlierJsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) earlierJsonUser
+                WHERE earlierJsonSection.departmentId = ${userAlias}.departmentId
+                  AND ISNULL(earlierJsonSection.isActive, 1) = 1
+                  AND earlierJsonSection.id < ${sectionAlias}.id
+                  AND TRY_CAST(earlierJsonUser.[value] AS INT) = ${userAlias}.id
+            )
         )
-
     )
-
 `;
-
 
 
 // Same shift matching rule as Dashboard addShiftFilter().
@@ -962,88 +998,24 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
-        // This reproduces getSectionHierarchyMatchSql("u") from the dashboard.
-
-        // Because a section is displayed inside a department, users.departmentId must also
-
-        // match that section's department, the same way Dashboard Dept + Section filters combine.
-
+        // Section manpower must use the SAME canonical one-section rule as attendance.
+        // This prevents the same employee from being counted in two section rows when
+        // users.sectionId / line hierarchy / sections.users JSON contain overlapping mappings.
         const sectionPromise = dbPool.request()
-
             .input("reportDate", reportDateStr)
-
             .query(`
-
                 ${eligibleUsersCte}
 
                 SELECT
-
                     s.id AS sectionId,
-
                     COUNT(DISTINCT eu.empId) AS cnt
-
                 FROM sections s
-
                 LEFT JOIN EligibleUsers eu
-
                     ON eu.departmentId = s.departmentId
-
-                   AND (
-
-                        eu.sectionId = s.id
-
-                        OR (
-
-                            eu.sectionId IS NULL
-
-                            AND EXISTS (
-
-                                SELECT 1
-
-                                FROM [lines] resolvedLine
-
-                                LEFT JOIN sub_sections resolvedSubSection
-
-                                    ON resolvedSubSection.id = eu.subSectionId
-
-                                WHERE resolvedLine.id = COALESCE(eu.lineId, resolvedSubSection.lineId)
-
-                                  AND resolvedLine.sectionId = s.id
-
-                            )
-
-                        )
-
-                        OR EXISTS (
-
-                            SELECT 1
-
-                            FROM OPENJSON(
-
-                                CASE
-
-                                    WHEN ISJSON(CAST(s.[users] AS NVARCHAR(MAX))) = 1
-
-                                    THEN CAST(s.[users] AS NVARCHAR(MAX))
-
-                                    ELSE N'[]'
-
-                                END
-
-                            ) jsonSectionUser
-
-                            WHERE TRY_CAST(jsonSectionUser.[value] AS INT) = eu.id
-
-                        )
-
-                   )
-
+                   AND ${getDashboardSectionMatchSql("eu", "s")}
                 WHERE ISNULL(s.isActive, 1) = 1
-
                 GROUP BY s.id
-
             `);
-
 
 
         const [totalResult, departmentResult, lineResult, sectionResult] = await Promise.all([
@@ -2182,35 +2154,70 @@ async function _buildManpowerBuffer() {
 
                 writeSubRow("Indirect", iReq, iAvail, iAct, iGap, iOT);
 
-                // Department Total row must match Dashboard when that department is selected.
+                /*
+                 * IMPORTANT — Department Total must match Dashboard first graph
+                 * when only the Department filter is selected.
+                 *
+                 * Direct / Indirect values above are section-wise values. They may be lower
+                 * when some department employees do not have a valid section assignment.
+                 * Therefore the department Total cannot be calculated only as dAct + iAct.
+                 *
+                 * departmentTotal* values come from the direct department-level SQL maps:
+                 * users.departmentId for Available M/P and attendance Present for Actual M/P.
+                 */
+                const departmentSource = sections[0] || {};
 
-                // Requirement, Total Manpower, Present Attendance and OT all use exact department-level maps.
+                const exactDepartmentRequired =
+                    departmentSource.departmentTotalRequired !== undefined
+                        ? (Number(departmentSource.departmentTotalRequired) || 0)
+                        : (dReq + iReq);
 
-                const exactDepartmentRequired = Number(
+                const exactDepartmentAvailable =
+                    departmentSource.departmentTotalAssigned !== undefined
+                        ? (Number(departmentSource.departmentTotalAssigned) || 0)
+                        : (dAvail + iAvail);
 
-                    sections[0]?.departmentTotalRequired ?? (dReq + iReq)
+                const exactDepartmentActual =
+                    departmentSource.departmentTotalPresent !== undefined
+                        ? (Number(departmentSource.departmentTotalPresent) || 0)
+                        : (dAct + iAct);
 
-                ) || 0;
+                const exactDepartmentOT =
+                    departmentSource.departmentTotalOtHrs !== undefined
+                        ? (Number(departmentSource.departmentTotalOtHrs) || 0)
+                        : (dOT + iOT);
 
-                const exactDepartmentAvailable = Number(
+                /*
+                 * Difference between direct department total and displayed section totals.
+                 * This is not an attendance-unmapped row. It means the employee belongs to
+                 * the department, but no active section could be resolved for the report row.
+                 */
+                const hierarchyPendingRequired = exactDepartmentRequired - (dReq + iReq);
+                const hierarchyPendingAvailable = exactDepartmentAvailable - (dAvail + iAvail);
+                const hierarchyPendingActual = exactDepartmentActual - (dAct + iAct);
+                const hierarchyPendingOT = exactDepartmentOT - (dOT + iOT);
+                const hierarchyPendingGap =
+                    hierarchyPendingActual - hierarchyPendingRequired;
 
-                    sections[0]?.departmentTotalAssigned ?? (dAvail + iAvail)
+                const hasHierarchyPending =
+                    Math.abs(hierarchyPendingRequired) > 0.0001 ||
+                    Math.abs(hierarchyPendingAvailable) > 0.0001 ||
+                    Math.abs(hierarchyPendingActual) > 0.0001 ||
+                    Math.abs(hierarchyPendingOT) > 0.0001;
 
-                ) || 0;
+                if (hasHierarchyPending) {
+                    writeSubRow(
+                        "Hierarchy Pending",
+                        hierarchyPendingRequired,
+                        hierarchyPendingAvailable,
+                        hierarchyPendingActual,
+                        hierarchyPendingGap,
+                        hierarchyPendingOT
+                    );
+                }
 
-                const exactDepartmentActual = Number(
-
-                    sections[0]?.departmentTotalPresent ?? (dAct + iAct)
-
-                ) || 0;
-
-                const exactDepartmentOT = Number(
-
-                    sections[0]?.departmentTotalOtHrs ?? (dOT + iOT)
-
-                ) || 0;
-
-
+                const exactDepartmentGap =
+                    exactDepartmentActual - exactDepartmentRequired;
 
                 writeSubRow(
 
@@ -2222,7 +2229,7 @@ async function _buildManpowerBuffer() {
 
                     exactDepartmentActual,
 
-                    exactDepartmentActual - exactDepartmentRequired,
+                    exactDepartmentGap,
 
                     parseFloat(exactDepartmentOT.toFixed(2))
 
@@ -2284,23 +2291,19 @@ async function _buildManpowerBuffer() {
 
 
 
-        // GRAND TOTAL must match the unfiltered Dashboard first manpower graph for yesterday.
-
-        // Do not derive Requirement / Total Manpower / Attendance / OT by adding section rows.
-
+        /*
+         * GRAND TOTAL must match the Dashboard first graph with no hierarchy filter.
+         * Do not use only the sum of displayed section rows because employees with a
+         * department but without a valid section would otherwise be missed.
+         */
         if (data.length > 0) {
-
-            gReq = Number(data[0].globalTotalRequired) || 0;
-
-            gAvail = Number(data[0].globalTotalAssigned) || 0;
-
-            gAct = Number(data[0].globalTotalPresent) || 0;
-
-            gOT = Number(data[0].globalTotalOtHrs) || 0;
-
-            gGap = gAct - gReq;
-
+            gReq = Number(data[0]?.globalTotalRequired) || 0;
+            gAvail = Number(data[0]?.globalTotalAssigned) || 0;
+            gAct = Number(data[0]?.globalTotalPresent) || 0;
+            gOT = Number(data[0]?.globalTotalOtHrs) || 0;
         }
+
+        gGap = gAct - gReq;
 
 
 
@@ -2826,39 +2829,26 @@ async function _buildManagementBuffer() {
 
 
 
-            // Exact Dashboard requirement when this department is selected.
+            /*
+             * Management summary department row must match Dashboard first graph
+             * when only this Department is selected.
+             *
+             * Do not calculate it by summing section rows. A department employee may
+             * be correctly present in users.departmentId but have no valid section/line.
+             * The direct department maps keep those employees in Department Actual
+             * and Available while the detailed section/line report remains filter-exact.
+             */
+            const deptAttendance = attDeptMap.get(Number(deptId)) || {};
 
-            dReq = reqMaps.byDepartment.get(Number(deptId)) || 0;
-
-
-
-            // Department available/handed-over manpower = active users on report date.
-
-            dHand = handDeptMap.get(Number(deptId)) || 0;
-
-
-
-            // Department-wise attendance/OT is calculated from all employees in users.departmentId.
-
-            // OT Mandays = SUM(attendance_logs.otHrs) / 8.
-
-            const deptAtt = attDeptMap.get(Number(deptId)) || {};
-
-            dGen = getNum(deptAtt, "shiftGeneral");
-
-            dA = getNum(deptAtt, "shiftA");
-
-            dB = getNum(deptAtt, "shiftB");
-
-            dC = getNum(deptAtt, "shiftC");
-
-            dAct = getNum(deptAtt, "totalPresent");
-
-            dOT = getNum(deptAtt, "totalOtHrs");
-
-            dHrs = getNum(deptAtt, "totalHrsWorked");
-
-
+            dReq = Number(reqMaps.byDepartment.get(Number(deptId))) || 0;
+            dHand = Number(handDeptMap.get(Number(deptId))) || 0;
+            dGen = getNum(deptAttendance, "shiftGeneral");
+            dA = getNum(deptAttendance, "shiftA");
+            dB = getNum(deptAttendance, "shiftB");
+            dC = getNum(deptAttendance, "shiftC");
+            dAct = getNum(deptAttendance, "totalPresent");
+            dOT = getNum(deptAttendance, "totalOtHrs");
+            dHrs = getNum(deptAttendance, "totalHrsWorked");
 
             grReq += dReq;
 
@@ -2956,27 +2946,23 @@ async function _buildManagementBuffer() {
 
 
 
-        // Top Management Total row must match Dashboard with no Department/Section/Line filter.
-
-        // This preserves employees with NULL hierarchy and avoids arithmetic-sum mismatches.
-
+        /*
+         * Top Management Total must match Dashboard first graph without a hierarchy
+         * filter. Use global maps instead of only summing displayed department rows.
+         */
         grReq = Number(reqMaps.total) || 0;
-
         grHand = Number(activeMaps.total) || 0;
 
-        grGen = getNum(attendanceMaps.total, "shiftGeneral");
-
-        grA = getNum(attendanceMaps.total, "shiftA");
-
-        grB = getNum(attendanceMaps.total, "shiftB");
-
-        grC = getNum(attendanceMaps.total, "shiftC");
-
-        grAct = getNum(attendanceMaps.total, "totalPresent");
-
-        grOT = getNum(attendanceMaps.total, "totalOtHrs");
-
-        grHrs = getNum(attendanceMaps.total, "totalHrsWorked");
+        {
+            const globalAttendance = attendanceMaps.total || {};
+            grGen = getNum(globalAttendance, "shiftGeneral");
+            grA = getNum(globalAttendance, "shiftA");
+            grB = getNum(globalAttendance, "shiftB");
+            grC = getNum(globalAttendance, "shiftC");
+            grAct = getNum(globalAttendance, "totalPresent");
+            grOT = getNum(globalAttendance, "totalOtHrs");
+            grHrs = getNum(globalAttendance, "totalHrsWorked");
+        }
 
 
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
     ComposedChart,
     Bar,
@@ -40,6 +41,9 @@ import {
     EyeOff,
     ArrowLeft,
     GraduationCap,
+    CalendarPlus,
+    Trash2,
+    Save,
 } from 'lucide-react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -578,12 +582,49 @@ const renderUsersTotalLabel = (suffix = "", fontSize = 12) =>
         textAnchor: "middle",
     });
 
-const renderAttendanceLabel = (color = DEFAULT_ATTENDANCE_BAR_COLOR, suffix = "", fontSize = 12) =>
-    renderBarValueLabel(color, suffix, fontSize, {
-        offsetX: 0,
-        offsetY: -10,
-        textAnchor: "middle",
-    });
+const renderAttendanceLabel = (color = DEFAULT_ATTENDANCE_BAR_COLOR, suffix = "", fontSize = 12) => (props) => {
+    const holidayShortCode = String(
+        props?.holidayShortCode ||
+        props?.payload?.holidayShortCode ||
+        ""
+    ).trim();
+
+    if (!holidayShortCode) {
+        return renderBarValueLabel(color, suffix, fontSize, {
+            offsetX: 0,
+            offsetY: -10,
+            textAnchor: "middle",
+        })(props);
+    }
+
+    const x = Number(props?.x || 0);
+    const y = Number(props?.y || 0);
+    const width = Number(props?.width || 0);
+    const safeY = Math.max(fontSize + 2, y - 10);
+    const holidayName = String(
+        props?.holidayName ||
+        props?.payload?.holidayName ||
+        "Holiday"
+    );
+
+    return (
+        <text
+            x={x + width / 2}
+            y={safeY}
+            textAnchor="middle"
+            fill={color}
+            fontSize={fontSize + 1}
+            fontWeight={900}
+            stroke="#ffffff"
+            strokeWidth={2.2}
+            paintOrder="stroke"
+            style={{ fontWeight: 900, fontFamily: "'Arial Black', Arial, sans-serif" }}
+        >
+            <title>{holidayName}</title>
+            {holidayShortCode}
+        </text>
+    );
+};
 
 const renderLineValueLabel = (color = "#1d4ed8", suffix = "", fontSize = 13) => (props) => {
     const { x, y, value } = props;
@@ -1003,6 +1044,8 @@ const extractSkillLevelLabel = (value) => {
 };
 
 const normalizeSkillLevelChartData = (list = []) => {
+    const holidaySource = (Array.isArray(list) ? list : []).find(item => item?.isHoliday || item?.holidayShortCode) || null;
+
     const buckets = {
         L1: { name: "L1", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
         L2: { name: "L2", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
@@ -1034,6 +1077,10 @@ const normalizeSkillLevelChartData = (list = []) => {
     return Object.values(buckets)
         .map(item => ({
             ...item,
+            isHoliday: Boolean(holidaySource),
+            holidayName: holidaySource?.holidayName || null,
+            holidayShortCode: holidaySource?.holidayShortCode || null,
+            holidayType: holidaySource?.holidayType || null,
             totalEmployees: denominatorTotal,
             denominatorTotal,
             percentage: denominatorTotal > 0 ? Number(((Number(item.attendanceValue || 0) / denominatorTotal) * 100).toFixed(1)) : 0,
@@ -1648,6 +1695,7 @@ const HighchartsPieCard = ({
     const safeData = convertedData
         .filter(item => Number(item.value) > 0 || Number(item.masterValue) > 0 || Number(item.attendanceValue) > 0)
         .map(item => ({
+            ...item,
             name: cleanDisplayName(item.name),
             value: Number(item.value || 0),
             rawValue: Number(item.rawValue ?? item.attendanceCount ?? item.attendanceValue ?? item.value ?? 0),
@@ -1946,7 +1994,11 @@ const HighchartsPieCard = ({
                                                 maxBarSize={28}
                                                 label={(props) => {
                                                     const item = finalSafeData[props.index] || {};
-                                                    return renderAttendanceLabel(getAttendanceBarColor(item), valueSuffix, 12)(props);
+                                                    return renderAttendanceLabel(getAttendanceBarColor(item), valueSuffix, 12)({
+                                                        ...props,
+                                                        holidayShortCode: item.holidayShortCode,
+                                                        holidayName: item.holidayName,
+                                                    });
                                                 }}
                                             >
                                                 {finalSafeData.map((entry, index) => (
@@ -2383,7 +2435,14 @@ const EducationChartCard = ({
                                         fill="#4f46e5"
                                         radius={[7, 7, 0, 0]}
                                         maxBarSize={34}
-                                        label={renderAttendanceLabel("#4f46e5", valueSuffix, 12)}
+                                        label={(props) => {
+                                            const item = chartData[props.index] || {};
+                                            return renderAttendanceLabel("#4f46e5", valueSuffix, 12)({
+                                                ...props,
+                                                holidayShortCode: item.holidayShortCode,
+                                                holidayName: item.holidayName,
+                                            });
+                                        }}
                                     />
                                 </>
                             ) : (
@@ -2520,7 +2579,14 @@ const ContractorPrefixChartCard = ({
                                         fill="#2563eb"
                                         radius={[7, 7, 0, 0]}
                                         maxBarSize={34}
-                                        label={renderAttendanceLabel("#2563eb", valueSuffix, 12)}
+                                        label={(props) => {
+                                            const item = chartData[props.index] || {};
+                                            return renderAttendanceLabel("#2563eb", valueSuffix, 12)({
+                                                ...props,
+                                                holidayShortCode: item.holidayShortCode,
+                                                holidayName: item.holidayName,
+                                            });
+                                        }}
                                     />
                                 </>
                             ) : (
@@ -2574,8 +2640,10 @@ const TenureFullWidthChart = ({
     setCustomTenureRange,
     showMasterComparison = true,
     showShiftFilter = true,
+    holidayAware = false,
 }) => {
-    const isEmpty = !data || data.every(d => Number(d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0));
+    const hasHoliday = Boolean(holidayAware && data?.some(d => d?.isHoliday || d?.holidayShortCode));
+    const isEmpty = !hasHoliday && (!data || data.every(d => Number(d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0)));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
     const hasMasterComparison = showMasterComparison && data?.some(d => Number(d.masterValue || 0) > 0);
 
@@ -2651,7 +2719,18 @@ const TenureFullWidthChart = ({
                                     strokeWidth={3}
                                     dot={{ r: 5, fill: color, strokeWidth: 0 }}
                                     activeDot={false}
-                                    label={renderLineValueLabel(color, valueSuffix, 13)}
+                                    label={(props) => {
+                                        const item = data?.[props.index] || {};
+                                        if (holidayAware && (item?.isHoliday || item?.holidayShortCode)) {
+                                            return renderAttendanceLabel(color, valueSuffix, 13)({
+                                                ...props,
+                                                width: 0,
+                                                holidayShortCode: item.holidayShortCode,
+                                                holidayName: item.holidayName,
+                                            });
+                                        }
+                                        return renderLineValueLabel(color, valueSuffix, 13)(props);
+                                    }}
                                 />
                             </LineChart>
                         ) : (
@@ -2699,7 +2778,17 @@ const TenureFullWidthChart = ({
                                             fill={`url(#${gradientId})`}
                                             radius={[7, 7, 0, 0]}
                                             maxBarSize={28}
-                                            label={renderBarValueLabel(color, valueSuffix, 12)}
+                                            label={(props) => {
+                                                const item = data?.[props.index] || {};
+                                                if (holidayAware) {
+                                                    return renderAttendanceLabel(color, valueSuffix, 12)({
+                                                        ...props,
+                                                        holidayShortCode: item.holidayShortCode,
+                                                        holidayName: item.holidayName,
+                                                    });
+                                                }
+                                                return renderBarValueLabel(color, valueSuffix, 12)(props);
+                                            }}
                                         />
                                     </>
                                 ) : (
@@ -2720,7 +2809,7 @@ const TenureFullWidthChart = ({
     );
 };
 
-const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = false) => {
+const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = false, holidayRevision = 0) => {
     const [tenureStats, setTenureStats] = useState(null);
     const [tenureLoading, setTenureLoading] = useState(false);
 
@@ -2729,6 +2818,7 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         setTenureStats(null);
 
         const params = new URLSearchParams();
+        params.append('_holidayRevision', String(holidayRevision));
 
         const departmentParam = serializeMultiValue(filter.department);
         const sectionParam = serializeMultiValue(filter.section);
@@ -2780,13 +2870,282 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         customTenureRange?.from,
         customTenureRange?.to,
         filter.shift,
+        holidayRevision,
     ]);
 
     return { tenureStats, tenureLoading };
 };
 
+
+const HOLIDAY_PRESETS = [
+    { value: "SUNDAY", label: "Sunday", name: "Sunday", shortCode: "S" },
+    { value: "WEEKLY_OFF", label: "Weekly Off", name: "Weekly Off", shortCode: "WO" },
+    { value: "NATIONAL", label: "National Holiday", name: "National Holiday", shortCode: "NH" },
+    { value: "FESTIVAL", label: "Festival Holiday", name: "Festival Holiday", shortCode: "FH" },
+    { value: "COMPANY", label: "Company Holiday", name: "Company Holiday", shortCode: "CH" },
+    { value: "CUSTOM", label: "Custom Holiday", name: "", shortCode: "H" },
+];
+
+const getLocalTodayForInput = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+const makeDefaultHolidayForm = () => ({
+    holidayDate: getLocalTodayForInput(),
+    holidayType: "SUNDAY",
+    holidayName: "Sunday",
+    shortCode: "S",
+    description: "",
+});
+
+const HolidayManagementDialog = ({ open, onOpenChange, onSaved }) => {
+    const [form, setForm] = useState(makeDefaultHolidayForm);
+    const [holidays, setHolidays] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState("");
+
+    const loadHolidays = async () => {
+        setLoading(true);
+        try {
+            const response = await axiosInstance.get('/api/dashboard/holidays');
+            setHolidays(extractApiList(response, "holidays"));
+        } catch (error) {
+            setMessage(error?.response?.data?.message || "Unable to load holidays");
+            setHolidays([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        setMessage("");
+        loadHolidays();
+    }, [open]);
+
+    const handlePresetChange = (holidayType) => {
+        const preset = HOLIDAY_PRESETS.find(item => item.value === holidayType) || HOLIDAY_PRESETS[0];
+        setForm(prev => ({
+            ...prev,
+            holidayType: preset.value,
+            holidayName: preset.name,
+            shortCode: preset.shortCode,
+        }));
+    };
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        setMessage("");
+
+        if (!form.holidayDate || !form.holidayName.trim() || !form.shortCode.trim()) {
+            setMessage("Date, holiday name and short code are required.");
+            return;
+        }
+
+        setSaving(true);
+        try {
+            await axiosInstance.post('/api/dashboard/holidays', {
+                ...form,
+                holidayName: form.holidayName.trim(),
+                shortCode: form.shortCode.trim().toUpperCase(),
+            });
+            setMessage("Holiday saved successfully.");
+            setForm(makeDefaultHolidayForm());
+            await loadHolidays();
+            onSaved?.();
+        } catch (error) {
+            setMessage(error?.response?.data?.message || "Unable to save holiday");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDelete = async (holiday) => {
+        const confirmed = window.confirm(`Remove ${holiday.holidayName} from ${holiday.holidayDate}?`);
+        if (!confirmed) return;
+
+        setMessage("");
+        try {
+            await axiosInstance.delete(`/api/dashboard/holidays/${holiday.id}`);
+            setMessage("Holiday removed successfully.");
+            await loadHolidays();
+            onSaved?.();
+        } catch (error) {
+            setMessage(error?.response?.data?.message || "Unable to remove holiday");
+        }
+    };
+
+    const editHoliday = (holiday) => {
+        setForm({
+            holidayDate: holiday.holidayDate || getLocalTodayForInput(),
+            holidayType: holiday.holidayType || "CUSTOM",
+            holidayName: holiday.holidayName || "",
+            shortCode: holiday.shortCode || "H",
+            description: holiday.description || "",
+        });
+        setMessage("Selected holiday loaded for editing.");
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <CalendarPlus className="w-5 h-5 text-blue-600" />
+                        Manage Dashboard Holidays
+                    </DialogTitle>
+                </DialogHeader>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700">Holiday date</label>
+                            <input
+                                type="date"
+                                value={form.holidayDate}
+                                onChange={(e) => setForm(prev => ({ ...prev, holidayDate: e.target.value }))}
+                                className="w-full h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                                required
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700">Holiday type</label>
+                            <Select value={form.holidayType} onValueChange={handlePresetChange}>
+                                <SelectTrigger className="w-full h-10">
+                                    <SelectValue placeholder="Select holiday type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {HOLIDAY_PRESETS.map(item => (
+                                        <SelectItem key={item.value} value={item.value}>
+                                            {item.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700">Holiday name</label>
+                            <input
+                                type="text"
+                                value={form.holidayName}
+                                onChange={(e) => setForm(prev => ({ ...prev, holidayName: e.target.value }))}
+                                className="w-full h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                                placeholder="Example: Diwali"
+                                maxLength={100}
+                                required
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700">Short code</label>
+                            <input
+                                type="text"
+                                value={form.shortCode}
+                                onChange={(e) => setForm(prev => ({
+                                    ...prev,
+                                    shortCode: e.target.value.toUpperCase().slice(0, 10),
+                                }))}
+                                className="w-full h-10 rounded-md border border-slate-300 px-3 text-sm uppercase outline-none focus:ring-2 focus:ring-blue-400"
+                                placeholder="S / NH / FH"
+                                maxLength={10}
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700">Description (optional)</label>
+                        <textarea
+                            value={form.description}
+                            onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+                            className="w-full min-h-20 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                            placeholder="Optional note"
+                            maxLength={255}
+                        />
+                    </div>
+
+                    {message && (
+                        <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700">
+                            {message}
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                            Save Holiday
+                        </Button>
+                    </DialogFooter>
+                </form>
+
+                <div className="border-t border-slate-200 pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-bold text-slate-800">Declared holidays</h3>
+                        {loading && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        {!loading && holidays.length === 0 && (
+                            <div className="text-sm text-slate-400 py-4 text-center">No holidays declared</div>
+                        )}
+
+                        {holidays.map(holiday => (
+                            <div
+                                key={holiday.id}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 bg-slate-50"
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => editHoliday(holiday)}
+                                    className="min-w-0 flex-1 text-left"
+                                >
+                                    <div className="font-bold text-slate-800 truncate">
+                                        {holiday.holidayName}
+                                        <span className="ml-2 text-xs rounded bg-blue-100 text-blue-700 px-2 py-0.5">
+                                            {holiday.shortCode}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        {formatDisplayDate(holiday.holidayDate)} · {holiday.holidayType}
+                                    </div>
+                                </button>
+
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    onClick={() => handleDelete(holiday)}
+                                    title="Remove holiday"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 const DashboardHome = () => {
     const [departments, setDepartments] = useState([]);
+    const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+    const [holidayRevision, setHolidayRevision] = useState(0);
+
+    const getDashboardQueryParams = (filter, extra = {}) =>
+        getQueryParams(filter, { ...extra, _holidayRevision: holidayRevision });
+
+    const getLowerDashboardQueryParams = (filter, extra = {}) =>
+        getLowerGraphQueryParams(filter, { ...extra, _holidayRevision: holidayRevision });
 
     const [tenureValueModes, setTenureValueModes] = useState({
         attendance: "percentage",
@@ -2945,40 +3304,40 @@ const DashboardHome = () => {
         data: manpowerStats,
         isLoading: manpowerLoading,
         isFetching: manpowerFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(manpowerFilter, {}));
+    } = useGetDashboardStatsQuery(getDashboardQueryParams(manpowerFilter, {}));
 
     const {
         data: attritionStats,
         isLoading: attritionLoading,
         isFetching: attritionFetching,
-    } = useGetDashboardStatsQuery(getQueryParams(attritionFilter, { shift: "ALL" }));
+    } = useGetDashboardStatsQuery(getDashboardQueryParams(attritionFilter, { shift: "ALL" }));
 
     const {
         data: absenteeismStats,
         isLoading: absenteeismLoading,
         isFetching: absenteeismFetching,
     } = useGetDashboardStatsQuery(
-        getQueryParams(absenteeismFilter, { shift: "ALL" })
+        getDashboardQueryParams(absenteeismFilter, { shift: "ALL" })
     );
 
     const {
         data: contractorPrefixStats,
         isLoading: contractorPrefixLoading,
         isFetching: contractorPrefixFetching,
-    } = useGetDashboardStatsQuery(getLowerGraphQueryParams(contractorPrefixFilter, {}));
+    } = useGetDashboardStatsQuery(getLowerDashboardQueryParams(contractorPrefixFilter, {}));
 
     const {
         data: educationStats,
         isLoading: educationLoading,
         isFetching: educationFetching,
-    } = useGetDashboardStatsQuery(getLowerGraphQueryParams(educationFilter, {}));
+    } = useGetDashboardStatsQuery(getLowerDashboardQueryParams(educationFilter, {}));
 
     const {
         data: skillStats,
         isLoading: skillLoading,
         isFetching: skillFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(skillFilter, { masterAttendanceMode: "YES" })
+        getLowerDashboardQueryParams(skillFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -2986,7 +3345,7 @@ const DashboardHome = () => {
         isLoading: genderLoading,
         isFetching: genderFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(genderFilter, { masterAttendanceMode: "YES" })
+        getLowerDashboardQueryParams(genderFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -2994,7 +3353,7 @@ const DashboardHome = () => {
         isLoading: leaderExpertLoading,
         isFetching: leaderExpertFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(leaderExpertFilter, { masterAttendanceMode: "YES" })
+        getLowerDashboardQueryParams(leaderExpertFilter, { masterAttendanceMode: "YES" })
     );
 
     const {
@@ -3002,7 +3361,7 @@ const DashboardHome = () => {
         isLoading: stateLoading,
         isFetching: stateFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(stateFilter, {
+        getLowerDashboardQueryParams(stateFilter, {
             stateFilter: serializeMultiValue(selectedMasterState),
             masterAttendanceMode: "YES",
         }),
@@ -3014,7 +3373,7 @@ const DashboardHome = () => {
         isLoading: districtLoading,
         isFetching: districtFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(getStateLinkedFilter(districtFilter), {
+        getLowerDashboardQueryParams(getStateLinkedFilter(districtFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -3027,7 +3386,7 @@ const DashboardHome = () => {
         isLoading: employeeGenderLoading,
         isFetching: employeeGenderFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(getStateLinkedFilter(employeeGenderFilter), {
+        getLowerDashboardQueryParams(getStateLinkedFilter(employeeGenderFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -3040,7 +3399,7 @@ const DashboardHome = () => {
         isLoading: designationLoading,
         isFetching: designationFetching,
     } = useGetDashboardStatsQuery(
-        getLowerGraphQueryParams(getStateLinkedFilter(designationFilter), {
+        getLowerDashboardQueryParams(getStateLinkedFilter(designationFilter), {
             stateFilter: serializeMultiValue(selectedMasterState),
             districtFilter: serializeMultiValue(selectedMasterDistrict),
             masterAttendanceMode: "YES",
@@ -3056,7 +3415,8 @@ const DashboardHome = () => {
     const { tenureStats, tenureLoading } = useTenureStats(
         tenureFilter,
         customTenureRange,
-        shouldUseCustomTenureRange
+        shouldUseCustomTenureRange,
+        holidayRevision
     );
 
     const normalizeTopGraphRange = (data = [], graphFilter = defaultFilter) => {
@@ -3127,6 +3487,7 @@ const DashboardHome = () => {
 
         const sourceObj = stats?.[key] || {};
         const masterObj = stats?.masterTenure || stats?.usersTotalByTenure || {};
+        const holiday = key === "attendance" ? (stats?.filters?.holiday || null) : null;
 
         const denominatorBuckets = tenureBucket === "CUSTOM"
             ? [{ value: "CUSTOM" }]
@@ -3157,6 +3518,10 @@ const DashboardHome = () => {
                 masterValue: valueMode === "percentage" ? masterPercentage : masterValue,
                 masterRawValue: masterValue,
                 masterPercentage,
+                isHoliday: Boolean(holiday),
+                holidayName: holiday?.holidayName || null,
+                holidayShortCode: holiday?.shortCode || null,
+                holidayType: holiday?.holidayType || null,
             };
         });
     };
@@ -3185,11 +3550,26 @@ const DashboardHome = () => {
                     <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
+                    <Button
+                        type="button"
+                        onClick={() => setHolidayDialogOpen(true)}
+                        className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
+                    >
+                        <CalendarPlus className="w-4 h-4" />
+                        Manage Holidays
+                    </Button>
+
                     <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-full font-semibold hidden md:inline-block">
-                        Requirement bar is orange and value is visible on every date
+                        Holiday code replaces attendance value on declared dates
                     </span>
                 </div>
             </div>
+
+            <HolidayManagementDialog
+                open={holidayDialogOpen}
+                onOpenChange={setHolidayDialogOpen}
+                onSaved={() => setHolidayRevision(prev => prev + 1)}
+            />
 
             <Card className="border-slate-200 shadow-sm bg-white w-full">
                 <CardHeader className="pb-1 pt-5 px-6 space-y-3">
@@ -3288,7 +3668,14 @@ const DashboardHome = () => {
                                             fill="url(#presentGrad)"
                                             radius={[4, 4, 0, 0]}
                                             barSize={42}
-                                            label={renderBarValueLabel("#2563eb", "", 13)}
+                                            label={(props) => {
+                                                const item = manpowerData[props.index] || {};
+                                                return renderAttendanceLabel("#2563eb", "", 13)({
+                                                    ...props,
+                                                    holidayShortCode: item.holidayShortCode,
+                                                    holidayName: item.holidayName,
+                                                });
+                                            }}
                                         />
 
                                         <Bar
@@ -3342,6 +3729,16 @@ const DashboardHome = () => {
                                             dot={{ r: 2.5, fill: "#2563eb", strokeWidth: 0 }}
                                             activeDot={false}
                                             label={(props) => {
+                                                const item = manpowerData[props.index] || {};
+                                                if (item?.isHoliday || item?.holidayShortCode) {
+                                                    return renderAttendanceLabel("#2563eb", "", 13)({
+                                                        ...props,
+                                                        width: 0,
+                                                        holidayShortCode: item.holidayShortCode,
+                                                        holidayName: item.holidayName,
+                                                    });
+                                                }
+
                                                 const { x, y, value } = props;
                                                 if (value === null || value === undefined || value === "") return null;
 
@@ -3373,7 +3770,7 @@ const DashboardHome = () => {
                     <SimpleLegend
                         items={[
                             { color: '#ea580c', label: 'Required' },
-                            { color: '#2563eb', label: 'Actual Present' },
+                            { color: '#2563eb', label: 'Actual Present / Holiday Code' },
                             { color: '#e7ae12', label: 'Current Headcount' },
                         ]}
                     />
@@ -3551,6 +3948,7 @@ const DashboardHome = () => {
                 setTenureBucket={setAttendanceTenureBucket}
                 customTenureRange={customTenureRange}
                 setCustomTenureRange={setCustomTenureRange}
+                holidayAware={true}
             />
 
             <div className="grid grid-cols-1 gap-4 items-stretch">

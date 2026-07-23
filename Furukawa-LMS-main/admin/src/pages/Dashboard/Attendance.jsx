@@ -109,6 +109,7 @@ const Attendance = () => {
     const [attendanceData, setAttendanceData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [attendanceExporting, setAttendanceExporting] = useState(false);
     const [unmappedExporting, setUnmappedExporting] = useState(false);
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -275,35 +276,89 @@ const Attendance = () => {
         }
     };
 
-    const handleDownloadAttendanceExcel = () => {
-        const exported = downloadExcelTable({
-            rows: filteredData,
-            fileName: `attendance-${filters.date || "selected-date"}.xls`,
-            title: `Attendance - ${filters.date || "Selected Date"}`,
-            columns: [
-                { header: "Sr.No", value: (_row, index) => index + 1 },
-                { header: "Date", value: () => filters.date || "" },
-                { header: "Emp ID", value: "empId" },
-                { header: "Employee Name", value: "name" },
-                { header: "Department", value: (row) => row.department || row.section || "" },
-                { header: "Designation", value: "designation" },
-                { header: "PayCode", value: "payCode" },
-                { header: "Card No", value: "cardNo" },
-                { header: "Shift", value: "shift" },
-                { header: "Start Time", value: "startTime" },
-                { header: "In Time", value: "inTime" },
-                { header: "Out Time", value: "outTime" },
-                { header: "Hrs Worked", value: (row) => row.hrsWorked ?? "" },
-                { header: "Status", value: "status" },
-                { header: "Late Arrival", value: (row) => row.lateArrival ?? "" },
-                { header: "Early Departure", value: (row) => row.earlyDeparture ?? "" },
-                { header: "OT Hrs", value: (row) => row.otHrs ?? "" },
-                { header: "OT Amount", value: (row) => row.otAmount ?? "" },
-            ],
-        });
+    const handleDownloadAttendanceExcel = async () => {
+        if (!filters.date) {
+            alert("Please select an attendance date first.");
+            return;
+        }
 
-        if (!exported) {
-            alert("No attendance records available to download.");
+        setAttendanceExporting(true);
+
+        try {
+            /*
+             * Do not export attendanceData/filteredData here.
+             * Fetch a fresh backend list containing only the employees counted
+             * by Dashboard after PRESENT + eligibility + hierarchy conditions.
+             */
+            const queryParams = new URLSearchParams({
+                date: filters.date,
+                departmentId: filters.departmentId,
+                sectionId: filters.sectionId,
+                lineId: filters.lineId,
+                dashboardOnly: "true",
+            }).toString();
+
+            const response = await axiosInstance.get(
+                `/api/attendance?${queryParams}`
+            );
+
+            // Supports normal Axios response and an interceptor-unwrapped response.
+            const payload =
+                response?.data?.success !== undefined
+                    ? response.data
+                    : response;
+
+            if (!payload?.success) {
+                throw new Error(
+                    payload?.message ||
+                    "Unable to fetch Dashboard attendance employees."
+                );
+            }
+
+            const dashboardAttendanceRows = Array.isArray(payload.data)
+                ? payload.data
+                : [];
+
+            const exported = downloadExcelTable({
+                rows: dashboardAttendanceRows,
+                fileName: `attendance-${filters.date}.xls`,
+                title: `Attendance - ${filters.date} (${dashboardAttendanceRows.length} Employees)`,
+                columns: [
+                    { header: "Sr.No", value: (_row, index) => index + 1 },
+                    { header: "Date", value: () => filters.date || "" },
+                    { header: "Emp ID", value: "empId" },
+                    { header: "Employee Name", value: "name" },
+                    { header: "Department", value: (row) => row.department || row.section || "" },
+                    { header: "Designation", value: "designation" },
+                    { header: "PayCode", value: "payCode" },
+                    { header: "Card No", value: "cardNo" },
+                    { header: "Shift", value: "shift" },
+                    { header: "Start Time", value: "startTime" },
+                    { header: "In Time", value: "inTime" },
+                    { header: "Out Time", value: "outTime" },
+                    { header: "Hrs Worked", value: (row) => row.hrsWorked ?? "" },
+                    { header: "Status", value: "status" },
+                    { header: "Late Arrival", value: (row) => row.lateArrival ?? "" },
+                    { header: "Early Departure", value: (row) => row.earlyDeparture ?? "" },
+                    { header: "OT Hrs", value: (row) => row.otHrs ?? "" },
+                    { header: "OT Amount", value: (row) => row.otAmount ?? "" },
+                ],
+            });
+
+            if (!exported) {
+                alert(
+                    "No Dashboard-eligible present employees are available for the selected date and filters."
+                );
+            }
+        } catch (error) {
+            console.error("Failed to download Dashboard attendance", error);
+            alert(
+                error?.response?.data?.message ||
+                error?.message ||
+                "Failed to download attendance Excel file."
+            );
+        } finally {
+            setAttendanceExporting(false);
         }
     };
 
@@ -502,10 +557,14 @@ const Attendance = () => {
                         variant="outline"
                         className="border-green-300 hover:bg-green-50 text-green-700 text-xs h-8 shadow-sm flex items-center gap-1.5"
                         onClick={handleDownloadAttendanceExcel}
-                        disabled={loading || filteredData.length === 0}
+                        disabled={loading || attendanceExporting || !filters.date}
                     >
-                        <Download className="w-3.5 h-3.5" />
-                        Download Attendance
+                        {attendanceExporting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                            <Download className="w-3.5 h-3.5" />
+                        )}
+                        {attendanceExporting ? "Preparing..." : "Download Attendance"}
                     </Button>
 
                     {/* Unmapped Present Button */}

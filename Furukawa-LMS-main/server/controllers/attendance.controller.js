@@ -5,6 +5,7 @@ import User from "../models/auth.model.js";
 import xlsx from "xlsx";
 import logger from "../logger/winston.logger.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
+import { getEligibleUserSql } from "../utils/userEligibility.js";
 
 // export const uploadAttendance = async (req, res, next) => {
 //     try {
@@ -899,74 +900,341 @@ const formatMssqlDate = (val) => {
     return val.toISOString().split('T')[0];
 };
 
+const isDashboardAttendanceDownload = (value) =>
+    ["true", "1", "yes"].includes(
+        String(value || "").trim().toLowerCase()
+    );
+
+const parseAttendanceFilterId = (value, fieldName) => {
+    if (
+        value === undefined ||
+        value === null ||
+        value === "" ||
+        String(value).toLowerCase() === "all"
+    ) {
+        return null;
+    }
+
+    const parsedValue = Number.parseInt(String(value), 10);
+
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+        const error = new Error(
+            `${fieldName} must be a valid positive integer or 'all'`
+        );
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return parsedValue;
+};
+
+/*
+ * Same canonical section rule used by Dashboard:
+ * 1. Use a valid users.sectionId first.
+ * 2. Resolve from line/sub-section only when direct section is missing/invalid.
+ * 3. Use sections.users JSON only when neither direct nor line section exists.
+ */
+const getDashboardAttendanceSectionSql = (alias = "u") => `
+    AND (
+        EXISTS (
+            SELECT 1
+            FROM sections directSection
+            WHERE directSection.id = ${alias}.sectionId
+              AND directSection.departmentId = ${alias}.departmentId
+              AND ISNULL(directSection.isActive, 1) = 1
+              AND directSection.id = @sectionId
+        )
+
+        OR (
+            NOT EXISTS (
+                SELECT 1
+                FROM sections directSection
+                WHERE directSection.id = ${alias}.sectionId
+                  AND directSection.departmentId = ${alias}.departmentId
+                  AND ISNULL(directSection.isActive, 1) = 1
+            )
+            AND EXISTS (
+                SELECT 1
+                FROM [lines] resolvedLine
+                LEFT JOIN sub_sections resolvedSubSection
+                    ON resolvedSubSection.id = ${alias}.subSectionId
+                INNER JOIN sections resolvedSection
+                    ON resolvedSection.id = resolvedLine.sectionId
+                   AND resolvedSection.departmentId = ${alias}.departmentId
+                   AND ISNULL(resolvedSection.isActive, 1) = 1
+                WHERE resolvedLine.id = COALESCE(
+                    ${alias}.lineId,
+                    resolvedSubSection.lineId
+                )
+                  AND ISNULL(resolvedLine.isActive, 1) = 1
+                  AND resolvedSection.id = @sectionId
+            )
+        )
+
+        OR (
+            NOT EXISTS (
+                SELECT 1
+                FROM sections directSection
+                WHERE directSection.id = ${alias}.sectionId
+                  AND directSection.departmentId = ${alias}.departmentId
+                  AND ISNULL(directSection.isActive, 1) = 1
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM [lines] anyResolvedLine
+                LEFT JOIN sub_sections anyResolvedSubSection
+                    ON anyResolvedSubSection.id = ${alias}.subSectionId
+                INNER JOIN sections anyResolvedSection
+                    ON anyResolvedSection.id = anyResolvedLine.sectionId
+                   AND anyResolvedSection.departmentId = ${alias}.departmentId
+                   AND ISNULL(anyResolvedSection.isActive, 1) = 1
+                WHERE anyResolvedLine.id = COALESCE(
+                    ${alias}.lineId,
+                    anyResolvedSubSection.lineId
+                )
+                  AND ISNULL(anyResolvedLine.isActive, 1) = 1
+            )
+            AND EXISTS (
+                SELECT 1
+                FROM sections jsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(
+                            CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                        ) = 1
+                        THEN CAST(jsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) jsonSectionUser
+                WHERE jsonSection.departmentId = ${alias}.departmentId
+                  AND ISNULL(jsonSection.isActive, 1) = 1
+                  AND jsonSection.id = @sectionId
+                  AND TRY_CAST(jsonSectionUser.[value] AS INT) = ${alias}.id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM sections earlierJsonSection
+                      CROSS APPLY OPENJSON(
+                          CASE
+                              WHEN ISJSON(
+                                  CAST(
+                                      earlierJsonSection.[users]
+                                      AS NVARCHAR(MAX)
+                                  )
+                              ) = 1
+                              THEN CAST(
+                                  earlierJsonSection.[users]
+                                  AS NVARCHAR(MAX)
+                              )
+                              ELSE N'[]'
+                          END
+                      ) earlierJsonUser
+                      WHERE earlierJsonSection.departmentId = ${alias}.departmentId
+                        AND ISNULL(earlierJsonSection.isActive, 1) = 1
+                        AND earlierJsonSection.id < jsonSection.id
+                        AND TRY_CAST(
+                            earlierJsonUser.[value] AS INT
+                        ) = ${alias}.id
+                  )
+            )
+        )
+    )
+`;
+
 export const getAttendance = async (req, res, next) => {
     try {
-        const { date, departmentId, sectionId, lineId } = req.query;
+        const {
+            date,
+            departmentId,
+            sectionId,
+            lineId,
+            dashboardOnly,
+        } = req.query;
 
         if (!date) {
-            return res.status(400).json({ success: false, message: "Date is required" });
+            return res.status(400).json({
+                success: false,
+                message: "Date is required",
+            });
         }
+
+        const departmentFilterId = parseAttendanceFilterId(
+            departmentId,
+            "departmentId"
+        );
+        const sectionFilterId = parseAttendanceFilterId(
+            sectionId,
+            "sectionId"
+        );
+        const lineFilterId = parseAttendanceFilterId(
+            lineId,
+            "lineId"
+        );
+
+        const dashboardDownload =
+            isDashboardAttendanceDownload(dashboardOnly);
 
         const pool = await poolPromise;
         const request = pool.request();
 
-        let sqlQuery = `
-            SELECT 
-                al.id as attendanceId,
-                al.userId,
-                u.fullName,
-                u.empId,
-                al.[date],
-                al.payCode,
-                al.cardNo,
-                al.employeeName as attEmployeeName,
-                al.department as attDepartment,
-                al.designation,
-                al.shift,
-                al.startTime,
-                al.inTime,
-                al.outTime,
-                al.hrsWorked,
-                al.status,
-                al.lateArrival,
-                al.earlyDeparture,
-                al.otHrs,
-                al.otAmount,
-                al.updatedBy,
-                al.updatedByRole,
-                al.updatedAt
-            FROM attendance_logs al
-            LEFT JOIN users u ON al.userId = u.id
-            WHERE CONVERT(VARCHAR, al.date, 23) = @date
-        `;
+        request.input("date", sql.VarChar, date);
 
-        request.input('date', sql.VarChar, date);
+        let normalHierarchySql = "";
+        let dashboardHierarchySql = "";
 
-        // Hierarchical Filters
-        if (departmentId && departmentId !== 'all') {
-            sqlQuery += ` AND u.departmentId = @deptId`;
-            request.input('deptId', sql.Int, departmentId);
+        if (departmentFilterId) {
+            normalHierarchySql += " AND u.departmentId = @deptId";
+            dashboardHierarchySql += " AND u.departmentId = @deptId";
+            request.input("deptId", sql.Int, departmentFilterId);
         }
 
-        if (sectionId && sectionId !== 'all') {
-            sqlQuery += ` AND u.sectionId = @sectionId`;
-            request.input('sectionId', sql.Int, sectionId);
+        if (sectionFilterId) {
+            // Existing attendance-page filter remains unchanged.
+            normalHierarchySql += " AND u.sectionId = @sectionId";
+
+            // Download follows the Dashboard's canonical section hierarchy.
+            dashboardHierarchySql +=
+                getDashboardAttendanceSectionSql("u");
+
+            request.input("sectionId", sql.Int, sectionFilterId);
         }
 
-        if (lineId && lineId !== 'all') {
-            sqlQuery += ` AND u.lineId = @lineId`;
-            request.input('lineId', sql.Int, lineId);
+        if (lineFilterId) {
+            normalHierarchySql += " AND u.lineId = @lineId";
+            dashboardHierarchySql += " AND u.lineId = @lineId";
+            request.input("lineId", sql.Int, lineFilterId);
         }
 
-        logger.info(`Attendance SQL Query: ${sqlQuery}`);
+        let sqlQuery;
 
-        sqlQuery += ` ORDER BY al.cardNo ASC`;
+        if (dashboardDownload) {
+            /*
+             * Dashboard attendance conditions:
+             * - Attendance status must be P/PRESENT/Present.
+             * - Common getEligibleUserSql() applies isDeleted = 0,
+             *   isTemporary = 0, valid empId and the same shutter/off
+             *   designation exclusions used by Dashboard graphs.
+             * - COUNT on Dashboard is DISTINCT u.id, so ROW_NUMBER returns
+             *   only one downloadable row for each eligible employee.
+             */
+            sqlQuery = `
+                WITH DashboardPresentAttendance AS (
+                    SELECT
+                        al.id AS attendanceId,
+                        al.userId,
+                        u.fullName,
+                        u.empId,
+                        al.[date],
+                        al.payCode,
+                        al.cardNo,
+                        al.employeeName AS attEmployeeName,
+                        al.department AS attDepartment,
+                        al.designation,
+                        al.shift,
+                        al.startTime,
+                        al.inTime,
+                        al.outTime,
+                        al.hrsWorked,
+                        al.status,
+                        al.lateArrival,
+                        al.earlyDeparture,
+                        al.otHrs,
+                        al.otAmount,
+                        al.updatedBy,
+                        al.updatedByRole,
+                        al.updatedAt,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY u.id
+                            ORDER BY
+                                CASE
+                                    WHEN al.updatedAt IS NULL THEN 1
+                                    ELSE 0
+                                END,
+                                al.updatedAt DESC,
+                                al.id DESC
+                        ) AS employeeRowNumber
+                    FROM attendance_logs al
+                    INNER JOIN users u
+                        ON al.userId = u.id
+                    WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, @date, 23)
+                      AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(100)))))
+                          IN ('P', 'PRESENT')
+                      ${dashboardHierarchySql}
+                      ${getEligibleUserSql("u")}
+                )
+                SELECT
+                    attendanceId,
+                    userId,
+                    fullName,
+                    empId,
+                    [date],
+                    payCode,
+                    cardNo,
+                    attEmployeeName,
+                    attDepartment,
+                    designation,
+                    shift,
+                    startTime,
+                    inTime,
+                    outTime,
+                    hrsWorked,
+                    status,
+                    lateArrival,
+                    earlyDeparture,
+                    otHrs,
+                    otAmount,
+                    updatedBy,
+                    updatedByRole,
+                    updatedAt
+                FROM DashboardPresentAttendance
+                WHERE employeeRowNumber = 1
+                ORDER BY cardNo ASC, empId ASC
+            `;
+        } else {
+            // Original attendance page behavior — unchanged.
+            sqlQuery = `
+                SELECT
+                    al.id AS attendanceId,
+                    al.userId,
+                    u.fullName,
+                    u.empId,
+                    al.[date],
+                    al.payCode,
+                    al.cardNo,
+                    al.employeeName AS attEmployeeName,
+                    al.department AS attDepartment,
+                    al.designation,
+                    al.shift,
+                    al.startTime,
+                    al.inTime,
+                    al.outTime,
+                    al.hrsWorked,
+                    al.status,
+                    al.lateArrival,
+                    al.earlyDeparture,
+                    al.otHrs,
+                    al.otAmount,
+                    al.updatedBy,
+                    al.updatedByRole,
+                    al.updatedAt
+                FROM attendance_logs al
+                LEFT JOIN users u
+                    ON al.userId = u.id
+                WHERE CONVERT(VARCHAR, al.[date], 23) = @date
+                  ${normalHierarchySql}
+                ORDER BY al.cardNo ASC
+            `;
+        }
+
+        logger.info(
+            `Attendance SQL mode=${
+                dashboardDownload ? "dashboard-download" : "normal"
+            }, date=${date}`
+        );
 
         const result = await request.query(sqlQuery);
-        const rows = result.recordset;
+        const rows = result.recordset || [];
 
-        // Format response
-        const attendanceData = rows.map(row => ({
+        const attendanceData = rows.map((row) => ({
             id: row.attendanceId,
             userId: row.userId,
             name: row.fullName || row.attEmployeeName || "N/A",
@@ -981,20 +1249,37 @@ export const getAttendance = async (req, res, next) => {
             inTime: formatMssqlTime(row.inTime),
             outTime: formatMssqlTime(row.outTime),
             hrsWorked: row.hrsWorked,
-            status: row.status || 'Absent',
+            status: row.status || "Absent",
             lateArrival: row.lateArrival,
             earlyDeparture: row.earlyDeparture,
             otHrs: row.otHrs,
             otAmount: row.otAmount,
             updatedBy: row.updatedBy,
             updatedByRole: row.updatedByRole,
-            updatedAt: row.updatedAt
+            updatedAt: row.updatedAt,
         }));
 
-        res.status(200).json({ success: true, data: attendanceData });
-
+        return res.status(200).json({
+            success: true,
+            data: attendanceData,
+            meta: dashboardDownload
+                ? {
+                    mode: "dashboard-present-download",
+                    totalEmployees: attendanceData.length,
+                    date,
+                }
+                : undefined,
+        });
     } catch (error) {
         console.error("Get attendance error:", error);
+
+        if (error?.statusCode === 400) {
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+            });
+        }
+
         next(error);
     }
 };

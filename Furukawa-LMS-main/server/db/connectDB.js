@@ -23,7 +23,13 @@ const baseConfig = {
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        connectionTimeout: CONNECTION_TIMEOUT
+        connectionTimeout: CONNECTION_TIMEOUT,
+        // The DB server's OS clock runs in local (IST) time, not UTC. Tedious defaults to
+        // useUTC: true, which mislabels GETDATE()'s naive local value as if it were UTC,
+        // shifting every DATETIME read from the DB by the local UTC offset (+5:30 here).
+        // useUTC: false makes it read/write DATETIME values as local time instead, matching
+        // what the DB server's clock actually is.
+        useUTC: false
     }
 };
 

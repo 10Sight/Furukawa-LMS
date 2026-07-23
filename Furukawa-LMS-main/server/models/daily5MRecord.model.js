@@ -41,8 +41,8 @@ class Daily5MRecord {
                     sessionId INT,
                     status NVARCHAR(20) DEFAULT 'PENDING',
                     approvedBy INT,
-                    createdAt DATETIME2 DEFAULT GETUTCDATE(),
-                    updatedAt DATETIME2 DEFAULT GETUTCDATE(),
+                    createdAt DATETIME2 DEFAULT GETDATE(),
+                    updatedAt DATETIME2 DEFAULT GETDATE(),
                     FOREIGN KEY (approvedBy) REFERENCES users(id)
                 )
             END
@@ -53,8 +53,8 @@ class Daily5MRecord {
 
             // Migration: Handle column type changes safely by dropping default constraints first
             const columnsToFix = [
-                { name: 'createdAt', type: 'DATETIME2', default: 'GETUTCDATE()' },
-                { name: 'updatedAt', type: 'DATETIME2', default: 'GETUTCDATE()' }
+                { name: 'createdAt', type: 'DATETIME2', default: 'GETDATE()' },
+                { name: 'updatedAt', type: 'DATETIME2', default: 'GETDATE()' }
             ];
 
             for (const col of columnsToFix) {
@@ -176,7 +176,7 @@ class Daily5MRecord {
 
         const query = `
             INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETUTCDATE(), GETUTCDATE());
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
 
@@ -359,7 +359,7 @@ class Daily5MRecord {
     static async updateStatus(id, status, userId) {
         const query = `
             UPDATE daily_5m_records 
-            SET status = ?, approvedBy = ?, updatedAt = GETUTCDATE() 
+            SET status = ?, approvedBy = ?, updatedAt = GETDATE() 
             WHERE id = ?
         `;
         await executeQuery(query, [status, userId, id]);

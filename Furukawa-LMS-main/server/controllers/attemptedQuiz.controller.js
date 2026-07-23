@@ -1319,10 +1319,11 @@ export const rejectExtraAttempt = asyncHandler(async (req, res) => {
 });
 
 export const getMonitoringAttempts = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, lineId, subSectionId, level, testType, search, isTemporary, quizDepartmentId } = req.query;
+    const { departmentId, sectionId, lineId, subSectionId, level, testType, search, isTemporary, quizDepartmentId, page, limit } = req.query;
     const isTemporaryQuery = isTemporary === 'true' || isTemporary === '1' || isTemporary === true;
+    const isPaginated = page !== undefined && limit !== undefined;
 
-    let sql = `
+    const selectFields = `
         SELECT
             aq.id as id,
             aq.quiz as quizId,
@@ -1360,6 +1361,9 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
             sec.name as secName,
             lin.name as lineName,
             sub.name as subSecName
+    `;
+
+    const fromJoinClause = `
         FROM attempted_quizzes aq
         LEFT JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
         OUTER APPLY (
@@ -1404,9 +1408,9 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
         LEFT JOIN [sections] sec ON sec.id = u_hier_resolved.resolvedSectionId
         LEFT JOIN [lines] lin ON lin.id = u_hier_resolved.resolvedLineId
         LEFT JOIN sub_sections sub ON sub.id = u_hier_resolved.resolvedSubSectionId
-        WHERE 1=1
     `;
 
+    let whereClause = " WHERE 1=1";
     const values = [];
 
     // Restrict department/section scope for CUSTOM role users to their assigned hierarchy
@@ -1437,18 +1441,18 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
 
     if (departmentId) {
         if (allowedDepts.length > 0 && !allowedDepts.includes(String(departmentId))) {
-            sql += " AND 1 = 0";
+            whereClause += " AND 1 = 0";
         } else {
-            sql += " AND u_hier_resolved.resolvedDeptId = ?";
+            whereClause += " AND u_hier_resolved.resolvedDeptId = ?";
             values.push(parseInt(departmentId));
         }
     } else if (allowedDepts.length > 0) {
-        sql += ` AND u_hier_resolved.resolvedDeptId IN (${allowedDepts.map(() => '?').join(',')})`;
+        whereClause += ` AND u_hier_resolved.resolvedDeptId IN (${allowedDepts.map(() => '?').join(',')})`;
         values.push(...allowedDepts);
     }
 
     if (quizDepartmentId && quizDepartmentId !== 'all') {
-        sql += ` AND (
+        whereClause += ` AND (
             q.departmentId LIKE ? 
             OR EXISTS (SELECT 1 FROM OPENJSON(q.departmentId) WHERE value = ?)
         )`;
@@ -1458,54 +1462,71 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
 
     if (sectionId) {
         if (allowedSections.length > 0 && !allowedSections.includes(String(sectionId))) {
-            sql += " AND 1 = 0";
+            whereClause += " AND 1 = 0";
         } else {
-            sql += " AND u_hier_resolved.resolvedSectionId = ?";
+            whereClause += " AND u_hier_resolved.resolvedSectionId = ?";
             values.push(parseInt(sectionId));
         }
     } else if (allowedSections.length > 0) {
-        sql += ` AND u_hier_resolved.resolvedSectionId IN (${allowedSections.map(() => '?').join(',')})`;
+        whereClause += ` AND u_hier_resolved.resolvedSectionId IN (${allowedSections.map(() => '?').join(',')})`;
         values.push(...allowedSections);
     }
 
     if (lineId) {
-        sql += " AND u_hier_resolved.resolvedLineId = ?";
+        whereClause += " AND u_hier_resolved.resolvedLineId = ?";
         values.push(parseInt(lineId));
     }
     if (subSectionId) {
-        sql += " AND u_hier_resolved.resolvedSubSectionId = ?";
+        whereClause += " AND u_hier_resolved.resolvedSubSectionId = ?";
         values.push(parseInt(subSectionId));
     }
     if (level) {
-        sql += " AND q.level = ?";
+        whereClause += " AND q.level = ?";
         values.push(level);
     }
     
     if (testType) {
         if (testType === "DOJO") {
-            sql += " AND q.isDojo = 1";
+            whereClause += " AND q.isDojo = 1";
         } else if (testType === "HANDOVER") {
-            sql += " AND q.isHandover = 1";
+            whereClause += " AND q.isHandover = 1";
         } else if (testType === "THEORETICAL") {
-            sql += " AND q.isTheoretical = 1";
+            whereClause += " AND q.isTheoretical = 1";
         } else if (testType === "REGULAR") {
-            sql += " AND q.isDojo = 0 AND q.isHandover = 0 AND q.isTheoretical = 0";
+            whereClause += " AND q.isDojo = 0 AND q.isHandover = 0 AND q.isTheoretical = 0";
         }
     }
 
     if (isTemporaryQuery) {
-        sql += " AND (aq.studentIsTemporary = 1 OR u.isTemporary = 1)";
+        whereClause += " AND (aq.studentIsTemporary = 1 OR u.isTemporary = 1)";
     }
 
     if (search) {
         const searchQuery = `%${search}%`;
-        sql += " AND (COALESCE(u.fullName, aq.studentName, '') LIKE ? OR COALESCE(u.empId, aq.studentEmpId, '') LIKE ? OR q.title LIKE ?)";
+        whereClause += " AND (COALESCE(u.fullName, aq.studentName, '') LIKE ? OR COALESCE(u.empId, aq.studentEmpId, '') LIKE ? OR q.title LIKE ?)";
         values.push(searchQuery, searchQuery, searchQuery);
     }
 
-    sql += " ORDER BY aq.createdAt DESC";
+    let sql = selectFields + fromJoinClause + whereClause + " ORDER BY aq.createdAt DESC";
+    const queryValues = [...values];
 
-    const [rows] = await executeQuery(sql, values);
+    let total = 0;
+    let pageNum = 1;
+    let limitNum = 0;
+    if (isPaginated) {
+        pageNum = Math.max(1, parseInt(page) || 1);
+        limitNum = Math.max(1, parseInt(limit) || 25);
+        const offset = (pageNum - 1) * limitNum;
+
+        const countSql = `SELECT COUNT(*) as total ${fromJoinClause} ${whereClause}`;
+        const [countRows] = await executeQuery(countSql, values);
+        total = countRows[0]?.total || 0;
+
+        sql += " OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+        queryValues.push(offset, limitNum);
+    }
+
+    const [rows] = await executeQuery(sql, queryValues);
 
     const attempts = rows.map(row => {
         let quizQuestionsParsed = [];
@@ -1561,5 +1582,14 @@ export const getMonitoringAttempts = asyncHandler(async (req, res) => {
         };
     });
 
-    res.json(new ApiResponse(200, attempts, "Monitoring attempts fetched successfully"));
+    if (isPaginated) {
+        res.json(new ApiResponse(200, {
+            attempts,
+            totalPages: Math.max(1, Math.ceil(total / limitNum)),
+            currentPage: pageNum,
+            total
+        }, "Monitoring attempts fetched successfully"));
+    } else {
+        res.json(new ApiResponse(200, attempts, "Monitoring attempts fetched successfully"));
+    }
 });

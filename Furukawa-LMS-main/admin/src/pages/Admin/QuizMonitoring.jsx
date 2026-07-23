@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import useTranslate from "@/hooks/useTranslate";
+import { useDebounce } from "@/hooks/useDebounce";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,9 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
   const [selectedTestType, setSelectedTestType] = useState("all");
   const [selectedQuizDeptId, setSelectedQuizDeptId] = useState("all");
   const [search, setSearch] = useState("");
+  const debouncedSearchTerm = useDebounce(search, 500);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   // Restrict department/section filters for CUSTOM role users to their assigned scope
   const currentUser = useSelector((state) => state.auth.user);
@@ -205,13 +209,22 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     if (selectedLevel !== "all") params.level = selectedLevel;
     if (selectedTestType !== "all") params.testType = selectedTestType;
     if (selectedQuizDeptId !== "all") params.quizDepartmentId = selectedQuizDeptId;
-    if (search.trim()) params.search = search.trim();
+    if (debouncedSearchTerm.trim()) params.search = debouncedSearchTerm.trim();
     if (isDojo) params.isTemporary = true;
+    params.page = currentPage;
+    params.limit = itemsPerPage;
     return params;
-  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, selectedQuizDeptId, search, isDojo]);
+  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, selectedQuizDeptId, debouncedSearchTerm, isDojo, currentPage]);
+
+  // Reset to page 1 whenever any filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDeptId, selectedSectionId, selectedLineId, selectedSubSectionId, selectedLevel, selectedTestType, selectedQuizDeptId, debouncedSearchTerm, isDojo]);
 
   const { data: attemptsData, isLoading: attemptsLoading, refetch } = useGetMonitoringAttemptsQuery(queryParams);
-  const attempts = attemptsData?.data || [];
+  const attempts = Array.isArray(attemptsData?.data) ? attemptsData.data : (attemptsData?.data?.attempts || []);
+  const totalPages = attemptsData?.data?.totalPages || 1;
+  const totalAttempts = attemptsData?.data?.total ?? attempts.length;
 
   const handleDeleteAttempt = async (id) => {
     if (window.confirm(t("testMonitoring.confirmDelete"))) {
@@ -234,6 +247,7 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
     setSelectedTestType("all");
     setSelectedQuizDeptId("all");
     setSearch("");
+    setCurrentPage(1);
   };
 
   const hasActiveFilters =
@@ -704,6 +718,37 @@ const AdminQuizMonitoring = ({ isDojo = false }) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {!attemptsLoading && totalAttempts > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
+            {Math.min(currentPage * itemsPerPage, totalAttempts)} of {totalAttempts} attempts
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

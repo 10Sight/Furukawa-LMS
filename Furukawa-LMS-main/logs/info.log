@@ -404,3 +404,6 @@
 [06 Jul, 2026 - 01:32:28:3228] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
 [06 Jul, 2026 - 01:40:54:4054] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
 [08 Jul, 2026 - 02:26:13:2613] [34minfo[39m: [34mMSSQL Connected to 'dojo'[39m
+[23 Jul, 2026 - 10:45:23:4523] [34minfo[39m: [34mMSSQL Connected to 'FME'[39m
+[23 Jul, 2026 - 10:45:26:4526] [34minfo[39m: [34mCourse table initialized successfully[39m
+[23 Jul, 2026 - 10:45:27:4527] [34minfo[39m: [34mQuiz table initialized successfully[39m

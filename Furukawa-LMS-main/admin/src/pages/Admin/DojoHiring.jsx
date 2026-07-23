@@ -110,6 +110,18 @@ const LEAVING_REASONS = [
     "Indiscipline case",
 ];
 
+const LEAVING_REASONS_MAP = {
+    "Employee not response": "noResponse",
+    "Exam": "exam",
+    "Family Function": "familyFunction",
+    "Marriage": "marriage",
+    "Family Problem": "familyProblem",
+    "Festival": "festival",
+    "Health Problem": "healthProblem",
+    "Join other company": "joinOtherCompany",
+    "Indiscipline case": "indisciplineCase",
+};
+
 const normalizeStatus = (status) => {
     const s = status || "PRESENT";
     if (s === "LEAVE") return "ON_LEAVE";
@@ -1758,7 +1770,7 @@ const DojoHiring = () => {
                                             <SelectContent>
                                                 {LEAVING_REASONS.map((reason) => (
                                                     <SelectItem key={reason} value={reason}>
-                                                        {t("dojoHiring.leavingReason." + reason.replace(/\s+/g, ""), reason)}
+                                                        {t("dojoHiring.leavingReason." + (LEAVING_REASONS_MAP[reason] || "other"))}
                                                     </SelectItem>
                                                 ))}
                                                 <SelectItem value="Other">{t("dojoHiring.leavingReason.other")}</SelectItem>
@@ -1996,7 +2008,7 @@ const DojoHiring = () => {
                                     <SelectContent>
                                         {LEAVING_REASONS.map((reason) => (
                                             <SelectItem key={reason} value={reason}>
-                                                {t("dojoHiring.leavingReason." + reason.replace(/\s+/g, ""), reason)}
+                                                {t("dojoHiring.leavingReason." + (LEAVING_REASONS_MAP[reason] || "other"))}
                                             </SelectItem>
                                         ))}
                                         <SelectItem value="Other">{t("dojoHiring.leavingReason.other")}</SelectItem>

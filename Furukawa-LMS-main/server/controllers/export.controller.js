@@ -173,7 +173,7 @@ export const exportStudents = asyncHandler(async (req, res) => {
 
   let sql = `
     SELECT u.fullName, u.userName, u.email, u.phoneNumber, u.status, u.createdAt, d.name as departmentName,
-           COALESCE(c.name, u.contractor) as contractorName
+           COALESCE(c.name, u.contractor) as contractorName, u.currentEffeciency
     FROM users u
     LEFT JOIN departments d ON (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name)
     LEFT JOIN contractors c ON u.contractorId = c.id
@@ -238,6 +238,7 @@ export const exportStudents = asyncHandler(async (req, res) => {
     { header: 'Status', key: 'status', width: 12 },
     { header: 'Department', key: 'departmentName', width: 22 },
     { header: 'Contractor', key: 'contractorName', width: 22 },
+    { header: 'Efficiency (%)', key: 'currentEffeciency', width: 16 },
     { header: 'Created At', key: 'createdAt', width: 22 },
   ];
 
@@ -249,6 +250,7 @@ export const exportStudents = asyncHandler(async (req, res) => {
     status: s.status,
     departmentName: s.departmentName || '',
     contractorName: s.contractorName || '',
+    currentEffeciency: s.currentEffeciency !== null && s.currentEffeciency !== undefined ? `${Math.round(s.currentEffeciency * 100) / 100}%` : '0%',
     createdAt: s.createdAt ? new Date(s.createdAt).toISOString() : '',
   }));
 

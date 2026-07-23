@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { executeQuery } from '../db/mssqlHelper.js';
 import HeadcountReport from '../models/headcountReport.model.js';
 import NotificationService from './notification.service.js';
+import { computeHeadcountTableData } from './headcountData.service.js';
 import logger from '../logger/winston.logger.js';
 
 class HeadcountReportScheduler {
@@ -83,10 +84,15 @@ class HeadcountReportScheduler {
 
     async _sendReport(month, year, forceResend = false) {
         const departmentId = 0; // matches resolvedDeptId = departmentId || 0 in saveHeadcountReport
-        const report = await HeadcountReport.findOne({ departmentId, month, year });
 
-        if (!report || !report.tableData || Object.keys(report.tableData).length === 0) {
-            return { sent: false, message: `No saved headcount data for ${month}/${year}. Skipping.` };
+        // Compute live, same as the "Sync Data" button on /admin/report — this way the
+        // email still goes out even if nobody has clicked "Save" for this month yet,
+        // matching how the Daily Manpower / Management Daily reports are always built
+        // fresh from live data rather than a saved snapshot.
+        const { tableData } = await computeHeadcountTableData(departmentId, month, year);
+
+        if (!tableData || Object.keys(tableData).length === 0) {
+            return { sent: false, message: `No headcount data available for ${month}/${year}. Skipping.` };
         }
 
         if (!forceResend) {
@@ -96,16 +102,20 @@ class HeadcountReportScheduler {
             }
         }
 
+        // Persist the freshly-synced data so /admin/report shows the same numbers that
+        // were just emailed, same as clicking "Sync Data" + "Save" would have produced.
+        const reportId = await HeadcountReport.createOrUpdate({ departmentId, month, year, tableData });
+
         const reportDate = new Date(year, month - 1, 1);
         const sent = await NotificationService.sendFormReport("Associates Headcount Report", null, {
-            tableData: report.tableData,
+            tableData,
             month,
             year,
             date: reportDate.toISOString().split('T')[0]
         });
 
         if (sent) {
-            await HeadcountReport.updateLastEmailSentAt(report.id);
+            await HeadcountReport.updateLastEmailSentAt(reportId);
             return { sent: true, message: `Headcount report sent for ${month}/${year}.` };
         }
 

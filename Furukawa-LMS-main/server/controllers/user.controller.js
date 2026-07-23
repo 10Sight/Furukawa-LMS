@@ -1157,6 +1157,13 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (data.status !== undefined && data.status !== "LEFT" && oldUser.status === "LEFT") {
     data.leavingDate = null;
     data.reasonOfLeaving = null;
+
+    // Auto-set/update joiningDate to today's date when returning from LEFT status,
+    // but allow the request to override it if a new, different joiningDate was explicitly provided.
+    const isNewJoiningDateProvided = data.joiningDate !== undefined && data.joiningDate !== oldUser.joiningDate;
+    if (!isNewJoiningDateProvided) {
+      data.joiningDate = new Date().toISOString().split('T')[0];
+    }
   }
 
   const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
@@ -1639,8 +1646,8 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all")) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
@@ -1873,8 +1880,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all")) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
@@ -2124,8 +2131,8 @@ export const getAllMentors = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all")) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
@@ -2361,8 +2368,8 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all")) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
@@ -2452,8 +2459,8 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
   let attendanceParams = [];
 
   if (dateFrom || dateTo || (date && date !== "all")) {
-    let start = dateFrom || date || dateTo;
-    let end = dateTo || date || dateFrom;
+    let start = dateFrom || dateTo || date;
+    let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
     const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";

@@ -75,6 +75,7 @@ const AutoGrowingTextarea = ({ value, onChange, disabled, className }) => {
 
 export default function AbnormalCondition() {
     const authUser = useSelector((state) => state.auth.user);
+    const todayStr = new Date().toISOString().split("T")[0];
 
     // Permission evaluation
     const isMasterAdmin =
@@ -188,6 +189,12 @@ export default function AbnormalCondition() {
 
     // Update row cell values locally
     const handleCellChange = (index, field, value) => {
+        if (field === "date" && value) {
+            if (value !== todayStr) {
+                toast.error("You can only select today's date.");
+                return;
+            }
+        }
         setLocalEntries((prev) => {
             const updated = [...prev];
             updated[index] = { ...updated[index], [field]: value };
@@ -454,6 +461,8 @@ export default function AbnormalCondition() {
                                                         onChange={(event) => handleCellChange(idx, "date", event.target.value)}
                                                         className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center"
                                                         style={{ width: "120px" }}
+                                                        min={todayStr}
+                                                        max={todayStr}
                                                     />
                                                 </td>
 

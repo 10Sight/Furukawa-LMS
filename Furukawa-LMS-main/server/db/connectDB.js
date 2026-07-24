@@ -37,7 +37,11 @@ const dbConfig = {
     ...baseConfig,
     pool: {
         max: 20,
-        min: 0,
+        // Keep a few connections warm so a burst after an idle gap doesn't pay full
+        // TCP+login setup cost on the request path (that cold-connect cost, not any
+        // particular query, was the real driver behind the multi-second [SLOW QUERY]
+        // warnings on the Attendance/Trainees dashboards).
+        min: 3,
         idleTimeoutMillis: 30000
     },
     options: {

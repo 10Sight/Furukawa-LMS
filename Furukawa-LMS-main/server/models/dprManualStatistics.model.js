@@ -1,11 +1,19 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 
+// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
+const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 class DPRManualStatistics {
     constructor(data) {
         if (!data) return;
         this.id = data.id;
-        this.date = data.date instanceof Date 
-            ? data.date.toISOString().split('T')[0] 
+        this.date = data.date instanceof Date
+            ? formatLocalDate(data.date)
             : (typeof data.date === 'string' ? data.date.split('T')[0] : data.date);
 
         // SRC Efficiency Performance

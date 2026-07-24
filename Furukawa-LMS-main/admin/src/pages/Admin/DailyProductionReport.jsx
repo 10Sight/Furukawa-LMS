@@ -11,7 +11,9 @@ import {
     Download as IconDownload,
     Plus,
     ChevronRight,
-    Settings as IconSettings
+    Settings as IconSettings,
+    Filter as IconFilter,
+    ClipboardList as IconReports
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportToExcel } from "@/utils/exportHelper";
@@ -46,8 +48,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import DPREfficiencyChart from "@/components/charts/DPREfficiencyChart";
-import DPRQualityChart from "@/components/charts/DPRQualityChart";
+import DPRChart from "@/components/charts/DPRChart";
 import DPRManualChartsContainer from "@/components/charts/DPRManualChartsContainer";
 
 // ----- Subcomponents for the Complex Table Sections -----
@@ -397,7 +398,8 @@ const DailyProductionReport = () => {
     const activeReportKey = React.useRef("");
 
     // Filter State
-    const [dashboardDate, setDashboardDate] = useState(() => searchParams.get("dashboardDate") || format(subDays(new Date(), 1), "yyyy-MM-dd"));
+    const [filterStartDate, setFilterStartDate] = useState(() => searchParams.get("startDate") || format(startOfMonth(new Date()), "yyyy-MM-dd"));
+    const [filterEndDate, setFilterEndDate] = useState(() => searchParams.get("endDate") || format(subDays(new Date(), 1), "yyyy-MM-dd"));
     const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || location.state?.date || format(subDays(new Date(), 1), "yyyy-MM-dd"));
     const [selectedDepartment, setSelectedDepartment] = useState(() => searchParams.get("department") || location.state?.department || "");
     const [selectedSection, setSelectedSection] = useState(() => searchParams.get("section") || "");
@@ -421,7 +423,7 @@ const DailyProductionReport = () => {
     // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [selectedDepartment, selectedSection, selectedLine, selectedShift, dashboardDate]);
+    }, [selectedDepartment, selectedSection, selectedLine, selectedShift, filterStartDate, filterEndDate]);
 
     const { data: lineData, isFetching: linesFetching } = useGetLinesBySectionQuery(
         selectedSection,
@@ -430,7 +432,7 @@ const DailyProductionReport = () => {
     const lines = lineData?.data || [];
 
     // Create Form States
-    const [createDate, setCreateDate] = useState(format(subDays(new Date(), 1), "yyyy-MM-dd"));
+    const [createDate, setCreateDate] = useState(format(new Date(), "yyyy-MM-dd"));
     const [createDepartment, setCreateDepartment] = useState("");
     const [createSection, setCreateSection] = useState("");
     const [createLine, setCreateLine] = useState("");
@@ -515,7 +517,8 @@ const DailyProductionReport = () => {
     // Sync state variables to URL search parameters
     useEffect(() => {
         const params = {};
-        if (dashboardDate) params.dashboardDate = dashboardDate;
+        if (filterStartDate) params.startDate = filterStartDate;
+        if (filterEndDate) params.endDate = filterEndDate;
         if (selectedDate) params.date = selectedDate;
         if (selectedDepartment) params.department = selectedDepartment;
         if (selectedSection) params.section = selectedSection;
@@ -523,7 +526,7 @@ const DailyProductionReport = () => {
         if (selectedShift) params.shift = selectedShift;
         if (isReportOpen) params.open = "true";
         setSearchParams(params, { replace: true });
-    }, [dashboardDate, selectedDate, selectedDepartment, selectedSection, selectedLine, selectedShift, isReportOpen, setSearchParams]);
+    }, [filterStartDate, filterEndDate, selectedDate, selectedDepartment, selectedSection, selectedLine, selectedShift, isReportOpen, setSearchParams]);
 
 
     const [checkReport, { isLoading: isChecking }] = useCheckDailyProductionReportMutation();
@@ -593,8 +596,8 @@ const DailyProductionReport = () => {
     // Daily Stats & Reports List
     const { data: reportListData, isFetching: isListFetching } = useListDailyProductionReportsQuery(
         {
-            startDate: dashboardDate || undefined,
-            endDate: dashboardDate || undefined,
+            startDate: filterStartDate || undefined,
+            endDate: filterEndDate || undefined,
             departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
             sectionId: selectedSection === 'all' ? undefined : selectedSection,
             lineId: selectedLine === 'all' ? undefined : selectedLine,
@@ -607,11 +610,12 @@ const DailyProductionReport = () => {
     const totalCount = reportListData?.totalCount || 0;
     const totalPages = Math.ceil(totalCount / pageSize);
 
-    // Unpaginated reports query specifically for the daily stats and analytical charts
+    // Unpaginated reports query specifically for the daily stats and analytical charts —
+    // always scoped to the "To Date" so the charts show a single-day snapshot.
     const { data: chartListData } = useListDailyProductionReportsQuery(
         {
-            startDate: dashboardDate || undefined,
-            endDate: dashboardDate || undefined,
+            startDate: filterEndDate || undefined,
+            endDate: filterEndDate || undefined,
             departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
             sectionId: selectedSection === 'all' ? undefined : selectedSection,
             lineId: selectedLine === 'all' ? undefined : selectedLine,
@@ -619,14 +623,14 @@ const DailyProductionReport = () => {
             limit: 1000,
             offset: 0
         },
-        { skip: isReportOpen || !dashboardDate }
+        { skip: isReportOpen || !filterEndDate }
     );
 
     const dailyStats = React.useMemo(() => {
         const allReports = chartListData?.data || [];
         const reports = allReports.filter(r => {
             const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
-            return reportDate === dashboardDate;
+            return reportDate === filterEndDate;
         });
         return {
             total: reports.length,
@@ -635,78 +639,7 @@ const DailyProductionReport = () => {
             submitted: reports.filter(r => r.status === 'SUBMITTED').length,
             draft: reports.filter(r => r.status === 'DRAFT' || !r.status).length,
         };
-    }, [chartListData, dashboardDate]);
-
-    const efficiencyData = React.useMemo(() => {
-        const allReports = chartListData?.data || [];
-        const reports = allReports.filter(r => {
-            const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
-            return reportDate === dashboardDate;
-        });
-        const lineData = {};
-
-        reports.forEach(report => {
-            const sectionLabel = report.sectionName ? `${report.sectionName} - ` : "";
-            const lineLabel = report.lineName || report.line || "Unknown Line";
-            const shiftLabel = report.shift ? ` (${report.shift})` : "";
-            const label = `${sectionLabel}${lineLabel}${shiftLabel}`;
-
-            if (!lineData[label]) {
-                lineData[label] = { name: label, plan: 0, actual: 0 };
-            }
-
-            const delivery = Array.isArray(report.delivery) ? report.delivery : [];
-            delivery.forEach(row => {
-                lineData[label].plan += Number(row.plan) || 0;
-                lineData[label].actual += Number(row.total) || 0;
-            });
-        });
-
-        const result = Object.values(lineData);
-
-        if (result.length === 0) {
-            return [{ name: 'No Data', plan: 0, actual: 0 }];
-        }
-
-        return result;
-    }, [chartListData, dashboardDate]);
-
-    const qualityData = React.useMemo(() => {
-        const allReports = chartListData?.data || [];
-        const reports = allReports.filter(r => {
-            const reportDate = r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : "";
-            return reportDate === dashboardDate;
-        });
-        const lineData = {};
-
-        reports.forEach(report => {
-            const sectionLabel = report.sectionName ? `${report.sectionName} - ` : "";
-            const lineLabel = report.lineName || report.line || "Unknown Line";
-            const shiftLabel = report.shift ? ` (${report.shift})` : "";
-            const label = `${sectionLabel}${lineLabel}${shiftLabel}`;
-
-            if (!lineData[label]) {
-                lineData[label] = { name: label, productionQty: 0, defectQty: 0, ppm: 0, count: 0 };
-            }
-
-            const internalDefect = report.quality?.internalDefect || {};
-            lineData[label].productionQty += Number(internalDefect.productionQty) || 0;
-            lineData[label].defectQty += Number(internalDefect.defectQty) || 0;
-            lineData[label].ppm += Number(internalDefect.ppm) || 0;
-            lineData[label].count += 1;
-        });
-
-        const result = Object.values(lineData).map(item => ({
-            ...item,
-            ppm: item.productionQty > 0 ? Math.round((item.defectQty / item.productionQty) * 1000000) : 0
-        }));
-
-        if (result.length === 0) {
-            return [{ name: 'No Data', productionQty: 0, defectQty: 0, ppm: 0 }];
-        }
-
-        return result;
-    }, [chartListData, dashboardDate]);
+    }, [chartListData, filterEndDate]);
 
     // Stats fetching
     const [getManpowerStats] = useLazyGetManpowerStatsQuery();
@@ -1106,11 +1039,11 @@ const DailyProductionReport = () => {
 
         try {
             const payload = {
+                ...formData,
                 date: selectedDate,
                 department: selectedDepartment,
                 line: selectedLine,
                 shift: selectedShift,
-                ...formData,
                 isSubmitted: isSubmitAction ? true : formData.isSubmitted
             };
             await saveReport(payload).unwrap();
@@ -1141,13 +1074,20 @@ const DailyProductionReport = () => {
         window.print();
     };
 
+    // Keeps the "To Date" filter (the active chart/stats snapshot day) in sync with a
+    // report being opened/created, widening "From Date" only if the date falls before it.
+    const syncFilterDate = (date) => {
+        setFilterEndDate(date);
+        setFilterStartDate(prev => (prev && prev <= date) ? prev : date);
+    };
+
     const handleCreateReport = () => {
         if (!createDepartment || !createLine || !createDate || !createShift) {
             toast.error("Please select all required fields");
             return;
         }
         setSelectedDate(createDate);
-        setDashboardDate(createDate); // Sync dashboard date
+        syncFilterDate(createDate);
         setSelectedDepartment(createDepartment);
         setSelectedSection(createSection); // Sync section
         setSelectedLine(createLine);
@@ -1158,7 +1098,7 @@ const DailyProductionReport = () => {
 
     const handleOpenReport = (report) => {
         setSelectedDate(report.date);
-        setDashboardDate(report.date); // Sync dashboard date
+        syncFilterDate(report.date);
         setSelectedDepartment(report.department);
         setSelectedLine(report.line);
         setSelectedShift(report.shift);
@@ -1234,145 +1174,181 @@ const DailyProductionReport = () => {
                             </Button>
                         </div>
 
-                        {/* Filters */}
-                        <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end`}>
-                            <div className="space-y-1.5 md:col-span-1 lg:col-span-1">
-                                <Label>Date</Label>
-                                <Input
-                                    type="date"
-                                    value={dashboardDate}
-                                    onChange={(e) => setDashboardDate(e.target.value)}
-                                />
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label>Department</Label>
-                                <Select
-                                    value={selectedDepartment}
-                                    onValueChange={(val) => {
-                                        setSelectedDepartment(val);
-                                        setSelectedSection("all");
-                                        setSelectedLine("all");
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All Departments" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Departments</SelectItem>
-                                        {departments.map((dept) => (
-                                            <SelectItem key={dept.id || dept._id} value={dept.id || dept._id}>
-                                                {dept.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label>Section</Label>
-                                <Select
-                                    value={selectedSection}
-                                    onValueChange={(val) => {
-                                        setSelectedSection(val);
-                                        setSelectedLine("all");
-                                    }}
-                                    disabled={!selectedDepartment || selectedDepartment === 'all'}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All Sections" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Sections</SelectItem>
-                                        {sections.map((sec) => (
-                                            <SelectItem key={sec.id || sec._id} value={sec.id || sec._id}>
-                                                {sec.name} ({sec.category})
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label>Line</Label>
-                                <Select
-                                    value={selectedLine}
-                                    onValueChange={setSelectedLine}
-                                    disabled={!selectedSection || selectedSection === 'all'}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All Lines" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Lines</SelectItem>
-                                        {lines.map((l) => (
-                                            <SelectItem key={l.id || l._id} value={l.id || l._id}>
-                                                {l.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label>Shift</Label>
-                                <Select value={selectedShift} onValueChange={setSelectedShift}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All Shifts" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Shifts</SelectItem>
-                                        <SelectItem value="A">A-Shift</SelectItem>
-                                        <SelectItem value="B">B-Shift</SelectItem>
-                                        <SelectItem value="C">C-Shift</SelectItem>
-                                        <SelectItem value="G">G-Shift</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="md:col-span-3 lg:col-span-6 flex justify-end">
-                                <Button variant="outline" size="sm" onClick={() => {
-                                    setDashboardDate("");
-                                    setSelectedDepartment("all");
-                                    setSelectedSection("all");
-                                    setSelectedLine("all");
-                                    setSelectedShift("all");
-                                    setCurrentPage(1);
-                                }}>
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Stats Summary */}
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm`}>
-                                <div className="text-xs text-gray-500 uppercase font-bold mb-1">Total Reports</div>
-                                <div className="text-2xl font-black">{dailyStats.total}</div>
-                            </div>
-                            <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30">
-                                <div className="text-xs text-blue-500 uppercase font-bold mb-1">Submitted</div>
-                                <div className="text-2xl font-black text-blue-600">{dailyStats.submitted}</div>
-                            </div>
-                            <div className="p-4 rounded-xl border border-green-100 bg-green-50/30">
-                                <div className="text-xs text-green-500 uppercase font-bold mb-1">Approved</div>
-                                <div className="text-2xl font-black text-green-600">{dailyStats.approved}</div>
-                            </div>
-                            <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
-                                <div className="text-xs text-red-500 uppercase font-bold mb-1">Rejected</div>
-                                <div className="text-2xl font-black text-red-600">{dailyStats.rejected}</div>
-                            </div>
-                            <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
-                                <div className="text-xs text-orange-500 uppercase font-bold mb-1">In Draft</div>
-                                <div className="text-2xl font-black text-orange-600">{dailyStats.draft}</div>
-                            </div>
-                        </div>
-
-                        {/* Charts Section */}
+                        {/* Charts Section — carries its own independent filters (see DPRChart) */}
                         <div className="grid grid-cols-1 gap-6">
-                            <DPREfficiencyChart data={efficiencyData} theme={theme} />
-                            <DPRQualityChart data={qualityData} theme={theme} />
-                            <DPRManualChartsContainer dashboardDate={dashboardDate} theme={theme} />
+                            <DPRChart theme={theme} />
+                            <DPRManualChartsContainer dashboardDate={filterEndDate} theme={theme} />
+                        </div>
+
+                        {/* Saved DPR Reports — filters here scope only the table below */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <IconReports className="h-5 w-5 text-blue-600" />
+                                <h2 className={`text-lg font-bold tracking-tight ${theme.textMain}`}>Saved DPR Reports</h2>
+                            </div>
+
+                            {/* Filters */}
+                            <div className={`rounded-xl border ${theme.border} ${theme.card} shadow-sm overflow-hidden`}>
+                                <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                                            <IconFilter className="h-4 w-4 text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <div className={`text-sm font-bold ${theme.textMain}`}>Filter Reports</div>
+                                            <div className={`text-xs ${theme.textMuted}`}>Scopes the table below only — date range and department hierarchy</div>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800 self-end sm:self-auto"
+                                        onClick={() => {
+                                            setFilterStartDate(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+                                            setFilterEndDate(format(subDays(new Date(), 1), "yyyy-MM-dd"));
+                                            setSelectedDepartment("all");
+                                            setSelectedSection("all");
+                                            setSelectedLine("all");
+                                            setSelectedShift("all");
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        <IconRefresh className="h-3.5 w-3.5 mr-1.5" />
+                                        Clear Filters
+                                    </Button>
+                                </div>
+
+                                <div className="p-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From Date</Label>
+                                        <Input
+                                            type="date"
+                                            value={filterStartDate}
+                                            max={filterEndDate || undefined}
+                                            onChange={(e) => setFilterStartDate(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To Date</Label>
+                                        <Input
+                                            type="date"
+                                            value={filterEndDate}
+                                            min={filterStartDate || undefined}
+                                            onChange={(e) => setFilterEndDate(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Department</Label>
+                                        <Select
+                                            value={selectedDepartment}
+                                            onValueChange={(val) => {
+                                                setSelectedDepartment(val);
+                                                setSelectedSection("all");
+                                                setSelectedLine("all");
+                                            }}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="All Departments" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Departments</SelectItem>
+                                                {departments.map((dept) => (
+                                                    <SelectItem key={dept.id || dept._id} value={dept.id || dept._id}>
+                                                        {dept.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Section</Label>
+                                        <Select
+                                            value={selectedSection}
+                                            onValueChange={(val) => {
+                                                setSelectedSection(val);
+                                                setSelectedLine("all");
+                                            }}
+                                            disabled={!selectedDepartment || selectedDepartment === 'all'}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="All Sections" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Sections</SelectItem>
+                                                {sections.map((sec) => (
+                                                    <SelectItem key={sec.id || sec._id} value={sec.id || sec._id}>
+                                                        {sec.name} ({sec.category})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Line</Label>
+                                        <Select
+                                            value={selectedLine}
+                                            onValueChange={setSelectedLine}
+                                            disabled={!selectedSection || selectedSection === 'all'}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="All Lines" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Lines</SelectItem>
+                                                {lines.map((l) => (
+                                                    <SelectItem key={l.id || l._id} value={l.id || l._id}>
+                                                        {l.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Shift</Label>
+                                        <Select value={selectedShift} onValueChange={setSelectedShift}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="All Shifts" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Shifts</SelectItem>
+                                                <SelectItem value="A">A-Shift</SelectItem>
+                                                <SelectItem value="B">B-Shift</SelectItem>
+                                                <SelectItem value="C">C-Shift</SelectItem>
+                                                <SelectItem value="G">G-Shift</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Stats Summary */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                <div className={`p-4 rounded-xl border ${theme.border} ${theme.card} shadow-sm`}>
+                                    <div className="text-xs text-gray-500 uppercase font-bold mb-1">Total Reports</div>
+                                    <div className="text-2xl font-black">{dailyStats.total}</div>
+                                </div>
+                                <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30">
+                                    <div className="text-xs text-blue-500 uppercase font-bold mb-1">Submitted</div>
+                                    <div className="text-2xl font-black text-blue-600">{dailyStats.submitted}</div>
+                                </div>
+                                <div className="p-4 rounded-xl border border-green-100 bg-green-50/30">
+                                    <div className="text-xs text-green-500 uppercase font-bold mb-1">Approved</div>
+                                    <div className="text-2xl font-black text-green-600">{dailyStats.approved}</div>
+                                </div>
+                                <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
+                                    <div className="text-xs text-red-500 uppercase font-bold mb-1">Rejected</div>
+                                    <div className="text-2xl font-black text-red-600">{dailyStats.rejected}</div>
+                                </div>
+                                <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
+                                    <div className="text-xs text-orange-500 uppercase font-bold mb-1">In Draft</div>
+                                    <div className="text-2xl font-black text-orange-600">{dailyStats.draft}</div>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Reports List Table */}
@@ -1479,7 +1455,21 @@ const DailyProductionReport = () => {
                                 <div className="space-y-4 py-4">
                                     <div className="space-y-2">
                                         <Label>Date</Label>
-                                        <Input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} />
+                                        <Input
+                                            type="date"
+                                            value={createDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                const today = format(new Date(), "yyyy-MM-dd");
+                                                if (val && val !== today) {
+                                                    toast.error("You can only select today's date.");
+                                                    return;
+                                                }
+                                                setCreateDate(val);
+                                            }}
+                                            min={format(new Date(), "yyyy-MM-dd")}
+                                            max={format(new Date(), "yyyy-MM-dd")}
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Department</Label>

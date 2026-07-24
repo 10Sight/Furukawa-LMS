@@ -101,8 +101,14 @@ const RolesPermissions = () => {
   const [deleteRole, { isLoading: deleteLoading }] = useDeleteRoleMutation();
 
   // Computed values
-  const { roles = [], permissions = {} } = rolesData?.data || {};
+  const rawRoles = rolesData?.data?.roles || [];
+  const permissions = rolesData?.data?.permissions || {};
   const users = usersData?.data?.users || [];
+
+  const roles = useMemo(
+    () => rawRoles.filter(role => !role.isSystemRole || role.id === 'ADMIN'),
+    [rawRoles]
+  );
 
   const roleStats = useMemo(() => {
     const totalRoles = roles.length;

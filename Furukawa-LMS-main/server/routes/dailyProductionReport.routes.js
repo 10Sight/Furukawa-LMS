@@ -24,11 +24,11 @@ router.get('/manual-stats/filled-dates', getDPRFilledDates);
 
 router.route('/manual-stats')
     .get(getDPRManualStats)
-    .post(authorizeRoles('ADMIN', 'SUPERADMIN', 'INSTRUCTOR'), saveDPRManualStats);
+    .post(authorizeRoles('ADMIN', 'SUPERADMIN', 'SHIFT_INCHARGE', 'INSTRUCTOR'), saveDPRManualStats);
 
 router.route('/')
     .get(getDailyProductionReport)
-    .post(authorizeRoles('ADMIN', 'SUPERADMIN', 'INSTRUCTOR'), saveDailyProductionReport);
+    .post(authorizeRoles('ADMIN', 'SUPERADMIN', 'SHIFT_INCHARGE', 'INSTRUCTOR'), saveDailyProductionReport);
 
 router.get('/list', listDailyProductionReports);
 router.delete('/:id', authorizeRoles('ADMIN', 'SUPERADMIN'), deleteDailyProductionReport);

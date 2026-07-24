@@ -309,6 +309,10 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 toast.error("Date of Level-1 Complete cannot be in the past");
                 return;
             }
+            if (value > todayStr) {
+                toast.error("Date of Level-1 Complete cannot be in the future");
+                return;
+            }
         }
         setHeaderData(prev => ({ ...prev, [field]: value }));
     };
@@ -354,6 +358,10 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         if (rowId === 'columnDates' && value) {
             if (value < todayStr) {
                 toast.error("Inspection date cannot be in the past");
+                return;
+            }
+            if (value > todayStr) {
+                toast.error("Inspection date cannot be in the future");
                 return;
             }
         }
@@ -600,6 +608,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={e => handleHeaderChange('level1Date', e.target.value)}
                                 disabled={!isEditMode || isCellLocked('header', 'level1Date')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-2 flex flex-col gap-1 relative">
@@ -661,6 +670,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs1')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -672,6 +682,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs1Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs1Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
 
@@ -684,6 +695,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs2')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -695,6 +707,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs2Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs2Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
 
@@ -707,6 +720,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs3')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -718,6 +732,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs3Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs3Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
 
@@ -730,6 +745,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs4')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -741,6 +757,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs4Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs4Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
 
@@ -753,6 +770,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs5', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs5')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -764,6 +782,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs5Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs5Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
 
@@ -776,6 +795,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs6', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs6')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -787,6 +807,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 onChange={(e) => handleTableChange('columnDates', 'obs6Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs6Re')}
                                 min={todayStr}
+                                max={todayStr}
                             />
                         </div>
                     </div>

@@ -182,8 +182,8 @@ export default function RoleManager() {
         }
     };
 
-    const manageableRoles = roles.filter(r => r.id !== 'ADMIN' && r.id !== 'STUDENT' && r.id !== 'INSTRUCTOR' && r.id !== 'SUPERADMIN');
-    const isReadOnly = false; // Allow editing all roles that appear in the manager
+    const manageableRoles = roles.filter(r => !r.isSystemRole || r.id === 'ADMIN');
+    const isReadOnly = !isNew && !!selected?.isSystemRole; // System roles (Admin) are view-only; custom roles are editable
     const hasChanges = selected || isNew;
 
     return (

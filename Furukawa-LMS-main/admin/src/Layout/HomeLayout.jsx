@@ -38,6 +38,7 @@ import {
   IconMenu2,
   IconX,
   IconChevronRight,
+  IconChevronDown,
   IconSearch,
   IconStars,
   IconClipboardList,
@@ -71,6 +72,15 @@ export function HomeLayout() {
   const { t, language } = useTranslate();
   const { hasPrivilege } = usePrivileges();
   const [customRoleTabs, setCustomRoleTabs] = useState([]);
+  const [isManageRolesOpen, setIsManageRolesOpen] = useState(
+    () => window.location.pathname.startsWith("/admin/manage-role/"),
+  );
+
+  useEffect(() => {
+    if (pathname.startsWith("/admin/manage-role/")) {
+      setIsManageRolesOpen(true);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const fetchCustomRoles = async () => {
@@ -331,7 +341,7 @@ export function HomeLayout() {
 
         {/* Sidebar Tabs */}
         <div className="px-3 flex-1 py-6 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
-          {tabs.map((item) => {
+          {tabs.filter((item) => !item.key || !item.key.startsWith("manage-role-")).map((item) => {
             const isActive =
               pathname === item.link ||
               (item.link === "/admin" && pathname === "/admin") ||
@@ -387,6 +397,86 @@ export function HomeLayout() {
               </div>
             );
           })}
+
+          {customRoleTabs.length > 0 && (() => {
+            const isManageRolesActive = customRoleTabs.some(
+              (item) => pathname === item.link || pathname.startsWith(item.link + "/"),
+            );
+            return (
+              <div>
+                <div
+                  className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-12 rounded-xl transition-all duration-300 hover:scale-[1.02] shrink-0
+                  ${isManageRolesActive && !isManageRolesOpen
+                      ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200"
+                      : "text-gray-600 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:text-blue-700 hover:shadow-md"
+                    }
+                  ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
+                  onClick={() => {
+                    if (collapsed) {
+                      setCollapsed(false);
+                      setIsManageRolesOpen(true);
+                    } else {
+                      setIsManageRolesOpen((prev) => !prev);
+                    }
+                  }}
+                >
+                  {isManageRolesActive && !isManageRolesOpen && !collapsed && (
+                    <div className="absolute left-0 top-0 h-full w-1 bg-white rounded-r-full" />
+                  )}
+                  <IconUsers
+                    className={`${collapsed ? "w-5 h-5" : "min-w-5 min-h-5"
+                      } transition-transform group-hover:scale-110`}
+                    strokeWidth={isManageRolesActive ? 2.5 : 1.5}
+                  />
+                  {!collapsed && (
+                    <span className="ml-3 text-sm font-medium transition-all group-hover:translate-x-0.5 flex-1">
+                      {t("nav.manageRoles")}
+                    </span>
+                  )}
+                  {!collapsed && (
+                    isManageRolesOpen ? (
+                      <IconChevronDown className="min-w-4 min-h-4 text-gray-400" />
+                    ) : (
+                      <IconChevronRight className="min-w-4 min-h-4 text-gray-400" />
+                    )
+                  )}
+                </div>
+                {!collapsed && isManageRolesOpen && (
+                  <div className="mt-1 space-y-1">
+                    {customRoleTabs.map((item) => {
+                      const isActive =
+                        pathname === item.link || pathname.startsWith(item.link + "/");
+                      return (
+                        <div
+                          className={`group relative flex items-center cursor-pointer w-full overflow-hidden h-11 rounded-xl transition-all duration-300 hover:scale-[1.02] shrink-0 pl-8 pr-4
+                          ${isActive
+                              ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200"
+                              : "text-gray-600 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:text-blue-700 hover:shadow-md"
+                            }`}
+                          key={item.key}
+                          onClick={() => {
+                            navigate(item.link);
+                            if (isMobile) setCollapsed(true);
+                          }}
+                        >
+                          {isActive && (
+                            <div className="absolute left-0 top-0 h-full w-1 bg-white rounded-r-full" />
+                          )}
+                          <item.icon
+                            className="min-w-4 min-h-4 transition-transform group-hover:scale-110"
+                            strokeWidth={isActive ? 2.5 : 1.5}
+                          />
+                          <span className="ml-3 text-sm font-medium transition-all group-hover:translate-x-0.5">
+                            {item.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         </div>
 

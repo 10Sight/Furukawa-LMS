@@ -510,18 +510,29 @@ const AutoResizeTextarea = ({ value, onChange, placeholder, className, ...props 
     );
 };
 
-const DaysInput = ({ value, onChange }) => {
+// Parses a "YYYY-MM-DD" string as local midnight instead of UTC midnight (avoids the
+// day-shift that `new Date("YYYY-MM-DD")` causes in timezones behind UTC).
+const parseLocalJSDate = (dateStr) => {
+    if (!dateStr) return new Date(NaN);
+    const [year, month, day] = dateStr.split('-').map(Number);
+    if (!year || !month || !day) return new Date(dateStr);
+    return new Date(year, month - 1, day);
+};
+
+const DaysInput = ({ value, onChange, baseDate, disabled }) => {
     const [isFocused, setIsFocused] = useState(false);
 
     const calculateDays = (targetDate) => {
         if (!targetDate) return "";
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const target = new Date(targetDate);
+        // Anchor to the sheet's own date rather than "today" so the day count stays
+        // fixed as a historical record instead of counting down after the fact.
+        const base = baseDate ? parseLocalJSDate(baseDate) : new Date();
+        base.setHours(0, 0, 0, 0);
+        const target = parseLocalJSDate(targetDate);
         if (isNaN(target.getTime())) return targetDate;
 
         target.setHours(0, 0, 0, 0);
-        const diffTime = target.getTime() - today.getTime();
+        const diffTime = target.getTime() - base.getTime();
         // Math.round handles the floating point issues with daylight savings etc.
         const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
@@ -538,6 +549,7 @@ const DaysInput = ({ value, onChange }) => {
             onBlur={() => setIsFocused(false)}
             placeholder="Select Date"
             min={todayStr}
+            disabled={disabled}
         />
     );
 };
@@ -613,7 +625,7 @@ const CRIMPING_CONFIG = {
     bodyRows: 5
 };
 
-const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview }) => {
+const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
     // Helper to determine if a specific containment field is locked
@@ -779,6 +791,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                     <DaysInput
                         value={formData[`rec_${recIndex}_DeputedOnPlan`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'DeputedOnPlan', e.target.value)}
+                        baseDate={selectedDate}
                         disabled={isLocked}
                     />
                 </td>
@@ -2201,6 +2214,7 @@ const Daily5MRecording = () => {
                                         canEditSubmitted5M={canEditSubmitted5M}
                                         hasEditPermission={hasEditPermission}
                                         isReview={isReview}
+                                        selectedDate={selectedDate}
                                     />
                                     :
                                     <React.Fragment key={recIndex}>
@@ -2360,6 +2374,7 @@ const Daily5MRecording = () => {
                                                             <DaysInput
                                                                 value={formData[`rec_${recIndex}_Plan`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'Plan', e.target.value)}
+                                                                baseDate={selectedDate}
                                                                 disabled={isLocked}
                                                             />
                                                         </td>

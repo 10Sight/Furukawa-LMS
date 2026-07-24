@@ -1872,7 +1872,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     }
   }
 
-  const { dateFrom, dateTo, status, shift, date } = req.query;
+  const { dateFrom, dateTo, status, shift, date, joiningDateFrom, joiningDateTo, leavingDateFrom, leavingDateTo } = req.query;
 
   const upperStatus = (status || "").toUpperCase();
 
@@ -1888,12 +1888,12 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId, 
-               MAX(status) as logStatus, 
+        SELECT userId,
+               MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
-        FROM attendance_logs 
+        FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
       ) al ON u.id = al.userId
@@ -1905,6 +1905,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
         SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
       ) al ON 1=0
     `;
+  }
+
+  // Filter by the user's own joiningDate/leavingDate columns, independent of the
+  // attendance-log dateFrom/dateTo range above.
+  if (joiningDateFrom || joiningDateTo) {
+    whereClauses.push("u.joiningDate BETWEEN ? AND ?");
+    params.push(joiningDateFrom || "1900-01-01", joiningDateTo || "9999-12-31");
+  }
+  if (leavingDateFrom || leavingDateTo) {
+    whereClauses.push("u.leavingDate BETWEEN ? AND ?");
+    params.push(leavingDateFrom || "1900-01-01", leavingDateTo || "9999-12-31");
   }
 
   let statusParamAdded = false;

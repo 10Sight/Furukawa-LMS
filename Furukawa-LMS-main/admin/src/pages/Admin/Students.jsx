@@ -33,6 +33,7 @@ import {
 import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/DesignationApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar as CalendarRange } from "@/components/ui/calendar";
 import { IconChevronDown } from "@tabler/icons-react";
 import {
   useGetAllDepartmentsQuery,
@@ -297,9 +298,15 @@ const Students = () => {
     shift: "",
     date: format(new Date(), "yyyy-MM-dd"),
     designation: "",
+    joiningDateFrom: "",
+    joiningDateTo: "",
+    leavingDateFrom: "",
+    leavingDateTo: "",
   });
   const [activeTab, setActiveTab] = useState("all");
   const [assignmentType, setAssignmentType] = useState("department");
+  const [empDatePopoverOpen, setEmpDatePopoverOpen] = useState(false);
+  const [empDateField, setEmpDateField] = useState("joining");
 
   const [logAction] = useLogActionMutation();
   useEffect(() => {
@@ -414,6 +421,10 @@ const Students = () => {
       dateTo: filters.dateTo,
       shift: filters.shift,
       date: filters.date,
+      joiningDateFrom: filters.joiningDateFrom,
+      joiningDateTo: filters.joiningDateTo,
+      leavingDateFrom: filters.leavingDateFrom,
+      leavingDateTo: filters.leavingDateTo,
       includeLeft: activeTab === "left" ? "true" : "false",
       designation: filters.designation,
       assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
@@ -602,6 +613,12 @@ const Students = () => {
     const list = [];
     if (filters.dateFrom) list.push({ label: "From", value: filters.dateFrom });
     if (filters.dateTo) list.push({ label: "To", value: filters.dateTo });
+    if (filters.joiningDateFrom || filters.joiningDateTo) {
+      list.push({ label: "Joined", value: `${filters.joiningDateFrom || "…"} – ${filters.joiningDateTo || "…"}` });
+    }
+    if (filters.leavingDateFrom || filters.leavingDateTo) {
+      list.push({ label: "Left", value: `${filters.leavingDateFrom || "…"} – ${filters.leavingDateTo || "…"}` });
+    }
     const namesForIds = (csv, source) => {
       const ids = csv ? csv.split(",").filter(Boolean) : [];
       return ids.map(id => source.find(item => String(item._id || item.id) === id)?.name || id);
@@ -1038,6 +1055,10 @@ const Students = () => {
               dateTo: filters.dateTo,
               shift: filters.shift,
               date: filters.date,
+              joiningDateFrom: filters.joiningDateFrom,
+              joiningDateTo: filters.joiningDateTo,
+              leavingDateFrom: filters.leavingDateFrom,
+              leavingDateTo: filters.leavingDateTo,
             }
           }
         : { ids: selectedIds };
@@ -1324,6 +1345,10 @@ const Students = () => {
           dateTo: filters.dateTo,
           shift: filters.shift,
           date: filters.date,
+          joiningDateFrom: filters.joiningDateFrom,
+          joiningDateTo: filters.joiningDateTo,
+          leavingDateFrom: filters.leavingDateFrom,
+          leavingDateTo: filters.leavingDateTo,
           includeLeft: activeTab === "left" ? "true" : "false",
           designation: filters.designation,
           assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
@@ -1714,6 +1739,22 @@ const Students = () => {
     );
   };
 
+  const parseFilterDate = (val) => (val ? new Date(`${val}T00:00:00`) : undefined);
+
+  const empDateRange = empDateField === "joining"
+    ? { from: parseFilterDate(filters.joiningDateFrom), to: parseFilterDate(filters.joiningDateTo) }
+    : { from: parseFilterDate(filters.leavingDateFrom), to: parseFilterDate(filters.leavingDateTo) };
+
+  const handleEmpDateRangeSelect = (range) => {
+    const fromStr = range?.from ? format(range.from, "yyyy-MM-dd") : "";
+    const toStr = range?.to ? format(range.to, "yyyy-MM-dd") : "";
+    setFilters((prev) => (
+      empDateField === "joining"
+        ? { ...prev, joiningDateFrom: fromStr, joiningDateTo: toStr }
+        : { ...prev, leavingDateFrom: fromStr, leavingDateTo: toStr }
+    ));
+  };
+
   const clearFilters = () => {
     const defaultDeptId = isRestrictedUser && availableDepartments.length > 0
       ? availableDepartments.map(d => String(d._id || d.id)).join(",")
@@ -1734,6 +1775,10 @@ const Students = () => {
       shift: "",
       date: format(new Date(), "yyyy-MM-dd"),
       designation: "",
+      joiningDateFrom: "",
+      joiningDateTo: "",
+      leavingDateFrom: "",
+      leavingDateTo: "",
     });
     setSearchTerm("");
     setActiveTab("all");
@@ -2400,15 +2445,88 @@ const Students = () => {
               </Popover>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Joining / Leaving Date</label>
+              <Popover open={empDatePopoverOpen} onOpenChange={(open) => {
+                setEmpDatePopoverOpen(open);
+                if (open && activeTab === "left") setEmpDateField("leaving");
+              }}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 justify-start text-left font-normal border-slate-200 hover:bg-slate-50 bg-white"
+                  >
+                    <IconCalendar className="h-4 w-4 mr-2 text-gray-400 shrink-0" />
+                    <span className="truncate text-xs">
+                      {filters.joiningDateFrom || filters.joiningDateTo ? (
+                        `Joined: ${filters.joiningDateFrom || "…"} – ${filters.joiningDateTo || "…"}`
+                      ) : filters.leavingDateFrom || filters.leavingDateTo ? (
+                        `Left: ${filters.leavingDateFrom || "…"} – ${filters.leavingDateTo || "…"}`
+                      ) : (
+                        "All Dates"
+                      )}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3 bg-white border border-slate-200 shadow-md rounded-md z-50" align="start">
+                  <div className="flex items-center gap-1 mb-2 bg-slate-100 rounded-md p-0.5 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setEmpDateField("joining")}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                        empDateField === "joining" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      Joined
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmpDateField("leaving")}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                        empDateField === "leaving" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      Left
+                    </button>
+                  </div>
+                  <CalendarRange
+                    initialFocus
+                    mode="range"
+                    defaultMonth={empDateRange.from}
+                    selected={empDateRange}
+                    onSelect={handleEmpDateRangeSelect}
+                    numberOfMonths={2}
+                  />
+                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      className="text-xs text-slate-500 hover:text-slate-700 font-medium"
+                      onClick={() => setFilters((prev) => (
+                        empDateField === "joining"
+                          ? { ...prev, joiningDateFrom: "", joiningDateTo: "" }
+                          : { ...prev, leavingDateFrom: "", leavingDateTo: "" }
+                      ))}
+                    >
+                      Clear
+                    </button>
+                    <Button size="sm" className="h-7 text-xs" onClick={() => setEmpDatePopoverOpen(false)}>
+                      Apply
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
             <div className="flex items-end sm:col-span-2 md:col-span-4 lg:col-span-5 justify-end">
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="h-9 w-fit"
                 onClick={() => setFilters({
                   status: "", dateFrom: "", dateTo: "",
                   departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
-                  unit: "", shift: "", date: format(new Date(), "yyyy-MM-dd"), designation: ""
+                  unit: "", shift: "", date: format(new Date(), "yyyy-MM-dd"), designation: "",
+                  joiningDateFrom: "", joiningDateTo: "", leavingDateFrom: "", leavingDateTo: ""
                 })}
               >
                 <IconX className="w-4 h-4 mr-2" />

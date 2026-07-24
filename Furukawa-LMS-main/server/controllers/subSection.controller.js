@@ -2,6 +2,21 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const subSectionCountSql = `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.subSections, '[]'))
+           WHERE TRY_CAST([value] AS INT) = ss.id
+       )
+    ) as subSectionCount
+`;
 
 const resolveDepartmentId = async (departmentId) => {
     if (!departmentId || departmentId === "undefined" || departmentId === "null") return null;
@@ -53,7 +68,7 @@ export const createSubSection = asyncHandler(async (req, res) => {
 
     const [newSubSection] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
+        ${subSectionCountSql}
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -86,7 +101,7 @@ export const getSubSectionsByLine = asyncHandler(async (req, res) => {
     const idsString = lineIds.join(',');
     const [subSections] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
+        ${subSectionCountSql}
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -110,7 +125,7 @@ export const getSubSectionById = asyncHandler(async (req, res) => {
 
     const [subSections] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
+        ${subSectionCountSql}
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -159,7 +174,7 @@ export const updateSubSection = asyncHandler(async (req, res) => {
 
     const [updatedSubSection] = await executeQuery(`
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
+        ${subSectionCountSql}
         FROM [sub_sections] ss 
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
@@ -195,7 +210,7 @@ export const getAllSubSections = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT ss.*, l.name as lineName, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.subSectionId = ss.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as subSectionCount
+        ${subSectionCountSql}
         FROM [sub_sections] ss
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id`;

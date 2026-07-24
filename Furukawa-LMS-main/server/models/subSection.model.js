@@ -1,5 +1,20 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const subSectionCountSql = (subSectionAlias = "ss") => `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.subSections, '[]'))
+           WHERE TRY_CAST([value] AS INT) = ${subSectionAlias}.id
+       )
+    ) as subSectionCount
+`;
 
 class SubSection {
     constructor(data) {
@@ -174,9 +189,9 @@ class SubSection {
 
     static async findById(id) {
         const query = `
-            SELECT ss.*, 
-            (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
-            FROM [sub_sections] ss 
+            SELECT ss.*,
+            ${subSectionCountSql("ss")}
+            FROM [sub_sections] ss
             WHERE ss.id = ?`;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
@@ -191,18 +206,18 @@ class SubSection {
             const ids = lineId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
             if (ids.length === 0) return [];
             query = `
-                SELECT ss.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
-                FROM [sub_sections] ss 
+                SELECT ss.*,
+                ${subSectionCountSql("ss")}
+                FROM [sub_sections] ss
                 WHERE ss.lineId IN (${ids.join(',')}) 
                 ORDER BY ss.createdAt DESC`;
         } else {
             const parsedId = parseInt(lineId);
             if (isNaN(parsedId)) return [];
             query = `
-                SELECT ss.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(ss.users, '[]'))) as subSectionCount
-                FROM [sub_sections] ss 
+                SELECT ss.*,
+                ${subSectionCountSql("ss")}
+                FROM [sub_sections] ss
                 WHERE ss.lineId = ? 
                 ORDER BY ss.createdAt DESC`;
             params = [parsedId];

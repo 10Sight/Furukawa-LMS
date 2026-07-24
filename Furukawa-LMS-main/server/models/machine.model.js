@@ -1,5 +1,20 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const machineCountSql = (machineAlias = "m") => `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.stations, '[]'))
+           WHERE TRY_CAST([value] AS INT) = ${machineAlias}.id
+       )
+    ) as machineCount
+`;
 
 class Machine {
     constructor(data) {
@@ -188,16 +203,9 @@ class Machine {
 
     static async findById(id) {
         const query = `
-            SELECT m.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.stationId = m.id 
-                OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = m.id)
-             )
-            ) as machineCount
-            FROM machines m 
+            SELECT m.*,
+            ${machineCountSql("m")}
+            FROM machines m
             WHERE m.id = ?`;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
@@ -219,15 +227,8 @@ class Machine {
     static async find(query = {}) {
         const keys = Object.keys(query).filter(key => query[key] !== undefined);
         let sql = `
-            SELECT m.*, 
-            (SELECT COUNT(DISTINCT u.id) 
-             FROM users u
-             WHERE (u.role = 'Student' AND (u.isDeleted = 0 OR u.isDeleted IS NULL))
-             AND (
-                u.stationId = m.id 
-                OR u.id IN (SELECT user_id FROM machine_assignments WHERE machine_id = m.id)
-             )
-            ) as machineCount
+            SELECT m.*,
+            ${machineCountSql("m")}
             FROM machines m`;
         let values = [];
 

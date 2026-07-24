@@ -2,7 +2,22 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 import fs from "fs";
+
+const lineCountSql = `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.lines, '[]'))
+           WHERE TRY_CAST([value] AS INT) = l.id
+       )
+    ) as lineCount
+`;
 
 const resolveDepartmentId = async (departmentId) => {
     if (!departmentId || departmentId === "undefined" || departmentId === "null") return null;
@@ -70,7 +85,7 @@ export const createLine = asyncHandler(async (req, res) => {
 
     const [newLine] = await executeQuery(`
         SELECT l.*, 
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        ${lineCountSql}
         FROM [lines] l WHERE l.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -103,7 +118,7 @@ export const getLinesBySection = asyncHandler(async (req, res) => {
     const idsString = sectionIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        ${lineCountSql}
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE (l.sectionId IN (${idsString}) OR l.department IN (${idsString})) ORDER BY l.createdAt DESC`
     );
 
@@ -137,7 +152,7 @@ export const getLinesByDepartment = asyncHandler(async (req, res) => {
     const idsString = departmentIds.join(',');
     const [lines] = await executeQuery(
         `SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        ${lineCountSql}
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id WHERE l.department IN (${idsString}) ORDER BY l.createdAt DESC`
     );
 
@@ -231,7 +246,7 @@ export const updateLine = asyncHandler(async (req, res) => {
 
     const [updatedLine] = await executeQuery(`
         SELECT l.*,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        ${lineCountSql}
         FROM [lines] l WHERE l.id = ?`, [id]);
 
     res.status(200).json(
@@ -288,7 +303,7 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     let querySQL = `
         SELECT l.*, s.name as sectionName,
-        (SELECT COUNT(ma.user_id) FROM machine_assignments ma JOIN machines m ON ma.machine_id = m.id JOIN users u ON ma.user_id = u.id WHERE m.line = l.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as lineCount
+        ${lineCountSql}
         FROM [lines] l LEFT JOIN [sections] s ON l.sectionId = s.id`;
     let params = [];
     let conditions = [];

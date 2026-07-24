@@ -2,6 +2,21 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const machineCountSql = `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.stations, '[]'))
+           WHERE TRY_CAST([value] AS INT) = m.id
+       )
+    ) as machineCount
+`;
 
 // Rebuilds the users.stations/subSections/lines/sections/departments JSON array
 // columns from the user's primary hierarchy fields + all machine_assignments rows,
@@ -95,7 +110,7 @@ export const createMachine = asyncHandler(async (req, res) => {
 
     const [newMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m WHERE m.id = ?`, [result[0].id]);
 
     res.status(201).json(
@@ -115,7 +130,7 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
         if (ids.length > 0) {
             const [rows] = await executeQuery(`
                 SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-                (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+                ${machineCountSql}
                 FROM machines m 
                 LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
                 WHERE m.subSectionId IN (${ids.join(',')}) ORDER BY m.createdAt DESC`);
@@ -128,7 +143,7 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
         }
         const [rows] = await executeQuery(`
             SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-            (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+            ${machineCountSql}
             FROM machines m 
             LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
             WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [parsedId]);
@@ -160,7 +175,7 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
     const idsString = lineIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
         WHERE m.line IN (${idsString}) 
@@ -192,7 +207,7 @@ export const getMachinesBySection = asyncHandler(async (req, res) => {
     const idsString = sectionIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
@@ -225,7 +240,7 @@ export const getMachinesByDepartment = asyncHandler(async (req, res) => {
     const idsString = departmentIds.join(',');
     const [machines] = await executeQuery(`
         SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
@@ -271,7 +286,7 @@ export const updateMachine = asyncHandler(async (req, res) => {
 
     const [updatedMachine] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m WHERE m.id = ?`, [id]);
 
     res.status(200).json(
@@ -312,7 +327,7 @@ export const getMachineById = asyncHandler(async (req, res) => {
 
     const [machines] = await executeQuery(`
         SELECT m.*, 
-        (SELECT COUNT(DISTINCT ma.user_id) FROM machine_assignments ma JOIN users u ON ma.user_id = u.id WHERE ma.machine_id = m.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL) AND (u.status IS NULL OR u.status != 'LEFT')) as machineCount
+        ${machineCountSql}
         FROM machines m WHERE m.id = ?`, [id]);
 
     if (machines.length === 0) {

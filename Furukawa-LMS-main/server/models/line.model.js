@@ -1,5 +1,20 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const lineCountSql = (lineAlias = "l") => `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.lines, '[]'))
+           WHERE TRY_CAST([value] AS INT) = ${lineAlias}.id
+       )
+    ) as lineCount
+`;
 
 class Line {
     constructor(data) {
@@ -243,9 +258,9 @@ class Line {
 
     static async findById(id) {
         const query = `
-            SELECT l.*, 
-            (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
-            FROM [lines] l 
+            SELECT l.*,
+            ${lineCountSql("l")}
+            FROM [lines] l
             WHERE l.id = ?`;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
@@ -260,18 +275,18 @@ class Line {
             const ids = sectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
             if (ids.length === 0) return [];
             query = `
-                SELECT l.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
-                FROM [lines] l 
+                SELECT l.*,
+                ${lineCountSql("l")}
+                FROM [lines] l
                 WHERE l.sectionId IN (${ids.join(',')}) 
                 ORDER BY l.createdAt DESC`;
         } else {
             const parsedId = parseInt(sectionId);
             if (isNaN(parsedId)) return [];
             query = `
-                SELECT l.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(l.users, '[]'))) as lineCount
-                FROM [lines] l 
+                SELECT l.*,
+                ${lineCountSql("l")}
+                FROM [lines] l
                 WHERE l.sectionId = ? 
                 ORDER BY l.createdAt DESC`;
             params = [parsedId];

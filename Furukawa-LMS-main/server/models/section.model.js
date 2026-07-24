@@ -1,5 +1,20 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+
+const sectionCountSql = (sectionAlias = "s") => `
+    (SELECT COUNT(*)
+     FROM users u
+     WHERE ISNULL(u.isDeleted, 0) = 0
+       AND ISNULL(u.isTemporary, 0) = 0
+       AND u.status = 'PRESENT'
+       ${getDesignationShutterExclusionSql("u")}
+       AND EXISTS (
+           SELECT 1 FROM OPENJSON(ISNULL(u.sections, '[]'))
+           WHERE TRY_CAST([value] AS INT) = ${sectionAlias}.id
+       )
+    ) as sectionCount
+`;
 
 class Section {
     constructor(data) {
@@ -371,9 +386,9 @@ class Section {
 
     static async findById(id) {
         const query = `
-            SELECT s.*, 
-            (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
-            FROM [sections] s 
+            SELECT s.*,
+            ${sectionCountSql("s")}
+            FROM [sections] s
             WHERE s.id = ?`;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
@@ -389,17 +404,17 @@ class Section {
             const ids = departmentId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
             if (ids.length === 0) return [];
             query = `
-                SELECT s.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
-                FROM [sections] s 
+                SELECT s.*,
+                ${sectionCountSql("s")}
+                FROM [sections] s
                 WHERE s.departmentId IN (${ids.join(',')}) 
                 ORDER BY s.createdAt DESC`;
         } else {
             // Handle single ID
             query = `
-                SELECT s.*, 
-                (SELECT COUNT(*) FROM OPENJSON(ISNULL(s.users, '[]'))) as sectionCount
-                FROM [sections] s 
+                SELECT s.*,
+                ${sectionCountSql("s")}
+                FROM [sections] s
                 WHERE s.departmentId = ? 
                 ORDER BY s.createdAt DESC`;
             params = [departmentId];

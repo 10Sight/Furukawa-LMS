@@ -207,7 +207,7 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 });
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
-const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, year, isReadOnly = false }) => {
+const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, lineId, lineName = "", year, isReadOnly = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
@@ -246,13 +246,13 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
-    // Reset state when department/section/year changes
+    // Reset state when department/section/line/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
         setRemovedUserIds(new Set());
         setIsLoadingPlan(true);
-    }, [departmentId, sectionId, year]);
+    }, [departmentId, sectionId, lineId, year]);
 
     // Initialize rows when both students and plan data are ready
     useEffect(() => {
@@ -284,11 +284,13 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         });
 
         // 1b. Preserve rows already saved in this sheet for users no longer in the eligible list
-        // (e.g. manually added, or added before an approval status changed)
+        // (e.g. manually added, or added before an approval status changed).
+        // Only keep rows matching the currently selected line, since tableData spans all lines in the section.
         Object.keys(tableData || {}).forEach((userId) => {
             if (userId === "__removedUserIds") return;
             if (addedUserIds.has(userId) || savedRemovedIds.has(userId)) return;
             const data = tableData[userId] || {};
+            if (lineName && data.modelLine !== lineName) return;
             finalRows.push({
                 rowId: userId,
                 userId,
@@ -321,7 +323,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setRemovedUserIds(savedRemovedIds);
         setRows(finalRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, hasLoaded]);
+    }, [tableData, students, isLoadingPlan, hasLoaded, lineName]);
 
     // Safeguard: update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
     useEffect(() => {
@@ -426,11 +428,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     const handleSave = async (sendEmail = false) => {
         if (!departmentId) return;
 
-        // Convert rows to tableData format
-        const newTableData = {};
+        // Convert this line's rows to tableData format
+        const currentLineData = {};
         rows.forEach(row => {
             if (row.userId) {
-                newTableData[row.userId] = {
+                currentLineData[row.userId] = {
                     userName: row.userName || "",
                     cardNo: row.cardNo || "",
                     shift: row.shift,
@@ -455,8 +457,18 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 };
             }
         });
-        if (removedUserIds.size > 0) {
-            newTableData.__removedUserIds = [...removedUserIds];
+
+        // Merge this line's rows back into the full section-wide tableData so
+        // other lines' saved data (which this component never loaded into `rows`) isn't lost.
+        const mergedTableData = { ...tableData };
+        delete mergedTableData.__removedUserIds;
+        removedUserIds.forEach(userId => { delete mergedTableData[userId]; });
+        Object.assign(mergedTableData, currentLineData);
+
+        const combinedRemovedIds = new Set(removedUserIds);
+        Object.keys(currentLineData).forEach(userId => combinedRemovedIds.delete(userId));
+        if (combinedRemovedIds.size > 0) {
+            mergedTableData.__removedUserIds = [...combinedRemovedIds];
         }
 
         try {
@@ -465,9 +477,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 sectionId,
                 year,
                 selectedLines: [],
-                tableData: newTableData,
+                tableData: mergedTableData,
                 sendEmail,
             });
+            setTableData(mergedTableData);
+            setRemovedUserIds(combinedRemovedIds);
             toast.success(response?.data?.message || "Skill upgradation plan saved successfully");
         } catch (error) {
             toast.error(error?.response?.data?.message || "Failed to save skill upgradation plan");

@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
+import { useGetLinesBySectionQuery } from '@/Redux/AllApi/LineApi';
 import { useGetAllStudentsQuery as useGetAllStudentsQueryInstructor } from '@/Redux/AllApi/InstructorApi';
 import {
     IconStars,
@@ -46,6 +47,7 @@ const SkillUpgradationWrapper = () => {
     // Selections
     const [dept, setDept] = useState("");
     const [section, setSection] = useState("");
+    const [line, setLine] = useState("");
 
     // Plans list and selection states
     const [selectedPlan, setSelectedPlan] = useState(null);
@@ -57,6 +59,7 @@ const SkillUpgradationWrapper = () => {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createDept, setCreateDept] = useState("");
     const [createSection, setCreateSection] = useState("");
+    const [createLine, setCreateLine] = useState("");
     const [createYear, setCreateYear] = useState(new Date().getFullYear().toString());
 
     // Delete confirmation dialog
@@ -73,22 +76,29 @@ const SkillUpgradationWrapper = () => {
     const { data: deptsData } = useGetAllDepartmentsQuery();
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
+    const { data: linesData } = useGetLinesBySectionQuery(section, { skip: !section });
+    const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
 
-    // Fetch students/operators for the selected section
+    // Fetch students/operators for the selected section and line
     const { data: studentsData, isFetching: isFetchingStudents } = useGetAllStudentsQueryInstructor({
         departmentId: dept,
         sectionId: section,
+        lineId: line,
         limit: 1000,
         includeTemporary: "false",
         sixteenDayApprovedOnly: "true"
     }, {
-        skip: !dept || !section,
+        skip: !dept || !section || !line,
         refetchOnMountOrArgChange: true
     });
 
     const departments = deptsData?.data?.departments || [];
     const sections = sectionsData?.data || [];
     const createSections = createSectionsData?.data || [];
+    const lines = linesData?.data || [];
+    const createLines = createLinesData?.data || [];
+    const selectedLineName = lines.find(l => String(l.id || l._id) === String(line))?.name || "";
+    const DOCUMENT_NO = "FRM-WH-QA-236";
     const students = useMemo(() => {
         const rawUsers = studentsData?.data?.users || [];
         return rawUsers.filter(user =>
@@ -156,8 +166,8 @@ const SkillUpgradationWrapper = () => {
     }, [selectedPlan]);
 
     const handleCreatePlanSubmit = async () => {
-        if (!createDept || !createSection || !createYear) {
-            toast.error("Please select Department, Section, and Year.");
+        if (!createDept || !createSection || !createLine || !createYear) {
+            toast.error("Please select Department, Section, Line, and Year.");
             return;
         }
         try {
@@ -167,7 +177,15 @@ const SkillUpgradationWrapper = () => {
             const existingPlans = existingPlansResponse.data?.data || [];
             const duplicate = existingPlans.find(p => String(p.year) === String(createYear));
             if (duplicate) {
-                toast.error(`A plan for Year ${createYear} already exists for this department and section. Open it from the list instead.`);
+                // Plans are stored one-per department/section/year and shared across all lines,
+                // so if it already exists (created for another line), just open it for this line instead of blocking.
+                setDept(createDept);
+                setSection(createSection);
+                setLine(createLine);
+                setIsCreateOpen(false);
+                setIsReadOnly(false);
+                setSelectedPlan(duplicate);
+                toast.success(`A plan for Year ${createYear} already exists for this section — opening it for this line.`);
                 return;
             }
             const response = await axiosInstance.post(`/api/skill-upgradation-plan/department/${createDept}`, {
@@ -179,6 +197,7 @@ const SkillUpgradationWrapper = () => {
             if (response.data.success) {
                 setDept(createDept);
                 setSection(createSection);
+                setLine(createLine);
                 setIsCreateOpen(false);
                 toast.success(`Skill Upgradation Plan created successfully for Year ${createYear}`);
                 fetchPlansList();
@@ -247,6 +266,7 @@ const SkillUpgradationWrapper = () => {
                                 onClick={() => {
                                     setCreateDept("");
                                     setCreateSection("");
+                                    setCreateLine("");
                                     setCreateYear(new Date().getFullYear().toString());
                                     setIsCreateOpen(true);
                                 }}
@@ -259,12 +279,12 @@ const SkillUpgradationWrapper = () => {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department</Label>
                             <Select
                                 value={dept}
-                                onValueChange={(val) => { setDept(val); setSection(""); }}
+                                onValueChange={(val) => { setDept(val); setSection(""); setLine(""); }}
                                 disabled={isRestricted && assignableDepartments.length <= 1}
                             >
                                 <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm">
@@ -282,7 +302,7 @@ const SkillUpgradationWrapper = () => {
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Section</Label>
                             <Select
                                 value={section}
-                                onValueChange={setSection}
+                                onValueChange={(val) => { setSection(val); setLine(""); }}
                                 disabled={!dept || (isRestricted && assignableSections.length <= 1)}
                             >
                                 <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm disabled:bg-slate-50">
@@ -295,12 +315,30 @@ const SkillUpgradationWrapper = () => {
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Line</Label>
+                            <Select
+                                value={line}
+                                onValueChange={setLine}
+                                disabled={!section}
+                            >
+                                <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm disabled:bg-slate-50">
+                                    <SelectValue placeholder="Select Line" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {lines.map((l) => (
+                                        <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                 </CardContent>
             </Card>
 
             {/* Training Plan Sheet */}
-            {dept && section ? (
+            {dept && section && line ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
                     {selectedPlan ? (
                         <div className="space-y-4">
@@ -328,6 +366,8 @@ const SkillUpgradationWrapper = () => {
                                  isLoadingStudents={isFetchingStudents}
                                  departmentId={dept}
                                  sectionId={section}
+                                 lineId={line}
+                                 lineName={selectedLineName}
                                  year={selectedPlan.year}
                                  isReadOnly={isReadOnly}
                             />
@@ -365,7 +405,9 @@ const SkillUpgradationWrapper = () => {
                                                 <tr>
                                                     <th className="p-3 pl-4">Department</th>
                                                     <th className="p-3">Section</th>
+                                                    <th className="p-3">Line</th>
                                                     <th className="p-3">Year</th>
+                                                    <th className="p-3">Document No</th>
                                                     <th className="p-3">Created By</th>
                                                     <th className="p-3">Last Updated By</th>
                                                     {(canUpdate || canDelete) && (
@@ -382,7 +424,9 @@ const SkillUpgradationWrapper = () => {
                                                     >
                                                         <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
                                                         <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
+                                                        <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
                                                         <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
+                                                        <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
                                                         <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
                                                         <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
                                                         {(canUpdate || canDelete) && (
@@ -430,7 +474,7 @@ const SkillUpgradationWrapper = () => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700">Select Hierarchy</h3>
                     <p className="text-sm text-slate-500 max-w-xs text-center mt-3 leading-relaxed">
-                        Choose a department and section to view and manage the skill upgradation training plan.
+                        Choose a department, section, and line to view and manage the skill upgradation training plan.
                     </p>
                 </div>
             )}
@@ -449,7 +493,7 @@ const SkillUpgradationWrapper = () => {
                             <Label className="text-xs font-bold text-slate-600 uppercase">Department</Label>
                             <Select
                                 value={createDept}
-                                onValueChange={(val) => { setCreateDept(val); setCreateSection(""); }}
+                                onValueChange={(val) => { setCreateDept(val); setCreateSection(""); setCreateLine(""); }}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm">
                                     <SelectValue placeholder="Select Department" />
@@ -465,7 +509,7 @@ const SkillUpgradationWrapper = () => {
                             <Label className="text-xs font-bold text-slate-600 uppercase">Section</Label>
                             <Select
                                 value={createSection}
-                                onValueChange={setCreateSection}
+                                onValueChange={(val) => { setCreateSection(val); setCreateLine(""); }}
                                 disabled={!createDept}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm disabled:bg-slate-50">
@@ -474,6 +518,23 @@ const SkillUpgradationWrapper = () => {
                                 <SelectContent>
                                     {createSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-bold text-slate-600 uppercase">Line</Label>
+                            <Select
+                                value={createLine}
+                                onValueChange={setCreateLine}
+                                disabled={!createSection}
+                            >
+                                <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-blue-500 text-sm disabled:bg-slate-50">
+                                    <SelectValue placeholder="Select Line" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {createLines.map((l) => (
+                                        <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -499,7 +560,7 @@ const SkillUpgradationWrapper = () => {
                         <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="h-10 text-sm">Cancel</Button>
                         <Button
                             onClick={handleCreatePlanSubmit}
-                            disabled={!createDept || !createSection}
+                            disabled={!createDept || !createSection || !createLine}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-5 rounded-lg text-sm"
                         >
                             Create

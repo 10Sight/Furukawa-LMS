@@ -1057,7 +1057,25 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         conductedBy: conductedBy !== undefined && conductedBy !== null ? conductedBy : ""
     };
 
-    const attempt = await AttemptedQuiz.create(attemptData);
+    let attempt;
+    try {
+        attempt = await AttemptedQuiz.create(attemptData);
+    } catch (err) {
+        // MSSQL 2601/2627: unique index/constraint violation. Concurrent double-submits can both
+        // pass the previousAttempts count check before either insert lands, so on that race,
+        // return the attempt the other request already created instead of failing the submission.
+        const isDuplicateKey = err && (err.number === 2601 || err.number === 2627 ||
+            (typeof err.message === "string" && err.message.includes("idx_unique_attempt")));
+        if (!isDuplicateKey) throw err;
+
+        console.warn(`[WARN] Duplicate attempt detected for quiz ${resolvedQuizId}, student ${userId}, attempt ${attemptData.attemptNumber}. Resolving gracefully.`);
+        attempt = await AttemptedQuiz.findOne({
+            quiz: resolvedQuizId,
+            student: userId,
+            attemptNumber: attemptData.attemptNumber
+        });
+        if (!attempt) throw err;
+    }
 
     logAudit(req.user.id, "SUBMIT_QUIZ_ATTEMPT", {
         quizId: quiz.id,

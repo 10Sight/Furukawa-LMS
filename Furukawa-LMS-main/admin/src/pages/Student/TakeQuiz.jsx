@@ -384,6 +384,7 @@ const TakeQuiz = () => {
   };
 
   const handleSubmit = async (autoSubmit = false) => {
+    if (submitting) return;
     try {
       if (!autoSubmit) {
         const unansweredQuestions = [];

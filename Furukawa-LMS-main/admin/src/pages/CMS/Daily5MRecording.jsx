@@ -644,7 +644,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
             {/* Row 1: Common fields and first parameter */}
             <tr className="hover:bg-slate-50">
                 <td rowSpan="5" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} max={todayStr} /></td>
                 <td rowSpan="5" className="border border-black py-0.5 px-0">
                     <SubSectionSelect
                         recIndex={recIndex}
@@ -2228,7 +2228,7 @@ const Daily5MRecording = () => {
                                                     {/* Row 1 of Record */}
                                                     <tr className="hover:bg-slate-50">
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} /></td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} max={todayStr} /></td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <select
                                                                 className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
@@ -3111,6 +3111,7 @@ const Daily5MRecording = () => {
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
                             className="h-11 pl-10"
+                            max={todayStr}
                         />
                         <IconClipboardList className="absolute left-3 top-3 text-slate-400" size={20} />
                     </div>
@@ -3360,6 +3361,7 @@ const Daily5MRecording = () => {
                                         disabled
                                         className="bg-slate-50"
                                         min={todayStr}
+                                        max={todayStr}
                                     />
                                 </div>
                             </div>

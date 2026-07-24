@@ -226,7 +226,7 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 });
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
-const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => {
+const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lineName = "", year }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
@@ -278,12 +278,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
-    // Reset loading state when department/section/year changes
+    // Snapshot of userIds visible in this line's view when rows were last (re)initialized,
+    // used by handleSave to detect session-scoped removals without touching other lines' data.
+    const lineUserIdsRef = useRef(new Set());
+
+    // Reset loading state when department/section/line/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
         setIsLoadingPlan(true);
-    }, [departmentId, sectionId, year]);
+    }, [departmentId, sectionId, lineId, year]);
 
     // Initialize rows when both students and plan details are ready
     useEffect(() => {
@@ -295,6 +299,16 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
         savedUserIds.forEach((userId) => {
             const user = students.find(s => String(s._id || s.id) === String(userId));
             const data = tableData[userId] || {};
+
+            // `students` is already scoped to the selected line by the parent query, so a match there
+            // confirms this row belongs here. Otherwise (user not currently in the eligible/scoped list,
+            // e.g. moved section or no longer approved), fall back to checking the saved per-quarter lines
+            // since tableData spans every line in the section.
+            if (!user && lineName) {
+                const belongsToLine = QUARTERS.some(({ key }) => data[`${key}ModelLine`] === lineName);
+                if (!belongsToLine) return;
+            }
+
             const quarterFields = {};
             QUARTERS.forEach(({ key }) => {
                 // Backward compatibility: older saved plans stored a single row-level
@@ -361,9 +375,10 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
             }
         }
 
+        lineUserIdsRef.current = new Set(savedRows.map(r => r.userId).filter(Boolean));
         setRows(savedRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, isLoadingActiveConfig, hasLoaded, allowedMultiSkillingLevels]);
+    }, [tableData, students, isLoadingPlan, isLoadingActiveConfig, hasLoaded, allowedMultiSkillingLevels, lineName]);
 
     // Safeguard: Update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
     useEffect(() => {
@@ -482,8 +497,8 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
     const handleSave = async (sendEmail = false) => {
         if (!departmentId) return;
 
-        // Convert rows to tableData format
-        const newTableData = {};
+        // Convert this line's rows to tableData format
+        const currentLineData = {};
         rows.forEach(row => {
             if (row.userId) {
                 const quarterFields = {};
@@ -495,7 +510,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                     quarterFields[`${key}DateActual`] = row[`${key}DateActual`];
                     quarterFields[`${key}Status`] = row[`${key}Status`];
                 });
-                newTableData[row.userId] = {
+                currentLineData[row.userId] = {
                     userName: row.userName || "",
                     cardNo: row.cardNo || "",
                     shift: row.shift,
@@ -504,16 +519,27 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
             }
         });
 
+        // Merge this line's rows back into the full section-wide tableData so other lines'
+        // saved data (which this component never loaded into `rows`) isn't lost. Any userId that
+        // was visible in this line's view when it loaded but is no longer in `rows` (removed via
+        // the trash icon this session) is dropped from the merged record.
+        const mergedTableData = { ...tableData };
+        lineUserIdsRef.current.forEach(userId => {
+            if (!currentLineData[userId]) delete mergedTableData[userId];
+        });
+        Object.assign(mergedTableData, currentLineData);
+
         try {
             setIsSaving(true);
             const response = await axiosInstance.post(`/api/multi-skilling-plan/department/${departmentId}`, {
                 sectionId,
                 year,
                 selectedLines: [],
-                tableData: newTableData,
+                tableData: mergedTableData,
                 sendEmail,
             });
-            setTableData(newTableData);
+            setTableData(mergedTableData);
+            lineUserIdsRef.current = new Set(Object.keys(currentLineData));
             toast.success(response?.data?.message || "Multi-skilling plan saved successfully");
         } catch (error) {
             toast.error(error?.response?.data?.message || "Failed to save multi-skilling plan");
@@ -750,6 +776,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                         <input
                                                             type="date"
                                                             value={row[dateField] || ""}
+                                                            min={new Date().toLocaleDateString('en-CA')}
                                                             onChange={(e) => handleRowFieldChange(rowId, dateField, e.target.value)}
                                                             disabled={!canManage}
                                                             className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -760,6 +787,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, year }) => 
                                                         <input
                                                             type="date"
                                                             value={row[dateActualField] || ""}
+                                                            min={new Date().toLocaleDateString('en-CA')}
                                                             onChange={(e) => handleRowFieldChange(rowId, dateActualField, e.target.value)}
                                                             disabled={!canManage}
                                                             className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"

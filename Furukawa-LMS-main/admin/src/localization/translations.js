@@ -13,6 +13,7 @@ export const translations = {
 
     // Navigation
     "nav.dashboard": "Dashboard",
+    "nav.landingPage": "Landing Page",
     "nav.instructors": "Trainers",
     "nav.courses": "Courses",
     "nav.departments": "Departments",
@@ -759,6 +760,7 @@ export const translations = {
     "label.language": "भाषा",
 
     "nav.dashboard": "डैशबोर्ड",
+    "nav.landingPage": "लैंडिंग पेज",
     "nav.instructors": "प्रशिक्षक",
     "nav.courses": "कोर्स",
     "nav.departments": "विभाग",
@@ -1485,6 +1487,7 @@ export const translations = {
     "label.language": "言語",
 
     "nav.dashboard": "ダッシュボード",
+    "nav.landingPage": "ランディングページ",
     "nav.instructors": "講師",
     "nav.courses": "コース",
     "nav.departments": "部門",
@@ -2211,6 +2214,7 @@ export const translations = {
     "label.language": "语言",
 
     "nav.dashboard": "仪表盘",
+    "nav.landingPage": "登陆页面",
     "nav.instructors": "讲师",
     "nav.courses": "课程",
     "nav.departments": "部门",
@@ -2937,6 +2941,7 @@ export const translations = {
     "label.language": "Язык",
 
     "nav.dashboard": "Панель",
+    "nav.landingPage": "Целевая страница",
     "nav.instructors": "Преподаватели",
     "nav.courses": "Курсы",
     "nav.departments": "Отделы",

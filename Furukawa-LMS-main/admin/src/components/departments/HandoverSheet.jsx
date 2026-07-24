@@ -792,6 +792,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                         className="w-40 h-8"
                                         disabled={viewOnly}
                                         min={isNewSheet ? new Date().toISOString().split('T')[0] : undefined}
+                                        max={new Date().toISOString().split('T')[0]}
                                     />
                                     {propShift && (
                                         <Badge variant="outline" className="text-xs font-semibold border-blue-300 text-blue-700 bg-blue-50">

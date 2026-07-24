@@ -738,6 +738,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q1Date || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q1Date", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -748,6 +749,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q1DateActual || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q1DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -796,6 +798,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q2Date || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q2Date", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -806,6 +809,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q2DateActual || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q2DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -854,6 +858,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q3Date || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q3Date", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -864,6 +869,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q3DateActual || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q3DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -912,6 +918,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q4Date || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q4Date", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -922,6 +929,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             <input
                                                 type="date"
                                                 value={row.q4DateActual || ""}
+                                                min={new Date().toLocaleDateString('en-CA')}
                                                 onChange={(e) => handleRowFieldChange(rowId, "q4DateActual", e.target.value)}
                                                 disabled={!canManage}
                                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"

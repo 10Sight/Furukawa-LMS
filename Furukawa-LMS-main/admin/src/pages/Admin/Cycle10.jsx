@@ -445,6 +445,20 @@ const Cycle10 = () => {
     };
 
     const handleRowChange = (id, field, value) => {
+        if (field === 'date' && value) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const enteredDate = new Date(value);
+            enteredDate.setHours(0, 0, 0, 0);
+            if (enteredDate < today) {
+                toast.error("You cannot select a past date");
+                return;
+            }
+            if (enteredDate > today) {
+                toast.error("You cannot select a future date");
+                return;
+            }
+        }
         setRows(rows.map(row => {
             if (row.id === id) {
                 let updatedRow = { ...row, [field]: value };
@@ -1095,7 +1109,7 @@ const Cycle10 = () => {
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5 print:hidden"><Trash2 size={10} /></button>}
                                                             </td>
                                                             <td className="border border-black p-0">
-                                                                <input type="date" className="w-full text-center bg-transparent outline-none p-1 text-[9px] disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} />
+                                                                <input type="date" className="w-full text-center bg-transparent outline-none p-1 text-[9px] disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={new Date().toLocaleDateString('en-CA')} max={new Date().toLocaleDateString('en-CA')} />
                                                             </td>
                                                             <td className="border border-black p-0 h-8 bg-yellow-50">
                                                                 <input
@@ -1332,7 +1346,7 @@ const Cycle10 = () => {
                                                                 {index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
-                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={new Date().toLocaleDateString('en-CA')} max={new Date().toLocaleDateString('en-CA')} /></td>
                                                             <td className="border border-black p-0 h-8">
                                                                 <input
                                                                     list={`stations-f2-${row.id}`}
@@ -1531,7 +1545,7 @@ const Cycle10 = () => {
                                                                 {index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
-                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={new Date().toLocaleDateString('en-CA')} max={new Date().toLocaleDateString('en-CA')} /></td>
                                                             <td className="border border-black p-0 h-8">
                                                                 <input
                                                                     list={`stations-f3-${row.id}`}

@@ -90,6 +90,7 @@ const MultiSkilling = () => {
     // Plan Calander Hierarchy Selections
     const [dept, setDept] = useState("");
     const [section, setSection] = useState("");
+    const [line, setLine] = useState("");
     const [year, setYear] = useState(new Date().getFullYear().toString());
 
     // Plans list and selection states
@@ -101,6 +102,7 @@ const MultiSkilling = () => {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createDept, setCreateDept] = useState("");
     const [createSection, setCreateSection] = useState("");
+    const [createLine, setCreateLine] = useState("");
     const [createYear, setCreateYear] = useState(new Date().getFullYear().toString());
 
     // Years list helper (last 2 years, current, and next 4 years)
@@ -113,19 +115,26 @@ const MultiSkilling = () => {
     const { data: deptsData } = useGetAllDepartmentsQuery();
     const { data: sectionsData } = useGetSectionsByDepartmentQuery(dept, { skip: !dept });
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
+    const { data: linesData } = useGetLinesBySectionQuery(section, { skip: !section });
+    const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
 
     // Fetch students/operators for Plan Calander
     const { data: studentsData } = useGetAllStudentsQuery({
         departmentId: dept,
         sectionId: section,
+        lineId: line,
         filterMultiSkillingLevels: "true",
         limit: 1000
     }, {
-        skip: !dept || !section,
+        skip: !dept || !section || !line,
         refetchOnMountOrArgChange: true
     });
 
     const createSections = createSectionsData?.data || [];
+    const lines = linesData?.data || [];
+    const createLines = createLinesData?.data || [];
+    const selectedLineName = lines.find(l => String(l.id || l._id) === String(line))?.name || "";
+    const DOCUMENT_NO = "FRM-WH-QA-236";
 
     const fetchPlansList = async () => {
         if (!dept || !section) {
@@ -163,11 +172,29 @@ const MultiSkilling = () => {
     }, [selectedPlan]);
 
     const handleCreatePlanSubmit = async () => {
-        if (!createDept || !createSection || !createYear) {
-            toast.error("Please select Department, Section, and Year.");
+        if (!createDept || !createSection || !createLine || !createYear) {
+            toast.error("Please select Department, Section, Line, and Year.");
             return;
         }
         try {
+            const existingPlansResponse = await axiosInstance.get('/api/multi-skilling-plan/list', {
+                params: { departmentId: createDept, sectionId: createSection }
+            });
+            const existingPlans = existingPlansResponse.data?.data || [];
+            const duplicate = existingPlans.find(p => String(p.year) === String(createYear));
+            if (duplicate) {
+                // Plans are stored one-per department/section/year and shared across all lines,
+                // so if it already exists (created for another line), just open it for this line
+                // instead of re-creating it (which would upsert tableData:{} and wipe the existing data).
+                setDept(createDept);
+                setSection(createSection);
+                setLine(createLine);
+                setYear(createYear);
+                setIsCreateOpen(false);
+                setSelectedPlan(duplicate);
+                toast.success(`A plan for Year ${createYear} already exists for this section — opening it for this line.`);
+                return;
+            }
             const response = await axiosInstance.post(`/api/multi-skilling-plan/department/${createDept}`, {
                 sectionId: createSection,
                 year: createYear,
@@ -177,6 +204,7 @@ const MultiSkilling = () => {
             if (response.data.success) {
                 setDept(createDept);
                 setSection(createSection);
+                setLine(createLine);
                 setYear(createYear);
                 setIsCreateOpen(false);
                 toast.success(`Multi-Skilling Plan created successfully for Year ${createYear}`);
@@ -417,10 +445,11 @@ const MultiSkilling = () => {
                                     <IconHierarchy2 className="w-4 h-4 text-amber-500" />
                                     Hierarchy Selection
                                 </span>
-                                <Button 
+                                <Button
                                     onClick={() => {
                                         setCreateDept("");
                                         setCreateSection("");
+                                        setCreateLine("");
                                         setCreateYear(new Date().getFullYear().toString());
                                         setIsCreateOpen(true);
                                     }}
@@ -432,12 +461,12 @@ const MultiSkilling = () => {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="pt-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department</Label>
                                     <Select
                                         value={dept}
-                                        onValueChange={(val) => { setDept(val); setSection(""); }}
+                                        onValueChange={(val) => { setDept(val); setSection(""); setLine(""); }}
                                     >
                                         <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm">
                                             <SelectValue placeholder="Select Department" />
@@ -454,7 +483,7 @@ const MultiSkilling = () => {
                                     <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Section</Label>
                                     <Select
                                         value={section}
-                                        onValueChange={setSection}
+                                        onValueChange={(val) => { setSection(val); setLine(""); }}
                                         disabled={!dept}
                                     >
                                         <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm disabled:bg-slate-50">
@@ -467,12 +496,30 @@ const MultiSkilling = () => {
                                         </SelectContent>
                                     </Select>
                                 </div>
+
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Line</Label>
+                                    <Select
+                                        value={line}
+                                        onValueChange={setLine}
+                                        disabled={!section}
+                                    >
+                                        <SelectTrigger className="h-11 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm disabled:bg-slate-50">
+                                            <SelectValue placeholder="Select Line" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {lines.map((l) => (
+                                                <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
 
                     {/* Training Plan Sheet / List Table */}
-                    {dept && section ? (
+                    {dept && section && line ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
                             {selectedPlan ? (
                                 <div className="space-y-4">
@@ -490,6 +537,8 @@ const MultiSkilling = () => {
                                         students={students}
                                         departmentId={dept}
                                         sectionId={section}
+                                        lineId={line}
+                                        lineName={selectedLineName}
                                         year={selectedPlan.year}
                                     />
                                 </div>
@@ -526,21 +575,25 @@ const MultiSkilling = () => {
                                                         <tr>
                                                             <th className="p-3 pl-4">Department</th>
                                                             <th className="p-3">Section</th>
+                                                            <th className="p-3">Line</th>
                                                             <th className="p-3">Year</th>
+                                                            <th className="p-3">Document No</th>
                                                             <th className="p-3">Created By</th>
                                                             <th className="p-3 pr-4">Last Updated By</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 text-slate-700">
                                                         {plansList.map((plan) => (
-                                                            <tr 
-                                                                key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`} 
+                                                            <tr
+                                                                key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
                                                                 onClick={() => setSelectedPlan(plan)}
                                                                 className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                                                             >
                                                                 <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
                                                                 <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
+                                                                <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
                                                                 <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
+                                                                <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
                                                                 <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
                                                                 <td className="p-3 pr-4 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
                                                             </tr>
@@ -560,7 +613,7 @@ const MultiSkilling = () => {
                             </div>
                             <h3 className="text-xl font-bold text-slate-700">Select Hierarchy</h3>
                             <p className="text-sm text-slate-500 max-w-xs text-center mt-3 leading-relaxed">
-                                Choose a department and section to view and manage the multi-skilling training plan.
+                                Choose a department, section, and line to view and manage the multi-skilling training plan.
                             </p>
                         </div>
                     )}
@@ -954,7 +1007,7 @@ const MultiSkilling = () => {
                             <Label className="text-xs font-bold text-slate-600 uppercase">Department</Label>
                             <Select
                                 value={createDept}
-                                onValueChange={(val) => { setCreateDept(val); setCreateSection(""); }}
+                                onValueChange={(val) => { setCreateDept(val); setCreateSection(""); setCreateLine(""); }}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm">
                                     <SelectValue placeholder="Select Department" />
@@ -970,7 +1023,7 @@ const MultiSkilling = () => {
                             <Label className="text-xs font-bold text-slate-600 uppercase">Section</Label>
                             <Select
                                 value={createSection}
-                                onValueChange={setCreateSection}
+                                onValueChange={(val) => { setCreateSection(val); setCreateLine(""); }}
                                 disabled={!createDept}
                             >
                                 <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm disabled:bg-slate-50">
@@ -979,6 +1032,23 @@ const MultiSkilling = () => {
                                 <SelectContent>
                                     {assignableCreateSections.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>{s.name} {s.category ? `(${s.category})` : ""}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-bold text-slate-600 uppercase">Line</Label>
+                            <Select
+                                value={createLine}
+                                onValueChange={setCreateLine}
+                                disabled={!createSection}
+                            >
+                                <SelectTrigger className="h-10 bg-white border-slate-200 shadow-sm focus:ring-amber-500 text-sm disabled:bg-slate-50">
+                                    <SelectValue placeholder="Select Line" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {createLines.map((l) => (
+                                        <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -1002,9 +1072,9 @@ const MultiSkilling = () => {
                     </div>
                     <div className="flex justify-end gap-3 pt-3 border-t">
                         <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="h-10 text-sm">Cancel</Button>
-                        <Button 
+                        <Button
                             onClick={handleCreatePlanSubmit}
-                            disabled={!createDept || !createSection}
+                            disabled={!createDept || !createSection || !createLine}
                             className="bg-amber-500 hover:bg-amber-600 text-white font-bold h-10 px-5 rounded-lg text-sm"
                         >
                             Create

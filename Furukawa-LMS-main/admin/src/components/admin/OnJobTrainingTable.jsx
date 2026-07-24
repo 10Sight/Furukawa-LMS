@@ -129,6 +129,10 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                 toast.error("You cannot select a past date");
                 return;
             }
+            if (enteredDate > today) {
+                toast.error("You cannot select a future date");
+                return;
+            }
         }
         const newEntries = [...entries];
         newEntries[index] = { ...newEntries[index], [field]: value };
@@ -363,7 +367,8 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                                 <Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                     value={row.date?.toString().split('T')[0] ?? ""}
                                                     onChange={e => handleEntryChange(index, 'date', e.target.value)} type="date"
-                                                    min={new Date().toLocaleDateString('en-CA')} />
+                                                    min={new Date().toLocaleDateString('en-CA')}
+                                                    max={new Date().toLocaleDateString('en-CA')} />
                                             </td>
                                             <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.hours ?? ""} onChange={e => handleEntryChange(index, 'hours', e.target.value)} /></td>
                                             <td className="border border-black p-0"><Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold" value={row.productionTarget ?? ""} onChange={e => handleEntryChange(index, 'productionTarget', e.target.value)} /></td>

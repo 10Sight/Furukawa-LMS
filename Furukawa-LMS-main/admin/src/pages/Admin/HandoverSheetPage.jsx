@@ -891,6 +891,7 @@ const HandoverSheetPage = () => {
                                 type="date"
                                 value={createDate}
                                 min={todayStr}
+                                max={todayStr}
                                 onChange={(e) => setCreateDate(e.target.value)}
                                 className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"
                             />

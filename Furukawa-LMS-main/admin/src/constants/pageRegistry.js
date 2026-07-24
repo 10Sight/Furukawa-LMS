@@ -159,7 +159,8 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
     const isRestricted = hasRestrictions(user);
 
     // Filter registry for pages that should appear in the sidebar
-    const sidebarPages = PAGE_REGISTRY.filter(p => p.label && p.link);
+    // "landing-page" is excluded here since it's already surfaced via the fixed "Back to Main Menu" button
+    const sidebarPages = PAGE_REGISTRY.filter(p => p.label && p.link && p.key !== "landing-page");
 
     // A page is shown if:
     // 1. It belongs to the current layout OR the user has explicit cross-layout access to it
@@ -344,5 +345,5 @@ export const PAGE_REGISTRY = [
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
-    { key: "landing-page", layout: "custom", link: "/", icon: "IconLayoutGrid" },
+    { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

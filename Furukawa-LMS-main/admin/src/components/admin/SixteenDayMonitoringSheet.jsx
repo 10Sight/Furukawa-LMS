@@ -1030,6 +1030,12 @@ const SixteenDayMonitoringSheet = ({
         return (date) => {
             if (prevMaxDate && date <= prevMaxDate) return true;
             if (nextMinDate && date >= nextMinDate) return true;
+
+            // Restrict future dates (after today)
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (date > today) return true;
+
             return false;
         };
     };

@@ -108,6 +108,10 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                 toast.error("You cannot select a past date");
                 return;
             }
+            if (enteredDate > today) {
+                toast.error("You cannot select a future date");
+                return;
+            }
         }
         setTrainingData(prev => ({ ...prev, [field]: value }));
     };
@@ -121,6 +125,10 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
             enteredDate.setHours(0, 0, 0, 0);
             if (enteredDate < today) {
                 toast.error("You cannot select a past date");
+                return;
+            }
+            if (enteredDate > today) {
+                toast.error("You cannot select a future date");
                 return;
             }
         }
@@ -368,6 +376,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                         value={trainingData.date}
                                         onChange={e => handleInputChange('date', e.target.value)}
                                         min={new Date().toISOString().split('T')[0]}
+                                        max={new Date().toISOString().split('T')[0]}
                                     />
                                 </div>
                             </div>
@@ -623,7 +632,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                             <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                 value={trainingData.attendanceRecords[leftIndex]?.date || ""}
                                                                 onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)}
-                                                                min={new Date().toISOString().split('T')[0]} />
+                                                                min={new Date().toISOString().split('T')[0]}
+                                                                max={new Date().toISOString().split('T')[0]} />
                                                         </td>
                                                         <td className="border-r border-black p-0 overflow-visible relative">
                                                             <UserAutocomplete
@@ -656,7 +666,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                     <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                         value={trainingData.attendanceRecords[rightIndex]?.date || ""}
                                                                         onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)}
-                                                                        min={new Date().toISOString().split('T')[0]} />
+                                                                        min={new Date().toISOString().split('T')[0]}
+                                                                        max={new Date().toISOString().split('T')[0]} />
                                                                 </td>
                                                                 <td className="border-r border-black p-0 overflow-visible relative">
                                                                     <UserAutocomplete

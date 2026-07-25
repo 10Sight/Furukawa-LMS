@@ -67,8 +67,8 @@ const CHECK_ROW_IDS = [
     "checkedByLine",
     "verificationByShift"
 ];
-const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4", "obs5", "obs6"];
-const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4"];
+const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const isCellFilled = (cell) => {
     if (!cell) return false;

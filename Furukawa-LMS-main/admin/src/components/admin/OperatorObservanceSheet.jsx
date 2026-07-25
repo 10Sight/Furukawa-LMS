@@ -41,8 +41,8 @@ const CHECK_CONTENTS = [
 ];
 
 const CHECK_ROW_IDS = CHECK_CONTENTS.map((row) => row.id);
-const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4", "obs5", "obs6"];
-const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4"];
+const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const isCellFilled = (cell) => {
     if (!cell) return false;
@@ -648,15 +648,19 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 {/* Table Section */}
                 <div className="border-2 border-black text-sm">
                     {/* Table Header */}
-                    <div className="grid grid-cols-[200px_repeat(12,1fr)_150px] divide-x border-black divide-black bg-gray-50 font-bold text-center">
+                    <div className="grid grid-cols-[200px_repeat(8,1fr)_150px] divide-x border-black divide-black bg-gray-50 font-bold text-center">
+                        {/* Level labels row */}
+                        <div className="border-b border-black p-2 h-8"></div>
+                        <div className="col-span-4 border-b border-black p-2 h-8 flex items-center justify-center">L1</div>
+                        <div className="col-span-4 border-b border-black p-2 h-8 flex items-center justify-center">L2</div>
+                        <div className="row-span-3 flex items-center justify-center p-2">Remarks (If Any)</div>
+
+                        {/* Observance labels row */}
                         <div className="flex items-center justify-center p-2 border-b border-black h-12">Period for Inspection--&gt;</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">1st Observance</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">2nd Observance</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">3rd Observance</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">4th Observance</div>
-                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">5th Observance</div>
-                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">6th Observance</div>
-                        <div className="row-span-2 flex items-center justify-center p-2">Remarks (If Any)</div>
 
                         {/* Sub headers */}
                         <div className="border-b border-black p-2 flex items-center justify-center">Check Contents</div>
@@ -761,60 +765,11 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             />
                         </div>
 
-                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
-                            <span>1st Time</span>
-                            <Input
-                                type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
-                                value={tableData.columnDates?.obs5 || ""}
-                                onChange={(e) => handleTableChange('columnDates', 'obs5', null, e.target.value)}
-                                disabled={!isEditMode || isCellLocked('date', 'obs5')}
-                                min={todayStr}
-                                max={todayStr}
-                            />
-                        </div>
-                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
-                            <span>Reinspect (If Fail)</span>
-                            <Input
-                                type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
-                                value={tableData.columnDates?.obs5Re || ""}
-                                onChange={(e) => handleTableChange('columnDates', 'obs5Re', null, e.target.value)}
-                                disabled={!isEditMode || isCellLocked('date', 'obs5Re')}
-                                min={todayStr}
-                                max={todayStr}
-                            />
-                        </div>
-
-                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
-                            <span>1st Time</span>
-                            <Input
-                                type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
-                                value={tableData.columnDates?.obs6 || ""}
-                                onChange={(e) => handleTableChange('columnDates', 'obs6', null, e.target.value)}
-                                disabled={!isEditMode || isCellLocked('date', 'obs6')}
-                                min={todayStr}
-                                max={todayStr}
-                            />
-                        </div>
-                        <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
-                            <span>Reinspect (If Fail)</span>
-                            <Input
-                                type="date"
-                                className="h-6 text-[10px] p-1 font-normal w-full disabled:opacity-70 disabled:cursor-default"
-                                value={tableData.columnDates?.obs6Re || ""}
-                                onChange={(e) => handleTableChange('columnDates', 'obs6Re', null, e.target.value)}
-                                disabled={!isEditMode || isCellLocked('date', 'obs6Re')}
-                                min={todayStr}
-                                max={todayStr}
-                            />
-                        </div>
                     </div>
 
                     {/* Table Body */}
                     {CHECK_CONTENTS.map((row) => (
-                        <div key={row.id} className="grid grid-cols-[200px_repeat(12,1fr)_150px] divide-x divide-y border-black divide-black">
+                        <div key={row.id} className="grid grid-cols-[200px_repeat(8,1fr)_150px] divide-x divide-y border-black divide-black">
                             <div className="p-2 text-sm border-black border-t">
                                 <div className="font-bold">{row.title}</div>
                                 <div className="text-xs text-gray-600 whitespace-pre-wrap">{row.desc}</div>
@@ -835,14 +790,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                             {/* 4th Obs */}
                             <div className="border-black border-t">{renderCell(row.id, 'obs4')}</div>
                             <div className="border-black border-t">{renderCell(row.id, 'obs4Re')}</div>
-
-                            {/* 5th Obs */}
-                            <div className="border-black border-t">{renderCell(row.id, 'obs5')}</div>
-                            <div className="border-black border-t">{renderCell(row.id, 'obs5Re')}</div>
-
-                            {/* 6th Obs */}
-                            <div className="border-black border-t">{renderCell(row.id, 'obs6')}</div>
-                            <div className="border-black border-t">{renderCell(row.id, 'obs6Re')}</div>
 
                             {/* Remarks */}
                             <div className="p-1 border-black border-t">

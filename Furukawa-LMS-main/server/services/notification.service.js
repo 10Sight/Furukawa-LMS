@@ -986,19 +986,28 @@ class NotificationService {
         worksheet.addRow([]); // Blank row 7
 
         // --- Table Headers ---
+        // Level labels row (L1 spans 1st & 2nd Observance, L2 spans 3rd & 4th Observance)
+        const hLevel = worksheet.addRow([
+            '',
+            'L1', '', '', '',
+            'L2', '', '', '',
+            'Remarks (If Any)'
+        ]);
+        worksheet.mergeCells(hLevel.number, 2, hLevel.number, 5);
+        worksheet.mergeCells(hLevel.number, 6, hLevel.number, 9);
+
         const h1 = worksheet.addRow([
             'Period for Inspection-->',
             '1st Observance', '',
             '2nd Observance', '',
             '3rd Observance', '',
             '4th Observance', '',
-            'Remarks (If Any)'
+            ''
         ]);
-        worksheet.mergeCells('B8:C8');
-        worksheet.mergeCells('D8:E8');
-        worksheet.mergeCells('F8:G8');
-        worksheet.mergeCells('H8:I8');
-        worksheet.mergeCells('J8:J9');
+        worksheet.mergeCells(h1.number, 2, h1.number, 3);
+        worksheet.mergeCells(h1.number, 4, h1.number, 5);
+        worksheet.mergeCells(h1.number, 6, h1.number, 7);
+        worksheet.mergeCells(h1.number, 8, h1.number, 9);
 
         const colDates = formData.observanceData?.columnDates || {};
         const getColHeader = (label, dateVal) => {
@@ -1018,6 +1027,9 @@ class NotificationService {
             '' // Remarks merged from J8
         ]);
 
+        worksheet.mergeCells(hLevel.number, 10, h2.number, 10);
+
+        hLevel.eachCell(cell => this._applyHeaderStyle(cell));
         h1.eachCell(cell => this._applyHeaderStyle(cell));
         h2.eachCell(cell => this._applyHeaderStyle(cell));
         h2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };

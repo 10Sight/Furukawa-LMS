@@ -81,7 +81,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
     useEffect(() => {
         if (open) {
             fetchAssignments();
-            logAction({ action: "VIEW_DAILY_5M_PEOPLE_MANAGEMENT", details: { departmentId } }).catch(() => {});
+            logAction({ action: "VIEW_DAILY_5M_PEOPLE_MANAGEMENT", details: { departmentId } }).catch(() => { });
         }
     }, [open, departmentId]);
 
@@ -1256,7 +1256,7 @@ const Daily5MRecording = () => {
             // Priority 3: Fetch all records for today to show in the list
             fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
             setShowFormList(true);
-            logAction({ action: "VIEW_DAILY_5M_PAGE", details: { departmentId: selectedDepartment, sectionId: selectedSection, date: selectedDate } }).catch(() => {});
+            logAction({ action: "VIEW_DAILY_5M_PAGE", details: { departmentId: selectedDepartment, sectionId: selectedSection, date: selectedDate } }).catch(() => { });
         }
     }, [selectedDepartment, selectedSection, selectedDate, location.state?.recordId, urlRecordId]);
 
@@ -1319,7 +1319,7 @@ const Daily5MRecording = () => {
             if (response.data.success) {
                 setConfigHistory(response.data.data);
                 setIsViewingHistory(true);
-                logAction({ action: "VIEW_DAILY_5M_LAYOUT_HISTORY", details: { departmentId: selectedDepartment } }).catch(() => {});
+                logAction({ action: "VIEW_DAILY_5M_LAYOUT_HISTORY", details: { departmentId: selectedDepartment } }).catch(() => { });
             }
         } catch (error) {
             console.error("Error fetching history:", error);
@@ -1406,7 +1406,7 @@ const Daily5MRecording = () => {
             pdf.save(`Daily_5M_${selectedDeptName.replace(/\s+/g, '_')}_${selectedDate}.pdf`);
             setIsPrintDialogOpen(false);
             toast.success("PDF downloaded successfully");
-            logAction({ action: "DOWNLOAD_DAILY_5M_PDF", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => {});
+            logAction({ action: "DOWNLOAD_DAILY_5M_PDF", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => { });
         }
     };
 
@@ -1441,7 +1441,7 @@ const Daily5MRecording = () => {
 
             toast.success("High-res image downloaded! You can now insert this into PPT.");
             setIsPrintDialogOpen(false);
-            logAction({ action: "DOWNLOAD_DAILY_5M_IMAGE", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => {});
+            logAction({ action: "DOWNLOAD_DAILY_5M_IMAGE", details: { departmentName: selectedDeptName, date: selectedDate } }).catch(() => { });
         } catch (error) {
             console.error("Image export error:", error);
             toast.error("Failed to generate high-res image.");
@@ -1780,41 +1780,41 @@ const Daily5MRecording = () => {
     const getOwnerField = (type) => type === 'crimping' ? 'Process_Owner' : 'Owner_Sign';
 
     const getStandardMandatoryFields = (i) => [
-        { key: `rec_${i}_Date`,        label: "Date" },
-        { key: `rec_${i}_Line`,        label: "Line" },
-        { key: `rec_${i}_Shift`,       label: "Shift" },
-        { key: `rec_${i}_Type`,        label: "Planned/Un-Planned" },
-        { key: `rec_${i}_Process`,     label: "Process" },
-        { key: `rec_${i}_Problem`,     label: "Problem" },
-        { key: `rec_${i}_OpName`,      label: "Operator Name" },
-        { key: `rec_${i}_CurSkill`,    label: "Current Skill Level" },
-        { key: `rec_${i}_ReqSkill`,    label: "Req. Min Skill Level" },
-        { key: `rec_${i}_Deputed`,     label: "Deputy Person Name" },
+        { key: `rec_${i}_Date`, label: "Date" },
+        { key: `rec_${i}_Line`, label: "Line" },
+        { key: `rec_${i}_Shift`, label: "Shift" },
+        { key: `rec_${i}_Type`, label: "Planned/Un-Planned" },
+        { key: `rec_${i}_Process`, label: "Process" },
+        { key: `rec_${i}_Problem`, label: "Problem" },
+        { key: `rec_${i}_OpName`, label: "Operator Name" },
+        { key: `rec_${i}_CurSkill`, label: "Current Skill Level" },
+        { key: `rec_${i}_ReqSkill`, label: "Req. Min Skill Level" },
+        { key: `rec_${i}_Deputed`, label: "Deputy Person Name" },
         { key: `rec_${i}_DeputedCode`, label: "Employee Code" },
-        { key: `rec_${i}_ActSkill`,    label: "Actual Skill Level" },
-        { key: `rec_${i}_From`,        label: "Deputed From" },
-        { key: `rec_${i}_Plan`,        label: "Deputed on Plan" },
-        { key: `rec_${i}_OJT`,         label: "OJT Status" },
-        { key: `rec_${i}_Retro1_NA`,   label: "Visual Retro Result" },
-        { key: `rec_${i}_Retro2_NA`,   label: "Dimension Retro Result" },
-        { key: `rec_${i}_Retro3_TQ`,   label: "Total Qty (Retro)" },
-        { key: `rec_${i}_Retro3_NG`,   label: "NG Qty (Retro)" },
-        { key: `rec_${i}_FP_Leader`,   label: "Inspector Name" },
-        { key: `rec_${i}_FP_PartNo`,   label: "Part No." },
-        { key: `rec_${i}_FP_LotNo`,    label: "Lot No." },
-        { key: `rec_${i}_FP_SrNo_1`,   label: "Circuit No. 1" },
-        { key: `rec_${i}_FP1_Chk1`,    label: "Visual Check (Circuit 1)" },
-        { key: `rec_${i}_FP1_Chk2`,    label: "Visual Check (Circuit 2)" },
-        { key: `rec_${i}_FP1_Chk3`,    label: "Visual Check (Circuit 3)" },
-        { key: `rec_${i}_FP1_Chk4`,    label: "Visual Check (Circuit 4)" },
-        { key: `rec_${i}_FP1_Chk5`,    label: "Visual Check (Circuit 5)" },
-        { key: `rec_${i}_FP2_Chk1`,    label: "Dimension Check (Circuit 1)" },
-        { key: `rec_${i}_FP2_Chk2`,    label: "Dimension Check (Circuit 2)" },
-        { key: `rec_${i}_FP2_Chk3`,    label: "Dimension Check (Circuit 3)" },
-        { key: `rec_${i}_FP2_Chk4`,    label: "Dimension Check (Circuit 4)" },
-        { key: `rec_${i}_FP2_Chk5`,    label: "Dimension Check (Circuit 5)" },
-        { key: `rec_${i}_Result_1`,    label: "QA Shift In-charge" },
-        { key: `rec_${i}_Owner_Sign`,  label: "Process Owner" },
+        { key: `rec_${i}_ActSkill`, label: "Actual Skill Level" },
+        { key: `rec_${i}_From`, label: "Deputed From" },
+        { key: `rec_${i}_Plan`, label: "Deputed on Plan" },
+        { key: `rec_${i}_OJT`, label: "OJT Status" },
+        { key: `rec_${i}_Retro1_NA`, label: "Visual Retro Result" },
+        { key: `rec_${i}_Retro2_NA`, label: "Dimension Retro Result" },
+        { key: `rec_${i}_Retro3_TQ`, label: "Total Qty (Retro)" },
+        { key: `rec_${i}_Retro3_NG`, label: "NG Qty (Retro)" },
+        { key: `rec_${i}_FP_Leader`, label: "Inspector Name" },
+        { key: `rec_${i}_FP_PartNo`, label: "Part No." },
+        { key: `rec_${i}_FP_LotNo`, label: "Lot No." },
+        { key: `rec_${i}_FP_SrNo_1`, label: "Circuit No. 1" },
+        { key: `rec_${i}_FP1_Chk1`, label: "Visual Check (Circuit 1)" },
+        { key: `rec_${i}_FP1_Chk2`, label: "Visual Check (Circuit 2)" },
+        { key: `rec_${i}_FP1_Chk3`, label: "Visual Check (Circuit 3)" },
+        { key: `rec_${i}_FP1_Chk4`, label: "Visual Check (Circuit 4)" },
+        { key: `rec_${i}_FP1_Chk5`, label: "Visual Check (Circuit 5)" },
+        { key: `rec_${i}_FP2_Chk1`, label: "Dimension Check (Circuit 1)" },
+        { key: `rec_${i}_FP2_Chk2`, label: "Dimension Check (Circuit 2)" },
+        { key: `rec_${i}_FP2_Chk3`, label: "Dimension Check (Circuit 3)" },
+        { key: `rec_${i}_FP2_Chk4`, label: "Dimension Check (Circuit 4)" },
+        { key: `rec_${i}_FP2_Chk5`, label: "Dimension Check (Circuit 5)" },
+        { key: `rec_${i}_Result_1`, label: "QA Shift In-charge" },
+        { key: `rec_${i}_Owner_Sign`, label: "Process Owner" },
     ];
 
     const getCrimpingMandatoryFields = (i) => {
@@ -1833,7 +1833,7 @@ const Daily5MRecording = () => {
                 );
             } else if (p === 'Length') {
                 retroFields.push(
-                    { key: `rec_${i}_Retro_Length_F`,  label: "Retro Standard Length (F)" },
+                    { key: `rec_${i}_Retro_Length_F`, label: "Retro Standard Length (F)" },
                     { key: `rec_${i}_Result_Length_F`, label: "Retro Result Length (F)" }
                 );
                 setupFields.push(
@@ -1842,8 +1842,8 @@ const Daily5MRecording = () => {
                 );
             } else {
                 retroFields.push(
-                    { key: `rec_${i}_Retro_${p}_F`,  label: `Retro Standard ${p} (F)` },
-                    { key: `rec_${i}_Retro_${p}_R`,  label: `Retro Standard ${p} (R)` },
+                    { key: `rec_${i}_Retro_${p}_F`, label: `Retro Standard ${p} (F)` },
+                    { key: `rec_${i}_Retro_${p}_R`, label: `Retro Standard ${p} (R)` },
                     { key: `rec_${i}_Result_${p}_F`, label: `Retro Result ${p} (F)` },
                     { key: `rec_${i}_Result_${p}_R`, label: `Retro Result ${p} (R)` }
                 );
@@ -1855,29 +1855,29 @@ const Daily5MRecording = () => {
         });
 
         return [
-            { key: `rec_${i}_Date`,            label: "Date" },
-            { key: `rec_${i}_StationMC`,       label: "Station M/C No" },
-            { key: `rec_${i}_Shift`,           label: "Shift" },
-            { key: `rec_${i}_Type`,            label: "Planned/Un-Planned" },
-            { key: `rec_${i}_Problem`,         label: "Problem" },
-            { key: `rec_${i}_Process`,         label: "Process Name" },
-            { key: `rec_${i}_OperatorName`,    label: "Operator Name" },
-            { key: `rec_${i}_CSL`,             label: "Current Skill Level" },
-            { key: `rec_${i}_ReqSkill`,        label: "Req. Min Skill Level" },
-            { key: `rec_${i}_DeputedPerson`,   label: "Deputy Person Name" },
-            { key: `rec_${i}_EmpCode`,         label: "Employee Code" },
-            { key: `rec_${i}_ActSkill`,        label: "Actual Skill Level" },
-            { key: `rec_${i}_From`,            label: "Deputed From" },
-            { key: `rec_${i}_DeputedOnPlan`,   label: "Deputed on Plan" },
-            { key: `rec_${i}_OJT`,             label: "OJT Status" },
+            { key: `rec_${i}_Date`, label: "Date" },
+            { key: `rec_${i}_StationMC`, label: "Station M/C No" },
+            { key: `rec_${i}_Shift`, label: "Shift" },
+            { key: `rec_${i}_Type`, label: "Planned/Un-Planned" },
+            { key: `rec_${i}_Problem`, label: "Problem" },
+            { key: `rec_${i}_Process`, label: "Process Name" },
+            { key: `rec_${i}_OperatorName`, label: "Operator Name" },
+            { key: `rec_${i}_CSL`, label: "Current Skill Level" },
+            { key: `rec_${i}_ReqSkill`, label: "Req. Min Skill Level" },
+            { key: `rec_${i}_DeputedPerson`, label: "Deputy Person Name" },
+            { key: `rec_${i}_EmpCode`, label: "Employee Code" },
+            { key: `rec_${i}_ActSkill`, label: "Actual Skill Level" },
+            { key: `rec_${i}_From`, label: "Deputed From" },
+            { key: `rec_${i}_DeputedOnPlan`, label: "Deputed on Plan" },
+            { key: `rec_${i}_OJT`, label: "OJT Status" },
             ...retroFields,
-            { key: `rec_${i}_InspectorName`,   label: "Inspector Name" },
-            { key: `rec_${i}_PartNo`,          label: "Part No." },
-            { key: `rec_${i}_LotNo`,           label: "Lot No." },
-            { key: `rec_${i}_CircuitNo`,       label: "Circuit No." },
+            { key: `rec_${i}_InspectorName`, label: "Inspector Name" },
+            { key: `rec_${i}_PartNo`, label: "Part No." },
+            { key: `rec_${i}_LotNo`, label: "Lot No." },
+            { key: `rec_${i}_CircuitNo`, label: "Circuit No." },
             ...setupFields,
-            { key: `rec_${i}_QA_Incharge`,     label: "QA Shift In-charge" },
-            { key: `rec_${i}_Process_Owner`,   label: "Process Owner" },
+            { key: `rec_${i}_QA_Incharge`, label: "QA Shift In-charge" },
+            { key: `rec_${i}_Process_Owner`, label: "Process Owner" },
         ];
     };
 
@@ -2317,14 +2317,14 @@ const Daily5MRecording = () => {
                                                         </td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" placeholder="Cur Skill" value={formData[`rec_${recIndex}_CurSkill`] || ""} onChange={(e) => handleInputChange(recIndex, 'CurSkill', e.target.value)} disabled={isLocked} /></td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0 text-center">
-                                                             <input
-                                                                 type="text"
-                                                                 className="w-full text-center bg-transparent outline-none h-7 text-[16px]"
-                                                                 value={formData[`rec_${recIndex}_ReqSkill`] || ""}
-                                                                 placeholder="Auto"
-                                                                 disabled
-                                                             />
-                                                         </td>
+                                                            <input
+                                                                type="text"
+                                                                className="w-full text-center bg-transparent outline-none h-7 text-[16px]"
+                                                                value={formData[`rec_${recIndex}_ReqSkill`] || ""}
+                                                                placeholder="Auto"
+                                                                disabled
+                                                            />
+                                                        </td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" placeholder="Deputed" value={formData[`rec_${recIndex}_Deputed`] || ""} onChange={(e) => handleInputChange(recIndex, 'Deputed', e.target.value)} disabled={isLocked} /></td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <UserAutocomplete
@@ -2620,26 +2620,6 @@ const Daily5MRecording = () => {
                                     5M Change type: Man
                                 </th>
                             </tr>
-                            <tr className="bg-gray-50 text-[11px] font-bold text-center">
-                                <td className="border border-black py-0.5 px-0">Expected Change (Planned)</td>
-                                <td className="border border-black py-0.5 px-0">Change Description</td>
-                                <td className="border border-black py-0.5 px-0">Action plan</td>
-                                <td className="border border-black py-0.5 px-0">OJT</td>
-                                <td className="border border-black py-0.5 px-0">First Part Approval</td>
-                                <td className="border border-black py-0.5 px-0">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0">Un-expected Change (Un-planned)</td>
-                                <td className="border border-black py-0.5 px-0">Change Description</td>
-                                <td className="border border-black py-0.5 px-0">Action plan</td>
-                                <td className="border border-black py-0.5 px-0">OJT</td>
-                                <td className="border border-black py-0.5 px-0">First Part Approval</td>
-                                <td className="border border-black py-0.5 px-0">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0">Abnormal Condition</td>
-                                <td className="border border-black py-0.5 px-0">Change Description</td>
-                                <td className="border border-black py-0.5 px-0">Action plan</td>
-                                <td className="border border-black p-1 text-center">OJT</td>
-                                <td className="border border-black py-0.5 px-0">First Part Approval</td>
-                                <td className="border border-black p-1 text-left">Retro/Containment Parts Description</td>
-                            </tr>
                         </thead>
                         <tbody className="text-[16px] leading-normal">
                             {/* Row 1 */}
@@ -2914,8 +2894,8 @@ const Daily5MRecording = () => {
 
                     {!viewMode && (
                         <div className="flex gap-2">
-                            <Button 
-                                onClick={() => handleSaveRecord(null, { showPreview: false })} 
+                            <Button
+                                onClick={() => handleSaveRecord(null, { showPreview: false })}
                                 disabled={!selectedDepartment || loadingConfig || !hasEditPermission}
                                 variant="outline"
                                 className="border-blue-200 text-blue-700 hover:bg-blue-50"
@@ -2923,8 +2903,8 @@ const Daily5MRecording = () => {
                                 <IconClipboardList className="w-5 h-5 mr-2" />
                                 Save Daily 5M
                             </Button>
-                            <Button 
-                                onClick={() => handleSaveRecord(null, { showPreview: true })} 
+                            <Button
+                                onClick={() => handleSaveRecord(null, { showPreview: true })}
                                 disabled={!selectedDepartment || loadingConfig || !hasEditPermission}
                                 className="bg-blue-600 hover:bg-blue-700"
                             >

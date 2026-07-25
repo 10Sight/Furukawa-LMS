@@ -206,6 +206,8 @@ const getEligibleAttendanceUserSql = (alias = "u") => `
 
     AND ${alias}.empId != ''
 
+    AND ISNULL(${alias}.isEmployee, 1) = 1
+
     ${getDesignationShutterExclusionSql(alias)}
 
 `;
@@ -838,7 +840,7 @@ async function fetchLineRequirements(dbPool, monthNumber, yearVal, reportDay = 1
 
 // - NO user_hierarchy_snapshots verification
 
-// - NO isEmployee filter
+// - isEmployee = 1 (or NULL, for legacy employees) required
 
 // - isDeleted = 0
 
@@ -900,6 +902,8 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
 
+                  AND ISNULL(u.isEmployee, 1) = 1
+
                   ${getDesignationShutterExclusionSql("u")}
 
                   AND (${joiningDateSql} IS NULL OR ${joiningDateSql} <= CONVERT(DATE, @reportDate, 23))
@@ -936,6 +940,11 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
+        // Department buckets are enumerated from `departments` (not just the values seen in
+        // EligibleUsers.departmentId) and a user is attributed to a department when either
+        // departmentId matches directly, or the user's id is present in a section's users
+        // JSON for a section under that department. Mirrors the All Users page's
+        // department-scoping OR-check.
         const departmentPromise = dbPool.request()
 
             .input("reportDate", reportDateStr)
@@ -946,15 +955,32 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                 SELECT
 
-                    departmentId AS deptId,
+                    d.id AS deptId,
 
-                    COUNT(DISTINCT empId) AS cnt
+                    COUNT(DISTINCT eu.empId) AS cnt
 
-                FROM EligibleUsers
+                FROM departments d
 
-                WHERE departmentId IS NOT NULL
+                LEFT JOIN EligibleUsers eu
 
-                GROUP BY departmentId
+                    ON (
+                        eu.departmentId = d.id
+                        OR eu.id IN (
+                            SELECT DISTINCT TRY_CAST(deptJsonUser.[value] AS INT)
+                            FROM sections deptJsonSection
+                            CROSS APPLY OPENJSON(
+                                CASE
+                                    WHEN ISJSON(CAST(deptJsonSection.[users] AS NVARCHAR(MAX))) = 1
+                                    THEN CAST(deptJsonSection.[users] AS NVARCHAR(MAX))
+                                    ELSE N'[]'
+                                END
+                            ) deptJsonUser
+                            WHERE deptJsonSection.departmentId = d.id
+                              AND ISNULL(deptJsonSection.isActive, 1) = 1
+                        )
+                    )
+
+                GROUP BY d.id
 
             `);
 
@@ -1126,6 +1152,11 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
     try {
 
+        // A user who has since left should still count as present/absent on dates
+        // before their leavingDate, rather than being blanket-excluded just because
+        // they're LEFT as of today. Mirrors the Dashboard/All Users resignation rule.
+        const notLeftYetSql = `(u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > CONVERT(DATE, @reportDate, 23))`;
+
         const presentCondition = `al.status IN ('P','PRESENT','Present')`;
 
         const shiftGeneralMatch = getDashboardShiftMatchSql("al", "G");
@@ -1188,12 +1219,19 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
                 WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
 
+                  AND ${notLeftYetSql}
+
                   ${getEligibleAttendanceUserSql("u")}
 
             `);
 
 
 
+        // Department buckets are enumerated from `departments` (not just departments that
+        // happen to have an attendance row that day) and a user is attributed to a
+        // department when either users.departmentId matches directly, or the user's id is
+        // present in a section's users JSON for a section under that department. This
+        // mirrors the All Users page's department-scoping OR-check.
         const departmentPromise = dbPool.request()
 
             .input("reportDate", reportDateStr)
@@ -1202,23 +1240,40 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
                 SELECT
 
-                    u.departmentId AS deptId,
+                    d.id AS deptId,
 
                     ${selectMetrics}
 
-                FROM attendance_logs al
+                FROM departments d
 
-                INNER JOIN users u
+                LEFT JOIN users u
+
+                    ON (
+                        u.departmentId = d.id
+                        OR u.id IN (
+                            SELECT DISTINCT TRY_CAST(deptJsonUser.[value] AS INT)
+                            FROM sections deptJsonSection
+                            CROSS APPLY OPENJSON(
+                                CASE
+                                    WHEN ISJSON(CAST(deptJsonSection.[users] AS NVARCHAR(MAX))) = 1
+                                    THEN CAST(deptJsonSection.[users] AS NVARCHAR(MAX))
+                                    ELSE N'[]'
+                                END
+                            ) deptJsonUser
+                            WHERE deptJsonSection.departmentId = d.id
+                              AND ISNULL(deptJsonSection.isActive, 1) = 1
+                        )
+                    )
+                   AND ${notLeftYetSql}
+                   ${getEligibleAttendanceUserSql("u")}
+
+                LEFT JOIN attendance_logs al
 
                     ON al.userId = u.id
 
-                WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
+                   AND CONVERT(VARCHAR, al.[date], 23) = @reportDate
 
-                  AND u.departmentId IS NOT NULL
-
-                  ${getEligibleAttendanceUserSql("u")}
-
-                GROUP BY u.departmentId
+                GROUP BY d.id
 
             `);
 
@@ -1245,6 +1300,8 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
                     ON u.departmentId = s.departmentId
 
                    AND ${getDashboardSectionMatchSql("u", "s")}
+
+                   AND ${notLeftYetSql}
 
                    ${getEligibleAttendanceUserSql("u")}
 
@@ -1291,6 +1348,8 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
                    AND u.lineId = l.id
 
                    AND ${getDashboardSectionMatchSql("u", "s")}
+
+                   AND ${notLeftYetSql}
 
                    ${getEligibleAttendanceUserSql("u")}
 

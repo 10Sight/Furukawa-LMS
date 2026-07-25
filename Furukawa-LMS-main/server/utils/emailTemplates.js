@@ -350,8 +350,9 @@ export const generateHandoverNotificationEmail = ({ instructorName, departmentNa
     const dayHeaders = Array.from({ length: 16 }, (_, i) => `<th style="padding: 5px; border: 1px solid #000; background: #f0f9ff; font-size: 8px;">Day ${i + 1}</th>`).join('');
 
     // Generate rows
+    const categories = Array.isArray(config) ? config : (config?.categories || []);
     let tableBody = '';
-    config.forEach(cat => {
+    categories.forEach(cat => {
         tableBody += `<tr><td colspan="19" style="padding: 5px; border: 1px solid #000; background: #e2e8f0; font-weight: bold; font-size: 10px;">${cat.category.replace(/\n/g, '<br/>')}</td></tr>`;
         cat.rows.forEach(row => {
             let dayCells = '';

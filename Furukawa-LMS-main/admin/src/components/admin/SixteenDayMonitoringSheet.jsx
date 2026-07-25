@@ -104,6 +104,50 @@ const DEFAULT_MONITORING_CONFIG_16 = [
     }
 ];
 
+const DEFAULT_SCORE_RANGES = [
+    { id: 'score1', catId: 'cat1', label: '10 Cycle Check', weight: 0.4, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100' },
+    { id: 'score2', catId: 'cat2', label: 'Quality / System', weight: 0.2, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100' },
+    { id: 'score3', catId: 'cat3', label: 'Defect Captured', weight: 0.1, poor: '40-50', avg: '51-65', good: '66-80', excel: '100' },
+    { id: 'score4', catId: 'cat4', label: 'Discipline', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100' },
+    { id: 'score5', catId: 'cat5', label: 'Safety', weight: 0.1, poor: '30-35', avg: '36-47', good: '48-55', excel: '100' },
+    { id: 'score6', catId: null, label: 'Attendance', weight: 0.1, poor: '50-75', avg: '76-85', good: '86-95', excel: '96-100' },
+];
+
+const DEFAULT_EVALUATION_LEGENDS = {
+    cycleTime: [
+        { score: 0, label: 'Is > 20% of standard time' },
+        { score: 1, label: '11% - 20% of standard time' },
+        { score: 2, label: 'Fit & above of standard time' }
+    ],
+    otherCriteria: [
+        { score: 0, label: 'Not known / Not adhere the rule' },
+        { score: 1, label: 'Partially known / Partially adhere the rule' },
+        { score: 2, label: 'Known / completely adhere the rule' }
+    ]
+};
+
+const normalizeConfig = (raw) => {
+    if (Array.isArray(raw)) {
+        return {
+            categories: raw,
+            scoreRanges: DEFAULT_SCORE_RANGES,
+            evaluationLegends: DEFAULT_EVALUATION_LEGENDS
+        };
+    }
+    if (raw && typeof raw === 'object') {
+        return {
+            categories: raw.categories || DEFAULT_MONITORING_CONFIG_16,
+            scoreRanges: raw.scoreRanges || DEFAULT_SCORE_RANGES,
+            evaluationLegends: raw.evaluationLegends || DEFAULT_EVALUATION_LEGENDS
+        };
+    }
+    return {
+        categories: DEFAULT_MONITORING_CONFIG_16,
+        scoreRanges: DEFAULT_SCORE_RANGES,
+        evaluationLegends: DEFAULT_EVALUATION_LEGENDS
+    };
+};
+
 const SixteenDayMonitoringSheet = ({
     studentId,
     studentName = "",
@@ -154,7 +198,11 @@ const SixteenDayMonitoringSheet = ({
     const [footerData, setFooterData] = useState({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [config, setConfig] = useState(DEFAULT_MONITORING_CONFIG_16);
+    const [config, setConfig] = useState({
+        categories: DEFAULT_MONITORING_CONFIG_16,
+        scoreRanges: DEFAULT_SCORE_RANGES,
+        evaluationLegends: DEFAULT_EVALUATION_LEGENDS
+    });
     const [isEditingLayout, setIsEditingLayout] = useState(false);
     const [configJson, setConfigJson] = useState('');
     const [lineLeaderOptions, setLineLeaderOptions] = useState([]);
@@ -312,7 +360,11 @@ const SixteenDayMonitoringSheet = ({
                 setOriginalGridData({});
                 setOriginalHeaderInfo({});
                 setFooterData({});
-                setConfig(DEFAULT_MONITORING_CONFIG_16);
+                setConfig({
+                    categories: DEFAULT_MONITORING_CONFIG_16,
+                    scoreRanges: DEFAULT_SCORE_RANGES,
+                    evaluationLegends: DEFAULT_EVALUATION_LEGENDS
+                });
                 return;
             }
 
@@ -513,7 +565,7 @@ const SixteenDayMonitoringSheet = ({
         try {
             const response = await axiosInstance.get(`/api/sixteen-day-monitoring/config/${departmentId}?sectionId=${sectionId || 0}`);
             if (response.data.success && response.data.data.config) {
-                setConfig(response.data.data.config);
+                setConfig(normalizeConfig(response.data.data.config));
             }
         } catch (error) {
             console.error("Error fetching config:", error);
@@ -523,7 +575,7 @@ const SixteenDayMonitoringSheet = ({
     const handleSaveConfig = async () => {
         try {
             setSaving(true);
-            const newConfig = JSON.parse(configJson);
+            const newConfig = normalizeConfig(JSON.parse(configJson));
             await axiosInstance.post(`/api/sixteen-day-monitoring/config/save`, {
                 departmentId,
                 sectionId: sectionId || 0,
@@ -558,10 +610,14 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
+    const categories = config?.categories || DEFAULT_MONITORING_CONFIG_16;
+    const scoreRanges = config?.scoreRanges || DEFAULT_SCORE_RANGES;
+    const evaluationLegends = config?.evaluationLegends || DEFAULT_EVALUATION_LEGENDS;
+
     const isDay1Filled = () => {
         const attDateVal = gridData['attendance_date_1'];
         if (attDateVal && attDateVal.toString().trim()) return true;
-        for (const cat of config) {
+        for (const cat of categories) {
             for (const row of cat.rows) {
                 if (gridData[`${row.id}_day_1`]?.toString().trim()) return true;
             }
@@ -573,7 +629,7 @@ const SixteenDayMonitoringSheet = ({
         if (!studentId) return false;
 
         // Scan all categories and check if Day-16 inputs are filled
-        for (const cat of config) {
+        for (const cat of categories) {
             for (const row of cat.rows) {
                 if (row.type === 'cycle_detailed') {
                     const targetKey = `${row.id}_day_16_target`;
@@ -732,7 +788,7 @@ const SixteenDayMonitoringSheet = ({
             }
         };
 
-        config.forEach(cat => {
+        categories.forEach(cat => {
             const catTotalMark = typeof cat.totalMark === 'number' ? cat.totalMark : parseFloat(cat.totalMark) || 0;
 
             daysDetailed.forEach(d => {
@@ -883,7 +939,7 @@ const SixteenDayMonitoringSheet = ({
             }
         });
 
-        config.forEach(cat => {
+        categories.forEach(cat => {
             const catTotalMark = typeof cat.totalMark === 'number' ? cat.totalMark : parseFloat(cat.totalMark) || 0;
             let catEvalSum = 0;
 
@@ -966,14 +1022,12 @@ const SixteenDayMonitoringSheet = ({
         attendanceAvgPerc = attCount > 0 ? Number((attSum / attCount).toFixed(2)) : 0;
         updateKey('attendance_total_score', attendanceAvgPerc > 0 ? `${attendanceAvgPerc}%` : "");
 
-        const summaryRows = [
-            { id: 'score1', catId: 'cat1', weight: 0.4 },
-            { id: 'score2', catId: 'cat2', weight: 0.2 },
-            { id: 'score3', catId: 'cat3', weight: 0.1 },
-            { id: 'score4', catId: 'cat4', weight: 0.1 },
-            { id: 'score5', catId: 'cat5', weight: 0.1 },
-            { id: 'score6', catId: null, weight: 0.1, customVal: attendanceAvgPerc }
-        ];
+        const summaryRows = scoreRanges.map(row => ({
+            id: row.id,
+            catId: row.catId || null,
+            weight: typeof row.weight === 'number' ? row.weight : parseFloat(row.weight) || 0,
+            customVal: row.catId ? undefined : attendanceAvgPerc
+        }));
 
         let grandTotalScore = 0;
         summaryRows.forEach(row => {
@@ -992,7 +1046,7 @@ const SixteenDayMonitoringSheet = ({
         if (hasChanges) {
             setGridData(newGridData);
         }
-    }, [gridData, config, readOnly]);
+    }, [gridData, config, categories, scoreRanges, readOnly]);
 
     const handleSignature = (field, type) => {
         const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
@@ -1463,7 +1517,7 @@ const SixteenDayMonitoringSheet = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {config.map((cat, catIdx) => {
+                                    {categories.map((cat, catIdx) => {
                                         const totalRowsInCat = cat.rows.reduce((acc, row) => acc + (row.type === 'cycle_detailed' ? 4 : 1), 0)
                                         return (
                                             <React.Fragment key={cat.id}>
@@ -1899,14 +1953,7 @@ const SixteenDayMonitoringSheet = ({
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {[
-                                                { label: '10 Cycle Check', weight: 0.4, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100', id: 'score1' },
-                                                { label: 'Quality / System', weight: 0.2, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100', id: 'score2' },
-                                                { label: 'Defect Captured', weight: 0.1, poor: '40-50', avg: '51-65', good: '66-80', excel: '100', id: 'score3' },
-                                                { label: 'Discipline', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100', id: 'score4' },
-                                                { label: 'Safety', weight: 0.1, poor: '30-35', avg: '36-47', good: '48-55', excel: '100', id: 'score5' },
-                                                { label: 'Attendance', weight: 0.1, poor: '50-75', avg: '76-85', good: '86-95', excel: '96-100', id: 'score6' },
-                                            ].map((row, idx) => (
+                                            {scoreRanges.map((row, idx) => (
                                                 <tr key={idx} className="border-b border-black h-10">
                                                     <td className="border-r border-black p-2 font-bold bg-gray-50/30 text-[14px]">{row.label}</td>
                                                     <td className="border-r border-black text-center font-bold text-[14px]">{row.weight}</td>
@@ -1940,9 +1987,13 @@ const SixteenDayMonitoringSheet = ({
                                             ))}
                                             <tr className="font-bold bg-gray-100 h-12">
                                                 <td className="border-r border-black p-2 text-[14px]">Total</td>
-                                                <td className="border-r border-black text-center text-[15px]">1</td>
+                                                <td className="border-r border-black text-center text-[15px]">
+                                                    {scoreRanges.reduce((sum, row) => sum + (parseFloat(row.weight) || 0), 0)}
+                                                </td>
                                                 <td colSpan="4" className="border-r border-black"></td>
-                                                <td className="border-r border-black p-0 italic text-center text-[14px] bg-white">100%</td>
+                                                <td className="border-r border-black p-0 italic text-center text-[14px] bg-white">
+                                                    {(scoreRanges.reduce((sum, row) => sum + (parseFloat(row.weight) || 0), 0) * 100).toFixed(0)}%
+                                                </td>
                                                 <td className="p-0 h-full">
                                                     <div className="relative flex items-center justify-center h-full bg-yellow-400 min-h-[2.5rem]">
                                                         <span className="invisible whitespace-pre px-4 text-[16px] font-bold">{gridData[`summary_total_score`] || "00"}</span>
@@ -1969,18 +2020,12 @@ const SixteenDayMonitoringSheet = ({
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <tr className="border-b border-black h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">0</td>
-                                                    <td className="p-2 italic">Is {'>'} 20% of standard time</td>
-                                                </tr>
-                                                <tr className="border-b border-black h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">1</td>
-                                                    <td className="p-2 italic">11% - 20% of standard time</td>
-                                                </tr>
-                                                <tr className="h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">2</td>
-                                                    <td className="p-2 italic">Fit & above of standard time</td>
-                                                </tr>
+                                                {(evaluationLegends.cycleTime || []).map((item, idx, arr) => (
+                                                    <tr key={idx} className={idx < arr.length - 1 ? "border-b border-black h-10" : "h-10"}>
+                                                        <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">{item.score}</td>
+                                                        <td className="p-2 italic">{item.label}</td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -1992,18 +2037,12 @@ const SixteenDayMonitoringSheet = ({
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <tr className="border-b border-black h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">0</td>
-                                                    <td className="p-2 italic">Not known / Not adhere the rule</td>
-                                                </tr>
-                                                <tr className="border-b border-black h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">1</td>
-                                                    <td className="p-2 italic italic underline">Partially known / Partially adhere the rule</td>
-                                                </tr>
-                                                <tr className="h-10">
-                                                    <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">2</td>
-                                                    <td className="p-2 italic">Known / completely adhere the rule</td>
-                                                </tr>
+                                                {(evaluationLegends.otherCriteria || []).map((item, idx, arr) => (
+                                                    <tr key={idx} className={idx < arr.length - 1 ? "border-b border-black h-10" : "h-10"}>
+                                                        <td className="w-12 border-r border-black text-center font-bold text-[14px] bg-gray-50">{item.score}</td>
+                                                        <td className="p-2 italic">{item.label}</td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -2253,7 +2292,7 @@ const SixteenDayMonitoringSheet = ({
                                         size="sm"
                                         className="h-auto p-0"
                                         onClick={() => {
-                                            setConfig(h.config);
+                                            setConfig(normalizeConfig(h.config));
                                             setShowHistory(false);
                                             toast.info("Restored configuration from history (unsaved)");
                                         }}

@@ -1309,6 +1309,7 @@ class NotificationService {
             config = resolvedConfig?.config;
         }
         if (!config) config = []; // Fallback
+        const categories = Array.isArray(config) ? config : (config?.categories || []);
 
         const daysDetailed = ["d1", "d2", "d3"];
         const daysSummary = Array.from({ length: 13 }, (_, i) => `day${i + 4}`);
@@ -1442,7 +1443,7 @@ class NotificationService {
 
         // 6. Data Rows
         let currentRow = 10;
-        config.forEach((cat, catIdx) => {
+        categories.forEach((cat, catIdx) => {
             const totalRowsInCat = cat.rows.reduce((acc, row) => acc + (row.type === 'cycle_detailed' ? 4 : 1), 0);
 
             // Render rows for category

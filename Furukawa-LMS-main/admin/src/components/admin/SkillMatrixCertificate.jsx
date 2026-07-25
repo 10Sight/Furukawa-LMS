@@ -839,10 +839,9 @@ const SkillMatrixCertificate = ({
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
                                     <input
                                         type="text"
-                                        className="w-full text-center outline-none bg-transparent"
+                                        className="w-full text-center outline-none bg-transparent cursor-not-allowed"
                                         value={headerData.dateOfEvaluation}
-                                        onChange={e => setHeaderData({ ...headerData, dateOfEvaluation: e.target.value })}
-                                        disabled={!isEditable}
+                                        disabled={true}
                                     />
                                 </div>
                             </div >

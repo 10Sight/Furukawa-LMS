@@ -1496,6 +1496,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE 1=1
               AND al.[date] >= '${sqlStartDate}'
               AND al.[date] <= '${sqlEndDate}'
+              AND (u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > al.[date])
               ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
               ${hierCondition}
               ${getEligibleUserSql("u")}

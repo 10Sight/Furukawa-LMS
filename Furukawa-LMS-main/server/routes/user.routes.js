@@ -28,6 +28,7 @@ import {
   getEmployeeById,
   getTemporaryUsers,
   getNextTemporaryId,
+  adminChangePassword,
 } from "../controllers/user.controller.js";
 import { AvailableUserRoles } from "../constants.js";
 
@@ -131,6 +132,7 @@ router.patch(
 router.post("/bulk-shift", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateShiftSchedule);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
 router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, SYSTEM_PERMISSIONS.MENTOR_UPDATE]), checkUserUpdatePrivilege, updateUser);
+router.patch("/:id/admin-change-password", verifyJWT, adminChangePassword);
 router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);
 router.delete("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_DELETE, SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, SYSTEM_PERMISSIONS.MENTOR_DELETE]), checkUserDeletePrivilege, deleteUser);
 

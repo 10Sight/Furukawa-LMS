@@ -83,12 +83,12 @@ const SkillUpgradationWrapper = () => {
     const { data: studentsData, isFetching: isFetchingStudents } = useGetAllStudentsQueryInstructor({
         departmentId: dept,
         sectionId: section,
-        lineId: line,
+        lineId: (line && line !== "all") ? line : undefined,
         limit: 1000,
         includeTemporary: "false",
         sixteenDayApprovedOnly: "true"
     }, {
-        skip: !dept || !section || !line,
+        skip: !dept || !section,
         refetchOnMountOrArgChange: true
     });
 
@@ -166,8 +166,8 @@ const SkillUpgradationWrapper = () => {
     }, [selectedPlan]);
 
     const handleCreatePlanSubmit = async () => {
-        if (!createDept || !createSection || !createLine || !createYear) {
-            toast.error("Please select Department, Section, Line, and Year.");
+        if (!createDept || !createSection || !createYear) {
+            toast.error("Please select Department, Section, and Year.");
             return;
         }
         try {
@@ -327,6 +327,7 @@ const SkillUpgradationWrapper = () => {
                                     <SelectValue placeholder="Select Line" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="all">All Lines</SelectItem>
                                     {lines.map((l) => (
                                         <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
@@ -338,7 +339,7 @@ const SkillUpgradationWrapper = () => {
             </Card>
 
             {/* Training Plan Sheet */}
-            {dept && section && line ? (
+            {dept && section ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
                     {selectedPlan ? (
                         <div className="space-y-4">
@@ -366,8 +367,8 @@ const SkillUpgradationWrapper = () => {
                                  isLoadingStudents={isFetchingStudents}
                                  departmentId={dept}
                                  sectionId={section}
-                                 lineId={line}
-                                 lineName={selectedLineName}
+                                 lineId={(line && line !== "all") ? line : ""}
+                                 lineName={(line && line !== "all") ? selectedLineName : ""}
                                  year={selectedPlan.year}
                                  isReadOnly={isReadOnly}
                             />
@@ -474,7 +475,7 @@ const SkillUpgradationWrapper = () => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700">Select Hierarchy</h3>
                     <p className="text-sm text-slate-500 max-w-xs text-center mt-3 leading-relaxed">
-                        Choose a department, section, and line to view and manage the skill upgradation training plan.
+                        Choose a department and section to view and manage the skill upgradation training plan.
                     </p>
                 </div>
             )}
@@ -523,7 +524,7 @@ const SkillUpgradationWrapper = () => {
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label className="text-xs font-bold text-slate-600 uppercase">Line</Label>
+                            <Label className="text-xs font-bold text-slate-600 uppercase">Line (Optional)</Label>
                             <Select
                                 value={createLine}
                                 onValueChange={setCreateLine}
@@ -533,6 +534,7 @@ const SkillUpgradationWrapper = () => {
                                     <SelectValue placeholder="Select Line" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="all">All Lines</SelectItem>
                                     {createLines.map((l) => (
                                         <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
@@ -560,7 +562,7 @@ const SkillUpgradationWrapper = () => {
                         <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="h-10 text-sm">Cancel</Button>
                         <Button
                             onClick={handleCreatePlanSubmit}
-                            disabled={!createDept || !createSection || !createLine}
+                            disabled={!createDept || !createSection}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-5 rounded-lg text-sm"
                         >
                             Create

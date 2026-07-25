@@ -1779,17 +1779,17 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   }
   if (sectIds.length) {
     const ph = sectIds.map(() => "?").join(",");
-    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id IN (${ph}))`);
+    whereClauses.push(`s_res.sectionId IN (${ph})`);
     params.push(...sectIds);
   }
   if (lnIds.length) {
     const ph = lnIds.map(() => "?").join(",");
-    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [lines] l2 CROSS APPLY OPENJSON(ISNULL(l2.users, '[]')) u_inner WHERE l2.id IN (${ph}))`);
+    whereClauses.push(`l_res.lineId IN (${ph})`);
     params.push(...lnIds);
   }
   if (subSectIds.length) {
     const ph = subSectIds.map(() => "?").join(",");
-    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sub_sections] ss2 CROSS APPLY OPENJSON(ISNULL(ss2.users, '[]')) u_inner WHERE ss2.id IN (${ph}))`);
+    whereClauses.push(`ss_res.subSectionId IN (${ph})`);
     params.push(...subSectIds);
   }
   if (stnIds.length) {

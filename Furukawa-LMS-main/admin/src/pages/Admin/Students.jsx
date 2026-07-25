@@ -1863,7 +1863,6 @@ const Students = () => {
   const todayKey = format(new Date(), "yyyy-MM-dd");
   const displayDateValue = filters.dateFrom || filters.dateTo || filters.date || todayKey;
   const displayDateLabel = safeDateFormat(displayDateValue, "dd MMM yyyy");
-  const isDateFilterActive = Boolean(filters.date || filters.dateFrom || filters.dateTo);
 
   return (
     <>
@@ -2744,13 +2743,7 @@ const Students = () => {
                         disabled={!hasPermission("user:change_status")}
                       >
                         <SelectTrigger className="w-[140px]">
-                          {getStatusBadge(
-                            student.status === "LEFT"
-                              ? student.status
-                              : isDateFilterActive
-                                ? (student.logStatus || "Absent")
-                                : student.status
-                          )}
+                          {getStatusBadge(student.status)}
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="PRESENT">Present</SelectItem>

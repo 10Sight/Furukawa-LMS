@@ -109,6 +109,15 @@ export const userApi = createApi({
             invalidatesTags: ['User'],
         }),
 
+        adminChangePassword: builder.mutation({
+            query: ({ id, ...passwords }) => ({
+                url: `/api/users/${id}/admin-change-password`,
+                method: "PATCH",
+                data: passwords,
+            }),
+            invalidatesTags: ['User'],
+        }),
+
         deleteUser: builder.mutation({
             query: (id) => ({
                 url: `/api/users/${id}`,
@@ -346,6 +355,7 @@ export const {
     useUpdateProfileMutation,
     useUpdateAvatarMutation,
     useUpdateUserMutation,
+    useAdminChangePasswordMutation,
     useCreateUserMutation,
     useDeleteUserMutation,
     useBulkDeleteUsersMutation,

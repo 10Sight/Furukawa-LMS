@@ -1512,6 +1512,40 @@ export const updateUser = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Admin Change Password (admin resets another user's password without knowing the current one)
+ */
+export const adminChangePassword = asyncHandler(async (req, res) => {
+  if (!(req.user?.isAdmin === 1 || req.user?.isAdmin === true || req.user?.role === 'SUPERADMIN')) {
+    throw new ApiError("You do not have permission to reset user passwords", 403);
+  }
+
+  const { newPassword, confirmPassword } = req.body;
+
+  if (!newPassword || !confirmPassword) {
+    throw new ApiError("New password and confirm password are required", 400);
+  }
+  if (newPassword.length < 6) {
+    throw new ApiError("New password must be at least 6 characters long", 400);
+  }
+  if (newPassword !== confirmPassword) {
+    throw new ApiError("New password and confirm password do not match", 400);
+  }
+
+  const User = (await import("../models/auth.model.js")).default;
+  const targetUser = await User.findById(req.params.id);
+  if (!targetUser) throw new ApiError("User not found", 404);
+
+  targetUser.password = newPassword;
+  targetUser.refreshToken = null;
+  await targetUser.save();
+
+  logAudit(req.user.id, "ADMIN_CHANGE_PASSWORD", { targetUserId: targetUser.id, targetUserName: targetUser.userName }, { resourceType: "User", resourceId: targetUser.id, req })
+    .catch(err => console.error("logAudit(ADMIN_CHANGE_PASSWORD) failed:", err.message));
+
+  res.json(new ApiResponse(200, null, "Password reset successfully"));
+});
+
+/**
  * Delete User
  */
 export const deleteUser = asyncHandler(async (req, res) => {

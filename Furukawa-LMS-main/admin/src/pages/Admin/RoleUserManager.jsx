@@ -5,7 +5,8 @@ import { FormSelect } from "@/components/form/FormSelect";
 import {
     useGetAllUsersQuery,
     useUpdateUserMutation,
-    useDeleteUserMutation
+    useDeleteUserMutation,
+    useAdminChangePasswordMutation
 } from "@/Redux/AllApi/UserApi";
 import {
     Table,
@@ -44,7 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Shield, Users, Search, RefreshCw, Trash2, Edit2, UserPlus, ChevronLeft, Eye } from "lucide-react";
+import { Shield, Users, Search, RefreshCw, Trash2, Edit2, UserPlus, ChevronLeft, Eye, Key } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
@@ -66,6 +67,14 @@ export default function RoleUserManager() {
     const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
     const [isEditUserOpen, setIsEditUserOpen] = useState(false);
     const [userToEdit, setUserToEdit] = useState(null);
+
+    // Reset Password State
+    const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+    const [userForReset, setUserForReset] = useState(null);
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [resetPasswordError, setResetPasswordError] = useState("");
+    const [adminChangePassword, { isLoading: isResettingPassword }] = useAdminChangePasswordMutation();
 
     // Fetch Role Details
     useEffect(() => {
@@ -143,6 +152,29 @@ export default function RoleUserManager() {
             setSelectedIds(prev => prev.filter(id => id !== user.id));
         } catch (e) {
             toast.error(e?.data?.message || "Failed to delete user");
+        }
+    };
+
+    const handleResetPassword = async () => {
+        setResetPasswordError("");
+        if (!newPassword || !confirmPassword) {
+            return setResetPasswordError("Please fill in both password fields");
+        }
+        if (newPassword.length < 6) {
+            return setResetPasswordError("Password must be at least 6 characters long");
+        }
+        if (newPassword !== confirmPassword) {
+            return setResetPasswordError("Passwords do not match");
+        }
+        try {
+            await adminChangePassword({ id: userForReset.id, newPassword, confirmPassword }).unwrap();
+            toast.success(`Password reset for ${userForReset.fullName}`);
+            setIsResetPasswordOpen(false);
+            setUserForReset(null);
+            setNewPassword("");
+            setConfirmPassword("");
+        } catch (e) {
+            setResetPasswordError(e?.data?.message || "Failed to reset password");
         }
     };
 
@@ -396,6 +428,21 @@ export default function RoleUserManager() {
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
+                                                    className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                                    onClick={() => {
+                                                        setUserForReset(user);
+                                                        setResetPasswordError("");
+                                                        setNewPassword("");
+                                                        setConfirmPassword("");
+                                                        setIsResetPasswordOpen(true);
+                                                    }}
+                                                    title="Reset Password"
+                                                >
+                                                    <Key className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
                                                     className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                                                     onClick={() => handleDelete(user)}
                                                     title="Delete User Permanently"
@@ -510,6 +557,70 @@ export default function RoleUserManager() {
                                 <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>
                             ) : (
                                 "Yes, Delete Permanently"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Reset Password Dialog */}
+            <Dialog open={isResetPasswordOpen} onOpenChange={(open) => {
+                setIsResetPasswordOpen(open);
+                if (!open) {
+                    setUserForReset(null);
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setResetPasswordError("");
+                }
+            }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <span className="p-2 bg-amber-100 text-amber-600 rounded-full">
+                                <Key className="w-5 h-5" />
+                            </span>
+                            Reset Password
+                        </DialogTitle>
+                        <DialogDescription>
+                            Set a new password for <strong>{userForReset?.fullName}</strong>. This will log them out of any active sessions on other devices.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="newPassword" className="text-xs font-semibold text-gray-600">New Password</Label>
+                            <Input
+                                id="newPassword"
+                                type="password"
+                                placeholder="Enter new password"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                            />
+                        </div>
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="confirmPassword" className="text-xs font-semibold text-gray-600">Confirm Password</Label>
+                            <Input
+                                id="confirmPassword"
+                                type="password"
+                                placeholder="Confirm new password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                            />
+                        </div>
+                        {resetPasswordError && (
+                            <p className="text-sm text-red-600">{resetPasswordError}</p>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsResetPasswordOpen(false)}>Cancel</Button>
+                        <Button
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={handleResetPassword}
+                            disabled={isResettingPassword}
+                        >
+                            {isResettingPassword ? (
+                                <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Resetting...</>
+                            ) : (
+                                "Reset Password"
                             )}
                         </Button>
                     </DialogFooter>

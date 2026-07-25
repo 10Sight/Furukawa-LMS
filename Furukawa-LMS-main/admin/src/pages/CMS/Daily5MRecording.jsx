@@ -219,7 +219,7 @@ const AssignmentManagementDialog = ({ open, onOpenChange, departmentId, departme
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
 import { Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -554,7 +554,7 @@ const DaysInput = ({ value, onChange, baseDate, disabled }) => {
     );
 };
 
-const CRIMPING_CONFIG = {
+const DEFAULT_CRIMPING_CONFIG = {
     headers: [
         // Row 1
         [{ text: "Daily 5M Recording Man -Crimping section", colSpan: 42, className: "bg-blue-50 text-lg font-bold" }],
@@ -743,6 +743,25 @@ const DEFAULT_CHANGE_TYPE_CONFIG = {
         { term: "* Containment parts:", definition: "Containment parts are the parts produced after change (ex. Part produced by lower operator, part produced at time of poka yoke bypass)" }
     ]
 };
+
+// Form types available for editable Daily 5M layouts, in the order they should be offered in the Edit Layout chooser
+const FORM_TYPE_META = [
+    {
+        key: 'src', label: 'SRC', description: 'SRC Machine Fix', icon: IconCpu,
+        hoverBorder: 'hover:border-emerald-300', iconInactive: 'bg-emerald-50 text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white',
+        titleHover: 'group-hover:text-emerald-700'
+    },
+    {
+        key: 'crimping', label: 'Cutting & Crimping', description: 'Crimping Machine Fix', icon: IconScissors,
+        hoverBorder: 'hover:border-orange-300', iconInactive: 'bg-orange-50 text-orange-500 group-hover:bg-orange-500 group-hover:text-white',
+        titleHover: 'group-hover:text-orange-700'
+    },
+    {
+        key: 'standard', label: 'Assembly', description: 'Regular 5M Sheet', icon: IconLayout2,
+        hoverBorder: 'hover:border-blue-300', iconInactive: 'bg-blue-50 text-blue-500 group-hover:bg-blue-500 group-hover:text-white',
+        titleHover: 'group-hover:text-blue-700'
+    }
+];
 
 const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
@@ -1225,6 +1244,7 @@ const Daily5MRecording = () => {
     const [rowCount, setRowCount] = useState(5);
     const [configError, setConfigError] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
+    const [editingFormType, setEditingFormType] = useState(null); // null = showing the form-type chooser
     const [jsonConfigStr, setJsonConfigStr] = useState("");
     const [layoutRemark, setLayoutRemark] = useState("");
     const [isViewingHistory, setIsViewingHistory] = useState(false);
@@ -1388,9 +1408,7 @@ const Daily5MRecording = () => {
             if (response.data.success) {
                 const config = response.data.data.config;
                 setTableConfig(config);
-                if (config.bodyRows) setRowCount(config.bodyRows);
-                // Pre-fill editor string
-                setJsonConfigStr(JSON.stringify(config, null, 2));
+                if (config?.[formType]?.bodyRows) setRowCount(config[formType].bodyRows);
             } else {
                 setConfigError("Failed to load configuration.");
             }
@@ -1402,6 +1420,12 @@ const Daily5MRecording = () => {
         }
     };
 
+    // Opens the JSON editor for a specific form type's layout (called from the Edit Layout chooser)
+    const openLayoutEditor = (type) => {
+        setEditingFormType(type);
+        setJsonConfigStr(JSON.stringify(tableConfig?.[type] || {}, null, 2));
+    };
+
     const handleSaveConfig = async () => {
         if (!layoutRemark.trim()) {
             toast.error("Please enter a remark detailing your layout changes.");
@@ -1409,20 +1433,23 @@ const Daily5MRecording = () => {
         }
 
         try {
-            let parsedConfig;
+            let parsedTypeConfig;
             try {
-                parsedConfig = JSON.parse(jsonConfigStr);
+                parsedTypeConfig = JSON.parse(jsonConfigStr);
             } catch (e) {
                 toast.error("Invalid JSON format");
                 return;
             }
 
+            const mergedConfig = { ...tableConfig, [editingFormType]: parsedTypeConfig };
+
             await axiosInstance.post(`/api/daily-5m/config/save`,
-                { departmentId: selectedDepartment, config: parsedConfig, remark: layoutRemark }
+                { departmentId: selectedDepartment, config: mergedConfig, remark: layoutRemark }
             );
 
-            setTableConfig(parsedConfig);
+            setTableConfig(mergedConfig);
             setIsEditing(false);
+            setEditingFormType(null);
             setLayoutRemark("");
             toast.success("Configuration saved successfully");
         } catch (error) {
@@ -1760,7 +1787,7 @@ const Daily5MRecording = () => {
                 navigate(`${location.pathname}?recordId=${newRecord.id}`, { replace: true });
 
                 // Load the new record configuration (handles row counts etc)
-                if (tableConfig?.bodyRows) setRowCount(tableConfig.bodyRows);
+                if (tableConfig?.[activeType]?.bodyRows) setRowCount(tableConfig[activeType].bodyRows);
 
                 setShowFormList(false);
                 setIsAddDialogOpen(false);
@@ -1876,16 +1903,16 @@ const Daily5MRecording = () => {
                 setShowFormList(false);
 
                 // Determine rowCount from existing data keys
-                updateRowCountFromData(recordData);
+                updateRowCountFromData(recordData, record.formType || 'standard');
             }
         } catch (error) {
             console.error("Error fetching record by ID:", error);
         }
     };
 
-    const updateRowCountFromData = (recordData) => {
+    const updateRowCountFromData = (recordData, type = formType) => {
         const keys = Object.keys(recordData);
-        let maxIndex = tableConfig?.bodyRows ? tableConfig.bodyRows - 1 : 4;
+        let maxIndex = tableConfig?.[type]?.bodyRows ? tableConfig[type].bodyRows - 1 : 4;
         keys.forEach(key => {
             const match = key.match(/^rec_(\d+)_/);
             if (match) {
@@ -2240,7 +2267,7 @@ const Daily5MRecording = () => {
 
     // Helper to process text (existing)
     const renderRecordingTable = (isReview = false) => {
-        const activeConfig = formType === 'crimping' ? CRIMPING_CONFIG : tableConfig;
+        const activeConfig = tableConfig?.[formType] || (formType === 'crimping' ? DEFAULT_CRIMPING_CONFIG : null);
         if (!activeConfig) return null;
 
         const renderChangeTypeTable = () => {
@@ -2317,10 +2344,7 @@ const Daily5MRecording = () => {
                                 return activeConfig.headers.map((row, rowIndex) => (
                                     <tr key={rowIndex}>
                                         {row.map((header, colIndex) => {
-                                            let headerText = processText(header.text);
-                                            if (formType === 'src' && rowIndex === 0 && colIndex === 0) {
-                                                headerText = "Daily 5M Recording Man - SRC section";
-                                            }
+                                            const headerText = processText(header.text);
 
                                             const isLastInRow = colIndex === row.length - 1;
                                             const adjustedColSpan = (formType !== 'crimping' && rowIndex < targetRowIndex && isLastInRow)
@@ -2834,7 +2858,10 @@ const Daily5MRecording = () => {
                     <Button
                         variant="outline"
                         disabled={!selectedDepartment || loadingConfig}
-                        onClick={() => setIsEditing(true)}
+                        onClick={() => {
+                            setEditingFormType(null);
+                            setIsEditing(true);
+                        }}
                     >
                         <IconSettings className="w-5 h-5 mr-2" />
                         Edit Layout
@@ -2856,40 +2883,83 @@ const Daily5MRecording = () => {
                         departmentName={selectedDeptName}
                     />
 
-                    <Dialog open={isEditing} onOpenChange={setIsEditing}>
+                    <Dialog open={isEditing} onOpenChange={(open) => {
+                        setIsEditing(open);
+                        if (!open) setEditingFormType(null);
+                    }}>
                         <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                            <DialogHeader>
-                                <DialogTitle className="flex justify-between items-center pr-8">
-                                    Edit Table Configuration (JSON)
-                                    <Button variant="outline" size="sm" onClick={fetchConfigHistory}>
-                                        View History
-                                    </Button>
-                                </DialogTitle>
-                            </DialogHeader>
-                            <div className="flex-1 overflow-auto p-1 space-y-4">
-                                <Textarea
-                                    className="font-mono text-xs h-[400px]"
-                                    value={jsonConfigStr}
-                                    onChange={(e) => setJsonConfigStr(e.target.value)}
-                                />
-                                <div className="space-y-2">
-                                    <Label htmlFor="remark">Remark (Required)</Label>
-                                    <Input
-                                        id="remark"
-                                        placeholder="Briefly describe the changes made to the layout..."
-                                        value={layoutRemark}
-                                        onChange={(e) => setLayoutRemark(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex justify-between">
-                                <Button variant="ghost" onClick={() => {
-                                    if (confirm("Discard changes?")) setIsEditing(false);
-                                }}>Cancel</Button>
-                                <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim()}>
-                                    Save Configuration
-                                </Button>
-                            </div>
+                            {!editingFormType ? (
+                                <>
+                                    <DialogHeader>
+                                        <DialogTitle>Edit Layout</DialogTitle>
+                                        <DialogDescription>Choose which sheet layout you'd like to customize.</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-1">
+                                        {FORM_TYPE_META.map((meta) => {
+                                            const Icon = meta.icon;
+                                            return (
+                                                <button
+                                                    key={meta.key}
+                                                    type="button"
+                                                    onClick={() => openLayoutEditor(meta.key)}
+                                                    className={`group flex flex-col items-center gap-2 rounded-xl border-2 border-slate-200 p-5 text-center transition-all duration-200 hover:shadow-md ${meta.hoverBorder}`}
+                                                >
+                                                    <div className={`rounded-lg p-3 transition-colors ${meta.iconInactive}`}>
+                                                        <Icon size={26} />
+                                                    </div>
+                                                    <div>
+                                                        <div className={`font-bold text-slate-800 transition-colors ${meta.titleHover}`}>{meta.label}</div>
+                                                        <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <DialogHeader>
+                                        <DialogTitle className="flex justify-between items-center pr-8">
+                                            <span>
+                                                Edit Table Configuration (JSON) — {FORM_TYPE_META.find(m => m.key === editingFormType)?.label}
+                                            </span>
+                                            <Button variant="outline" size="sm" onClick={fetchConfigHistory}>
+                                                View History
+                                            </Button>
+                                        </DialogTitle>
+                                    </DialogHeader>
+                                    <div className="flex-1 overflow-auto p-1 space-y-4">
+                                        <Textarea
+                                            className="font-mono text-xs h-[400px]"
+                                            value={jsonConfigStr}
+                                            onChange={(e) => setJsonConfigStr(e.target.value)}
+                                        />
+                                        <div className="space-y-2">
+                                            <Label htmlFor="remark">Remark (Required)</Label>
+                                            <Input
+                                                id="remark"
+                                                placeholder="Briefly describe the changes made to the layout..."
+                                                value={layoutRemark}
+                                                onChange={(e) => setLayoutRemark(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <Button variant="ghost" onClick={() => {
+                                            if (confirm("Discard changes?")) {
+                                                setEditingFormType(null);
+                                                setLayoutRemark("");
+                                            }
+                                        }}>Back</Button>
+                                        <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim()}>
+                                            Save Configuration
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
                         </DialogContent>
                     </Dialog>
 

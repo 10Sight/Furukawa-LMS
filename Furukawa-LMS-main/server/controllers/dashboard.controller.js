@@ -796,8 +796,29 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // jiski wajah se department + shift select karne par attendance extra employees count kar sakta tha.
     let hierCondition = "";
 
+    // DEPARTMENT SCOPE FIX:
+    // A user belongs to a selected department when either users.departmentId matches
+    // directly, or the user's id is present in a section's users JSON for a section
+    // under that department (legacy JSON-only assignment). All Users page already
+    // matches on both; without the JSON fallback here, department-only dashboard
+    // graphs undercount/overcount vs. the All Users headcount cards.
     if (numericDepartmentIds.length) {
-        hierCondition += ` AND u.departmentId IN (${numericDepartmentIds.join(",")})`;
+        hierCondition += ` AND (
+            u.departmentId IN (${numericDepartmentIds.join(",")})
+            OR u.id IN (
+                SELECT DISTINCT TRY_CAST(deptJsonUser.[value] AS INT)
+                FROM [sections] deptJsonSection
+                CROSS APPLY OPENJSON(
+                    CASE
+                        WHEN ISJSON(CAST(deptJsonSection.[users] AS NVARCHAR(MAX))) = 1
+                        THEN CAST(deptJsonSection.[users] AS NVARCHAR(MAX))
+                        ELSE N'[]'
+                    END
+                ) deptJsonUser
+                WHERE deptJsonSection.departmentId IN (${numericDepartmentIds.join(",")})
+                  AND ISNULL(deptJsonSection.isActive, 1) = 1
+            )
+        )`;
     } else {
         hierCondition += buildNameInCondition("u.[department]", departmentNames);
     }
@@ -1530,6 +1551,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE 1=1
               AND al.[date] >= '${sqlStartDate}'
               AND al.[date] <= '${sqlEndDate}'
+              AND (u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > al.[date])
               ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
               ${hierCondition}
               ${getEligibleUserSql("u")}

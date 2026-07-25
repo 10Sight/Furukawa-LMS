@@ -668,6 +668,68 @@ const autoApproveExpiredRequirements = async () => {
                 status: "system_approved",
             });
         }
+
+        // Fallback Auto-Approval for any unassigned sections' requirements that have been pending for > 24 hours
+        const [pendingReqs] = await executeSql(
+            `
+            SELECT id, sectionCode, sectionName FROM requirements WITH (NOLOCK)
+            WHERE ISNULL(approvalStatus, 'pending') = 'pending'
+              AND (createdAt <= DATEADD(hour, -24, GETDATE()) OR createdAt IS NULL)
+            `
+        );
+
+        for (const reqRow of pendingReqs || []) {
+            const code = safeTrim(reqRow.sectionCode);
+            const name = safeTrim(reqRow.sectionName);
+
+            // Resolve section ID
+            const [secRows] = await executeSql(
+                `SELECT id FROM sections WITH (NOLOCK) WHERE UPPER(LTRIM(RTRIM(uniCode))) = UPPER(LTRIM(RTRIM(?))) OR UPPER(LTRIM(RTRIM(name))) = UPPER(LTRIM(RTRIM(?)))`,
+                [code, name]
+            );
+
+            if (secRows.length > 0) {
+                const sectionId = secRows[0].id;
+
+                // Check section_heads
+                const [heads] = await executeSql(
+                    `SELECT TOP 1 1 FROM section_heads WITH (NOLOCK) WHERE sectionId = ?`,
+                    [sectionId]
+                );
+
+                if (heads.length === 0) {
+                    // Check users table assignments
+                    const [users] = await executeSql(
+                        `SELECT TOP 1 1 FROM users WITH (NOLOCK) 
+                         WHERE sectionId = ? 
+                            OR CHARINDEX('"' + CAST(? AS VARCHAR) + '"', sections) > 0
+                            OR CHARINDEX(',' + CAST(? AS VARCHAR) + ',', ',' + REPLACE(REPLACE(REPLACE(sections, '[', ''), ']', ''), '"', '') + ',') > 0`,
+                        [sectionId, sectionId, sectionId]
+                    );
+
+                    if (users.length === 0) {
+                        // Section is completely unassigned! Auto-approve requirement.
+                        await executeSql(
+                            `
+                            UPDATE requirements
+                            SET
+                                is_active = 1,
+                                approvalStatus = 'system_approved',
+                                approvedBy = 'System',
+                                approvedByEmail = '',
+                                approvedAt = GETDATE(),
+                                approvalSource = 'system',
+                                rejectedBy = NULL,
+                                rejectedAt = NULL
+                            WHERE id = ?
+                            `,
+                            [reqRow.id]
+                        );
+                        console.log(`[AUTO-APPROVE] Auto-approved requirement ID ${reqRow.id} for unassigned section: ${name} (${code})`);
+                    }
+                }
+            }
+        }
     } catch (e) {
         console.error("[AUTO-APPROVE] Error:", e.message);
     }
@@ -734,31 +796,7 @@ const sendRequirementEditApprovalMail = async ({
             found: heads.length,
         });
 
-        if (!heads || heads.length === 0) {
-            const [sampleHeads] = await executeSql(
-                `
-                SELECT TOP 20
-                    sh.email,
-                    sh.name,
-                    sh.sectionId,
-                    s.name AS sectionName,
-                    s.uniCode
-                FROM section_heads sh
-                LEFT JOIN sections s
-                    ON sh.sectionId = s.id
-                WHERE sh.email IS NOT NULL
-                  AND LTRIM(RTRIM(sh.email)) != ''
-                `
-            );
-
-            console.log("[REQ-EDIT-MAIL] No matching section head found.");
-            console.log("[REQ-EDIT-MAIL] Available sample heads:", sampleHeads);
-
-            return {
-                sent: false,
-                reason: "No matching section head found for this requirement section/line",
-            };
-        }
+        const hasHeads = heads && heads.length > 0;
 
         await executeSql(
             `
@@ -769,23 +807,31 @@ const sendRequirementEditApprovalMail = async ({
             WHERE id = ?
             `,
             [
-                getValueIgnoreCase(heads[0], ["name", "Name", "NAME"]) || "Section Head",
-                getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "",
+                hasHeads ? (getValueIgnoreCase(heads[0], ["name", "Name", "NAME"]) || "Section Head") : "Section Head",
+                hasHeads ? (getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "") : "",
                 requirementId,
             ]
         );
 
         const token = crypto.randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours expiration
 
         await createRequirementTokenSafe({
             token,
             requirementId,
-            recipientEmail: getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "",
+            recipientEmail: hasHeads ? (getValueIgnoreCase(heads[0], ["email", "Email", "EMAIL"]) || "") : "",
             senderEmail: req.user?.email || "admin@furukawa.com",
             expiresAt,
             status: "pending",
         });
+
+        if (!hasHeads) {
+            console.log(`[REQ-EDIT-MAIL] No matching section head found for requirement ${requirementId}, scheduled for auto-approval after 24 hours.`);
+            return {
+                sent: false,
+                reason: "No matching section head found, scheduled for auto-approval after 24 hours",
+            };
+        }
 
         const BASE_URL =
             process.env.BASE_URL ||
@@ -1013,27 +1059,20 @@ export const createRequirement = asyncHandler(async (req, res) => {
         count,
     } = req.body;
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
+    if (!hasActionPermission(req.user, "edit")) {
+        throw new ApiError("You do not have permission to create requirements.", 403);
+    }
 
-    if (!isSuperUser) {
-        const assignedSections = await getAssignedRequirementSectionsForUser(req);
-        if (assignedSections?.noAssignedSection) {
-            throw new ApiError("You are not allowed to create requirements. No section is assigned to you.", 403);
-        }
-        const codeMatched = assignedSections?.sectionCodes?.some(
-            (code) => String(code).trim().toUpperCase() === String(sectionCode || "").trim().toUpperCase()
-        );
-        const nameMatched = assignedSections?.sectionNames?.some(
-            (name) => String(name).trim().toUpperCase() === String(sectionName || "").trim().toUpperCase()
-        );
-        if (!codeMatched && !nameMatched) {
-            throw new ApiError("You can only create requirements for your assigned sections.", 403);
-        }
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        sectionCode ? [sectionCode] : [],
+        sectionName ? [sectionName] : []
+    );
+    if (resolvedIds.length === 0) {
+        throw new ApiError(`Section '${sectionCode || sectionName}' not found in the system.`, 404);
+    }
+    const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+    if (!sectionAccess.hasAccess) {
+        throw new ApiError("You do not have permission to create requirements for this section.", 403);
     }
 
     const finalMonthName = normalizeMonth(monthName || month);
@@ -1406,30 +1445,23 @@ export const addRequirements = asyncHandler(async (req, res) => {
         );
     }
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
+    if (!hasActionPermission(req.user, "upload")) {
+        throw new ApiError("You do not have permission to upload requirements.", 403);
+    }
 
-    if (!isSuperUser) {
-        const assignedSections = await getAssignedRequirementSectionsForUser(req);
-        if (assignedSections?.noAssignedSection) {
-            throw new ApiError("You are not allowed to upload requirements. No section is assigned to you.", 403);
-        }
-        
-        for (const row of validRowsToProcess) {
-            const codeMatched = assignedSections?.sectionCodes?.some(
-                (code) => String(code).trim().toUpperCase() === String(row.sectionCode || "").trim().toUpperCase()
-            );
-            const nameMatched = assignedSections?.sectionNames?.some(
-                (name) => String(name).trim().toUpperCase() === String(row.sectionName || "").trim().toUpperCase()
-            );
-            if (!codeMatched && !nameMatched) {
-                throw new ApiError(`You are not allowed to upload requirements for section ${row.sectionCode || row.sectionName}.`, 403);
+    const sectionIdsInSheet = [...new Set(validRowsToProcess.map(row => Number(row.sectionId)).filter(id => id > 0))];
+    const sectionAccess = await checkSectionAccess(req.user, sectionIdsInSheet);
+    if (!sectionAccess.hasAccess) {
+        const unauthorizedSectionNamesAndCodes = [];
+        for (const unauthorizedId of sectionAccess.unauthorizedIds) {
+            const matched = validRowsToProcess.find(r => Number(r.sectionId) === unauthorizedId);
+            if (matched) {
+                unauthorizedSectionNamesAndCodes.push(`${matched.sectionName} (${matched.sectionCode})`);
+            } else {
+                unauthorizedSectionNamesAndCodes.push(`ID: ${unauthorizedId}`);
             }
         }
+        throw new ApiError(`You do not have permission to upload for the following section(s): ${unauthorizedSectionNamesAndCodes.join(", ")}`, 403);
     }
 
     // Same Section Unicode should not be saved multiple times in one upload.
@@ -1838,7 +1870,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     .filter(Boolean)
                     .join(", ") || "-";
 
-                const [secHeads] = await executeSql(
+                const [secHeadsRows] = await executeSql(
                     `
                     SELECT DISTINCT
                         sh.email,
@@ -1860,12 +1892,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     [secCode]
                 );
 
-                if (!secHeads || secHeads.length === 0) {
-                    console.log(
-                        `[UPLOAD-EMAIL] No section head/CC mail found for section: ${secName}`
-                    );
-                    continue;
-                }
+                const secHeads = secHeadsRows || [];
 
                 const approvalHeads = secHeads.filter((head) =>
                     normalizeEmailList(getValueIgnoreCase(head, ["email", "Email", "EMAIL"])).length > 0
@@ -1875,7 +1902,11 @@ export const addRequirements = asyncHandler(async (req, res) => {
                 const globalCcEmails = await getGlobalCcEmailsFromDb();
                 const ccEmails = mergeUniqueEmails(sectionWiseCcEmails, globalCcEmails);
 
-                if (approvalHeads.length === 0) {
+                if (secHeads.length === 0) {
+                    console.log(
+                        `[UPLOAD-EMAIL] No section head/CC mail found for section: ${secName}. Scheduled for auto-approval after 24 hours.`
+                    );
+                } else if (approvalHeads.length === 0) {
                     console.log(
                         `[UPLOAD-EMAIL] No section-head email found for section: ${secName}. CC notification will still be sent without buttons.`
                     );
@@ -1948,18 +1979,16 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     .toString(36)
                     .substring(2, 10)}`.toUpperCase();
 
-                if (approvalHeads.length > 0) {
-                    await createRequirementTokenSafe({
-                        token: tkn,
-                        uploadBatchId,
-                        sectionCode: secCode,
-                        sectionName: secName,
-                        recipientEmail: getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "",
-                        senderEmail: req.user?.email || "admin@furukawa.com",
-                        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes expiration
-                        status: "pending",
-                    });
-                }
+                await createRequirementTokenSafe({
+                    token: tkn,
+                    uploadBatchId,
+                    sectionCode: secCode,
+                    sectionName: secName,
+                    recipientEmail: approvalHeads.length > 0 ? (getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "") : "",
+                    senderEmail: req.user?.email || "admin@furukawa.com",
+                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours expiration
+                    status: "pending",
+                });
 
                 const BASE_URL =
                     process.env.BASE_URL ||
@@ -2305,70 +2334,148 @@ const parseJsonArrayIds = (value) => {
     return [...new Set(ids)];
 };
 
-const getAssignedRequirementSectionsForUser = async (req) => {
-    const userId = req.user?.id || req.user?._id;
-    const userEmail = req.user?.email;
-
+const hasActionPermission = (user, action) => {
+    if (!user) return false;
+    const userRole = String(user.role || "").trim().toUpperCase();
     const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        String(req.user?.role || "").toUpperCase() === "SUPERADMIN" ||
-        String(req.user?.role || "").toUpperCase() === "ADMIN";
+        user.isAdmin === true ||
+        user.isAdmin === 1 ||
+        userRole === "SUPERADMIN" ||
+        userRole === "ADMIN";
+
+    if (isSuperUser) return true;
+
+    const permissions = user.customRole?.permissions || [];
+
+    // Legacy privilege fallback
+    const hasSetRequirementPrivilege = permissions.includes("setrequirement");
+
+    if (action === "upload") {
+        return permissions.includes("mps_requirement:upload_excel") || hasSetRequirementPrivilege;
+    }
+    if (action === "edit") {
+        return permissions.includes("mps_requirement:edit") || hasSetRequirementPrivilege;
+    }
+    if (action === "approve") {
+        return true; // Section-level permission check is enforced in checkSectionAccess
+    }
+    if (action === "view") {
+        return permissions.includes("mps_requirement:view") ||
+            permissions.includes("mps_requirement:view_all_sections") ||
+            hasSetRequirementPrivilege;
+    }
+    return false;
+};
+
+const checkSectionAccess = async (user, sectionIds) => {
+    if (!user) return { hasAccess: false, isGlobal: false, unauthorizedIds: sectionIds };
+
+    const userRole = String(user.role || "").trim().toUpperCase();
+    const isSuperUser =
+        user.isAdmin === true ||
+        user.isAdmin === 1 ||
+        userRole === "SUPERADMIN" ||
+        userRole === "ADMIN";
+
+    if (isSuperUser) {
+        return { hasAccess: true, isGlobal: true };
+    }
+
+    const userSectionIds = [
+        ...parseJsonArrayIds(user.sectionId),
+        ...parseJsonArrayIds(user.sections),
+    ].map(Number).filter((id) => Number.isInteger(id) && id > 0);
+
+    const hasWildcard =
+        userSectionIds.includes(-1) ||
+        (typeof user.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
+        (Array.isArray(user.sections) && (user.sections.includes('*') || user.sections.includes('all')));
+
+    const customRolePermissions = user.customRole?.permissions || [];
+    const hasGlobalPermission =
+        customRolePermissions.includes("mps_requirement:view_all_sections") ||
+        customRolePermissions.includes("mps_requirement:access_all") ||
+        customRolePermissions.includes("setrequirement:global");
+
+    if (hasWildcard || hasGlobalPermission) {
+        return { hasAccess: true, isGlobal: true, userSectionIds };
+    }
+
+    if (userSectionIds.length === 0) {
+        return { hasAccess: false, isGlobal: false, userSectionIds, unauthorizedIds: sectionIds };
+    }
+
+    const unauthorizedIds = sectionIds.filter(id => !userSectionIds.includes(Number(id)));
+    if (unauthorizedIds.length > 0) {
+        return { hasAccess: false, isGlobal: false, userSectionIds, unauthorizedIds };
+    }
+
+    return { hasAccess: true, isGlobal: false, userSectionIds };
+};
+
+const resolveSectionIdsFromCodesOrNames = async (codes = [], names = []) => {
+    const filters = [];
+    const params = [];
+
+    const cleanCodes = (codes || []).map(c => safeTrim(c)).filter(Boolean);
+    const cleanNames = (names || []).map(n => safeTrim(n)).filter(Boolean);
+
+    if (cleanCodes.length > 0) {
+        const placeholders = cleanCodes.map(() => "?").join(",");
+        filters.push(`UPPER(LTRIM(RTRIM(uniCode))) IN (${placeholders.split(',').map(() => 'UPPER(LTRIM(RTRIM(?)))').join(',')})`);
+        params.push(...cleanCodes);
+    }
+
+    if (cleanNames.length > 0) {
+        const placeholders = cleanNames.map(() => "?").join(",");
+        filters.push(`UPPER(LTRIM(RTRIM(name))) IN (${placeholders.split(',').map(() => 'UPPER(LTRIM(RTRIM(?)))').join(',')})`);
+        params.push(...cleanNames);
+    }
+
+    if (filters.length === 0) return [];
+
+    const [rows] = await executeSql(
+        `SELECT DISTINCT id FROM sections WITH (NOLOCK) WHERE ${filters.join(" OR ")}`,
+        params
+    );
+
+    return (rows || []).map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
+};
+
+const getAssignedRequirementSectionsForUser = async (req) => {
+    const user = req.user;
+    if (!user) return { noAssignedSection: true };
+
+    const userRole = String(user.role || "").trim().toUpperCase();
+    const isSuperUser =
+        user.isAdmin === true ||
+        user.isAdmin === 1 ||
+        userRole === "SUPERADMIN" ||
+        userRole === "ADMIN";
 
     if (isSuperUser) return null;
 
-    const currentRole = String(req.user?.role || "").trim().toUpperCase();
+    const userSectionIds = [
+        ...parseJsonArrayIds(user.sectionId),
+        ...parseJsonArrayIds(user.sections),
+    ].map(Number).filter((id) => Number.isInteger(id) && id > 0);
 
-    // Only CUSTOM section-head users are restricted by assigned section IDs.
-    if (currentRole && currentRole !== "CUSTOM") return null;
+    const hasWildcard =
+        userSectionIds.includes(-1) ||
+        (typeof user.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
+        (Array.isArray(user.sections) && (user.sections.includes('*') || user.sections.includes('all')));
 
-    const filters = [];
-    const values = [];
+    const customRolePermissions = user.customRole?.permissions || [];
+    const hasGlobalPermission =
+        customRolePermissions.includes("mps_requirement:view_all_sections") ||
+        customRolePermissions.includes("mps_requirement:access_all") ||
+        customRolePermissions.includes("setrequirement:global");
 
-    if (userId) {
-        filters.push("u.id = ?");
-        values.push(userId);
-    }
+    if (hasWildcard || hasGlobalPermission) return null;
 
-    if (userEmail) {
-        filters.push("LOWER(LTRIM(RTRIM(u.email))) = LOWER(LTRIM(RTRIM(?)))");
-        values.push(userEmail);
-    }
+    if (userSectionIds.length === 0) return { noAssignedSection: true, sectionIds: [], sectionCodes: [], sectionNames: [], sections: [] };
 
-    if (!filters.length) return null;
-
-    const [userRows] = await executeSql(
-        `
-        SELECT TOP 1
-            u.id,
-            u.role,
-            u.sectionId,
-            u.sections
-        FROM users u WITH (NOLOCK)
-        WHERE (${filters.join(" OR ")})
-          AND UPPER(LTRIM(RTRIM(ISNULL(u.role, '')))) = 'CUSTOM'
-        `,
-        values
-    );
-
-    const assignedUser = userRows?.[0];
-
-    // If logged-in user is not CUSTOM, do not restrict this endpoint.
-    if (!assignedUser && currentRole !== "CUSTOM") return null;
-    if (!assignedUser) return { noAssignedSection: true };
-
-    const sectionIds = [
-        ...parseJsonArrayIds(assignedUser.sectionId),
-        ...parseJsonArrayIds(assignedUser.sections),
-        ...parseJsonArrayIds(req.user?.sectionId),
-        ...parseJsonArrayIds(req.user?.sections),
-    ];
-
-    const uniqueSectionIds = [...new Set(sectionIds)].filter((id) => Number.isInteger(Number(id)) && Number(id) > 0).map(Number);
-
-    if (uniqueSectionIds.length === 0) return { noAssignedSection: true };
-
-    const placeholders = uniqueSectionIds.map(() => "?").join(",");
+    const placeholders = userSectionIds.map(() => "?").join(",");
     const [sectionRows] = await executeSql(
         `
         SELECT DISTINCT
@@ -2379,7 +2486,7 @@ const getAssignedRequirementSectionsForUser = async (req) => {
         FROM sections WITH (NOLOCK)
         WHERE id IN (${placeholders})
         `,
-        uniqueSectionIds
+        userSectionIds
     );
 
     const sections = (sectionRows || [])
@@ -2391,7 +2498,7 @@ const getAssignedRequirementSectionsForUser = async (req) => {
             sectionCategory: safeTrim(s.sectionCategory),
         }));
 
-    if (sections.length === 0) return { noAssignedSection: true };
+    if (sections.length === 0) return { noAssignedSection: true, sectionIds: [], sectionCodes: [], sectionNames: [], sections: [] };
 
     return {
         sectionIds: sections.map((s) => s.sectionId),
@@ -2430,6 +2537,10 @@ const appendAssignedSectionsFilter = (countSql, sql, params, assignedSections, a
 };
 
 export const getRequirements = asyncHandler(async (req, res) => {
+    if (!hasActionPermission(req.user, "view")) {
+        throw new ApiError("You do not have permission to view requirements.", 403);
+    }
+
     await autoApproveExpiredRequirements();
 
     const { section, sub_section, startDate, endDate, search } = req.query;
@@ -2439,7 +2550,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
     const offset = (page - 1) * limit;
 
     let countSql = "SELECT COUNT(r.id) AS total FROM requirements r WHERE 1=1";
-    let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE 1=1";
+    let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory, (SELECT TOP 1 id FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionId FROM requirements r WHERE 1=1";
     let params = [];
 
     const hasViewAllSections = hasPermission(req.user, "mps_requirement:view_all_sections");
@@ -2589,6 +2700,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
             ...row,
             count: row.salesPlan,
             section: row.sectionName,
+            sectionId: row.sectionId,
             sectionCategory: row.category || row.sectionCategory || "Not Applicable",
             sub_section: row.lineDescription,
             line_area: "N/A",
@@ -2715,8 +2827,15 @@ export const getRequirementLogs = asyncHandler(async (req, res) => {
 });
 
 export const getRequirementFilters = asyncHandler(async (req, res) => {
+    if (!hasActionPermission(req.user, "view")) {
+        throw new ApiError("You do not have permission to view requirements.", 403);
+    }
+
     const { department } = req.query || {};
-    const hasViewAllSections = hasPermission(req.user, "mps_requirement:view_all_sections");
+    const hasViewAllSections = hasPermission(req.user, "mps_requirement:view_all_sections") ||
+        String(req.user?.role || "").toUpperCase() === "ADMIN" ||
+        String(req.user?.role || "").toUpperCase() === "SUPERADMIN" ||
+        req.user?.isAdmin;
     const assignedSections = await getAssignedRequirementSectionsForUser(req);
 
     if (assignedSections?.noAssignedSection && !hasViewAllSections) {
@@ -2816,10 +2935,14 @@ export const getRequirementFilters = asyncHandler(async (req, res) => {
 });
 
 export const getRequirementById = asyncHandler(async (req, res) => {
+    if (!hasActionPermission(req.user, "view")) {
+        throw new ApiError("You do not have permission to view requirements.", 403);
+    }
+
     const { id } = req.params;
 
     const [result] = await executeSql(
-        "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory FROM requirements r WHERE r.id = ?",
+        "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory, (SELECT TOP 1 id FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionId FROM requirements r WHERE r.id = ?",
         [id]
     );
 
@@ -2829,35 +2952,20 @@ export const getRequirementById = asyncHandler(async (req, res) => {
 
     const row = result[0];
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
-
-    const hasViewAllSections = hasPermission(req.user, "mps_requirement:view_all_sections");
-    const assignedSections = await getAssignedRequirementSectionsForUser(req);
-
     let isAssigned = true;
-    if (!isSuperUser) {
-        if (assignedSections?.noAssignedSection) {
-            isAssigned = false;
-        } else if (assignedSections?.sectionCodes?.length || assignedSections?.sectionNames?.length) {
-            const codeMatched = assignedSections.sectionCodes?.some(
-                (code) => String(code).trim().toUpperCase() === String(row.sectionCode || "").trim().toUpperCase()
-            );
-            const nameMatched = assignedSections.sectionNames?.some(
-                (name) => String(name).trim().toUpperCase() === String(row.sectionName || "").trim().toUpperCase()
-            );
-            isAssigned = !!(codeMatched || nameMatched);
-        } else {
-            isAssigned = false;
-        }
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        row.sectionCode ? [row.sectionCode] : [],
+        row.sectionName ? [row.sectionName] : []
+    );
+    if (resolvedIds.length > 0) {
+        const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+        isAssigned = sectionAccess.hasAccess;
+    } else {
+        isAssigned = false;
+    }
 
-        if (!hasViewAllSections && !isAssigned) {
-            throw new ApiError("You are not allowed to view this requirement.", 403);
-        }
+    if (!isAssigned) {
+        throw new ApiError("You do not have permission to view this requirement.", 403);
     }
 
     res.status(200).json(
@@ -2867,6 +2975,7 @@ export const getRequirementById = asyncHandler(async (req, res) => {
                 ...row,
                 count: row.salesPlan,
                 section: row.sectionName,
+                sectionId: row.sectionId,
                 sectionCategory: row.category || row.sectionCategory || "Not Applicable",
                 sub_section: row.lineDescription,
                 line_area: "N/A",
@@ -2899,27 +3008,37 @@ export const updateRequirement = asyncHandler(async (req, res) => {
 
     const oldReq = existingRows[0];
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
+    if (!hasActionPermission(req.user, "edit")) {
+        throw new ApiError("You do not have permission to update requirements.", 403);
+    }
 
-    if (!isSuperUser) {
-        const assignedSections = await getAssignedRequirementSectionsForUser(req);
-        if (assignedSections?.noAssignedSection) {
-            throw new ApiError("You are not allowed to update requirements. No section is assigned to you.", 403);
-        }
-        const codeMatched = assignedSections?.sectionCodes?.some(
-            (code) => String(code).trim().toUpperCase() === String(oldReq.sectionCode || "").trim().toUpperCase()
-        );
-        const nameMatched = assignedSections?.sectionNames?.some(
-            (name) => String(name).trim().toUpperCase() === String(oldReq.sectionName || "").trim().toUpperCase()
-        );
-        if (!codeMatched && !nameMatched) {
-            throw new ApiError("You can only update requirements for your assigned sections.", 403);
-        }
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        oldReq.sectionCode ? [oldReq.sectionCode] : [],
+        oldReq.sectionName ? [oldReq.sectionName] : []
+    );
+    if (resolvedIds.length === 0) {
+        throw new ApiError("Section associated with this requirement not found.", 404);
+    }
+    const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+    if (!sectionAccess.hasAccess) {
+        throw new ApiError("You do not have permission to update requirements for this section.", 403);
+    }
+
+    // Check target section access if changed
+    const targetCodes = [];
+    const targetNames = [];
+    if (req.body.sectionCode !== undefined) targetCodes.push(req.body.sectionCode);
+    else if (oldReq.sectionCode) targetCodes.push(oldReq.sectionCode);
+    if (req.body.sectionName !== undefined) targetNames.push(req.body.sectionName);
+    else if (oldReq.sectionName) targetNames.push(oldReq.sectionName);
+
+    const targetResolvedIds = await resolveSectionIdsFromCodesOrNames(targetCodes, targetNames);
+    if (targetResolvedIds.length === 0) {
+        throw new ApiError("Target section not found.", 404);
+    }
+    const targetSectionAccess = await checkSectionAccess(req.user, targetResolvedIds);
+    if (!targetSectionAccess.hasAccess) {
+        throw new ApiError("You do not have permission to change requirements to the target section.", 403);
     }
 
     const isSameNumber = (a, b) => {
@@ -3229,27 +3348,20 @@ export const deleteRequirement = asyncHandler(async (req, res) => {
 
     const targetReq = existingRows[0];
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
+    if (!hasActionPermission(req.user, "edit")) {
+        throw new ApiError("You do not have permission to delete requirements.", 403);
+    }
 
-    if (!isSuperUser) {
-        const assignedSections = await getAssignedRequirementSectionsForUser(req);
-        if (assignedSections?.noAssignedSection) {
-            throw new ApiError("You are not allowed to delete requirements. No section is assigned to you.", 403);
-        }
-        const codeMatched = assignedSections?.sectionCodes?.some(
-            (code) => String(code).trim().toUpperCase() === String(targetReq.sectionCode || "").trim().toUpperCase()
-        );
-        const nameMatched = assignedSections?.sectionNames?.some(
-            (name) => String(name).trim().toUpperCase() === String(targetReq.sectionName || "").trim().toUpperCase()
-        );
-        if (!codeMatched && !nameMatched) {
-            throw new ApiError("You can only delete requirements for your assigned sections.", 403);
-        }
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        targetReq.sectionCode ? [targetReq.sectionCode] : [],
+        targetReq.sectionName ? [targetReq.sectionName] : []
+    );
+    if (resolvedIds.length === 0) {
+        throw new ApiError("Section associated with this requirement not found.", 404);
+    }
+    const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+    if (!sectionAccess.hasAccess) {
+        throw new ApiError("You do not have permission to delete requirements for this section.", 403);
     }
 
     await executeSql("DELETE FROM requirements WHERE id = ?", [id]);
@@ -3278,54 +3390,26 @@ export const approveDashboardRequirements = asyncHandler(async (req, res) => {
         throw new ApiError("Valid requirement IDs are required", 400);
     }
 
-    const loggedInRole = String(req.user?.role || "").trim().toUpperCase();
-    const isSuperUser =
-        req.user?.isAdmin === true ||
-        req.user?.isAdmin === 1 ||
-        loggedInRole === "SUPERADMIN" ||
-        loggedInRole === "ADMIN";
-
-    const assignedSections = await getAssignedRequirementSectionsForUser(req);
-
-    if (assignedSections?.noAssignedSection) {
-        throw new ApiError("No section is assigned to this custom user.", 403);
+    if (!hasActionPermission(req.user, "approve")) {
+        throw new ApiError("You do not have permission to approve requirements.", 403);
     }
 
-    // CUSTOM users can approve only their assigned sections.
-    // Admin/Superadmin can approve any selected requirement IDs.
-    if (!isSuperUser) {
-        if (!assignedSections?.sectionCodes?.length && !assignedSections?.sectionNames?.length) {
-            throw new ApiError("You are not allowed to approve these requirements.", 403);
-        }
+    const idPlaceholders = cleanIds.map(() => "?").join(",");
+    const [reqSections] = await executeSql(
+        `SELECT DISTINCT sectionCode, sectionName FROM requirements WITH (NOLOCK) WHERE id IN (${idPlaceholders})`,
+        cleanIds
+    );
+    if (!reqSections || reqSections.length === 0) {
+        throw new ApiError("No requirements found for the provided IDs.", 404);
+    }
 
-        const idPlaceholders = cleanIds.map(() => "?").join(",");
-        const codeConditions = assignedSections.sectionCodes?.length
-            ? `UPPER(LTRIM(RTRIM(ISNULL(r.sectionCode, '')))) IN (${assignedSections.sectionCodes.map(() => "UPPER(LTRIM(RTRIM(?)))").join(",")})`
-            : "";
-        const nameConditions = assignedSections.sectionNames?.length
-            ? `UPPER(LTRIM(RTRIM(ISNULL(r.sectionName, '')))) IN (${assignedSections.sectionNames.map(() => "UPPER(LTRIM(RTRIM(?)))").join(",")})`
-            : "";
-        const sectionConditions = [codeConditions, nameConditions].filter(Boolean).join(" OR ");
+    const uniqueCodes = [...new Set(reqSections.map(r => r.sectionCode).filter(Boolean))];
+    const uniqueNames = [...new Set(reqSections.map(r => r.sectionName).filter(Boolean))];
 
-        const [allowedRows] = await executeSql(
-            `
-            SELECT COUNT(1) AS matchedCount
-            FROM requirements r WITH (NOLOCK)
-            WHERE r.id IN (${idPlaceholders})
-              AND (${sectionConditions})
-            `,
-            [
-                ...cleanIds,
-                ...(assignedSections.sectionCodes || []),
-                ...(assignedSections.sectionNames || []),
-            ]
-        );
-
-        const matchedCount = Number(allowedRows?.[0]?.matchedCount || 0);
-
-        if (matchedCount !== cleanIds.length) {
-            throw new ApiError("You can approve only your assigned section requirements.", 403);
-        }
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(uniqueCodes, uniqueNames);
+    const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+    if (!sectionAccess.hasAccess) {
+        throw new ApiError("You do not have permission to approve requirements for one or more of the selected sections.", 403);
     }
 
     const approvedByEmail = safeTrim(req.user?.email || "");
@@ -3677,6 +3761,37 @@ p {
             );
     }
 
+    if (!hasActionPermission(user, "approve")) {
+        return res
+            .status(403)
+            .send(
+                renderPage(
+                    "Permission Denied",
+                    "You do not have permission to approve requirements."
+                )
+            );
+    }
+
+    const tSectionCode = getTokenField(tokenDoc, "sectionCode", "section_code");
+    const tSectionName = getTokenField(tokenDoc, "sectionName", "section_name");
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        tSectionCode ? [tSectionCode] : [],
+        tSectionName ? [tSectionName] : []
+    );
+    if (resolvedIds.length > 0) {
+        const sectionAccess = await checkSectionAccess(user, resolvedIds);
+        if (!sectionAccess.hasAccess) {
+            return res
+                .status(403)
+                .send(
+                    renderPage(
+                        "Permission Denied",
+                        "You do not have section-level access to approve this requirement."
+                    )
+                );
+        }
+    }
+
     const tokenStatus = getTokenField(tokenDoc, "status", "status");
 
     const expiresAt =
@@ -3996,6 +4111,37 @@ p {
         return res
             .status(400)
             .send("Invalid token data. Batch or section not found.");
+    }
+
+    if (!hasActionPermission(user, "approve")) {
+        return res
+            .status(403)
+            .send(
+                renderBatchResult(
+                    false,
+                    "Permission Denied",
+                    "You do not have permission to approve requirements."
+                )
+            );
+    }
+
+    const resolvedIds = await resolveSectionIdsFromCodesOrNames(
+        sectionCode ? [sectionCode] : [],
+        sectionName ? [sectionName] : []
+    );
+    if (resolvedIds.length > 0) {
+        const sectionAccess = await checkSectionAccess(user, resolvedIds);
+        if (!sectionAccess.hasAccess) {
+            return res
+                .status(403)
+                .send(
+                    renderBatchResult(
+                        false,
+                        "Permission Denied",
+                        "You do not have section-level access to approve this batch."
+                    )
+                );
+        }
     }
 
     if (action === "approve") {

@@ -845,15 +845,49 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return date;
     };
 
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const todayStr = formatDateLocal(today);
+    const yesterdayStr = formatDateLocal(yesterday);
+
+    let todayHasAttendance = false;
+    try {
+        const checkTodaySql = `
+            SELECT TOP 1 1 
+            FROM attendance_logs al
+            WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, ?, 23)
+              AND (
+                  UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'SHIFT A'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A SHIFT'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A-SHIFT'
+              )
+        `;
+        const [todayCheckRows] = await executeQuery(checkTodaySql, [todayStr]);
+        todayHasAttendance = todayCheckRows && todayCheckRows.length > 0;
+    } catch (checkErr) {
+        console.warn("[DASHBOARD] Today Shift A check failed:", checkErr.message);
+    }
+
+    const effectiveDateStr = todayHasAttendance ? todayStr : yesterdayStr;
+
     let rangeStart;
     let rangeEnd;
 
     if (startDate) {
-        rangeStart = parseDateLocal(startDate) || new Date(today);
-        rangeEnd = parseDateLocal(endDate || startDate) || new Date(today);
+        rangeStart = parseDateLocal(startDate) || parseDateLocal(effectiveDateStr);
+        rangeEnd = parseDateLocal(endDate || startDate) || parseDateLocal(effectiveDateStr);
+
+        if (startDate === todayStr && !todayHasAttendance) {
+            rangeStart = parseDateLocal(effectiveDateStr);
+        }
+        if ((endDate || startDate) === todayStr && !todayHasAttendance) {
+            rangeEnd = parseDateLocal(effectiveDateStr);
+        }
     } else {
-        rangeEnd = new Date(today);
-        rangeStart = new Date(today);
+        rangeEnd = parseDateLocal(effectiveDateStr);
+        rangeStart = parseDateLocal(effectiveDateStr);
         rangeStart.setDate(rangeStart.getDate() - 29);
     }
 
@@ -1650,23 +1684,25 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     indiaNow.setHours(0, 0, 0, 0);
 
-    const yesterday = new Date(indiaNow);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayVal = new Date(indiaNow);
+    yesterdayVal.setDate(yesterdayVal.getDate() - 1);
 
-    const yesterdaySqlDate = formatDateLocal(yesterday);
+    const yesterdaySqlDate = formatDateLocal(yesterdayVal);
 
-    // LOWER GRAPH DATE RANGE FILTER DISABLED.
-    // All graphs below the top three use the default previous attendance date.
-    // The old selected date-range block is retained below for easy restoration.
-    let masterRangeStart = new Date(yesterday);
-    let masterRangeEnd = new Date(yesterday);
+    // Dynamic single-day active date selection based on today's attendance availability.
+    let masterRangeStart = parseDateLocal(effectiveDateStr);
+    let masterRangeEnd = parseDateLocal(effectiveDateStr);
 
-    /* RESTORE LOWER GRAPH DATE RANGE FILTER:
-    if (startDate) {
-        masterRangeStart = parseDateLocal(startDate) || new Date(yesterday);
-        masterRangeEnd = parseDateLocal(endDate || startDate) || new Date(yesterday);
+    if (startDate && startDate === (endDate || startDate)) {
+        const requestedDate = parseDateLocal(startDate);
+        if (startDate === todayStr && !todayHasAttendance) {
+            masterRangeStart = parseDateLocal(effectiveDateStr);
+            masterRangeEnd = parseDateLocal(effectiveDateStr);
+        } else {
+            masterRangeStart = requestedDate;
+            masterRangeEnd = requestedDate;
+        }
     }
-    */
 
     masterRangeStart.setHours(0, 0, 0, 0);
     masterRangeEnd.setHours(0, 0, 0, 0);
@@ -1686,7 +1722,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Attendance bars continue to use the selected date/range.
     // Every Users Total / Total Manpower comparison bar must always use
     // the current India date, independent of the selected attendance date.
-    const usersTotalAsOfDate = formatDateLocal(today);
+    const usersTotalAsOfDate = masterSqlEndDate;
 
     function appendMultiHierarchyFilter({
         sqlText,
@@ -3233,20 +3269,43 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     const yesterday = new Date(indiaNow);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    // LOWER TENURE GRAPH DATE RANGE FILTER DISABLED.
-    // Tenure graphs use the default previous attendance date.
-    let rangeStart = new Date(yesterday);
-    let rangeEnd = new Date(yesterday);
+    const todayStr = formatDateLocal(indiaNow);
+    const yesterdayStr = formatDateLocal(yesterday);
 
-    /* RESTORE LOWER TENURE DATE RANGE FILTER:
-    if (startDate) {
-        rangeStart = parseDateLocal(startDate) || new Date(yesterday);
-        rangeEnd = parseDateLocal(endDate || startDate) || new Date(rangeStart);
-    } else {
-        rangeStart = new Date(yesterday);
-        rangeEnd = new Date(yesterday);
+    let todayHasAttendance = false;
+    try {
+        const checkTodaySql = `
+            SELECT TOP 1 1 
+            FROM attendance_logs al
+            WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, ?, 23)
+              AND (
+                  UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'SHIFT A'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A SHIFT'
+                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A-SHIFT'
+              )
+        `;
+        const [todayCheckRows] = await executeQuery(checkTodaySql, [todayStr]);
+        todayHasAttendance = todayCheckRows && todayCheckRows.length > 0;
+    } catch (checkErr) {
+        console.warn("[TENURE] Today Shift A check failed:", checkErr.message);
     }
-    */
+
+    const effectiveDateStr = todayHasAttendance ? todayStr : yesterdayStr;
+
+    let rangeStart = parseDateLocal(effectiveDateStr);
+    let rangeEnd = parseDateLocal(effectiveDateStr);
+
+    if (startDate && startDate === (endDate || startDate)) {
+        const requestedDate = parseDateLocal(startDate);
+        if (startDate === todayStr && !todayHasAttendance) {
+            rangeStart = parseDateLocal(effectiveDateStr);
+            rangeEnd = parseDateLocal(effectiveDateStr);
+        } else {
+            rangeStart = requestedDate;
+            rangeEnd = requestedDate;
+        }
+    }
 
     rangeStart.setHours(0, 0, 0, 0);
     rangeEnd.setHours(0, 0, 0, 0);
@@ -3264,7 +3323,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     // Tenure Attrition uses the current India date independently.
     // Tenure Users Total buckets always use the current India date so their
     // Total Manpower values match all other dashboard comparison graphs.
-    const usersTotalAsOfDate = formatDateLocal(indiaNow);
+    const usersTotalAsOfDate = sqlEndDate;
 
     const customFromDays = Number(customTenureFrom);
     const customToDays = Number(customTenureTo);
@@ -3693,15 +3752,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
     try {
         // TENURE ATTRITION ONLY:
-        // This graph is permanently locked to the current India date.
-        // It does not use selected startDate/endDate, yesterday, attendance date or shift.
-        // Attendance, absenteeism, master tenure, normal attrition and every other graph remain unchanged.
-        const tenureAttritionTodaySql = `
-            CONVERT(
-                DATE,
-                (SYSUTCDATETIME() AT TIME ZONE 'UTC') AT TIME ZONE 'India Standard Time'
-            )
-        `;
+        // Set dynamic date to sqlEndDate (Today or Yesterday)
+        const tenureAttritionTodaySql = `CONVERT(DATE, ?, 23)`;
 
         let attritionSql = `
             SELECT
@@ -3710,7 +3762,10 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             FROM (
                 SELECT
                     u.id AS userId,
-                    DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) AS tenureDays
+                    CASE 
+                        WHEN DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) < 0 THEN 0 
+                        ELSE DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) 
+                    END AS tenureDays
                 FROM users u
                 WHERE
                   -- TENURE ATTRITION ONLY:
@@ -3735,7 +3790,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   -- Shift behavior remains unchanged.
         `;
 
-        const attritionParams = [];
+        const attritionParams = [sqlEndDate];
 
         attritionSql += `
             ) parsed
@@ -3761,7 +3816,12 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${attritionJoinDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} IS NOT NULL
                   AND ${leaveDateSQL} = ${tenureAttritionTodaySql}
-                  AND DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) BETWEEN ? AND ?
+                  AND (
+                      CASE 
+                          WHEN DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) < 0 THEN 0 
+                          ELSE DATEDIFF(DAY, ${attritionJoinDateSQL}, ${leaveDateSQL}) 
+                      END
+                  ) BETWEEN ? AND ?
                   ${attritionHierCondition}
 
                   -- Snapshot-independent eligibility, only for Tenure Attrition.
@@ -3773,7 +3833,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   -- Shift behavior remains unchanged.
             `;
 
-            const customAttritionParams = [customFromDays, customToDays];
+            const customAttritionParams = [sqlEndDate, customFromDays, customToDays];
 
             const [rows] = await executeQuery(customAttritionSql, customAttritionParams);
             attrition.CUSTOM = Number(rows?.[0]?.leftCount || 0);

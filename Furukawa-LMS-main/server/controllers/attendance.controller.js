@@ -693,8 +693,8 @@ export const uploadAttendance = async (req, res, next) => {
         // 1. Delete existing unmapped logs for this date
         try {
             const deleteReq = pool.request();
-            deleteReq.input("date", sql.Date, attendanceDate);
-            await deleteReq.query("DELETE FROM attendance_unmapped_logs WHERE CONVERT(date, [date]) = @date");
+            deleteReq.input("date", sql.VarChar(10), attendanceDate);
+            await deleteReq.query("DELETE FROM attendance_unmapped_logs WHERE CONVERT(date, [date]) = CONVERT(date, @date, 23)");
             logger.info(`Cleared old unmapped logs for date: ${attendanceDate}`);
         } catch (delErr) {
             logger.error(`Error deleting from attendance_unmapped_logs: ${delErr.message}`);
@@ -702,7 +702,7 @@ export const uploadAttendance = async (req, res, next) => {
 
         const mergeSql = `
             MERGE attendance_logs AS target
-            USING (SELECT @userId AS userId, @date AS [date]) AS source
+            USING (SELECT @userId AS userId, CONVERT(date, @date, 23) AS [date]) AS source
             ON target.userId = source.userId AND target.[date] = source.[date]
             WHEN MATCHED THEN 
                 UPDATE SET
@@ -730,7 +730,7 @@ export const uploadAttendance = async (req, res, next) => {
                     lateArrival, earlyDeparture, otHrs, otAmount, updatedAt
                 )
                 VALUES (
-                    @userId, @payCode, @cardNo, @empName, @date,
+                    @userId, @payCode, @cardNo, @empName, CONVERT(date, @date, 23),
                     @dept, @desig, @shift, @startTime,
                     @inT, @outT, @hrs, @status,
                     @late, @early, @otH, @otA, GETDATE()
@@ -744,7 +744,7 @@ export const uploadAttendance = async (req, res, next) => {
                 inTime, outTime, hrsWorked, status,
                 lateArrival, earlyDeparture, otHrs, otAmount, reason, createdAt
             ) VALUES (
-                @payCode, @cardNo, @employeeName, @date,
+                @payCode, @cardNo, @employeeName, CONVERT(date, @date, 23),
                 @department, @designation, @shift, @startTime,
                 @inTime, @outTime, @hrsWorked, @status,
                 @lateArrival, @earlyDeparture, @otHrs, @otAmount, @reason, GETDATE()
@@ -782,7 +782,7 @@ export const uploadAttendance = async (req, res, next) => {
                 reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
                 reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
                 reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
-                reqDB.input("date", sql.Date, attendanceDate);
+                reqDB.input("date", sql.VarChar(10), attendanceDate);
                 reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
                 reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
                 reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
@@ -820,7 +820,7 @@ export const uploadAttendance = async (req, res, next) => {
                 reqUnmapped.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
                 reqUnmapped.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
                 reqUnmapped.input("employeeName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
-                reqUnmapped.input("date", sql.Date, attendanceDate);
+                reqUnmapped.input("date", sql.VarChar(10), attendanceDate);
                 reqUnmapped.input("department", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
                 reqUnmapped.input("designation", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
                 reqUnmapped.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);

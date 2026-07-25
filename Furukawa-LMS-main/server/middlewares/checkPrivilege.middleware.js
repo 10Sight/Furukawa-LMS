@@ -42,8 +42,12 @@ export const checkPrivilege = (requiredPrivilegeName) => asyncHandler(async (req
         
         if (requiredPrivilegeName === "setrequirement") {
             const hasRequirementPermission = permissions.includes("line_requirement:update") || 
-                                            permissions.includes("line_requirement:read") ||
-                                            permissions.includes("mps_requirement:upload_excel");
+                                             permissions.includes("line_requirement:read") ||
+                                             permissions.includes("mps_requirement:upload_excel") ||
+                                             permissions.includes("mps_requirement:edit") ||
+                                             permissions.includes("mps_requirement:approve") ||
+                                             permissions.includes("mps_requirement:process_approve") ||
+                                             permissions.includes("setrequirement");
             if (hasRequirementPermission) {
                 return next();
             }

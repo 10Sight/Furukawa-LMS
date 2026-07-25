@@ -48,7 +48,6 @@ router.route("/approve-single").get(approveSingleRequirement).post(approveSingle
 router.post(
     "/approve-dashboard",
     verifyJWT,
-    authorizeRoles("isAdmin", "SUPERADMIN", "CUSTOM"),
     approveDashboardRequirements
 );
 

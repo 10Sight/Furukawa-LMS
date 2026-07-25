@@ -16,7 +16,6 @@ export const getEligibleUserCondition = (alias = "u") => `
     AND ISNULL(${alias}.isTemporary, 0) = 0
     AND ${alias}.empId IS NOT NULL
     AND ${alias}.empId != ''
-    AND ISNULL(${alias}.isEmployee, 1) = 1
     AND ${getDesignationShutterExclusionCondition(alias)}
 `;
 
@@ -46,6 +45,5 @@ export const getEligibleUserConditionViaJoin = (usersAlias = "u", shutterAlias =
     AND ISNULL(${usersAlias}.isTemporary, 0) = 0
     AND ${usersAlias}.empId IS NOT NULL
     AND ${usersAlias}.empId != ''
-    AND ISNULL(${usersAlias}.isEmployee, 1) = 1
     AND ${shutterAlias}.designation IS NULL
 `;

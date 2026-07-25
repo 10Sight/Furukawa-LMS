@@ -625,6 +625,125 @@ const CRIMPING_CONFIG = {
     bodyRows: 5
 };
 
+// Default configuration for the editable "5M Change Type" footer table (matches the legacy hardcoded layout)
+const DEFAULT_CHANGE_TYPE_CONFIG = {
+    title: "5M Change type: Man",
+    rows: [
+        [
+            { text: "Expected Change (Planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+            { text: "Associate on planned leave / Absent without information (During start of shift)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+            { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Un-expected Change (Un-planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+            { text: "Support operator / Work load (VD) adjustment", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+            { text: "(a) Depute associates from similar skill and process from same or other line/machine", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Abnormal Condition", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+            { text: "Extent working hours from 8 hrs (Over time)", rowSpan: 4, className: "border border-black py-0.5 px-0" },
+            { text: "Expert person shall check produced part (line/station/process change during over time)", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" }
+        ],
+        [
+            { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "In case of less skill- (b) less skill associates under supervision of expert after training of defects", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" }
+        ],
+        [
+            { text: "New associates", className: "border border-black py-0.5 px-0" },
+            { text: "Depute new associate to work station under supervision of expert", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Gate pass due to emergency (Operator not able to work due to sickness or accident)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+            { text: "Operator of same skill deputed", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Retroactive", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" }
+        ],
+        [
+            { text: "Job Rotation / Multi-skill", className: "border border-black py-0.5 px-0" },
+            { text: "Part/Product training before placing on the station", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Operator unskilled deputed", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0 text-center" }
+        ],
+        [
+            { text: "Associate work after Long vacation (1 month)", className: "border border-black py-0.5 px-0" },
+            { text: "Depute associate under supervision of expert", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" }
+        ],
+        [
+            { text: "Planned Gate pass", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+            { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" }
+        ],
+        [
+            { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
+            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
+            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black py-0.5 px-0" },
+            { text: "", className: "border border-black p-1 text-center" },
+            { text: "", className: "border border-black p-1 text-center" }
+        ]
+    ],
+    notes: [
+        { term: "* Retro parts:", definition: "Retro parts are the parts which are already produced when we come to know of change in process like m/c breakdown, poka yoke failures etc." },
+        { term: "* Containment parts:", definition: "Containment parts are the parts produced after change (ex. Part produced by lower operator, part produced at time of poka yoke bypass)" }
+    ]
+};
+
 const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
@@ -2124,6 +2243,53 @@ const Daily5MRecording = () => {
         const activeConfig = formType === 'crimping' ? CRIMPING_CONFIG : tableConfig;
         if (!activeConfig) return null;
 
+        const renderChangeTypeTable = () => {
+            const changeTypeConfig = activeConfig.changeTypeTable || DEFAULT_CHANGE_TYPE_CONFIG;
+            const notes = changeTypeConfig.notes || [];
+
+            return (
+                <div className="mt-8 border-2 border-black">
+                    <table className="w-full border-collapse text-[12px] sm:text-sm">
+                        <thead>
+                            <tr>
+                                <th colSpan={100} className="border border-black bg-gray-100 p-1 text-left font-bold text-[12px]">
+                                    {processText(changeTypeConfig.title)}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="text-[16px] leading-normal">
+                            {(changeTypeConfig.rows || []).map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                    {row.map((cell, cellIndex) => (
+                                        <td
+                                            key={cellIndex}
+                                            rowSpan={cell.rowSpan}
+                                            colSpan={cell.colSpan}
+                                            className={cell.className}
+                                        >
+                                            {processText(cell.text)}
+                                        </td>
+                                    ))}
+                                    {rowIndex === 0 && notes.length > 0 && (
+                                        <td rowSpan={changeTypeConfig.rows.length} className="border border-black p-1.5 align-top bg-slate-50/50">
+                                            <div className="space-y-1.5">
+                                                {notes.map((note, noteIndex) => (
+                                                    <div key={noteIndex}>
+                                                        <span className="font-bold underline">{processText(note.term)}</span>
+                                                        <p className="mt-0.5 italic">{processText(note.definition)}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </td>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
         return (
             <div className="w-full bg-white p-4">
                 {/* Main Table Container */}
@@ -2612,146 +2778,7 @@ const Daily5MRecording = () => {
                 </div>
 
                 {/* Footer Table: 5M Change Type */}
-                <div className="mt-8 border-2 border-black">
-                    <table className="w-full border-collapse text-[12px] sm:text-sm">
-                        <thead>
-                            <tr>
-                                <th colSpan="18" className="border border-black bg-gray-100 p-1 text-left font-bold text-[12px]">
-                                    5M Change type: Man
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-[16px] leading-normal">
-                            {/* Row 1 */}
-                            <tr>
-                                <td rowSpan="7" className="border border-black p-1.5 text-center font-bold align-middle bg-slate-50">Expected Change (Planned)</td>
-                                <td rowSpan="2" className="border border-black py-0.5 px-0">Associate on planned leave / Absent without information (During start of shift)</td>
-                                <td className="border border-black py-0.5 px-0">Depute operator on station of same skill</td>
-                                <td className="border border-black p-1 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-1 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-1 text-center font-semibold">Containment Action</td>
-                                <td rowSpan="7" className="border border-black p-1.5 text-center font-bold align-middle bg-slate-50">Un-expected Change (Un-planned)</td>
-                                <td rowSpan="2" className="border border-black py-0.5 px-0">Support operator / Work load (VD) adjustment</td>
-                                <td className="border border-black py-0.5 px-0">(a) Depute associates from similar skill and process from same or other line/machine</td>
-                                <td className="border border-black p-1 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-1 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-1 text-center font-semibold">Containment Action</td>
-                                <td rowSpan="7" className="border border-black p-1.5 text-center font-bold align-middle bg-slate-50">Abnormal Condition</td>
-                                <td rowSpan="4" className="border border-black py-0.5 px-0">Extent working hours from 8 hrs (Over time)</td>
-                                <td className="border border-black py-0.5 px-0">Expert person shall check produced part (line/station/process change during over time)</td>
-                                <td className="border border-black p-1 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-1 text-center font-semibold">First Part Approval</td>
-                                <td rowSpan="7" className="border border-black p-1.5 align-top bg-slate-50/50">
-                                    <div className="space-y-1.5">
-                                        <div>
-                                            <span className="font-bold underline">* Retro parts:</span>
-                                            <p className="mt-0.5 italic">Retro parts are the parts which are already produced when we come to know of change in process like m/c breakdown, poka yoke failures etc.</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-bold underline">* Containment parts:</span>
-                                            <p className="mt-0.5 italic">Containment parts are the parts produced after change (ex. Part produced by lower operator, part produced at time of poka yoke bypass)</p>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {/* Row 2 */}
-                            <tr>
-                                <td className="border border-black py-0.5 px-0">In case of less skill- a) less skill associates can produce parts under supervision of expert</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0">In case of less skill- (b) less skill associates under supervision of expert after training of defects</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                            </tr>
-                            {/* Row 3 */}
-                            <tr>
-                                <td className="border border-black py-0.5 px-0">New associates</td>
-                                <td className="border border-black py-0.5 px-0">Depute new associate to work station under supervision of expert</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Containment Action</td>
-                                <td rowSpan="2" className="border border-black py-0.5 px-0">Gate pass due to emergency (Operator not able to work due to sickness or accident)</td>
-                                <td className="border border-black py-0.5 px-0">Operator of same skill deputed</td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Retroactive</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                            </tr>
-                            {/* Row 4 */}
-                            <tr>
-                                <td className="border border-black py-0.5 px-0">Job Rotation / Multi-skill</td>
-                                <td className="border border-black py-0.5 px-0">Part/Product training before placing on the station</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0">Operator unskilled deputed</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-0.5 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                                <td className="border border-black py-0.5 px-0 text-center"></td>
-                            </tr>
-                            {/* Row 5 */}
-                            <tr>
-                                <td className="border border-black py-0.5 px-0">Associate work after Long vacation (1 month)</td>
-                                <td className="border border-black py-0.5 px-0">Depute associate under supervision of expert</td>
-                                <td className="border border-black p-1 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-1 text-center font-semibold">First Part Approval</td>
-                                <td className="border border-black p-1 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                            </tr>
-                            {/* Row 6 */}
-                            <tr>
-                                <td rowSpan="2" className="border border-black py-0.5 px-0">Planned Gate pass</td>
-                                <td className="border border-black py-0.5 px-0">Depute operator on station of same skill</td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center font-semibold">Setup Approval</td>
-                                <td className="border border-black p-1 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                            </tr>
-                            {/* Row 7 */}
-                            <tr>
-                                <td className="border border-black py-0.5 px-0">In case of less skill- a) less skill associates can produce parts under supervision of expert</td>
-                                <td className="border border-black p-1 text-center font-semibold">OJT</td>
-                                <td className="border border-black p-1 text-center font-semibold">Setup Approval</td>
-                                <td className="border border-black p-1 text-center font-semibold">Containment Action</td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black py-0.5 px-0"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                                <td className="border border-black p-1 text-center"></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                {renderChangeTypeTable()}
 
                 {/* Revision Info Footer */}
                 <div className="mt-6 flex justify-between items-center px-1 pt-1 border-t border-black font-bold text-[16px] italic">

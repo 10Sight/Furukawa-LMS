@@ -71,10 +71,129 @@ const DEFAULT_CONFIG = {
             { text: "1st Check", width: "w-12" }, { text: "2nd Check", width: "w-12" }, { text: "3rd Check", width: "w-12" }
         ]
     ],
-    // The columns definition is strictly for data mapping if we were generating rows dynamically from DB records. 
+    // The columns definition is strictly for data mapping if we were generating rows dynamically from DB records.
     // However, since the sheet is "empty rows to be filled", we mainly just define the structure for the *User Interface* to render inputs.
     // We will assume a fixed number of rows (e.g., 5) or dynamic rows, where each cell maps to the column index/id.
-    bodyRows: 5 // Default rows
+    bodyRows: 5, // Default rows
+
+    // Editable "5M Change Type" footer table (matches the legacy hardcoded layout)
+    changeTypeTable: {
+        title: "5M Change type: Man",
+        rows: [
+            [
+                { text: "Expected Change (Planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+                { text: "Associate on planned leave / Absent without information (During start of shift)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+                { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Un-expected Change (Un-planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+                { text: "Support operator / Work load (VD) adjustment", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+                { text: "(a) Depute associates from similar skill and process from same or other line/machine", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Abnormal Condition", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
+                { text: "Extent working hours from 8 hrs (Over time)", rowSpan: 4, className: "border border-black py-0.5 px-0" },
+                { text: "Expert person shall check produced part (line/station/process change during over time)", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" }
+            ],
+            [
+                { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "In case of less skill- (b) less skill associates under supervision of expert after training of defects", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" }
+            ],
+            [
+                { text: "New associates", className: "border border-black py-0.5 px-0" },
+                { text: "Depute new associate to work station under supervision of expert", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Gate pass due to emergency (Operator not able to work due to sickness or accident)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+                { text: "Operator of same skill deputed", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Retroactive", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" }
+            ],
+            [
+                { text: "Job Rotation / Multi-skill", className: "border border-black py-0.5 px-0" },
+                { text: "Part/Product training before placing on the station", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Operator unskilled deputed", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0 text-center" }
+            ],
+            [
+                { text: "Associate work after Long vacation (1 month)", className: "border border-black py-0.5 px-0" },
+                { text: "Depute associate under supervision of expert", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+                { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" }
+            ],
+            [
+                { text: "Planned Gate pass", rowSpan: 2, className: "border border-black py-0.5 px-0" },
+                { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" }
+            ],
+            [
+                { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
+                { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
+                { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black py-0.5 px-0" },
+                { text: "", className: "border border-black p-1 text-center" },
+                { text: "", className: "border border-black p-1 text-center" }
+            ]
+        ],
+        notes: [
+            { term: "* Retro parts:", definition: "Retro parts are the parts which are already produced when we come to know of change in process like m/c breakdown, poka yoke failures etc." },
+            { term: "* Containment parts:", definition: "Containment parts are the parts produced after change (ex. Part produced by lower operator, part produced at time of poka yoke bypass)" }
+        ]
+    }
 };
 
 export const get5MConfig = asyncHandler(async (req, res) => {

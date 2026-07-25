@@ -20,6 +20,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SkillMatrixCertificate from "@/components/admin/SkillMatrixCertificate";
+import TestPaper from "../Admin/TestPaper";
 
 const InstructorSkillMatrix = () => {
     const componentRef = useRef();
@@ -845,6 +846,7 @@ const InstructorSkillMatrix = () => {
                     <TabsList className="no-print mb-4 flex gap-2 w-fit bg-gray-100 p-1 rounded-md">
                         <TabsTrigger value="skillMatrix" className="text-xs font-bold px-4 py-2">Skill Matrix</TabsTrigger>
                         <TabsTrigger value="evaluation" className="text-xs font-bold px-4 py-2">Skill Matrix Evaluation</TabsTrigger>
+                        <TabsTrigger value="testPaper" className="text-xs font-bold px-4 py-2">Test Paper</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="skillMatrix" className="space-y-4">
@@ -1298,6 +1300,10 @@ const InstructorSkillMatrix = () => {
                                 )}
                             </div>
                         )}
+                    </TabsContent>
+
+                    <TabsContent value="testPaper" className="space-y-4">
+                        <TestPaper skillUpgradation={true} />
                     </TabsContent>
                 </Tabs>
             )}

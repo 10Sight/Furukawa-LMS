@@ -112,6 +112,9 @@ const TakeQuiz = () => {
   }, []);
 
   const searchStudents = async (value, limit) => {
+    // Skill Upgradation quizzes only require general OJT approval (any time), while
+    // Multi-Skilling quizzes keep the strict same-day gating.
+    const isSkillUpgradationOnly = !quiz?.isDojo && !quiz?.isMultiSkilling && !!quiz?.skillUpgradation;
     const response = await axiosInstance.get(`/api/users/students`, {
       params: {
         search: value,
@@ -119,7 +122,8 @@ const TakeQuiz = () => {
         limit,
         includeTemporary: "true",
         isDojo: quiz?.isDojo ? "true" : undefined,
-        ojtApprovedToday: !quiz?.isDojo ? "true" : undefined,
+        ojtApprovedOnly: isSkillUpgradationOnly ? "true" : undefined,
+        ojtApprovedToday: (!quiz?.isDojo && !isSkillUpgradationOnly) ? "true" : undefined,
         quizTargetDepts: quiz?.isDojo ? JSON.stringify(quiz?.targetDeptId || []) : undefined,
         quizTargetSections: quiz?.isDojo ? JSON.stringify(quiz?.targetSectionId || []) : undefined
       }

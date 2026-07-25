@@ -32,6 +32,37 @@ const checkOjtApprovedToday = async (userId) => {
     return rows.length > 0;
 };
 
+// Helper to check if a student has ever had an OJT approved (Pass/Approved), at any time —
+// not restricted to today. Mirrors the base OJT gating check below: reads the per-student
+// ojt JSON blob first, falling back to the on_job_trainings table if that column isn't synced.
+const checkOjtApprovedGenerally = async (userId) => {
+    try {
+        const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [userId]);
+        if (userRows.length > 0) {
+            try {
+                const ojtList = JSON.parse(userRows[0].ojt || "[]");
+                if (Array.isArray(ojtList) && ojtList.some(o => o.result === "Pass" || o.result === "Approved")) {
+                    return true;
+                }
+            } catch (e) { /* fall through to fallback check */ }
+        }
+    } catch (dbErr) {
+        console.error("[ERROR] Failed to query user ojt list:", dbErr.message);
+    }
+
+    try {
+        const [fallbackRows] = await executeQuery(`
+            SELECT 1 FROM on_job_trainings
+            WHERE student = CAST(? AS NVARCHAR(50))
+              AND (result = 'Pass' OR result = 'Approved')
+        `, [userId]);
+        return fallbackRows.length > 0;
+    } catch (fallbackErr) {
+        console.error("[ERROR] Fallback OJT query failed:", fallbackErr.message);
+        return false;
+    }
+};
+
 // Resolves the snapshot fields (identity + status/hierarchy at attempt time) for the actual
 // candidate taking the quiz. Always queries by the candidate's userId — never req.user — since
 // admins/trainers frequently submit attempts on behalf of a candidate.
@@ -642,9 +673,8 @@ export const startQuiz = asyncHandler(async (req, res) => {
         }
     }
 
-    // OJT Daily Gating for Multi-Skilling and Skill Upgradation Quizzes (for non-admins/trainers)
-    const isMultiOrUpgradation = !!quiz.isMultiSkilling || !!quiz.skillUpgradation;
-    if (isMultiOrUpgradation && !isAdminOrTrainer) {
+    // OJT Gating for Multi-Skilling (daily) and Skill Upgradation (general) Quizzes (for non-admins/trainers)
+    if (!!quiz.isMultiSkilling && !isAdminOrTrainer) {
         const isOjtApprovedToday = await checkOjtApprovedToday(userId);
         if (!isOjtApprovedToday) {
             return res.json(new ApiResponse(200, {
@@ -658,6 +688,22 @@ export const startQuiz = asyncHandler(async (req, res) => {
                     level: quiz.level
                 }
             }, "OJT approval today required"));
+        }
+    }
+    if (!!quiz.skillUpgradation && !isAdminOrTrainer) {
+        const isOjtApprovedGenerally = await checkOjtApprovedGenerally(userId);
+        if (!isOjtApprovedGenerally) {
+            return res.json(new ApiResponse(200, {
+                canAttempt: false,
+                reason: "Access Denied: You must be approved in On-Job-Training (OJT) before you can attempt this assessment.",
+                quiz: {
+                    _id: quiz.id,
+                    title: quiz.title,
+                    course: quiz.course,
+                    module: quiz.module,
+                    level: quiz.level
+                }
+            }, "OJT approval required"));
         }
     }
 
@@ -720,6 +766,8 @@ export const startQuiz = asyncHandler(async (req, res) => {
         isDojo: quiz.isDojo,
         isHandover: quiz.isHandover,
         isTheoretical: quiz.isTheoretical,
+        isMultiSkilling: !!quiz.isMultiSkilling,
+        skillUpgradation: !!quiz.skillUpgradation,
         targetDeptId: quiz.targetDeptId,
         targetSectionId: quiz.targetSectionId,
         conductedBy: quiz.conductedBy || "Education Cell",
@@ -916,12 +964,17 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         throw new ApiError(dojoTargetCheck.reason, 403);
     }
 
-    // OJT Daily Gating for Multi-Skilling and Skill Upgradation Quizzes on submit
-    const isMultiOrUpgradation = !!quiz.isMultiSkilling || !!quiz.skillUpgradation;
-    if (isMultiOrUpgradation) {
+    // OJT Gating for Multi-Skilling (daily) and Skill Upgradation (general) Quizzes on submit
+    if (!!quiz.isMultiSkilling) {
         const isOjtApprovedToday = await checkOjtApprovedToday(userId);
         if (!isOjtApprovedToday) {
             throw new ApiError("Access Denied: The candidate must be approved in On-Job-Training (OJT) today before attempting or submitting this assessment.", 403);
+        }
+    }
+    if (!!quiz.skillUpgradation) {
+        const isOjtApprovedGenerally = await checkOjtApprovedGenerally(userId);
+        if (!isOjtApprovedGenerally) {
+            throw new ApiError("Access Denied: The candidate must be approved in On-Job-Training (OJT) before attempting or submitting this assessment.", 403);
         }
     }
 

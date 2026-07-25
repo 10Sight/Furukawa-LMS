@@ -88,7 +88,11 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
     return currentUser?.customRole?.permissions?.includes(permission);
   };
 
-  const canRead = hasPermission("test_paper:read") || currentUser?.role === "STUDENT" || currentUser?.isEmployee;
+  const canRead = hasPermission("test_paper:read") ||
+    currentUser?.role === "STUDENT" ||
+    currentUser?.isEmployee ||
+    currentUser?.role === "INSTRUCTOR" ||
+    currentUser?.isTrainer;
   const canManage = hasPermission("test_paper:create");
 
   const isAuthorizedToAccessAll = currentUser?.role === "SUPERADMIN" ||

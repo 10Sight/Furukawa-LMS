@@ -1122,7 +1122,7 @@ const SkillMatrixCertificate = ({
                                                 onMouseEnter={() => setActiveStandardTooltip(sIdx)}
                                                 onMouseLeave={() => setActiveStandardTooltip(prev => prev === sIdx ? null : prev)}
                                             >
-                                                Standard
+                                                Standard <span className="text-red-500 ml-0.5">*</span>
                                                 <Info size={12} className="text-gray-500 flex-shrink-0" />
                                                 {activeStandardTooltip === sIdx && (
                                                     <div
@@ -1133,7 +1133,7 @@ const SkillMatrixCertificate = ({
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="w-[120px] p-2 border-r border-black flex items-center justify-center">Evaluation</div>
+                                            <div className="w-[120px] p-2 border-r border-black flex items-center justify-center">Evaluation <span className="text-red-500 ml-0.5">*</span></div>
                                             <div className="w-[150px] p-2 flex items-center justify-center text-center">Content that must be re-educated</div>
                                         </div>
 

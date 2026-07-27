@@ -119,13 +119,13 @@ const ProcessSelect = ({ departmentId, sectionId, value, onValueChange, classNam
     );
 };
 
-// Mentors are scoped to the department/section of the sheet and show their current
+// Mentors are scoped to the department of the sheet and show their current
 // mentee load so reviewers can see (and avoid picking) mentors who are already at capacity.
 // The value stored on the entry stays the mentor's fullName (matches how existing entries
 // are persisted), so a fallback option is added for saved names that fall outside the
-// current department/section scope or belong to a user no longer flagged as a mentor.
+// current department scope or belong to a user no longer flagged as a mentor.
 const MentorSelect = ({ departmentId, sectionId, value, onValueChange, className = "" }) => {
-    const { data } = useGetAllMentorsQuery({ departmentId, sectionId, limit: 1000 }, { skip: !departmentId });
+    const { data } = useGetAllMentorsQuery({ departmentId, limit: 1000 }, { skip: !departmentId });
     const mentors = data?.data?.users || [];
     const matchedMentor = mentors.find(m => m.fullName === value);
 

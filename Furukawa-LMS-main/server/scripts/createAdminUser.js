@@ -14,13 +14,13 @@ const createAdminUser = async () => {
 
         // Admin user details
         const adminData = {
-            fullName: "Yadvender Yadav",
-            userName: "ST080014",
-            email: "yadvender.yadav@furukawaminda.com",
-            phoneNumber: "7015997109",
+            fullName: "Joy Dastidar",
+            userName: "ST080780",
+            email: "joy.dastidar@furukawaminda.com",
+            phoneNumber: "9887510125",
             role: "ADMIN",
             unit: "UNIT_1",
-            password: "ST080014@FME",
+            password: "ST080780@FME",
             isAdmin: true,
             isEmployee: false,
             isTrainer: false,

@@ -1,5 +1,4 @@
 import { executeQuery } from "../db/mssqlHelper.js";
-import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 import Department from "../models/department.model.js";
 import validator from "validator";
@@ -14,6 +13,7 @@ import logAudit from "../utils/auditLogger.js";
 import sendMail from "../utils/mail.util.js";
 import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
+import logger from "../logger/winston.logger.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -187,54 +187,65 @@ const handleInstructorAssignments = async (userId, departmentIds) => {
   }
 };
 
-const getHierarchyJoinSQL = `
+// Resolves department/section/line/sub-section for filtering (WHERE clauses reference
+// ss_res/l_res/s_res/d). Kept separate from getHierarchyDisplayJoinSQL below so count-only
+// queries (which never select a hierarchy display column) can skip the far more expensive
+// display join — in particular the `ma` all-stations subquery (UNION ALL + FOR JSON PATH),
+// which was previously being evaluated per row on every COUNT(*)/status-counts query too.
+const getHierarchyFilterJoinSQL = `
   OUTER APPLY (
-    SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId 
-    FROM sub_sections ss 
+    SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId
+    FROM sub_sections ss
     WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
   ) ss_res
   OUTER APPLY (
     SELECT TOP 1 l.id as lineId, l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
-    FROM [lines] l 
+    FROM [lines] l
     WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
   ) l_res
   OUTER APPLY (
     SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.departmentId as sDeptId
-    FROM [sections] s 
+    FROM [sections] s
     WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
   ) s_res
   OUTER APPLY (
     SELECT TOP 1 d.id, d.name as deptName, d.instructor as deptInstructor
-    FROM departments d 
+    FROM departments d
     WHERE d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
        OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
   ) d
+`;
+
+// Station name, contractor name, and the full all-stations assignment list — only ever
+// selected for display, never referenced in a WHERE clause. Must be appended after
+// getHierarchyFilterJoinSQL since the `ma` subquery below reads s_res/d from it.
+const getHierarchyDisplayJoinSQL = `
   OUTER APPLY (
-    SELECT TOP 1 name as stationName FROM machines 
+    SELECT TOP 1 name as stationName FROM machines
     WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
   ) st
   OUTER APPLY (
-    SELECT TOP 1 name as contractorName FROM contractors 
+    SELECT TOP 1 name as contractorName FROM contractors
     WHERE id = u.contractorId
   ) c_res
   OUTER APPLY (
-    SELECT 
-        (SELECT 
-             data.machineId, data.stationName, 
-             data.subSectionId, data.subSectionName, 
-             data.lineId, data.lineName, 
-             data.sectionId, data.sectionName, 
+    SELECT
+        (SELECT
+             data.machineId, data.stationName,
+             data.subSectionId, data.subSectionName,
+             data.lineId, data.lineName,
+             data.sectionId, data.sectionName,
              data.departmentId, data.deptName,
              data.assigned_at
          FROM (
             -- Current Primary Station
-            SELECT 
-                m2.id as machineId, m2.name as stationName, 
-                ss2.id as subSectionId, ss2.name as subSectionName, 
-                l2.id as lineId, l2.name as lineName, 
-                COALESCE(s_res.sectionId, s2.id) as sectionId, 
-                COALESCE(s_res.sectionName, s2.name) as sectionName, 
-                COALESCE(d.id, d2.id) as departmentId, 
+            SELECT
+                m2.id as machineId, m2.name as stationName,
+                ss2.id as subSectionId, ss2.name as subSectionName,
+                l2.id as lineId, l2.name as lineName,
+                COALESCE(s_res.sectionId, s2.id) as sectionId,
+                COALESCE(s_res.sectionName, s2.name) as sectionName,
+                COALESCE(d.id, d2.id) as departmentId,
                 COALESCE(d.deptName, d2.name) as deptName,
                 u.updatedAt as assigned_at
             FROM machines m2
@@ -248,11 +259,11 @@ const getHierarchyJoinSQL = `
 
             -- Junction Table Assignments (Secondary stations)
             -- For secondary stations, we stick to the machine's actual hierarchy
-            SELECT 
-                m.id as machineId, m.name as stationName, 
-                ss.id as subSectionId, ss.name as subSectionName, 
-                l.id as lineId, l.name as lineName, 
-                s.id as sectionId, s.name as sectionName, 
+            SELECT
+                m.id as machineId, m.name as stationName,
+                ss.id as subSectionId, ss.name as subSectionName,
+                l.id as lineId, l.name as lineName,
+                s.id as sectionId, s.name as sectionName,
                 d_inner.id as departmentId, d_inner.name as deptName,
                 ma.assigned_at
             FROM machine_assignments ma
@@ -269,6 +280,10 @@ const getHierarchyJoinSQL = `
          FOR JSON PATH) as assignments
   ) ma
 `;
+
+// Full join graph, kept for call sites that always need both filtering and display columns
+// and haven't been split into the two pieces above individually.
+const getHierarchyJoinSQL = `${getHierarchyFilterJoinSQL}${getHierarchyDisplayJoinSQL}`;
 
 const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none") ? val : null;
 
@@ -709,13 +724,12 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
   // --- NEW: Calculate Present/Absent counts for the cards ---
   const excludeCounts = req.query.excludeCounts === "true";
-  let presentCount = 0;
-  let absentCount = 0;
-  let leftCount = 0;
-  let presentEfficiency = 0;
-  let overallEfficiency = 0;
-  let systemEfficiency = 0;
 
+  // Count-only/aggregate queries only need getHierarchyFilterJoinSQL (department/section/
+  // line/sub-section resolution for WHERE clauses) — not getHierarchyDisplayJoinSQL, whose
+  // `ma` OUTER APPLY (all-stations UNION ALL + FOR JSON PATH) is display-only and was
+  // previously being evaluated per row on these count queries for no reason.
+  let countsQueryPromise = Promise.resolve([[]]);
   if (!excludeCounts) {
     // Create a version of where clauses that omits the specific status filter
     const countsWhereClauses = whereClauses.filter(c =>
@@ -744,7 +758,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       : new Date().toISOString().split('T')[0];
     const notLeftYetSQL = `(u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > '${countsRefDate}')`;
 
-    const [countsData] = await executeQuery(`
+    countsQueryPromise = executeQuery(`
       SELECT
         SUM(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as presentCount,
         SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as absentCount,
@@ -753,27 +767,18 @@ export const getAllUsers = asyncHandler(async (req, res) => {
         AVG(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND ${notLeftYetSQL} THEN 0 ELSE NULL END) as overallEfficiency,
         AVG(CASE WHEN ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
       FROM users u
-      ${getHierarchyJoinSQL}
+      ${getHierarchyFilterJoinSQL}
       ${attendanceJoinSQL}
       ${countsWhereSQL}
-    `, [...attendanceParams, ...params]); // We use the same params as the filters built so far
-
-    presentCount = countsData[0]?.presentCount || 0;
-    absentCount = countsData[0]?.absentCount || 0;
-    leftCount = countsData[0]?.leftCount || 0;
-    presentEfficiency = countsData[0]?.presentEfficiency || 0;
-    overallEfficiency = countsData[0]?.overallEfficiency || 0;
-    systemEfficiency = countsData[0]?.systemEfficiency || 0;
+    `, [...attendanceParams, ...params], { label: "getAllUsers.counts" });
   }
-  // ----------------------------------------------------------
 
-  const [cnt] = await executeQuery(`
-    SELECT COUNT(*) as total 
-    FROM users u ${getHierarchyJoinSQL} 
+  const cntQueryPromise = executeQuery(`
+    SELECT COUNT(*) as total
+    FROM users u ${getHierarchyFilterJoinSQL}
     ${attendanceJoinSQL}
     ${whereSQL}
-  `, [...attendanceParams, ...params]);
-  const totalUsers = cnt[0].total;
+  `, [...attendanceParams, ...params], { label: "getAllUsers.count" });
 
   // Sorting
   const sortBy = req.query.sortBy || "createdAt";
@@ -788,7 +793,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const sortColumn = allowedSortFields[sortBy] || "u.createdAt";
   const sortOrder = order.toLowerCase() === "asc" ? "ASC" : "DESC";
 
-  const [users] = await executeQuery(`
+  const usersQueryPromise = executeQuery(`
     SELECT u.*,
            d.id as actualDeptId, d.deptName, d.deptInstructor,
            s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
@@ -805,7 +810,25 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     ${whereSQL}
     ORDER BY ${sortColumn} ${sortOrder}, u.id ${sortOrder}
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...attendanceParams, ...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit], { label: "getAllUsers.select" });
+
+  // The 3 queries above share the same WHERE/params but not each other's results, so they
+  // run concurrently instead of adding up sequentially (previously ~3x the wall-clock cost).
+  const requestStartedAt = Date.now();
+  const [[countsData], [cnt], [users]] = await Promise.all([
+    countsQueryPromise,
+    cntQueryPromise,
+    usersQueryPromise,
+  ]);
+  logger.debug(`[getAllUsers] total=${Date.now() - requestStartedAt}ms rows=${users.length}/${cnt[0].total}`);
+
+  const presentCount = countsData[0]?.presentCount || 0;
+  const absentCount = countsData[0]?.absentCount || 0;
+  const leftCount = countsData[0]?.leftCount || 0;
+  const presentEfficiency = countsData[0]?.presentEfficiency || 0;
+  const overallEfficiency = countsData[0]?.overallEfficiency || 0;
+  const systemEfficiency = countsData[0]?.systemEfficiency || 0;
+  const totalUsers = cnt[0].total;
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -1032,11 +1055,9 @@ export const createUser = asyncHandler(async (req, res) => {
     FROM users u ${getHierarchyJoinSQL} WHERE u.id = ?
   `, [newUserId]);
 
-  try {
-    await UserHierarchySnapshot.syncFromUsers();
-  } catch (syncErr) {
-    console.error("Snapshot sync failed after createUser:", syncErr.message);
-  }
+  // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+  // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+  // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
 
   res.status(201).json(new ApiResponse(201, formatUser(newUser[0]), "User created successfully"));
 });
@@ -1500,13 +1521,9 @@ export const updateUser = asyncHandler(async (req, res) => {
     };
   }
 
-  // Fire-and-forget: this rebuilds the whole snapshot table (TRUNCATE + full INSERT...SELECT
-  // over all users) and was blocking every update response, including simple status changes
-  // like Mark as Left. The table is already eventually-consistent via a 30-minute background
-  // sync, so it doesn't need to be on the response's critical path.
-  UserHierarchySnapshot.syncFromUsers().catch((syncErr) => {
-    console.error("Snapshot sync failed after updateUser:", syncErr.message);
-  });
+  // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+  // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+  // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
 
   res.json(new ApiResponse(200, finalUser, "User updated successfully"));
 });
@@ -1601,11 +1618,9 @@ export const deleteUser = asyncHandler(async (req, res) => {
     await syncHierarchyUserLists(affectedSubSectionIds, affectedLineIds, affectedSectionIds);
   }
 
-  try {
-    await UserHierarchySnapshot.syncFromUsers();
-  } catch (syncErr) {
-    console.error("Snapshot sync failed after deleteUser:", syncErr.message);
-  }
+  // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+  // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+  // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
 
   res.json(new ApiResponse(200, null, "User deleted successfully"));
 });
@@ -2052,13 +2067,16 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     ) mq` : "";
   const marksSelectSQL = includeHandoverMarks ? ", mq.score as quizScore, mq.quizQuestions as quizQuestions" : "";
 
-  const [cnt] = await executeQuery(`
+  // Count-only/aggregate queries only need getHierarchyFilterJoinSQL — see comment on that
+  // constant. Only the paginated select needs the display join (station/contractor/assignments).
+  const cntQueryPromise = executeQuery(`
     SELECT COUNT(*) as total
-    FROM users u ${getHierarchyJoinSQL}
+    FROM users u ${getHierarchyFilterJoinSQL}
     ${attendanceJoinSQL}
     ${whereSQL}
-  `, [...attendanceParams, ...params]);
-  const [students] = await executeQuery(`
+  `, [...attendanceParams, ...params], { label: "getAllStudents.count" });
+
+  const studentsQueryPromise = executeQuery(`
     SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
            al.logShift, al.logStatus, al.logDate, c_res.contractorName${marksSelectSQL}
     FROM users u ${getHierarchyJoinSQL}
@@ -2066,17 +2084,27 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     ${marksJoinSQL}
     ${whereSQL}
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...attendanceParams, ...params, offset, limit]);
+  `, [...attendanceParams, ...params, offset, limit], { label: "getAllStudents.select" });
 
-  const [statusCountsData] = await executeQuery(`
+  const statusCountsQueryPromise = executeQuery(`
     SELECT
       COUNT(*) as totalHeadcount,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
       SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
       SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount
-    FROM users u ${getHierarchyJoinSQL}
+    FROM users u ${getHierarchyFilterJoinSQL}
     ${countsWhereSQL}
-  `, countsParams);
+  `, countsParams, { label: "getAllStudents.statusCounts" });
+
+  // None of these 3 queries depend on each other's results, only the same WHERE/params —
+  // run concurrently instead of sequentially (previously ~3x the wall-clock cost per request).
+  const requestStartedAt = Date.now();
+  const [[cnt], [students], [statusCountsData]] = await Promise.all([
+    cntQueryPromise,
+    studentsQueryPromise,
+    statusCountsQueryPromise,
+  ]);
+  logger.debug(`[getAllStudents] total=${Date.now() - requestStartedAt}ms rows=${students.length}/${cnt[0].total}`);
 
   res.json(new ApiResponse(200, {
     users: students.map(formatUser),
@@ -2184,12 +2212,12 @@ export const getAllMentors = asyncHandler(async (req, res) => {
 
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId, 
-               MAX(status) as logStatus, 
+        SELECT userId,
+               MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
-        FROM attendance_logs 
+        FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
       ) al ON u.id = al.userId
@@ -2221,13 +2249,15 @@ export const getAllMentors = asyncHandler(async (req, res) => {
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
-  const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
-           al.logShift, al.logStatus, al.logDate
-    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
-    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...attendanceParams, ...params, offset, limit]);
+  const [[cnt], [users]] = await Promise.all([
+    executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params], { label: "getAllMentors.count" }),
+    executeQuery(`
+      SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+             al.logShift, al.logStatus, al.logDate
+      FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
+      ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...attendanceParams, ...params, offset, limit], { label: "getAllMentors.select" }),
+  ]);
 
   // Resolve the selected month ("YYYY-MM" or "ALL"), defaulting to the current month.
   const now = new Date();
@@ -2458,13 +2488,15 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
-  const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
-           al.logShift, al.logStatus, al.logDate
-    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
-    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...attendanceParams, ...params, offset, limit]);
+  const [[cnt], [users]] = await Promise.all([
+    executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params], { label: "getAllSupervisors.count" }),
+    executeQuery(`
+      SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+             al.logShift, al.logStatus, al.logDate
+      FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
+      ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...attendanceParams, ...params, offset, limit], { label: "getAllSupervisors.select" }),
+  ]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -2512,12 +2544,12 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
 
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId, 
-               MAX(status) as logStatus, 
+        SELECT userId,
+               MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
                COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
-        FROM attendance_logs 
+        FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
       ) al ON u.id = al.userId
@@ -2549,13 +2581,15 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-  const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params]);
-  const [users] = await executeQuery(`
-    SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
-           al.logShift, al.logStatus, al.logDate
-    FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
-    ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-  `, [...attendanceParams, ...params, offset, limit]);
+  const [[cnt], [users]] = await Promise.all([
+    executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params], { label: "getAllIncharges.count" }),
+    executeQuery(`
+      SELECT u.*, d.id as actualDeptId, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName,
+             al.logShift, al.logStatus, al.logDate
+      FROM users u ${getHierarchyJoinSQL} ${attendanceJoinSQL} ${whereSQL}
+      ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...attendanceParams, ...params, offset, limit], { label: "getAllIncharges.select" }),
+  ]);
 
   res.json(new ApiResponse(200, {
     users: users.map(formatUser),
@@ -3080,11 +3114,119 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
     datesModified: Object.keys(shiftSchedulePatch).length,
   }, { req });
 
-  try {
-    await UserHierarchySnapshot.syncFromUsers();
-  } catch (syncErr) {
-    console.error("Snapshot sync failed after bulkUpdateShiftSchedule:", syncErr.message);
-  }
+  // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+  // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+  // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
 
   res.json(new ApiResponse(200, { updated: updates.length }, `Shift schedule updated for ${updates.length} user${updates.length !== 1 ? "s" : ""}`));
+});
+
+export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
+  if (!hasPermission(req.user, SYSTEM_PERMISSIONS.USER_CHANGE_STATUS)) {
+    throw new ApiError("You do not have permission to change user status", 403);
+  }
+
+  const { ids, isAllSelected, filters, leavingDate, reasonOfLeaving } = req.body;
+
+  if (!leavingDate) throw new ApiError("Date of leaving is required", 400);
+  if (!reasonOfLeaving) throw new ApiError("Reason of leaving is required", 400);
+
+  // Resolve which user IDs to target
+  let userIds = [];
+
+  if (isAllSelected) {
+    const assignmentStatus = filters?.assignmentStatus;
+    const needsHierarchy = assignmentStatus && ['assigned', 'unassigned'].includes(assignmentStatus);
+
+    if (needsHierarchy) {
+      let hierWhere = ["u.isEmployee = 1", "(u.isTrainer = 0 OR u.isTrainer IS NULL)", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+      let hierParams = [];
+
+      if (filters?.search) {
+        const t = `%${filters.search}%`;
+        hierWhere.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+        hierParams.push(t, t, t);
+      }
+      if (filters?.status && filters.status !== "ALL") {
+        hierWhere.push("u.status = ?");
+        hierParams.push(filters.status);
+      }
+      if (filters?.unit && filters.unit !== "ALL") {
+        hierWhere.push("u.unit = ?");
+        hierParams.push(filters.unit);
+      }
+      const hierDeptIds = toIdList(filters?.departmentId);
+      if (hierDeptIds.length) {
+        const ph = hierDeptIds.map(() => "?").join(",");
+        hierWhere.push(`(u.departmentId IN (${ph}) OR u.department IN (${ph}))`);
+        hierParams.push(...hierDeptIds, ...hierDeptIds);
+      }
+
+      const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
+      if (ac) hierWhere.push(ac);
+
+      const [matchedRows] = await executeQuery(
+        `SELECT u.id FROM users u ${getHierarchyJoinSQL} WHERE ${hierWhere.join(' AND ')}`,
+        hierParams
+      );
+      userIds = matchedRows.map(r => r.id);
+    } else {
+      let whereClauses = [
+        "isEmployee = 1",
+        "(isTrainer = 0 OR isTrainer IS NULL)",
+        "(isDeleted = 0 OR isDeleted IS NULL)",
+      ];
+      let params = [];
+
+      if (filters?.search) {
+        const t = `%${filters.search}%`;
+        whereClauses.push("(fullName LIKE ? OR userName LIKE ? OR empId LIKE ?)");
+        params.push(t, t, t);
+      }
+      if (filters?.status && filters.status !== "ALL") {
+        whereClauses.push("status = ?");
+        params.push(filters.status);
+      }
+      if (filters?.unit && filters.unit !== "ALL") {
+        whereClauses.push("unit = ?");
+        params.push(filters.unit);
+      }
+      const flatDeptIds = toIdList(filters?.departmentId);
+      if (flatDeptIds.length) {
+        const ph = flatDeptIds.map(() => "?").join(",");
+        whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
+        params.push(...flatDeptIds, ...flatDeptIds);
+      }
+
+      const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+      const [rows] = await executeQuery(`SELECT id FROM users ${whereSQL}`, params);
+      userIds = rows.map(r => r.id);
+    }
+  } else {
+    if (!ids?.length) throw new ApiError("No IDs provided", 400);
+    userIds = ids;
+  }
+
+  if (userIds.length === 0) {
+    return res.json(new ApiResponse(200, { updated: 0 }, "No users matched the criteria"));
+  }
+
+  const placeholders = userIds.map(() => "?").join(",");
+  await executeQuery(
+    `UPDATE users SET status = 'LEFT', leavingDate = ?, reasonOfLeaving = ?, updatedAt = GETDATE() WHERE id IN (${placeholders})`,
+    [leavingDate, reasonOfLeaving, ...userIds]
+  );
+
+  await logAudit(req.user.id, "BULK_UPDATE_STATUS_LEFT", {
+    count: userIds.length,
+    isAllSelected: !!isAllSelected,
+    leavingDate,
+    reasonOfLeaving,
+  }, { req });
+
+  // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+  // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+  // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
+
+  res.json(new ApiResponse(200, { updated: userIds.length }, `${userIds.length} user${userIds.length !== 1 ? "s" : ""} marked as left`));
 });

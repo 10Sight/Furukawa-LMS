@@ -159,6 +159,31 @@ export const getPoolStatus = async () => {
     };
 };
 
+// --- Pool contention watchdog -------------------------------------------------------
+// pendingAcquires > 0 means requests are actually queuing for a free connection right
+// now — the direct symptom of "the API feels slow" under load. Logs once when
+// contention starts and once when it clears, rather than every scan, so a sustained
+// backlog doesn't spam the logs.
+const POOL_CONTENTION_SCAN_INTERVAL_MS = 10000;
+let poolContentionWarned = false;
+
+setInterval(async () => {
+    const status = await getPoolStatus();
+    const isContended = status.main.pendingAcquires > 0 || status.longRunning.pendingAcquires > 0;
+
+    if (isContended && !poolContentionWarned) {
+        poolContentionWarned = true;
+        logger.warn(
+            `[DB POOL CONTENTION] Requests are queuing for a connection: ` +
+            `main pendingAcquires=${status.main.pendingAcquires} (used=${status.main.used}/${status.main.max}), ` +
+            `longRunning pendingAcquires=${status.longRunning.pendingAcquires} (used=${status.longRunning.used}/${status.longRunning.max})`
+        );
+    } else if (!isContended && poolContentionWarned) {
+        poolContentionWarned = false;
+        logger.info(`[DB POOL CONTENTION] Cleared — no requests currently queuing for a connection.`);
+    }
+}, POOL_CONTENTION_SCAN_INTERVAL_MS).unref();
+
 export const pool = {
     query: async (query, params = [], options = {}) => {
         const { executeQuery } = await import("./mssqlHelper.js");

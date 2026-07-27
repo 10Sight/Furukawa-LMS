@@ -1,7 +1,6 @@
 import XLSX from "xlsx";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
-import UserHierarchySnapshot from "../models/userHierarchySnapshot.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import bcrypt from "bcryptjs";
@@ -135,6 +134,40 @@ const normalizeDate = (val) => {
     return null;
 };
 
+/**
+ * Parses a worksheet the same way sheet_to_json(raw: false) does (preserves leading
+ * zeros / formatted text), except Date cells are kept as unambiguous YYYY-MM-DD strings
+ * instead of being reformatted into the workbook's locale date format (e.g. MM/DD/YYYY),
+ * which is what previously caused DD-MM-YYYY dates to get flipped on import.
+ */
+const getExcelRows = (worksheet, options = {}) => {
+    const formattedRows = XLSX.utils.sheet_to_json(worksheet, { ...options, raw: false });
+    const rawRows = XLSX.utils.sheet_to_json(worksheet, { ...options, raw: true });
+
+    const toDateStr = (val) => {
+        if (!(val instanceof Date) || isNaN(val.getTime())) return null;
+        const year = val.getFullYear();
+        const month = String(val.getMonth() + 1).padStart(2, '0');
+        const day = String(val.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    return formattedRows.map((row, rIdx) => {
+        const rawRow = rawRows[rIdx];
+        if (!rawRow) return row;
+
+        if (Array.isArray(row)) {
+            return row.map((cell, cIdx) => toDateStr(rawRow[cIdx]) ?? cell);
+        }
+
+        const merged = { ...row };
+        for (const key of Object.keys(rawRow)) {
+            const dateStr = toDateStr(rawRow[key]);
+            if (dateStr) merged[key] = dateStr;
+        }
+        return merged;
+    });
+};
 
 /**
  * Helper to sync user ID to department's students array
@@ -795,7 +828,7 @@ export const importEmployees = async (req, res) => {
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        const allRows = getExcelRows(worksheet, { header: 1, defval: null });
         let hRowIndex = -1;
 
         // Find the header row (look for "EmployeeID" or "Employee Code")
@@ -875,11 +908,9 @@ export const importEmployees = async (req, res) => {
             [results.success.length, results.failed.length, results.updatedCount, logId]
         );
 
-        try {
-            await UserHierarchySnapshot.syncFromUsers();
-        } catch (syncErr) {
-            console.error("Snapshot sync failed after importEmployees:", syncErr.message);
-        }
+        // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+        // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+        // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
         res.json(
             new ApiResponse(
@@ -967,11 +998,9 @@ export const finalizeImportEmployees = async (req, res) => {
         [successCount, failCount, updatedCount, logId]
     );
 
-    try {
-        await UserHierarchySnapshot.syncFromUsers();
-    } catch (syncErr) {
-        console.error("Snapshot sync failed after finalizeImportEmployees:", syncErr.message);
-    }
+    // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+    // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+    // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
 
@@ -1003,7 +1032,7 @@ export const importEmployeesFull = async (req, res) => {
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        const allRows = getExcelRows(worksheet, { header: 1, defval: null });
         let hRowIndex = -1;
 
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
@@ -1077,11 +1106,9 @@ export const importEmployeesFull = async (req, res) => {
             [results.success.length, results.failed.length, results.updatedCount, logId]
         );
 
-        try {
-            await UserHierarchySnapshot.syncFromUsers();
-        } catch (syncErr) {
-            console.error("Snapshot sync failed after importEmployeesFull:", syncErr.message);
-        }
+        // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+        // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+        // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
         res.json(
             new ApiResponse(
@@ -1171,11 +1198,9 @@ export const finalizeImportEmployeesFull = async (req, res) => {
         [successCount, failCount, updatedCount, logId]
     );
 
-    try {
-        await UserHierarchySnapshot.syncFromUsers();
-    } catch (syncErr) {
-        console.error("Snapshot sync failed after finalizeImportEmployeesFull:", syncErr.message);
-    }
+    // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+    // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+    // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
     const [log] = await executeQuery("SELECT * FROM import_logs WHERE id = ?", [logId]);
 
@@ -1203,7 +1228,7 @@ export const importInstructors = async (req, res) => {
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+        const data = getExcelRows(worksheet);
 
         if (!data || data.length === 0) {
             throw new ApiError(400, "Excel file is empty");
@@ -1265,11 +1290,9 @@ export const importInstructors = async (req, res) => {
             }
         }
 
-        try {
-            await UserHierarchySnapshot.syncFromUsers();
-        } catch (syncErr) {
-            console.error("Snapshot sync failed after importInstructors:", syncErr.message);
-        }
+        // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+        // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+        // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
         res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
     } catch (error) {
@@ -1445,7 +1468,7 @@ export const importDojoUsers = async (req, res) => {
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+        const allRows = getExcelRows(worksheet, { header: 1, defval: null });
 
 
         let hRowIndex = -1;
@@ -1617,11 +1640,9 @@ export const importDojoUsers = async (req, res) => {
             [results.success.length, results.failed.length, logId]
         );
 
-        try {
-            await UserHierarchySnapshot.syncFromUsers();
-        } catch (syncErr) {
-            console.error("Snapshot sync failed after importDojoUsers:", syncErr.message);
-        }
+        // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
+        // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
+        // UserHierarchySnapshot.init() instead of rebuilding on every import.
 
         res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
     } catch (error) {

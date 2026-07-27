@@ -350,6 +350,37 @@ class User {
                 console.error("Migration error for dept lookup composite index:", err);
             }
 
+            // Additional indexes to speed up the list endpoints (getAllUsers/getAllStudents/
+            // getAllMentors/getAllSupervisors/getAllIncharges in user.controller.js), which
+            // filter/sort on these columns on every page load.
+            const additionalIndexes = [
+                // Status filtering/exclusion (`u.status = ?`, `status != 'LEFT'`) used in every list endpoint.
+                { name: 'idx_users_status', ddl: 'CREATE INDEX idx_users_status ON users(status)' },
+                // Direct `u.stationId IN (...)` filters plus the station-name correlated lookup.
+                { name: 'idx_users_stationId', ddl: 'CREATE INDEX idx_users_stationId ON users(stationId)' },
+                // Supports the default `ORDER BY u.createdAt DESC ... OFFSET/FETCH` pagination.
+                { name: 'idx_users_createdAt', ddl: 'CREATE INDEX idx_users_createdAt ON users(createdAt DESC)' },
+                // Parity with the existing departmentId index; used by temporary-user target-hierarchy
+                // resolution and direct filters.
+                { name: 'idx_users_lineId', ddl: 'CREATE INDEX idx_users_lineId ON users(lineId)' },
+                { name: 'idx_users_subSectionId', ddl: 'CREATE INDEX idx_users_subSectionId ON users(subSectionId)' },
+                // Drives the contractor-name correlated lookup.
+                { name: 'idx_users_contractorId', ddl: 'CREATE INDEX idx_users_contractorId ON users(contractorId)' },
+                // Composite covering the near-universal base predicate present in essentially every
+                // list query, so SQL Server can narrow the row set before any correlated join work.
+                { name: 'idx_users_scope', ddl: 'CREATE INDEX idx_users_scope ON users(isDeleted, isTemporary, isEmployee, isTrainer)' },
+            ];
+            for (const idx of additionalIndexes) {
+                try {
+                    const [existsIdx] = await executeQuery(`SELECT name FROM sys.indexes WHERE name = '${idx.name}' AND object_id = OBJECT_ID('users')`);
+                    if (existsIdx.length === 0) {
+                        await executeQuery(idx.ddl);
+                    }
+                } catch (err) {
+                    console.error(`Migration error for ${idx.name} index:`, err);
+                }
+            }
+
             // Ensure phoneNumber is nullable and has no unique constraint (duplicates are allowed)
             try {
                 // 1. Drop existing unique indexes/constraints on phoneNumber first

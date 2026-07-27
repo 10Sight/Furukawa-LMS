@@ -72,7 +72,21 @@ class UserHierarchySnapshot {
         }
     }
 
+    // Guards against overlapping TRUNCATE+rebuild passes: if a sync is already running
+    // (e.g. the 30-min interval firing while a prior run is still in flight on a slow DB),
+    // concurrent callers await the same in-flight promise instead of starting another
+    // full-table rebuild and piling more load onto the connection pool.
+    static _syncPromise = null;
+
     static async syncFromUsers() {
+        if (this._syncPromise) return this._syncPromise;
+        this._syncPromise = this._doSyncFromUsers().finally(() => {
+            this._syncPromise = null;
+        });
+        return this._syncPromise;
+    }
+
+    static async _doSyncFromUsers() {
         try {
             // 1. Clear existing snapshot
             await executeQuery("TRUNCATE TABLE user_hierarchy_snapshots");

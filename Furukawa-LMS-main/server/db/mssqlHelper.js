@@ -16,14 +16,15 @@ const SCHEMA_QUERY_PATTERN =
 // Chain that schema/DDL queries are serialized onto, one at a time, in call order.
 let schemaQueuePromise = Promise.resolve();
 
-const executeRequest = async (request, processedQuery, queryText) => {
+const executeRequest = async (request, processedQuery, queryText, label) => {
     const startedAt = Date.now();
+    const tag = label ? `label=${label} ` : "";
     try {
         const result = await request.query(processedQuery);
         const durationMs = Date.now() - startedAt;
 
         if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
-            logger.warn(`[SLOW QUERY] Execution took ${durationMs}ms: ${truncateForLog(queryText)}`);
+            logger.warn(`[SLOW QUERY] ${tag}Execution took ${durationMs}ms: ${truncateForLog(queryText)}`);
         }
 
         // Mimic the mysql2 return format: [rows, fields/metadata]
@@ -40,7 +41,7 @@ const executeRequest = async (request, processedQuery, queryText) => {
         return [result.recordset || [], fakeMetadata];
     } catch (error) {
         const durationMs = Date.now() - startedAt;
-        logger.error(`[QUERY FAILED] after ${durationMs}ms: ${error.message} | Query: ${truncateForLog(queryText)}`);
+        logger.error(`[QUERY FAILED] ${tag}after ${durationMs}ms: ${error.message} | Query: ${truncateForLog(queryText)}`);
         throw error;
     }
 };
@@ -48,8 +49,10 @@ const executeRequest = async (request, processedQuery, queryText) => {
 /**
  * Runs a query against a given mssql Request (either pool.request() or transaction.request()),
  * mimicking the array-based parameter approach of mysql2.
+ * `options.label` is an optional human-readable tag (e.g. "getAllStudents.select") included in
+ * slow-query/failure log lines so they can be triaged without reading the raw SQL text.
  */
-export const runOnRequest = async (request, queryText, params = []) => {
+export const runOnRequest = async (request, queryText, params = [], options = {}) => {
     let processedQuery = queryText;
 
     let paramIndex = 0;
@@ -92,12 +95,12 @@ export const runOnRequest = async (request, queryText, params = []) => {
     });
 
     if (!SCHEMA_QUERY_PATTERN.test(queryText)) {
-        return executeRequest(request, processedQuery, queryText);
+        return executeRequest(request, processedQuery, queryText, options.label);
     }
 
     // Serialize this schema query behind whatever's already queued, without letting one
     // failure block the rest of the queue.
-    const run = () => executeRequest(request, processedQuery, queryText);
+    const run = () => executeRequest(request, processedQuery, queryText, options.label);
     const resultPromise = schemaQueuePromise.then(run, run);
     schemaQueuePromise = resultPromise.then(() => {}, () => {});
     return resultPromise;
@@ -113,7 +116,7 @@ export const runOnRequest = async (request, queryText, params = []) => {
 export const executeQuery = async (queryText, params = [], options = {}) => {
     const pool = await (options.longRunning ? longRunningPoolPromise : poolPromise);
     const request = pool.request();
-    return runOnRequest(request, queryText, params);
+    return runOnRequest(request, queryText, params, options);
 };
 
 /**

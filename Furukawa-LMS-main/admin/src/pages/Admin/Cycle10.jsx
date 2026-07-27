@@ -45,11 +45,11 @@ const Cycle10 = () => {
     const [searchParams] = useSearchParams();
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
-    const canCreate = isAdmin || user?.permissions?.includes('ten_cycle:create') || user?.permissions?.includes('ten_cycle:manage');
-    const canRead = isAdmin || user?.permissions?.includes('ten_cycle:read') || user?.permissions?.includes('ten_cycle:manage');
-    const canUpdate = isAdmin || user?.permissions?.includes('ten_cycle:update') || user?.permissions?.includes('ten_cycle:manage');
-    const canDelete = isAdmin || user?.permissions?.includes('ten_cycle:delete') || user?.permissions?.includes('ten_cycle:manage');
-    const canEditApproved = isAdmin || user?.permissions?.includes('ten_cycle:manage') || user?.permissions?.includes('ten_cycle:edit_approved');
+    const canCreate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:create') || user?.customRole?.permissions?.includes('ten_cycle:manage');
+    const canRead = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:read') || user?.customRole?.permissions?.includes('ten_cycle:manage');
+    const canUpdate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:update') || user?.customRole?.permissions?.includes('ten_cycle:manage');
+    const canDelete = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:delete') || user?.customRole?.permissions?.includes('ten_cycle:manage');
+    const canEditApproved = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:manage') || user?.customRole?.permissions?.includes('ten_cycle:edit_approved');
     const isSheetLocked = (sheet) => sheet?.verifiedStatus === 'APPROVE' || sheet?.reviewedStatus === 'APPROVE';
 
     const [logAction] = useLogActionMutation();
@@ -620,7 +620,7 @@ const Cycle10 = () => {
                         </>
                     ) : (
                         <div className="flex gap-2 print:hidden">
-                            {(user?.permissions?.includes('ten_cycle:verify') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
+                            {(user?.customRole?.permissions?.includes('ten_cycle:verify') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
                                 <>
                                     <Button
                                         size="sm"
@@ -658,7 +658,7 @@ const Cycle10 = () => {
                         </>
                     ) : (
                         <div className="flex gap-2 print:hidden">
-                            {(user?.permissions?.includes('ten_cycle:approve') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
+                            {(user?.customRole?.permissions?.includes('ten_cycle:approve') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
                                 <>
                                     <Button
                                         size="sm"

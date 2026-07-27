@@ -16,6 +16,7 @@ import {
   deleteUser,
   bulkDeleteUsers,
   bulkUpdateShiftSchedule,
+  bulkUpdateStatusLeft,
   getAllInstructors,
   getAllStudents,
   getAllMentors,
@@ -130,6 +131,7 @@ router.patch(
   updateAvatar
 );
 router.post("/bulk-shift", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateShiftSchedule);
+router.post("/bulk-left", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateStatusLeft);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
 router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, SYSTEM_PERMISSIONS.MENTOR_UPDATE]), checkUserUpdatePrivilege, updateUser);
 router.patch("/:id/admin-change-password", verifyJWT, adminChangePassword);

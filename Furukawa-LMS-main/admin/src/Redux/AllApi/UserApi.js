@@ -345,6 +345,15 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User'],
         }),
+
+        bulkUpdateStatusLeft: builder.mutation({
+            query: (data) => ({
+                url: "/api/users/bulk-left",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ['User'],
+        }),
     }),
 });
 
@@ -382,4 +391,5 @@ export const {
     useChangePasswordMutation,
     useDojoRegisterMutation,
     useBulkUpdateShiftScheduleMutation,
+    useBulkUpdateStatusLeftMutation,
 } = userApi;

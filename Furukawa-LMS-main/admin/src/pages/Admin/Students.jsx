@@ -18,6 +18,7 @@ import {
   useDeleteUserMutation,
   useBulkDeleteUsersMutation,
   useBulkUpdateShiftScheduleMutation,
+  useBulkUpdateStatusLeftMutation,
   useStartImportEmployeesMutation,
   useProcessEmployeesChunkMutation,
   useFinalizeImportEmployeesMutation,
@@ -125,6 +126,7 @@ import MultiSelectFilter from "@/components/common/MultiSelectFilter";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getMediaUrl } from "@/utils/mediaUtils";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
+import { getExcelRows } from "@/utils/excelUtils";
 import StudentLevelManager from "@/components/admin/StudentLevelManager";
 import ShiftScheduler from "@/components/admin/ShiftScheduler";
 
@@ -218,6 +220,12 @@ const Students = () => {
   const [isBulkShiftDialogOpen, setIsBulkShiftDialogOpen] = useState(false);
   const [bulkShiftScheduleDraft, setBulkShiftScheduleDraft] = useState({});
   const [isBulkShiftSubmitting, setIsBulkShiftSubmitting] = useState(false);
+  // Bulk "Mark as Left" confirmation dialog state
+  const [isBulkLeftConfirmOpen, setIsBulkLeftConfirmOpen] = useState(false);
+  const [bulkLeftConfirmDate, setBulkLeftConfirmDate] = useState("");
+  const [bulkLeftConfirmReason, setBulkLeftConfirmReason] = useState("");
+  const [bulkLeftConfirmCustomReason, setBulkLeftConfirmCustomReason] = useState("");
+  const [isBulkLeftConfirmSubmitting, setIsBulkLeftConfirmSubmitting] = useState(false);
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   // "standard" = /employees (Dept + Section only); "full" = /employees-full (also resolves
@@ -457,6 +465,7 @@ const Students = () => {
   const [deleteStudent] = useDeleteUserMutation();
   const [bulkDeleteUsers] = useBulkDeleteUsersMutation();
   const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
+  const [bulkUpdateStatusLeft] = useBulkUpdateStatusLeftMutation();
   const [assignStudent] = useAddStudentToDepartmentMutation();
   const [startImportEmployees] = useStartImportEmployeesMutation();
   const [processEmployeesChunk] = useProcessEmployeesChunkMutation();
@@ -1116,6 +1125,60 @@ const Students = () => {
     }
   };
 
+  const handleConfirmBulkLeftStatus = async () => {
+    if (!bulkLeftConfirmDate) {
+      showToast("error", "Please select a date of leaving");
+      return;
+    }
+    if (!bulkLeftConfirmReason) {
+      showToast("error", "Please select a reason of leaving");
+      return;
+    }
+    if (bulkLeftConfirmReason === "Other" && !bulkLeftConfirmCustomReason.trim()) {
+      showToast("error", "Please specify the reason of leaving");
+      return;
+    }
+    if (isBulkLeftConfirmSubmitting) return;
+    setIsBulkLeftConfirmSubmitting(true);
+    try {
+      const payload = isAllSelectedAcrossPages
+        ? {
+            isAllSelected: true,
+            filters: {
+              search: searchTerm,
+              status: filters.status,
+              unit: filters.unit,
+              departmentId: filters.departmentId,
+              assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
+              assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
+            },
+            leavingDate: bulkLeftConfirmDate || null,
+            reasonOfLeaving:
+              (bulkLeftConfirmReason === "Other" ? bulkLeftConfirmCustomReason : bulkLeftConfirmReason)?.trim() || null,
+          }
+        : {
+            ids: selectedIds,
+            leavingDate: bulkLeftConfirmDate || null,
+            reasonOfLeaving:
+              (bulkLeftConfirmReason === "Other" ? bulkLeftConfirmCustomReason : bulkLeftConfirmReason)?.trim() || null,
+          };
+
+      const result = await bulkUpdateStatusLeft(payload).unwrap();
+      showToast("success", result?.message || "Selected operators marked as left");
+      setIsBulkLeftConfirmOpen(false);
+      setBulkLeftConfirmDate("");
+      setBulkLeftConfirmReason("");
+      setBulkLeftConfirmCustomReason("");
+      setSelectedIds([]);
+      setIsAllSelectedAcrossPages(false);
+      refetch();
+    } catch (error) {
+      showToast("error", error?.data?.message || "Failed to update status");
+    } finally {
+      setIsBulkLeftConfirmSubmitting(false);
+    }
+  };
+
   const toggleSelectAll = () => {
     if (selectedIds.length === students.length) {
       setSelectedIds([]);
@@ -1211,7 +1274,7 @@ const Students = () => {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+      const allRows = getExcelRows(worksheet, { header: 1, defval: null });
 
       headerRowIndex = -1;
       for (let i = 0; i < Math.min(allRows.length, 15); i++) {
@@ -2598,6 +2661,20 @@ const Students = () => {
                   >
                     <IconCalendar className="h-4 w-4 mr-2" />
                     Bulk Shift Schedule
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setBulkLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
+                      setBulkLeftConfirmReason("");
+                      setBulkLeftConfirmCustomReason("");
+                      setIsBulkLeftConfirmOpen(true);
+                    }}
+                    className="bg-white hover:bg-red-50 text-red-700 border-red-200"
+                  >
+                    <IconUserMinus className="h-4 w-4 mr-2" />
+                    Bulk Mark as Left
                   </Button>
                   <Button
                     variant="destructive"
@@ -4325,6 +4402,83 @@ const Students = () => {
             >
               {isLeftConfirmSubmitting && <IconLoader className="h-4 w-4 animate-spin" />}
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Left Status Confirmation Dialog */}
+      <Dialog
+        open={isBulkLeftConfirmOpen}
+        onOpenChange={(open) => setIsBulkLeftConfirmOpen(open)}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <IconUserX className="h-5 w-5" />
+              Bulk Mark as Left
+            </DialogTitle>
+            <DialogDescription>
+              Please provide the leaving details before confirming this status change for{" "}
+              {isAllSelectedAcrossPages ? `all ${studentsData?.data?.totalUsers || "matching"}` : selectedIds.length}{" "}
+              selected operator{(isAllSelectedAcrossPages || selectedIds.length !== 1) ? "s" : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulkLeftConfirmDate">Date of Leaving</Label>
+              <Input
+                id="bulkLeftConfirmDate"
+                type="date"
+                value={bulkLeftConfirmDate}
+                onChange={(e) => setBulkLeftConfirmDate(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulkLeftConfirmReason">Reason of Leaving</Label>
+              <Select value={bulkLeftConfirmReason} onValueChange={setBulkLeftConfirmReason}>
+                <SelectTrigger id="bulkLeftConfirmReason">
+                  <SelectValue placeholder="Select Reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEAVING_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              {bulkLeftConfirmReason === "Other" && (
+                <Textarea
+                  value={bulkLeftConfirmCustomReason}
+                  onChange={(e) => setBulkLeftConfirmCustomReason(e.target.value)}
+                  placeholder="Please specify the reason"
+                  rows={3}
+                />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkLeftConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmBulkLeftStatus}
+              disabled={
+                isBulkLeftConfirmSubmitting ||
+                !bulkLeftConfirmDate ||
+                !bulkLeftConfirmReason ||
+                (bulkLeftConfirmReason === "Other" && !bulkLeftConfirmCustomReason.trim())
+              }
+              className="gap-2"
+            >
+              {isBulkLeftConfirmSubmitting && <IconLoader className="h-4 w-4 animate-spin" />}
+              Confirm Bulk Left
             </Button>
           </DialogFooter>
         </DialogContent>

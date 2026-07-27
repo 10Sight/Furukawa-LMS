@@ -69,6 +69,14 @@ class AttendanceLog {
                 BEGIN
                     CREATE INDEX idx_attendance_logs_date ON attendance_logs([date]);
                 END
+
+                -- The getAllStudents/getAllUsers attendance join does
+                -- WHERE [date] BETWEEN ? AND ? GROUP BY userId; this composite lets it seek the
+                -- date range and aggregate without a full scan, alongside the single-column index above.
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_date_userId' AND object_id = OBJECT_ID('attendance_logs'))
+                BEGIN
+                    CREATE INDEX idx_attendance_logs_date_userId ON attendance_logs([date], userId);
+                END
             `;
             await pool.query(indexQuery);
             console.log("Indexes checked/created for attendance_logs.");

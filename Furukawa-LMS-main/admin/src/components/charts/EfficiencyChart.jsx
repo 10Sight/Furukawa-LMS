@@ -99,6 +99,7 @@ const applyFilters = (ops, f) => {
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
+    if (f.subSectionIds?.length) r = r.filter(op => f.subSectionIds.includes(String(op.subSectionId || op.subSectionName)));
     if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
 
     // Condition 2: Default under-the-hood date range to current date
@@ -123,6 +124,7 @@ const applyFiltersNoDate = (ops, f) => {
     if (f.deptIds?.length) r = r.filter(op => f.deptIds.includes(String(op.departmentId || op.departmentName)));
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
+    if (f.subSectionIds?.length) r = r.filter(op => f.subSectionIds.includes(String(op.subSectionId || op.subSectionName)));
     if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
     return r;
 };
@@ -307,31 +309,37 @@ const MultiSelectDropdown = ({ label, options, value = [], onChange }) => {
 
 // ─── ChartFilter ──────────────────────────────────────────────────────────────
 const initF = () => {
-    return { deptIds: [], sectionIds: [], lineIds: [], shifts: [], dateFrom: "", dateTo: "" };
+    return { deptIds: [], sectionIds: [], lineIds: [], subSectionIds: [], shifts: [], dateFrom: "", dateTo: "" };
 };
 
-const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, shiftOpts, showDept, showSection, showLine, hideLegend = false, hideShift = false }) => {
+const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, subSectionOpts, shiftOpts, showDept, showSection, showLine, showSubSection = false, hideLegend = false, hideShift = false }) => {
     const { t } = useTranslate();
-    const hasFilter = filter.deptIds?.length || filter.sectionIds?.length || filter.lineIds?.length || filter.shifts?.length || filter.dateFrom || filter.dateTo;
+    const hasFilter = filter.deptIds?.length || filter.sectionIds?.length || filter.lineIds?.length || filter.subSectionIds?.length || filter.shifts?.length || filter.dateFrom || filter.dateTo;
     return (
         <div className="flex flex-wrap gap-2.5 items-center mt-4 pt-4 border-t border-slate-100">
             {showDept && (
                 <MultiSelectDropdown label={t('nav.department')}
                     options={deptOpts}
                     value={filter.deptIds}
-                    onChange={v => setFilter(f => ({ ...f, deptIds: v, sectionIds: [], lineIds: [] }))} />
+                    onChange={v => setFilter(f => ({ ...f, deptIds: v, sectionIds: [], lineIds: [], subSectionIds: [] }))} />
             )}
             {showSection && sectionOpts.length > 0 && (
                 <MultiSelectDropdown label={t('charts.section')}
                     options={sectionOpts}
                     value={filter.sectionIds}
-                    onChange={v => setFilter(f => ({ ...f, sectionIds: v, lineIds: [] }))} />
+                    onChange={v => setFilter(f => ({ ...f, sectionIds: v, lineIds: [], subSectionIds: [] }))} />
             )}
             {showLine && lineOpts.length > 0 && (
                 <MultiSelectDropdown label={t('charts.lineLevel')}
                     options={lineOpts}
                     value={filter.lineIds}
-                    onChange={v => setFilter(f => ({ ...f, lineIds: v }))} />
+                    onChange={v => setFilter(f => ({ ...f, lineIds: v, subSectionIds: [] }))} />
+            )}
+            {showSubSection && subSectionOpts?.length > 0 && (
+                <MultiSelectDropdown label={t('charts.subsection')}
+                    options={subSectionOpts}
+                    value={filter.subSectionIds}
+                    onChange={v => setFilter(f => ({ ...f, subSectionIds: v }))} />
             )}
             {!hideShift && (
                 <MultiSelectDropdown label={t('charts.shift')}
@@ -656,6 +664,18 @@ const EfficiencyChart = () => {
         return Object.entries(m).map(([value, label]) => ({ value, label }));
     };
 
+    const getSubSectionOpts = (deptIds, sectionIds, lineIds) => {
+        const m = {};
+        rawOps.forEach(op => {
+            if (deptIds?.length && !deptIds.includes(String(op.departmentId || op.departmentName))) return;
+            if (sectionIds?.length && !sectionIds.includes(String(op.sectionId || op.sectionName))) return;
+            if (lineIds?.length && !lineIds.includes(String(op.lineId || op.lineName))) return;
+            const id = String(op.subSectionId || op.subSectionName || '');
+            if (id && op.subSectionName) m[id] = op.subSectionName;
+        });
+        return Object.entries(m).map(([value, label]) => ({ value, label }));
+    };
+
     // Memoised option lists per chart (deps use JSON key to avoid stale array refs)
     const s2Opts = useMemo(() => getSectionOpts(f2.deptIds), [rawOps, f2.deptIds]);
     const s3Opts = useMemo(() => getSectionOpts(f3.deptIds), [rawOps, f3.deptIds]);
@@ -666,6 +686,7 @@ const EfficiencyChart = () => {
     const l5Opts = useMemo(() => getLineOpts(f5.deptIds, f5.sectionIds), [rawOps, f5.deptIds, f5.sectionIds]);
     const s6Opts = useMemo(() => getSectionOpts(f6.deptIds), [rawOps, f6.deptIds]);
     const l6Opts = useMemo(() => getLineOpts(f6.deptIds, f6.sectionIds), [rawOps, f6.deptIds, f6.sectionIds]);
+    const ss6Opts = useMemo(() => getSubSectionOpts(f6.deptIds, f6.sectionIds, f6.lineIds), [rawOps, f6.deptIds, f6.sectionIds, f6.lineIds]);
 
     // Unique operators list representing the overall software user database (latest record per userId):
     const uniqueOps = useMemo(() => {
@@ -770,6 +791,7 @@ const EfficiencyChart = () => {
             if (f6.deptIds?.length && !f6.deptIds.includes(String(op.departmentId || op.departmentName))) return;
             if (f6.sectionIds?.length && !f6.sectionIds.includes(String(op.sectionId || op.sectionName))) return;
             if (f6.lineIds?.length && !f6.lineIds.includes(String(op.lineId || op.lineName))) return;
+            if (f6.subSectionIds?.length && !f6.subSectionIds.includes(String(op.subSectionId || op.subSectionName))) return;
             const uid = op.userId;
             if (uid) {
                 m[uid] = {
@@ -782,7 +804,7 @@ const EfficiencyChart = () => {
             }
         });
         return Object.values(m);
-    }, [uniqueOps, f6.deptIds, f6.sectionIds, f6.lineIds]);
+    }, [uniqueOps, f6.deptIds, f6.sectionIds, f6.lineIds, f6.subSectionIds]);
 
     // Chart data — hierarchical rollups (Sub-Section ← users; Line ← sub-sections; Section ← lines; Department ← sections)
     const d1 = useMemo(() => {
@@ -1231,9 +1253,9 @@ const EfficiencyChart = () => {
                         statsVisible={statVis.c6} onToggleStats={() => toggleStat('c6')}
                     >
                         <ChartFilter filter={f6} setFilter={setF6}
-                            deptOpts={allDeptOpts} sectionOpts={s6Opts} lineOpts={l6Opts}
+                            deptOpts={allDeptOpts} sectionOpts={s6Opts} lineOpts={l6Opts} subSectionOpts={ss6Opts}
                             shiftOpts={allShifts}
-                            showDept={true} showSection={true} showLine={true} hideLegend={true} />
+                            showDept={true} showSection={true} showLine={true} showSubSection={true} hideLegend={true} />
                         {d6.length > 0 ? (
                             <>
                                 <ChartWrapper data={d6} minW={80}>

@@ -55,6 +55,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
+import { getExcelRows } from "@/utils/excelUtils";
 
 const EMP_ID_HEADER_ALIASES = ["employeeid", "employee code", "employee id", "empid", "emp id", "emp code"];
 
@@ -208,7 +209,7 @@ const StudentComparison = () => {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+      const allRows = getExcelRows(worksheet, { header: 1, defval: null });
 
       let foundHeaderRowIndex = -1;
       for (let i = 0; i < Math.min(allRows.length, 15); i++) {

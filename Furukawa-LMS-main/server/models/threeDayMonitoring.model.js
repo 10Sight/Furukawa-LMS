@@ -27,6 +27,9 @@ class ThreeDayMonitoring {
 
         this.createdBy = data.createdBy;
         this.updatedBy = data.updatedBy;
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -66,6 +69,19 @@ class ThreeDayMonitoring {
                 BEGIN
                     ALTER TABLE three_day_monitorings ADD attemptNumber INT DEFAULT 1;
                 END
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE three_day_monitorings ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE three_day_monitorings ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE three_day_monitorings ADD revDate VARCHAR(255) NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -92,14 +108,14 @@ class ThreeDayMonitoring {
     static async create(data) {
         const {
             studentId, attemptNumber, processName, lineName, entries, evaluation,
-            checkedBy, verifiedBy, approvedBy, status, createdBy
+            checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, revDate
         } = data;
 
         const query = `
-            INSERT INTO three_day_monitorings 
-            (studentId, attemptNumber, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy)
+            INSERT INTO three_day_monitorings
+            (studentId, attemptNumber, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -113,7 +129,10 @@ class ThreeDayMonitoring {
             verifiedBy,
             approvedBy,
             status || "Draft",
-            createdBy
+            createdBy,
+            docNo || null,
+            revNo || null,
+            revDate || null
         ];
 
         const [rows] = await executeQuery(query, values);

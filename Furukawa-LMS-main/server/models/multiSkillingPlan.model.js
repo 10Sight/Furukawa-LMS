@@ -17,6 +17,9 @@ class MultiSkillingPlan {
         this.updatedBy = data.updatedBy || "";
         this.departmentName = data.departmentName || "";
         this.sectionName = data.sectionName || "";
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -79,6 +82,20 @@ class MultiSkillingPlan {
                 BEGIN
                     ALTER TABLE multi_skilling_plans ADD CONSTRAINT unique_dept_section_year_plan UNIQUE (departmentId, sectionId, year);
                 END
+
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('multi_skilling_plans') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE multi_skilling_plans ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('multi_skilling_plans') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE multi_skilling_plans ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('multi_skilling_plans') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE multi_skilling_plans ADD revDate VARCHAR(255) NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -130,7 +147,7 @@ class MultiSkillingPlan {
         return rows.map(r => new MultiSkillingPlan(r));
     }
 
-    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName }) {
+    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, revDate }) {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 
         if (existing) {
@@ -162,9 +179,9 @@ class MultiSkillingPlan {
 
         const [rows] = await executeQuery(
             `INSERT INTO multi_skilling_plans
-             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy)
+             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId,
@@ -173,6 +190,9 @@ class MultiSkillingPlan {
                 JSON.stringify(tableData || {}),
                 userName || "",
                 userName || "",
+                docNo || null,
+                revNo || null,
+                revDate || null,
             ]
         );
 

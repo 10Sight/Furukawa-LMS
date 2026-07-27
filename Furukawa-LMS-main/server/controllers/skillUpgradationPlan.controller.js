@@ -5,6 +5,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Get skill upgradation plan by department
 export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res) => {
@@ -46,6 +47,17 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         year ? parseInt(year) : null
     );
 
+    // Brand-new plan: freeze whatever the Revision Table currently says for this
+    // form. Existing plans are untouched — upsert()'s UPDATE branch never writes
+    // these columns, regardless of what's passed in.
+    let revisionSnapshot = {};
+    if (!existing) {
+        const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan');
+        if (revision?.docNo) {
+            revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate };
+        }
+    }
+
     const saved = await SkillUpgradationPlan.upsert({
         departmentId: parseInt(departmentId),
         sectionId: sectionId ? parseInt(sectionId) : null,
@@ -53,6 +65,7 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         selectedLines: Array.isArray(selectedLines) ? selectedLines : [],
         tableData: tableData && typeof tableData === "object" ? tableData : {},
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
+        ...revisionSnapshot,
     });
 
     const action = existing ? "SAVE_SKILL_UPGRADATION_PLAN" : "CREATE_SKILL_UPGRADATION_PLAN";

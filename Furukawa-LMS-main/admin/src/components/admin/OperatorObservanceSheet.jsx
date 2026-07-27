@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,11 @@ const validateObservanceSheet = (observanceData) => {
 };
 
 const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "", readOnly = false }) => {
+    const liveRevisionInfo = useRevisionInfo("operator-observance", { docNo: "FRM-WH-QA-277", revNo: "00", revDate: "01.04.2025" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved record keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (never-saved) record shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const authUser = useSelector((state) => state.auth?.user);
     const todayStr = new Date().toISOString().split('T')[0];
     const [loading, setLoading] = useState(true);
@@ -245,6 +251,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     setTableData(loadedTableData);
                     setOriginalHeaderData(loadedHeaderData);
                     setOriginalTableData(loadedTableData);
+                    setSavedRevisionInfo({ docNo: data.docNo, revNo: data.revNo, revDate: data.revDate });
                 } else {
                     setHeaderData(prev => ({
                         ...prev,
@@ -823,11 +830,11 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         <div className="grid grid-cols-[1fr_2fr_2fr] divide-x divide-black h-full">
                             <div className="grid grid-rows-[auto_1fr] divide-y divide-black">
                                 <div className="text-center bg-gray-50 font-bold p-1">Rev No.</div>
-                                <div className="text-center p-2">00</div>
+                                <div className="text-center p-2">{revisionInfo.revNo}</div>
                             </div>
                             <div className="grid grid-rows-[auto_1fr] divide-y divide-black">
                                 <div className="text-center bg-gray-50 font-bold p-1">Revision Date</div>
-                                <div className="text-center p-2">01.04.2025</div>
+                                <div className="text-center p-2">{revisionInfo.revDate}</div>
                             </div>
                             <div className="grid grid-rows-[auto_1fr] divide-y divide-black">
                                 <div className="text-center bg-gray-50 font-bold p-1">Revision Details</div>
@@ -837,9 +844,9 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     </div>
 
                     <div className="border-t border-black p-1 flex justify-between text-[10px] text-gray-500">
-                        <span>Doc. No:- FRM-WH-QA-277</span>
-                        <span>Rev. No:00</span>
-                        <span>Rev. Date : 01.04.2025</span>
+                        <span>Doc. No:- {revisionInfo.docNo}</span>
+                        <span>Rev. No:{revisionInfo.revNo}</span>
+                        <span>Rev. Date : {revisionInfo.revDate}</span>
                         <span>Page1:1</span>
                     </div>
                 </div>

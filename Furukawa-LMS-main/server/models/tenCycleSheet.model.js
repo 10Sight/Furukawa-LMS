@@ -27,6 +27,9 @@ class TenCycleSheet {
         this.createdBy = data.createdBy || "";
         this.updatedBy = data.updatedBy || "";
         this.lastEditRemark = data.lastEditRemark || "";
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -90,6 +93,13 @@ class TenCycleSheet {
                     ALTER TABLE ten_cycle_sheets ADD reviewedAt DATETIME;
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'lastEditRemark')
                     ALTER TABLE ten_cycle_sheets ADD lastEditRemark NVARCHAR(MAX);
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'docNo')
+                    ALTER TABLE ten_cycle_sheets ADD docNo VARCHAR(255) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'revNo')
+                    ALTER TABLE ten_cycle_sheets ADD revNo VARCHAR(255) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'revDate')
+                    ALTER TABLE ten_cycle_sheets ADD revDate VARCHAR(255) NULL;
             END
         `;
         await executeQuery(query);
@@ -152,13 +162,16 @@ class TenCycleSheet {
             reviewedStatus,
             reviewedAt,
             createdBy,
+            docNo,
+            revNo,
+            revDate,
         } = data;
 
         const [rows] = await executeQuery(
             `INSERT INTO ten_cycle_sheets
-             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, status, checkedBy, verifiedBy, verifiedStatus, verifiedAt, reviewedBy, reviewedStatus, reviewedAt, createdBy, updatedBy)
+             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, status, checkedBy, verifiedBy, verifiedStatus, verifiedAt, reviewedBy, reviewedStatus, reviewedAt, createdBy, updatedBy, docNo, revNo, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId || null,
@@ -180,6 +193,9 @@ class TenCycleSheet {
                 reviewedAt || null,
                 createdBy || "",
                 createdBy || "",
+                docNo || null,
+                revNo || null,
+                revDate || null,
             ]
         );
 

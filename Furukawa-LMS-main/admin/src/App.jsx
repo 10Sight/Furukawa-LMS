@@ -87,6 +87,7 @@ const MentorDetail = lazy(() => import("./pages/Admin/MentorDetail"));
 const Supervisor = lazy(() => import("./pages/Admin/Supervisor"));
 const Incharge = lazy(() => import("./pages/Admin/Incharge"));
 const LineRequirementManager = lazy(() => import("./pages/Admin/LineRequirementManager.jsx"));
+const RevisionTable = lazy(() => import("./pages/Admin/RevisionTable.jsx"));
 const DPRManage = lazy(() => import("./pages/Admin/DPRManage"));
 const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitoring"));
 const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
@@ -299,6 +300,7 @@ const App = () => {
             <Route path="supervisors" element={<Supervisor />} />
             <Route path="incharges" element={<Incharge />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
+            <Route path="revision-table" element={<RevisionTable />} />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
             <Route path="report-clubbing" element={<ReportClubbing />} />
             <Route path="learning" element={<Learning />} />

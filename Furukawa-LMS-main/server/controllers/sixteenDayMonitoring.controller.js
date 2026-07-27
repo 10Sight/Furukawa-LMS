@@ -13,6 +13,7 @@ import ENV from "../configs/env.config.js";
 
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
@@ -379,6 +380,11 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         const latest = await SixteenDayMonitoring.findByStudentId(sid);
         const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
 
+        // Freeze whatever the Revision Table currently says for this form — each new
+        // attempt is a fresh physical copy of the form, so it gets the current
+        // revision; the update branch above never touches these columns afterwards.
+        const revision = await RevisionRecordService.getLatestForSheet('sixteen-day-monitoring');
+
         sheet = await SixteenDayMonitoring.create({
             studentId: sid,
             attemptNumber: nextAttempt,
@@ -398,7 +404,10 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             createdBy: req.user?.fullName || req.user?.name,
             status: status || "Draft",
             startDate,
-            adminRemarksHistory: updatedHistory
+            adminRemarksHistory: updatedHistory,
+            docNo: revision?.docNo,
+            revNo: revision?.revNo,
+            revDate: revision?.revDate,
         });
     }
 

@@ -6,6 +6,7 @@ import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import axiosInstance from "@/Helper/axiosInstance";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { toast } from "sonner";
 import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend } from "@tabler/icons-react";
 import {
@@ -227,6 +228,11 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
 const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lineName = "", year }) => {
+    const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (never-saved) plan shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
@@ -424,6 +430,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                     if (data.tableData && typeof data.tableData === "object") {
                         setTableData(data.tableData);
                     }
+                    setSavedRevisionInfo(data.isNew ? null : { docNo: data.docNo, revNo: data.revNo, revDate: data.revDate });
                 }
             } catch (error) {
                 if (!cancelled) {
@@ -603,7 +610,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                         </span>
                     </div>
                     <div className="text-xs font-bold text-slate-900 border border-slate-950 bg-slate-50 px-3 py-1 rounded shadow-sm print:shadow-none print:bg-white print:rounded-none whitespace-nowrap">
-                        Document No: FRM-WH-QA-236
+                        Document No: {revisionInfo.docNo}
                     </div>
                 </div>
                 <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">

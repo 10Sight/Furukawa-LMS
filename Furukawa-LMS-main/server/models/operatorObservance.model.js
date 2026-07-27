@@ -24,6 +24,10 @@ class OperatorObservance {
             ? JSON.parse(data.revHistory)
             : (data.revHistory || []);
 
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
+
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -60,6 +64,19 @@ class OperatorObservance {
                 BEGIN
                     ALTER TABLE operator_observances ADD status VARCHAR(50) NULL;
                 END
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE operator_observances ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE operator_observances ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE operator_observances ADD revDate VARCHAR(255) NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -74,14 +91,15 @@ class OperatorObservance {
     static async create(data) {
         const {
             studentId, lineName, processName, level1Date, operatorNameCode,
-            observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory
+            observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory,
+            docNo, revNo, revDate
         } = data;
 
         const query = `
-            INSERT INTO operator_observances 
-            (studentId, lineName, processName, level1Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory)
+            INSERT INTO operator_observances
+            (studentId, lineName, processName, level1Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory, docNo, revNo, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -95,7 +113,10 @@ class OperatorObservance {
             verifiedBy,
             preparedBy,
             status || "Draft",
-            JSON.stringify(revHistory || [])
+            JSON.stringify(revHistory || []),
+            docNo || null,
+            revNo || null,
+            revDate || null
         ];
 
         const [rows] = await executeQuery(query, values);

@@ -1,5 +1,6 @@
 import AbnormalConditionSheet from "../models/abnormalCondition.model.js";
 import NotificationService from "../services/notification.service.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -59,11 +60,25 @@ export const getAbnormalConditionSheet = asyncHandler(async (req, res) => {
 
     // Auto-create sheet if not found
     if (!sheet) {
+        // New sheets pick up whatever docNo/revNo/revDate is current in the Revision
+        // Table at creation time; once saved, that snapshot is frozen on the record
+        // (matches how a physical document-controlled form works) — never touched here.
+        const revision = await RevisionRecordService.getLatestForSheet('abnormal-condition');
+        const metadata = revision?.docNo
+            ? {
+                docNo: revision.docNo,
+                revNo: revision.revNo,
+                revDate: revision.revDate,
+                remarks: "NG product will be handled as the defective product handling system"
+            }
+            : undefined;
+
         sheet = await AbnormalConditionSheet.create({
             departmentId: parseInt(departmentId),
             date: normalizedDate,
             updatedBy: req.user?.fullName || "System",
-            isSubmitted: false
+            isSubmitted: false,
+            metadata
         });
     }
 

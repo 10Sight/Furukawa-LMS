@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -1223,6 +1224,11 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
 };
 
 const Daily5MRecording = () => {
+    const liveRevisionInfo = useRevisionInfo("daily-5m", { docNo: "FRM-WH-QA-241", revNo: "02", revDate: "27.01.2023" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved record keeps whatever docNo/revNo/revDate was frozen into its session's
+    // first row; only a brand-new (never-saved) record shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const [selectedDepartment, setSelectedDepartment] = useState("");
     const [selectedSection, setSelectedSection] = useState("");
     const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
@@ -1782,6 +1788,7 @@ const Daily5MRecording = () => {
                 setSubmittedBy(null);
                 setCurrentRecordId(newRecord.id);
                 setSessionId(newRecord.sessionId);
+                setSavedRevisionInfo({ docNo: newRecord.docNo, revNo: newRecord.revNo, revDate: newRecord.revDate });
 
                 // Keep URL in sync
                 navigate(`${location.pathname}?recordId=${newRecord.id}`, { replace: true });
@@ -1897,6 +1904,7 @@ const Daily5MRecording = () => {
                 setCurrentRecordId(record.id);
                 setSessionId(record.sessionId);
                 setRecordStatus(record.status || 'PENDING');
+                setSavedRevisionInfo({ docNo: record.docNo, revNo: record.revNo, revDate: record.revDate });
                 if (record.formType) {
                     setFormType(record.formType);
                 }
@@ -2119,9 +2127,11 @@ const Daily5MRecording = () => {
 
             const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
             if (response.data.success && response.data.data) {
-                const newId = response.data.data.id;
-                setCurrentRecordId(newId);
-                navigate(`${location.pathname}?recordId=${newId}`, { replace: true });
+                const saved = response.data.data;
+                setCurrentRecordId(saved.id);
+                setSessionId(saved.sessionId);
+                setSavedRevisionInfo({ docNo: saved.docNo, revNo: saved.revNo, revDate: saved.revDate });
+                navigate(`${location.pathname}?recordId=${saved.id}`, { replace: true });
             }
 
             toast.success("Record saved successfully!");
@@ -2806,9 +2816,9 @@ const Daily5MRecording = () => {
 
                 {/* Revision Info Footer */}
                 <div className="mt-6 flex justify-between items-center px-1 pt-1 border-t border-black font-bold text-[16px] italic">
-                    <span>FRM-WH-QA-241</span>
-                    <span>Rev. No:02</span>
-                    <span>Rev Date:27.01.2023</span>
+                    <span>{revisionInfo.docNo}</span>
+                    <span>Rev. No:{revisionInfo.revNo}</span>
+                    <span>Rev Date:{revisionInfo.revDate}</span>
                 </div>
                 <div className="h-[3px] bg-blue-700 w-full mt-0.5" />
 

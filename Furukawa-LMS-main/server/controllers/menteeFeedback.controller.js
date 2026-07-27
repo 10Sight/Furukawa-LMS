@@ -7,6 +7,7 @@ import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import { executeQuery } from "../db/mssqlHelper.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
@@ -81,12 +82,19 @@ export const saveMenteeFeedback = asyncHandler(async (req, res) => {
         feedback.updatedBy = req.user?.fullName || req.user?.name;
         await feedback.save();
     } else {
+        // Freeze whatever the Revision Table currently says for this form; the
+        // update branch above never touches these columns.
+        const revision = await RevisionRecordService.getLatestForSheet('mentee-feedback');
+
         feedback = await MenteeFeedback.create({
             studentId: sid,
             topTableData,
             dailyLogs,
             createdBy: req.user?.fullName || req.user?.name,
-            status: status || "Draft"
+            status: status || "Draft",
+            docNo: revision?.docNo,
+            revNo: revision?.revNo,
+            revDate: revision?.revDate,
         });
     }
 

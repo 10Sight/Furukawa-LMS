@@ -20,6 +20,10 @@ class MenteeFeedback {
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
         this.status = data.status || "Draft";
+
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
     }
 
     static async init() {
@@ -39,6 +43,22 @@ class MenteeFeedback {
                     CONSTRAINT fk_student_mentee_feedback FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
             END
+            ELSE
+            BEGIN
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE mentee_feedbacks ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE mentee_feedbacks ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE mentee_feedbacks ADD revDate VARCHAR(255) NULL;
+                END
+            END
         `;
         await executeQuery(query);
     }
@@ -51,14 +71,14 @@ class MenteeFeedback {
 
     static async create(data) {
         const {
-            studentId, topTableData, dailyLogs, createdBy, status
+            studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, revDate
         } = data;
 
         const query = `
-            INSERT INTO mentee_feedbacks 
-            (studentId, topTableData, dailyLogs, createdBy, status)
+            INSERT INTO mentee_feedbacks
+            (studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -66,7 +86,10 @@ class MenteeFeedback {
             JSON.stringify(topTableData || {}),
             JSON.stringify(dailyLogs || []),
             createdBy,
-            status || "Draft"
+            status || "Draft",
+            docNo || null,
+            revNo || null,
+            revDate || null
         ];
 
         const [rows] = await executeQuery(query, values);

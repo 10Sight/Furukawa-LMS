@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
 import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend } from "@tabler/icons-react";
@@ -208,6 +209,11 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
 const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, lineId, lineName = "", year, isReadOnly = false }) => {
+    const liveRevisionInfo = useRevisionInfo("skill-upgradation-plan", { docNo: "FRM-WH-QA-236" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (never-saved) plan shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' || authUser?.role === 'INSTRUCTOR' || authUser?.isTrainer;
 
@@ -361,6 +367,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     if (data.tableData && typeof data.tableData === "object") {
                         setTableData(data.tableData);
                     }
+                    setSavedRevisionInfo(data.isNew ? null : { docNo: data.docNo, revNo: data.revNo, revDate: data.revDate });
                 }
             } catch (error) {
                 if (!cancelled) {
@@ -551,7 +558,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                         </span>
                     </div>
                     <div className="text-xs font-bold text-slate-900 border border-slate-950 bg-slate-50 px-3 py-1 rounded shadow-sm print:shadow-none print:bg-white print:rounded-none whitespace-nowrap">
-                        Document No: FRM-WH-QA-236
+                        Document No: {revisionInfo.docNo}
                     </div>
                 </div>
                 <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import axiosInstance from "@/Helper/axiosInstance";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { toast } from "sonner";
 import { exportToExcel } from "@/utils/exportHelper";
 import { cn } from "@/lib/utils";
@@ -103,6 +104,11 @@ const ThreeDayMonitoringSheet = ({
     canEditConfig = false,
     initialForceNewAttempt = false
 }) => {
+    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", revDate: "16.10.20" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (not-yet-created) attempt shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: "",
         employeeCode: "",
@@ -236,6 +242,7 @@ const ThreeDayMonitoringSheet = ({
                         setStatus("Draft");
                         setSelectedAttemptId("");
                         setIsForceNewAttempt(true);
+                        setSavedRevisionInfo(null);
                         setHeaderInfo(prev => ({
                             ...prev,
                             checkedBy: "",
@@ -249,6 +256,7 @@ const ThreeDayMonitoringSheet = ({
                         setStatus(data.status || "Draft");
                         setSelectedAttemptId(data.id);
                         setIsForceNewAttempt(false);
+                        setSavedRevisionInfo({ docNo: data.docNo, revNo: data.revNo, revDate: data.revDate });
                         setHeaderInfo(prev => ({
                             ...prev,
                             attemptNumber: data.attemptNumber || 1
@@ -260,6 +268,7 @@ const ThreeDayMonitoringSheet = ({
                     setStatus("Draft");
                     setSelectedAttemptId("");
                     setIsForceNewAttempt(false);
+                    setSavedRevisionInfo(null);
                     setHeaderInfo(prev => ({
                         ...prev,
                         attemptNumber: 1
@@ -309,6 +318,7 @@ const ThreeDayMonitoringSheet = ({
                     comment: ""
                 });
                 setSelectedAttemptId("");
+                setSavedRevisionInfo(null);
                 toast.info(`Starting new attempt (#${(historyAttempts[0]?.attemptNumber || 0) + 1})`);
             }
         };
@@ -1528,9 +1538,9 @@ const ThreeDayMonitoringSheet = ({
 
                                         {/* Meta Info Footer */}
                                         <div className="mt-2 flex justify-between text-[12px] font-bold border-t border-black pt-2 pb-2 px-4">
-                                            <div className="w-1/4">FRM: WH QA 240</div>
-                                            <div className="w-1/4 text-center">Rev No 00</div>
-                                            <div className="w-1/4 text-center">Issue Date: 16.10.20</div>
+                                            <div className="w-1/4">{revisionInfo.docNo}</div>
+                                            <div className="w-1/4 text-center">Rev No {revisionInfo.revNo}</div>
+                                            <div className="w-1/4 text-center">Issue Date: {revisionInfo.revDate}</div>
                                             <div className="w-1/4 text-right">PG: 1 OF 1</div>
                                         </div>
                                     </td>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import useCountdown from '@/hooks/useCountdown';
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -163,6 +164,11 @@ const SixteenDayMonitoringSheet = ({
     feedbackRef = null,
     studentStatus = "PRESENT",
 }) => {
+    const liveRevisionInfo = useRevisionInfo("sixteen-day-monitoring", { docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" });
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (not-yet-created) attempt shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const combinedDept = (name, section) => [name, section].filter(Boolean).join(" / ");
 
     const [headerInfo, setHeaderInfo] = useState({
@@ -423,6 +429,7 @@ const SixteenDayMonitoringSheet = ({
                         setOriginalHeaderInfo({});
                         setSelectedAttemptId("");
                         setIsForceNewAttempt(true);
+                        setSavedRevisionInfo(null);
                     } else {
                         setHeaderInfo(loadedHeader);
                         setGridData(record.gridData || {});
@@ -430,6 +437,7 @@ const SixteenDayMonitoringSheet = ({
                         setOriginalHeaderInfo(loadedHeader);
                         setSelectedAttemptId(record.id);
                         setIsForceNewAttempt(false);
+                        setSavedRevisionInfo({ docNo: record.docNo, revNo: record.revNo, revDate: record.revDate });
                     }
                 } else {
                     const header = response.data.data?.headerInfo || {};
@@ -459,6 +467,7 @@ const SixteenDayMonitoringSheet = ({
                     setOriginalHeaderInfo(newHeader);
                     setSelectedAttemptId("");
                     setIsForceNewAttempt(false);
+                    setSavedRevisionInfo(null);
                 }
 
                 logAction({
@@ -512,6 +521,7 @@ const SixteenDayMonitoringSheet = ({
                     attemptNumber: (historyAttempts[0]?.attemptNumber || 0) + 1
                 }));
                 setSelectedAttemptId("");
+                setSavedRevisionInfo(null);
                 toast.info(`Starting new attempt (#${(historyAttempts[0]?.attemptNumber || 0) + 1})`);
             }
         };
@@ -1275,15 +1285,15 @@ const SixteenDayMonitoringSheet = ({
                                 <div className="w-48 border-l border-black text-[8px] font-bold">
                                     <div className="border-b border-black p-1 flex justify-between">
                                         <span>Document No.</span>
-                                        <span>FRM-HR-004</span>
+                                        <span>{revisionInfo.docNo}</span>
                                     </div>
                                     <div className="border-b border-black p-1 flex justify-between">
                                         <span>Revision No.</span>
-                                        <span>07</span>
+                                        <span>{revisionInfo.revNo}</span>
                                     </div>
                                     <div className="p-1 flex justify-between">
                                         <span>Revision Date:</span>
-                                        <span>11.12.21</span>
+                                        <span>{revisionInfo.revDate}</span>
                                     </div>
                                 </div>
                             </div>

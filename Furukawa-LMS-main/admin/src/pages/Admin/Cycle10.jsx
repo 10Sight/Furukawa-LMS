@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +44,7 @@ const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
+    const revisionInfo = useRevisionInfo("ten-cycle-sheet", {});
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
     const canCreate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:create') || user?.customRole?.permissions?.includes('ten_cycle:manage');
@@ -596,6 +598,7 @@ const Cycle10 = () => {
 
     // ─── Shared approval footer (used by all three form types) ────────────────
     const renderApprovalFooter = () => (
+      <>
         <div className="mt-4 grid grid-cols-3 text-[10px] font-bold text-center border-t border-black pt-4 gap-4">
             <div className="space-y-2">
                 <div className="uppercase">Checked By</div>
@@ -683,6 +686,19 @@ const Cycle10 = () => {
                 </div>
             </div>
         </div>
+        {(() => {
+            // A saved sheet keeps whatever docNo/revNo/revDate was frozen into it at
+            // creation; only a brand-new (not-yet-created) sheet shows the live value.
+            const footerInfo = currentSheet?.docNo ? currentSheet : revisionInfo;
+            return footerInfo.docNo ? (
+                <div className="mt-2 flex justify-between items-center text-[9px] font-bold text-gray-500 px-1">
+                    <span>Doc. No: {footerInfo.docNo}</span>
+                    {footerInfo.revNo && <span>Rev. No: {footerInfo.revNo}</span>}
+                    {footerInfo.revDate && <span>Rev. Date: {footerInfo.revDate}</span>}
+                </div>
+            ) : null;
+        })()}
+      </>
     );
 
     return (

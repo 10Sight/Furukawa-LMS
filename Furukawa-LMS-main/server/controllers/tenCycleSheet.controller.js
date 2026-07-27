@@ -9,6 +9,7 @@ import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logAudit from "../utils/auditLogger.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 
@@ -69,6 +70,11 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
     const [deps] = await executeQuery("SELECT id FROM departments WHERE id = ?", [departmentId]);
     if (deps.length === 0) throw new ApiError("Department not found", 404);
 
+    // Freeze whatever the Revision Table currently says for this form — this sheet
+    // keeps this snapshot for its whole lifetime; updateTenCycleSheetById never
+    // touches these columns.
+    const revision = await RevisionRecordService.getLatestForSheet('ten-cycle-sheet');
+
     const sheet = await TenCycleSheet.create({
         departmentId,
         sectionId,
@@ -82,6 +88,9 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
         entries: [],
         status: "Draft",
         createdBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+        docNo: revision?.docNo,
+        revNo: revision?.revNo,
+        revDate: revision?.revDate,
     });
 
     logAudit(req.user?.id, "CREATE_TEN_CYCLE_SHEET", { sheetId: sheet.id, departmentId, sectionId, lineId, formType, status: "Draft" },

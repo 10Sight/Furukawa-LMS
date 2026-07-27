@@ -356,12 +356,17 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                         statusActionBy: ""
                     }]);
                     setOriginalEntries([]);
-                    setOriginalMetadata({
-                        docNo: "FRM-HR-003",
-                        revNo: "05",
-                        revDate: "30.01.2024",
-                        issueDate: "01.06.09"
-                    });
+                    if (data?.metadata) {
+                        setMetadata(data.metadata);
+                        setOriginalMetadata(JSON.parse(JSON.stringify(data.metadata)));
+                    } else {
+                        setOriginalMetadata({
+                            docNo: "FRM-HR-003",
+                            revNo: "05",
+                            revDate: "30.01.2024",
+                            issueDate: "01.06.09"
+                        });
+                    }
                 }
             } catch (error) {
                 console.error("Error fetching handover sheet:", error);

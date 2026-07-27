@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Get multi skilling plan by department
 export const getMultiSkillingPlanByDepartment = asyncHandler(async (req, res) => {
@@ -34,13 +35,29 @@ export const saveMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =
 
     const { sectionId, year, selectedLines, tableData, sendEmail = false } = req.body || {};
 
+    const parsedSectionId = sectionId ? parseInt(sectionId) : null;
+    const parsedYear = year ? parseInt(year) : null;
+
+    // Brand-new plan: freeze whatever the Revision Table currently says for this
+    // form. Existing plans are untouched — upsert()'s UPDATE branch never writes
+    // these columns, regardless of what's passed in.
+    const existing = await MultiSkillingPlan.findByHierarchy(parseInt(departmentId), parsedSectionId, parsedYear);
+    let revisionSnapshot = {};
+    if (!existing) {
+        const revision = await RevisionRecordService.getLatestForSheet('multi-skilling-plan');
+        if (revision?.docNo) {
+            revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate };
+        }
+    }
+
     const saved = await MultiSkillingPlan.upsert({
         departmentId: parseInt(departmentId),
-        sectionId: sectionId ? parseInt(sectionId) : null,
-        year: year ? parseInt(year) : null,
+        sectionId: parsedSectionId,
+        year: parsedYear,
         selectedLines: Array.isArray(selectedLines) ? selectedLines : [],
         tableData: tableData && typeof tableData === "object" ? tableData : {},
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
+        ...revisionSnapshot,
     });
 
     // Trigger Email Notification only when explicitly requested

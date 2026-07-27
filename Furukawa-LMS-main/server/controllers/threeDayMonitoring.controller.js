@@ -9,6 +9,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
 import { generateThreeDayMonitoringEmail } from "../utils/emailTemplates.js";
 import sendMail from "../utils/mail.util.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Helper to parse emails from various formats (JSON array or comma-separated string)
 const parseEmails = (input) => {
@@ -202,6 +203,11 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         const latest = await ThreeDayMonitoring.findByStudentId(sid);
         const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
 
+        // Freeze whatever the Revision Table currently says for this form — each new
+        // attempt is a fresh physical copy of the form; the update branch above never
+        // touches these columns afterwards.
+        const revision = await RevisionRecordService.getLatestForSheet('three-day-monitoring');
+
         sheet = await ThreeDayMonitoring.create({
             studentId: sid,
             attemptNumber: nextAttempt,
@@ -213,7 +219,10 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
             verifiedBy,
             approvedBy,
             status: status || "Draft",
-            createdBy: req.user?.fullName || req.user?.name
+            createdBy: req.user?.fullName || req.user?.name,
+            docNo: revision?.docNo,
+            revNo: revision?.revNo,
+            revDate: revision?.revDate,
         });
     }
 

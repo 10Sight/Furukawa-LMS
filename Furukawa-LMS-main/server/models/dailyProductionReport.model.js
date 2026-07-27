@@ -72,6 +72,10 @@ class DailyProductionReport {
         this.status = data.status || 'DRAFT';
         this.checkedByUserId = data.checkedByUserId;
 
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
+
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -143,6 +147,20 @@ class DailyProductionReport {
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'kaizenDetails')
                 BEGIN
                     ALTER TABLE daily_production_reports ADD kaizenDetails NVARCHAR(MAX);
+                END
+                -- Doc/revision snapshot: frozen at creation from the Revision Table, never
+                -- updated afterwards (see upsert() below).
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE daily_production_reports ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE daily_production_reports ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE daily_production_reports ADD revDate VARCHAR(255) NULL;
                 END
             END
         `;
@@ -266,11 +284,13 @@ class DailyProductionReport {
                 data.date, data.department, data.line, data.shift
             ]);
         } else {
-            // INSERT
+            // INSERT — docNo/revNo/revDate are frozen here (caller passes the current
+            // Revision Table snapshot for a brand-new record) and never touched by the
+            // UPDATE branch above, so they stay immutable for the life of the record.
             await executeQuery(`
                 INSERT INTO daily_production_reports
-                (date, department_id, line_id, shift, leaderName, delivery, quality, downTime, shiftCommunication, moral, directEfficiency, customerEndDefectDetails, internalDefectDetails, manpowerAttendance, kaizenDetails, madeBy, checkedBy, isSubmitted, submittedBy, status, checkedByUserId)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (date, department_id, line_id, shift, leaderName, delivery, quality, downTime, shiftCommunication, moral, directEfficiency, customerEndDefectDetails, internalDefectDetails, manpowerAttendance, kaizenDetails, madeBy, checkedBy, isSubmitted, submittedBy, status, checkedByUserId, docNo, revNo, revDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 data.date, data.department, data.line, data.shift,
                 data.leaderName || null,
@@ -280,7 +300,8 @@ class DailyProductionReport {
                 jsonValues.manpowerAttendance, jsonValues.kaizenDetails,
                 data.madeBy || null, data.checkedBy || null,
                 data.isSubmitted ? 1 : 0, data.submittedBy || null,
-                data.status || 'DRAFT', data.checkedByUserId || null
+                data.status || 'DRAFT', data.checkedByUserId || null,
+                data.docNo || null, data.revNo || null, data.revDate || null
             ]);
         }
 

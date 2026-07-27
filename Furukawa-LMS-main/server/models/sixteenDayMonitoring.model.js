@@ -31,6 +31,9 @@ class SixteenDayMonitoring {
         this.adminRemarksHistory = typeof data.adminRemarksHistory === 'string'
             ? JSON.parse(data.adminRemarksHistory)
             : (data.adminRemarksHistory || []);
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -104,6 +107,19 @@ class SixteenDayMonitoring {
                 BEGIN
                     ALTER TABLE sixteen_day_monitorings ADD verifiedByEduCell VARCHAR(255);
                 END
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE sixteen_day_monitorings ADD revDate VARCHAR(255) NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -132,14 +148,14 @@ class SixteenDayMonitoring {
             studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
             gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate,
-            adminRemarksHistory
+            adminRemarksHistory, docNo, revNo, revDate
         } = data;
 
         const query = `
             INSERT INTO sixteen_day_monitorings
-            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate, adminRemarksHistory)
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate, adminRemarksHistory, docNo, revNo, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -161,7 +177,10 @@ class SixteenDayMonitoring {
             createdBy,
             status || "Draft",
             startDate || "",
-            Array.isArray(adminRemarksHistory) ? JSON.stringify(adminRemarksHistory) : (adminRemarksHistory || "[]")
+            Array.isArray(adminRemarksHistory) ? JSON.stringify(adminRemarksHistory) : (adminRemarksHistory || "[]"),
+            docNo || null,
+            revNo || null,
+            revDate || null
         ];
 
         const [rows] = await executeQuery(query, values);

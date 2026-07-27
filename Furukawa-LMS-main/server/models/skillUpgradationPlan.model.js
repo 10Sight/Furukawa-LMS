@@ -17,6 +17,9 @@ class SkillUpgradationPlan {
         this.updatedBy = data.updatedBy || "";
         this.departmentName = data.departmentName || "";
         this.sectionName = data.sectionName || "";
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -79,6 +82,20 @@ class SkillUpgradationPlan {
                 BEGIN
                     ALTER TABLE skill_upgradation_plans ADD CONSTRAINT unique_dept_section_upgradation_year_plan UNIQUE (departmentId, sectionId, year);
                 END
+
+                -- Doc/revision snapshot: frozen at creation from the Revision Table.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'docNo')
+                BEGIN
+                    ALTER TABLE skill_upgradation_plans ADD docNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'revNo')
+                BEGIN
+                    ALTER TABLE skill_upgradation_plans ADD revNo VARCHAR(255) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'revDate')
+                BEGIN
+                    ALTER TABLE skill_upgradation_plans ADD revDate VARCHAR(255) NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -135,7 +152,7 @@ class SkillUpgradationPlan {
     }
 
     // Upsert skill upgradation plan by department, section and year
-    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName }) {
+    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, revDate }) {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 
         if (existing) {
@@ -167,9 +184,9 @@ class SkillUpgradationPlan {
 
         const [rows] = await executeQuery(
             `INSERT INTO skill_upgradation_plans
-             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy)
+             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId,
@@ -178,6 +195,9 @@ class SkillUpgradationPlan {
                 JSON.stringify(tableData || {}),
                 userName || "",
                 userName || "",
+                docNo || null,
+                revNo || null,
+                revDate || null,
             ]
         );
 

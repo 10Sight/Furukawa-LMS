@@ -73,6 +73,9 @@ import evaluationTestRoutes from "./routes/evaluationTest.routes.js";
 import adminHomeRoutes from "./routes/adminHome.routes.js";
 import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 import contractorRoutes from "./routes/contractor.routes.js";
+import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
+import RevisionRecord from "./models/revisionRecord.model.js";
+import RevisionHistory from "./models/revisionHistory.model.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
 
 import machineRoutes from "./routes/machine.routes.js";
@@ -300,6 +303,7 @@ app.use("/api/evaluation-tests", evaluationTestRoutes);
 app.use("/api/admin-home", adminHomeRoutes);
 app.use("/api/abnormal-conditions", abnormalConditionRoutes);
 app.use("/api/contractors", contractorRoutes);
+app.use("/api/revision-records", revisionRecordRoutes);
 
 
 // Initialize Socket.IO service
@@ -492,6 +496,8 @@ const startServer = async () => {
 
         await LineRequirement.init();
         await LineRequirementHistory.init();
+        await RevisionRecord.init();
+        await RevisionHistory.init();
         await ReportClub.init();
         await UserHierarchySnapshot.init();
         await MenteeFeedback.init();

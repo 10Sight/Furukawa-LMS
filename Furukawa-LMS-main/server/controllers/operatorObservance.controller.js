@@ -6,6 +6,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 const normalizeLevel = (level) => String(level || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 
@@ -284,7 +285,10 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
         res.json(new ApiResponse(200, observance, "Observance record updated"));
     } else {
-        // Create new
+        // Create new — freeze whatever the Revision Table currently says for this
+        // form; the update branch above never touches these columns.
+        const revision = await RevisionRecordService.getLatestForSheet('operator-observance');
+
         const newRecord = await OperatorObservance.create({
             studentId: resolvedId,
             ...data,
@@ -293,6 +297,9 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
             checkedBy: data.checkedBy || "",
             verifiedBy: data.verifiedBy || "",
             status: data.status || "Draft",
+            docNo: revision?.docNo,
+            revNo: revision?.revNo,
+            revDate: revision?.revDate,
         });
 
         logAudit(req.user?.id, "CREATE_OPERATOR_OBSERVANCE_SHEET",

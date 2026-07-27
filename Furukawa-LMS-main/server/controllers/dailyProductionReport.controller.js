@@ -2,6 +2,7 @@ import DailyProductionReport from '../models/dailyProductionReport.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import NotificationService from '../services/notification.service.js';
+import RevisionRecordService from '../services/revisionRecord.service.js';
 
 /**
  * @desc    Get Daily Production Report
@@ -71,6 +72,18 @@ export const saveDailyProductionReport = asyncHandler(async (req, res, next) => 
         submittedBy: isSubmitted ? req.user.id : (existingReport?.submittedBy || null),
         status: isSubmitted ? 'SUBMITTED' : (existingReport?.status || 'DRAFT')
     };
+
+    // Brand-new report: freeze whatever the Revision Table currently says for this
+    // form. Existing reports are untouched — the model's UPDATE branch never writes
+    // these columns, regardless of what's in updateData.
+    if (!existingReport) {
+        const revision = await RevisionRecordService.getLatestForSheet('daily-production-report');
+        if (revision?.docNo) {
+            updateData.docNo = revision.docNo;
+            updateData.revNo = revision.revNo;
+            updateData.revDate = revision.revDate;
+        }
+    }
 
     // Auto-set madeBy if being submitted and not set
     if (isSubmitted && (!updateData.madeBy || updateData.madeBy === "")) {

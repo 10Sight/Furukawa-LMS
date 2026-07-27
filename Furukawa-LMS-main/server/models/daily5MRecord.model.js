@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 class Daily5MRecord {
     constructor(data) {
@@ -23,6 +24,9 @@ class Daily5MRecord {
         this.updatedAt = data.updatedAt;
         this.adminRemarks = data.adminRemarks || "";
         this.adminRemarksHistory = data.adminRemarksHistory || [];
+        this.docNo = data.docNo;
+        this.revNo = data.revNo;
+        this.revDate = data.revDate;
     }
 
     static async init() {
@@ -95,6 +99,11 @@ class Daily5MRecord {
             await migrationHelper.ensureColumnExists('daily_5m_records', 'approvedBy', "INT");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'sectionId', "NVARCHAR(255)");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'adminRemarks', "NVARCHAR(MAX)");
+            // Doc/revision snapshot: frozen on the first row of a session, then carried
+            // forward onto every later row of that same session (see upsert() below).
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'docNo', "VARCHAR(255) NULL");
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'revNo', "VARCHAR(255) NULL");
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'revDate', "VARCHAR(255) NULL");
 
             // Remove unique constraints to allow full history (every save = new row)
             const dropConstraintsQuery = `
@@ -162,26 +171,42 @@ class Daily5MRecord {
 
         // Preserve the original submitter so that a QA Incharge approving rows
         // doesn't overwrite submittedBy with their own ID (which would trigger
-        // the self-approval restriction on subsequent loads).
+        // the self-approval restriction on subsequent loads). Every save inserts a
+        // brand-new row (see comment on the dropped unique constraints below), so the
+        // doc/rev snapshot is frozen once on the session's first row and carried
+        // forward from there onto every later row of the same session — otherwise
+        // mid-session edits would silently pick up whatever the Revision Table says
+        // at that moment instead of staying consistent for the whole session.
         let finalSubmittedBy = submittedBy;
+        let docNo = null, revNo = null, revDate = null;
         if (sessionId) {
             const [originalRows] = await executeQuery(
-                `SELECT TOP 1 submittedBy FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt ASC`,
+                `SELECT TOP 1 submittedBy, docNo, revNo, revDate FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt ASC`,
                 [sessionId]
             );
-            if (originalRows && originalRows.length > 0 && originalRows[0].submittedBy) {
-                finalSubmittedBy = originalRows[0].submittedBy;
+            if (originalRows && originalRows.length > 0) {
+                if (originalRows[0].submittedBy) finalSubmittedBy = originalRows[0].submittedBy;
+                docNo = originalRows[0].docNo;
+                revNo = originalRows[0].revNo;
+                revDate = originalRows[0].revDate;
+            }
+        } else {
+            const revision = await RevisionRecordService.getLatestForSheet('daily-5m');
+            if (revision?.docNo) {
+                docNo = revision.docNo;
+                revNo = revision.revNo;
+                revDate = revision.revDate;
             }
         }
 
         const query = `
-            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, docNo, revNo, revDate, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
 
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null, docNo, revNo, revDate
         ]);
 
         const newId = rows[0].id;

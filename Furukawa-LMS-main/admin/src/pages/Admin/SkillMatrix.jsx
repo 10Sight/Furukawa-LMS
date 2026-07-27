@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { useSelector } from 'react-redux';
@@ -94,6 +95,7 @@ const ConditionalTabsContent = ({ isEmbedded, value, className, children }) => {
 };
 
 const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
+    const revisionInfo = useRevisionInfo("skill-matrix", { docNo: "FRM-WH-PR-009", revNo: "02", revDate: "02.05.2022" });
     const isEmbeddedView = isEmbedded === true || isEmbedded === "true";
     const componentRef = useRef();
     const tableRef = useRef(null);
@@ -2258,10 +2260,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
                                     {/* Footer Info */}
                                     <div className="flex justify-between text-[11px] mt-2 border-t border-black pt-1">
-                                        <div>Date of Certificate/update : {config.documentInfo.revDate}</div>
-                                        <div>Doc No. {config.documentInfo.docNo}</div>
-                                        <div>Rev.{config.documentInfo.revNo}</div>
-                                        <div>Rev Date: {config.documentInfo.revDate}</div>
+                                        <div>Date of Certificate/update : {revisionInfo.revDate}</div>
+                                        <div>Doc No. {revisionInfo.docNo}</div>
+                                        <div>Rev.{revisionInfo.revNo}</div>
+                                        <div>Rev Date: {revisionInfo.revDate}</div>
                                         <div>Page: {config.documentInfo.page}</div>
                                     </div>
                                 </div>

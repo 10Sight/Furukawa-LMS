@@ -4,9 +4,15 @@ import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { useSelector } from 'react-redux';
 import { Loader2 } from "lucide-react";
+import useRevisionInfo from '@/hooks/useRevisionInfo';
 
 const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false }, ref) => {
     const authUser = useSelector(state => state.auth.user);
+    const liveRevisionInfo = useRevisionInfo("mentee-feedback", {});
+    const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    // A saved record keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (never-saved) record shows the live value.
+    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
     const [loading, setLoading] = useState(false);
 
     // 16 Days
@@ -131,6 +137,7 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                     setOriginalTopTableData(JSON.parse(JSON.stringify(loadedTop)));
                     setDailyLogs(loadedLogs);
                     setOriginalDailyLogs(JSON.parse(JSON.stringify(loadedLogs)));
+                    setSavedRevisionInfo({ docNo: res.data.data.docNo, revNo: res.data.data.revNo, revDate: res.data.data.revDate });
                 } else {
                     setTopTableData({});
                     setOriginalTopTableData({});
@@ -395,6 +402,14 @@ const MenteeFeedbackMonitoringSheet = forwardRef(({ studentId, readOnly = false 
                         </tbody>
                     </table>
                 </div>
+
+                {revisionInfo.docNo && (
+                    <div className="px-4 pb-2 -mt-4 flex justify-between items-center text-[10px] font-bold text-gray-500 border-t border-black pt-1">
+                        <span>Doc. No: {revisionInfo.docNo}</span>
+                        {revisionInfo.revNo && <span>Rev. No: {revisionInfo.revNo}</span>}
+                        {revisionInfo.revDate && <span>Rev. Date: {revisionInfo.revDate}</span>}
+                    </div>
+                )}
 
             </CardContent>
         </Card>

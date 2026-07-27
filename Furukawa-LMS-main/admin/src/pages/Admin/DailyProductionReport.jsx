@@ -26,6 +26,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
@@ -244,13 +245,23 @@ const KaizenSection = ({ data, onChange, disabled }) => (
     </div>
 );
 
-const FormFooter = () => (
-    <div className="w-full mt-2 flex justify-between items-center text-[10px] font-bold border-t border-black pt-1">
-        <div>FRM-PR-274</div>
-        <div>Rev.-03</div>
-        <div>Date- 09.02.2026</div>
-    </div>
-);
+const FormFooter = ({ savedInfo }) => {
+    const liveInfo = useRevisionInfo("daily-production-report", {
+        docNo: "FRM-PR-274",
+        revNo: "03",
+        revDate: "09.02.2026",
+    });
+    // A saved report keeps whatever docNo/revNo/revDate was frozen into it at
+    // creation; only a brand-new (never-saved) report shows the live value.
+    const info = savedInfo?.docNo ? savedInfo : liveInfo;
+    return (
+        <div className="w-full mt-2 flex justify-between items-center text-[10px] font-bold border-t border-black pt-1">
+            <div>{info.docNo}</div>
+            <div>Rev.-{info.revNo}</div>
+            <div>Date- {info.revDate}</div>
+        </div>
+    );
+};
 
 const ManpowerAttendanceSection = ({ data, onChange, disabled, navigate, date, shift }) => {
     // Split data into two columns dynamically
@@ -2170,7 +2181,7 @@ const DailyProductionReport = () => {
                         </table>
 
                         {/* Official Form Footer */}
-                        <FormFooter />
+                        <FormFooter savedInfo={reportResp?.data} />
 
                     </div>
 

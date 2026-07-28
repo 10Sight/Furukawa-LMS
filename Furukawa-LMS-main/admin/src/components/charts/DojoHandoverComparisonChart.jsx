@@ -164,31 +164,38 @@ const DojoHandoverComparisonChart = () => {
         [groupBy, apiStart, apiEnd]
     );
 
+    // Drill mode: once the user narrows to a single department, break its bars down by section
+    // instead of showing one slot per department. This keeps the normal (multi/all-department)
+    // view at one slot per department per period, so the category count doesn't explode into
+    // periods × departments × sections when nothing is filtered.
+    const isSectionDrill = selectedDepts.length === 1;
+
     // Two-series approach (Expected vs Actual):
-    // For each date, we display each department as a single category slot,
-    // and within that category slot, Highcharts renders 2 bars (Expected and Actual) side-by-side.
-    // The date label is shown once per group under the middle department.
+    // For each date, we display each department (or, in drill mode, each section) as a single
+    // category slot, and within that category slot, Highcharts renders 2 bars (Expected and
+    // Actual) side-by-side. The date label is shown once per group under the middle slot.
     const { expectedPoints, actualPoints, categories, groupSeparators } = useMemo(() => {
         if (!deptBreakdown.length || !fullPeriods.length)
             return { expectedPoints: [], actualPoints: [], categories: [], groupSeparators: [] };
 
-        // Build lookup maps
-        const deptDataMap = {};
-        const orderedDeptIds = [];
+        // Build lookup maps. In drill mode, keys are sectionId; otherwise keys are deptId
+        // and section-level rows for the same (period, dept) are summed together.
+        const dataMap = {};
+        const orderedKeys = [];
+        const nameMap = {};
         deptBreakdown.forEach(r => {
-            if (!deptDataMap[r.deptId]) {
-                deptDataMap[r.deptId] = {};
-                orderedDeptIds.push(r.deptId);
+            const key = isSectionDrill ? r.sectionId : r.deptId;
+            if (!dataMap[key]) {
+                dataMap[key] = {};
+                orderedKeys.push(key);
+                nameMap[key] = isSectionDrill
+                    ? (r.sectionName || t('charts.unassignedSection'))
+                    : (departments.find(d => String(d.id ?? d._id) === r.deptId)?.name ?? `Dept ${r.deptId}`);
             }
-            deptDataMap[r.deptId][r.period] = {
-                expected: Number(r.expected) || 0,
-                actual: Number(r.actual) || 0,
-            };
-        });
-
-        const deptNameMap = {};
-        orderedDeptIds.forEach((deptId) => {
-            deptNameMap[deptId] = departments.find(d => String(d.id ?? d._id) === deptId)?.name ?? `Dept ${deptId}`;
+            const bucket = dataMap[key][r.period] ?? { expected: 0, actual: 0 };
+            bucket.expected += Number(r.expected) || 0;
+            bucket.actual += Number(r.actual) || 0;
+            dataMap[key][r.period] = bucket;
         });
 
         const expectedPoints = [];
@@ -198,24 +205,24 @@ const DojoHandoverComparisonChart = () => {
 
         fullPeriods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, groupBy, language);
-            const deptsPresent = orderedDeptIds.filter(id => {
-                const v = deptDataMap[id]?.[period];
+            const keysPresent = orderedKeys.filter(k => {
+                const v = dataMap[k]?.[period];
                 return v && (v.expected > 0 || v.actual > 0);
             });
 
-            if (!deptsPresent.length) {
-                // Empty slot to represent the date without any department data
+            if (!keysPresent.length) {
+                // Empty slot to represent the date without any data
                 categories.push(`<span style="color:#94a3b8;font-size:11px;font-weight:600">${periodLabel}</span>`);
                 expectedPoints.push({
                     y: null,
-                    deptName: '',
+                    label: '',
                     periodLabel,
                     isExpected: true,
                     isEmpty: true,
                 });
                 actualPoints.push({
                     y: null,
-                    deptName: '',
+                    label: '',
                     periodLabel,
                     isExpected: false,
                     isEmpty: true,
@@ -223,16 +230,16 @@ const DojoHandoverComparisonChart = () => {
                 return;
             }
 
-            const N = deptsPresent.length;
+            const N = keysPresent.length;
             const midIdx = Math.floor((N - 1) / 2);
 
-            deptsPresent.forEach((deptId, idx) => {
-                const deptName = deptNameMap[deptId];
-                const vals = deptDataMap[deptId][period];
+            keysPresent.forEach((key, idx) => {
+                const label = nameMap[key];
+                const vals = dataMap[key][period];
                 const isDateSlot = idx === midIdx;
 
-                // Department label
-                const topHtml = deptName
+                // Slot label (department name, or section name in drill mode)
+                const topHtml = label
                     .split(' ')
                     .map(w => `<span style="color:#475569;font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
                     .join('<br/>');
@@ -245,7 +252,7 @@ const DojoHandoverComparisonChart = () => {
 
                 expectedPoints.push({
                     y: vals.expected > 0 ? vals.expected : null,
-                    deptName,
+                    label,
                     periodLabel,
                     isExpected: true,
                     isEmpty: false,
@@ -253,7 +260,7 @@ const DojoHandoverComparisonChart = () => {
 
                 actualPoints.push({
                     y: vals.actual > 0 ? vals.actual : null,
-                    deptName,
+                    label,
                     periodLabel,
                     isExpected: false,
                     isEmpty: false,
@@ -280,13 +287,17 @@ const DojoHandoverComparisonChart = () => {
         }
 
         return { expectedPoints, actualPoints, categories, groupSeparators };
-    }, [deptBreakdown, fullPeriods, groupBy, departments, language]);
+    }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t]);
 
     const SLOT_WIDTH = 120; // 120px slot width to fit two bars nicely
     const needsScroll = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
+
+    const selectedDeptName = isSectionDrill
+        ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '')
+        : '';
 
     const chartOptions = {
         chart: {
@@ -341,10 +352,11 @@ const DojoHandoverComparisonChart = () => {
             useHTML: true,
             style: { fontSize: '13px' },
             formatter() {
-                if (!this.point.deptName) return `<b>${this.point.periodLabel}</b>: ${t('charts.noData')}`;
+                if (!this.point.label) return `<b>${this.point.periodLabel}</b>: ${t('charts.noData')}`;
+                const title = selectedDeptName ? `${selectedDeptName} (${this.point.label})` : this.point.label;
                 return (
                     `<span style="color:${this.series.color}">●</span> ` +
-                    `<b>${this.point.deptName}</b> — ${this.point.isExpected ? t('charts.expectedHandover') : t('charts.actualHandover')}<br/>` +
+                    `<b>${title}</b> — ${this.point.isExpected ? t('charts.expectedHandover') : t('charts.actualHandover')}<br/>` +
                     `Date: <b>${this.point.periodLabel}</b><br/>` +
                     `Count: <b>${this.y}</b>`
                 );

@@ -217,6 +217,7 @@ export const translations = {
     "charts.yearsTracked": "Years Tracked",
     "charts.expectedHandover": "Expected Handover",
     "charts.actualHandover": "Actual Handover",
+    "charts.unassignedSection": "Unassigned",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Contractor Wise DOJO Candidates",
@@ -947,6 +948,7 @@ export const translations = {
     "charts.yearsTracked": "वर्ष ट्रैक किए गए",
     "charts.expectedHandover": "अपेक्षित हैंडओवर",
     "charts.actualHandover": "वास्तविक हैंडओवर",
+    "charts.unassignedSection": "अनिर्धारित",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "ठेकेदार वार DOJO उम्मीदवार",
@@ -1676,6 +1678,7 @@ export const translations = {
     "charts.yearsTracked": "追跡年数",
     "charts.expectedHandover": "予定引き継ぎ数",
     "charts.actualHandover": "実績引き継ぎ数",
+    "charts.unassignedSection": "未割当",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "請負業者別 DOJO 候補者",
@@ -2405,6 +2408,7 @@ export const translations = {
     "charts.yearsTracked": "跟踪年数",
     "charts.expectedHandover": "计划交接",
     "charts.actualHandover": "实际交接",
+    "charts.unassignedSection": "未分配",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "按承包商 DOJO 候选人",
@@ -3134,6 +3138,7 @@ export const translations = {
     "charts.yearsTracked": "Лет отслежено",
     "charts.expectedHandover": "Ожидаемая передача",
     "charts.actualHandover": "Фактическая передача",
+    "charts.unassignedSection": "Не назначено",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Кандидаты DOJO по подрядчикам",

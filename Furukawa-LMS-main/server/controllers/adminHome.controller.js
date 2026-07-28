@@ -382,6 +382,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
     // Temp users store their destination in targetDeptId; after handover it moves to departmentId
     // Accepts comma-separated IDs for multi-select
     let expectedDeptClause = '';
+    let expectedDeptClausePrefixed = '';
     let actualDeptClausePrefixed = '';
     const expectedParams = [start, end];
     const actualParams   = [start, end];
@@ -389,6 +390,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
     if (deptIds.length > 0) {
         const ph = deptIds.map(() => '?').join(',');
         expectedDeptClause = `AND COALESCE(departmentId, targetDeptId) IN (${ph})`;
+        expectedDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
         actualDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
         expectedParams.push(...deptIds);
         actualParams.push(...deptIds);
@@ -409,21 +411,24 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, expectedParams);
 
-    // Per-department expected breakdown (same filters, grouped by period + COALESCE(departmentId, targetDeptId))
+    // Per-department + per-section expected breakdown (same filters, grouped by period + dept + section)
     const [deptExpectedRows] = await executeQuery(`
         SELECT
-            ${expectedFormatMap[safeGroupBy]} AS period,
-            CAST(COALESCE(departmentId, targetDeptId) AS NVARCHAR(20)) AS deptId,
-            COUNT(*)                           AS expected
-        FROM users
-        WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
-          AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND expectedHandover IS NOT NULL
-          AND COALESCE(departmentId, targetDeptId) IS NOT NULL
-          AND expectedHandover >= ?
-          AND expectedHandover <= ?
-          ${expectedDeptClause}
-        GROUP BY ${expectedFormatMap[safeGroupBy]}, COALESCE(departmentId, targetDeptId)
+            ${expectedFormatMap[safeGroupBy].replace('expectedHandover', 'u.expectedHandover')} AS period,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned')    AS sectionName,
+            COUNT(*)                          AS expected
+        FROM users u
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE (u.isTemporary = 1 OR u.expectedHandover IS NOT NULL)
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND u.expectedHandover IS NOT NULL
+          AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
+          AND u.expectedHandover >= ?
+          AND u.expectedHandover <= ?
+          ${expectedDeptClausePrefixed}
+        GROUP BY ${expectedFormatMap[safeGroupBy].replace('expectedHandover', 'u.expectedHandover')}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
     `, expectedParams);
 
@@ -444,15 +449,18 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, actualParams);
 
-    // Per-department actual breakdown (grouped by period + COALESCE(u.departmentId, u.targetDeptId))
+    // Per-department + per-section actual breakdown (grouped by period + dept + section)
     const [deptActualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]}            AS period,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20))     AS deptId,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned')             AS sectionName,
             COUNT(DISTINCT u.id)                       AS actual
         FROM users u
         INNER JOIN handover_sheets hs ON 1=1
         CROSS APPLY OPENJSON(hs.entries) as entry
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
         WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
           AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
@@ -460,7 +468,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
           AND hs.date >= ?
           AND hs.date <= ?
           ${actualDeptClausePrefixed}
-        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId)
+        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
     `, actualParams);
 
@@ -481,36 +489,52 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
 
     const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
 
-    // Build per-dept breakdown merging expected + actual per (deptId, period)
+    // Build per-dept + per-section breakdown merging expected + actual per (deptId, sectionId, period)
     const deptExpMap = {};
     deptExpectedRows.forEach(r => {
-        if (!deptExpMap[r.deptId]) deptExpMap[r.deptId] = {};
-        deptExpMap[r.deptId][r.period] = Number(r.expected);
+        const key = `${r.deptId}__${r.sectionId}`;
+        if (!deptExpMap[key]) deptExpMap[key] = {};
+        deptExpMap[key][r.period] = Number(r.expected);
     });
 
     const deptActMap = {};
     deptActualRows.forEach(r => {
-        if (!deptActMap[r.deptId]) deptActMap[r.deptId] = {};
-        deptActMap[r.deptId][r.period] = Number(r.actual);
+        const key = `${r.deptId}__${r.sectionId}`;
+        if (!deptActMap[key]) deptActMap[key] = {};
+        deptActMap[key][r.period] = Number(r.actual);
     });
 
-    // Collect all unique (deptId, period) pairs from both expected and actual rows
+    // Collect all unique (deptId, sectionId, period) tuples from both expected and actual rows
     const deptPeriodPairs = new Map();
-    deptExpectedRows.forEach(r => {
-        const key = `${r.deptId}__${r.period}`;
-        if (!deptPeriodPairs.has(key)) deptPeriodPairs.set(key, { deptId: String(r.deptId), period: r.period });
-    });
-    deptActualRows.forEach(r => {
-        const key = `${r.deptId}__${r.period}`;
-        if (!deptPeriodPairs.has(key)) deptPeriodPairs.set(key, { deptId: String(r.deptId), period: r.period });
-    });
+    const addPair = (r) => {
+        const key = `${r.deptId}__${r.sectionId}__${r.period}`;
+        if (!deptPeriodPairs.has(key)) {
+            deptPeriodPairs.set(key, {
+                deptId: String(r.deptId),
+                sectionId: String(r.sectionId),
+                sectionName: r.sectionName,
+                period: r.period,
+            });
+        }
+    };
+    deptExpectedRows.forEach(addPair);
+    deptActualRows.forEach(addPair);
 
-    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, period }) => ({
-        period,
-        deptId,
-        expected: deptExpMap[deptId]?.[period] || 0,
-        actual:   deptActMap[deptId]?.[period]  || 0,
-    })).sort((a, b) => Number(a.deptId) - Number(b.deptId) || a.period.localeCompare(b.period));
+    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, sectionId, sectionName, period }) => {
+        const key = `${deptId}__${sectionId}`;
+        return {
+            period,
+            deptId,
+            sectionId,
+            sectionName,
+            expected: deptExpMap[key]?.[period] || 0,
+            actual:   deptActMap[key]?.[period]  || 0,
+        };
+    }).sort((a, b) =>
+        Number(a.deptId) - Number(b.deptId) ||
+        a.sectionName.localeCompare(b.sectionName) ||
+        a.period.localeCompare(b.period)
+    );
 
     res.status(200).json(
         new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Dojo handover comparison fetched successfully")

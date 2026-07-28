@@ -368,10 +368,13 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         end   = now.toISOString().split('T')[0];
     }
 
+    // Temp users may not have an expectedHandover date filled in yet; fall back to when they
+    // joined so they still land on the timeline instead of being dropped from the chart.
+    const expectedDateExpr = (p = '') => `COALESCE(${p}expectedHandover, ${p}joiningDate, CAST(${p}createdAt AS DATE))`;
     const expectedFormatMap = {
-        daily:   "FORMAT(expectedHandover, 'yyyy-MM-dd')",
-        monthly: "FORMAT(expectedHandover, 'yyyy-MM')",
-        yearly:  "FORMAT(expectedHandover, 'yyyy')",
+        daily:   (p = '') => `FORMAT(${expectedDateExpr(p)}, 'yyyy-MM-dd')`,
+        monthly: (p = '') => `FORMAT(${expectedDateExpr(p)}, 'yyyy-MM')`,
+        yearly:  (p = '') => `FORMAT(${expectedDateExpr(p)}, 'yyyy')`,
     };
     const actualFormatMap = {
         daily:   "FORMAT(hs.date, 'yyyy-MM-dd')",
@@ -398,23 +401,22 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
 
     const [expectedRows] = await executeQuery(`
         SELECT
-            ${expectedFormatMap[safeGroupBy]} AS period,
+            ${expectedFormatMap[safeGroupBy]()} AS period,
             COUNT(*)                          AS expected
         FROM users
         WHERE (isTemporary = 1 OR expectedHandover IS NOT NULL)
           AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND expectedHandover IS NOT NULL
-          AND expectedHandover >= ?
-          AND expectedHandover <= ?
+          AND ${expectedDateExpr()} >= ?
+          AND ${expectedDateExpr()} <= ?
           ${expectedDeptClause}
-        GROUP BY ${expectedFormatMap[safeGroupBy]}
+        GROUP BY ${expectedFormatMap[safeGroupBy]()}
         ORDER BY period ASC
     `, expectedParams);
 
     // Per-department + per-section expected breakdown (same filters, grouped by period + dept + section)
     const [deptExpectedRows] = await executeQuery(`
         SELECT
-            ${expectedFormatMap[safeGroupBy].replace('expectedHandover', 'u.expectedHandover')} AS period,
+            ${expectedFormatMap[safeGroupBy]('u.')} AS period,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned')    AS sectionName,
@@ -423,12 +425,11 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
         WHERE (u.isTemporary = 1 OR u.expectedHandover IS NOT NULL)
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND u.expectedHandover IS NOT NULL
           AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
-          AND u.expectedHandover >= ?
-          AND u.expectedHandover <= ?
+          AND ${expectedDateExpr('u.')} >= ?
+          AND ${expectedDateExpr('u.')} <= ?
           ${expectedDeptClausePrefixed}
-        GROUP BY ${expectedFormatMap[safeGroupBy].replace('expectedHandover', 'u.expectedHandover')}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
+        GROUP BY ${expectedFormatMap[safeGroupBy]('u.')}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
     `, expectedParams);
 

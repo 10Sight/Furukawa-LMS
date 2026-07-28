@@ -282,6 +282,7 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/add-resource/", key: "courses" },
     { layout: "admin", prefix: "/admin/add-quiz/", key: "courses" },
     { layout: "admin", prefix: "/admin/edit-quiz/", key: "courses" },
+    { layout: "admin", prefix: "/admin/revision-table/", key: "revision-table" },
     { layout: "admin", prefix: "/admin/report-clubbing/", key: "report-clubbing" },
     { layout: "admin", prefix: "/admin/trainers/", key: "trainers" },
     { layout: "admin", prefix: "/admin/dojo-hiring/", key: "dojo-hiring" },

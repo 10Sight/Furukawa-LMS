@@ -365,7 +365,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                                         <tr key={index}>
                                             <td className="border border-black p-0 h-8">
                                                 <Input disabled={readOnly} className="h-full w-full border-none text-center p-0 focus-visible:ring-0 disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
-                                                    value={row.date?.toString().split('T')[0] ?? ""}
+                                                    value={row.date ? new Date(row.date).toLocaleDateString('en-CA') : ""}
                                                     onChange={e => handleEntryChange(index, 'date', e.target.value)} type="date"
                                                     min={new Date().toLocaleDateString('en-CA')}
                                                     max={new Date().toLocaleDateString('en-CA')} />

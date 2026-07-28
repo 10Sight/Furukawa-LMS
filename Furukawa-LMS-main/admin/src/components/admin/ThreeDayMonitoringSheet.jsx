@@ -104,7 +104,9 @@ const ThreeDayMonitoringSheet = ({
     canEditConfig = false,
     initialForceNewAttempt = false
 }) => {
-    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", revDate: "16.10.20" });
+    // No sectionId prop reaches this component today — department-level scoping
+    // only; the backend still resolves the student's own section at freeze time.
+    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", revDate: "16.10.20" }, { departmentId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (not-yet-created) attempt shows the live value.

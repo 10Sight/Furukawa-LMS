@@ -888,6 +888,7 @@ const DojoHiring = () => {
         { label: t("dojoHiring.stats.todayHiring"), value: tempUsersData?.data?.todayJoined || 0, icon: IconCalendar, color: "emerald" },
         { label: t("dojoHiring.stats.totalCandidates"), value: tempUsersData?.data?.total || 0, icon: IconUsers, color: "blue" },
         { label: t("dojoHiring.stats.totalHandover"), value: tempUsersData?.data?.handoverCount || 0, icon: IconCircleCheck, color: "teal" },
+        { label: t("dojoHiring.stats.onLeaveCandidates"), value: tempUsersData?.data?.leaveTotal || 0, icon: IconClock, color: "amber" },
         { label: t("dojoHiring.stats.leftCandidates"), value: tempUsersData?.data?.leftTotal || 0, icon: IconUserMinus, color: "rose" },
         { label: t("dojoHiring.stats.maleCandidates"), value: tempUsersData?.data?.maleCount || 0, icon: IconUser, color: "indigo" },
         { label: t("dojoHiring.stats.femaleCandidates"), value: tempUsersData?.data?.femaleCount || 0, icon: IconUser, color: "pink" },
@@ -944,6 +945,16 @@ const DojoHiring = () => {
                     borderColor: "border-teal-200",
                     textColor: "text-teal-800",
                     valueColor: "text-teal-900"
+                };
+            case "amber":
+                return {
+                    iconBgColor: "bg-amber-100",
+                    iconColor: "text-amber-600",
+                    gradientFrom: "from-amber-50",
+                    gradientTo: "to-amber-100",
+                    borderColor: "border-amber-200",
+                    textColor: "text-amber-800",
+                    valueColor: "text-amber-900"
                 };
             case "blue":
             default:
@@ -1217,7 +1228,7 @@ const DojoHiring = () => {
                         </div>
 
                         {/* Stats Section */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
                             {stats.map((stat, idx) => (
                                 <StatCard
                                     key={idx}

@@ -164,7 +164,7 @@ const SixteenDayMonitoringSheet = ({
     feedbackRef = null,
     studentStatus = "PRESENT",
 }) => {
-    const liveRevisionInfo = useRevisionInfo("sixteen-day-monitoring", { docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" });
+    const liveRevisionInfo = useRevisionInfo("sixteen-day-monitoring", { docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" }, { departmentId, sectionId: sectionId || null });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (not-yet-created) attempt shows the live value.

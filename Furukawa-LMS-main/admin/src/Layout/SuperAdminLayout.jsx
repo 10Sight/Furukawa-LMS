@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -359,7 +359,13 @@ export function SuperAdminLayout() {
         {/* Page Content */}
         <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen">
           <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-all duration-300 hover:shadow-md`}>
-            <Outlet />
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-20 min-h-[400px]">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600"></div>
+              </div>
+            }>
+              <Outlet />
+            </Suspense>
           </div>
         </div>
       </div>

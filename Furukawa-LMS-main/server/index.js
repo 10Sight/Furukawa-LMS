@@ -119,7 +119,11 @@ import EvaluationTestAttempt from "./models/evaluationTestAttempt.model.js";
 const app = express();
 const allowedOrigins = [
     "http://192.168.90.19:5174",
-    "https://192.168.90.19"
+    "https://192.168.90.19",
+    "http://31.97.229.146",
+    "http://31.97.229.146:5174",
+    ENV.FRONTEND_URL,
+    ENV.ADMIN_URL
 ];
 // Matches localhost/127.0.0.1 and any private LAN address (10.x, 172.16-31.x, 192.168.x) on any port,
 // so the app is reachable from other devices on the same network (e.g. shared OJT links) without

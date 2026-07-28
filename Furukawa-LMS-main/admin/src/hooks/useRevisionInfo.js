@@ -2,15 +2,21 @@ import { useState, useEffect } from 'react';
 import axiosInstance from '@/Helper/axiosInstance';
 
 // Fetches the live docNo/revNo/revDate for a form from the Revision Table
-// (revision_records, keyed by sheetKey). Falls back to whatever the caller
+// (revision_records, keyed by sheetKey), optionally scoped to a department
+// and/or section — resolves to the most specific match (department+section ->
+// department-only -> global default). Falls back to whatever the caller
 // passes in — the form's own previously-hardcoded values — while loading or
-// if the row is unset/unreachable, so nothing ever renders blank or broken.
-export default function useRevisionInfo(sheetKey, fallback) {
+// if nothing is unreachable, so nothing ever renders blank or broken.
+export default function useRevisionInfo(sheetKey, fallback, { departmentId, sectionId } = {}) {
     const [info, setInfo] = useState(fallback);
 
     useEffect(() => {
         let active = true;
-        axiosInstance.get(`/api/revision-records/sheet/${sheetKey}`)
+        const params = {};
+        if (departmentId) params.departmentId = departmentId;
+        if (sectionId) params.sectionId = sectionId;
+
+        axiosInstance.get(`/api/revision-records/sheet/${sheetKey}`, { params })
             .then((res) => {
                 if (!active || !res.data?.success) return;
                 const record = res.data.data || {};
@@ -25,7 +31,7 @@ export default function useRevisionInfo(sheetKey, fallback) {
             })
             .catch(() => { /* keep fallback */ });
         return () => { active = false; };
-    }, [sheetKey]);
+    }, [sheetKey, departmentId, sectionId]);
 
     return info;
 }

@@ -52,7 +52,7 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
     // these columns, regardless of what's passed in.
     let revisionSnapshot = {};
     if (!existing) {
-        const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan');
+        const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan', parseInt(departmentId), sectionId ? parseInt(sectionId) : null);
         if (revision?.docNo) {
             revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate };
         }

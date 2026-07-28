@@ -191,7 +191,15 @@ class Daily5MRecord {
                 revDate = originalRows[0].revDate;
             }
         } else {
-            const revision = await RevisionRecordService.getLatestForSheet('daily-5m');
+            // departmentId/sectionId are stored as NVARCHAR on this table (unlike
+            // revision_records' INT columns), so normalize before the lookup.
+            const revisionDeptId = departmentId ? parseInt(departmentId) : null;
+            const revisionSectionId = sectionId ? parseInt(sectionId) : null;
+            const revision = await RevisionRecordService.getLatestForSheet(
+                'daily-5m',
+                isNaN(revisionDeptId) ? null : revisionDeptId,
+                isNaN(revisionSectionId) ? null : revisionSectionId
+            );
             if (revision?.docNo) {
                 docNo = revision.docNo;
                 revNo = revision.revNo;

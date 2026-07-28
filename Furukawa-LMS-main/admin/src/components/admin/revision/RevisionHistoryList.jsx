@@ -7,6 +7,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 const formatDate = (value) => {
     if (!value) return "-";
@@ -31,6 +32,7 @@ const RevisionHistoryList = ({ logs, loading }) => {
                     <TableRow>
                         <TableHead>Date Updated</TableHead>
                         <TableHead>Sheet Name</TableHead>
+                        <TableHead>Department / Section</TableHead>
                         <TableHead>Doc. No.</TableHead>
                         <TableHead>Rev. No.</TableHead>
                         <TableHead>Changed By</TableHead>
@@ -42,6 +44,16 @@ const RevisionHistoryList = ({ logs, loading }) => {
                         <TableRow key={log.id}>
                             <TableCell>{formatDate(log.updatedAt)}</TableCell>
                             <TableCell className="font-medium">{log.sheetName}</TableCell>
+                            <TableCell>
+                                {log.departmentName ? (
+                                    <div className="text-sm">
+                                        {log.departmentName}
+                                        {log.sectionName && <div className="text-muted-foreground text-xs">{log.sectionName}</div>}
+                                    </div>
+                                ) : (
+                                    <Badge variant="secondary">Global</Badge>
+                                )}
+                            </TableCell>
                             <TableCell>{log.docNo || "-"}</TableCell>
                             <TableCell>{log.revNo || "-"}</TableCell>
                             <TableCell>

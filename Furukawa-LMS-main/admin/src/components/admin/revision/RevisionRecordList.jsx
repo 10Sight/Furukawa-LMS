@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Table,
     TableBody,
@@ -7,10 +8,22 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pencil } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 
-const RevisionRecordList = ({ records, loading, canEdit, onEdit }) => {
+const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride }) => {
+    const navigate = useNavigate();
+
+    const goToHistory = (record) => {
+        navigate(`/admin/revision-table/${record.sheetKey}`, { state: { sheetName: record.sheetName } });
+    };
+
+    const stopAnd = (handler, record) => (e) => {
+        e.stopPropagation();
+        handler(record);
+    };
+
     if (loading) {
         return <div className="py-10 text-center text-muted-foreground">Loading revision records...</div>;
     }
@@ -26,19 +39,34 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit }) => {
                     <TableRow>
                         <TableHead className="w-12">Sr. No.</TableHead>
                         <TableHead>Sheet Name</TableHead>
+                        <TableHead>Department / Section</TableHead>
                         <TableHead>Doc. No.</TableHead>
                         <TableHead>Rev. No.</TableHead>
                         <TableHead>Rev. Date</TableHead>
                         <TableHead>Affected Sr. No. / Page</TableHead>
                         <TableHead>Change Details</TableHead>
-                        {canEdit && <TableHead className="w-16 text-right">Action</TableHead>}
+                        {canEdit && <TableHead className="w-24 text-right">Action</TableHead>}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {records.map((record, index) => (
-                        <TableRow key={record.id}>
+                        <TableRow
+                            key={record.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => goToHistory(record)}
+                        >
                             <TableCell>{index + 1}</TableCell>
                             <TableCell className="font-medium">{record.sheetName}</TableCell>
+                            <TableCell>
+                                {record.departmentName ? (
+                                    <div className="text-sm">
+                                        {record.departmentName}
+                                        {record.sectionName && <div className="text-muted-foreground text-xs">{record.sectionName}</div>}
+                                    </div>
+                                ) : (
+                                    <Badge variant="secondary">Global</Badge>
+                                )}
+                            </TableCell>
                             <TableCell>{record.docNo || "-"}</TableCell>
                             <TableCell>{record.revNo || "-"}</TableCell>
                             <TableCell>{record.revDate || "-"}</TableCell>
@@ -55,9 +83,12 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit }) => {
                                 )}
                             </TableCell>
                             {canEdit && (
-                                <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon" onClick={() => onEdit(record)}>
+                                <TableCell className="text-right whitespace-nowrap">
+                                    <Button variant="ghost" size="icon" title="Edit this record" onClick={stopAnd(onEdit, record)}>
                                         <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" title="Add department override" onClick={stopAnd(onAddOverride, record)}>
+                                        <Plus className="h-4 w-4" />
                                     </Button>
                                 </TableCell>
                             )}

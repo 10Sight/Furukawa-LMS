@@ -73,7 +73,7 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
     // Freeze whatever the Revision Table currently says for this form — this sheet
     // keeps this snapshot for its whole lifetime; updateTenCycleSheetById never
     // touches these columns.
-    const revision = await RevisionRecordService.getLatestForSheet('ten-cycle-sheet');
+    const revision = await RevisionRecordService.getLatestForSheet('ten-cycle-sheet', departmentId, sectionId);
 
     const sheet = await TenCycleSheet.create({
         departmentId,

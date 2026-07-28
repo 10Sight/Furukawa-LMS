@@ -2858,6 +2858,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     SELECT
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND (u.joiningDate IS NULL OR CAST(u.joiningDate AS DATE) != ?) THEN 1 ELSE 0 END) as total,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftTotal,
+      SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as leaveTotal,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND CAST(u.joiningDate AS DATE) = ? THEN 1 ELSE 0 END) as todayJoined,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'MALE' THEN 1 ELSE 0 END) as maleCount,
       SUM(CASE WHEN (u.status != 'LEFT' OR u.status IS NULL) AND u.gender = 'FEMALE' THEN 1 ELSE 0 END) as femaleCount
@@ -2927,6 +2928,7 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     currentPage: page,
     total: statsData[0].total,
     leftTotal: statsData[0].leftTotal,
+    leaveTotal: statsData[0].leaveTotal,
     todayJoined: statsData[0].todayJoined,
     maleCount: statsData[0].maleCount,
     femaleCount: statsData[0].femaleCount,

@@ -63,7 +63,8 @@ export const getAbnormalConditionSheet = asyncHandler(async (req, res) => {
         // New sheets pick up whatever docNo/revNo/revDate is current in the Revision
         // Table at creation time; once saved, that snapshot is frozen on the record
         // (matches how a physical document-controlled form works) — never touched here.
-        const revision = await RevisionRecordService.getLatestForSheet('abnormal-condition');
+        // Abnormal Condition has no section concept — always department-only scope.
+        const revision = await RevisionRecordService.getLatestForSheet('abnormal-condition', parseInt(departmentId), null);
         const metadata = revision?.docNo
             ? {
                 docNo: revision.docNo,

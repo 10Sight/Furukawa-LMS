@@ -286,8 +286,12 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         res.json(new ApiResponse(200, observance, "Observance record updated"));
     } else {
         // Create new — freeze whatever the Revision Table currently says for this
-        // form; the update branch above never touches these columns.
-        const revision = await RevisionRecordService.getLatestForSheet('operator-observance');
+        // form; the update branch above never touches these columns. This model has
+        // no department/section of its own, so resolve the student's current
+        // assignment (frozen at creation, same as everything else here).
+        const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [resolvedId]);
+        const student = studentRows[0] || {};
+        const revision = await RevisionRecordService.getLatestForSheet('operator-observance', student.departmentId || null, student.sectionId || null);
 
         const newRecord = await OperatorObservance.create({
             studentId: resolvedId,

@@ -44,7 +44,7 @@ export const saveMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =
     const existing = await MultiSkillingPlan.findByHierarchy(parseInt(departmentId), parsedSectionId, parsedYear);
     let revisionSnapshot = {};
     if (!existing) {
-        const revision = await RevisionRecordService.getLatestForSheet('multi-skilling-plan');
+        const revision = await RevisionRecordService.getLatestForSheet('multi-skilling-plan', parseInt(departmentId), parsedSectionId);
         if (revision?.docNo) {
             revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate };
         }

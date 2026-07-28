@@ -228,7 +228,7 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
 const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lineName = "", year }) => {
-    const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" });
+    const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (never-saved) plan shows the live value.

@@ -3,6 +3,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import NotificationService from '../services/notification.service.js';
 import RevisionRecordService from '../services/revisionRecord.service.js';
+import { executeQuery } from '../db/mssqlHelper.js';
 
 /**
  * @desc    Get Daily Production Report
@@ -77,7 +78,9 @@ export const saveDailyProductionReport = asyncHandler(async (req, res, next) => 
     // form. Existing reports are untouched — the model's UPDATE branch never writes
     // these columns, regardless of what's in updateData.
     if (!existingReport) {
-        const revision = await RevisionRecordService.getLatestForSheet('daily-production-report');
+        const [lineRows] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [line]);
+        const sectionId = lineRows[0]?.sectionId || null;
+        const revision = await RevisionRecordService.getLatestForSheet('daily-production-report', department, sectionId);
         if (revision?.docNo) {
             updateData.docNo = revision.docNo;
             updateData.revNo = revision.revNo;

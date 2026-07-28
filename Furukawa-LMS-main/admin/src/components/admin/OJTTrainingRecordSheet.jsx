@@ -39,7 +39,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
     // State
     const [trainingData, setTrainingData] = useState({
         areaLine: "New Manpower",
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA'),
         trainingGivenBy: "",
         trainingTopic: "",
         trainingStartTime: "",
@@ -61,7 +61,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                 
             const formatDate = (dateStr) => {
                 if (!dateStr) return "";
-                return dateStr.split('T')[0];
+                return new Date(dateStr).toLocaleDateString('en-CA');
             };
 
             const rawRecords = data.attendanceRecords || [];
@@ -79,7 +79,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
             setTrainingData(prev => ({
                 ...prev,
                 areaLine: computedAreaLine,
-                date: formatDate(data.trainingDate || data.date) || new Date().toISOString().split('T')[0],
+                date: formatDate(data.trainingDate || data.date) || new Date().toLocaleDateString('en-CA'),
                 trainingGivenBy: data.trainingGivenBy || data.creatorName || "",
                 trainingTopic: data.trainingTopic || data.name || "",
                 trainingStartTime: data.trainingStartTime || "",
@@ -375,8 +375,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                         className="inline w-32 border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold text-right disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.date}
                                         onChange={e => handleInputChange('date', e.target.value)}
-                                        min={new Date().toISOString().split('T')[0]}
-                                        max={new Date().toISOString().split('T')[0]}
+                                        min={new Date().toLocaleDateString('en-CA')}
+                                        max={new Date().toLocaleDateString('en-CA')}
                                     />
                                 </div>
                             </div>
@@ -632,8 +632,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                             <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                 value={trainingData.attendanceRecords[leftIndex]?.date || ""}
                                                                 onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)}
-                                                                min={new Date().toISOString().split('T')[0]}
-                                                                max={new Date().toISOString().split('T')[0]} />
+                                                                min={new Date().toLocaleDateString('en-CA')}
+                                                                max={new Date().toLocaleDateString('en-CA')} />
                                                         </td>
                                                         <td className="border-r border-black p-0 overflow-visible relative">
                                                             <UserAutocomplete
@@ -666,8 +666,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                     <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                         value={trainingData.attendanceRecords[rightIndex]?.date || ""}
                                                                         onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)}
-                                                                        min={new Date().toISOString().split('T')[0]}
-                                                                        max={new Date().toISOString().split('T')[0]} />
+                                                                        min={new Date().toLocaleDateString('en-CA')}
+                                                                        max={new Date().toLocaleDateString('en-CA')} />
                                                                 </td>
                                                                 <td className="border-r border-black p-0 overflow-visible relative">
                                                                     <UserAutocomplete

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -316,7 +316,13 @@ export function CmsLayout() {
 
                 <div className="pt-20 pb-6 px-2 sm:px-4 min-h-screen">
                     <div className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-2 sm:p-4`}>
-                        <Outlet />
+                        <Suspense fallback={
+                            <div className="flex items-center justify-center py-20 min-h-[400px]">
+                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                            </div>
+                        }>
+                            <Outlet />
+                        </Suspense>
                     </div>
                 </div>
             </div>

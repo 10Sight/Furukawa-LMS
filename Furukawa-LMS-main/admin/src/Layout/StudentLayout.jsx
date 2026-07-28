@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -516,7 +516,13 @@ export function StudentLayout() {
         {/* Page Content */}
         <main className="flex-1">
           <div className="max-w-7xl mx-auto px-2.5 py-6 sm:px-6 lg:px-8">
-            <Outlet />
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-20 min-h-[400px]">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+              </div>
+            }>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>

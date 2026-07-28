@@ -245,12 +245,12 @@ const KaizenSection = ({ data, onChange, disabled }) => (
     </div>
 );
 
-const FormFooter = ({ savedInfo }) => {
+const FormFooter = ({ savedInfo, departmentId, sectionId }) => {
     const liveInfo = useRevisionInfo("daily-production-report", {
         docNo: "FRM-PR-274",
         revNo: "03",
         revDate: "09.02.2026",
-    });
+    }, { departmentId, sectionId });
     // A saved report keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (never-saved) report shows the live value.
     const info = savedInfo?.docNo ? savedInfo : liveInfo;
@@ -2181,7 +2181,7 @@ const DailyProductionReport = () => {
                         </table>
 
                         {/* Official Form Footer */}
-                        <FormFooter savedInfo={reportResp?.data} />
+                        <FormFooter savedInfo={reportResp?.data} departmentId={selectedDepartment} sectionId={selectedSection} />
 
                     </div>
 

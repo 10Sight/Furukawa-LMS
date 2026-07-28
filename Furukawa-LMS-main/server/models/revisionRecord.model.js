@@ -56,6 +56,10 @@ class RevisionRecord {
         this.id = data.id;
         this.sheetKey = data.sheetKey;
         this.sheetName = data.sheetName;
+        this.departmentId = data.departmentId;
+        this.sectionId = data.sectionId;
+        this.departmentName = data.departmentName;
+        this.sectionName = data.sectionName;
         this.docNo = data.docNo;
         this.revNo = data.revNo;
         this.revDate = data.revDate;
@@ -73,8 +77,10 @@ class RevisionRecord {
             BEGIN
                 CREATE TABLE [revision_records] (
                     id INT IDENTITY(1,1) PRIMARY KEY,
-                    sheetKey VARCHAR(255) NOT NULL UNIQUE,
+                    sheetKey VARCHAR(255) NOT NULL,
                     sheetName VARCHAR(255) NOT NULL,
+                    departmentId INT NULL,
+                    sectionId INT NULL,
                     docNo VARCHAR(255) NULL,
                     revNo VARCHAR(255) NULL,
                     revDate VARCHAR(255) NULL,
@@ -83,8 +89,58 @@ class RevisionRecord {
                     changeDetails NVARCHAR(MAX) NULL,
                     changeDetailsHi NVARCHAR(MAX) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
+                    updatedAt DATETIME DEFAULT GETDATE(),
+                    CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId),
+                    FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
+                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION
                 );
+            END
+            ELSE
+            BEGIN
+                -- Department/section scoping: a form can now have a global default
+                -- (both NULL) plus per-department and per-department+section overrides.
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_records') AND name = 'departmentId')
+                BEGIN
+                    ALTER TABLE [revision_records] ADD departmentId INT NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_records') AND name = 'sectionId')
+                BEGIN
+                    ALTER TABLE [revision_records] ADD sectionId INT NULL;
+                END
+
+                -- Drop the old single-column UNIQUE(sheetKey) constraint, if present —
+                -- it would block inserting department/section-specific overrides for a
+                -- sheetKey that already has a global row.
+                DECLARE @OldConstraintName NVARCHAR(255);
+                SELECT TOP 1 @OldConstraintName = kc.name
+                FROM sys.key_constraints kc
+                JOIN sys.index_columns ic ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id
+                JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE kc.parent_object_id = OBJECT_ID('revision_records')
+                  AND kc.type = 'UQ'
+                  AND kc.name <> 'uq_revision_records_scope'
+                GROUP BY kc.name
+                HAVING COUNT(*) = 1 AND MAX(c.name) = 'sheetKey';
+
+                IF @OldConstraintName IS NOT NULL
+                BEGIN
+                    DECLARE @DropOldUnique NVARCHAR(MAX) = 'ALTER TABLE [revision_records] DROP CONSTRAINT ' + QUOTENAME(@OldConstraintName);
+                    EXEC sp_executesql @DropOldUnique;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.key_constraints WHERE name = 'uq_revision_records_scope' AND type = 'UQ')
+                BEGIN
+                    ALTER TABLE [revision_records] ADD CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId);
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('departments'))
+                BEGIN
+                    ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('sections'))
+                BEGIN
+                    ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_section FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION;
+                END
             END
         `;
         try {
@@ -95,10 +151,15 @@ class RevisionRecord {
             return;
         }
 
-        // Seed default sheets on first run only — never touch rows that already exist,
-        // so admin edits are never clobbered by a restart.
+        // Seed default (global) sheets on first run only — never touch rows that
+        // already exist, so admin edits/overrides are never clobbered by a restart.
+        // "Existing" here specifically means the GLOBAL row (departmentId/sectionId
+        // both NULL) — department/section-specific overrides are a separate concern
+        // and never seeded automatically.
         try {
-            const [existing] = await executeQuery("SELECT sheetKey FROM [revision_records]");
+            const [existing] = await executeQuery(
+                "SELECT sheetKey FROM [revision_records] WHERE departmentId IS NULL AND sectionId IS NULL"
+            );
             const existingKeys = new Set(existing.map(r => r.sheetKey));
             const missing = DEFAULT_SHEETS.filter(s => !existingKeys.has(s.sheetKey));
             for (const sheet of missing) {
@@ -111,21 +172,20 @@ class RevisionRecord {
                 logger.info(`Seeded ${missing.length} default revision_records rows`);
             }
 
-            // Prune rows for sheet keys that were removed from the register.
+            // Prune rows for sheet keys that were removed from the register — every
+            // row for that sheetKey, global default and any overrides alike.
             for (const removedKey of REMOVED_SHEET_KEYS) {
-                if (existingKeys.has(removedKey)) {
-                    await executeQuery("DELETE FROM [revision_records] WHERE sheetKey = ?", [removedKey]);
-                    logger.info(`Removed revision_records row for retired sheetKey '${removedKey}'`);
-                }
+                await executeQuery("DELETE FROM [revision_records] WHERE sheetKey = ?", [removedKey]);
             }
 
-            // Backfill rows still sitting on the old "TBD" placeholder or a blank docNo
-            // for sheets where the real value is now known. Only touches rows that have
-            // never been given a real docNo, so an admin's own edits are never overwritten.
+            // Backfill the GLOBAL row only if it's still sitting on the old "TBD"
+            // placeholder or blank docNo, for sheets where the real value is now known.
+            // Never touches a department/section-specific override an admin created.
             for (const known of KNOWN_DEFAULTS_BACKFILL) {
                 await executeQuery(
                     `UPDATE [revision_records] SET docNo = ?, revNo = ?, revDate = ?, updatedAt = GETDATE()
-                     WHERE sheetKey = ? AND (docNo = 'TBD' OR docNo IS NULL OR docNo = '')`,
+                     WHERE sheetKey = ? AND departmentId IS NULL AND sectionId IS NULL
+                       AND (docNo = 'TBD' OR docNo IS NULL OR docNo = '')`,
                     [known.docNo, known.revNo ?? null, known.revDate ?? null, known.sheetKey]
                 );
             }
@@ -134,21 +194,95 @@ class RevisionRecord {
         }
     }
 
-    static async findAll() {
-        const [rows] = await executeQuery("SELECT * FROM [revision_records] ORDER BY sheetName ASC");
+    static _baseSelect() {
+        return `
+            SELECT rr.*, d.name as departmentName, s.name as sectionName
+            FROM [revision_records] rr
+            LEFT JOIN departments d ON rr.departmentId = d.id
+            LEFT JOIN [sections] s ON rr.sectionId = s.id
+        `;
+    }
+
+    // Every row that exists — global defaults and every department/section
+    // override alike — optionally narrowed by department/section, so the admin
+    // list can show the full picture rather than one collapsed value per sheet.
+    static async findAll({ departmentId, sectionId } = {}) {
+        let query = `${this._baseSelect()} WHERE 1=1`;
+        const values = [];
+        if (departmentId) {
+            query += " AND rr.departmentId = ?";
+            values.push(departmentId);
+        }
+        if (sectionId) {
+            query += " AND rr.sectionId = ?";
+            values.push(sectionId);
+        }
+        query += " ORDER BY rr.sheetName ASC, d.name ASC, s.name ASC";
+        const [rows] = await executeQuery(query, values);
         return rows.map(r => new RevisionRecord(r));
     }
 
     static async findById(id) {
-        const [rows] = await executeQuery("SELECT * FROM [revision_records] WHERE id = ?", [id]);
+        const [rows] = await executeQuery(`${this._baseSelect()} WHERE rr.id = ?`, [id]);
         if (rows.length === 0) return null;
         return new RevisionRecord(rows[0]);
     }
 
-    static async findBySheetKey(sheetKey) {
-        const [rows] = await executeQuery("SELECT * FROM [revision_records] WHERE sheetKey = ?", [sheetKey]);
+    // Exact-scope lookup (no fallback) — used to decide insert vs. update when
+    // saving a specific department/section override.
+    static async findExactScope(sheetKey, departmentId = null, sectionId = null) {
+        const query = `${this._baseSelect()} WHERE rr.sheetKey = ?
+            AND (rr.departmentId = ? OR (rr.departmentId IS NULL AND ? IS NULL))
+            AND (rr.sectionId = ? OR (rr.sectionId IS NULL AND ? IS NULL))`;
+        const [rows] = await executeQuery(query, [sheetKey, departmentId, departmentId, sectionId, sectionId]);
         if (rows.length === 0) return null;
         return new RevisionRecord(rows[0]);
+    }
+
+    // Most-specific match for a sheet given a department/section: exact
+    // department+section match, falling back to department-only, falling back to
+    // the global default. Mirrors EmailConfiguration.findByFormDeptAndSection's
+    // fallback-hierarchy pattern (server/models/emailConfiguration.model.js).
+    static async findLatestForScope(sheetKey, departmentId = null, sectionId = null) {
+        const query = `
+            SELECT TOP 1 rr.*, d.name as departmentName, s.name as sectionName
+            FROM [revision_records] rr
+            LEFT JOIN departments d ON rr.departmentId = d.id
+            LEFT JOIN [sections] s ON rr.sectionId = s.id
+            WHERE rr.sheetKey = ?
+              AND (
+                (rr.departmentId = ? AND rr.sectionId = ?) OR
+                (rr.departmentId = ? AND rr.sectionId IS NULL) OR
+                (rr.departmentId IS NULL AND rr.sectionId IS NULL)
+              )
+            ORDER BY rr.sectionId DESC, rr.departmentId DESC
+        `;
+        const [rows] = await executeQuery(query, [sheetKey, departmentId, sectionId, departmentId]);
+        if (rows.length === 0) return null;
+        return new RevisionRecord(rows[0]);
+    }
+
+    static async create(data) {
+        const query = `
+            INSERT INTO [revision_records]
+            (sheetKey, sheetName, departmentId, sectionId, docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi)
+            OUTPUT INSERTED.id
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        const [rows] = await executeQuery(query, [
+            data.sheetKey,
+            data.sheetName,
+            data.departmentId || null,
+            data.sectionId || null,
+            data.docNo || null,
+            data.revNo || null,
+            data.revDate || null,
+            data.affectedSrNoPage || null,
+            data.affectedSrNoPageHi || null,
+            data.changeDetails || null,
+            data.changeDetailsHi || null,
+        ]);
+        return RevisionRecord.findById(rows[0].id);
     }
 
     static async update(id, data) {

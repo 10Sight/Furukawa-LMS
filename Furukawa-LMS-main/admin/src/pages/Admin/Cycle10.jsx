@@ -44,7 +44,6 @@ const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
-    const revisionInfo = useRevisionInfo("ten-cycle-sheet", {});
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
     const canCreate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:create') || user?.customRole?.permissions?.includes('ten_cycle:manage');
@@ -82,6 +81,13 @@ const Cycle10 = () => {
     const [createFormType, setCreateFormType] = useState("form1");
     const [createdDate, setCreatedDate] = useState("");
     const [currentDepartmentName, setCurrentDepartmentName] = useState("");
+
+    // Live preview for a not-yet-created sheet reflects whatever department/section
+    // is currently selected (the page filter, or the "Add Sheet" dialog's own pick).
+    const revisionInfo = useRevisionInfo("ten-cycle-sheet", {}, {
+        departmentId: selectedDepartmentFilter || createDepartmentId,
+        sectionId: selectedSectionFilter || createSectionId,
+    });
 
     const { data: departmentsData } = useGetAllDepartmentsQuery({ page: 1, limit: 500 });
     const departments = departmentsData?.data?.departments || [];

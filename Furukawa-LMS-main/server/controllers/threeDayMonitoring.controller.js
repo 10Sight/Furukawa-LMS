@@ -205,8 +205,11 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
 
         // Freeze whatever the Revision Table currently says for this form — each new
         // attempt is a fresh physical copy of the form; the update branch above never
-        // touches these columns afterwards.
-        const revision = await RevisionRecordService.getLatestForSheet('three-day-monitoring');
+        // touches these columns afterwards. This model has no department/section of
+        // its own, so resolve the student's current assignment.
+        const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [sid]);
+        const student = studentRows[0] || {};
+        const revision = await RevisionRecordService.getLatestForSheet('three-day-monitoring', student.departmentId || null, student.sectionId || null);
 
         sheet = await ThreeDayMonitoring.create({
             studentId: sid,

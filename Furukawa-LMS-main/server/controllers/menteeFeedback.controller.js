@@ -83,8 +83,12 @@ export const saveMenteeFeedback = asyncHandler(async (req, res) => {
         await feedback.save();
     } else {
         // Freeze whatever the Revision Table currently says for this form; the
-        // update branch above never touches these columns.
-        const revision = await RevisionRecordService.getLatestForSheet('mentee-feedback');
+        // update branch above never touches these columns. This model has no
+        // department/section of its own, so resolve the student's current
+        // assignment (frozen at creation, same as everything else here).
+        const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [sid]);
+        const student = studentRows[0] || {};
+        const revision = await RevisionRecordService.getLatestForSheet('mentee-feedback', student.departmentId || null, student.sectionId || null);
 
         feedback = await MenteeFeedback.create({
             studentId: sid,

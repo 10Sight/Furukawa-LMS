@@ -1224,13 +1224,15 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
 };
 
 const Daily5MRecording = () => {
-    const liveRevisionInfo = useRevisionInfo("daily-5m", { docNo: "FRM-WH-QA-241", revNo: "02", revDate: "27.01.2023" });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
+    const [selectedDepartment, setSelectedDepartment] = useState("");
+    const [selectedSection, setSelectedSection] = useState("");
+    // Live preview for a not-yet-created record reflects whichever department/
+    // section is currently selected on the page.
+    const liveRevisionInfo = useRevisionInfo("daily-5m", { docNo: "FRM-WH-QA-241", revNo: "02", revDate: "27.01.2023" }, { departmentId: selectedDepartment, sectionId: selectedSection });
     // A saved record keeps whatever docNo/revNo/revDate was frozen into its session's
     // first row; only a brand-new (never-saved) record shows the live value.
     const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
-    const [selectedDepartment, setSelectedDepartment] = useState("");
-    const [selectedSection, setSelectedSection] = useState("");
     const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
     const navigate = useNavigate();
     const location = useLocation();
@@ -1662,7 +1664,7 @@ const Daily5MRecording = () => {
             if (data.departmentId) setSelectedDepartment(data.departmentId);
             if (data.date) {
                 // Ensure format is YYYY-MM-DD
-                const formattedDate = new Date(data.date).toISOString().split('T')[0];
+                const formattedDate = new Date(data.date).toLocaleDateString('en-CA');
                 setSelectedDate(formattedDate);
             }
 
@@ -1896,7 +1898,7 @@ const Daily5MRecording = () => {
 
                 setSelectedDepartment(deptId);
                 setSelectedSection(sectId);
-                setSelectedDate(record.date ? new Date(record.date).toISOString().split('T')[0] : new Date().toLocaleDateString('en-CA'));
+                setSelectedDate(record.date ? new Date(record.date).toLocaleDateString('en-CA') : new Date().toLocaleDateString('en-CA'));
                 setFormData(recordData);
                 setInitialFormData(recordData);
                 setSubmittedBy(record.submittedByName || "User");

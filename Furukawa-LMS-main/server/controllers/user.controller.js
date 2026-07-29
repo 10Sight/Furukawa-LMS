@@ -2627,8 +2627,73 @@ export const getEmployeeById = asyncHandler(async (req, res) => {
 });
 
 export const getSoftDeletedUsers = asyncHandler(async (req, res) => {
-  const [users] = await executeQuery(`SELECT * FROM users WHERE isDeleted = 1`);
-  res.json(new ApiResponse(200, users.map(formatUser), "Soft deleted users fetched"));
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 200);
+  const offset = (page - 1) * limit;
+
+  let whereClauses = ["u.isDeleted = 1"];
+  let params = [];
+
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.email LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+    params.push(t, t, t, t);
+  }
+
+  if (req.query.deletedDateFrom) {
+    whereClauses.push("CAST(u.updatedAt AS DATE) >= CAST(? AS DATE)");
+    params.push(req.query.deletedDateFrom);
+  }
+  if (req.query.deletedDateTo) {
+    whereClauses.push("CAST(u.updatedAt AS DATE) <= CAST(? AS DATE)");
+    params.push(req.query.deletedDateTo);
+  }
+
+  const deptIds = toIdList(req.query.departmentId);
+  const sectIds = toIdList(req.query.sectionId);
+  const lnIds = toIdList(req.query.lineId);
+
+  if (deptIds.length) {
+    const ph = deptIds.map(() => "?").join(",");
+    whereClauses.push(`d.id IN (${ph})`);
+    params.push(...deptIds);
+  }
+  if (sectIds.length) {
+    const ph = sectIds.map(() => "?").join(",");
+    whereClauses.push(`s_res.sectionId IN (${ph})`);
+    params.push(...sectIds);
+  }
+  if (lnIds.length) {
+    const ph = lnIds.map(() => "?").join(",");
+    whereClauses.push(`l_res.lineId IN (${ph})`);
+    params.push(...lnIds);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(" AND ")}`;
+
+  const sortableColumns = { updatedAt: "u.updatedAt", fullName: "u.fullName", createdAt: "u.createdAt" };
+  const sortCol = sortableColumns[req.query.sortBy] || "u.updatedAt";
+  const sortDir = req.query.order === "asc" ? "ASC" : "DESC";
+
+  const [[cnt], [users]] = await Promise.all([
+    executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${whereSQL}`, params, { label: "getSoftDeletedUsers.count" }),
+    executeQuery(
+      `SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName
+       FROM users u ${getHierarchyFilterJoinSQL} ${whereSQL}
+       ORDER BY ${sortCol} ${sortDir}
+       OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`,
+      [...params, offset, limit],
+      { label: "getSoftDeletedUsers.select" }
+    ),
+  ]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(formatUser),
+    totalUsers: cnt.total,
+    totalPages: Math.max(Math.ceil(cnt.total / limit), 1),
+    currentPage: page,
+    limit
+  }, "Soft deleted users fetched"));
 });
 
 export const restoreUser = asyncHandler(async (req, res) => {

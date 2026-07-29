@@ -40,7 +40,7 @@ export const superAdminApi = createApi({
       providesTags: ["User"],
     }),
 
-    // Get soft-deleted users (SuperAdmin only)
+    // Get soft-deleted users (Admin / SuperAdmin only)
     getSoftDeletedUsers: builder.query({
       query: (params = {}) => ({
         url: "/api/users/deleted/all",
@@ -51,10 +51,11 @@ export const superAdminApi = createApi({
           sortBy: params.sortBy || "updatedAt",
           order: params.order || "desc",
           search: params.search || "",
-          role: params.role || "",
           deletedDateFrom: params.deletedDateFrom || "",
           deletedDateTo: params.deletedDateTo || "",
-          deletedBy: params.deletedBy || "",
+          departmentId: params.departmentId || "",
+          sectionId: params.sectionId || "",
+          lineId: params.lineId || "",
         },
       }),
       providesTags: ["User"],

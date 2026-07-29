@@ -1,586 +1,524 @@
-import React, { useState, useEffect } from "react";
-import { useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import {
   IconTrash,
   IconRestore,
-  IconSearch,
   IconFilter,
-  IconDownload,
-  IconEye,
+  IconFilterOff,
   IconRefresh,
   IconAlertTriangle,
-  IconX,
-  IconClock,
-  IconUser,
-  IconCalendar,
-  IconShieldCheck,
-  IconTrashOff
+  IconUserOff,
+  IconBuilding,
+  IconLayoutGrid,
+  IconRoute,
+  IconChevronLeft,
+  IconChevronRight,
+  IconLoader2,
 } from "@tabler/icons-react";
-import { 
+import {
   useGetSoftDeletedUsersQuery,
   useRestoreUserMutation,
-  usePermanentDeleteUserMutation
+  usePermanentDeleteUserMutation,
 } from "@/Redux/AllApi/SuperAdminApi";
+import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import SearchInput from "@/components/common/SearchInput";
+import MultiSelectFilter from "@/components/common/MultiSelectFilter";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+
+const STATUS_BADGE_VARIANT = {
+  ACTIVE: "success",
+  SUSPENDED: "warning",
+  BANNED: "destructive",
+  PENDING: "info",
+};
+
+const EMPTY_FILTERS = {
+  departmentId: "",
+  sectionId: "",
+  lineId: "",
+  deletedDateFrom: "",
+  deletedDateTo: "",
+};
 
 const SoftDeletedUsersManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(true);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [sortBy, setSortBy] = useState("updatedAt");
-  const [sortOrder, setSortOrder] = useState("desc");
-  
-  const [filters, setFilters] = useState({
-    role: "",
-    deletedDateFrom: "",
-    deletedDateTo: "",
-    deletedBy: ""
-  });
+  const [pendingAction, setPendingAction] = useState(null); // { type: 'restore' | 'permanentDelete', ids: string[] }
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // API hooks
-  const { 
-    data: deletedUsersData, 
-    isLoading, 
-    isError, 
-    error, 
-    refetch 
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+
+  const {
+    data: deletedUsersData,
+    isLoading,
+    isFetching,
+    isError,
+    error,
+    refetch,
   } = useGetSoftDeletedUsersQuery({
     page: currentPage,
     limit: 20,
-    sortBy,
-    order: sortOrder,
+    sortBy: "updatedAt",
+    order: "desc",
     search: searchTerm,
-    role: filters.role,
     deletedDateFrom: filters.deletedDateFrom,
     deletedDateTo: filters.deletedDateTo,
-    deletedBy: filters.deletedBy
+    departmentId: filters.departmentId,
+    sectionId: filters.sectionId,
+    lineId: filters.lineId,
   });
 
   const [restoreUser] = useRestoreUserMutation();
   const [permanentDeleteUser] = usePermanentDeleteUserMutation();
 
+  const { data: departmentsData } = useGetAllDepartmentsQuery({ page: 1, limit: 500 });
+  const departmentOptions = useMemo(
+    () => (departmentsData?.data?.departments || []).map((d) => ({ id: String(d.id || d._id), name: d.name })),
+    [departmentsData]
+  );
+
+  const { data: sectionsData } = useGetSectionsByDepartmentQuery(filters.departmentId, { skip: !filters.departmentId });
+  const sectionOptions = useMemo(
+    () => (sectionsData?.data || []).map((s) => ({ id: String(s.id), name: s.name })),
+    [sectionsData]
+  );
+
+  const { data: linesData } = useGetLinesBySectionQuery(filters.sectionId, { skip: !filters.sectionId });
+  const lineOptions = useMemo(
+    () => (linesData?.data || []).map((l) => ({ id: String(l.id), name: l.name })),
+    [linesData]
+  );
+
   const deletedUsers = deletedUsersData?.data?.users || [];
+  const totalUsers = deletedUsersData?.data?.totalUsers ?? deletedUsers.length;
   const totalPages = deletedUsersData?.data?.totalPages || 1;
 
-  const handleRestoreUser = async (userId) => {
+  const hasActiveFilters =
+    !!searchTerm || Object.values(filters).some(Boolean);
+
+  const resetFilters = () => {
+    setSearchTerm("");
+    setFilters(EMPTY_FILTERS);
+    setCurrentPage(1);
+  };
+
+  const updateFilters = (patch) => {
+    setFilters((prev) => ({ ...prev, ...patch }));
+    setCurrentPage(1);
+  };
+
+  const openConfirm = (type, ids) => setPendingAction({ type, ids });
+
+  const handleConfirm = async () => {
+    if (!pendingAction) return;
+    const { type, ids } = pendingAction;
+    const mutate = type === "restore" ? restoreUser : permanentDeleteUser;
+
+    setIsProcessing(true);
     try {
-      await restoreUser(userId).unwrap();
-      toast.success("User restored successfully!");
+      const results = await Promise.allSettled(ids.map((id) => mutate(id).unwrap()));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const succeeded = results.length - failed;
+
+      if (succeeded > 0) {
+        toast.success(
+          type === "restore"
+            ? `Restored ${succeeded} user${succeeded > 1 ? "s" : ""} successfully`
+            : `Permanently deleted ${succeeded} user${succeeded > 1 ? "s" : ""}`
+        );
+      }
+      if (failed > 0) {
+        toast.error(`Failed to ${type === "restore" ? "restore" : "permanently delete"} ${failed} user${failed > 1 ? "s" : ""}`);
+      }
+
+      setSelectedUsers((prev) => prev.filter((id) => !ids.includes(id)));
       refetch();
-    } catch (error) {
-      console.error("Error restoring user:", error);
-      toast.error(error?.data?.message || "Failed to restore user");
+    } finally {
+      setIsProcessing(false);
+      setPendingAction(null);
     }
   };
 
-  const handlePermanentDelete = async (userId) => {
-    try {
-      await permanentDeleteUser(userId).unwrap();
-      toast.success("User permanently deleted!");
-      refetch();
-    } catch (error) {
-      console.error("Error permanently deleting user:", error);
-      toast.error(error?.data?.message || "Failed to permanently delete user");
-    }
+  const toggleSelectAll = (checked) => {
+    setSelectedUsers(checked ? deletedUsers.map((u) => u._id) : []);
   };
 
-  const handleBulkAction = async (action) => {
-    if (selectedUsers.length === 0) return;
-    
-    setConfirmAction({ type: action, users: selectedUsers });
-    setShowConfirmModal(true);
+  const toggleSelectUser = (id, checked) => {
+    setSelectedUsers((prev) => (checked ? [...prev, id] : prev.filter((v) => v !== id)));
   };
-
-  const executeBulkAction = async () => {
-    try {
-      // Note: Bulk operations would need to be implemented in the API
-      toast.success(`Bulk ${confirmAction.type} operation completed!`);
-      setSelectedUsers([]);
-      setShowConfirmModal(false);
-      setConfirmAction(null);
-      refetch();
-    } catch (error) {
-      console.error("Error performing bulk action:", error);
-      toast.error("Failed to perform bulk action");
-    }
-  };
-
-  const getRoleColor = (role) => {
-    switch (role) {
-      case "SUPERADMIN":
-        return "bg-purple-100 text-purple-800";
-      case "ADMIN":
-        return "bg-red-100 text-red-800";
-      case "INSTRUCTOR":
-        return "bg-blue-100 text-blue-800";
-      case "STUDENT":
-        return "bg-green-100 text-green-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "ACTIVE":
-        return "bg-green-100 text-green-800";
-      case "SUSPENDED":
-        return "bg-yellow-100 text-yellow-800";
-      case "BANNED":
-        return "bg-red-100 text-red-800";
-      case "PENDING":
-        return "bg-blue-100 text-blue-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const ConfirmModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <div className="flex items-start space-x-3">
-          <div className="flex-shrink-0">
-            <IconAlertTriangle className="w-6 h-6 text-yellow-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Confirm Action
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              {confirmAction?.type === 'restore' 
-                ? `Are you sure you want to restore ${confirmAction?.users?.length} user(s)? This will reactivate their accounts and they will be able to log in again.`
-                : `Are you sure you want to permanently delete ${confirmAction?.users?.length} user(s)? This action cannot be undone and will remove all associated data.`
-              }
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setConfirmAction(null);
-                }}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeBulkAction}
-                className={`px-4 py-2 text-white rounded-md transition-colors ${
-                  confirmAction?.type === 'restore' 
-                    ? 'bg-green-600 hover:bg-green-700'
-                    : 'bg-red-600 hover:bg-red-700'
-                }`}
-              >
-                {confirmAction?.type === 'restore' ? 'Restore' : 'Permanently Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Soft Deleted Users Management</h1>
-          <p className="text-gray-600 mt-1">
-            Manage soft-deleted users with restore or permanent deletion options
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-900">Deleted Users</h1>
+            {!isLoading && (
+              <Badge variant="secondary" className="text-sm font-medium">
+                {totalUsers} total
+              </Badge>
+            )}
+          </div>
+          <p className="text-gray-600 mt-1 text-sm">
+            Restore soft-deleted accounts or permanently remove them.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showFilters ? "secondary" : "outline"}
+            size="sm"
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
-              showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
           >
             <IconFilter className="w-4 h-4" />
-            <span>Filters</span>
-          </button>
+            Filters
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <IconRefresh className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
       </div>
 
       {/* Alert Banner */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <div className="flex items-start space-x-3">
-          <IconAlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-          <div>
-            <h3 className="text-sm font-medium text-yellow-800">Important Notice</h3>
-            <p className="text-sm text-yellow-700 mt-1">
-              These users have been soft-deleted and are not visible to regular users. 
-              You can either restore them to reactivate their accounts or permanently delete them to remove all data.
-            </p>
-          </div>
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+        <IconAlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" />
+        <div>
+          <h3 className="text-sm font-medium text-yellow-800">Important Notice</h3>
+          <p className="text-sm text-yellow-700 mt-0.5">
+            These users have been soft-deleted and are hidden from regular views. Restore an account to
+            reactivate it, or permanently delete it to remove it — and all its data — for good.
+          </p>
         </div>
       </div>
 
       {/* Filters */}
       {showFilters && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-              <select
-                value={filters.role}
-                onChange={(e) => setFilters({ ...filters, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Roles</option>
-                <option value="SUPERADMIN">Super Admin</option>
-                <option value="ADMIN">Admin</option>
-                <option value="INSTRUCTOR">Instructor</option>
-                <option value="STUDENT">Student</option>
-              </select>
+        <Card>
+          <CardContent className="p-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              <div className="xl:col-span-2">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Search
+                </label>
+                <SearchInput
+                  placeholder="Name, username, email, or ID..."
+                  value={searchTerm}
+                  onChange={(val) => {
+                    setSearchTerm(val);
+                    setCurrentPage(1);
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Department
+                </label>
+                <MultiSelectFilter
+                  placeholder="All Departments"
+                  options={departmentOptions}
+                  selectedValues={filters.departmentId ? filters.departmentId.split(",").filter(Boolean) : []}
+                  onChange={(vals) => updateFilters({ departmentId: vals.join(","), sectionId: "", lineId: "" })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Section
+                </label>
+                <MultiSelectFilter
+                  placeholder="All Sections"
+                  options={sectionOptions}
+                  selectedValues={filters.sectionId ? filters.sectionId.split(",").filter(Boolean) : []}
+                  onChange={(vals) => updateFilters({ sectionId: vals.join(","), lineId: "" })}
+                  disabled={!filters.departmentId}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Line
+                </label>
+                <MultiSelectFilter
+                  placeholder="All Lines"
+                  options={lineOptions}
+                  selectedValues={filters.lineId ? filters.lineId.split(",").filter(Boolean) : []}
+                  onChange={(vals) => updateFilters({ lineId: vals.join(",") })}
+                  disabled={!filters.sectionId}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Deleted From
+                </label>
+                <Input
+                  type="date"
+                  value={filters.deletedDateFrom}
+                  onChange={(e) => updateFilters({ deletedDateFrom: e.target.value })}
+                  className="h-9"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Deleted To
+                </label>
+                <Input
+                  type="date"
+                  value={filters.deletedDateTo}
+                  onChange={(e) => updateFilters({ deletedDateTo: e.target.value })}
+                  className="h-9"
+                />
+              </div>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Deleted From</label>
-              <input
-                type="date"
-                value={filters.deletedDateFrom}
-                onChange={(e) => setFilters({ ...filters, deletedDateFrom: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Deleted To</label>
-              <input
-                type="date"
-                value={filters.deletedDateTo}
-                onChange={(e) => setFilters({ ...filters, deletedDateTo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Deleted By</label>
-              <input
-                type="text"
-                value={filters.deletedBy}
-                onChange={(e) => setFilters({ ...filters, deletedBy: e.target.value })}
-                placeholder="Admin name or email"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+
+            {hasActiveFilters && (
+              <div className="mt-4">
+                <Button variant="ghost" size="sm" onClick={resetFilters} className="text-gray-500">
+                  <IconFilterOff className="w-4 h-4" />
+                  Reset filters
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Bulk actions bar */}
+      {selectedUsers.length > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+          <span className="text-sm font-medium text-blue-800">
+            {selectedUsers.length} user{selectedUsers.length > 1 ? "s" : ""} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => openConfirm("restore", selectedUsers)}>
+              <IconRestore className="w-4 h-4" />
+              Restore
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => openConfirm("permanentDelete", selectedUsers)}>
+              <IconTrash className="w-4 h-4" />
+              Permanently Delete
+            </Button>
           </div>
         </div>
       )}
 
-      {/* Search and Actions */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-          <div className="relative flex-1 max-w-md">
-            <IconSearch className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search deleted users..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          
-          <div className="flex items-center space-x-3">
-            {selectedUsers.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">
-                  {selectedUsers.length} selected
-                </span>
-                <button
-                  onClick={() => handleBulkAction('restore')}
-                  className="flex items-center space-x-1 px-3 py-1 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors"
-                >
-                  <IconRestore className="w-4 h-4" />
-                  <span>Restore</span>
-                </button>
-                <button
-                  onClick={() => handleBulkAction('permanent_delete')}
-                  className="flex items-center space-x-1 px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                >
-                  <IconTrash className="w-4 h-4" />
-                  <span>Permanent Delete</span>
-                </button>
-              </div>
+      {/* Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedUsers.length === deletedUsers.length && deletedUsers.length > 0}
+                  onChange={(e) => toggleSelectAll(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </TableHead>
+              <TableHead>User</TableHead>
+              <TableHead>Contact</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Previous Status</TableHead>
+              <TableHead>Deleted On</TableHead>
+              <TableHead className="text-center">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 7 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-5 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-10 text-red-600">
+                  Error loading deleted users: {error?.data?.message || error?.message}
+                </TableCell>
+              </TableRow>
+            ) : deletedUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-14">
+                  <div className="flex flex-col items-center text-center">
+                    <IconUserOff className="w-10 h-10 text-gray-300 mb-3" />
+                    <h3 className="text-base font-medium text-gray-900">No deleted users found</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {hasActiveFilters ? "Try adjusting or clearing your filters." : "There are no soft-deleted users to manage."}
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              deletedUsers.map((user) => (
+                <TableRow key={user._id} className="hover:bg-gray-50">
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user._id)}
+                      onChange={(e) => toggleSelectUser(user._id, e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="relative shrink-0">
+                        <img
+                          className="h-9 w-9 rounded-full object-cover opacity-60"
+                          src={user.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=9ca3af&color=fff`}
+                          alt={user.fullName}
+                        />
+                        <div className="absolute inset-0 bg-gray-500/20 rounded-full flex items-center justify-center">
+                          <IconTrash className="w-3 h-3 text-gray-700" />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-700 truncate">{user.fullName}</div>
+                        <div className="text-xs text-gray-500 truncate">@{user.userName}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm text-gray-700">{user.email || "—"}</div>
+                    <div className="text-xs text-gray-500">{user.phoneNumber || ""}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs text-gray-600 space-y-0.5">
+                      {user.deptName && (
+                        <div className="flex items-center gap-1"><IconBuilding className="w-3.5 h-3.5 text-gray-400" />{user.deptName}</div>
+                      )}
+                      {user.sectionName && (
+                        <div className="flex items-center gap-1"><IconLayoutGrid className="w-3.5 h-3.5 text-gray-400" />{user.sectionName}</div>
+                      )}
+                      {user.lineName && (
+                        <div className="flex items-center gap-1"><IconRoute className="w-3.5 h-3.5 text-gray-400" />{user.lineName}</div>
+                      )}
+                      {!user.deptName && !user.sectionName && !user.lineName && <span className="text-gray-400">—</span>}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_BADGE_VARIANT[user.status] || "secondary"}>{user.status || "—"}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm text-gray-900">{new Date(user.updatedAt).toLocaleDateString()}</div>
+                    <div className="text-xs text-gray-500">{new Date(user.updatedAt).toLocaleTimeString()}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        onClick={() => openConfirm("restore", [user._id])}
+                        className="text-green-600 hover:text-green-800 transition-colors"
+                        title="Restore User"
+                      >
+                        <IconRestore className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => openConfirm("permanentDelete", [user._id])}
+                        className="text-red-600 hover:text-red-800 transition-colors"
+                        title="Permanently Delete"
+                      >
+                        <IconTrash className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
-            
-            <button
-              onClick={() => refetch()}
-              className="flex items-center space-x-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-            >
-              <IconRefresh className="w-4 h-4" />
-              <span>Refresh</span>
-            </button>
-            
-            <button className="flex items-center space-x-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors">
-              <IconDownload className="w-4 h-4" />
-              <span>Export</span>
-            </button>
-          </div>
-        </div>
-      </div>
+          </TableBody>
+        </Table>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Deleted</p>
-              <p className="text-2xl font-bold text-gray-900">{deletedUsers.length}</p>
-            </div>
-            <IconTrashOff className="w-8 h-8 text-red-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Students</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {deletedUsers.filter(u => u.role === 'STUDENT').length}
-              </p>
-            </div>
-            <IconUser className="w-8 h-8 text-green-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Instructors</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {deletedUsers.filter(u => u.role === 'INSTRUCTOR').length}
-              </p>
-            </div>
-            <IconShieldCheck className="w-8 h-8 text-blue-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">This Week</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {deletedUsers.filter(u => 
-                  new Date(u.updatedAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-                ).length}
-              </p>
-            </div>
-            <IconCalendar className="w-8 h-8 text-purple-600" />
-          </div>
-        </div>
-      </div>
-
-      {/* Deleted Users Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left">
-                  <input
-                    type="checkbox"
-                    checked={selectedUsers.length === deletedUsers.length && deletedUsers.length > 0}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedUsers(deletedUsers.map(user => user._id));
-                      } else {
-                        setSelectedUsers([]);
-                      }
-                    }}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Role
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Previous Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Deleted Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Deleted By
-                </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {isLoading ? (
-                <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center">
-                    <div className="flex justify-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                    </div>
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center">
-                    <div className="text-red-600">
-                      Error loading deleted users: {error?.data?.message || error?.message}
-                    </div>
-                  </td>
-                </tr>
-              ) : deletedUsers.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center">
-                    <div className="flex flex-col items-center">
-                      <IconTrashOff className="w-12 h-12 text-gray-400 mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900">No Deleted Users</h3>
-                      <p className="text-gray-500">There are no soft-deleted users to manage.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                deletedUsers.map((user) => (
-                  <tr key={user._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user._id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUsers([...selectedUsers, user._id]);
-                          } else {
-                            setSelectedUsers(selectedUsers.filter(id => id !== user._id));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <div className="relative">
-                          <img
-                            className="h-10 w-10 rounded-full object-cover opacity-60"
-                            src={user.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=9ca3af&color=fff`}
-                            alt={user.fullName}
-                          />
-                          <div className="absolute inset-0 bg-gray-500 bg-opacity-20 rounded-full flex items-center justify-center">
-                            <IconTrash className="w-3 h-3 text-gray-600" />
-                          </div>
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-700">{user.fullName}</div>
-                          <div className="text-sm text-gray-500">@{user.userName}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-700">{user.email}</div>
-                      <div className="text-sm text-gray-500">{user.phoneNumber}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">
-                        {new Date(user.updatedAt).toLocaleDateString()}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {new Date(user.updatedAt).toLocaleTimeString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">System</div>
-                      <div className="text-xs text-gray-500">Soft deleted by admin</div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center space-x-2">
-                        <button
-                          onClick={() => {/* View user details */}}
-                          className="text-blue-600 hover:text-blue-900 transition-colors"
-                          title="View Details"
-                        >
-                          <IconEye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleRestoreUser(user._id)}
-                          className="text-green-600 hover:text-green-900 transition-colors"
-                          title="Restore User"
-                        >
-                          <IconRestore className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handlePermanentDelete(user._id)}
-                          className="text-red-600 hover:text-red-900 transition-colors"
-                          title="Permanently Delete"
-                        >
-                          <IconTrash className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        
         {/* Pagination */}
-        <div className="px-6 py-4 border-t border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-700">
-              Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, deletedUsers.length)} of {deletedUsers.length} deleted users
+        {!isLoading && deletedUsers.length > 0 && (
+          <div className="px-5 py-3.5 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Page {currentPage} of {totalPages} &middot; {totalUsers} deleted user{totalUsers !== 1 ? "s" : ""}
             </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
+                <IconChevronLeft className="w-4 h-4" />
                 Previous
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`px-3 py-1 border rounded-md ${
-                    currentPage === page 
-                      ? 'bg-blue-600 text-white border-blue-600' 
-                      : 'border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
                 Next
-              </button>
+                <IconChevronRight className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-        </div>
-      </div>
+        )}
+      </Card>
 
-      {/* Modals */}
-      {showConfirmModal && <ConfirmModal />}
+      {/* Confirm Dialog */}
+      <AlertDialog open={!!pendingAction} onOpenChange={(open) => !open && setPendingAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <IconAlertTriangle className="w-5 h-5 text-yellow-600" />
+              Confirm Action
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.type === "restore"
+                ? `Are you sure you want to restore ${pendingAction?.ids?.length} user(s)? They will be able to log in again.`
+                : `Are you sure you want to permanently delete ${pendingAction?.ids?.length} user(s)? This action cannot be undone and will remove all associated data.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isProcessing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirm();
+              }}
+              disabled={isProcessing}
+              className={pendingAction?.type === "permanentDelete" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}
+            >
+              {isProcessing && <IconLoader2 className="w-4 h-4 animate-spin" />}
+              {pendingAction?.type === "restore" ? "Restore" : "Permanently Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

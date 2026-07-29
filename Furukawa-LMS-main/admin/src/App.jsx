@@ -345,6 +345,7 @@ const App = () => {
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="data-management" element={<DataManagement />} />
+            <Route path="soft-deleted-users" element={<SoftDeletedUsersManagement />} />
           </Route>
 
           {/* CMS Route */}

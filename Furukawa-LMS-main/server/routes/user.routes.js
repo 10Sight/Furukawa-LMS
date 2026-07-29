@@ -116,9 +116,9 @@ router.get("/employees/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_R
 router.get("/temporary", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getTemporaryUsers);
 router.get("/temporary/next-id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getNextTemporaryId);
 
-// Super admin specific routes - must come before /:id routes
-router.get("/deleted/all", verifyJWT, authorizeRoles("SUPERADMIN"), getSoftDeletedUsers);
-router.patch("/deleted/:id/restore", verifyJWT, authorizeRoles("SUPERADMIN"), restoreUser);
+// Super admin / admin specific routes - must come before /:id routes
+router.get("/deleted/all", verifyJWT, authorizeRoles("SUPERADMIN", "isAdmin"), getSoftDeletedUsers);
+router.patch("/deleted/:id/restore", verifyJWT, authorizeRoles("SUPERADMIN", "isAdmin"), restoreUser);
 
 // Update own profile
 router.patch("/profile", verifyJWT, updateProfile);

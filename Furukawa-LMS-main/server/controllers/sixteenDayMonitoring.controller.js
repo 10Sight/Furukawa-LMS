@@ -14,6 +14,7 @@ import ENV from "../configs/env.config.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
 
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
@@ -111,7 +112,7 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
         }
 
         if (row.handoverApprovedAt) {
-            const eligibleAtMs = new Date(row.handoverApprovedAt).getTime() + 24 * 60 * 60 * 1000;
+            const eligibleAtMs = getNextCalendarDayMidnightIST(row.handoverApprovedAt).getTime();
             row.eligibleAt = new Date(eligibleAtMs).toISOString();
             row.isEligible = Date.now() >= eligibleAtMs;
         } else {
@@ -172,7 +173,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     let eligibleAt = null;
     let isEligible = true;
     if (handoverInfo?.handoverDate) {
-        const eligibleAtMs = new Date(handoverInfo.handoverDate).getTime() + 24 * 60 * 60 * 1000;
+        const eligibleAtMs = getNextCalendarDayMidnightIST(handoverInfo.handoverDate).getTime();
         eligibleAt = new Date(eligibleAtMs).toISOString();
         isEligible = Date.now() >= eligibleAtMs;
     }
@@ -276,7 +277,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const [userStatusRows] = await executeQuery("SELECT status FROM users WHERE id = ?", [sid]);
     const isLeftUser = userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT';
 
-    // 24-hour eligibility gate: only applies before the very first attempt is created.
+    // Eligibility gate: only applies before the very first attempt is created.
     // Admins/Trainers can override and start monitoring early.
     const canOverrideEligibility = req.user.isAdmin || req.user.isTrainer;
     if (!canOverrideEligibility) {
@@ -292,9 +293,9 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             `, [sid]);
             const approvedAt = approvalRows[0]?.approvedAt;
             if (approvedAt) {
-                const eligibleAtMs = new Date(approvedAt).getTime() + 24 * 60 * 60 * 1000;
+                const eligibleAtMs = getNextCalendarDayMidnightIST(approvedAt).getTime();
                 if (Date.now() < eligibleAtMs) {
-                    throw new ApiError("16-Day Monitoring can only be started 24 hours after Handover approval.", 400);
+                    throw new ApiError("16-Day Monitoring can only be started on the next calendar day after Handover approval.", 400);
                 }
             }
         }

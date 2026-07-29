@@ -257,10 +257,15 @@ class EvaluationTestAttempt {
     static async findById(id) {
         const query = `
             SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure, t.departmentId as testDepartmentId,
+                   COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
+                   COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
+                   dept.name as departmentName, sec.name as sectionName,
                    u.userName, CASE WHEN a.studentIsTemporary = 1 OR u.isTemporary = 1 THEN 1 ELSE 0 END as isTemporary
             FROM evaluation_test_attempts a
             JOIN evaluation_tests t ON a.testId = t.id
             LEFT JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
+            LEFT JOIN departments dept ON COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) = dept.id
+            LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) = sec.id
             WHERE a.id = ?
         `;
         const [rows] = await executeQuery(query, [id]);

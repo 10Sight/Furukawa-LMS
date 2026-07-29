@@ -1651,7 +1651,7 @@ export const generateSixteenDayMonitoringEligibleEmail = ({ operatorName, employ
         <div style="padding:28px 32px;">
             <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Team,</p>
             <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
-                The 24-hour waiting period since Handover approval has elapsed for the employee below.
+                The next calendar day after Handover approval has arrived for the employee below.
                 Their <strong>16-Day Monitoring Sheet</strong> can now be started for
                 <strong>${departmentName}</strong>.
             </p>

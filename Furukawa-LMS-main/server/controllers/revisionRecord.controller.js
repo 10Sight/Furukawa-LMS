@@ -7,12 +7,18 @@ const toId = (value) => (value && value !== "all" ? parseInt(value) : null);
 
 /**
  * @desc    Get all revision records (global defaults + department/section
- *          overrides), optionally narrowed by department/section
+ *          overrides), optionally narrowed by department/section/sheetKey, or
+ *          restricted to just the global rows via isGlobal=true
  * @route   GET /api/revision-records
  * @access  Private
  */
 export const getAllRecords = asyncHandler(async (req, res) => {
-    const records = await RevisionRecordService.getAllRecords(toId(req.query.departmentId), toId(req.query.sectionId));
+    const records = await RevisionRecordService.getAllRecords(
+        toId(req.query.departmentId),
+        toId(req.query.sectionId),
+        req.query.sheetKey || null,
+        req.query.isGlobal === "true"
+    );
     res.json(new ApiResponse(200, records, "Revision records fetched successfully"));
 });
 

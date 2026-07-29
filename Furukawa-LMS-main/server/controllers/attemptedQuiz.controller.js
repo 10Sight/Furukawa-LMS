@@ -29,12 +29,43 @@ const checkOjtApprovedToday = async (userId) => {
           AND (ojt_item.result = 'Pass' OR ojt_item.result = 'Approved')
           AND CAST(ojt_item.approvedAt AS DATE) = CAST(GETDATE() AS DATE)
     `, [userId]);
-    return rows.length > 0;
+    if (rows.length > 0) return true;
+
+    // Fallback for sheets whose badge sync hasn't run yet: check the student's own attendance
+    // row directly (matched by empId/userName), same-day only.
+    try {
+        const [userIdentityRows] = await executeQuery("SELECT empId, userName FROM users WHERE id = ?", [userId]);
+        const empId = userIdentityRows[0]?.empId;
+        const userName = userIdentityRows[0]?.userName;
+        if (!empId && !userName) return false;
+
+        const [rowRows] = await executeQuery(`
+            SELECT TOP 1 1
+            FROM on_job_trainings ojt
+            CROSS APPLY OPENJSON(ojt.attendanceRecords) WITH (
+                ecode NVARCHAR(100) '$.ecode',
+                result NVARCHAR(50) '$.result',
+                recDate DATE '$.date'
+            ) AS rec
+            WHERE (rec.result = 'Pass' OR rec.result = 'Approved')
+              AND (rec.ecode = ? OR rec.ecode = ?)
+              AND rec.recDate = CAST(GETDATE() AS DATE)
+        `, [empId || null, userName || null]);
+        return rowRows.length > 0;
+    } catch (fallbackErr) {
+        console.error("[ERROR] Fallback same-day OJT row query failed:", fallbackErr.message);
+        return false;
+    }
 };
 
 // Helper to check if a student has ever had an OJT approved (Pass/Approved), at any time —
 // not restricted to today. Mirrors the base OJT gating check below: reads the per-student
 // ojt JSON blob first, falling back to the on_job_trainings table if that column isn't synced.
+//
+// The fallback deliberately checks each student's OWN attendance row (matched by empId/userName)
+// rather than the sheet-level `result` column: on a multi-trainee Record sheet, one student's row
+// can be Approved while another's is Rejected, so trusting only the sheet-level result would wrongly
+// approve every trainee on an otherwise-approved sheet.
 const checkOjtApprovedGenerally = async (userId) => {
     try {
         const [userRows] = await executeQuery("SELECT ojt FROM users WHERE id = ?", [userId]);
@@ -51,12 +82,34 @@ const checkOjtApprovedGenerally = async (userId) => {
     }
 
     try {
-        const [fallbackRows] = await executeQuery(`
+        const [userIdentityRows] = await executeQuery("SELECT empId, userName FROM users WHERE id = ?", [userId]);
+        const empId = userIdentityRows[0]?.empId;
+        const userName = userIdentityRows[0]?.userName;
+
+        // Primary-student sheets (Evaluation sheets): sheet-level result applies directly.
+        const [primaryRows] = await executeQuery(`
             SELECT 1 FROM on_job_trainings
             WHERE student = CAST(? AS NVARCHAR(50))
               AND (result = 'Pass' OR result = 'Approved')
         `, [userId]);
-        return fallbackRows.length > 0;
+        if (primaryRows.length > 0) return true;
+
+        // Multi-trainee Record sheets: check this student's own attendance row result via OPENJSON.
+        if (empId || userName) {
+            const [rowRows] = await executeQuery(`
+                SELECT TOP 1 1
+                FROM on_job_trainings ojt
+                CROSS APPLY OPENJSON(ojt.attendanceRecords) WITH (
+                    ecode NVARCHAR(100) '$.ecode',
+                    result NVARCHAR(50) '$.result'
+                ) AS rec
+                WHERE (rec.result = 'Pass' OR rec.result = 'Approved')
+                  AND (rec.ecode = ? OR rec.ecode = ?)
+            `, [empId || null, userName || null]);
+            if (rowRows.length > 0) return true;
+        }
+
+        return false;
     } catch (fallbackErr) {
         console.error("[ERROR] Fallback OJT query failed:", fallbackErr.message);
         return false;

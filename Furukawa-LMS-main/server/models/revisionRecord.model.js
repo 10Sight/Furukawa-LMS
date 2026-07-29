@@ -38,6 +38,15 @@ const DEFAULT_SHEETS = [
     { sheetKey: "daily-5m", sheetName: "Daily 5M Record", docNo: "FRM-WH-QA-241", revNo: "02", revDate: "27.01.2023" },
     { sheetKey: "operator-observance", sheetName: "Operator Observance", docNo: "FRM-WH-QA-277", revNo: "00", revDate: "01.04.2025" },
     { sheetKey: "mentee-feedback", sheetName: "Mentee Feedback" },
+    { sheetKey: "evaluation-test-attempt", sheetName: "DOJO Evaluation Test", docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025" },
+    { sheetKey: "on-job-training", sheetName: "On the Job Training", docNo: "FRM-WH-QA-178", revNo: "02", revDate: "19.06.2021" },
+    // Hardcoded fallback for skill-matrix-certificate — only used by the normal
+    // "missing" seed path below when no admin-entered value exists yet. If a real
+    // value was already saved via the legacy skill-matrix-config screen,
+    // _migrateSkillMatrixCertificateDocDefaults() (called earlier in init(), see
+    // below) creates the global row from that instead, and this entry is skipped
+    // as "already exists" by the time the seed loop runs.
+    { sheetKey: "skill-matrix-certificate", sheetName: "Skill Matrix Certificate", docNo: "FRM-HR-007", revNo: "02", revDate: "06/10/17" },
 ];
 
 // Sheet keys that used to be seeded but were removed from the register — pruned from
@@ -151,6 +160,12 @@ class RevisionRecord {
             return;
         }
 
+        // Runs before the seed step below so a migrated global row (from a real
+        // admin-entered skill-matrix-config value) is already present by the time
+        // the "missing" check runs, and the hardcoded fallback in DEFAULT_SHEETS is
+        // correctly skipped in favor of it.
+        await RevisionRecord._migrateSkillMatrixCertificateDocDefaults();
+
         // Seed default (global) sheets on first run only — never touch rows that
         // already exist, so admin edits/overrides are never clobbered by a restart.
         // "Existing" here specifically means the GLOBAL row (departmentId/sectionId
@@ -194,6 +209,50 @@ class RevisionRecord {
         }
     }
 
+    // One-time backfill: copies docNo/revNo/revDate out of the legacy
+    // skill_matrix_certificate_configs.config JSON blob (docDefaults) into
+    // revision_records, so the Skill Matrix Certificate's doc/rev header moves
+    // onto the same Revision Table every other form uses. Only docNo/revNo/revDate
+    // move — dateOfIssue/headerDefaults/levels stay on the legacy config table
+    // (server/models/skillMatrixConfig.model.js), which is untouched and still
+    // used by that table's own config API and by import.controller.js's bulk
+    // import "levels" lookup.
+    // Self-healing: skips any (sheetKey, departmentId) scope that already has a
+    // revision_records row (an admin may have already set an override there
+    // directly), so this only ever migrates configs it hasn't seen yet and is
+    // safe to run on every startup.
+    static async _migrateSkillMatrixCertificateDocDefaults() {
+        try {
+            const [tables] = await executeQuery(
+                "SELECT * FROM sysobjects WHERE name = 'skill_matrix_certificate_configs' AND xtype = 'U'"
+            );
+            if (tables.length === 0) return;
+
+            const [configRows] = await executeQuery("SELECT departmentId, config FROM skill_matrix_certificate_configs");
+            for (const row of configRows) {
+                let docDefaults;
+                try {
+                    docDefaults = JSON.parse(row.config)?.docDefaults;
+                } catch {
+                    continue;
+                }
+                if (!docDefaults?.docNo && !docDefaults?.revNo && !docDefaults?.revDate) continue;
+
+                const departmentId = row.departmentId && row.departmentId !== "GLOBAL" ? parseInt(row.departmentId) : null;
+                const existing = await RevisionRecord.findExactScope("skill-matrix-certificate", departmentId, null);
+                if (existing) continue;
+
+                await executeQuery(
+                    `INSERT INTO [revision_records] (sheetKey, sheetName, departmentId, sectionId, docNo, revNo, revDate) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    ["skill-matrix-certificate", "Skill Matrix Certificate", departmentId, null, docDefaults.docNo || null, docDefaults.revNo || null, docDefaults.revDate || null]
+                );
+                logger.info(`Migrated skill-matrix-certificate doc defaults for departmentId=${departmentId ?? "GLOBAL"}`);
+            }
+        } catch (error) {
+            logger.error(`Failed to migrate skill matrix certificate doc defaults: ${error.message}`);
+        }
+    }
+
     static _baseSelect() {
         return `
             SELECT rr.*, d.name as departmentName, s.name as sectionName
@@ -204,18 +263,28 @@ class RevisionRecord {
     }
 
     // Every row that exists — global defaults and every department/section
-    // override alike — optionally narrowed by department/section, so the admin
-    // list can show the full picture rather than one collapsed value per sheet.
-    static async findAll({ departmentId, sectionId } = {}) {
+    // override alike — optionally narrowed by department/section/sheetKey, or
+    // restricted to just the global (departmentId/sectionId both NULL) rows via
+    // isGlobal, so the admin directory list can show one row per sheet while the
+    // per-sheet detail page can pull the global row plus all of its overrides.
+    static async findAll({ departmentId, sectionId, sheetKey, isGlobal } = {}) {
         let query = `${this._baseSelect()} WHERE 1=1`;
         const values = [];
-        if (departmentId) {
-            query += " AND rr.departmentId = ?";
-            values.push(departmentId);
+        if (sheetKey) {
+            query += " AND rr.sheetKey = ?";
+            values.push(sheetKey);
         }
-        if (sectionId) {
-            query += " AND rr.sectionId = ?";
-            values.push(sectionId);
+        if (isGlobal) {
+            query += " AND rr.departmentId IS NULL AND rr.sectionId IS NULL";
+        } else {
+            if (departmentId) {
+                query += " AND rr.departmentId = ?";
+                values.push(departmentId);
+            }
+            if (sectionId) {
+                query += " AND rr.sectionId = ?";
+                values.push(sectionId);
+            }
         }
         query += " ORDER BY rr.sheetName ASC, d.name ASC, s.name ASC";
         const [rows] = await executeQuery(query, values);

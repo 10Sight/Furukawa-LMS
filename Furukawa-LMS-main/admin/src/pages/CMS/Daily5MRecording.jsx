@@ -930,7 +930,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                     <DaysInput
                         value={formData[`rec_${recIndex}_DeputedOnPlan`] || ""}
                         onChange={(e) => handleInputChange(recIndex, 'DeputedOnPlan', e.target.value)}
-                        baseDate={selectedDate}
+                        baseDate={formData[`rec_${recIndex}_Date`] || selectedDate}
                         disabled={isLocked}
                     />
                 </td>
@@ -2576,7 +2576,7 @@ const Daily5MRecording = () => {
                                                             <DaysInput
                                                                 value={formData[`rec_${recIndex}_Plan`] || ""}
                                                                 onChange={(e) => handleInputChange(recIndex, 'Plan', e.target.value)}
-                                                                baseDate={selectedDate}
+                                                                baseDate={formData[`rec_${recIndex}_Date`] || selectedDate}
                                                                 disabled={isLocked}
                                                             />
                                                         </td>

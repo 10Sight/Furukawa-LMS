@@ -5,8 +5,7 @@ import { generateSixteenDayMonitoringEligibleEmail } from '../utils/emailTemplat
 import logger from '../logger/winston.logger.js';
 import ENV from '../configs/env.config.js';
 import SixteenDayEligibilityNotification from '../models/sixteenDayEligibilityNotification.model.js';
-
-const ELIGIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+import { getNextCalendarDayMidnightIST } from '../utils/istDate.util.js';
 
 class SixteenDayEligibilityScheduler {
     constructor() {
@@ -17,8 +16,9 @@ class SixteenDayEligibilityScheduler {
     init() {
         if (this.isInitialized) return;
 
-        // Elapsed-time based (not time-of-day), so a coarser interval than the
-        // once-a-minute reminder schedulers is enough to catch newly-unlocked candidates.
+        // Candidates unlock in a single batch at midnight IST rather than continuously
+        // through the day, so a coarser interval than the once-a-minute reminder
+        // schedulers is enough to catch newly-unlocked candidates soon after midnight.
         this.job = cron.schedule('*/5 * * * *', async () => {
             await this._checkAndSend();
         }, {
@@ -140,11 +140,11 @@ class SixteenDayEligibilityScheduler {
             }
 
             const eligibleNow = candidates.filter(c =>
-                Date.now() >= new Date(c.handoverApprovedAt).getTime() + ELIGIBILITY_WINDOW_MS
+                Date.now() >= getNextCalendarDayMidnightIST(c.handoverApprovedAt).getTime()
             );
 
             if (eligibleNow.length === 0) {
-                return returnReport ? { ...report, message: 'No candidates have crossed the 24h mark yet' } : undefined;
+                return returnReport ? { ...report, message: 'No candidates have reached the next calendar day (IST) yet' } : undefined;
             }
 
             report.candidatesFound = eligibleNow.length;

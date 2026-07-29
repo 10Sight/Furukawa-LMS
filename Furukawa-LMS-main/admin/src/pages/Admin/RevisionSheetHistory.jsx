@@ -1,41 +1,110 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from 'sonner';
+import RevisionRecordList from '@/components/admin/revision/RevisionRecordList';
 import RevisionHistoryList from '@/components/admin/revision/RevisionHistoryList';
+import RevisionEditModal from '@/components/admin/revision/RevisionEditModal';
 
+// Per-sheet detail page: the global default plus every department/section
+// override for this sheetKey, and the sheet's full audit log history.
 const RevisionSheetHistory = () => {
     const { sheetKey } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
     const [sheetName, setSheetName] = useState(location.state?.sheetName || "");
-    const [logs, setLogs] = useState([]);
-    const [loading, setLoading] = useState(false);
 
-    const fetchHistory = useCallback(async () => {
-        setLoading(true);
+    const [records, setRecords] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [loadingRecords, setLoadingRecords] = useState(false);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [editingRecord, setEditingRecord] = useState(null);
+    const [overrideTarget, setOverrideTarget] = useState(null);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    const fetchRecords = useCallback(async () => {
+        setLoadingRecords(true);
         try {
-            const res = await axiosInstance.get('/api/revision-records/history', { params: { sheetKey } });
+            const res = await axiosInstance.get('/api/revision-records', { params: { sheetKey } });
             if (res.data?.success) {
                 const data = res.data.data || [];
-                setLogs(data);
-                if (!sheetName && data.length > 0) setSheetName(data[0].sheetName);
+                setRecords(data);
+                const globalRow = data.find((r) => !r.departmentId);
+                if (!sheetName && (globalRow || data[0])) setSheetName((globalRow || data[0]).sheetName);
             }
         } catch (error) {
-            console.error("Failed to load revision history", error);
-            toast.error("Failed to load revision history");
+            console.error("Failed to load revision records", error);
+            toast.error("Failed to load revision records");
         } finally {
-            setLoading(false);
+            setLoadingRecords(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sheetKey]);
 
+    const fetchHistory = useCallback(async () => {
+        setLoadingHistory(true);
+        try {
+            const res = await axiosInstance.get('/api/revision-records/history', { params: { sheetKey } });
+            if (res.data?.success) setLogs(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load revision history", error);
+            toast.error("Failed to load revision history");
+        } finally {
+            setLoadingHistory(false);
+        }
+    }, [sheetKey]);
+
     useEffect(() => {
+        fetchRecords();
         fetchHistory();
-    }, [fetchHistory]);
+    }, [fetchRecords, fetchHistory]);
+
+    const handleEdit = (record) => {
+        setEditingRecord(record);
+        setOverrideTarget(null);
+        setModalOpen(true);
+    };
+
+    const handleAddOverride = () => {
+        setEditingRecord(null);
+        setOverrideTarget({ sheetKey, sheetName });
+        setModalOpen(true);
+    };
+
+    const handleModalOpenChange = (open) => {
+        setModalOpen(open);
+        if (!open) {
+            setEditingRecord(null);
+            setOverrideTarget(null);
+        }
+    };
+
+    const handleSave = async (form) => {
+        setSaving(true);
+        try {
+            const res = editingRecord
+                ? await axiosInstance.put(`/api/revision-records/${editingRecord.id}`, form)
+                : await axiosInstance.put(`/api/revision-records/sheet/${overrideTarget.sheetKey}`, {
+                    ...form,
+                    sheetName: overrideTarget.sheetName,
+                });
+
+            if (res.data?.success) {
+                toast.success("Revision record saved");
+                handleModalOpenChange(false);
+                await Promise.all([fetchRecords(), fetchHistory()]);
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.message || "Failed to save revision record");
+        } finally {
+            setSaving(false);
+        }
+    };
 
     return (
         <div className="p-4 md:p-6 space-y-4">
@@ -44,12 +113,44 @@ const RevisionSheetHistory = () => {
                     <Button variant="ghost" size="icon" onClick={() => navigate('/admin/revision-table')}>
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
-                    <CardTitle>{sheetName || sheetKey} — Revision History</CardTitle>
+                    <CardTitle>{sheetName || sheetKey}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <RevisionHistoryList logs={logs} loading={loading} />
+                    <Tabs defaultValue="active">
+                        <TabsList>
+                            <TabsTrigger value="active">Active Revisions & Overrides</TabsTrigger>
+                            <TabsTrigger value="history">Audit Log History</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="active" className="mt-4 space-y-3">
+                            <div className="flex justify-end">
+                                <Button size="sm" onClick={handleAddOverride}>
+                                    <Plus className="h-4 w-4 mr-1" />
+                                    Add Department Override
+                                </Button>
+                            </div>
+                            <RevisionRecordList
+                                records={records}
+                                loading={loadingRecords}
+                                canEdit
+                                onEdit={handleEdit}
+                                linkToDetail={false}
+                            />
+                        </TabsContent>
+                        <TabsContent value="history" className="mt-4">
+                            <RevisionHistoryList logs={logs} loading={loadingHistory} />
+                        </TabsContent>
+                    </Tabs>
                 </CardContent>
             </Card>
+
+            <RevisionEditModal
+                record={editingRecord}
+                overrideTarget={overrideTarget}
+                open={modalOpen}
+                onOpenChange={handleModalOpenChange}
+                onSave={handleSave}
+                saving={saving}
+            />
         </div>
     );
 };

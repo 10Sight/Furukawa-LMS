@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 
 // Dynamic Pie Chart Icon
 const LevelIcon = ({ level, maxLevels = 4, size = 24 }) => {
@@ -281,6 +282,25 @@ const SkillMatrixCertificate = ({
 
     const authUser = useSelector(state => state.auth.user);
 
+    // Live docNo/revNo/revDate from the shared Revision Table, scoped to this
+    // certificate's department (the 'GLOBAL' sentinel here matches skill-matrix's
+    // own convention, not a real department id, so it's translated to no scope).
+    const revisionInfo = useRevisionInfo(
+        "skill-matrix-certificate",
+        { docNo: 'FRM-HR-007', revNo: '02', revDate: '06/10/17' },
+        { departmentId: departmentId !== 'GLOBAL' ? departmentId : null }
+    );
+
+    // Applies the live revision info to the current sheet's doc/rev fields, same
+    // gating the old config.docDefaults sync used: once a sheet is approved its
+    // doc/rev numbers are historical record and must stop tracking live changes.
+    useEffect(() => {
+        if (!docData.approved) {
+            setDocData(prev => ({ ...prev, docNo: revisionInfo.docNo, revNo: revisionInfo.revNo, revDate: revisionInfo.revDate }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [revisionInfo]);
+
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const activeConfig = activeConfigData?.data;
     const displayLevels = activeConfig?.levels || [];
@@ -465,6 +485,10 @@ const SkillMatrixCertificate = ({
         }
     };
 
+    // docNo/revNo/revDate are no longer sourced from here — they come from the
+    // shared Revision Table (see `revisionInfo`/the sync effect below) instead of
+    // this certificate's own config.docDefaults. headerDefaults/levels are
+    // unrelated (rubric content + sign-off names) and still come from here.
     const fetchConfig = async () => {
         try {
             const response = await axiosInstance.get(`/api/skill-matrix/config/${departmentId}`);
@@ -474,17 +498,6 @@ const SkillMatrixCertificate = ({
                     setSkillConfig(config);
                     if (!headerData.processInCharge && config.headerDefaults) {
                         setHeaderData(prev => ({ ...prev, ...config.headerDefaults }));
-                    }
-                    if (!docData.approved && config.docDefaults) {
-                        let configDocDefaults = { ...config.docDefaults };
-                        if (configDocDefaults.revNo && typeof configDocDefaults.revNo === 'string' && configDocDefaults.revNo.includes('.....')) {
-                            const parts = configDocDefaults.revNo.split('.....');
-                            configDocDefaults.revNo = parts[0] || '02';
-                            configDocDefaults.revDate = parts[1] || '06/10/17';
-                        } else if (!configDocDefaults.revDate) {
-                            configDocDefaults.revDate = '06/10/17';
-                        }
-                        setDocData(prev => ({ ...prev, ...configDocDefaults }));
                     }
                 } else {
                     setSkillConfig({ ...DEFAULT_SKILL_CONFIG, levels: config });
@@ -936,34 +949,19 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black" >
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Doc.No.</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input
-                                        className="w-full outline-none bg-transparent"
-                                        value={docData.docNo}
-                                        onChange={e => setDocData({ ...docData, docNo: e.target.value })}
-                                        disabled={!isEditable}
-                                    />
+                                    <span className="w-full block bg-transparent">{docData.docNo}</span>
                                 </div>
                             </div >
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev.No</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input
-                                        className="w-full outline-none text-xs bg-transparent"
-                                        value={docData.revNo || ''}
-                                        onChange={e => setDocData({ ...docData, revNo: e.target.value })}
-                                        disabled={!isEditable}
-                                    />
+                                    <span className="w-full block text-xs bg-transparent">{docData.revNo || ''}</span>
                                 </div>
                             </div>
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-1 text-xs border-r border-black">Rev Date</div>
                                 <div className="w-[60%] p-1 text-xs">
-                                    <input
-                                        className="w-full outline-none text-xs bg-transparent"
-                                        value={docData.revDate || ''}
-                                        onChange={e => setDocData({ ...docData, revDate: e.target.value })}
-                                        disabled={!isEditable}
-                                    />
+                                    <span className="w-full block text-xs bg-transparent">{docData.revDate || ''}</span>
                                 </div>
                             </div>
                             <div className="flex border-b border-black">

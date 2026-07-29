@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useGetOnJobTrainingByIdQuery, useGetPublicOnJobTrainingQuery, useUpdateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import UserAutocomplete from "@/components/common/UserAutocomplete";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 
 const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Name", readOnly = false, onBack }) => {
     const { user: authUser } = useSelector((state) => state.auth);
@@ -35,6 +36,12 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
     const refetch = shareToken ? refetchByToken : refetchById;
     const [updateOnJobTraining, { isLoading: isSaving }] = useUpdateOnJobTrainingMutation();
     const [logAction] = useLogActionMutation();
+
+    const revisionInfo = useRevisionInfo(
+        "on-job-training",
+        { docNo: "FRM-WH-QA-178", revNo: "02", revDate: "19.06.2021" },
+        { departmentId: ojtData?.data?.department?.id }
+    );
 
     // State
     const [trainingData, setTrainingData] = useState({
@@ -72,7 +79,8 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                     date: formatDate(rec.date),
                     name: rec.name || "",
                     ecode: rec.ecode || "",
-                    department: rec.department || ""
+                    department: rec.department || "",
+                    result: rec.result || "Pending"
                 };
             });
 
@@ -166,23 +174,61 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
         }
     };
 
-    const handleStatusUpdate = async (newStatus) => {
+    // Approves/rejects/resets a single trainee's row and immediately persists the whole
+    // attendanceRecords array (self-saving, so trainers don't need a separate Save click per row).
+    const handleRowStatusUpdate = async (index, newStatus) => {
         if (!ojtId) {
             toast.error("OJT ID is missing");
             return;
         }
+        const updatedRecords = trainingData.attendanceRecords.map((rec, i) =>
+            i === index ? { ...rec, result: newStatus } : rec
+        );
+        setTrainingData(prev => ({ ...prev, attendanceRecords: updatedRecords }));
+
         try {
             await updateOnJobTraining({
                 id: ojtId,
-                data: {
-                    result: newStatus
-                }
+                data: { attendanceRecords: updatedRecords }
             }).unwrap();
-            toast.success(`Sheet ${newStatus} successfully!`);
+            toast.success(newStatus === "Pending" ? "Trainee status reset" : `Trainee ${newStatus.toLowerCase()} successfully!`);
             refetch();
         } catch (error) {
-            toast.error(error?.data?.message || `Failed to update sheet status to ${newStatus}`);
+            toast.error(error?.data?.message || "Failed to update trainee status");
         }
+    };
+
+    const renderRowApproval = (index) => {
+        const rec = trainingData.attendanceRecords[index];
+        if (!rec || (!rec.name && !rec.ecode)) return null;
+        const status = rec.result || "Pending";
+        const canSignOff = !readOnly && hasSignOffPermission();
+
+        if (status === "Pending") {
+            if (!canSignOff) return null;
+            return (
+                <div className="flex items-center justify-center gap-1.5 no-print">
+                    <button type="button" onClick={() => handleRowStatusUpdate(index, "Approved")} title="Approve" className="text-green-600 hover:text-green-800">
+                        <IconCheck className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleRowStatusUpdate(index, "Rejected")} title="Reject" className="text-rose-600 hover:text-rose-800">
+                        <IconX className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            );
+        }
+
+        const badgeClass = status === "Approved" ? "bg-green-100 text-green-700" : "bg-rose-100 text-rose-700";
+        return (
+            <div className="flex items-center justify-center gap-1">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${badgeClass}`}>{status}</span>
+                {canSignOff && (
+                    <button type="button" onClick={() => handleRowStatusUpdate(index, "Pending")} title="Reset" className="text-gray-500 hover:text-gray-700 text-[9px] underline no-print">
+                        Reset
+                    </button>
+                )}
+            </div>
+        );
     };
 
     const handleSave = async (sendEmail = false) => {
@@ -292,28 +338,6 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                 >
                                     <IconSend className="w-4 h-4" />
                                     {isSaving ? "Submitting..." : "Submit & Send Email"}
-                                </Button>
-                            )}
-
-                            {/* Prominent Approve OJT Button */}
-                            {ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
-                                <Button 
-                                    onClick={() => handleStatusUpdate("Approved")} 
-                                    className="gap-2 bg-green-600 hover:bg-green-700 text-white font-bold shadow-md transition-all px-4"
-                                >
-                                    <IconCheck className="w-4 h-4" />
-                                    Approve OJT
-                                </Button>
-                            )}
-
-                            {/* Prominent Reject OJT Button */}
-                            {ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
-                                <Button 
-                                    onClick={() => handleStatusUpdate("Rejected")} 
-                                    className="gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md transition-all px-4"
-                                >
-                                    <IconX className="w-4 h-4" />
-                                    Reject OJT
                                 </Button>
                             )}
                         </>
@@ -606,15 +630,17 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                 <table className="w-full border-collapse text-[10px] table-fixed">
                                     <thead>
                                         <tr className="border-b border-black bg-gray-50 print:bg-transparent">
-                                            <th className="border-r border-black p-1 w-[5%] text-center font-bold">S.No</th>
-                                            <th className="border-r border-black p-1 w-[13%] text-center font-bold">Date</th>
-                                            <th className="border-r border-black p-1 w-[24%] text-left pl-2 font-bold">Name</th>
+                                            <th className="border-r border-black p-1 w-[4%] text-center font-bold">S.No</th>
+                                            <th className="border-r border-black p-1 w-[10%] text-center font-bold">Date</th>
+                                            <th className="border-r border-black p-1 w-[20%] text-left pl-2 font-bold">Name</th>
                                             <th className="border-r border-black p-1 w-[8%] text-center font-bold">E.Code</th>
+                                            <th className="border-r border-black p-1 w-[8%] text-center font-bold">Approval</th>
 
-                                            <th className="border-r border-black p-1 w-[5%] text-center font-bold">S.No</th>
-                                            <th className="border-r border-black p-1 w-[13%] text-center font-bold">Date</th>
-                                            <th className="border-r border-black p-1 w-[24%] text-left pl-2 font-bold">Name</th>
-                                            <th className="p-1 w-[8%] text-center font-bold">E.Code</th>
+                                            <th className="border-r border-black p-1 w-[4%] text-center font-bold">S.No</th>
+                                            <th className="border-r border-black p-1 w-[10%] text-center font-bold">Date</th>
+                                            <th className="border-r border-black p-1 w-[20%] text-left pl-2 font-bold">Name</th>
+                                            <th className="border-r border-black p-1 w-[8%] text-center font-bold">E.Code</th>
+                                            <th className="p-1 w-[8%] text-center font-bold">Approval</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -657,6 +683,9 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                             <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                 value={trainingData.attendanceRecords[leftIndex]?.ecode || ""} onChange={e => handleAttendanceChange(leftIndex, 'ecode', e.target.value)} />
                                                         </td>
+                                                        <td className="border-r border-black p-0.5">
+                                                            {renderRowApproval(leftIndex)}
+                                                        </td>
 
                                                         {/* Right Side */}
                                                         <td className="border-r border-black text-center font-bold text-blue-600">{rightIndex + 1}</td>
@@ -687,13 +716,17 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                         inputClassName="w-full h-full border-none p-0 px-1 text-[10px] text-blue-600 focus-visible:ring-0 uppercase text-left bg-transparent rounded-none disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                     />
                                                                 </td>
-                                                                <td className="p-0">
+                                                                <td className="border-r border-black p-0">
                                                                     <Input disabled={readOnly} className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 uppercase bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                         value={trainingData.attendanceRecords[rightIndex]?.ecode || ""} onChange={e => handleAttendanceChange(rightIndex, 'ecode', e.target.value)} />
+                                                                </td>
+                                                                <td className="p-0.5">
+                                                                    {renderRowApproval(rightIndex)}
                                                                 </td>
                                                             </>
                                                         ) : (
                                                             <>
+                                                                <td className="border-r border-black bg-gray-50/50"></td>
                                                                 <td className="border-r border-black bg-gray-50/50"></td>
                                                                 <td className="border-r border-black bg-gray-50/50"></td>
                                                                 <td className="bg-gray-50/50"></td>
@@ -724,36 +757,16 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                             </span>
                                         )}
                                     </div>
-                                    {!readOnly && ojtData?.data?.result === "Pending" && hasSignOffPermission() && (
-                                        <div className="flex gap-1.5 no-print">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-5 px-2 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200 text-[10px] font-semibold transition-colors"
-                                                onClick={() => handleStatusUpdate("Approved")}
-                                            >
-                                                Approve
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-5 px-2 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800 border-rose-200 text-[10px] font-semibold transition-colors"
-                                                onClick={() => handleStatusUpdate("Rejected")}
-                                            >
-                                                Reject
-                                            </Button>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                         </div>
 
                         {/* Document Validation Footer - Outside the main border to look like page footer */}
                         <div className="flex justify-between text-[10px] font-bold p-1 border border-black border-t-0 uppercase">
-                            <div>FRM-WH-QA-178</div>
+                            <div>{revisionInfo.docNo}</div>
                             <div className="flex gap-12">
-                                <span>REV: 02</span>
-                                <span>REV DATE: 19.06.2021</span>
+                                <span>REV: {revisionInfo.revNo}</span>
+                                <span>REV DATE: {revisionInfo.revDate}</span>
                             </div>
                             <div>PAGE: 1 OF 1</div>
                         </div>

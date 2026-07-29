@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pencil, Plus } from 'lucide-react';
 
-const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride }) => {
+const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, linkToDetail = true, emptyMessage }) => {
     const navigate = useNavigate();
 
     const goToHistory = (record) => {
@@ -29,7 +29,7 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride }
     }
 
     if (!records || records.length === 0) {
-        return <div className="py-10 text-center text-muted-foreground">No revision records found.</div>;
+        return <div className="py-10 text-center text-muted-foreground">{emptyMessage || "No revision records found."}</div>;
     }
 
     return (
@@ -52,8 +52,8 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride }
                     {records.map((record, index) => (
                         <TableRow
                             key={record.id}
-                            className="cursor-pointer hover:bg-muted/50"
-                            onClick={() => goToHistory(record)}
+                            className={linkToDetail ? "cursor-pointer hover:bg-muted/50" : undefined}
+                            onClick={linkToDetail ? () => goToHistory(record) : undefined}
                         >
                             <TableCell>{index + 1}</TableCell>
                             <TableCell className="font-medium">{record.sheetName}</TableCell>
@@ -87,9 +87,11 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride }
                                     <Button variant="ghost" size="icon" title="Edit this record" onClick={stopAnd(onEdit, record)}>
                                         <Pencil className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" title="Add department override" onClick={stopAnd(onAddOverride, record)}>
-                                        <Plus className="h-4 w-4" />
-                                    </Button>
+                                    {onAddOverride && (
+                                        <Button variant="ghost" size="icon" title="Add department override" onClick={stopAnd(onAddOverride, record)}>
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                 </TableCell>
                             )}
                         </TableRow>

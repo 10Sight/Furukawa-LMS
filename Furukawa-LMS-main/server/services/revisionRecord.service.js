@@ -4,10 +4,12 @@ import { ApiError } from "../utils/ApiError.js";
 
 class RevisionRecordService {
     // Every row that exists (global defaults + all department/section overrides),
-    // optionally narrowed by department/section — used by the admin list, which
-    // shows the full picture rather than one resolved value per sheet.
-    static async getAllRecords(departmentId = null, sectionId = null) {
-        return RevisionRecord.findAll({ departmentId, sectionId });
+    // optionally narrowed by department/section/sheetKey, or restricted to just
+    // the global rows via isGlobal. The admin directory list passes isGlobal so
+    // it shows one row per sheet; the per-sheet detail page passes sheetKey so it
+    // shows that sheet's global row plus all of its overrides.
+    static async getAllRecords(departmentId = null, sectionId = null, sheetKey = null, isGlobal = false) {
+        return RevisionRecord.findAll({ departmentId, sectionId, sheetKey, isGlobal });
     }
 
     static async getHistoryLogs(departmentId = null, sectionId = null, sheetKey = null) {

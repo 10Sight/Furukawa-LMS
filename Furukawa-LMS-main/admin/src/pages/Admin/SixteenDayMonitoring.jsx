@@ -50,9 +50,9 @@ import useCountdown from '@/hooks/useCountdown';
 
 const EMPTY_ARRAY = [];
 
-// Renders the stack-table action button. The live countdown is shown to everyone whose 24h
-// Handover-approval wait hasn't elapsed; only the button itself is locked, and Admins/Trainers
-// (canOverride) can still click through early.
+// Renders the stack-table action button. The live countdown is shown to everyone whose
+// unlock (midnight IST of the day after Handover approval) hasn't arrived yet; only the
+// button itself is locked, and Admins/Trainers (canOverride) can still click through early.
 const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
     const notYetEligible = !item.status && !item.isEligible;
     const { isExpired, formatted } = useCountdown(notYetEligible ? item.eligibleAt : null);
@@ -71,7 +71,7 @@ const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
                 variant={blocked ? "outline" : (item.status ? "outline" : "default")}
                 className={cn("h-8 text-xs font-bold", blocked ? "text-slate-400" : (!item.status && "bg-indigo-600 hover:bg-indigo-700"))}
                 disabled={blocked}
-                title={blocked ? "Unlocks 24 hours after Handover approval" : (stillWaiting ? "Admin/Trainer override — starting before the 24h wait has elapsed" : undefined)}
+                title={blocked ? "Unlocks at midnight (IST) the day after Handover approval" : (stillWaiting ? "Admin/Trainer override — starting before the next-day unlock" : undefined)}
                 onClick={onStart}
             >
                 {blocked ? "Locked" : (item.status ? (readOnly ? "View" : "View Latest") : (readOnly ? "View" : "Start Monitoring"))}

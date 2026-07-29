@@ -246,7 +246,7 @@ const SixteenDayMonitoringSheet = ({
         !canEditSubmitted &&
         !authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
-    // Not yet 24h past Handover approval for the very first attempt.
+    // Not yet past midnight (IST) of the day after Handover approval, for the very first attempt.
     // The countdown itself is shown to everyone; only the edit/save lock is Admin/Trainer-overridable.
     const notYetEligible = !isSheetSaved &&
         !isForceNewAttempt &&

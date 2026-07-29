@@ -9,6 +9,7 @@ import {
 } from "@/Redux/AllApi/EvaluationTestApi";
 import { useGetAllUsersQuery } from "@/Redux/AllApi/UserApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
+import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
@@ -176,6 +177,17 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
 
     const activeTemplate = (isView || isEdit) ? attemptResponse?.data : templateResponse?.data;
     const testTitle = activeTemplate?.title || activeTemplate?.testTitle || "Evaluation Test";
+
+    // Department/section only resolve once a saved attempt is loaded (view/edit) —
+    // in create mode there's no persisted trainee-department link yet, so the doc
+    // header falls back to the global default until the attempt is saved.
+    const revisionInfo = useRevisionInfo(
+        "evaluation-test-attempt",
+        { docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025" },
+        (isView || isEdit)
+            ? { departmentId: attemptResponse?.data?.departmentId, sectionId: attemptResponse?.data?.sectionId }
+            : {}
+    );
     const contentStructure = React.useMemo(() => {
         return normalizeContentStructure(activeTemplate?.contentStructure || [], testTitle);
     }, [activeTemplate, testTitle]);
@@ -564,9 +576,9 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                             <div className="font-semibold text-[10px] sm:text-xs">FURUKAWA ELECTRICAL INDIA PVT. LTD.</div>
                         </div>
                         <div className="text-right text-[10px] sm:text-xs leading-tight font-mono">
-                            <div>ST-S16-01 FORMAT 4 -E</div>
-                            <div>Revision No. 01</div>
-                            <div>Revision Date : 28.02.2025</div>
+                            <div>{revisionInfo.docNo}</div>
+                            <div>Revision No. {revisionInfo.revNo}</div>
+                            <div>Revision Date : {revisionInfo.revDate}</div>
                             <div>Issue date : 17.01.2024</div>
                         </div>
                     </div>

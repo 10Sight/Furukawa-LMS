@@ -496,21 +496,37 @@ export const updateOnJobTraining = async (req, res, next) => {
         // Runs on every save (not just when `result` is in the payload) so that adding/removing
         // attendees on a reused sheet keeps everyone's badge in sync.
         if (updatedOJT) {
-            const isApproved = updatedOJT.result === "Pass" || updatedOJT.result === "Approved";
+            const attendanceRecords = updatedOJT.attendanceRecords || [];
+            const sheetApproved = updatedOJT.result === "Pass" || updatedOJT.result === "Approved";
 
-            // Students currently on this sheet (single student + attendance records)
-            const currentStudentIds = new Set();
-            if (updatedOJT.student) currentStudentIds.add(String(updatedOJT.student));
+            // Per-student approval map. The sheet's primary `student` (used by single-trainee
+            // Evaluation sheets, which have no attendanceRecords) always follows the sheet-level
+            // result. Attendance-row trainees follow their own row's `result`; rows saved before
+            // row-level approval existed have no `result` yet, so they fall back to the sheet-level
+            // result to keep older sheets working.
+            const studentApprovalMap = new Map();
+            if (updatedOJT.student) {
+                studentApprovalMap.set(String(updatedOJT.student), sheetApproved);
+            }
 
-            const ecodes = (updatedOJT.attendanceRecords || []).map(r => r.ecode).filter(Boolean);
+            const ecodes = attendanceRecords.map(r => r.ecode).filter(Boolean);
             if (ecodes.length > 0) {
                 const placeholders = ecodes.map(() => "?").join(",");
                 const [matchedUsers] = await executeQuery(
-                    `SELECT id FROM users WHERE empId IN (${placeholders}) OR userName IN (${placeholders})`,
+                    `SELECT id, empId, userName FROM users WHERE empId IN (${placeholders}) OR userName IN (${placeholders})`,
                     [...ecodes, ...ecodes]
                 );
-                matchedUsers.forEach(u => currentStudentIds.add(String(u.id)));
+                matchedUsers.forEach(u => {
+                    const row = attendanceRecords.find(r => r.ecode && (r.ecode === u.empId || r.ecode === u.userName));
+                    if (!row) return;
+                    const rowApproved = row.result !== undefined
+                        ? (row.result === "Approved" || row.result === "Pass")
+                        : sheetApproved;
+                    studentApprovalMap.set(String(u.id), rowApproved);
+                });
             }
+
+            const currentStudentIds = new Set(studentApprovalMap.keys());
 
             // Students who already carry this sheet's badge (covers students removed since the last save)
             const [previouslyLinkedUsers] = await executeQuery(
@@ -525,7 +541,7 @@ export const updateOnJobTraining = async (req, res, next) => {
 
             for (const studentId of studentIdsToProcess) {
                 try {
-                    const shouldHaveBadge = isApproved && currentStudentIds.has(studentId);
+                    const shouldHaveBadge = studentApprovalMap.get(studentId) === true;
 
                     const [userRows] = await executeQuery("SELECT ojt, empId, userName FROM users WHERE id = ?", [studentId]);
                     if (userRows.length === 0) continue;
@@ -546,7 +562,7 @@ export const updateOnJobTraining = async (req, res, next) => {
                         // editing the row's date (or a fresh sheet) is how a trainer reopens
                         // same-day quiz eligibility on a later day.
                         const { empId: userEmpId, userName: userUserName } = userRows[0];
-                        const studentRow = (updatedOJT.attendanceRecords || []).find(r =>
+                        const studentRow = attendanceRecords.find(r =>
                             r.ecode && (r.ecode === userEmpId || r.ecode === userUserName)
                         );
 
@@ -563,7 +579,7 @@ export const updateOnJobTraining = async (req, res, next) => {
                             departmentId: updatedOJT.department,
                             sectionId: updatedOJT.section,
                             lineId: updatedOJT.line,
-                            result: updatedOJT.result,
+                            result: studentRow?.result || updatedOJT.result,
                             approvedAt: customApprovalDate
                         };
 

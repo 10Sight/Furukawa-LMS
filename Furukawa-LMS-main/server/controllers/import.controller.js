@@ -76,9 +76,9 @@ const normalizeDate = (val) => {
 
     if (val instanceof Date) {
         if (isNaN(val.getTime())) return null;
-        const year = val.getFullYear();
-        const month = String(val.getMonth() + 1).padStart(2, '0');
-        const day = String(val.getDate()).padStart(2, '0');
+        const year = val.getUTCFullYear();
+        const month = String(val.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(val.getUTCDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }
 
@@ -146,9 +146,9 @@ const getExcelRows = (worksheet, options = {}) => {
 
     const toDateStr = (val) => {
         if (!(val instanceof Date) || isNaN(val.getTime())) return null;
-        const year = val.getFullYear();
-        const month = String(val.getMonth() + 1).padStart(2, '0');
-        const day = String(val.getDate()).padStart(2, '0');
+        const year = val.getUTCFullYear();
+        const month = String(val.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(val.getUTCDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
 

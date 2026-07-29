@@ -122,7 +122,15 @@ class User {
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
         this.ojt = typeof data.ojt === 'string' ? JSON.parse(data.ojt) : (data.ojt || []);
-        this.expectedHandover = data.expectedHandover || null;
+        // expectedHandover is the only genuine SQL DATE column on this table; tedious
+        // (with useUTC:false, see connectDB.js) reconstructs it as a Date using LOCAL
+        // fields, which JSON.stringify then re-encodes via toISOString() (always UTC) --
+        // shifting the calendar day back by the server's UTC offset. Flatten it to a
+        // plain date string here (using the matching local getters) so API responses
+        // never carry a Date object that can get corrupted on serialization.
+        this.expectedHandover = data.expectedHandover instanceof Date
+            ? (isNaN(data.expectedHandover.getTime()) ? null : `${data.expectedHandover.getFullYear()}-${String(data.expectedHandover.getMonth() + 1).padStart(2, '0')}-${String(data.expectedHandover.getDate()).padStart(2, '0')}`)
+            : (data.expectedHandover || null);
         this.dojoShift = data.dojoShift || null;
 
         // Carry over any extra columns/joined fields (e.g. deptName, assignments) that

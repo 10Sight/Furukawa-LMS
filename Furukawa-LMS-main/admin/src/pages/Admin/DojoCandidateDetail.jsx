@@ -31,6 +31,7 @@ import {
 import axiosInstance from "@/Helper/axiosInstance";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
 import MenteeFeedbackMonitoringSheet from "@/components/admin/MenteeFeedbackMonitoringSheet";
+import { displayDate } from "@/utils/dateUtils";
 
 const DojoCandidateDetail = () => {
   const { studentId } = useParams();
@@ -220,7 +221,7 @@ const DojoCandidateDetail = () => {
                     <div className="space-y-3">
                       <ProfileField label="Father / Husband" value={candidate.fatherHusbandName} />
                       <ProfileField label="Gender" value={candidate.gender} />
-                      <ProfileField label="DOB" value={candidate.dob && new Date(candidate.dob).toLocaleDateString()} />
+                      <ProfileField label="DOB" value={candidate.dob && displayDate(candidate.dob)} />
                       <div className="group">
                         <p className="text-[10px] text-muted-foreground mb-0.5 font-bold uppercase">Qualification</p>
                         <Badge variant="outline" className="text-blue-700 border-blue-200 bg-blue-50/30 text-[10px] py-0 px-2">
@@ -252,8 +253,8 @@ const DojoCandidateDetail = () => {
 
                 <div className="mt-8 pt-4 border-t grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 p-4 rounded-lg">
                   <TimelineItem label="Registration Date" value={new Date(candidate.createdAt).toLocaleDateString()} icon={IconCalendar} color="blue" />
-                  <TimelineItem label="Target Joining" value={candidate.joiningDate && new Date(candidate.joiningDate).toLocaleDateString()} icon={IconCalendar} color="green" />
-                  <TimelineItem label="Expected Handover" value={candidate.expectedHandover ? new Date(candidate.expectedHandover).toLocaleDateString() : "—"} icon={IconCalendar} color="amber" />
+                  <TimelineItem label="Target Joining" value={candidate.joiningDate && displayDate(candidate.joiningDate)} icon={IconCalendar} color="green" />
+                  <TimelineItem label="Expected Handover" value={candidate.expectedHandover ? displayDate(candidate.expectedHandover) : "—"} icon={IconCalendar} color="amber" />
                   <TimelineItem label="Hiring Status" value={candidate.isTemporary ? "Assessment Pending" : "Promoted"} icon={IconCheck} color="amber" />
                 </div>
               </CardContent>

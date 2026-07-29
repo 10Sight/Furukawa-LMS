@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { format } from "date-fns";
-import { safeDateFormat } from "@/utils/dateUtils";
+import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
 import {
     Table,
     TableBody,
@@ -829,8 +829,8 @@ const DojoHiring = () => {
             fatherHusbandName: user.fatherHusbandName || "",
             gender: user.gender || "MALE",
             designation: user.designation || "",
-            dob: user.dob ? String(user.dob).substring(0, 10) : "",
-            joiningDate: user.joiningDate ? String(user.joiningDate).substring(0, 10) : new Date().toISOString().split('T')[0],
+            dob: user.dob ? dateToInputFormat(user.dob) : "",
+            joiningDate: user.joiningDate ? dateToInputFormat(user.joiningDate) : new Date().toISOString().split('T')[0],
             departmentId: getFormId(user.departmentId, user.targetDeptId),
             sectionId: getFormId(user.sectionId, user.targetSectionId),
             lineId: getFormId(user.lineId, user.targetLineId),
@@ -845,11 +845,11 @@ const DojoHiring = () => {
             busRoute: user.busRoute || "",
             unit: user.unit || "UNIT_1",
             status: normalizeStatus(user.status),
-            leavingDate: user.leavingDate ? String(user.leavingDate).substring(0, 10) : "",
+            leavingDate: user.leavingDate ? dateToInputFormat(user.leavingDate) : "",
             reasonOfLeaving: user.reasonOfLeaving || "",
             contractor: user.contractor || "",
             contractorId: user.contractorId ? String(user.contractorId) : "",
-            expectedHandover: user.expectedHandover ? String(user.expectedHandover).substring(0, 10) : "",
+            expectedHandover: user.expectedHandover ? dateToInputFormat(user.expectedHandover) : "",
             shiftSchedule: typeof user.shiftSchedule === 'string'
                 ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
                 : (user.shiftSchedule || {}),

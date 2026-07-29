@@ -124,6 +124,7 @@ const MultiSkilling = () => {
         sectionId: section,
         lineId: line,
         filterMultiSkillingLevels: "true",
+        includeTemporary: "true",
         limit: 1000
     }, {
         skip: !dept || !section || !line,

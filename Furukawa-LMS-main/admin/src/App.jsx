@@ -302,9 +302,21 @@ const App = () => {
             <Route path="supervisors" element={<Supervisor />} />
             <Route path="incharges" element={<Incharge />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
-            <Route path="revision-table" element={<RevisionTable />} />
-            <Route path="revision-table/:sheetKey" element={<RevisionSheetHistory />} />
-            <Route path="dept-revision-logs" element={<DepartmentRevisionLogs />} />
+            <Route path="revision-table" element={
+              <RequireAccess allow="revision:read">
+                <RevisionTable />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/:sheetKey" element={
+              <RequireAccess allow="revision:read">
+                <RevisionSheetHistory />
+              </RequireAccess>
+            } />
+            <Route path="dept-revision-logs" element={
+              <RequireAccess allow="dept_revision_logs:read">
+                <DepartmentRevisionLogs />
+              </RequireAccess>
+            } />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
             <Route path="report-clubbing" element={<ReportClubbing />} />
             <Route path="learning" element={<Learning />} />

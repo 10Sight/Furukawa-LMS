@@ -294,12 +294,12 @@ const CourseDetailPage = () => {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 md:grid-cols-6 mb-6">
+        <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
 
           <TabsTrigger value="modules">Modules ({modules.length})</TabsTrigger>
-          <TabsTrigger value="quizzes">Quizzes ({quizzes.length})</TabsTrigger>
+          {/* <TabsTrigger value="quizzes">Quizzes ({quizzes.length})</TabsTrigger> */}
           <TabsTrigger value="assignments">
             Assignments ({assignments.length})
           </TabsTrigger>

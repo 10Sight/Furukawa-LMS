@@ -795,15 +795,23 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
-    const hasEvalPermission = (perm) => {
+    // Matches the backend's hasPermission (server/middlewares/roleAuth.middleware.js): Admins bypass
+    // everything, everyone else needs the permission explicitly granted on their custom role.
+    const hasPermission = (perm) => {
         if (!user) return false;
-        if (user.role === 'SUPERADMIN' || user.role === 'ADMIN') return true;
+        if (isAdmin) return true;
         const customPerms = user.customRole?.permissions || [];
+        return customPerms.includes(perm);
+    };
+
+    const hasEvalPermission = (perm) => {
+        if (hasPermission(perm) || hasPermission('evaluation:manage')) return true;
+        if (!user) return false;
         const roleDefaults = {
             INSTRUCTOR: ['evaluation:manage','evaluation:create','evaluation:read','evaluation:update','evaluation:delete'],
         };
         const defaultPerms = roleDefaults[user.role] || [];
-        return [...defaultPerms, ...customPerms].includes(perm) || [...defaultPerms, ...customPerms].includes('evaluation:manage');
+        return defaultPerms.includes(perm) || defaultPerms.includes('evaluation:manage');
     };
 
     const canEditEval = hasEvalPermission('evaluation:update');
@@ -924,11 +932,12 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         const result = {};
         SKILL_MATRIX_SIGNATURE_ROLES.forEach(role => {
             result[role] = user
-                ? canActOnSkillMatrix(user, currentDepartmentObj, currentSectionObj, role).allowed
+                ? hasPermission(`skill_matrix:${role}_approve`) &&
+                  canActOnSkillMatrix({ ...user, isAdmin }, currentDepartmentObj, currentSectionObj, role).allowed
                 : false;
         });
         return result;
-    }, [user, currentDepartmentObj, currentSectionObj]);
+    }, [user, isAdmin, currentDepartmentObj, currentSectionObj]);
 
     const handleSignature = (role, status) => {
         if (!user) {
@@ -1742,7 +1751,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.qa ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.qa}</span>
-                                                            {!isMatrixReadOnly && (
+                                                            {!isMatrixReadOnly && canSignSkillMatrix.qa && (
                                                                 <button onClick={() => handleConfigChange('signatures.qa', '')} className="no-print hidden group-hover:block text-red-500">
                                                                     <IconX size={12} />
                                                                 </button>
@@ -1764,7 +1773,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.safety ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.safety}</span>
-                                                            {!isMatrixReadOnly && (
+                                                            {!isMatrixReadOnly && canSignSkillMatrix.safety && (
                                                                 <button onClick={() => handleConfigChange('signatures.safety', '')} className="no-print hidden group-hover:block text-red-500">
                                                                     <IconX size={12} />
                                                                 </button>
@@ -1786,7 +1795,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     {config.signatures?.process ? (
                                                         <div className="flex items-center gap-1 group">
                                                             <span className="font-bold leading-tight break-all">{config.signatures.process}</span>
-                                                            {!isMatrixReadOnly && (
+                                                            {!isMatrixReadOnly && canSignSkillMatrix.process && (
                                                                 <button onClick={() => handleConfigChange('signatures.process', '')} className="no-print hidden group-hover:block text-red-500">
                                                                     <IconX size={12} />
                                                                 </button>

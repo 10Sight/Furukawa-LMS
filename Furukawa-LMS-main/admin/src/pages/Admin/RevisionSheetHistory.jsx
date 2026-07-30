@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -17,6 +18,11 @@ const RevisionSheetHistory = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [sheetName, setSheetName] = useState(location.state?.sheetName || "");
+
+    const authUser = useSelector((state) => state.auth.user);
+    const isAdmin = authUser?.isAdmin;
+    const canCreate = isAdmin || authUser?.customRole?.permissions?.includes('revision:create');
+    const canEdit = isAdmin || authUser?.customRole?.permissions?.includes('revision:update');
 
     const [records, setRecords] = useState([]);
     const [logs, setLogs] = useState([]);
@@ -122,16 +128,18 @@ const RevisionSheetHistory = () => {
                             <TabsTrigger value="history">Audit Log History</TabsTrigger>
                         </TabsList>
                         <TabsContent value="active" className="mt-4 space-y-3">
-                            <div className="flex justify-end">
-                                <Button size="sm" onClick={handleAddOverride}>
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add Department Override
-                                </Button>
-                            </div>
+                            {canCreate && (
+                                <div className="flex justify-end">
+                                    <Button size="sm" onClick={handleAddOverride}>
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Department Override
+                                    </Button>
+                                </div>
+                            )}
                             <RevisionRecordList
                                 records={records}
                                 loading={loadingRecords}
-                                canEdit
+                                canEdit={canEdit}
                                 onEdit={handleEdit}
                                 linkToDetail={false}
                             />

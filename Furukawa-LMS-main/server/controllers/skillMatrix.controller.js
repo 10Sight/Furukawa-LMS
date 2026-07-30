@@ -6,6 +6,7 @@ import NotificationService from "../services/notification.service.js";
 import Department from "../models/department.model.js";
 import Section from "../models/section.model.js";
 import { canActOnSkillMatrix, SKILL_MATRIX_SIGNATURE_ROLES } from "../../shared/skillMatrixRouting.js";
+import { hasPermission } from "../middlewares/roleAuth.middleware.js";
 import { SkillMatrixConfig } from "../models/skillMatrixConfig.model.js";
 import { SkillMatrixEvaluation } from "../models/skillMatrixEvaluation.model.js";
 import SkillMatrixDashboardConfig from "../models/skillMatrixDashboardConfig.model.js";
@@ -158,30 +159,34 @@ const saveSkillMatrix = asyncHandler(async (req, res) => {
     );
 
     // Segregation of Duties: a QA/Safety/Process signature that is being newly set, changed, or
-    // cleared must be authorized against that role's configured Skill Matrix approval routing for
-    // the source department/section (see shared/skillMatrixRouting.js). Only the roles that actually
-    // changed are checked, so a QA-authorized user editing signatures.qa isn't blocked just because
-    // they aren't authorized for signatures.safety.
-    if (existing.length > 0) {
-        const previousFooterInfo = parseJSON(existing[0].footerInfo, {});
-        const previousSignatures = previousFooterInfo?.config?.signatures || {};
-        const newSignatures = footerInfo?.config?.signatures || {};
+    // cleared must be authorized against that role's `skill_matrix:${role}_approve` permission AND
+    // that role's configured Skill Matrix approval routing for the source department/section (see
+    // shared/skillMatrixRouting.js). Runs for both inserts and updates (a brand-new matrix can be
+    // saved with a signature already set). Only the roles that actually changed are checked, so a
+    // QA-authorized user editing signatures.qa isn't blocked just because they aren't authorized for
+    // signatures.safety.
+    const previousFooterInfo = existing.length > 0 ? parseJSON(existing[0].footerInfo, {}) : {};
+    const previousSignatures = previousFooterInfo?.config?.signatures || {};
+    const newSignatures = footerInfo?.config?.signatures || {};
 
-        const changedRoles = SKILL_MATRIX_SIGNATURE_ROLES.filter(
-            (role) => (previousSignatures[role] || "") !== (newSignatures[role] || "")
-        );
+    const changedRoles = SKILL_MATRIX_SIGNATURE_ROLES.filter(
+        (role) => (previousSignatures[role] || "") !== (newSignatures[role] || "")
+    );
 
-        if (changedRoles.length > 0) {
-            const [sourceDepartment, sourceSection] = await Promise.all([
-                Department.findById(normDept),
-                normSection ? Section.findById(normSection) : Promise.resolve(null)
-            ]);
+    if (changedRoles.length > 0) {
+        const [sourceDepartment, sourceSection] = await Promise.all([
+            Department.findById(normDept),
+            normSection ? Section.findById(normSection) : Promise.resolve(null)
+        ]);
 
-            for (const role of changedRoles) {
-                const { allowed, reason } = canActOnSkillMatrix(req.user, sourceDepartment, sourceSection, role);
-                if (!allowed) {
-                    throw new ApiError(reason, 403);
-                }
+        for (const role of changedRoles) {
+            if (!hasPermission(req.user, `skill_matrix:${role}_approve`)) {
+                throw new ApiError(`You do not have permission to sign the ${role} approval`, 403);
+            }
+
+            const { allowed, reason } = canActOnSkillMatrix(req.user, sourceDepartment, sourceSection, role);
+            if (!allowed) {
+                throw new ApiError(reason, 403);
             }
         }
     }

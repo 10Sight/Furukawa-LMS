@@ -255,13 +255,19 @@ const SYSTEM_PERMISSIONS = {
   MENTOR_READ: "mentor:read",
   MENTOR_UPDATE: "mentor:update",
   MENTOR_DELETE: "mentor:delete",
+
+  // Revision Management
+  REVISION_READ: "revision:read",
+  REVISION_CREATE: "revision:create",
+  REVISION_UPDATE: "revision:update",
+  DEPT_REVISION_LOGS_READ: "dept_revision_logs:read",
 };
 
 // Define default role permissions
 const DEFAULT_ROLES = {
   STUDENT: {
-    name: "Student",
-    description: "Basic student access to courses and assignments",
+    name: "Operator",
+    description: "Basic operator access to courses and assignments",
     permissions: [
       SYSTEM_PERMISSIONS.COURSE_READ,
       SYSTEM_PERMISSIONS.MODULE_READ,
@@ -380,6 +386,9 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_DELETE,
       // Mentor Management
       SYSTEM_PERMISSIONS.MENTOR_READ,
+      // Revision Management
+      SYSTEM_PERMISSIONS.REVISION_READ,
+      SYSTEM_PERMISSIONS.DEPT_REVISION_LOGS_READ,
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -469,7 +478,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SECTION_UPDATE, name: "Update Sections", description: "Edit section information" },
         { id: SYSTEM_PERMISSIONS.SECTION_DELETE, name: "Delete Sections", description: "Delete sections and their lines" }
       ],
-      "Assessment Management": [
+      "Test & Assessment Management": [
         { id: SYSTEM_PERMISSIONS.QUIZ_CREATE, name: "Create Quizzes", description: "Create new quizzes and tests" },
         { id: SYSTEM_PERMISSIONS.QUIZ_READ, name: "View Quizzes", description: "View quiz content and results" },
         { id: SYSTEM_PERMISSIONS.QUIZ_UPDATE, name: "Update Quizzes", description: "Edit quiz content and settings" },
@@ -515,50 +524,66 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ROLE_DELETE, name: "Delete Roles", description: "Delete custom roles" },
         { id: SYSTEM_PERMISSIONS.ROLE_ASSIGN, name: "Assign Roles", description: "Assign roles to users" }
       ],
-      "CMS Management": [
+      "Daily 5M Recording": [
         { id: SYSTEM_PERMISSIONS.DAILY_5M_APPROVE, name: "Approve Daily 5M", description: "Approve or decline daily 5M recording sessions" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_READ, name: "View Daily 5M", description: "View daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" }
+      ],
+      "16-Day Monitoring": [
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY_EDUCATION, name: "Verify 16-Day Monitoring (Education Cell)", description: "Verify 16-day monitoring records as Education Cell" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_SUBMITTED, name: "Edit Submitted 16-Day Monitoring", description: "Edit and save 16-day monitoring sheets that have already been submitted" },
-        { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" },
+        { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" }
+      ],
+      "3-Day Monitoring": [
         { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_VERIFY, name: "Verify 3-Day Monitoring", description: "Verify 3-day monitoring records (Area Incharge sign-off)" },
-        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" }
+      ],
+      "Mentee Feedback": [
         { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_MANAGE, name: "Manage Mentee Feedback", description: "Fill out and manage mentee feedback monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_VIEW, name: "View Mentee Feedback", description: "View mentee feedback monitoring sheets" },
-        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_EDIT_SUBMITTED, name: "Edit Submitted Mentee Feedback", description: "Edit and save mentee feedback sheets that have already been submitted" },
+        { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_EDIT_SUBMITTED, name: "Edit Submitted Mentee Feedback", description: "Edit and save mentee feedback sheets that have already been submitted" }
+      ],
+      "Multi Skilling": [
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE, name: "Manage Multi Skilling", description: "Fill out and manage multi skilling training plans" },
         { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_EDIT_LAYOUT, name: "Edit Multi Skilling Layout", description: "Modify the table configuration and structure of multi skilling sheets" },
-        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" },
+        { id: SYSTEM_PERMISSIONS.MULTI_SKILLING_VIEW_HISTORY, name: "View Multi Skilling History", description: "View the history of layout changes for multi skilling sheets" }
+      ],
+      "Skill Upgradation": [
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE, name: "Manage Skill Upgradation (Full Access)", description: "Super-permission: full create, read, update, and delete access to skill upgradation plans" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_CREATE, name: "Create Skill Upgradation Plan", description: "Create new skill upgradation plans for a department/section/year" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_READ, name: "View Skill Upgradation Plans", description: "View and read existing skill upgradation plans" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_UPDATE, name: "Edit Skill Upgradation Plan", description: "Edit and save changes to existing skill upgradation plans" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_DELETE, name: "Delete Skill Upgradation Plan", description: "Permanently delete skill upgradation plan records" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
-        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" }
+      ],
+      "Handover Sheet": [
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE, name: "Manage Handover Sheet", description: "Fill out, save, and submit handover sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_APPROVE, name: "Approve Handover Sheet", description: "Approve or Reject handover sheet entries" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE, name: "Delete Handover Sheet", description: "Permanently delete handover sheet records" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" }
+      ],
+      "10-Cycle Sheet": [
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet (Full Access)", description: "Super-permission: full create, read, update, and delete access to 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_CREATE, name: "Create 10-Cycle Sheet", description: "Create new 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_READ, name: "View 10-Cycle Sheet", description: "View and read existing 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_UPDATE, name: "Edit 10-Cycle Sheet", description: "Edit and save changes to existing 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_DELETE, name: "Delete 10-Cycle Sheet", description: "Permanently delete 10-cycle sheet records" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
-        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" }
+      ],
+      "DOJO Hiring": [
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, name: "Update Candidates", description: "Edit candidate information" },
@@ -578,16 +603,16 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" },
         { id: SYSTEM_PERMISSIONS.DOJO_ALL_TEST_DEPARTMENT, name: "DOJO Access All Test Departments", description: "Unlocks all departments/sections on the Add/Edit Test Paper screens, bypassing the assigned department restriction" }
       ],
-      "Learning Management": [
-        { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Learning Dashboard", description: "View the learning management dashboard and statistics" },
-        { id: SYSTEM_PERMISSIONS.LEARNING_CREATE, name: "Create Learning Content", description: "Create new before & after learning comparisons" },
-        { id: SYSTEM_PERMISSIONS.LEARNING_UPDATE, name: "Update Learning Content", description: "Edit existing learning comparison entries" },
-        { id: SYSTEM_PERMISSIONS.LEARNING_DELETE, name: "Delete Learning Content", description: "Remove learning comparison entries from the system" }
+      "Improvement Evidence Management": [
+        { id: SYSTEM_PERMISSIONS.LEARNING_READ, name: "View Improvement Evidence", description: "View the improvement evidence dashboard and statistics" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_CREATE, name: "Create Improvement Evidence", description: "Create new before & after improvement evidence comparisons" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_UPDATE, name: "Update Improvement Evidence", description: "Edit existing improvement evidence comparison entries" },
+        { id: SYSTEM_PERMISSIONS.LEARNING_DELETE, name: "Delete Improvement Evidence", description: "Remove improvement evidence comparison entries from the system" }
       ],
-      "Skill Matrix Management": [
-        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_QA_APPROVE, name: "QA In-charge Approval", description: "Approve or reject the Skill Matrix as QA In-charge" },
-        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_SAFETY_APPROVE, name: "Safety In-charge Approval", description: "Approve or reject the Skill Matrix as Safety In-charge" },
-        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_PROCESS_APPROVE, name: "Process In-charge Approval", description: "Approve or reject the Skill Matrix as Process In-charge" }
+      "Skill Evaluation Management": [
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_QA_APPROVE, name: "QA In-charge Approval", description: "Approve or reject the Skill Evaluation as QA In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_SAFETY_APPROVE, name: "Safety In-charge Approval", description: "Approve or reject the Skill Evaluation as Safety In-charge" },
+        { id: SYSTEM_PERMISSIONS.SKILL_MATRIX_PROCESS_APPROVE, name: "Process In-charge Approval", description: "Approve or reject the Skill Evaluation as Process In-charge" }
       ],
       "On Job Training (OJT) Management": [
         { id: SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ, name: "View OJT", description: "Access and view On the Job Training sheets" },
@@ -624,6 +649,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       "Line Requirement Management": [
         { id: SYSTEM_PERMISSIONS.LINE_REQUIREMENT_READ, name: "View Line Requirements", description: "View line requirements page and records" },
         { id: SYSTEM_PERMISSIONS.LINE_REQUIREMENT_UPDATE, name: "Edit Line Requirements", description: "Create, update, or edit line requirements" }
+      ],
+      "Revision Management": [
+        { id: SYSTEM_PERMISSIONS.REVISION_READ, name: "View Revision Table", description: "View the document revision table and sheet override history" },
+        { id: SYSTEM_PERMISSIONS.REVISION_CREATE, name: "Create Department Overrides", description: "Add department-level revision overrides for a sheet" },
+        { id: SYSTEM_PERMISSIONS.REVISION_UPDATE, name: "Update Revisions", description: "Edit default or department-override revision records" },
+        { id: SYSTEM_PERMISSIONS.DEPT_REVISION_LOGS_READ, name: "View Department Revision Logs", description: "View the department revision logs page" }
       ],
       "Settings Management": [
         { id: SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD, name: "Change Password", description: "Allow user to change their own login password from the Settings page" },

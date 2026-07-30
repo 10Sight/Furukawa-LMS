@@ -414,7 +414,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
   let {
     fullName, userName, password, email, phoneNumber, unit,
     gender, dob, education, district, state, pin, busRoute, contractor, designation,
-    departmentId, sectionId, expectedHandover, fatherHusbandName, empId, idCard, joiningDate,
+    departmentId, sectionId, lineId, expectedHandover, fatherHusbandName, empId, idCard, joiningDate,
     shiftSchedule, dojoShift
   } = req.body;
 
@@ -463,6 +463,7 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     status: "PRESENT",
     targetDeptId: cleanId(departmentId),
     targetSectionId: cleanId(sectionId),
+    targetLineId: cleanId(lineId),
     departmentId: null,
     sectionId: null,
     lineId: null,

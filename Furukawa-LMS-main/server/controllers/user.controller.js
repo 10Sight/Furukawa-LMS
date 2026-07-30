@@ -1907,19 +1907,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
         .map(l => l.name);
 
       if (allowedLevels.length > 0) {
-        // L0 is stored inconsistently across flows ("L0" vs "L0 (Dojo User)" from
-        // quiz records), so match either representation when either is configured.
-        const normalizedLevels = [];
-        allowedLevels.forEach(lvl => {
-          normalizedLevels.push(lvl);
-          if (lvl.toUpperCase() === "L0") {
-            normalizedLevels.push("L0 (Dojo User)");
-          } else if (lvl.toUpperCase() === "L0 (DOJO USER)") {
-            normalizedLevels.push("L0");
-          }
-        });
-        const uniqueLevels = [...new Set(normalizedLevels)];
-        const placeholders = uniqueLevels.map(() => "?").join(",");
+        const placeholders = allowedLevels.map(() => "?").join(",");
         // Mirror formatUser's level resolution: currentSkill[subSectionId] takes
         // precedence over the currentLevel column, which is only synced on station change.
         whereClauses.push(`
@@ -1928,7 +1916,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
             u.currentLevel
           ) IN (${placeholders})
         `);
-        params.push(...uniqueLevels);
+        params.push(...allowedLevels);
       }
     }
   }

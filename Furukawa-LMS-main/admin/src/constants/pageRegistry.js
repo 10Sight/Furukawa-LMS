@@ -255,6 +255,7 @@ export const PAGE_REGISTRY = [
     // { key: "incharges", label: "Incharges", labelKey: "nav.incharges", layout: "admin", link: "/admin/incharges", icon: "IconUserCheck" },
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     { key: "revision-table", label: "Revision Table", labelKey: "nav.revisionTable", layout: "admin", link: "/admin/revision-table", icon: "IconHistory" },
+    { key: "dept-revision-logs", label: "Dept. Revision Logs", labelKey: "nav.deptRevisionLogs", layout: "admin", link: "/admin/dept-revision-logs", icon: "IconHistory" },
     // { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
     { key: "learning", label: "Improvement Evidence", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
     { key: "data-management", label: "Data Management", labelKey: "nav.dataManagement", layout: "admin", link: "/admin/data-management", icon: "IconDatabase" },

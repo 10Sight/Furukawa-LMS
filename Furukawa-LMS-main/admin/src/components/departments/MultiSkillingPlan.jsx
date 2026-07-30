@@ -97,7 +97,7 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
                         <li
                             key={s._id || s.id}
                             onMouseDown={() => {
-                                onChange(s._id || s.id, s.fullName || s.name, s.lineName, s.subSectionName);
+                                onChange(s._id || s.id, s.fullName || s.name);
                                 handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
                                 setShowSuggestions(false);
                             }}
@@ -347,8 +347,8 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
             if (!savedSet.has(uid) && levelQualifies) {
                 const quarterFields = {};
                 QUARTERS.forEach(({ key }) => {
-                    quarterFields[`${key}ModelLine`] = s.lineName || "";
-                    quarterFields[`${key}Station`] = s.subSectionName || "";
+                    quarterFields[`${key}ModelLine`] = "";
+                    quarterFields[`${key}Station`] = "";
                     quarterFields[`${key}Skill`] = "";
                     quarterFields[`${key}Date`] = "";
                     quarterFields[`${key}DateActual`] = "";
@@ -393,17 +393,11 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                 if (!row.userId) return row;
                 const user = students.find(s => String(s._id || s.id) === String(row.userId));
                 if (user) {
-                    const quarterFields = {};
-                    QUARTERS.forEach(({ key }) => {
-                        quarterFields[`${key}ModelLine`] = row[`${key}ModelLine`] || user.lineName || "";
-                        quarterFields[`${key}Station`] = row[`${key}Station`] || user.subSectionName || "";
-                    });
                     return {
                         ...row,
                         userName: user.fullName || user.name || row.userName,
                         cardNo: user.cardNo || user.username || user.empId || row.cardNo,
                         shift: row.shift || user.shift || "",
-                        ...quarterFields,
                     };
                 }
                 return row;
@@ -478,12 +472,13 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         }));
     };
 
-    const handleUserSelect = (rowId, userId, userName, lineName, subSectionName) => {
+    const handleUserSelect = (rowId, userId, userName) => {
         handleRowFieldChange(rowId, "userId", userId);
         handleRowFieldChange(rowId, "userName", userName);
         QUARTERS.forEach(({ key }) => {
-            handleRowFieldChange(rowId, `${key}ModelLine`, lineName || "");
-            handleRowFieldChange(rowId, `${key}Station`, subSectionName || "");
+            handleRowFieldChange(rowId, `${key}ModelLine`, "");
+            handleRowFieldChange(rowId, `${key}Station`, "");
+            handleRowFieldChange(rowId, `${key}Skill`, "");
         });
     };
 
@@ -676,7 +671,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                                         <td className={`${stickyFrozenCell} left-[70px] w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`}>
                                             <UserCellSelector
                                                 value={row.userName}
-                                                onChange={(userId, userName, lineName, subSectionName) => handleUserSelect(rowId, userId, userName, lineName, subSectionName)}
+                                                onChange={(userId, userName) => handleUserSelect(rowId, userId, userName)}
                                                 students={students}
                                                 rowId={rowId}
                                                 handleRowFieldChange={handleRowFieldChange}

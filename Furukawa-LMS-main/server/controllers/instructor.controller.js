@@ -66,7 +66,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
   const courseIds = [...new Set(departments.map(d => d.course).filter(Boolean))];
   let publishedCoursesCount = 0;
   if (courseIds.length > 0) {
-    const [cRows] = await executeQuery("SELECT COUNT(*) as count FROM courses WHERE id IN (?) AND status = 'PUBLISHED'", [courseIds]);
+    const [cRows] = await executeQuery("SELECT COUNT(*) as count FROM courses WHERE id IN (?) AND (isDeleted = 0 OR isDeleted IS NULL)", [courseIds]);
     publishedCoursesCount = cRows[0].count;
   }
 
@@ -130,7 +130,7 @@ export const getAssignedCourses = asyncHandler(async (req, res) => {
     return res.json(new ApiResponse(200, { courses: [], totalPages: 0, currentPage: 1, total: 0 }, "No courses"));
   }
 
-  let sql = `SELECT * FROM courses WHERE id IN (?) AND status = 'PUBLISHED'`;
+  let sql = `SELECT * FROM courses WHERE id IN (?) AND (isDeleted = 0 OR isDeleted IS NULL)`;
   let params = [courseIds];
 
   if (search) {
@@ -138,7 +138,7 @@ export const getAssignedCourses = asyncHandler(async (req, res) => {
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
-  const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM courses WHERE id IN (?) AND status = 'PUBLISHED' ` + (search ? "AND (title LIKE ? OR description LIKE ? OR category LIKE ?)" : ""), params);
+  const [countRows] = await executeQuery(`SELECT COUNT(*) as total FROM courses WHERE id IN (?) AND (isDeleted = 0 OR isDeleted IS NULL) ` + (search ? "AND (title LIKE ? OR description LIKE ? OR category LIKE ?)" : ""), params);
   const total = countRows[0].total;
 
   sql += " ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
@@ -169,8 +169,8 @@ export const getCourseDetails = asyncHandler(async (req, res) => {
   const [depts] = await executeQuery("SELECT id FROM departments WHERE instructor = ? AND course = ?", [instructorId, courseId]);
   if (depts.length === 0) throw new ApiError("Access denied. Course not assigned to you.", 403);
 
-  const [rows] = await executeQuery("SELECT * FROM courses WHERE id = ? AND status = 'PUBLISHED'", [courseId]);
-  if (rows.length === 0) throw new ApiError("Course not found or not published", 404);
+  const [rows] = await executeQuery("SELECT * FROM courses WHERE id = ? AND (isDeleted = 0 OR isDeleted IS NULL)", [courseId]);
+  if (rows.length === 0) throw new ApiError("Course not found", 404);
   const course = rows[0];
 
   const [modules] = await executeQuery("SELECT * FROM modules WHERE course = ?", [courseId]);

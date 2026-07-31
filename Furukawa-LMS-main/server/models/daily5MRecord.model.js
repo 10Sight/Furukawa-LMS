@@ -2,13 +2,16 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class Daily5MRecord {
     constructor(data) {
         this.id = data.id;
         this.departmentId = data.departmentId;
         this.sectionId = data.sectionId;
-        this.date = data.date;
+        this.date = data.date instanceof Date
+            ? formatLocalDate(data.date)
+            : (data.date || null);
         this.shift = data.shift;
         this.line = data.line;
         this.formType = data.formType || 'standard';
@@ -486,10 +489,7 @@ class Daily5MRecord {
             // Ensure date is in YYYY-MM-DD format for grouping
             let dateStr = record.date;
             if (record.date instanceof Date) {
-                const year = record.date.getUTCFullYear();
-                const month = String(record.date.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(record.date.getUTCDate()).padStart(2, '0');
-                dateStr = `${year}-${month}-${day}`;
+                dateStr = formatLocalDate(record.date);
             } else if (typeof record.date === 'string' && record.date.includes('T')) {
                 dateStr = record.date.split('T')[0];
             }

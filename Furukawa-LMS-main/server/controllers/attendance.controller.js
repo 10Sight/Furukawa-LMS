@@ -6,6 +6,7 @@ import xlsx from "xlsx";
 import logger from "../logger/winston.logger.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 import { getEligibleUserSql } from "../utils/userEligibility.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 // export const uploadAttendance = async (req, res, next) => {
 //     try {
@@ -897,7 +898,7 @@ const formatMssqlTime = (val) => {
 
 const formatMssqlDate = (val) => {
     if (!val || !(val instanceof Date)) return val;
-    return val.toISOString().split('T')[0];
+    return formatLocalDate(val);
 };
 
 const isDashboardAttendanceDownload = (value) =>

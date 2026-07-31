@@ -8,6 +8,7 @@ import {
     saveMultiSkillingPlanConfig,
     getMultiSkillingPlanHistory,
     listMultiSkillingPlans,
+    deleteMultiSkillingPlan,
 } from "../controllers/multiSkillingPlan.controller.js";
 
 const router = Router();
@@ -55,6 +56,13 @@ router.get(
     "/history/:departmentId",
     authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
     getMultiSkillingPlanHistory
+);
+
+// Delete a multi-skilling plan by ID
+router.delete(
+    "/:id",
+    authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN"),
+    deleteMultiSkillingPlan
 );
 
 export default router;

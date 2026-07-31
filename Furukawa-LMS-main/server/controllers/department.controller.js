@@ -1037,11 +1037,6 @@ export const getDepartmentCourseContent = asyncHandler(async (req, res) => {
         return res.json(new ApiResponse(200, [], "Course not found"));
     }
 
-    if (c[0].status !== 'PUBLISHED') {
-        console.log("Debug: Course found but status is:", c[0].status);
-        // For testing, let's allow NON-published courses for now to verify data fetching works
-        // return res.json(new ApiResponse(200, [], `Course found but status is ${c[0].status} (must be PUBLISHED)`));
-    }
     const course = c[0];
 
     // Fetch Modules

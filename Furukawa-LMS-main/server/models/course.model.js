@@ -13,11 +13,9 @@ class Course {
         this.thumbnail = typeof data.thumbnail === 'string' ? JSON.parse(data.thumbnail) : (data.thumbnail || { publicId: "", url: "" });
         this.category = data.category;
         this.tags = typeof data.tags === 'string' ? JSON.parse(data.tags) : (data.tags || []);
-        this.instructor = data.instructor;
         this.students = typeof data.students === 'string' ? JSON.parse(data.students) : (data.students || []);
         this.price = data.price !== undefined ? data.price : 0;
         this.difficulty = data.difficulty || "BEGGINER";
-        this.status = data.status || "DRAFT";
         this.modules = typeof data.modules === 'string' ? JSON.parse(data.modules) : (data.modules || []);
         this.reviews = typeof data.reviews === 'string' ? JSON.parse(data.reviews) : (data.reviews || []);
         this.totalEnrollments = data.totalEnrollments !== undefined ? data.totalEnrollments : 0;
@@ -57,11 +55,10 @@ class Course {
                             thumbnail NVARCHAR(MAX),
                             category NVARCHAR(255) NOT NULL,
                             tags NVARCHAR(MAX),
-                            instructor INT NOT NULL,
+                            instructor INT NULL,
                             students NVARCHAR(MAX),
                             price DECIMAL(10, 2) DEFAULT 0,
                             difficulty NVARCHAR(50) DEFAULT 'BEGGINER',
-                            status NVARCHAR(50) DEFAULT 'DRAFT',
                             modules NVARCHAR(MAX),
                             reviews NVARCHAR(MAX),
                             totalEnrollments INT DEFAULT 0,
@@ -77,13 +74,23 @@ class Course {
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
                         );
-                        CREATE INDEX idx_instructor ON courses(instructor);
                         CREATE INDEX idx_category ON courses(category);
-                        CREATE INDEX idx_status ON courses(status);
                     END
                 `;
                 await executeQuery(query);
-                
+
+                // Self-healing migration: instructor is no longer required directly on a course
+                // (instructors are now associated via department.instructor instead)
+                await executeQuery(`
+                    IF EXISTS (
+                        SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = 'courses' AND COLUMN_NAME = 'instructor' AND IS_NULLABLE = 'NO'
+                    )
+                    BEGIN
+                        ALTER TABLE courses ALTER COLUMN instructor INT NULL;
+                    END
+                `);
+
                 // Manual migration check for columns using INFORMATION_SCHEMA
                 const columns = [
                     { name: 'departmentId', type: 'NVARCHAR(MAX)' },
@@ -139,9 +146,9 @@ class Course {
 
         const fields = [
             "title", "description", "thumbnail", "category", "tags",
-            "instructor", "students", "price", "difficulty", "status",
+            "students", "price", "difficulty",
             "modules", "reviews", "totalEnrollments", "averageRating",
-            "slug", "createdBy", "quizzes", "assignments", "resources", 
+            "slug", "createdBy", "quizzes", "assignments", "resources",
             "departmentId", "sectionId", "isDeleted", "createdAt"
         ];
 
@@ -228,7 +235,7 @@ class Course {
 
         const fields = [
             "title", "description", "thumbnail", "category", "tags",
-            "instructor", "students", "price", "difficulty", "status",
+            "students", "price", "difficulty",
             "modules", "reviews", "totalEnrollments", "averageRating",
             "slug", "createdBy", "quizzes", "assignments", "resources",
             "departmentId", "sectionId", "isDeleted"

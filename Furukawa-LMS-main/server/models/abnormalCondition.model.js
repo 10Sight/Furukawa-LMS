@@ -1,10 +1,13 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class AbnormalConditionSheet {
     constructor(data) {
         this.id = data.id;
         this.departmentId = data.departmentId;
-        this.date = data.date;
+        this.date = data.date instanceof Date
+            ? formatLocalDate(data.date)
+            : (data.date || null);
 
         // Dynamic sheet rows: default 15 rows of entries
         this.entries = typeof data.entries === 'string'

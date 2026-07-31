@@ -20,12 +20,6 @@ const populateCourse = async (course) => {
         if (u) course.createdBy = { id: u.id, fullName: u.fullName, email: u.email, role: u.role };
     }
 
-    // Instructor
-    if (course.instructor && typeof course.instructor !== 'object') {
-        const u = await User.findById(course.instructor);
-        if (u) course.instructor = { id: u.id, fullName: u.fullName, email: u.email };
-    }
-
     // Modules (if JSON or IDs)
     // Assuming modules stored as JSON array of objects or IDs. 
     // If IDs, fetch. If objects embedded in JSON column, fine.
@@ -93,9 +87,9 @@ const populateCourse = async (course) => {
 };
 
 export const createCourse = asyncHandler(async (req, res) => {
-    const { title, description, category, level, difficulty, modules, instructor, quizzes, assignments, departmentId, sectionId } = req.body;
+    const { title, description, category, level, difficulty, modules, quizzes, assignments, departmentId, sectionId } = req.body;
 
-    if (!title || !description || !instructor) {
+    if (!title || !description) {
         throw new ApiError("Title and description are required", 400);
     }
 
@@ -105,11 +99,9 @@ export const createCourse = asyncHandler(async (req, res) => {
         category,
         difficulty: difficulty || level, // Support both fields, prioritize difficulty
         modules: modules || [], // Assuming JSON column
-        instructor,
         quizzes: quizzes || [],
         assignments: assignments || [],
         createdBy: req.user.id,
-        status: 'DRAFT', // Default
         students: [],
         departmentId: departmentId || null,
         sectionId: sectionId || null
@@ -129,7 +121,7 @@ export const createCourse = asyncHandler(async (req, res) => {
 });
 
 export const getCourses = asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, category, level, search, status } = req.query;
+    const { page = 1, limit = 10, category, level, search, departmentId, sectionId } = req.query;
 
     const offset = (Number(page) - 1) * Number(limit);
     let whereClauses = [];
@@ -138,7 +130,14 @@ export const getCourses = asyncHandler(async (req, res) => {
     // Filters
     if (category && category.trim()) { whereClauses.push("category = ?"); params.push(category); }
     if (level && level.trim()) { whereClauses.push("difficulty = ?"); params.push(level); } // Map level query to difficulty col
-    if (status && status.trim()) { whereClauses.push("status = ?"); params.push(status); }
+    if (departmentId && departmentId.trim()) {
+        whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(departmentId) WHERE [value] = ?)");
+        params.push(departmentId);
+    }
+    if (sectionId && sectionId.trim()) {
+        whereClauses.push("EXISTS (SELECT 1 FROM OPENJSON(sectionId) WHERE [value] = ?)");
+        params.push(sectionId);
+    }
 
     // Soft Delete
     if (!req.query.includeDeleted || req.user.role !== "SUPERADMIN") {
@@ -203,7 +202,7 @@ export const updatedCourse = asyncHandler(async (req, res) => {
     // Update using model wrapper or raw SQL
     // req.body contains fields.
     // Filter allowed fields?
-    const allowed = ['title', 'description', 'category', 'difficulty', 'level', 'modules', 'instructor', 'quizzes', 'assignments', 'status', 'departmentId', 'sectionId'];
+    const allowed = ['title', 'description', 'category', 'difficulty', 'level', 'modules', 'quizzes', 'assignments', 'departmentId', 'sectionId'];
     Object.keys(req.body).forEach(k => {
         if (allowed.includes(k)) {
             if (k === 'level') {
@@ -245,24 +244,6 @@ export const deleteCourse = asyncHandler(async (req, res) => {
         details: { courseId: course.id, title: course.title },
     });
     return res.status(200).json(new ApiResponse(200, {}, "Course permanently deleted"));
-});
-
-export const togglePublishCourse = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-
-    const course = await Course.findById(id);
-    if (!course) throw new ApiError("Course not found", 404);
-
-    course.status = course.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED";
-    await course.save();
-
-    await Audit.create({
-        user: req.user.id,
-        action: course.status === "PUBLISHED" ? "PUBLISH_COURSE" : "UNPUBLISH_COURSE",
-        details: { courseId: course.id },
-    });
-
-    return res.status(200).json(new ApiResponse(200, course, `Course ${course.status === "PUBLISHED" ? "published" : "unpublished"} successfully`));
 });
 
 // Analytics
@@ -392,7 +373,6 @@ export const getCourseAnalytics = asyncHandler(async (req, res) => {
         courseInfo: {
             _id: course.id,
             title: course.title,
-            status: course.status,
             totalModules,
             totalEnrollments
         },

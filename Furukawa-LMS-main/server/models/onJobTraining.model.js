@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class OnJobTraining {
     constructor(data) {
@@ -27,7 +28,9 @@ class OnJobTraining {
 
         // Training Record Sheet Fields
         this.areaLine = data.areaLine;
-        this.trainingDate = data.trainingDate;
+        this.trainingDate = data.trainingDate instanceof Date
+            ? formatLocalDate(data.trainingDate)
+            : (data.trainingDate || null);
         this.trainingGivenBy = data.trainingGivenBy;
         this.trainingTopic = data.trainingTopic;
         this.trainingStartTime = data.trainingStartTime;

@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import migrationHelper from "../db/migrationHelper.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 // Mirrors normalizeContentStructure from EvaluationTestAttemptPage.jsx
 const normalizeContentStructure = (structure, fallbackTitle) => {
@@ -61,7 +62,9 @@ class EvaluationTestAttempt {
         this.createdBy = data.createdBy;
         this.createdAt = data.createdAt;
         this.isHandoverEligible = data.isHandoverEligible;
-        this.passedDate = data.passedDate;
+        this.passedDate = data.passedDate instanceof Date
+            ? formatLocalDate(data.passedDate)
+            : (data.passedDate || null);
 
         this.studentIsTemporary = data.studentIsTemporary;
         this.studentDeptId = data.studentDeptId;

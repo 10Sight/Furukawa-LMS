@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class HandoverSheet {
     constructor(data) {
@@ -6,7 +7,9 @@ class HandoverSheet {
         this.departmentId = data.departmentId;
         this.sectionId = data.sectionId;
         this.shift = data.shift;
-        this.date = data.date;
+        this.date = data.date instanceof Date
+            ? formatLocalDate(data.date)
+            : (data.date || null);
 
         // Array of entries: { studentId, marks, process, mentor, interview1, interview2 }
         this.entries = typeof data.entries === 'string'

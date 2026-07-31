@@ -1,12 +1,15 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class LineRequirement {
     constructor(data) {
         this.id = data.id;
         this.lineId = data.lineId;
         this.sectionId = data.sectionId;
-        this.requirementDate = data.requirementDate;
+        this.requirementDate = data.requirementDate instanceof Date
+            ? formatLocalDate(data.requirementDate)
+            : (data.requirementDate || null);
         this.requirementMonth = data.requirementMonth;
         this.requirementYear = data.requirementYear;
         this.fn01 = data.fn01 || 0;
@@ -145,7 +148,12 @@ class LineRequirement {
         if (filters.date) { sql += " AND lr.requirementDate = ?"; params.push(filters.date); }
 
         const [rows] = await executeQuery(sql, params);
-        return rows;
+        return rows.map(row => ({
+            ...row,
+            requirementDate: row.requirementDate instanceof Date
+                ? formatLocalDate(row.requirementDate)
+                : row.requirementDate
+        }));
     }
 }
 

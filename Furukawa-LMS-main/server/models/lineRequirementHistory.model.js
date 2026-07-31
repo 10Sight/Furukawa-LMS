@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class LineRequirementHistory {
     constructor(data) {
@@ -12,7 +13,9 @@ class LineRequirementHistory {
         this.oldQuantity = data.oldQuantity;
         this.newQuantity = data.newQuantity;
         this.type = data.type;
-        this.requirementDate = data.requirementDate;
+        this.requirementDate = data.requirementDate instanceof Date
+            ? formatLocalDate(data.requirementDate)
+            : (data.requirementDate || null);
         this.requirementMonth = data.requirementMonth;
         this.requirementYear = data.requirementYear;
         this.changedBy = data.changedBy;
@@ -102,7 +105,12 @@ class LineRequirementHistory {
             ORDER BY h.createdAt DESC
         `;
         const [rows] = await executeQuery(query, [lineId]);
-        return rows;
+        return rows.map(row => ({
+            ...row,
+            requirementDate: row.requirementDate instanceof Date
+                ? formatLocalDate(row.requirementDate)
+                : row.requirementDate
+        }));
     }
 }
 

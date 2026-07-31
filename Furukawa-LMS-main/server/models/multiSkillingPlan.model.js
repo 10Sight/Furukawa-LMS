@@ -199,6 +199,12 @@ class MultiSkillingPlan {
         if (rows.length === 0) return null;
         return this.findByHierarchy(departmentId, sectionId, year);
     }
+
+    static async deleteById(id) {
+        const query = "DELETE FROM multi_skilling_plans WHERE id = ?";
+        await executeQuery(query, [id]);
+        return true;
+    }
 }
 
 // Initialize the multi_skilling_plans table

@@ -93,7 +93,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const [activeDeptRows] = await executeQuery("SELECT COUNT(*) as count FROM departments WHERE status = 'ONGOING' AND (isDeleted = 0 OR isDeleted IS NULL)");
         const activeDepartments = activeDeptRows[0].count;
 
-        const publishedCourses = await Course.countDocuments({ status: "PUBLISHED" });
+        const [publishedCourseRows] = await executeQuery("SELECT COUNT(*) as count FROM courses WHERE (isDeleted = 0 OR isDeleted IS NULL)");
+        const publishedCourses = publishedCourseRows[0].count;
 
         // Recent activity
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

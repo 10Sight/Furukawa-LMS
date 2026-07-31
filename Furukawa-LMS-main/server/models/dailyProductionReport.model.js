@@ -1,13 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
-
-// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
-const formatLocalDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class DailyProductionReport {
     constructor(data) {

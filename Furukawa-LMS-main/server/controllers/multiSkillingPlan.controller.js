@@ -127,3 +127,15 @@ export const listMultiSkillingPlans = asyncHandler(async (req, res) => {
         new ApiResponse(200, plans, "Multi-skilling plans list fetched successfully")
     );
 });
+
+// Delete a multi-skilling plan by ID
+export const deleteMultiSkillingPlan = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id) throw new ApiError("Plan ID is required", 400);
+
+    await MultiSkillingPlan.deleteById(parseInt(id));
+
+    return res.status(200).json(
+        new ApiResponse(200, null, "Multi skilling plan deleted successfully")
+    );
+});

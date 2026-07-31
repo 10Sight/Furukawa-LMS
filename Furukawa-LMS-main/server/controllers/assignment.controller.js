@@ -92,7 +92,7 @@ export const createAssignment = asyncHandler(async (req, res) => {
         dueDate,
         maxScore: maxScore || 100,
         allowResubmission: allowResubmission !== undefined ? allowResubmission : true,
-        instructor: course.instructor || req.user.id,
+        instructor: req.user.id,
         createdBy: req.user.id,
         course: resolvedCourseId,
         courseId: resolvedCourseId,

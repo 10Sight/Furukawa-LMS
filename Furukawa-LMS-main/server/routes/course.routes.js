@@ -5,7 +5,6 @@ import {
     getCourseById,
     updatedCourse,
     deleteCourse,
-    togglePublishCourse,
     getCourseAnalytics,
     getCourseStudents,
     getSoftDeletedCourses,
@@ -28,6 +27,5 @@ router.get("/:id/analytics", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "
 router.get("/:id/students", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "course:update"), getCourseStudents);
 router.put("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "course:update"), updatedCourse);
 router.delete("/:id", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "SUPERADMIN", "course:delete"), deleteCourse);
-router.patch("/:id/toggle-publish", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "course:publish"), togglePublishCourse);
 
 export default router;

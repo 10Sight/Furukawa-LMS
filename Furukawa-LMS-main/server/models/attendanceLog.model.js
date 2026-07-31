@@ -1,4 +1,5 @@
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class AttendanceLog {
     constructor(data) {
@@ -7,6 +8,9 @@ class AttendanceLog {
         this.payCode = data.payCode;
         this.cardNo = data.cardNo;
         this.employeeName = data.employeeName;
+        this.date = data.date instanceof Date
+            ? formatLocalDate(data.date)
+            : (data.date || null);
         this.department = data.department;
         this.designation = data.designation;
         this.shift = data.shift;
@@ -165,7 +169,7 @@ class AttendanceLog {
         request.input('start', sql.Date, startDate);
         request.input('end', sql.Date, endDate);
         const result = await request.query("SELECT * FROM attendance_logs WHERE [date] BETWEEN @start AND @end ORDER BY [date] ASC");
-        return result.recordset;
+        return result.recordset.map(row => new AttendanceLog(row));
     }
 }
 

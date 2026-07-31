@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class TenCycleSheet {
     constructor(data) {
@@ -8,7 +9,9 @@ class TenCycleSheet {
         this.lineId = data.lineId;
         this.subSectionId = data.subSectionId;
         this.formType = data.formType || "form1";
-        this.createdDate = data.createdDate;
+        this.createdDate = data.createdDate instanceof Date
+            ? formatLocalDate(data.createdDate)
+            : (data.createdDate || null);
         this.qualityEngineer = data.qualityEngineer || "";
         this.qualityEngineerSign = data.qualityEngineerSign || "";
         this.dojoEngineer = data.dojoEngineer || "";

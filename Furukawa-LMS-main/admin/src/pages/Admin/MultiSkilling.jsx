@@ -105,6 +105,10 @@ const MultiSkilling = () => {
     const [createLine, setCreateLine] = useState("");
     const [createYear, setCreateYear] = useState(new Date().getFullYear().toString());
 
+    // Delete Plan confirmation state
+    const [deletePlanConfirmId, setDeletePlanConfirmId] = useState(null);
+    const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+
     // Years list helper (last 2 years, current, and next 4 years)
     const yearsList = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -122,12 +126,12 @@ const MultiSkilling = () => {
     const { data: studentsData } = useGetAllStudentsQuery({
         departmentId: dept,
         sectionId: section,
-        lineId: line,
+        lineId: (line && line !== "all") ? line : undefined,
         filterMultiSkillingLevels: "true",
         includeTemporary: "true",
         limit: 1000
     }, {
-        skip: !dept || !section || !line,
+        skip: !dept || !section,
         refetchOnMountOrArgChange: true
     });
 
@@ -173,10 +177,11 @@ const MultiSkilling = () => {
     }, [selectedPlan]);
 
     const handleCreatePlanSubmit = async () => {
-        if (!createDept || !createSection || !createLine || !createYear) {
-            toast.error("Please select Department, Section, Line, and Year.");
+        if (!createDept || !createSection || !createYear) {
+            toast.error("Please select Department, Section, and Year.");
             return;
         }
+        const effectiveCreateLine = (createLine && createLine !== "none") ? createLine : "";
         try {
             const existingPlansResponse = await axiosInstance.get('/api/multi-skilling-plan/list', {
                 params: { departmentId: createDept, sectionId: createSection }
@@ -189,7 +194,7 @@ const MultiSkilling = () => {
                 // instead of re-creating it (which would upsert tableData:{} and wipe the existing data).
                 setDept(createDept);
                 setSection(createSection);
-                setLine(createLine);
+                setLine(effectiveCreateLine);
                 setYear(createYear);
                 setIsCreateOpen(false);
                 setSelectedPlan(duplicate);
@@ -205,7 +210,7 @@ const MultiSkilling = () => {
             if (response.data.success) {
                 setDept(createDept);
                 setSection(createSection);
-                setLine(createLine);
+                setLine(effectiveCreateLine);
                 setYear(createYear);
                 setIsCreateOpen(false);
                 toast.success(`Multi-Skilling Plan created successfully for Year ${createYear}`);
@@ -219,6 +224,24 @@ const MultiSkilling = () => {
         } catch (error) {
             console.error("Error creating plan:", error);
             toast.error(error?.response?.data?.message || "Failed to create plan.");
+        }
+    };
+
+    const handleDeletePlan = async () => {
+        if (!deletePlanConfirmId) return;
+        try {
+            setIsDeletingPlan(true);
+            const response = await axiosInstance.delete(`/api/multi-skilling-plan/${deletePlanConfirmId}`);
+            if (response.data.success) {
+                toast.success("Multi-Skilling Plan deleted successfully");
+                setDeletePlanConfirmId(null);
+                fetchPlansList();
+            }
+        } catch (error) {
+            console.error("Error deleting plan:", error);
+            toast.error(error?.response?.data?.message || "Failed to delete plan.");
+        } finally {
+            setIsDeletingPlan(false);
         }
     };
     const departments = useMemo(() => {
@@ -509,6 +532,7 @@ const MultiSkilling = () => {
                                             <SelectValue placeholder="Select Line" />
                                         </SelectTrigger>
                                         <SelectContent>
+                                            <SelectItem value="all">All Lines (Optional)</SelectItem>
                                             {lines.map((l) => (
                                                 <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                             ))}
@@ -520,7 +544,7 @@ const MultiSkilling = () => {
                     </Card>
 
                     {/* Training Plan Sheet / List Table */}
-                    {dept && section && line ? (
+                    {dept && section ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
                             {selectedPlan ? (
                                 <div className="space-y-4">
@@ -538,7 +562,7 @@ const MultiSkilling = () => {
                                         students={students}
                                         departmentId={dept}
                                         sectionId={section}
-                                        lineId={line}
+                                        lineId={(line && line !== "all") ? line : ""}
                                         lineName={selectedLineName}
                                         year={selectedPlan.year}
                                     />
@@ -580,7 +604,8 @@ const MultiSkilling = () => {
                                                             <th className="p-3">Year</th>
                                                             <th className="p-3">Document No</th>
                                                             <th className="p-3">Created By</th>
-                                                            <th className="p-3 pr-4">Last Updated By</th>
+                                                            <th className="p-3">Last Updated By</th>
+                                                            {isAdmin && <th className="p-3 pr-4 text-center">Action</th>}
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -596,7 +621,20 @@ const MultiSkilling = () => {
                                                                 <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
                                                                 <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
                                                                 <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
-                                                                <td className="p-3 pr-4 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                                <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                                {isAdmin && (
+                                                                    <td className="p-3 pr-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                        <Button
+                                                                            size="xs"
+                                                                            variant="outline"
+                                                                            className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
+                                                                            title="Delete Plan"
+                                                                            onClick={() => setDeletePlanConfirmId(plan.id)}
+                                                                        >
+                                                                            <Trash2 className="h-3 w-3" /> Delete
+                                                                        </Button>
+                                                                    </td>
+                                                                )}
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -614,7 +652,7 @@ const MultiSkilling = () => {
                             </div>
                             <h3 className="text-xl font-bold text-slate-700">Select Hierarchy</h3>
                             <p className="text-sm text-slate-500 max-w-xs text-center mt-3 leading-relaxed">
-                                Choose a department, section, and line to view and manage the multi-skilling training plan.
+                                Choose a department and section (line is optional) to view and manage the multi-skilling training plan.
                             </p>
                         </div>
                     )}
@@ -1048,6 +1086,7 @@ const MultiSkilling = () => {
                                     <SelectValue placeholder="Select Line" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="none">None (Optional)</SelectItem>
                                     {createLines.map((l) => (
                                         <SelectItem key={l.id || l._id} value={String(l.id || l._id)}>{l.name}</SelectItem>
                                     ))}
@@ -1075,7 +1114,7 @@ const MultiSkilling = () => {
                         <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="h-10 text-sm">Cancel</Button>
                         <Button
                             onClick={handleCreatePlanSubmit}
-                            disabled={!createDept || !createSection || !createLine}
+                            disabled={!createDept || !createSection}
                             className="bg-amber-500 hover:bg-amber-600 text-white font-bold h-10 px-5 rounded-lg text-sm"
                         >
                             Create
@@ -1109,6 +1148,28 @@ const MultiSkilling = () => {
                             }}
                         >
                             Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Multi-Skilling Plan Confirm Dialog */}
+            <Dialog open={!!deletePlanConfirmId} onOpenChange={(open) => { if (!open) setDeletePlanConfirmId(null); }}>
+                <DialogContent className="bg-white rounded-xl shadow-lg border border-slate-200">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-slate-800">Delete Multi-Skilling Plan</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-slate-600">
+                        Are you sure you want to permanently delete this multi-skilling plan? This will remove all associate tracking rows, planned dates, actual dates, and status fields stored within it. This action cannot be undone.
+                    </p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeletePlanConfirmId(null)} className="border-slate-200">Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            disabled={isDeletingPlan}
+                            onClick={handleDeletePlan}
+                        >
+                            {isDeletingPlan ? "Deleting..." : "Delete"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

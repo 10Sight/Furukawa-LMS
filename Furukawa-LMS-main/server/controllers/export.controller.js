@@ -50,12 +50,11 @@ const sendPDF = (res, filename, title, columns, rows) => {
 };
 
 export const exportCourses = asyncHandler(async (req, res) => {
-  const { format = 'excel', search = '', status = '', category = '' } = req.query;
+  const { format = 'excel', search = '', category = '' } = req.query;
 
   let sql = `
-    SELECT c.title, c.category, c.difficulty, c.status, c.totalEnrollments, c.createdAt, u.fullName as instructorName 
-    FROM courses c 
-    LEFT JOIN users u ON c.instructor = u.id 
+    SELECT c.title, c.category, c.difficulty, c.totalEnrollments, c.createdAt
+    FROM courses c
     WHERE (c.isDeleted IS NULL OR c.isDeleted = 0)
   `;
   const params = [];
@@ -63,10 +62,6 @@ export const exportCourses = asyncHandler(async (req, res) => {
   if (search) {
     sql += " AND (c.title LIKE ? OR c.description LIKE ?)";
     params.push(`%${search}%`, `%${search}%`);
-  }
-  if (status) {
-    sql += " AND c.status = ?";
-    params.push(status);
   }
   if (category) {
     sql += " AND c.category = ?";
@@ -81,8 +76,6 @@ export const exportCourses = asyncHandler(async (req, res) => {
     { header: 'Title', key: 'title', width: 30 },
     { header: 'Category', key: 'category', width: 18 },
     { header: 'Difficulty', key: 'difficulty', width: 14 },
-    { header: 'Status', key: 'status', width: 12 },
-    { header: 'Instructor', key: 'instructorName', width: 24 },
     { header: 'Enrollments', key: 'totalEnrollments', width: 12 },
     { header: 'Created At', key: 'createdAt', width: 22 },
   ];
@@ -91,8 +84,6 @@ export const exportCourses = asyncHandler(async (req, res) => {
     title: c.title,
     category: c.category,
     difficulty: c.difficulty,
-    status: c.status,
-    instructorName: c.instructorName || '',
     totalEnrollments: c.totalEnrollments || 0,
     createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : '',
   }));

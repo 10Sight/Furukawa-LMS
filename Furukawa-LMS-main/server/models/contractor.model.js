@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 class Contractor {
     constructor(data) {
@@ -9,7 +10,9 @@ class Contractor {
         this.location = data.location || null;
         this.phoneNumber = data.phoneNumber || null;
         this.email = data.email || null;
-        this.startDate = data.startDate ? new Date(data.startDate) : null;
+        this.startDate = data.startDate instanceof Date
+            ? formatLocalDate(data.startDate)
+            : (data.startDate || null);
         this.status = data.status || 'active';
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;

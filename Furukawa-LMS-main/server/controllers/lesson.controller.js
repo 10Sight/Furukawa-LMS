@@ -3,6 +3,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import Lesson from "../models/lesson.model.js";
+import { normalizeElement, normalizeSlide } from "../utils/lessonNormalizers.js";
 
 // Helper to normalize slides (moved logic inside respective functions or kept simple)
 // Helper to parse JSON safely
@@ -31,33 +32,7 @@ export const createLesson = asyncHandler(async (req, res) => {
   // Normalize slides if provided
   let normalizedSlides = [];
   if (Array.isArray(slides)) {
-    normalizedSlides = slides.map((s, idx) => ({
-      id: s.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      _id: s._id || s.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`, // Maintain _id for frontend compatibility
-      order: typeof s.order === 'number' ? s.order : idx + 1,
-      contentHtml: String(s.contentHtml || ''),
-      bgColor: s.bgColor || '#ffffff',
-      images: Array.isArray(s.images) ? s.images.map(img => ({
-        url: img.url,
-        public_id: img.public_id,
-        alt: img.alt || ''
-      })) : [],
-      elements: Array.isArray(s.elements) ? s.elements.map(el => ({
-        id: String(el.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
-        type: el.type,
-        xPct: Number(el.xPct ?? 10),
-        yPct: Number(el.yPct ?? 10),
-        wPct: Number(el.wPct ?? 20),
-        hPct: Number(el.hPct ?? 10),
-        rotation: Number(el.rotation ?? 0),
-        text: el.text,
-        fill: el.fill,
-        stroke: el.stroke,
-        url: el.url,
-        alt: el.alt,
-        aspectRatio: typeof el.aspectRatio === 'number' ? el.aspectRatio : undefined,
-      })) : []
-    }));
+    normalizedSlides = slides.map(normalizeSlide);
   }
 
   // Back-compat: if slides provided but content missing, set content from first slide
@@ -168,33 +143,7 @@ export const updateLesson = asyncHandler(async (req, res) => {
   if (typeof order !== 'undefined') { updateFields.push("[order] = ?"); updateValues.push(order); }
 
   if (Array.isArray(slides)) {
-    const normalizedSlides = slides.map((s, idx) => ({
-      id: s.id || s._id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      _id: s._id || s.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      order: typeof s.order === 'number' ? s.order : idx + 1,
-      contentHtml: String(s.contentHtml || ''),
-      bgColor: s.bgColor || '#ffffff',
-      images: Array.isArray(s.images) ? s.images.map(img => ({
-        url: img.url,
-        public_id: img.public_id,
-        alt: img.alt || ''
-      })) : [],
-      elements: Array.isArray(s.elements) ? s.elements.map(el => ({
-        id: String(el.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
-        type: el.type,
-        xPct: Number(el.xPct ?? 10),
-        yPct: Number(el.yPct ?? 10),
-        wPct: Number(el.wPct ?? 20),
-        hPct: Number(el.hPct ?? 10),
-        rotation: Number(el.rotation ?? 0),
-        text: el.text,
-        fill: el.fill,
-        stroke: el.stroke,
-        url: el.url,
-        alt: el.alt,
-        aspectRatio: typeof el.aspectRatio === 'number' ? el.aspectRatio : undefined,
-      })) : []
-    }));
+    const normalizedSlides = slides.map(normalizeSlide);
     updateFields.push("slides = ?");
     updateValues.push(JSON.stringify(normalizedSlides));
 
@@ -258,21 +207,7 @@ export const addSlide = asyncHandler(async (req, res) => {
     contentHtml: String(contentHtml || ''),
     bgColor: bgColor || '#ffffff',
     images: Array.isArray(images) ? images.map(img => ({ url: img.url, public_id: img.public_id, alt: img.alt || '' })) : [],
-    elements: Array.isArray(elements) ? elements.map(el => ({
-      id: String(el.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
-      type: el.type,
-      xPct: Number(el.xPct ?? 10),
-      yPct: Number(el.yPct ?? 10),
-      wPct: Number(el.wPct ?? 20),
-      hPct: Number(el.hPct ?? 10),
-      rotation: Number(el.rotation ?? 0),
-      text: el.text,
-      fill: el.fill,
-      stroke: el.stroke,
-      url: el.url,
-      alt: el.alt,
-      aspectRatio: typeof el.aspectRatio === 'number' ? el.aspectRatio : undefined,
-    })) : [],
+    elements: Array.isArray(elements) ? elements.map(normalizeElement) : [],
   };
 
   const newSlides = [...currentSlides, slide].sort((a, b) => (a.order || 0) - (b.order || 0)).map((s, i) => ({ ...s, order: i + 1 }));
@@ -304,21 +239,7 @@ export const updateSlide = asyncHandler(async (req, res) => {
   if (typeof contentHtml !== 'undefined') slides[sIdx].contentHtml = String(contentHtml || '');
   if (typeof bgColor !== 'undefined') slides[sIdx].bgColor = bgColor || '#ffffff';
   if (Array.isArray(images)) slides[sIdx].images = images.map(img => ({ url: img.url, public_id: img.public_id, alt: img.alt || '' }));
-  if (Array.isArray(elements)) slides[sIdx].elements = elements.map(el => ({
-    id: String(el.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
-    type: el.type,
-    xPct: Number(el.xPct ?? 10),
-    yPct: Number(el.yPct ?? 10),
-    wPct: Number(el.wPct ?? 20),
-    hPct: Number(el.hPct ?? 10),
-    rotation: Number(el.rotation ?? 0),
-    text: el.text,
-    fill: el.fill,
-    stroke: el.stroke,
-    url: el.url,
-    alt: el.alt,
-    aspectRatio: typeof el.aspectRatio === 'number' ? el.aspectRatio : undefined,
-  }));
+  if (Array.isArray(elements)) slides[sIdx].elements = elements.map(normalizeElement);
   if (typeof order === 'number') slides[sIdx].order = order;
 
   // Normalize order

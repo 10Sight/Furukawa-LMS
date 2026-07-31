@@ -15,6 +15,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
 import logAudit from "../utils/auditLogger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 const normalizeParam = (val) => {
     if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
@@ -1907,8 +1908,13 @@ export const getHandoverSheetsMonitoring = asyncHandler(async (req, res) => {
         ORDER BY hs.date DESC, hs.createdAt DESC
     `, params);
 
+    const formattedRows = rows.map(row => ({
+        ...row,
+        date: row.date instanceof Date ? formatLocalDate(row.date) : row.date
+    }));
+
     return res.status(200).json(
-        new ApiResponse(200, rows, "Handover sheet monitoring data fetched successfully")
+        new ApiResponse(200, formattedRows, "Handover sheet monitoring data fetched successfully")
     );
 });
 
@@ -1982,7 +1988,12 @@ export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
         ORDER BY hs.date DESC, hs.createdAt DESC
     `, [studentId]);
 
+    const formattedRows = rows.map(row => ({
+        ...row,
+        date: row.date instanceof Date ? formatLocalDate(row.date) : row.date
+    }));
+
     res.status(200).json(
-        new ApiResponse(200, rows, "Student handover history fetched successfully")
+        new ApiResponse(200, formattedRows, "Student handover history fetched successfully")
     );
 });

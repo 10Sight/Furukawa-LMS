@@ -22,9 +22,18 @@ if (typeof highcharts3d === 'function') {
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8', '#8b5cf6']; // Green (Present), Amber (Leave), Red (Left)
 
+// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
+const formatDate = (date) => {
+    if (!date || isNaN(date)) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
-const MONTH_END = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
+const MONTH_END = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1, 0));
 
 // Default under-the-hood date range per timeframe, used when the visible inputs are left blank.
 const getDefaultDates = (timeframe) => {
@@ -33,8 +42,8 @@ const getDefaultDates = (timeframe) => {
         const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         return {
-            rawStart: firstOfMonth.toISOString().split('T')[0],
-            rawEnd: lastOfMonth.toISOString().split('T')[0],
+            rawStart: formatDate(firstOfMonth),
+            rawEnd: formatDate(lastOfMonth),
         };
     }
     if (timeframe === 'monthly') {

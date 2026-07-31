@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
+import { displayDate } from '@/utils/dateUtils';
 
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,7 +57,7 @@ const SHIFTS = [
 
 const formatDate = (dateStr) => {
     if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    return displayDate(dateStr);
 };
 
 const HandoverSheetsTable = ({ rows, loading, selectedIds, onToggleSelect, onToggleSelectAll, onRowClick, onEdit, onDelete, canManage, canDelete }) => {

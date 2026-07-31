@@ -14,6 +14,7 @@ import sendMail from "../utils/mail.util.js";
 import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -314,6 +315,9 @@ export const formatUser = (u) => {
   const formatted = {
     ...u,
     _id: u.id,
+    expectedHandover: u.expectedHandover instanceof Date
+      ? formatLocalDate(u.expectedHandover)
+      : (u.expectedHandover || null),
     ...(marksPercent !== undefined ? { marks: marksPercent } : {}),
     contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
@@ -2403,7 +2407,7 @@ export const getMentorMentees = asyncHandler(async (req, res) => {
       marks: entry.marks || null,
       interview1: entry.interview1 || null,
       interview2: entry.interview2 || null,
-      sheetDate: entry.sheetDate,
+      sheetDate: entry.sheetDate instanceof Date ? formatLocalDate(entry.sheetDate) : entry.sheetDate,
     };
   });
 

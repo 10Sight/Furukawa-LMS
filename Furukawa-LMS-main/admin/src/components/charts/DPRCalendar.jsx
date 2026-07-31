@@ -7,8 +7,16 @@ const MONTHS = [
     'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
+const formatDate = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 const DPRCalendar = ({ selectedDate, onDateSelect, filledDates = [], viewMonth, viewYear, onMonthChange }) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDate(new Date());
     const filledSet = useMemo(() => new Set(filledDates), [filledDates]);
 
     const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay();

@@ -5,6 +5,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -42,7 +43,13 @@ export const getLineRequirements = asyncHandler(async (req, res) => {
     if (lineId) { sql += " AND l.id = ?"; params.push(lineId); }
     sql += " ORDER BY d.name, s.name, l.name";
 
-    const [rows] = await executeQuery(sql, params);
+    const [rawRows] = await executeQuery(sql, params);
+    const rows = rawRows.map(row => ({
+        ...row,
+        requirementDate: row.requirementDate instanceof Date
+            ? formatLocalDate(row.requirementDate)
+            : row.requirementDate
+    }));
 
     // Detect requirements table schema — all critical columns checked in one round-trip
     const [colCheck] = await executeQuery(`

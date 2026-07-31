@@ -58,9 +58,17 @@ const CHARTS = [
     },
 ];
 
+// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
+const formatDate = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 // ─── Main component ──────────────────────────────────────────────────────────
 const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDate(new Date());
 
     const [selectedDate, setSelectedDate] = useState(dashboardDate || today);
     const [activeChart, setActiveChart] = useState(null);

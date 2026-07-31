@@ -11,9 +11,18 @@ import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
 import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
+// Formats a Date using local calendar fields, avoiding the UTC day-shift toISOString() causes in IST.
+const formatDate = (date) => {
+    if (!date || isNaN(date)) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 const _now         = new Date();
 const CURRENT_YEAR = _now.getFullYear();
-const MONTH_END    = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).toISOString().split('T')[0];
+const MONTH_END    = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1, 0));
 
 const CONTRACTOR_COLORS = [
     '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
@@ -27,7 +36,7 @@ const getDefaultDates = (timeframe) => {
     if (timeframe === 'daily') {
         const first = new Date(now.getFullYear(), now.getMonth(), 1);
         const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        return { rawStart: first.toISOString().split('T')[0], rawEnd: last.toISOString().split('T')[0] };
+        return { rawStart: formatDate(first), rawEnd: formatDate(last) };
     }
     if (timeframe === 'monthly') {
         const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
@@ -87,7 +96,7 @@ const buildPeriodList = (groupBy, start, end) => {
         const cur  = new Date(`${start}T00:00:00`);
         const last = new Date(`${end}T00:00:00`);
         while (cur <= last) {
-            periods.push(cur.toISOString().split('T')[0]);
+            periods.push(formatDate(cur));
             cur.setDate(cur.getDate() + 1);
         }
     } else if (groupBy === 'monthly') {

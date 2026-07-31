@@ -4,6 +4,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -87,6 +88,7 @@ export const createOnJobTraining = async (req, res, next) => {
 
         const ojt = rows[0];
         if (ojt) {
+            ojt.trainingDate = ojt.trainingDate instanceof Date ? formatLocalDate(ojt.trainingDate) : ojt.trainingDate;
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
             ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
@@ -157,6 +159,7 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
         ]);
 
         const formatted = ojts.map(ojt => {
+            ojt.trainingDate = ojt.trainingDate instanceof Date ? formatLocalDate(ojt.trainingDate) : ojt.trainingDate;
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
             ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
@@ -166,7 +169,7 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
             ojt.line = ojt.line ? { id: ojt.line, name: ojt.lineName } : null;
             ojt.subSection = ojt.subSection ? { id: ojt.subSection, name: ojt.subSectionName } : null;
             ojt.machine = ojt.machine ? { id: ojt.machine, name: ojt.machineName, machineName: ojt.machineDisplayName } : null;
-            
+
             delete ojt.deptName; delete ojt.sectionName; delete ojt.lineName; delete ojt.subSectionName;
             delete ojt.machineName; delete ojt.machineDisplayName;
             return ojt;
@@ -223,6 +226,7 @@ export const getOnJobTrainingById = async (req, res, next) => {
         }
 
         const ojt = rows[0];
+        ojt.trainingDate = ojt.trainingDate instanceof Date ? formatLocalDate(ojt.trainingDate) : ojt.trainingDate;
         ojt.entries = parseJSON(ojt.entries, []);
         ojt.scoring = parseJSON(ojt.scoring, null);
         ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
@@ -310,6 +314,7 @@ export const getOnJobTrainingByShareToken = async (req, res, next) => {
         }
 
         const ojt = rows[0];
+        ojt.trainingDate = ojt.trainingDate instanceof Date ? formatLocalDate(ojt.trainingDate) : ojt.trainingDate;
         ojt.entries = parseJSON(ojt.entries, []);
         ojt.scoring = parseJSON(ojt.scoring, null);
         ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
@@ -396,6 +401,7 @@ export const getAllOnJobTrainings = async (req, res, next) => {
         const [ojts] = await executeQuery(queryStr, params);
 
         const formatted = ojts.map(ojt => {
+            ojt.trainingDate = ojt.trainingDate instanceof Date ? formatLocalDate(ojt.trainingDate) : ojt.trainingDate;
             ojt.entries = parseJSON(ojt.entries, []);
             ojt.scoring = parseJSON(ojt.scoring, null);
             ojt.attendanceRecords = parseJSON(ojt.attendanceRecords, []);
@@ -486,6 +492,7 @@ export const updateOnJobTraining = async (req, res, next) => {
         const updatedOJT = updatedRows[0];
 
         if (updatedOJT) {
+            updatedOJT.trainingDate = updatedOJT.trainingDate instanceof Date ? formatLocalDate(updatedOJT.trainingDate) : updatedOJT.trainingDate;
             updatedOJT.entries = parseJSON(updatedOJT.entries, []);
             updatedOJT.scoring = parseJSON(updatedOJT.scoring, null);
             updatedOJT.attendanceRecords = parseJSON(updatedOJT.attendanceRecords, []);

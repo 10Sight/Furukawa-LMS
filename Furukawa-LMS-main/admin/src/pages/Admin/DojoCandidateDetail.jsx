@@ -487,7 +487,7 @@ const DojoCandidateDetail = () => {
                     {handoverHistory.map((entry) => (
                       <TableRow key={`${entry.id}-${entry.date}`} className="hover:bg-slate-50/50">
                         <TableCell className="text-xs text-slate-600 whitespace-nowrap">
-                          {entry.date ? new Date(entry.date).toLocaleDateString() : "—"}
+                          {entry.date ? displayDate(entry.date) : "—"}
                         </TableCell>
                         <TableCell className="text-xs font-medium">{entry.departmentName || "—"}</TableCell>
                         <TableCell className="text-xs text-slate-500">{entry.sectionName || "—"}</TableCell>

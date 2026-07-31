@@ -26,19 +26,6 @@ const InstructorCourses = ({ instructorId }) => {
   const courses = data?.data?.courses || [];
   const totalPages = data?.data?.totalPages || 1;
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case "PUBLISHED":
-        return <Badge variant="success">Published</Badge>;
-      case "DRAFT":
-        return <Badge variant="secondary">Draft</Badge>;
-      case "ARCHIVED":
-        return <Badge variant="outline">Archived</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
-    }
-  };
-
   const getLevelBadge = (difficulty) => {
     switch (difficulty) {
       case "BEGINNER":
@@ -92,7 +79,6 @@ const InstructorCourses = ({ instructorId }) => {
                 <TableHead>Title</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Level</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -104,7 +90,6 @@ const InstructorCourses = ({ instructorId }) => {
                     <Badge variant="outline">{course.category}</Badge>
                   </TableCell>
                   <TableCell>{getLevelBadge(course.level)}</TableCell>
-                  <TableCell>{getStatusBadge(course.status)}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

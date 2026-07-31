@@ -23,8 +23,6 @@ import {
   IconClipboardList,
   IconHelpCircle,
   IconPaperclip,
-  IconEye,
-  IconEyeOff,
   IconCalendar,
   IconUsers,
   IconClock,
@@ -40,7 +38,6 @@ import {
   IconFileCheck,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import {
   Table,
@@ -108,27 +105,6 @@ const InstructorCourseDetailPage = () => {
     quizzesLoading ||
     assignmentsLoading ||
     submissionsLoading;
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      PUBLISHED: { variant: "success", label: "Published", icon: IconEye },
-      DRAFT: { variant: "secondary", label: "Draft", icon: IconEyeOff },
-      ARCHIVED: { variant: "destructive", label: "Archived" },
-    };
-
-    const config = statusConfig[status] || {
-      variant: "secondary",
-      label: status,
-    };
-    const IconComponent = config.icon;
-
-    return (
-      <Badge variant={config.variant} className="flex items-center gap-1 w-fit">
-        {IconComponent && <IconComponent className="h-3 w-3" />}
-        {config.label}
-      </Badge>
-    );
-  };
 
   const getDifficultyBadge = (difficulty) => {
     const difficultyConfig = {
@@ -374,24 +350,6 @@ const InstructorCourseDetailPage = () => {
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Level</p>
                   {getDifficultyBadge(course.difficulty || "BEGINNER")}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Status</p>
-                  {getStatusBadge(course.status)}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Instructor</p>
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage src={course.instructor?.avatar} />
-                      <AvatarFallback>
-                        {course.instructor?.name?.charAt(0) || "I"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm">
-                      {course.instructor?.name || "Not assigned"}
-                    </p>
-                  </div>
                 </div>
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Created At</p>

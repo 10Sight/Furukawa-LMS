@@ -49,7 +49,6 @@ export {
     useGetCourseByIdQuery,
     useUpdateCourseMutation,
     useDeleteCourseMutation,
-    useTogglePublishCourseMutation,
 } from './CourseApi';
 
 // Assignment API exports

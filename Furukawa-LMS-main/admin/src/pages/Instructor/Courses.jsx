@@ -27,19 +27,6 @@ const InstructorCourses = () => {
   const courses = data?.data?.courses || []
   const totalPages = data?.data?.totalPages || 1
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'PUBLISHED':
-        return <Badge variant="success">Published</Badge>
-      case 'DRAFT':
-        return <Badge variant="secondary">Draft</Badge>
-      case 'ARCHIVED':
-        return <Badge variant="outline">Archived</Badge>
-      default:
-        return <Badge variant="secondary">{status}</Badge>
-    }
-  }
-
   const getLevelColor = (level) => {
     switch (level) {
       case 'BEGINNER':
@@ -122,8 +109,7 @@ const InstructorCourses = () => {
           {courses.map((course) => (
             <Card key={course.id || course._id} className="hover:shadow-lg transition-shadow">
               <CardHeader className="pb-3">
-                <div className="flex justify-between items-start mb-2">
-                  {getStatusBadge(course.status)}
+                <div className="flex justify-end items-start mb-2">
                   <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                     <IconStar className="h-3 w-3" />
                     <span>{course.rating || '0.0'}</span>

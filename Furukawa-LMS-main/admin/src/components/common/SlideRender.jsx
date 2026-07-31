@@ -1,7 +1,7 @@
 import React from "react";
 import clsx from "clsx";
 import "./slide-stage.css";
-import { getMediaUrl } from "@/utils/mediaUtils";
+import { getMediaUrl, convertRelativeToAbsolute } from "@/utils/mediaUtils";
 
 /**
  * SlideRender: read-only renderer for a slide (contentHtml + elements)
@@ -9,14 +9,16 @@ import { getMediaUrl } from "@/utils/mediaUtils";
  */
 export default function SlideRender({ slide, className }) {
   const bg = slide?.bgColor || '#ffffff';
-  const elements = Array.isArray(slide?.elements) ? slide.elements : [];
+  const elements = Array.isArray(slide?.elements)
+    ? [...slide.elements].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+    : [];
   return (
     <div className={clsx("stage-outer", className)}>
       <div className="stage-wrapper">
         <div className="stage-inner" style={{ backgroundColor: bg }}>
           <div className="stage-content relative select-none">
             <div className="prose prose-sm sm:prose-base max-w-none">
-              <div dangerouslySetInnerHTML={{ __html: slide?.contentHtml || '' }} />
+              <div dangerouslySetInnerHTML={{ __html: convertRelativeToAbsolute(slide?.contentHtml || '') }} />
             </div>
             {/* Positioned elements */}
             <div className="absolute inset-0">
@@ -42,6 +44,13 @@ export default function SlideRender({ slide, className }) {
                   )}
                   {el.type === 'image' && (
                     <img src={getMediaUrl(el.url)} alt={el.alt || ''} className="w-full h-full object-contain" />
+                  )}
+                  {el.type === 'video' && (
+                    <video
+                      src={getMediaUrl(el.url)}
+                      controls
+                      className="w-full h-full object-contain"
+                    />
                   )}
                 </div>
               ))}

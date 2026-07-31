@@ -48,7 +48,7 @@ const InstructorCourses = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // API Hook - Only fetch published courses
+  // API Hook
   const {
     data: coursesData,
     isLoading,
@@ -59,7 +59,6 @@ const InstructorCourses = () => {
       page: currentPage,
       limit: 10,
       search: debouncedSearchTerm || "",
-      status: "PUBLISHED", // Only get published courses
     },
     {
       refetchOnMountOrArgChange: true,
@@ -238,14 +237,14 @@ const InstructorCourses = () => {
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <SearchInput
-              placeholder="Search published courses..."
+              placeholder="Search courses..."
               value={searchTerm}
               onChange={setSearchTerm}
               className="w-full sm:w-96"
             />
 
             <div className="text-sm text-muted-foreground">
-              {totalCount} published courses available
+              {totalCount} courses available
             </div>
           </div>
         </CardHeader>
@@ -308,7 +307,7 @@ const InstructorCourses = () => {
                     <div className="flex flex-col items-center space-y-3">
                       <IconBook className="h-12 w-12 text-muted-foreground/60" />
                       <p className="text-muted-foreground font-medium">
-                        No published courses available
+                        No courses available
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {searchTerm

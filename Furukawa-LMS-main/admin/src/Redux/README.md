@@ -32,7 +32,6 @@ All server controller endpoints have been converted into Redux RTK Query APIs wi
 - `getCourseById` - Get specific course details
 - `updateCourse` - Update course information
 - `deleteCourse` - Delete course
-- `togglePublishCourse` - Publish/unpublish course
 
 ### 4. AssignmentApi.js
 **Endpoints:**

@@ -18,8 +18,7 @@ const SystemOverviewCard = () => {
     page: 1,
     limit: 1000,
     search: "",
-    category: "",
-    status: ""
+    category: ""
   });
   const { data: auditsData } = useGetAllAuditsQuery({ page: 1, limit: 10 });
 
@@ -35,7 +34,7 @@ const SystemOverviewCard = () => {
 
   const publishedCourses = useMemo(() => {
     if (!coursesData?.data?.courses) return 0;
-    return coursesData.data.courses.filter(course => course.status === 'PUBLISHED').length;
+    return coursesData.data.courses.length;
   }, [coursesData]);
 
   const recentActivitiesCount = auditsData?.data?.audits?.length || 0;

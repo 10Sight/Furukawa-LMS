@@ -16,7 +16,6 @@ const initialState = {
         category: "",
         level: "BEGINNER",
         modules: [],
-        instructor: "",
         quizzes: [],
         assignments: []
     },

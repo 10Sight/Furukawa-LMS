@@ -125,8 +125,7 @@ const Home = () => {
     page: 1,
     limit: 1000, // Get all courses for count
     search: "",
-    category: "",
-    status: ""
+    category: ""
   });
 
   // Dojo Hiring stats from the new API
@@ -151,7 +150,7 @@ const Home = () => {
 
   const publishedCourses = useMemo(() => {
     if (!coursesData?.data?.courses) return 0;
-    return coursesData.data.courses.filter(course => course.status === 'PUBLISHED').length;
+    return coursesData.data.courses.length;
   }, [coursesData]);
 
   // Calculate engagement metrics

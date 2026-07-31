@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { Node, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
@@ -9,6 +10,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import axiosInstance from "@/Helper/axiosInstance";
+import { getMediaUrl, convertRelativeToAbsolute, convertAbsoluteToRelative } from "@/utils/mediaUtils";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -28,11 +30,36 @@ import {
   Quote,
   Code,
   Image as ImageIcon,
+  Video as VideoIcon,
   Undo2,
   Redo2,
   Eraser,
 } from "lucide-react";
 import "./rich-text-editor.css";
+
+const VideoNode = Node.create({
+  name: "video",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      controls: { default: true },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "video" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["video", mergeAttributes(HTMLAttributes, { controls: "controls", class: "max-w-full rounded" })];
+  },
+  addCommands() {
+    return {
+      setVideo: (options) => ({ commands }) => commands.insertContent({ type: this.name, attrs: options }),
+    };
+  },
+});
 
 const ToolbarButton = ({ onClick, active, children, title }) => (
   <TooltipProvider>
@@ -59,6 +86,7 @@ const ToolbarButton = ({ onClick, active, children, title }) => (
 
 const RichTextEditorBase = ({ className, value, onChange, placeholder, borderless = false, ...props }, ref) => {
   const fileInputRef = React.useRef(null);
+  const videoInputRef = React.useRef(null);
   const extensions = React.useMemo(() => {
     return [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -67,17 +95,18 @@ const RichTextEditorBase = ({ className, value, onChange, placeholder, borderles
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph', 'image'] }),
       Image.configure({ inline: false, HTMLAttributes: { class: 'max-w-full h-auto rounded' } }),
+      VideoNode,
       Placeholder.configure({ placeholder: placeholder || "Write something..." }),
     ];
   }, []);
 
   const editor = useEditor({
     extensions,
-    content: value || "",
+    content: convertRelativeToAbsolute(value || ""),
     onUpdate({ editor }) {
       const html = editor.getHTML();
       if (onChange) {
-        onChange(html);
+        onChange(convertAbsoluteToRelative(html));
       }
     },
     editorProps: {
@@ -93,7 +122,7 @@ const RichTextEditorBase = ({ className, value, onChange, placeholder, borderles
     if (!editor) return;
 
     const currentContent = editor.getHTML();
-    const newValue = value || "";
+    const newValue = convertRelativeToAbsolute(value || "");
 
     // Only update if the content is actually different and editor is not focused
     if (currentContent !== newValue && !editor.isFocused) {
@@ -224,12 +253,48 @@ const RichTextEditorBase = ({ className, value, onChange, placeholder, borderles
               });
               const url = res?.data?.data?.url;
               if (url) {
-                editor.chain().focus().setImage({ src: url, alt: file.name }).run();
+                editor.chain().focus().setImage({ src: getMediaUrl(url), alt: file.name }).run();
               } else {
                 toast.error('Upload succeeded but no URL returned');
               }
             } catch (err) {
               const message = err?.response?.data?.message || err?.message || 'Image upload failed';
+              toast.error(message);
+            } finally {
+              e.target.value = '';
+            }
+          }}
+        />
+        <ToolbarButton title="Insert Video" onClick={() => videoInputRef.current?.click()}>
+          <VideoIcon className="h-4 w-4" />
+        </ToolbarButton>
+        <input
+          type="file"
+          accept="video/*"
+          ref={videoInputRef}
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            if (!file.type.startsWith('video/')) {
+              toast.error('Please select a video file');
+              e.target.value = '';
+              return;
+            }
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+              const res = await axiosInstance.post('/api/upload/single', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+              const url = res?.data?.data?.url;
+              if (url) {
+                editor.chain().focus().setVideo({ src: getMediaUrl(url) }).run();
+              } else {
+                toast.error('Upload succeeded but no URL returned');
+              }
+            } catch (err) {
+              const message = err?.response?.data?.message || err?.message || 'Video upload failed';
               toast.error(message);
             } finally {
               e.target.value = '';

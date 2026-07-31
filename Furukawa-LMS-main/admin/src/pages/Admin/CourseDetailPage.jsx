@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useGetCourseByIdQuery } from "@/Redux/AllApi/CourseApi";
 import { useGetModulesByCourseQuery } from "@/Redux/AllApi/moduleApi";
-import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import {
   Card,
   CardContent,
@@ -18,8 +17,6 @@ import {
   IconBook,
   IconFileText,
   IconPaperclip,
-  IconEye,
-  IconEyeOff,
   IconCalendar,
   IconUsers,
   IconClock,
@@ -29,7 +26,6 @@ import {
   IconPlus,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 
 // Import reusable components
@@ -63,39 +59,19 @@ const CourseDetailPage = () => {
     refetch: refetchModules,
   } = useGetModulesByCourseQuery(courseId);
 
-  const { data: configData } = useGetActiveConfigQuery();
-
-
   const course = courseData?.data || {};
   const modules = modulesData?.data || [];
 
-  // Determine difficulty badge color and label dynamically
-  const getDifficultyBadge = (difficulty) => {
+  // Determine course type badge color and label
+  const getCourseTypeBadge = (difficulty) => {
     if (!difficulty) return <Badge variant="outline">Unknown</Badge>;
 
-    // Try to find matching level in active config
-    const activeLevels = configData?.data?.levels || [];
-    const matchedLevel = activeLevels.find(l => l.name?.toUpperCase() === difficulty?.toUpperCase());
-
-    if (matchedLevel) {
-      // Use configured color if available
-      return (
-        <Badge
-          style={{
-            backgroundColor: matchedLevel.color || "#3B82F6",
-            color: "#fff",
-            borderColor: matchedLevel.color || "#3B82F6"
-          }}
-          className="capitalize"
-        >
-          {matchedLevel.name}
-        </Badge>
-      );
-    }
-
-    // Fallback for legacy static levels
     const colors = {
+      THEORETICAL: "bg-teal-100 text-teal-800 hover:bg-teal-100/80",
+      PRACTICAL: "bg-indigo-100 text-indigo-800 hover:bg-indigo-100/80",
+      // Legacy fallback for courses created before Course Type replaced Difficulty Level
       BEGINNER: "bg-green-100 text-green-800 hover:bg-green-100/80",
+      BEGGINER: "bg-green-100 text-green-800 hover:bg-green-100/80",
       INTERMEDIATE: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80",
       ADVANCED: "bg-red-100 text-red-800 hover:bg-red-100/80",
       CRITICAL: "bg-red-100 text-red-800 hover:bg-red-100/80",
@@ -107,29 +83,6 @@ const CourseDetailPage = () => {
   };
 
   const isLoading = courseLoading || modulesLoading;
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      PUBLISHED: { variant: "success", label: "Published", icon: IconEye },
-      DRAFT: { variant: "secondary", label: "Draft", icon: IconEyeOff },
-      ARCHIVED: { variant: "destructive", label: "Archived" },
-    };
-
-    const config = statusConfig[status] || {
-      variant: "secondary",
-      label: status,
-    };
-    const IconComponent = config.icon;
-
-    return (
-      <Badge variant={config.variant} className="flex items-center gap-1 w-fit">
-        {IconComponent && <IconComponent className="h-3 w-3" />}
-        {config.label}
-      </Badge>
-    );
-  };
-
-
 
   const getLevelBadge = (level) => {
     const colorMap = {
@@ -282,25 +235,8 @@ const CourseDetailPage = () => {
                   <Badge variant="secondary" className="font-normal">{course.category}</Badge>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Difficulty Level</p>
-                  {getDifficultyBadge(course.difficulty || "BEGINNER")}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Current Status</p>
-                  {getStatusBadge(course.status)}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Trainer</p>
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback className="text-[10px]">
-                        {course.instructor?.fullName?.charAt(0) || 'T'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm font-medium">
-                      {course.instructor?.fullName || "Not assigned"}
-                    </p>
-                  </div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Course Type</p>
+                  {getCourseTypeBadge(course.difficulty)}
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created Date</p>

@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateCourseMutation } from "@/Redux/AllApi/CourseApi";
 import { useCreateModuleMutation } from "@/Redux/AllApi/moduleApi";
 import { useCreateQuizMutation } from "@/Redux/AllApi/QuizApi";
 import { useCreateAssignmentMutation } from "@/Redux/AllApi/AssignmentApi";
 import { useCreateResourceMutation } from "@/Redux/AllApi/resourceApi"; // Added resource API import
-import { useGetAllInstructorsQuery } from "@/Redux/AllApi/InstructorApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
-import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import { Button } from "@/components/ui/button";
 import { FormCard, FormInput, FormTextarea, FormSelect } from "@/components/form";
 import { CModuleForm } from "@/components/course/CModuleForm";
@@ -30,17 +28,14 @@ const AddCourse = () => {
   const [createQuiz] = useCreateQuizMutation();
   const [createAssignment] = useCreateAssignmentMutation();
   const [createResource] = useCreateResourceMutation(); // Added resource mutation
-  const { data: instructorsData } = useGetAllInstructorsQuery({});
 
-  const instructors = instructorsData?.data?.users || [];
   const [isLoading, setIsLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     category: "",
-    level: "BEGINNER",
-    instructor: "",
+    level: "THEORETICAL",
     departmentId: [], // Now an array
     sectionId: [],    // Now an array
   });
@@ -367,7 +362,6 @@ const AddCourse = () => {
     if (!formData.title.trim()) errors.title = "Title is required";
     if (!formData.description.trim()) errors.description = "Description is required";
     if (!formData.category.trim()) errors.category = "Category is required";
-    if (!formData.instructor) errors.instructor = "Instructor is required";
     if (!formData.departmentId) errors.departmentId = "Department is required";
 
     modules.forEach((module, index) => {
@@ -442,7 +436,6 @@ const AddCourse = () => {
         description: formData.description,
         category: formData.category,
         level: formData.level,
-        instructor: formData.instructor,
         departmentId: formData.departmentId,
         sectionId: formData.sectionId || null
       }).unwrap();
@@ -518,41 +511,10 @@ const AddCourse = () => {
     }
   };
 
-  const { data: configData, isLoading: isConfigLoading } = useGetActiveConfigQuery();
-  const activeLevels = configData?.data?.levels || [];
-
-  const difficultyOptions = activeLevels.length > 0
-    ? activeLevels.map(level => ({
-      value: level.name,
-      label: level.name
-    }))
-    : [
-      { value: "BEGINNER", label: "Beginner" },
-      { value: "INTERMEDIATE", label: "Intermediate" },
-      { value: "ADVANCED", label: "Advanced" }
-    ];
-
-  // Logic to set default level:
-  // 1. If we have active levels, and current selection is NOT in the list, default to first active level.
-  // 2. If we don't have active levels (fallback), allow "BEGINNER" etc.
-  useEffect(() => {
-    if (activeLevels.length > 0) {
-      const currentLevelExists = activeLevels.some(l => l.name === formData.level);
-      // If current selected level is valid in new config, do nothing.
-      // If invalid (e.g. "BEGINNER" from init, or switching configs), set to first available.
-      if (!currentLevelExists) {
-        setFormData(prev => ({ ...prev, level: activeLevels[0].name }));
-      }
-    }
-  }, [activeLevels, formData.level]);
-
-  // Prevent rendering incorrect options while loading
-  const finalDifficultyOptions = isConfigLoading ? [{ value: "loading", label: "Loading levels...", disabled: true }] : difficultyOptions;
-
-  const instructorOptions = instructors.map(instructor => ({
-    value: instructor.id || instructor._id,
-    label: instructor.fullName
-  }));
+  const courseTypeOptions = [
+    { value: "THEORETICAL", label: "Theoretical" },
+    { value: "PRACTICAL", label: "Practical" },
+  ];
 
   // Fetch Departments
   const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
@@ -651,22 +613,11 @@ const AddCourse = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormSelect
               id="level"
-              label="Difficulty Level"
+              label="Course Type"
               value={formData.level}
               onValueChange={(value) => handleSelectChange("level", value)}
-              options={finalDifficultyOptions}
-              disabled={isConfigLoading}
-              placeholder="Select difficulty"
-            />
-
-            <FormSelect
-              id="instructor"
-              label="Instructor *"
-              value={formData.instructor}
-              onValueChange={(value) => handleSelectChange("instructor", value)}
-              options={instructorOptions}
-              placeholder="Select instructor"
-              error={formErrors.instructor}
+              options={courseTypeOptions}
+              placeholder="Select course type"
             />
           </div>
 

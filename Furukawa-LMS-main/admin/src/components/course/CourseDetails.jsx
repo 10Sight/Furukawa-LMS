@@ -6,14 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  IconBook,
-  IconUsers,
-  IconEye,
-  IconEyeOff,
-  IconX,
-  IconInfoCircle,
-} from "@tabler/icons-react";
+import { IconBook, IconUsers } from "@tabler/icons-react";
 
 const CourseDetails = ({ course }) => {
   const getDifficultyBadge = (difficulty) => {
@@ -35,28 +28,6 @@ const CourseDetails = ({ course }) => {
     );
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      PUBLISHED: { variant: "success", label: "Published", icon: IconEye },
-      DRAFT: { variant: "secondary", label: "Draft", icon: IconEyeOff },
-      ARCHIVED: { variant: "destructive", label: "Archived", icon: IconX },
-    };
-
-    const config = statusConfig[status] || {
-      variant: "secondary",
-      label: status,
-      icon: IconInfoCircle,
-    };
-    const IconComponent = config.icon;
-
-    return (
-      <Badge variant={config.variant} className="flex items-center gap-1 w-fit">
-        <IconComponent className="h-3 w-3" />
-        {config.label}
-      </Badge>
-    );
-  };
-
   return (
     <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -73,7 +44,6 @@ const CourseDetails = ({ course }) => {
           <p className="text-sm text-blue-800">{course?.description}</p>
           <div className="flex flex-wrap gap-2 mt-2">
             {getDifficultyBadge(course?.level)}
-            {getStatusBadge(course?.status)}
             <Badge variant="outline" className="bg-white">
               {course?.category}
             </Badge>

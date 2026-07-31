@@ -7,19 +7,19 @@ export const courseApi = createApi({
     tagTypes: ['Course', 'Quiz', 'Assignment'], // Add Assignment to tagTypes
     endpoints: (builder) => ({
         createCourse: builder.mutation({
-            query: ({ title, description, category, level, modules, instructor, quizzes, assignments, departmentId, sectionId }) => ({
+            query: ({ title, description, category, level, modules, quizzes, assignments, departmentId, sectionId }) => ({
                 url: "/api/courses",
                 method: "POST",
-                data: { title, description, category, level, modules, instructor, quizzes, assignments, departmentId, sectionId }
+                data: { title, description, category, level, modules, quizzes, assignments, departmentId, sectionId }
             }),
             invalidatesTags: ['Course'],
         }),
 
         getCourses: builder.query({
-            query: ({ page = 1, limit = 10, category = "", level = "", search = "", status = "" } = {}) => ({
+            query: ({ page = 1, limit = 10, category = "", level = "", search = "", departmentId = "", sectionId = "" } = {}) => ({
                 url: "/api/courses",
                 method: "GET",
-                params: { page, limit, category, level, search, status }
+                params: { page, limit, category, level, search, departmentId, sectionId }
             }),
             providesTags: ['Course'],
         }),
@@ -49,14 +49,6 @@ export const courseApi = createApi({
             query: (id) => ({
                 url: `/api/courses/${id}`,
                 method: "DELETE",
-            }),
-            invalidatesTags: ['Course'],
-        }),
-
-        togglePublishCourse: builder.mutation({
-            query: (id) => ({
-                url: `/api/courses/${id}/toggle-publish`,
-                method: "PATCH",
             }),
             invalidatesTags: ['Course'],
         }),
@@ -113,7 +105,6 @@ export const {
     useGetCourseByIdQuery,
     useUpdateCourseMutation,
     useDeleteCourseMutation,
-    useTogglePublishCourseMutation,
     useGetCourseAnalyticsQuery,
     useGetCourseStudentsQuery,
     useGetSoftDeletedCoursesQuery,

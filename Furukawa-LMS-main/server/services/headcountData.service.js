@@ -104,6 +104,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const netHeadcountSql = `
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS dateKey,
+            SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) as totalPresentForHeadcount,
             SUM(CASE WHEN UPPER(ISNULL(al.status, '')) IN ('ABSENT', 'A') AND u.[isEmployee] = 1 AND ${eligibleEmployeeCondition} AND ${notYetLeftCondition} AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) as totalAbsent,
             COUNT(*) as totalUploaded
         FROM (
@@ -267,7 +268,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // Absent is pulled directly from attendance_logs (totalAbsent, computed in netHeadcountSql
         // above), rather than derived via roster subtraction. Future dates have no attendance data yet.
         const absent = (dKey <= todayYMD) ? (row.totalAbsent || 0) : 0;
+        // totalPA (roster/activeCount-based) is kept as-is for Absenteeism % and the Attrition %
+        // fallback average below — only the "Total Headcount (Present + Absent)" row itself
+        // switches to attendance_logs (totalPresentForHeadcount + totalAbsent), 0 on future dates.
         const totalPA = activeCount;
+        const totalHeadcountPresentAbsent = (dKey <= todayYMD)
+            ? (row.totalPresentForHeadcount || 0) + (row.totalAbsent || 0)
+            : 0;
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);
@@ -277,7 +284,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
         tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
         tableData[`Net Available Headcount Total_${dKey}`] = String(netAvailableHeadcountTotal);
-        tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalPA;
+        tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(netAvailableAbove3Months);
         tableData[`Absent_${dKey}`] = String(absent);
 
@@ -297,7 +304,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // user's planned shift should show up even without an attendance punch for that date.
     // Assigned_* is a headcount too, but of the subset that (a) has a station assigned AND (b) is
     // marked PRESENT in attendance_logs for that date (see presentSet above) — i.e. actually
-    // showed up to their assigned station. Attendance_* is a % actually present, not a headcount.
+    // showed up to their assigned station. Attendance_* is Assigned / Available * 100, i.e. what
+    // share of the scheduled headcount actually showed up to their station. Future dates: "0.00".
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
     const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
     for (let d = 1; d <= totalDays; d++) {
@@ -306,11 +314,9 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         let availableTotal = 0;
         let assignedTotal = 0;
-        let presentTotal = 0;
         const availableByShift = {};
         const assignedByShift = {};
-        const presentByShift = {};
-        shiftsList.forEach(s => { availableByShift[s] = 0; assignedByShift[s] = 0; presentByShift[s] = 0; });
+        shiftsList.forEach(s => { availableByShift[s] = 0; assignedByShift[s] = 0; });
 
         allEligibleUsers.forEach(u => {
             const join = u.joiningDate ? new Date(u.joiningDate) : null;
@@ -333,24 +339,23 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 assignedByShift[shiftName]++;
                 assignedTotal++;
             }
-
-            if (isPresent) {
-                presentByShift[shiftName]++;
-                presentTotal++;
-            }
         });
 
         shiftsList.forEach(s => {
             tableData[`Available_${s}_${dKey}`] = String(availableByShift[s]);
             tableData[`Assigned_${s}_${dKey}`] = String(assignedByShift[s]);
-            const present = presentByShift[s];
+            const assigned = assignedByShift[s];
             const available = availableByShift[s];
-            tableData[`Attendance_${s}_${dKey}`] = available > 0 ? ((present / available) * 100).toFixed(2) : "0.00";
+            tableData[`Attendance_${s}_${dKey}`] = (dKey > todayYMD)
+                ? "0.00"
+                : (available > 0 ? ((assigned / available) * 100).toFixed(2) : "0.00");
         });
 
         tableData[`Available_Total_${dKey}`] = String(availableTotal);
         tableData[`Assigned_Total_${dKey}`] = String(assignedTotal);
-        tableData[`Attendance_Total_${dKey}`] = availableTotal > 0 ? ((presentTotal / availableTotal) * 100).toFixed(2) : "0.00";
+        tableData[`Attendance_Total_${dKey}`] = (dKey > todayYMD)
+            ? "0.00"
+            : (availableTotal > 0 ? ((assignedTotal / availableTotal) * 100).toFixed(2) : "0.00");
     }
 
     // 3. Dynamic Club Headcount rows
@@ -373,6 +378,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         const clubDailySql = `
             SELECT
                 CONVERT(VARCHAR, al.[date], 23) AS dateKey,
+                SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) AS presentCount,
                 SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) IN ('ABSENT', 'A') AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) AS absentCount
             FROM (
                 -- Collapse to one row per user per date first, same reasoning as netHeadcountSql above.
@@ -433,13 +439,18 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
             // Same attendance_logs-direct rule as the global Absent row above.
             const absent = (dKey <= todayYMD) ? (row.absentCount || 0) : 0;
+            // totalPA (roster/activeInClub-based) is kept as-is for Absenteeism % below — only the
+            // "Total Headcount (Present + Absent)" row switches to attendance_logs, 0 on future dates.
             const totalPA = activeInClub;
+            const clubTotalHeadcountPresentAbsent = (dKey <= todayYMD)
+                ? (row.presentCount || 0) + (row.absentCount || 0)
+                : 0;
 
             const { countAbove3Months: clubCountAbove3 } = getNetAvailableHeadcount(dKey, dDate, normalizedSectionIds);
 
             tableData[`${clubName} Headcount available_${dKey}`] = String(clubHeadcountAvailable);
             tableData[`${clubName} absent_${dKey}`] = String(absent);
-            tableData[`${clubName} Total Headcount (Present + Absent)_${dKey}`] = String(totalPA);
+            tableData[`${clubName} Total Headcount (Present + Absent)_${dKey}`] = String(clubTotalHeadcountPresentAbsent);
             tableData[`${clubName} Net Available Headcount Above 3 Months_${dKey}`] = String(clubCountAbove3);
 
             if (dKey > todayYMD) {
@@ -566,17 +577,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // since they're data-quality checks that apply to both populations; the isTemporary = 0
     // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
     // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount.
+    // Requires the user's CURRENT status = 'LEFT' — a user who was LEFT and has since been
+    // reverted back to PRESENT (which clears leavingDate on that path, see user.controller.js)
+    // no longer matches here. That's fine for "today"/future recomputation, but it means a past
+    // date's already-recorded Left in nos (Daily) must be frozen below rather than re-derived
+    // from this live snapshot, or the correction would silently erase that day's history.
     const leftSql = `
         SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary,
                CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey
         FROM users u
-        WHERE (
-            (leavingDate >= ? AND leavingDate < ?) OR
-            (TRIM(LOWER(status)) LIKE 'left%' AND (updatedAt >= ? AND updatedAt < ?))
-        )
-        AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
-        AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-        AND (u.[designation] IS NULL OR u.[designation] = '' OR u.[designation] NOT IN (SELECT designation FROM designation_shutters))
+        WHERE TRIM(LOWER(status)) = 'left'
+          AND COALESCE(leavingDate, updatedAt) >= ? AND COALESCE(leavingDate, updatedAt) < ?
+          AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+          AND (u.[designation] IS NULL OR u.[designation] = '' OR u.[designation] NOT IN (SELECT designation FROM designation_shutters))
     `;
     const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart, start, nextMonthStart]);
 
@@ -595,7 +609,16 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const dayLeftCount = leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary).length;
+
+        // Freeze Left in nos (Daily) once a past date already has a recorded value: a later
+        // status correction (e.g. LEFT -> PRESENT) must only affect today's/future recomputation,
+        // not silently rewrite a day that's already been reported.
+        const priorLeftCount = tableData[`Left in nos (Daily)_${dKey}`];
+        const hasPriorLeftCount = priorLeftCount !== undefined && priorLeftCount !== null;
+        const dayLeftCount = (dKey < todayYMD && hasPriorLeftCount)
+            ? Number(priorLeftCount) || 0
+            : leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary).length;
+
         const dojoDayLeftCount = leftUsers.filter(l => l.dateKey === dKey && l.isTemporary).length;
         cumulativeLeft += dayLeftCount;
 
@@ -702,11 +725,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     } else {
         const prevMonthRow = presentDataMap[prevMonthLastDateKey] || {};
         const prevMonthAbsent = prevMonthRow.totalAbsent || 0;
+        // Roster-based, kept only for the Absenteeism % denominator below (unchanged rule).
         const prevMonthActiveCount = allEligibleUsers.filter(u => isRosterActiveOnDate(u, prevMonthLastDateObj)).length;
         const prevMonthAbsPercent = (prevMonthActiveCount > 0) ? (prevMonthAbsent / prevMonthActiveCount) * 100 : 0;
+        const prevMonthTotalHeadcountPresentAbsent = (prevMonthRow.totalPresentForHeadcount || 0) + prevMonthAbsent;
 
         tableData[`Absent_${prevMonthLastDateKey}`] = String(prevMonthAbsent);
-        tableData[`Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = prevMonthActiveCount;
+        tableData[`Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = prevMonthTotalHeadcountPresentAbsent;
         tableData[`Absenteeism %_${prevMonthLastDateKey}`] = prevMonthAbsPercent.toFixed(2);
     }
 
@@ -733,15 +758,17 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         } else {
             const clubPrevMonthRow = clubAbsentMapByClubId[club.id]?.[prevMonthLastDateKey] || {};
             const clubPrevMonthAbsent = clubPrevMonthRow.absentCount || 0;
+            // Roster-based, kept only for the Absenteeism % denominator below (unchanged rule).
             const clubPrevMonthActiveCount = allEligibleUsers.filter(u =>
                 normalizedClubSectionIds.includes(String(u.sectionId)) && isRosterActiveOnDate(u, prevMonthLastDateObj)
             ).length;
             const clubPrevMonthAbsPercent = (clubPrevMonthActiveCount > 0)
                 ? (clubPrevMonthAbsent / clubPrevMonthActiveCount) * 100
                 : 0;
+            const clubPrevMonthTotalHeadcountPresentAbsent = (clubPrevMonthRow.presentCount || 0) + clubPrevMonthAbsent;
 
             tableData[`${club.name} absent_${prevMonthLastDateKey}`] = String(clubPrevMonthAbsent);
-            tableData[`${club.name} Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = String(clubPrevMonthActiveCount);
+            tableData[`${club.name} Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = String(clubPrevMonthTotalHeadcountPresentAbsent);
             tableData[`${club.name} Absenteeism %_${prevMonthLastDateKey}`] = clubPrevMonthAbsPercent.toFixed(2);
         }
         tableData[`${club.name} Net Available Headcount Above 3 Months_${prevMonthLastDateKey}`] = String(clubPrevMonthAbove3);

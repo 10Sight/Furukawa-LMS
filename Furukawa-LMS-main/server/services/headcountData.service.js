@@ -559,7 +559,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Sale Plan:
     // salesPlan from the same valid/approved requirements rows.
     //
-    // Hiring Plan keeps its existing logic unchanged.
+    // Hiring Plan = productionPlanRequirement - present (attendance_logs-derived), floored at 0.
     const formatDateKey = (dateObj) => {
         const y = dateObj.getFullYear();
         const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -603,9 +603,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         }
     });
 
-    // Existing map is retained for Hiring Plan only so its old logic remains untouched.
-    let requirementPlanMap = {};
-
     // Dashboard-aligned map is used ONLY for the two requirement rows requested above.
     let dashboardRequirementPlanMap = {};
 
@@ -615,10 +612,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     reportingClubs.forEach(club => { clubDashboardRequirementPlanMap[club.id] = {}; });
 
     if (uniqueRequirementMonths.length > 0) {
-        const requirementWhereClause = uniqueRequirementMonths
-            .map(() => `([year] = ? AND monthNumber = ?)`)
-            .join(' OR ');
-
         const dashboardRequirementWhereClause = uniqueRequirementMonths
             .map(() => `(r.[year] = ? AND r.monthNumber = ?)`)
             .join(' OR ');
@@ -629,24 +622,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             requirementParams.push(item.monthNumber);
         });
 
-        // Keep the original Hiring Plan source/logic exactly as it was.
-        const [requirementRows] = await executeQuery(`
-            SELECT
-                [year],
-                monthNumber,
-                SUM(ISNULL(prodPlan, 0)) AS prodPlan
-            FROM requirements
-            WHERE ${requirementWhereClause}
-              AND ISNULL(is_active, 1) = 1
-            GROUP BY [year], monthNumber
-        `, requirementParams);
-
-        requirementRows.forEach(row => {
-            const key = `${row.year}-${row.monthNumber}`;
-            requirementPlanMap[key] = {
-                prodPlan: Number(row.prodPlan || 0)
-            };
-        });
 
         // Exact dashboard first-graph approval logic for requirement rows.
         // This includes active approved rows plus system-approved rows.
@@ -762,11 +737,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     visibleRequirementDates.forEach(item => {
         const planKey = `${item.year}-${item.monthNumber}`;
 
-        // Used ONLY for Hiring Plan — existing logic unchanged.
-        const hiringPlan = requirementPlanMap[planKey] || {
-            prodPlan: 0
-        };
-
         // Used ONLY for the two requested requirement rows.
         const dashboardRequirementPlan = dashboardRequirementPlanMap[planKey] || {
             prodPlanFN01: 0,
@@ -782,8 +752,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Headcount required as per production plan_${item.dateKey}`] = productionPlanRequirement;
         tableData[`Headcount required as per sale plan_${item.dateKey}`] = dashboardRequirementPlan.salesPlan;
 
-        // Do not change Hiring Plan.
-        tableData[`Hiring Plan_${item.dateKey}`] = hiringPlan.prodPlan;
+        // Hiring Plan = requirement - present, where "present" is the same attendance_logs-derived
+        // headcount as the "Headcount available" row above. Capped at 0 so a day fully staffed
+        // (or over-staffed) doesn't show a negative hiring need.
+        const dayPresent = Number(tableData[`Headcount available_${item.dateKey}`]) || 0;
+        tableData[`Hiring Plan_${item.dateKey}`] = Math.max(0, productionPlanRequirement - dayPresent);
 
         // `${club.name} Headcount required` — same FN01 (days 1-15) / FN02 (day 16+) split as
         // the aggregate production-plan row, scoped to each club's own sectionIds.

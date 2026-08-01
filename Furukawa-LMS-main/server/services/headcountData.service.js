@@ -302,10 +302,9 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // SCHEDULED shift for the date (users.shiftSchedule, falling back to users.shift).
     // Available_* is a pure schedule headcount, deliberately independent of attendance_logs — a
     // user's planned shift should show up even without an attendance punch for that date.
-    // Assigned_* is a headcount too, but of the subset that (a) has a station assigned AND (b) is
-    // marked PRESENT in attendance_logs for that date (see presentSet above) — i.e. actually
-    // showed up to their assigned station. Attendance_* is Assigned / Available * 100, i.e. what
-    // share of the scheduled headcount actually showed up to their station. Future dates: "0.00".
+    // Assigned_* is a users-table headcount too (no attendance_logs involved): the subset of the
+    // same active-on-this-date population that has a station assigned (u._hasStation). Future
+    // dates show "0". Attendance_* is Assigned / Available * 100; future dates show "0.00".
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
     const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
     for (let d = 1; d <= totalDays; d++) {
@@ -330,12 +329,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             const shiftKey = Object.keys(shiftMap).find(k => resolvedShift.includes(k));
             if (!shiftKey) return;
             const shiftName = shiftMap[shiftKey];
-            const isPresent = presentSet.has(`${u.id}|${dKey}`);
 
             availableByShift[shiftName]++;
             availableTotal++;
 
-            if (u._hasStation && isPresent) {
+            if (u._hasStation) {
                 assignedByShift[shiftName]++;
                 assignedTotal++;
             }
@@ -343,7 +341,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         shiftsList.forEach(s => {
             tableData[`Available_${s}_${dKey}`] = String(availableByShift[s]);
-            tableData[`Assigned_${s}_${dKey}`] = String(assignedByShift[s]);
+            tableData[`Assigned_${s}_${dKey}`] = (dKey > todayYMD) ? "0" : String(assignedByShift[s]);
             const assigned = assignedByShift[s];
             const available = availableByShift[s];
             tableData[`Attendance_${s}_${dKey}`] = (dKey > todayYMD)
@@ -352,7 +350,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         });
 
         tableData[`Available_Total_${dKey}`] = String(availableTotal);
-        tableData[`Assigned_Total_${dKey}`] = String(assignedTotal);
+        tableData[`Assigned_Total_${dKey}`] = (dKey > todayYMD) ? "0" : String(assignedTotal);
         tableData[`Attendance_Total_${dKey}`] = (dKey > todayYMD)
             ? "0.00"
             : (availableTotal > 0 ? ((assignedTotal / availableTotal) * 100).toFixed(2) : "0.00");

@@ -911,110 +911,112 @@ const AddTestPaper = () => {
             </div>
 
             {/* Handover Sheet Targeting */}
-            <div className="border rounded-lg p-4 bg-amber-50/30 space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold">Handover Sheet Targeting (Optional)</h3>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  When a student passes this test and the Dojo Evaluation Test, their score will
-                  automatically populate the Handover Sheet for all selected departments and sections.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Target Departments */}
-                <div className="space-y-2">
-                  <Label>Target Departments</Label>
-                  <div className="flex flex-wrap gap-1 mb-1">
-                    {formData.targetDeptId.map(id => {
-                      const dept = departmentOptions.find(o => o.value === id);
-                      return (
-                        <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50">
-                          {dept?.label || id}
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({
-                              ...prev,
-                              targetDeptId: prev.targetDeptId.filter(d => d !== id),
-                            }))}
-                            className="hover:bg-amber-100 rounded-full p-0.5"
-                          >
-                            <IconX className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                  <Select
-                    onValueChange={(val) => setFormData(prev => ({
-                      ...prev,
-                      targetDeptId: prev.targetDeptId.includes(val) ? prev.targetDeptId : [...prev.targetDeptId, val],
-                    }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={formData.targetDeptId.length > 0 ? `${formData.targetDeptId.length} selected` : "Select target departments"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {departmentOptions.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value} disabled={formData.targetDeptId.includes(opt.value)}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {hasButtonPermission("test_paper:handover_targeting") && (
+              <div className="border rounded-lg p-4 bg-amber-50/30 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Handover Sheet Targeting (Optional)</h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    When a student passes this test and the Dojo Evaluation Test, their score will
+                    automatically populate the Handover Sheet for all selected departments and sections.
+                  </p>
                 </div>
-                {/* Target Sections */}
-                <div className="space-y-2">
-                  <Label>Target Sections</Label>
-                  <div className="flex flex-wrap gap-1 mb-1">
-                    {formData.targetSectionId.map(id => {
-                      const sec = targetSectionOptions.find(o => o.value === id);
-                      return (
-                        <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50/70">
-                          {sec?.label || id}
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({
-                              ...prev,
-                              targetSectionId: prev.targetSectionId.filter(s => s !== id),
-                            }))}
-                            className="hover:bg-amber-100 rounded-full p-0.5"
-                          >
-                            <IconX className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                  <Select
-                    onValueChange={(val) => setFormData(prev => ({
-                      ...prev,
-                      targetSectionId: prev.targetSectionId.includes(val) ? prev.targetSectionId : [...prev.targetSectionId, val],
-                    }))}
-                    disabled={formData.targetDeptId.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={
-                        formData.targetDeptId.length === 0
-                          ? "Select target departments first"
-                          : formData.targetSectionId.length > 0
-                            ? `${formData.targetSectionId.length} selected`
-                            : "Select target sections"
-                      } />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {targetSectionOptions.length === 0 ? (
-                        <SelectItem value="none" disabled>No sections available</SelectItem>
-                      ) : (
-                        targetSectionOptions.map(opt => (
-                          <SelectItem key={opt.value} value={opt.value} disabled={formData.targetSectionId.includes(opt.value)}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Target Departments */}
+                  <div className="space-y-2">
+                    <Label>Target Departments</Label>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {formData.targetDeptId.map(id => {
+                        const dept = departmentOptions.find(o => o.value === id);
+                        return (
+                          <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50">
+                            {dept?.label || id}
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                targetDeptId: prev.targetDeptId.filter(d => d !== id),
+                              }))}
+                              className="hover:bg-amber-100 rounded-full p-0.5"
+                            >
+                              <IconX className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                    <Select
+                      onValueChange={(val) => setFormData(prev => ({
+                        ...prev,
+                        targetDeptId: prev.targetDeptId.includes(val) ? prev.targetDeptId : [...prev.targetDeptId, val],
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={formData.targetDeptId.length > 0 ? `${formData.targetDeptId.length} selected` : "Select target departments"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departmentOptions.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value} disabled={formData.targetDeptId.includes(opt.value)}>
                             {opt.label}
                           </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Target Sections */}
+                  <div className="space-y-2">
+                    <Label>Target Sections</Label>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {formData.targetSectionId.map(id => {
+                        const sec = targetSectionOptions.find(o => o.value === id);
+                        return (
+                          <Badge key={id} variant="outline" className="gap-1 pr-1 py-1 bg-amber-50/70">
+                            {sec?.label || id}
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                targetSectionId: prev.targetSectionId.filter(s => s !== id),
+                              }))}
+                              className="hover:bg-amber-100 rounded-full p-0.5"
+                            >
+                              <IconX className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                    <Select
+                      onValueChange={(val) => setFormData(prev => ({
+                        ...prev,
+                        targetSectionId: prev.targetSectionId.includes(val) ? prev.targetSectionId : [...prev.targetSectionId, val],
+                      }))}
+                      disabled={formData.targetDeptId.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={
+                          formData.targetDeptId.length === 0
+                            ? "Select target departments first"
+                            : formData.targetSectionId.length > 0
+                              ? `${formData.targetSectionId.length} selected`
+                              : "Select target sections"
+                        } />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {targetSectionOptions.length === 0 ? (
+                          <SelectItem value="none" disabled>No sections available</SelectItem>
+                        ) : (
+                          targetSectionOptions.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value} disabled={formData.targetSectionId.includes(opt.value)}>
+                              {opt.label}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="grid gap-2">

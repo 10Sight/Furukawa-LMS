@@ -5,6 +5,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { executeQuery } from "../db/mssqlHelper.js";
 
 // Get multi skilling plan by department
 export const getMultiSkillingPlanByDepartment = asyncHandler(async (req, res) => {
@@ -21,6 +22,19 @@ export const getMultiSkillingPlanByDepartment = asyncHandler(async (req, res) =>
         return res.status(200).json(
             new ApiResponse(200, { isNew: true, departmentId, sectionId, year, selectedLines: [], tableData: {} }, "No multi skilling plan found")
         );
+    }
+
+    // Dynamically drop associates who have since left or no longer exist, so a stale saved
+    // row doesn't linger on the sheet forever just because it was never explicitly removed.
+    const userIds = Object.keys(plan.tableData || {}).filter(k => k !== "__removedUserIds");
+    if (userIds.length > 0) {
+        const [users] = await executeQuery("SELECT id, status FROM users WHERE id IN (?)", [userIds]);
+        userIds.forEach((id) => {
+            const user = users.find(u => String(u.id) === String(id));
+            if (!user || (user.status || "").toUpperCase() === "LEFT") {
+                delete plan.tableData[id];
+            }
+        });
     }
 
     return res.status(200).json(

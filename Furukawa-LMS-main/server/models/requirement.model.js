@@ -142,6 +142,28 @@ class Requirement {
                 BEGIN
                     ALTER TABLE requirements ADD category NVARCHAR(255) NULL;
                 END
+                IF COL_LENGTH('requirements', 'sectionId') IS NULL
+                BEGIN
+                    ALTER TABLE requirements ADD sectionId INT NULL;
+                    ALTER TABLE requirements ADD CONSTRAINT FK_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
+                END
+            END
+
+            -- Backfill sectionId for existing rows using the same string-matching
+            -- logic the report queries fall back on, so old rows join reliably too.
+            IF COL_LENGTH('requirements', 'sectionId') IS NOT NULL
+            BEGIN
+                EXEC('
+                    UPDATE r
+                    SET r.sectionId = s.id
+                    FROM requirements r
+                    INNER JOIN [sections] s
+                        ON (
+                            UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                            OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                        )
+                    WHERE r.sectionId IS NULL
+                ');
             END
         `;
         try {

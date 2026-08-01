@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { slugify } from "../utils/slugify.js";
 import logAudit from "../utils/auditLogger.js";
+import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -12,6 +13,14 @@ const parseJSON = (data, fallback = []) => {
         try { return JSON.parse(data); } catch (e) { return fallback; }
     }
     return data;
+};
+
+// Helper to check Handover Sheet Targeting permission
+const canSetHandoverTargeting = (user) => {
+    if (!user) return false;
+    if (user.role === 'SUPERADMIN' || user.role === 'ADMIN' || user.isAdmin) return true;
+    if (user.role === 'INSTRUCTOR' || user.isTrainer) return true;
+    return !!user.customRole?.permissions?.includes(SYSTEM_PERMISSIONS.TEST_PAPER_HANDOVER_TARGETING);
 };
 
 // Helper to resolve Quiz ID
@@ -37,6 +46,10 @@ export const createQuiz = asyncHandler(async (req, res) => {
     if (scope && !['course', 'module', 'lesson', 'standalone'].includes(scope)) {
         throw new ApiError("Scope must be 'course', 'module', 'lesson', or 'standalone'", 400);
     }
+
+    const allowHandoverTargeting = canSetHandoverTargeting(req.user);
+    const finalTargetDeptId = allowHandoverTargeting ? targetDeptId : [];
+    const finalTargetSectionId = allowHandoverTargeting ? targetSectionId : [];
 
     const actualScope = scope || (lessonId ? 'lesson' : moduleId ? 'module' : courseId ? 'course' : 'standalone');
 
@@ -113,8 +126,8 @@ export const createQuiz = asyncHandler(async (req, res) => {
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
             JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, paperTitle || null, paperSubTitle || null, req.user.id,
-            JSON.stringify(Array.isArray(targetDeptId) ? targetDeptId : (targetDeptId ? [targetDeptId] : [])),
-            JSON.stringify(Array.isArray(targetSectionId) ? targetSectionId : (targetSectionId ? [targetSectionId] : []))
+            JSON.stringify(Array.isArray(finalTargetDeptId) ? finalTargetDeptId : (finalTargetDeptId ? [finalTargetDeptId] : [])),
+            JSON.stringify(Array.isArray(finalTargetSectionId) ? finalTargetSectionId : (finalTargetSectionId ? [finalTargetSectionId] : []))
         ]
     );
 
@@ -390,6 +403,10 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     const [rows] = await executeQuery("SELECT * FROM quizzes WHERE id = ?", [id]);
     if (rows.length === 0) throw new ApiError("Quiz not found", 404);
 
+    const allowHandoverTargeting = canSetHandoverTargeting(req.user);
+    const finalTargetDeptId = allowHandoverTargeting ? targetDeptId : (targetDeptId !== undefined ? [] : undefined);
+    const finalTargetSectionId = allowHandoverTargeting ? targetSectionId : (targetSectionId !== undefined ? [] : undefined);
+
     let updates = [];
     let values = [];
 
@@ -413,8 +430,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (isMultiSkilling !== undefined) { updates.push("isMultiSkilling = ?"); values.push(isMultiSkilling ? 1 : 0); }
     if (paperTitle !== undefined) { updates.push("paperTitle = ?"); values.push(paperTitle || null); }
     if (paperSubTitle !== undefined) { updates.push("paperSubTitle = ?"); values.push(paperSubTitle || null); }
-    if (targetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(JSON.stringify(Array.isArray(targetDeptId) ? targetDeptId : (targetDeptId ? [targetDeptId] : []))); }
-    if (targetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(JSON.stringify(Array.isArray(targetSectionId) ? targetSectionId : (targetSectionId ? [targetSectionId] : []))); }
+    if (finalTargetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(JSON.stringify(Array.isArray(finalTargetDeptId) ? finalTargetDeptId : (finalTargetDeptId ? [finalTargetDeptId] : []))); }
+    if (finalTargetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(JSON.stringify(Array.isArray(finalTargetSectionId) ? finalTargetSectionId : (finalTargetSectionId ? [finalTargetSectionId] : []))); }
 
     if (updates.length > 0) {
         updates.push("updatedAt = GETDATE()");

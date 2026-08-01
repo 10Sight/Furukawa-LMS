@@ -1096,10 +1096,11 @@ export const createRequirement = asyncHandler(async (req, res) => {
             year,
             is_active,
             approvalStatus,
+            sectionId,
             createdAt
         )
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
     `;
 
     const [rows] = await executeSql(query, [
@@ -1117,6 +1118,7 @@ export const createRequirement = asyncHandler(async (req, res) => {
         year || new Date().getFullYear(),
         1,
         "approved",
+        resolvedIds[0],
     ]);
 
     const requirementId = rows?.[0]?.id || null;
@@ -1601,12 +1603,13 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     0,
                     uploadBatchId,
                     "pending",
-                    row.category
+                    row.category,
+                    row.sectionId || null
                 );
             });
 
             const placeholders = chunk
-                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                 .join(", ");
 
             const insertQuery = `
@@ -1627,7 +1630,8 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     is_active,
                     uploadBatchId,
                     approvalStatus,
-                    category
+                    category,
+                    sectionId
                 )
                 OUTPUT INSERTED.id, INSERTED.srNo, INSERTED.sectionCode, INSERTED.lineCode, INSERTED.monthName, INSERTED.year, INSERTED.sectionName, INSERTED.lineDescription, INSERTED.salesPlan, INSERTED.prodPlan, INSERTED.prodPlanFN01, INSERTED.prodPlanFN02, INSERTED.category
                 VALUES ${placeholders}
@@ -1671,6 +1675,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     uploadBatchId = ?,
                     approvalStatus = ?,
                     category = ?,
+                    sectionId = ?,
                     approvalSource = NULL,
                     approvedBy = NULL,
                     approvedByEmail = NULL,
@@ -1697,6 +1702,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     uploadBatchId,
                     "pending",
                     row.category,
+                    row.sectionId || null,
                     row.id,
                 ],
                 transaction
@@ -3116,6 +3122,12 @@ export const updateRequirement = asyncHandler(async (req, res) => {
     if (prodPlanFN02 !== undefined) {
         fields.push("prodPlanFN02 = ?");
         values.push(prodPlanFN02);
+    }
+
+    // Keep sectionId in sync whenever the section itself is being changed.
+    if (sectionCode !== undefined || sectionName !== undefined) {
+        fields.push("sectionId = ?");
+        values.push(targetResolvedIds[0]);
     }
 
     // No ccEmail column in requirements database table

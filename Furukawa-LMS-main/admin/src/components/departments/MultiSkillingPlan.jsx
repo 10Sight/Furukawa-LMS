@@ -283,15 +283,13 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
-
-    // Snapshot of userIds visible in this line's view when rows were last (re)initialized,
-    // used by handleSave to detect session-scoped removals without touching other lines' data.
-    const lineUserIdsRef = useRef(new Set());
+    const [removedUserIds, setRemovedUserIds] = useState(new Set());
 
     // Reset loading state when department/section/line/year changes
     useEffect(() => {
         setHasLoaded(false);
         setRows([]);
+        setRemovedUserIds(new Set());
         setIsLoadingPlan(true);
     }, [departmentId, sectionId, lineId, year]);
 
@@ -300,7 +298,8 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         if (isLoadingPlan || isLoadingActiveConfig || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
 
         const savedRows = [];
-        const savedUserIds = Object.keys(tableData || {});
+        const savedRemovedIds = new Set(tableData.__removedUserIds || []);
+        const savedUserIds = Object.keys(tableData || {}).filter(k => k !== "__removedUserIds");
 
         savedUserIds.forEach((userId) => {
             const user = students.find(s => String(s._id || s.id) === String(userId));
@@ -337,6 +336,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         });
 
         // Auto-add students (filtered by competency level) not already in the saved plan
+        // and not previously removed from this sheet via the trash icon.
         const savedSet = new Set(savedUserIds.map(String));
         students.forEach((s) => {
             const uid = String(s._id || s.id);
@@ -344,7 +344,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
             // the raw currentLevel column — fall back to it so this filter works from either caller.
             const levelQualifies = allowedMultiSkillingLevels.size === 0
                 || allowedMultiSkillingLevels.has(String(s.primaryLevel || s.currentLevel || "").toUpperCase());
-            if (!savedSet.has(uid) && levelQualifies) {
+            if (!savedSet.has(uid) && !savedRemovedIds.has(uid) && levelQualifies) {
                 const quarterFields = {};
                 QUARTERS.forEach(({ key }) => {
                     quarterFields[`${key}ModelLine`] = "";
@@ -381,7 +381,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
             }
         }
 
-        lineUserIdsRef.current = new Set(savedRows.map(r => r.userId).filter(Boolean));
+        setRemovedUserIds(savedRemovedIds);
         setRows(savedRows);
         setHasLoaded(true);
     }, [tableData, students, isLoadingPlan, isLoadingActiveConfig, hasLoaded, allowedMultiSkillingLevels, lineName]);
@@ -455,8 +455,11 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         ]);
     };
 
-    const handleRemoveEmployee = (rowId) => {
+    const handleRemoveEmployee = (rowId, userId) => {
         setRows(prev => prev.filter(row => row.rowId !== rowId));
+        if (userId) {
+            setRemovedUserIds(prev => new Set([...prev, String(userId)]));
+        }
         toast.success("Row removed from sheet");
     };
 
@@ -522,14 +525,19 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         });
 
         // Merge this line's rows back into the full section-wide tableData so other lines'
-        // saved data (which this component never loaded into `rows`) isn't lost. Any userId that
-        // was visible in this line's view when it loaded but is no longer in `rows` (removed via
-        // the trash icon this session) is dropped from the merged record.
+        // saved data (which this component never loaded into `rows`) isn't lost. Users removed
+        // via the trash icon this session are dropped from the merged record and tracked in
+        // __removedUserIds so they aren't auto-added back on the next load.
         const mergedTableData = { ...tableData };
-        lineUserIdsRef.current.forEach(userId => {
-            if (!currentLineData[userId]) delete mergedTableData[userId];
-        });
+        delete mergedTableData.__removedUserIds;
+        removedUserIds.forEach(userId => { delete mergedTableData[userId]; });
         Object.assign(mergedTableData, currentLineData);
+
+        const combinedRemovedIds = new Set(removedUserIds);
+        Object.keys(currentLineData).forEach(userId => combinedRemovedIds.delete(userId));
+        if (combinedRemovedIds.size > 0) {
+            mergedTableData.__removedUserIds = [...combinedRemovedIds];
+        }
 
         try {
             setIsSaving(true);
@@ -541,7 +549,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                 sendEmail,
             });
             setTableData(mergedTableData);
-            lineUserIdsRef.current = new Set(Object.keys(currentLineData));
+            setRemovedUserIds(combinedRemovedIds);
             toast.success(response?.data?.message || "Multi-skilling plan saved successfully");
         } catch (error) {
             toast.error(error?.response?.data?.message || "Failed to save multi-skilling plan");
@@ -823,7 +831,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleRemoveEmployee(rowId)}
+                                                    onClick={() => handleRemoveEmployee(rowId, row.userId)}
                                                     className="text-red-500 hover:text-red-700 p-1 h-auto"
                                                     title="Remove Row"
                                                 >

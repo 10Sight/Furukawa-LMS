@@ -684,8 +684,14 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             FROM requirements r
             LEFT JOIN sections s
                 ON (
-                    UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
-                    OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                    r.sectionId = s.id
+                    OR (
+                        r.sectionId IS NULL
+                        AND (
+                            UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                            OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                        )
+                    )
                 )
                 AND ISNULL(s.isActive, 1) = 1
             LEFT JOIN departments d ON d.id = s.departmentId
@@ -727,8 +733,14 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 FROM requirements r
                 INNER JOIN sections s
                     ON (
-                        UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
-                        OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                        r.sectionId = s.id
+                        OR (
+                            r.sectionId IS NULL
+                            AND (
+                                UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                                OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                            )
+                        )
                     )
                     AND ISNULL(s.isActive, 1) = 1
                 WHERE (${dashboardRequirementWhereClause})

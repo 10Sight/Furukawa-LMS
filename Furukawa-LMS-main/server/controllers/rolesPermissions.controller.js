@@ -179,6 +179,7 @@ const SYSTEM_PERMISSIONS = {
   TEST_PAPER_IS_HANDOVER: "test_paper:is_handover",
   TEST_PAPER_IS_THEORETICAL: "test_paper:is_theoretical",
   TEST_PAPER_IS_MULTI_SKILLING: "test_paper:is_multi_skilling",
+  TEST_PAPER_HANDOVER_TARGETING: "test_paper:handover_targeting",
   DOJO_ALL_TEST_DEPARTMENT: "dojo:all_test_department",
 
   // Learning Management
@@ -601,6 +602,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_HANDOVER, name: "Toggle Is Handover Quiz", description: "Allows marking test papers as Handover quizzes" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_THEORETICAL, name: "Toggle Is Theoretical Quiz", description: "Allows marking test papers as Theoretical quizzes" },
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_IS_MULTI_SKILLING, name: "Toggle Is Multi Skilling Quiz", description: "Allows marking test papers as Multi Skilling quizzes" },
+        { id: SYSTEM_PERMISSIONS.TEST_PAPER_HANDOVER_TARGETING, name: "Toggle Handover Sheet Targeting", description: "Allows configuring Handover Sheet Targeting on Add/Edit Test Paper screens" },
         { id: SYSTEM_PERMISSIONS.DOJO_ALL_TEST_DEPARTMENT, name: "DOJO Access All Test Departments", description: "Unlocks all departments/sections on the Add/Edit Test Paper screens, bypassing the assigned department restriction" }
       ],
       "Improvement Evidence Management": [

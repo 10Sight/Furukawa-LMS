@@ -738,7 +738,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         const planKey = `${item.year}-${item.monthNumber}`;
 
         // Used ONLY for the two requested requirement rows.
-        const dashboardRequirementPlan = dashboardRequirementPlanMap[planKey] || {
+        const dashboardRequirementPlanEntry = dashboardRequirementPlanMap[planKey];
+        const dashboardRequirementPlan = dashboardRequirementPlanEntry || {
             prodPlanFN01: 0,
             prodPlanFN02: 0,
             salesPlan: 0
@@ -753,10 +754,17 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Headcount required as per sale plan_${item.dateKey}`] = dashboardRequirementPlan.salesPlan;
 
         // Hiring Plan = requirement - present, where "present" is the same attendance_logs-derived
-        // headcount as the "Headcount available" row above. Capped at 0 so a day fully staffed
-        // (or over-staffed) doesn't show a negative hiring need.
-        const dayPresent = Number(tableData[`Headcount available_${item.dateKey}`]) || 0;
-        tableData[`Hiring Plan_${item.dateKey}`] = Math.max(0, productionPlanRequirement - dayPresent);
+        // headcount as the "Headcount available" row above. If either side has no real data for
+        // this date (no requirement row for the month, or no attendance data for the day — e.g.
+        // the leading previous-month reference column), show 0 instead of a misleading number.
+        // Otherwise capped at 0 so a fully/over-staffed day doesn't show a negative hiring need.
+        const presentRaw = tableData[`Headcount available_${item.dateKey}`];
+        const attendanceAvailable = presentRaw !== undefined && presentRaw !== null;
+        const requirementAvailable = !!dashboardRequirementPlanEntry;
+
+        tableData[`Hiring Plan_${item.dateKey}`] = (requirementAvailable && attendanceAvailable)
+            ? Math.max(0, productionPlanRequirement - (Number(presentRaw) || 0))
+            : 0;
 
         // `${club.name} Headcount required` — same FN01 (days 1-15) / FN02 (day 16+) split as
         // the aggregate production-plan row, scoped to each club's own sectionIds.

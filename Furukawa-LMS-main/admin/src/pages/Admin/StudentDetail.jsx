@@ -157,6 +157,15 @@ const StudentDetail = () => {
 
   const student = studentData?.data;
 
+  // A user has rejoined if their statusHistory records more than one distinct
+  // joiningDate -- i.e. joiningDate was set, then later changed to a new date
+  // (typically after a LEFT -> PRESENT transition).
+  const hasRejoined = useMemo(() => {
+    const history = student?.statusHistory || [];
+    const joiningDates = new Set(history.map((h) => h.joiningDate).filter(Boolean));
+    return joiningDates.size > 1;
+  }, [student?.statusHistory]);
+
   const [logAction] = useLogActionMutation();
   useEffect(() => {
     const action = TAB_VIEW_ACTIONS[activeTab];
@@ -571,6 +580,12 @@ const StudentDetail = () => {
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-muted-foreground">@{student.userName}</p>
                 {getStatusBadge(student.status)}
+                {hasRejoined && (
+                  <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 flex items-center gap-1">
+                    <IconRefresh className="h-3 w-3" />
+                    Rejoined
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
@@ -1331,6 +1346,51 @@ const StudentDetail = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Status & Date Change History */}
+          {student?.statusHistory?.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <IconHistory className="h-5 w-5 text-blue-600" />
+                  Status &amp; Date Change History
+                </CardTitle>
+                <CardDescription>
+                  Timeline of status, joining date, and leaving date changes
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="relative space-y-6 border-l-2 border-muted pl-6">
+                  {[...student.statusHistory].reverse().map((entry, idx) => (
+                    <div key={idx} className="relative">
+                      <span className="absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-background bg-blue-600" />
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        {getStatusBadge(entry.status)}
+                        <span className="text-xs text-muted-foreground">
+                          {safeDateFormat(entry.changedAt, "dd MMM yyyy, hh:mm a")}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 text-sm text-muted-foreground">
+                        <div>
+                          <span className="font-medium text-foreground">Joining Date: </span>
+                          {entry.joiningDate ? displayDate(entry.joiningDate) : "—"}
+                        </div>
+                        <div>
+                          <span className="font-medium text-foreground">Leaving Date: </span>
+                          {entry.leavingDate ? displayDate(entry.leavingDate) : "—"}
+                        </div>
+                      </div>
+                      {entry.changedByName && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Changed by {entry.changedByName}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="progress">

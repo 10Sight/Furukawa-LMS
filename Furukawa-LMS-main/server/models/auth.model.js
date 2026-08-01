@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import ENV from "../configs/env.config.js";
 import { slugify } from "../utils/slugify.js";
+import { buildStatusHistoryEntry } from "../utils/statusHistory.js";
 
 // Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
 // mirrored target* chain used for temporary users) on a plain object carrying those keys.
@@ -69,6 +70,13 @@ class User {
         this.createdCourses = typeof data.createdCourses === 'string' ? JSON.parse(data.createdCourses) : (data.createdCourses || []);
         this.lastLogin = data.lastLogin ? new Date(data.lastLogin) : null;
         this.loginHistory = typeof data.loginHistory === 'string' ? JSON.parse(data.loginHistory) : (data.loginHistory || []);
+        this.statusHistory = (() => {
+            if (Array.isArray(data.statusHistory)) return data.statusHistory;
+            if (typeof data.statusHistory === 'string') {
+                try { return JSON.parse(data.statusHistory || "[]"); } catch (e) { return []; }
+            }
+            return [];
+        })();
         this.isDeleted = !!data.isDeleted;
         this.department = data.department;
         this.departments = typeof data.departments === 'string' ? JSON.parse(data.departments) : (data.departments || []);
@@ -286,7 +294,8 @@ class User {
                 { name: 'expectedHandover', type: 'DATE NULL' },
                 { name: 'contractorId', type: 'INT NULL' },
                 { name: 'shiftSchedule', type: "NVARCHAR(MAX) DEFAULT '{}'" },
-                { name: 'dojoShift', type: 'NVARCHAR(50) NULL' }
+                { name: 'dojoShift', type: 'NVARCHAR(50) NULL' },
+                { name: 'statusHistory', type: "NVARCHAR(MAX) DEFAULT '[]'" }
             ];
 
             for (const col of columnsToAdd) {
@@ -767,6 +776,29 @@ class User {
                 console.error("Error during hierarchy reference ID backfill migration:", backfillErr);
             }
 
+            // One-time backfill: seed a genesis statusHistory entry (from the row's current
+            // status/joiningDate/leavingDate) for users whose history is still the column
+            // default '[]', so the timeline isn't empty for everyone who existed before this
+            // column was introduced.
+            try {
+                const [rows] = await executeQuery(
+                    "SELECT id, status, joiningDate, leavingDate, createdAt FROM users WHERE statusHistory IS NULL OR statusHistory = '[]'"
+                );
+                for (const row of rows) {
+                    const entry = JSON.stringify({
+                        status: row.status ?? null,
+                        joiningDate: row.joiningDate ?? null,
+                        leavingDate: row.leavingDate ?? null,
+                        changedBy: null,
+                        changedByName: "System (migration)",
+                        changedAt: (row.createdAt ? new Date(row.createdAt) : new Date()).toISOString(),
+                    });
+                    await executeQuery("UPDATE users SET statusHistory = ? WHERE id = ?", [`[${entry}]`, row.id]);
+                }
+            } catch (statusHistoryBackfillErr) {
+                console.error("Error during statusHistory genesis backfill migration:", statusHistoryBackfillErr);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);
@@ -799,13 +831,20 @@ class User {
             "leavingDate", "isTemporary", "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
             "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
             "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute", "reasonOfLeaving", "contractor", "mentor", "designation",
-            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "mentorLimit", "customRoleId", "createdAt", "ojt", "expectedHandover", "shiftSchedule", "contractorId", "dojoShift"
+            "supervisor", "incharge", "section", "line", "stationNo", "isMentor", "isSupervisor", "isIncharge", "mentorLimit", "customRoleId", "createdAt", "ojt", "expectedHandover", "shiftSchedule", "contractorId", "dojoShift", "statusHistory"
         ];
 
         // Apply defaults if fields are missing in userData
         const dataToInsert = { ...userData };
         if (!dataToInsert.createdAt) dataToInsert.createdAt = new Date();
         if (dataToInsert.status === undefined) dataToInsert.status = 'PRESENT';
+        dataToInsert.statusHistory = `[${buildStatusHistoryEntry({
+            status: dataToInsert.status,
+            joiningDate: dataToInsert.joiningDate,
+            leavingDate: dataToInsert.leavingDate,
+            changedBy: dataToInsert.createdBy,
+            changedByName: dataToInsert.createdByName,
+        })}]`;
         if (dataToInsert.role === undefined) dataToInsert.role = 'STUDENT';
         if (dataToInsert.isDeleted === undefined) dataToInsert.isDeleted = 0;
         if (dataToInsert.isVerified === undefined) dataToInsert.isVerified = 0;

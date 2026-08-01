@@ -15,6 +15,7 @@ import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import { statusHistoryChanged, buildStatusHistoryEntry } from "../utils/statusHistory.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -343,6 +344,7 @@ export const formatUser = (u) => {
     fromInfo: [u.deptName || sanitize(u.department), u.sectionName || sanitize(u.section), u.lineName || sanitize(u.line), u.subSectionName || sanitize(u.sub_section), u.stationName || sanitize(u.stationNo)].filter(Boolean).join(' / '),
     currentSkill,
     shiftSchedule: parseJSON(u.shiftSchedule, {}),
+    statusHistory: parseJSON(u.statusHistory, []),
     targetDeptId: u.targetDeptId,
     targetSectionId: u.targetSectionId,
     targetLineId: u.targetLineId,
@@ -955,7 +957,7 @@ export const createUser = asyncHandler(async (req, res) => {
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
     "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge", "mentorLimit",
-    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId", "shiftSchedule"
+    "currentLevel", "isTemporary", "createdAt", "updatedAt", "departments", "stations", "sections", "lines", "subSections", "contractorId", "shiftSchedule", "statusHistory"
   ];
 
   const values = fields.map(f => {
@@ -970,6 +972,13 @@ export const createUser = asyncHandler(async (req, res) => {
     if (f === 'lines') return JSON.stringify(lines);
     if (f === 'subSections') return JSON.stringify(subSections);
     if (f === 'shiftSchedule') return JSON.stringify(typeof data[f] === 'object' && data[f] !== null ? data[f] : {});
+    if (f === 'statusHistory') return `[${buildStatusHistoryEntry({
+      status: data.status || 'PRESENT',
+      joiningDate: data.joiningDate,
+      leavingDate: data.leavingDate,
+      changedBy: req.user?.id,
+      changedByName: req.user?.fullName,
+    })}]`;
     if (['isEmployee', 'isAdmin', 'isTrainer', 'isMentor', 'isSupervisor', 'isIncharge', 'isTemporary'].includes(f)) return data[f] ? 1 : 0;
     return data[f] || null;
   });
@@ -1269,6 +1278,21 @@ export const updateUser = asyncHandler(async (req, res) => {
       currentSkillMap[activeSubSecId] = data.currentLevel;
       data.currentSkill = currentSkillMap;
     }
+  }
+
+  // Append a statusHistory entry atomically in SQL (JSON_MODIFY) rather than reading the
+  // column into JS and writing it back, so concurrent updates to the same user can't
+  // silently drop each other's entries. Checked against the *effective* post-update
+  // values, since status===LEFT auto-sets/clears leavingDate above.
+  if (statusHistoryChanged(oldUser, data)) {
+    updates.push("statusHistory = JSON_MODIFY(ISNULL(statusHistory, '[]'), 'append $', JSON_QUERY(?))");
+    values.push(buildStatusHistoryEntry({
+      status: data.status !== undefined ? data.status : oldUser.status,
+      joiningDate: data.joiningDate !== undefined ? data.joiningDate : oldUser.joiningDate,
+      leavingDate: data.leavingDate !== undefined ? data.leavingDate : oldUser.leavingDate,
+      changedBy: req.user?.id,
+      changedByName: req.user?.fullName,
+    }));
   }
 
   for (const f of fieldsToUpdate) {
@@ -3282,10 +3306,37 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
     return res.json(new ApiResponse(200, { updated: 0 }, "No users matched the criteria"));
   }
 
+  // Dedupe -- a duplicated id would otherwise produce two matching rows in the
+  // JOIN (VALUES ...) history update below, which SQL Server would resolve arbitrarily.
+  userIds = [...new Set(userIds)];
+
   const placeholders = userIds.map(() => "?").join(",");
+
+  // Each user keeps their own joiningDate in the snapshot (only status/leavingDate change
+  // here), so fetch it first and build one history entry per user. Applied via a single
+  // set-based UPDATE...FROM...JOIN(VALUES) statement -- still one round trip regardless of
+  // how many users are selected, but each row's statusHistory entry stays accurate.
+  const [existingRows] = await executeQuery(`SELECT id, joiningDate FROM users WHERE id IN (${placeholders})`, userIds);
+  const joiningDateById = new Map(existingRows.map(r => [r.id, r.joiningDate]));
+
+  const historyValuesSql = userIds.map(() => "(?, ?)").join(",");
+  const historyValuesParams = userIds.flatMap(id => [
+    id,
+    buildStatusHistoryEntry({
+      status: "LEFT",
+      joiningDate: joiningDateById.get(id) ?? null,
+      leavingDate,
+      changedBy: req.user?.id,
+      changedByName: req.user?.fullName,
+    }),
+  ]);
+
   await executeQuery(
-    `UPDATE users SET status = 'LEFT', leavingDate = ?, reasonOfLeaving = ?, updatedAt = GETDATE() WHERE id IN (${placeholders})`,
-    [leavingDate, reasonOfLeaving, ...userIds]
+    `UPDATE u SET u.status = 'LEFT', u.leavingDate = ?, u.reasonOfLeaving = ?, u.updatedAt = GETDATE(),
+       u.statusHistory = JSON_MODIFY(ISNULL(u.statusHistory, '[]'), 'append $', JSON_QUERY(v.entry))
+     FROM users u
+     JOIN (VALUES ${historyValuesSql}) AS v(id, entry) ON u.id = v.id`,
+    [leavingDate, reasonOfLeaving, ...historyValuesParams]
   );
 
   await logAudit(req.user.id, "BULK_UPDATE_STATUS_LEFT", {

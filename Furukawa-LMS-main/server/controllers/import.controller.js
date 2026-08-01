@@ -18,6 +18,7 @@ import {
     syncStudentSkillProgress,
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
+import { buildStatusHistoryEntry } from "../utils/statusHistory.js";
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -348,7 +349,7 @@ const applySkillMatrixFromImportRow = async ({ userId, subSectionId, departmentI
  */
 const processSingleEmployeeRow = async ({
     row, rowNumber, logId, deptMap, sectionMap, contractorMap,
-    resolveFullHierarchy = false, lineMap, subSectionMap, stationMap, updatedBy,
+    resolveFullHierarchy = false, lineMap, subSectionMap, stationMap, updatedBy, updatedByName,
 }) => {
     const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
     const normalizedRow = {
@@ -584,7 +585,9 @@ const processSingleEmployeeRow = async ({
             email: normalizedRow.email || null,
             status: normalizedRow.status || "PRESENT",
             departments: departmentId ? [departmentId] : [],
-            sections: sectionId ? [sectionId] : []
+            sections: sectionId ? [sectionId] : [],
+            createdBy: updatedBy,
+            createdByName: updatedByName
         };
 
         if (existingUser) {
@@ -705,11 +708,31 @@ const processSingleEmployeeRow = async ({
                 if (userData.stationId) updatedData.stations = JSON.stringify([userData.stationId]);
             }
 
+            // Append a statusHistory entry atomically in SQL (JSON_MODIFY) whenever this row's
+            // diff above touched status/joiningDate/leavingDate, using the same snapshot
+            // approach as updateUser/bulkUpdateStatusLeft.
+            const statusHistoryTouched = ['status', 'joiningDate', 'leavingDate'].some(k => updatedData[k] !== undefined);
+            let statusHistoryParam = null;
+            if (statusHistoryTouched) {
+                statusHistoryParam = buildStatusHistoryEntry({
+                    status: updatedData.status !== undefined ? updatedData.status : existingUser.status,
+                    joiningDate: updatedData.joiningDate !== undefined ? updatedData.joiningDate : existingUser.joiningDate,
+                    leavingDate: updatedData.leavingDate !== undefined ? updatedData.leavingDate : existingUser.leavingDate,
+                    changedBy: updatedBy,
+                    changedByName: updatedByName,
+                });
+            }
+
             if (Object.keys(updatedData).length > 0) {
                 const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
                 const values = [...Object.values(updatedData), existingUser.id];
 
-                await executeQuery(`UPDATE users SET ${updateFields}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
+                const statusHistorySql = statusHistoryTouched
+                    ? ", statusHistory = JSON_MODIFY(ISNULL(statusHistory, '[]'), 'append $', JSON_QUERY(?))"
+                    : "";
+                if (statusHistoryTouched) values.splice(-1, 0, statusHistoryParam);
+
+                await executeQuery(`UPDATE users SET ${updateFields}${statusHistorySql}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
 
                 const status = Object.keys(changes).length > 0 ? "UPDATED" : "SUCCESS";
 
@@ -895,7 +918,10 @@ export const importEmployees = async (req, res) => {
             const row = data[i];
             const rowNumber = hIndex + i + 2; // Excel row number (1-indexed + header)
 
-            const outcome = await processSingleEmployeeRow({ row, rowNumber, logId, deptMap, sectionMap, contractorMap });
+            const outcome = await processSingleEmployeeRow({
+                row, rowNumber, logId, deptMap, sectionMap, contractorMap,
+                updatedBy: req.user?.id || null, updatedByName: req.user?.fullName || null,
+            });
             if (outcome.skip) continue;
 
             if (outcome.status === "FAILED") {
@@ -961,7 +987,10 @@ export const processEmployeesChunk = async (req, res) => {
     const results = [];
     for (let i = 0; i < rows.length; i++) {
         const rowNumber = (startIndex || 0) + i;
-        const outcome = await processSingleEmployeeRow({ row: rows[i], rowNumber, logId, deptMap, sectionMap, contractorMap });
+        const outcome = await processSingleEmployeeRow({
+            row: rows[i], rowNumber, logId, deptMap, sectionMap, contractorMap,
+            updatedBy: req.user?.id || null, updatedByName: req.user?.fullName || null,
+        });
         if (outcome.skip) continue;
         results.push(outcome);
     }
@@ -1093,7 +1122,7 @@ export const importEmployeesFull = async (req, res) => {
             const outcome = await processSingleEmployeeRow({
                 row, rowNumber, logId, deptMap, sectionMap, contractorMap,
                 resolveFullHierarchy: true, lineMap, subSectionMap, stationMap,
-                updatedBy: req.user?.id || null,
+                updatedBy: req.user?.id || null, updatedByName: req.user?.fullName || null,
             });
             if (outcome.skip) continue;
 
@@ -1161,7 +1190,7 @@ export const processEmployeesChunkFull = async (req, res) => {
         const outcome = await processSingleEmployeeRow({
             row: rows[i], rowNumber, logId, deptMap, sectionMap, contractorMap,
             resolveFullHierarchy: true, lineMap, subSectionMap, stationMap,
-            updatedBy: req.user?.id || null,
+            updatedBy: req.user?.id || null, updatedByName: req.user?.fullName || null,
         });
         if (outcome.skip) continue;
         results.push(outcome);
@@ -1269,6 +1298,8 @@ export const importInstructors = async (req, res) => {
                     isTrainer: true,
                     joiningDate: normalizeDate(row.joiningDate),
                     status: "PRESENT",
+                    createdBy: req.user?.id || null,
+                    createdByName: req.user?.fullName || null,
                 };
 
                 const existing = await executeQuery(
@@ -1620,6 +1651,8 @@ export const importDojoUsers = async (req, res) => {
                     contractor: normalizedRow.contractor,
                     contractorId,
                     dojoShift: ["A", "B", "C", "G"].includes(normalizedRow.dojoShift) ? normalizedRow.dojoShift : null,
+                    createdBy: req.user?.id || null,
+                    createdByName: req.user?.fullName || null,
                 };
 
                 const newUser = await User.create(userData);

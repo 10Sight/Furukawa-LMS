@@ -277,6 +277,24 @@ const parseMultiParam = (value) => {
 };
 
 
+// One source of truth for the first Daily Manpower Trend graph's Total Manpower population.
+// Every lower Total Manpower comparison graph must use this exact rule so its category sum
+// equals the first graph's Total Manpower bar for the same hierarchy/state/district filters.
+const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
+    AND ${alias}.isDeleted = 0
+    AND ${alias}.isTemporary = 0
+    AND ${alias}.status = 'PRESENT'
+    AND ISNULL(${alias}.designation, '') NOT IN (
+        '1076',
+        '1077',
+        '1081',
+        'DRIVER',
+        'Supervisor',
+        'Staff'
+    )
+`;
+
+
 const normalizeDashboardHolidayRow = (row = {}) => ({
     id: Number(row.id || 0),
     holidayDate: row.holidayDate
@@ -1398,8 +1416,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let snapshotTotal = 0;
 
-    // Total Manpower base remains the same correct users-table logic.
-    // No user_hierarchy_snapshots EXISTS/JOIN filter is introduced here.
+    // TOTAL MANPOWER (2647 LOGIC):
+    // Exact users-table eligibility requested for the first Dashboard graph:
+    // isDeleted = 0, isTemporary = 0, status = PRESENT, and fixed designation exclusions.
+    // No joiningDate/leavingDate or non-LEFT fallback is applied here.
     const userHierConditions = [];
     const userHierParams = [];
 
@@ -1431,9 +1451,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             .map((dateObj) => `('${formatDateLocal(dateObj)}')`)
             .join(",");
 
-        const joiningDateSql = userDateToDateSql("u.joiningDate");
-        const leavingDateSql = userDateToDateSql("u.leavingDate");
-
         const dailyHeadcountSql = `
             WITH DateRange AS (
                 SELECT CONVERT(DATE, valuesTable.fullDate, 23) AS fullDate
@@ -1441,29 +1458,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             ),
             EligibleUsers AS (
                 SELECT DISTINCT
-                    LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) AS empId,
-                    ${joiningDateSql} AS joining_date,
-                    ${leavingDateSql} AS leaving_date,
-                    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) AS employee_status
+                    u.id AS userId
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
                   ${userHierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
             )
             SELECT
                 CONVERT(VARCHAR, d.fullDate, 23) AS fullDate,
-                COUNT(DISTINCT CASE
-                    WHEN (eu.joining_date IS NULL OR eu.joining_date <= d.fullDate)
-                     AND (
-                            eu.employee_status <> 'LEFT'
-                            OR eu.leaving_date IS NULL
-                            OR eu.leaving_date > d.fullDate
-                         )
-                    THEN eu.empId
-                END) AS total
+                COUNT(DISTINCT eu.userId) AS total
             FROM DateRange d
             LEFT JOIN EligibleUsers eu ON 1 = 1
             GROUP BY d.fullDate
@@ -1477,24 +1480,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         snapshotTotal = Number(dailyHeadcountByDate[sqlEndDate] || 0);
     } catch (e) {
-        console.warn("[DASHBOARD] Date-wise Total Manpower query failed; original total fallback used:", e.message);
+        console.warn("[DASHBOARD] Total Manpower query failed; same-rule fallback used:", e.message);
 
         try {
-            // Fallback applies the same LEFT-status and leavingDate rule for the selected end date.
             let fallbackSql = `
-                SELECT COUNT(DISTINCT u.empId) AS total
+                SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  AND (
-                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
-                        OR ${leavingDateSql} IS NULL
-                        OR ${leavingDateSql} > CONVERT(DATE, '${sqlEndDate}', 23)
-                      )
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
                   ${userHierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
             `;
 
             const [fallbackRows] = await executeQuery(fallbackSql, userHierParams);
@@ -1503,7 +1497,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 loopDates.map((dateObj) => [formatDateLocal(dateObj), snapshotTotal])
             );
         } catch (fallbackError) {
-            console.warn("[DASHBOARD] Original Total Manpower fallback failed:", fallbackError.message);
+            console.warn("[DASHBOARD] Total Manpower fallback failed:", fallbackError.message);
             snapshotTotal = 0;
             dailyHeadcountByDate = {};
         }
@@ -1948,18 +1942,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let sqlText = `
                 SELECT
                     ${columnSql} AS rawName,
-                    COUNT(DISTINCT u.empId) AS total
+                    COUNT(DISTINCT u.id) AS total
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
             `;
             const params = [];
-            sqlText = addUserMasterFilters(sqlText, params, "u");
-            sqlText += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
+            sqlText = addUserMasterHierarchyFilters(sqlText, params, "u");
             sqlText = addStateDistrictFilters(sqlText, params, { includeState, includeDistrict });
-            // Users total chart should ignore shift filter.
+            // First graph Total Manpower intentionally ignores shift and joining/leaving dates.
             sqlText += `
                 GROUP BY ${columnSql}
                 ORDER BY total DESC
@@ -2030,24 +2021,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const getUsersTotalDenominator = async ({ includeState = true, includeDistrict = true } = {}) => {
         try {
             let sqlText = `
-                SELECT COUNT(DISTINCT u.empId) AS total
+                SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
             `;
 
             const params = [];
-            sqlText = addUserMasterFilters(sqlText, params, "u");
-            sqlText += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
+            sqlText = addUserMasterHierarchyFilters(sqlText, params, "u");
             sqlText = addStateDistrictFilters(sqlText, params, { includeState, includeDistrict });
 
-            // IMPORTANT:
-            // Percentage denominator hamesha total active employees se hoga.
-            // Isme category-specific WHERE (skillLevelWhere / leaderExpertWhere) apply nahi hoga,
-            // warna sirf 21 skill-level employees hi 100% ban jayenge.
-            // Shift filter bhi users-total denominator par apply nahi hoga.
+            // Same denominator as the first graph Total Manpower bar. Shift and date-lifecycle
+            // filters are intentionally not applied because the first graph does not apply them.
             const [rows] = await executeQuery(sqlText, params);
             return Number(rows?.[0]?.total || 0);
         } catch (e) {
@@ -2130,48 +2115,19 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         }
 
         try {
-            let masterSql;
             const masterParams = [];
+            let masterSql = `
+                SELECT
+                    ${resolvedMasterColumnSql} AS rawName,
+                    COUNT(DISTINCT u.id) AS total
+                FROM users u
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${resolvedMasterExtraWhere}
+            `;
 
-            if (masterUsePresentUsersOnly) {
-                // Skill Level Users Total must match the users-table query exactly:
-                // currentLevel L1-L4 + isTemporary = 0 + isDeleted = 0 + status = PRESENT.
-                // Do not apply joiningDate/leavingDate active-as-of-date logic here.
-                // This removes the net-count mismatch caused by:
-                // - future-joining PRESENT employees being excluded, and
-                // - ACTIVE / ON-LEAVE employees being added.
-                // Department/Section/Line, State/District and designation shutter filters remain unchanged.
-                masterSql = `
-                    SELECT
-                        ${resolvedMasterColumnSql} AS rawName,
-                        COUNT(DISTINCT u.id) AS total
-                    FROM users u
-                    WHERE u.isDeleted = 0
-                      AND u.isTemporary = 0
-                      AND u.status = 'PRESENT'
-                      ${resolvedMasterExtraWhere}
-                `;
-
-                masterSql = addUserMasterHierarchyFilters(masterSql, masterParams, "u");
-                masterSql += getDesignationShutterExclusionSql("u");
-                masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
-            } else {
-                masterSql = `
-                    SELECT
-                        ${resolvedMasterColumnSql} AS rawName,
-                        COUNT(DISTINCT u.empId) AS total
-                    FROM users u
-                    WHERE ISNULL(u.isDeleted, 0) = 0
-                      AND ISNULL(u.isTemporary, 0) = 0
-                      AND u.empId IS NOT NULL
-                      AND u.empId != ''
-                      ${resolvedMasterExtraWhere}
-                `;
-
-                masterSql = addUserMasterFilters(masterSql, masterParams, "u");
-                masterSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
-                masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
-            }
+            masterSql = addUserMasterHierarchyFilters(masterSql, masterParams, "u");
+            masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
 
             // IMPORTANT:
             // Users Total / dark yellow bar par shift filter apply nahi hoga.
@@ -2193,20 +2149,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return Object.values(mapByName)
             .map(item => {
                 const attendanceCount = Number(item.attendanceValue || 0);
-                const rawMasterCount = Number(item.masterValue || 0);
-                const bucketName = String(item.name || item[labelKey] || "").trim().toUpperCase();
-                const isBlankBucket = ["", "BLANK", "NOT PROVIDED", "UNKNOWN", "NULL", "UNDEFINED", "N/A", "NA", "-"].includes(bucketName);
-                let masterCount = alignBlankMasterWithAttendance && isBlankBucket
-                    ? attendanceCount
-                    : rawMasterCount;
-
-                // DISTRICT GRAPH SAFETY RULE (enabled only for District Distribution):
-                // A district cannot have present attendance without at least the same employees
-                // existing in Total Manpower. Date/status master filters can otherwise exclude
-                // those present employees and incorrectly produce a yellow zero bar.
-                if (ensureMasterAtLeastAttendance && attendanceCount > masterCount) {
-                    masterCount = attendanceCount;
-                }
+                const masterCount = Number(item.masterValue || 0);
 
                 return {
                     ...item,
@@ -2241,13 +2184,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     };
 
 
-    // EDUCATION GRAPH RAW COUNT FIX:
-    // Education graph me Users Total ko ab users table ke raw records se calculate kiya gaya hai.
-    // Pehle common getGroupedComparisonChart() education ke liye bhi active employee logic use kar raha tha:
-    // isDeleted = 0, isTemporary = 0, valid empId, COUNT(DISTINCT empId).
-    // Isliye SQL query `SELECT COUNT(*) FROM users WHERE education = '12th'` me 1545 aata tha,
-    // lekin dashboard education graph me 1384 aa raha tha.
-    // Ab education graph ka masterValue raw users rows ke basis par aayega, same as table count.
+    // EDUCATION GRAPH ALIGNMENT:
+    // Every education category uses the exact first-graph Total Manpower population,
+    // while its Attendance category uses the exact first-graph present population.
+    // Blank/unknown education values remain in one visible category so no employee is dropped.
     const getEducationComparisonChart = async ({ columnSql, labelKey = "name", includeState = true, includeDistrict = true }) => {
         const mapByName = {};
 
@@ -2295,7 +2235,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 params.push(...lineNames);
             }
 
-            sqlText += getEligibleUserSql(alias);
             return sqlText;
         };
 
@@ -2307,14 +2246,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             let attendanceSql = `
                 SELECT
                     ${columnSql} AS rawName,
-                    COUNT(DISTINCT u.empId) AS total
+                    COUNT(DISTINCT u.id) AS total
                 FROM attendance_logs al
                 INNER JOIN users u ON al.userId = u.id
                 WHERE al.[date] >= '${masterSqlStartDate}'
                   AND al.[date] <= '${masterSqlEndDate}'
                   AND al.status IN ('P','PRESENT','Present')
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
+                  ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
+                  ${getEligibleUserSql("u")}
             `;
 
             const attendanceParams = [];
@@ -2339,11 +2278,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
             `;
 
             const masterParams = [];
             masterSql = addRawUserHierarchyFilters(masterSql, masterParams, "u");
-            masterSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
             masterSql = addStateDistrictFilters(masterSql, masterParams, { includeState, includeDistrict });
             masterSql += `
                 GROUP BY ${columnSql}
@@ -2362,10 +2301,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
             `;
             const denominatorParams = [];
             denominatorSql = addRawUserHierarchyFilters(denominatorSql, denominatorParams, "u");
-            denominatorSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
             denominatorSql = addStateDistrictFilters(denominatorSql, denominatorParams, { includeState, includeDistrict });
 
             const [rows] = await executeQuery(denominatorSql, denominatorParams);
@@ -2412,26 +2351,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             END
         `;
 
-        const leaderExpertWhere = `
-            AND (
-                UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%LINE LEADER%'
-                OR UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%EXPERT%'
-            )
-        `;
-
-        const skillLevelWhere = `
-            AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.currentLevel)))) IN ('L1','L2','L3','L4')
-        `;
-        const skillMasterColumnSql = `
+        const leaderExpertColumnSql = `
             CASE
-                WHEN UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.currentLevel)))) IN ('L1','L2','L3','L4')
-                    THEN UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.currentLevel))))
-                ELSE 'Not Provided'
+                WHEN UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%LINE LEADER%'
+                    THEN 'Line Leader'
+                WHEN UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%EXPERT%'
+                    THEN 'Expert'
+                ELSE 'Other'
             END
-        `;
-
-        const skillMasterWhere = `
-            AND u.currentLevel IN ('L1','L2','L3','L4')
         `;
 
 
@@ -2464,10 +2391,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         ] = await Promise.all([
             getGroupedComparisonChart({
                 columnSql: skillColumnSql,
-                extraWhere: skillLevelWhere,
-                masterColumnSql: skillMasterColumnSql,
-                masterExtraWhere: skillMasterWhere,
-                masterUsePresentUsersOnly: true,
             }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
             getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
@@ -2480,15 +2403,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 columnSql: getCleanTextColumnSql("u.district"),
                 includeState: true,
                 includeDistrict: true,
-                alignBlankMasterWithAttendance: true,
-                ensureMasterAtLeastAttendance: true,
                 caseInsensitiveNameMerge: true,
                 preserveMergedDisplayName: true,
             }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
             getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation") }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
             getGroupedComparisonChart({
-                columnSql: getCleanTextColumnSql("u.designation"),
-                extraWhere: leaderExpertWhere,
+                columnSql: leaderExpertColumnSql,
             }).catch(err => { console.warn("[DASHBOARD] leaderExpert query failed:", err.message); return []; }),
             getStateOptions().catch(err => { console.warn("[DASHBOARD] stateOptions query failed:", err.message); return []; }),
             getDistrictOptions().catch(err => { console.warn("[DASHBOARD] districtOptions query failed:", err.message); return []; }),
@@ -2503,7 +2423,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             district: districtData,
             designation: designationData,
             leaderExpert,
-            leaderExpertTotalEmployees: shouldUseAttendanceMaster ? attendanceMasterTotal : snapshotTotal,
+            leaderExpertTotalEmployees: await getUsersTotalDenominator(),
             stateOptions,
             districtOptions,
             education: educationData,
@@ -2517,13 +2437,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // CONTRACTOR GRAPH COMPARISON FIX
         // Requirement:
         // Contractor graph me 2 bars dikhengi:
-        // 1) Total Headcount (yellow) = users table ke contractor column se.
-        // 2) Actual Present (blue) = attendance_logs me payCode = users.empId,
-        //    selected date/range + PRESENT status + attendance shift filter se.
-        //
-        // Important:
-        // Contractor employees often have isTemporary = 1, so contractor graph
-        // me addUserMasterFilters() use nahi karna. Warna contractor data exclude ho jayega.
+        // 1) Total Headcount (yellow) = first graph Total Manpower population,
+        //    grouped by users.contractor.
+        // 2) Actual Present (blue) = first graph Attendance population,
+        //    grouped by the same contractor category and attendance shift.
         // ============================================================
 
         // Contractor category normalization:
@@ -2582,105 +2499,22 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             END
         `;
 
-        const appendContractorHierarchyFilter = ({ sqlText, params, idColumn, textColumns = [], ids = [], names = [], alias = "u" }) => {
-            const numericIds = (ids || [])
-                .map(id => parseInt(id, 10))
-                .filter(id => !Number.isNaN(id));
-
-            const parts = [];
-
-            if (numericIds.length) {
-                const placeholders = numericIds.map(() => "?").join(",");
-                parts.push(`${alias}.${idColumn} IN (${placeholders})`);
-                params.push(...numericIds);
-            }
-
-            const cleanNames = (names || [])
-                .map(name => String(name || "").trim())
-                .filter(Boolean);
-
-            if (cleanNames.length && textColumns.length) {
-                const namePlaceholders = cleanNames
-                    .map(() => "UPPER(LTRIM(RTRIM(CAST(? AS NVARCHAR(510)))))")
-                    .join(",");
-
-                const nameParts = textColumns.map(column =>
-                    `UPPER(LTRIM(RTRIM(CAST(${alias}.${column} AS NVARCHAR(510))))) IN (${namePlaceholders})`
-                );
-
-                parts.push(`(${nameParts.join(" OR ")})`);
-
-                // Each text column has its own placeholder set.
-                textColumns.forEach(() => params.push(...cleanNames));
-            }
-
-            if (!parts.length) return sqlText;
-            return `${sqlText} AND (${parts.join(" OR ")})`;
-        };
-
-        const applyContractorCommonFilters = (sqlText, params, { applyUserShift = false, applyAttendanceShift = false } = {}) => {
-            let nextSql = sqlText;
-
-            nextSql = appendContractorHierarchyFilter({
-                sqlText: nextSql,
-                params,
-                idColumn: "departmentId",
-                textColumns: ["[department]"],
-                ids: departmentIds,
-                names: departmentNames,
-                alias: "u",
-            });
-
-            nextSql = appendContractorHierarchyFilter({
-                sqlText: nextSql,
-                params,
-                idColumn: "sectionId",
-                textColumns: ["[section]", "[sub_section]"],
-                ids: sectionIds,
-                names: sectionNames,
-                alias: "u",
-            });
-
-            nextSql = appendContractorHierarchyFilter({
-                sqlText: nextSql,
-                params,
-                idColumn: "lineId",
-                textColumns: ["[line]"],
-                ids: lineIds,
-                names: lineNames,
-                alias: "u",
-            });
-
-            // State/District filters users table ke state/district se apply honge.
+        const applyContractorHierarchyAndLocationFilters = (sqlText, params) => {
+            let nextSql = addUserMasterHierarchyFilters(sqlText, params, "u");
             nextSql = addStateDistrictFilters(nextSql, params, { alias: "u" });
-
-            // Total headcount par shift filter apply nahi hoga.
-            // Shift filter sirf actual present bar par attendance_logs.shift se apply hoga.
-            if (applyUserShift) {
-                // Intentionally skipped for contractor total headcount.
-                // Total Headcount users table ka fixed contractor-wise total rahega.
-            }
-            if (applyAttendanceShift) {
-                nextSql = addShiftFilter(nextSql, params, "al");
-            }
-
-            nextSql += getEligibleUserSql("u");
-
             return nextSql;
         };
 
         let contractorTotalSql = `
             SELECT
                 ${contractorColumnSql} AS contractorName,
-                COUNT(DISTINCT u.empId) AS totalHeadcount
+                COUNT(DISTINCT u.id) AS totalHeadcount
             FROM users u
-            WHERE ISNULL(u.isDeleted, 0) = 0
-              AND u.empId IS NOT NULL
-              AND u.empId != ''
+            WHERE 1=1
+              ${getFirstGraphTotalManpowerEligibilitySql("u")}
         `;
         const contractorTotalParams = [];
-        contractorTotalSql = applyContractorCommonFilters(contractorTotalSql, contractorTotalParams, { applyUserShift: false });
-        contractorTotalSql += getActiveUserAsOfDateSql("u", usersTotalAsOfDate);
+        contractorTotalSql = applyContractorHierarchyAndLocationFilters(contractorTotalSql, contractorTotalParams);
         contractorTotalSql += `
             GROUP BY ${contractorColumnSql}
         `;
@@ -2688,18 +2522,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         let contractorPresentSql = `
             SELECT
                 ${contractorColumnSql} AS contractorName,
-                COUNT(DISTINCT u.empId) AS actualPresent
+                COUNT(DISTINCT u.id) AS actualPresent
             FROM attendance_logs al
             INNER JOIN users u ON al.userId = u.id
-            WHERE ISNULL(u.isDeleted, 0) = 0
-              AND u.empId IS NOT NULL
-              AND u.empId != ''
-              AND al.[date] >= '${masterSqlStartDate}'
+            WHERE al.[date] >= '${masterSqlStartDate}'
               AND al.[date] <= '${masterSqlEndDate}'
               AND al.status IN ('P','PRESENT','Present')
+              ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
+              ${getEligibleUserSql("u")}
         `;
         const contractorPresentParams = [];
-        contractorPresentSql = applyContractorCommonFilters(contractorPresentSql, contractorPresentParams, { applyAttendanceShift: true });
+        contractorPresentSql = applyContractorHierarchyAndLocationFilters(contractorPresentSql, contractorPresentParams);
+        contractorPresentSql = addShiftFilter(contractorPresentSql, contractorPresentParams, "al");
         contractorPresentSql += `
             GROUP BY ${contractorColumnSql}
         `;
@@ -2740,17 +2574,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             contractorMap.set(contractorName, existing);
         });
 
-        const contractorTotalHeadcount = Array.from(contractorMap.values()).reduce(
-            (sum, row) => sum + Number(row.totalHeadcount || 0),
-            0
-        );
-
-        const contractorTotalPresent = Array.from(contractorMap.values()).reduce(
-            (sum, row) => sum + Number(row.actualPresent || 0),
-            0
-        );
-
-        const contractorDenominator = Math.max(contractorTotalHeadcount, contractorTotalPresent, 0);
+        const contractorDenominator = await getUsersTotalDenominator();
 
         pieCharts.contractorPrefix = Array.from(contractorMap.values())
             .map(row => {
@@ -3523,7 +3347,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     u.id AS userId,
                     u.empId,
                     al.status AS attendanceStatus,
-                    DATEDIFF(DAY, ${joinDateSQL}, al.[date]) AS tenureDays
+                    CASE
+                        WHEN ${joinDateSQL} IS NULL THEN 1096
+                        WHEN DATEDIFF(DAY, ${joinDateSQL}, al.[date]) < 0 THEN 0
+                        ELSE DATEDIFF(DAY, ${joinDateSQL}, al.[date])
+                    END AS tenureDays
                 FROM attendance_logs al
                 INNER JOIN users u
                     ON al.userId = u.id
@@ -3534,7 +3362,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
-                  AND ${joinDateSQL} IS NOT NULL
                   ${hierCondition}
                   ${getDesignationShutterExclusionSql("u")}
         `;
@@ -3650,44 +3477,22 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         let masterTenureSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
-                COUNT(DISTINCT empId) AS totalCount
+                COUNT(DISTINCT userId) AS totalCount
             FROM (
                 SELECT
-                    u.empId,
-
-                    -- Total Manpower blank/invalid joiningDate ko old existing employee maanta hai.
-                    -- Tenure graph me aise employees ko 3y & others bucket me rakha jayega,
-                    -- taaki sab tenure buckets ka total Total Manpower se match kare.
+                    u.id AS userId,
                     CASE
                         WHEN ${joinDateSQL} IS NULL THEN 1096
+                        WHEN DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) < 0 THEN 0
                         ELSE DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?))
                     END AS tenureDays
-
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
-
-                  -- Valid future joiningDate employee current date tak count nahi hoga.
-                  -- Blank/invalid joiningDate old existing employee ke roop me include hoga.
-                  AND (${joinDateSQL} IS NULL OR ${joinDateSQL} <= ?)
-
-                  -- Total Manpower ke same active employee rule:
-                  -- leavingDate sirf tab employee ko remove karegi jab status LEFT ho.
-                  -- PRESENT/ACTIVE/ON-LEAVE employee filled old leavingDate ke baad bhi include rahega.
-                  AND (
-                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
-                        OR ${leaveDateSQL} IS NULL
-                        OR ${leaveDateSQL} > ?
-                      )
-
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
         `;
 
         const masterTenureParams = [
-            usersTotalAsOfDate,
             usersTotalAsOfDate,
             usersTotalAsOfDate,
         ];
@@ -3711,31 +3516,15 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
         if (hasCustomTenureRange) {
             let customMasterSql = `
-                SELECT COUNT(DISTINCT u.empId) AS totalCount
+                SELECT COUNT(DISTINCT u.id) AS totalCount
                 FROM users u
-                WHERE ISNULL(u.isDeleted, 0) = 0
-                  AND ISNULL(u.isTemporary, 0) = 0
-                  AND u.empId IS NOT NULL
-                  AND u.empId != ''
-
-                  -- Custom range needs a valid joining date because exact tenure is required.
+                WHERE 1=1
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
                   AND ${joinDateSQL} IS NOT NULL
-                  AND ${joinDateSQL} <= ?
-
-                  -- Keep the same status-aware active rule as Total Manpower.
-                  AND (
-                        UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) <> 'LEFT'
-                        OR ${leaveDateSQL} IS NULL
-                        OR ${leaveDateSQL} > ?
-                      )
-
                   AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) BETWEEN ? AND ?
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
             `;
             const customMasterParams = [
-                usersTotalAsOfDate,
-                usersTotalAsOfDate,
                 usersTotalAsOfDate,
                 customFromDays,
                 customToDays,

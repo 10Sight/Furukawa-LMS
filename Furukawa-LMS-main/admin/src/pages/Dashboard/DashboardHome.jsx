@@ -1026,7 +1026,7 @@ const extractSkillLevelLabel = (value) => {
     const upperText = text.toUpperCase();
 
     if (!text || upperText === "BLANK" || upperText === "NOT PROVIDED" || upperText === "{}" || upperText === "[]" || upperText === "NULL" || upperText === "UNDEFINED") {
-        return null;
+        return BLANK_CHART_LABEL;
     }
 
     if (["L1", "L2", "L3", "L4"].includes(upperText)) {
@@ -1040,7 +1040,7 @@ const extractSkillLevelLabel = (value) => {
         return `L${match[1]}`;
     }
 
-    return null;
+    return BLANK_CHART_LABEL;
 };
 
 const normalizeSkillLevelChartData = (list = []) => {
@@ -1051,6 +1051,7 @@ const normalizeSkillLevelChartData = (list = []) => {
         L2: { name: "L2", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
         L3: { name: "L3", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
         L4: { name: "L4", value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
+        [BLANK_CHART_LABEL]: { name: BLANK_CHART_LABEL, value: 0, attendanceValue: 0, masterValue: 0, rawValue: 0, percentage: 0 },
     };
 
     (Array.isArray(list) ? list : []).forEach(item => {
@@ -1722,25 +1723,12 @@ const HighchartsPieCard = ({
     const valueSuffix = valueMode === "percentage" ? "%" : "";
 
     const finalSafeData = isGenderChart
-        ? ["Male", "Female"]
-            .map((genderName) => {
-                const existing = safeData.find(item => cleanDisplayName(item.name) === genderName);
-                return existing || {
-                    name: genderName,
-                    value: 0,
-                    rawValue: 0,
-                    percentage: 0,
-                    totalEmployees: 0,
-                    attendanceValue: 0,
-                    masterValue: 0,
-                    attendanceCount: 0,
-                    masterCount: 0,
-                    attendancePercentage: 0,
-                    masterPercentage: 0,
-                };
-            })
-            // Gender charts me Blank/Other/Not Provided bar show nahi karna.
-            .filter(item => Number(item.value) > 0 || Number(item.masterValue) > 0 || Number(item.attendanceValue) > 0)
+        ? [
+            ...["Male", "Female"]
+                .map((genderName) => safeData.find(item => cleanDisplayName(item.name) === genderName))
+                .filter(Boolean),
+            ...safeData.filter(item => !["Male", "Female"].includes(cleanDisplayName(item.name))),
+        ]
         : safeData;
 
     const hasMasterComparison = finalSafeData.some(item => Number(item.masterValue || 0) > 0);
@@ -2643,7 +2631,7 @@ const TenureFullWidthChart = ({
     holidayAware = false,
 }) => {
     const hasHoliday = Boolean(holidayAware && data?.some(d => d?.isHoliday || d?.holidayShortCode));
-    const isEmpty = !hasHoliday && (!data || data.every(d => Number(d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0)));
+    const isEmpty = !hasHoliday && (!data || data.every(d => Number(d.rawValue ?? d.value) === 0 && (!showMasterComparison || Number(d.masterValue || 0) === 0)));
     const valueSuffix = valueMode === "percentage" ? "%" : "";
     const hasMasterComparison = showMasterComparison && data?.some(d => Number(d.masterValue || 0) > 0);
 
@@ -3504,10 +3492,9 @@ const DashboardHome = () => {
         return selectedBuckets.map(item => {
             const rawValue = Number(sourceObj?.[item.value] ?? 0);
             const masterValue = Number(masterObj?.[item.value] ?? 0);
-            // Same denominator for attendance and Users Total percentage.
-            // This keeps yellow Users Total bar greater/equal when its count is greater/equal.
             const commonTotal = masterTotal > 0 ? masterTotal : total;
-            const percentage = commonTotal > 0 ? Number(((rawValue / commonTotal) * 100).toFixed(1)) : 0;
+            const denominator = key === "attrition" ? (masterValue > 0 ? masterValue : rawValue) : commonTotal;
+            const percentage = denominator > 0 ? Number(((rawValue / denominator) * 100).toFixed(1)) : 0;
             const masterPercentage = commonTotal > 0 ? Number(((masterValue / commonTotal) * 100).toFixed(1)) : 0;
 
             return {

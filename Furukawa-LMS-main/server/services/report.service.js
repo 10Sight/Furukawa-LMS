@@ -159,6 +159,23 @@ const getDesignationShutterExclusionSql = (alias = "u") => `
 `;
 
 
+// Exact Total Manpower population used by the Dashboard's first Daily Manpower Trend graph.
+// Both report Available columns use this same helper to prevent future logic drift.
+const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
+    AND ${alias}.isDeleted = 0
+    AND ${alias}.isTemporary = 0
+    AND ${alias}.status = 'PRESENT'
+    AND ISNULL(${alias}.designation, '') NOT IN (
+        '1076',
+        '1077',
+        '1081',
+        'DRIVER',
+        'Supervisor',
+        'Staff'
+    )
+`;
+
+
 
 // users.joiningDate / leavingDate can be NVARCHAR in different formats.
 
@@ -838,21 +855,11 @@ async function fetchLineRequirements(dbPool, monthNumber, yearVal, reportDay = 1
 
 // - NO user_hierarchy_snapshots verification
 
-// - NO isEmployee filter
+// - NO isEmployee, empId, joiningDate, or leavingDate condition
 
-// - isDeleted = 0
+// - isDeleted = 0, isTemporary = 0, status = PRESENT
 
-// - isTemporary = 0
-
-// - valid/non-empty empId
-
-// - designation_shutters exclusion
-
-// - joiningDate adds employee from that exact date
-
-// - employee is removed only when status = LEFT and leavingDate <= report date
-
-// - blank/invalid joiningDate stays included as an existing employee
+// - same fixed designation exclusions as the first graph
 
 // - Department uses users.departmentId
 
@@ -864,14 +871,9 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
     try {
 
-        const joiningDateSql = userDateToDateSql("u.joiningDate");
-
-        const leavingDateSql = userDateToDateSql("u.leavingDate");
-
-        const employeeStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, '')))))`;
-
-
-
+        // AVAILABLE M/P (2647 LOGIC):
+        // Exact users-table eligibility requested for the report Available column.
+        // No joiningDate/leavingDate, empId, or non-LEFT fallback is applied.
         const eligibleUsersCte = `
 
             WITH EligibleUsers AS (
@@ -879,8 +881,6 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
                 SELECT DISTINCT
 
                     u.id,
-
-                    LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) AS empId,
 
                     u.departmentId,
 
@@ -892,27 +892,9 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                 FROM users u
 
-                WHERE ISNULL(u.isDeleted, 0) = 0
+                WHERE 1=1
 
-                  AND ISNULL(u.isTemporary, 0) = 0
-
-                  AND u.empId IS NOT NULL
-
-                  AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-
-                  ${getDesignationShutterExclusionSql("u")}
-
-                  AND (${joiningDateSql} IS NULL OR ${joiningDateSql} <= CONVERT(DATE, @reportDate, 23))
-
-                  AND (
-
-                        ${employeeStatusSql} <> 'LEFT'
-
-                        OR ${leavingDateSql} IS NULL
-
-                        OR ${leavingDateSql} > CONVERT(DATE, @reportDate, 23)
-
-                  )
+                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
 
             )
 
@@ -928,7 +910,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                 ${eligibleUsersCte}
 
-                SELECT COUNT(DISTINCT empId) AS total
+                SELECT COUNT(DISTINCT id) AS total
 
                 FROM EligibleUsers
 
@@ -948,7 +930,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                     departmentId AS deptId,
 
-                    COUNT(DISTINCT empId) AS cnt
+                    COUNT(DISTINCT id) AS cnt
 
                 FROM EligibleUsers
 
@@ -972,7 +954,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                     l.id AS lineId,
 
-                    COUNT(DISTINCT eu.empId) AS cnt
+                    COUNT(DISTINCT eu.id) AS cnt
 
                 FROM [lines] l
 
@@ -998,9 +980,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
-        // Section manpower must use the SAME canonical one-section rule as attendance.
-        // This prevents the same employee from being counted in two section rows when
-        // users.sectionId / line hierarchy / sections.users JSON contain overlapping mappings.
+        // Section manpower keeps the existing canonical one-section hierarchy rule.
         const sectionPromise = dbPool.request()
             .input("reportDate", reportDateStr)
             .query(`
@@ -1008,7 +988,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                 SELECT
                     s.id AS sectionId,
-                    COUNT(DISTINCT eu.empId) AS cnt
+                    COUNT(DISTINCT eu.id) AS cnt
                 FROM sections s
                 LEFT JOIN EligibleUsers eu
                     ON eu.departmentId = s.departmentId
@@ -1066,7 +1046,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
         console.log(
 
-            `[fetchActiveManpowerMaps] DASHBOARD-EXACT ${reportDateStr}: total=${total}, departments=${byDepartment.size}, sections=${bySection.size}, lines=${byLine.size}`
+            `[fetchActiveManpowerMaps] PRESENT-ONLY ${reportDateStr}: total=${total}, departments=${byDepartment.size}, sections=${bySection.size}, lines=${byLine.size}`
 
         );
 
@@ -1099,7 +1079,6 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
-
 // =================================================
 
 // STEP 4: Fetch Dashboard-exact attendance maps for yesterday
@@ -1122,9 +1101,74 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 // =================================================
 
+async function isDashboardHoliday(dbPool, reportDateStr) {
+
+    try {
+
+        const result = await dbPool.request()
+
+            .input("reportDate", reportDateStr)
+
+            .query(`
+
+                SELECT TOP (1) id
+
+                FROM dashboard_holidays
+
+                WHERE ISNULL(isActive, 1) = 1
+
+                  AND holidayDate = CONVERT(DATE, @reportDate, 23)
+
+            `);
+
+        return Boolean(result.recordset?.length);
+
+    } catch (e) {
+
+        // Older client databases may not yet contain dashboard_holidays.
+        // Keep the previous report behavior instead of failing report generation.
+        return false;
+
+    }
+
+}
+
+
 async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
     try {
+
+        if (await isDashboardHoliday(dbPool, reportDateStr)) {
+
+            return {
+
+                byDepartment: new Map(),
+
+                bySection: new Map(),
+
+                byLine: new Map(),
+
+                total: {
+
+                    totalPresent: 0,
+
+                    shiftGeneral: 0,
+
+                    shiftA: 0,
+
+                    shiftB: 0,
+
+                    shiftC: 0,
+
+                    totalOtHrs: 0,
+
+                    totalHrsWorked: 0
+
+                }
+
+            };
+
+        }
 
         const presentCondition = `al.status IN ('P','PRESENT','Present')`;
 

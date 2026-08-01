@@ -229,9 +229,25 @@ const MonthStatusLabel = ({ cell }) => {
 export default function SetRequirements() {
   const { user } = useSelector((state) => state.auth);
   const { hasPrivilege } = usePrivileges();
-  const canManageRequirements = hasPrivilege("setrequirement");
-  const canUpload = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:upload_excel');
-  const canManageEmails = user?.isAdmin || user?.role === 'SUPERADMIN' || canManageRequirements || user?.customRole?.permissions?.includes('mps_requirement:add_emails');
+  const canManageRequirements =
+    user?.isAdmin ||
+    user?.role === 'SUPERADMIN' ||
+    hasPrivilege("setrequirement") ||
+    user?.customRole?.permissions?.includes('mps_requirement:edit') ||
+    user?.customRole?.permissions?.includes('mps_requirement:manage');
+
+  const canUpload =
+    user?.isAdmin ||
+    user?.role === 'SUPERADMIN' ||
+    canManageRequirements ||
+    user?.customRole?.permissions?.includes('mps_requirement:upload_excel');
+
+  const canManageEmails =
+    user?.isAdmin ||
+    user?.role === 'SUPERADMIN' ||
+    canManageRequirements ||
+    user?.customRole?.permissions?.includes('mps_requirement:add_emails');
+
   const isCustomSectionHead = String(user?.role || "").trim().toUpperCase() === "CUSTOM";
 
   const [loading, setLoading] = useState(false);
@@ -481,6 +497,7 @@ export default function SetRequirements() {
           key,
           sectionCode: req?.sectionCode || "",
           sectionName: req?.sectionName || "",
+          sectionId: req?.sectionId || null,
           sectionCategory: req?.sectionCategory || "Not Applicable",
           lineCode: req?.lineCode || "",
           lineDescription: req?.lineDescription || "",
@@ -765,7 +782,35 @@ export default function SetRequirements() {
 
   const canApproveRow = (row) => {
     const status = normalizeApprovalStatus(row?.approvalStatus, row?.isActive);
-    return isCustomSectionHead && row.isAssigned !== false && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
+
+    const parseUserSections = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.map(Number);
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(Number);
+      } catch (_) {}
+      return String(val).split(/[;,]+/).map(x => Number(x.trim())).filter(x => !isNaN(x));
+    };
+
+    const userSections = [
+      ...parseUserSections(user?.sectionId),
+      ...parseUserSections(user?.sections),
+    ];
+
+    const hasWildcard = 
+      userSections.includes(-1) ||
+      (typeof user?.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
+      (Array.isArray(user?.sections) && (user.sections.includes('*') || user.sections.includes('all')));
+
+    const hasApprovePermission =
+      user?.isAdmin ||
+      user?.role === 'SUPERADMIN' ||
+      hasWildcard ||
+      (row?.sectionId && userSections.includes(Number(row.sectionId))) ||
+      row?.isAssigned === true;
+
+    return hasApprovePermission && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
   };
 
   const handleApproveRow = async (row) => {

@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,12 +46,34 @@ const EvaluationTestMonitoring = () => {
   const [deleteAttempt, { isLoading: isDeleting }] = useDeleteEvaluationTestAttemptMutation();
   const [deleteId, setDeleteId] = useState(null);
 
-  // Filter States
-  const [selectedDeptId, setSelectedDeptId] = useState("all");
-  const [selectedTestDeptId, setSelectedTestDeptId] = useState("all");
-  const [search, setSearch] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+  // Filter States — persisted in the URL query string so they survive navigating
+  // away to audit/attempt a test paper and back (see back-button `state.from` wiring).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedDeptId = searchParams.get("deptId") || "all";
+  const selectedTestDeptId = searchParams.get("testDeptId") || "all";
+  const search = searchParams.get("search") || "";
+  const rawPage = parseInt(searchParams.get("page"), 10);
+  const currentPage = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
   const itemsPerPage = 10;
+
+  // Merges the given updates into the URL search params, dropping keys back to
+  // their default (deptId=all, testDeptId=all, search="", page=1) so the URL stays clean.
+  const updateParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        const isDefault =
+          value === null || value === undefined || value === "" ||
+          value === "all" || (key === "page" && Number(value) === 1);
+        if (isDefault) {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // Restrict the Test Paper Dept filter for non-admin users assigned to specific departments.
   // The trainee Department filter stays unrestricted so restricted users can still monitor
@@ -77,9 +99,9 @@ const EvaluationTestMonitoring = () => {
 
   useEffect(() => {
     if (isUserRestricted && !assignedDepartments.includes(selectedTestDeptId)) {
-      setSelectedTestDeptId(assignedDepartments[0]);
+      updateParams({ testDeptId: assignedDepartments[0] });
     }
-  }, [isUserRestricted, assignedDepartments, selectedTestDeptId]);
+  }, [isUserRestricted, assignedDepartments, selectedTestDeptId, updateParams]);
 
   // 1. Fetch organizational departments
   const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 1000 });
@@ -108,13 +130,11 @@ const EvaluationTestMonitoring = () => {
   const rawAttempts = attemptsRes?.data || [];
 
   const handleDeptChange = (val) => {
-    setSelectedDeptId(val);
-    setCurrentPage(1);
+    updateParams({ deptId: val, page: 1 });
   };
 
   const handleTestDeptChange = (val) => {
-    setSelectedTestDeptId(val);
-    setCurrentPage(1);
+    updateParams({ testDeptId: val, page: 1 });
   };
 
   const handleDeleteClick = (id) => {
@@ -135,10 +155,7 @@ const EvaluationTestMonitoring = () => {
   };
 
   const handleResetAll = () => {
-    setSelectedDeptId("all");
-    setSelectedTestDeptId("all");
-    setSearch("");
-    setCurrentPage(1);
+    updateParams({ deptId: "all", testDeptId: "all", search: "", page: 1 });
   };
 
   const hasActiveFilters =
@@ -215,6 +232,14 @@ const EvaluationTestMonitoring = () => {
 
   const totalPages = Math.ceil(filteredAttempts.length / itemsPerPage) || 1;
 
+  // Clamp an out-of-range page from the URL (e.g. returning from a stale link, or a
+  // filter/delete shrinking the result set) back within bounds.
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      updateParams({ page: totalPages });
+    }
+  }, [currentPage, totalPages, updateParams]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Page Title */}
@@ -289,11 +314,11 @@ const EvaluationTestMonitoring = () => {
                   className="h-9 pl-9 pr-8 border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-xs"
                   placeholder="Search trainee name, E-code, evaluator, or test title..."
                   value={search}
-                  onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => updateParams({ search: e.target.value, page: 1 })}
                 />
                 {search && (
                   <button
-                    onClick={() => { setSearch(""); setCurrentPage(1); }}
+                    onClick={() => updateParams({ search: "", page: 1 })}
                     className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 hover:bg-gray-100 rounded-full flex items-center justify-center"
                   >
                     <IconX className="h-3 w-3 text-gray-500" />
@@ -317,13 +342,13 @@ const EvaluationTestMonitoring = () => {
               {selectedTestDeptId !== "all" && (
                 <Badge variant="secondary" className="gap-1 pl-2.5 pr-1.5 py-1 bg-slate-100 text-slate-700 font-medium">
                   Test Dept: {departments.find(d => String(d.id) === selectedTestDeptId)?.name || selectedTestDeptId}
-                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => setSelectedTestDeptId("all")} />
+                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => updateParams({ testDeptId: "all" })} />
                 </Badge>
               )}
               {search && (
                 <Badge variant="secondary" className="gap-1 pl-2.5 pr-1.5 py-1 bg-slate-100 text-slate-700 font-medium">
                   Search: "{search}"
-                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => { setSearch(""); setCurrentPage(1); }} />
+                  <IconX className="h-3.5 w-3.5 cursor-pointer hover:bg-slate-200 rounded-full p-0.5" onClick={() => updateParams({ search: "", page: 1 })} />
                 </Badge>
               )}
 
@@ -582,16 +607,16 @@ const EvaluationTestMonitoring = () => {
               variant="outline" 
               size="sm" 
               disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => prev - 1)}
+              onClick={() => updateParams({ page: currentPage - 1 })}
               className="rounded-lg border-gray-250"
             >
               Previous
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(prev => prev + 1)}
+              onClick={() => updateParams({ page: currentPage + 1 })}
               className="rounded-lg border-gray-250"
             >
               Next

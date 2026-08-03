@@ -4,11 +4,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
-import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend, IconLoader } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -56,22 +55,53 @@ const emptyQuarterFields = (obj = {}) => {
     return obj;
 };
 
-const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
+const MIN_SEARCH_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+
+const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabled, departmentId, sectionId, lineId }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
 
     useEffect(() => {
         setSearchTerm(value || "");
     }, [value]);
 
-    const suggestions = useMemo(() => {
-        if (!searchTerm.trim()) return [];
-        const lower = searchTerm.toLowerCase();
-        return students.filter(s =>
-            (s.fullName || "").toLowerCase().includes(lower) ||
-            (s.cardNo || "").toLowerCase().includes(lower)
-        ).slice(0, 5);
-    }, [students, searchTerm]);
+    useEffect(() => {
+        const trimmed = searchTerm.trim();
+        if (trimmed.length < MIN_SEARCH_LENGTH) {
+            setSuggestions([]);
+            setIsSearching(false);
+            return;
+        }
+        let cancelled = false;
+        setIsSearching(true);
+        const timer = setTimeout(() => {
+            axiosInstance.get('/api/users/students', {
+                params: {
+                    search: trimmed,
+                    departmentId: departmentId || undefined,
+                    sectionId: sectionId || undefined,
+                    lineId: lineId || undefined,
+                    filterMultiSkillingLevels: "true",
+                    includeTemporary: "true",
+                    limit: 10,
+                },
+            }).then((response) => {
+                if (cancelled) return;
+                setSuggestions(response?.data?.data?.users || []);
+            }).catch(() => {
+                if (!cancelled) setSuggestions([]);
+            }).finally(() => {
+                if (!cancelled) setIsSearching(false);
+            });
+        }, SEARCH_DEBOUNCE_MS);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [searchTerm, departmentId, sectionId, lineId]);
 
     return (
         <div className="relative w-full">
@@ -91,22 +121,30 @@ const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChan
                 disabled={disabled}
                 className="h-8 w-full min-w-[180px] text-xs shadow-none border-slate-200 bg-white"
             />
-            {showSuggestions && suggestions.length > 0 && !disabled && (
+            {showSuggestions && !disabled && searchTerm.trim().length >= MIN_SEARCH_LENGTH && (
                 <ul className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-40 overflow-y-auto z-50 py-1 normal-case font-normal text-left">
-                    {suggestions.map((s) => (
-                        <li
-                            key={s._id || s.id}
-                            onMouseDown={() => {
-                                onChange(s._id || s.id, s.fullName || s.name);
-                                handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
-                                setShowSuggestions(false);
-                            }}
-                            className="px-2 py-1 text-xs hover:bg-amber-50 cursor-pointer flex flex-col"
-                        >
-                            <span className="font-semibold text-slate-700">{s.fullName || s.name}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">Card: {s.cardNo || s.username || s.empId || "—"}</span>
+                    {isSearching ? (
+                        <li className="px-2 py-1.5 text-xs text-slate-400 flex items-center gap-1.5">
+                            <IconLoader className="h-3 w-3 animate-spin" /> Searching...
                         </li>
-                    ))}
+                    ) : suggestions.length > 0 ? (
+                        suggestions.map((s) => (
+                            <li
+                                key={s._id || s.id}
+                                onMouseDown={() => {
+                                    onChange(s._id || s.id, s.fullName || s.name);
+                                    handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
+                                    setShowSuggestions(false);
+                                }}
+                                className="px-2 py-1 text-xs hover:bg-amber-50 cursor-pointer flex flex-col"
+                            >
+                                <span className="font-semibold text-slate-700">{s.fullName || s.name}</span>
+                                <span className="text-[10px] text-slate-500 font-mono">Card: {s.cardNo || s.username || s.empId || "—"}</span>
+                            </li>
+                        ))
+                    ) : (
+                        <li className="px-2 py-1.5 text-xs text-slate-400">No matches found</li>
+                    )}
                 </ul>
             )}
         </div>
@@ -227,7 +265,7 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 });
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
-const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lineName = "", year }) => {
+const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", year }) => {
     const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
@@ -266,20 +304,6 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
 
     const getQuarterSubSections = (modelLine) => (modelLine ? subSections.filter(ss => ss.lineName === modelLine) : subSections);
 
-    // Only students whose current level is flagged "Include in Multi-Skilling Sheet"
-    // in the active CourseLevelConfig should be auto-added to this sheet — mirrors the
-    // filterMultiSkillingLevels logic in server/controllers/user.controller.js so this
-    // holds true regardless of which page passes in an unfiltered students list.
-    const { data: activeConfigData, isLoading: isLoadingActiveConfig } = useGetActiveConfigQuery();
-    const allowedMultiSkillingLevels = useMemo(() => {
-        const levels = activeConfigData?.data?.levels || [];
-        return new Set(
-            levels
-                .filter(l => l.includeInMultiSkilling === true || l.includeInMultiSkilling === "true")
-                .map(l => String(l.name || "").toUpperCase())
-        );
-    }, [activeConfigData]);
-
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
@@ -293,23 +317,21 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         setIsLoadingPlan(true);
     }, [departmentId, sectionId, lineId, year]);
 
-    // Initialize rows when both students and plan details are ready
+    // Initialize rows from the saved plan once it has loaded (no auto-population of eligible
+    // students — rows are added manually via "Add Row" + searching for the associate).
     useEffect(() => {
-        if (isLoadingPlan || isLoadingActiveConfig || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
+        if (isLoadingPlan || hasLoaded) return;
 
         const savedRows = [];
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const savedUserIds = Object.keys(tableData || {}).filter(k => k !== "__removedUserIds");
 
         savedUserIds.forEach((userId) => {
-            const user = students.find(s => String(s._id || s.id) === String(userId));
             const data = tableData[userId] || {};
 
-            // `students` is already scoped to the selected line by the parent query, so a match there
-            // confirms this row belongs here. Otherwise (user not currently in the eligible/scoped list,
-            // e.g. moved section or no longer approved), fall back to checking the saved per-quarter lines
-            // since tableData spans every line in the section.
-            if (!user && lineName) {
+            // tableData spans every line in the section, so only keep rows whose saved
+            // per-quarter line matches the line currently selected.
+            if (lineName) {
                 const belongsToLine = QUARTERS.some(({ key }) => data[`${key}ModelLine`] === lineName);
                 if (!belongsToLine) return;
             }
@@ -328,41 +350,11 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
             savedRows.push({
                 rowId: userId,
                 userId: userId,
-                userName: user?.fullName || user?.name || data.userName || "",
-                cardNo: user?.cardNo || user?.username || user?.empId || data.cardNo || "",
+                userName: data.userName || "",
+                cardNo: data.cardNo || "",
                 shift: data.shift || "",
                 ...quarterFields,
             });
-        });
-
-        // Auto-add students (filtered by competency level) not already in the saved plan
-        // and not previously removed from this sheet via the trash icon.
-        const savedSet = new Set(savedUserIds.map(String));
-        students.forEach((s) => {
-            const uid = String(s._id || s.id);
-            // department.students (DepartmentDetail's tab) never computes primaryLevel, only
-            // the raw currentLevel column — fall back to it so this filter works from either caller.
-            const levelQualifies = allowedMultiSkillingLevels.size === 0
-                || allowedMultiSkillingLevels.has(String(s.primaryLevel || s.currentLevel || "").toUpperCase());
-            if (!savedSet.has(uid) && !savedRemovedIds.has(uid) && levelQualifies) {
-                const quarterFields = {};
-                QUARTERS.forEach(({ key }) => {
-                    quarterFields[`${key}ModelLine`] = "";
-                    quarterFields[`${key}Station`] = "";
-                    quarterFields[`${key}Skill`] = "";
-                    quarterFields[`${key}Date`] = "";
-                    quarterFields[`${key}DateActual`] = "";
-                    quarterFields[`${key}Status`] = "";
-                });
-                savedRows.push({
-                    rowId: uid,
-                    userId: uid,
-                    userName: s.fullName || s.name || "",
-                    cardNo: s.cardNo || s.username || s.empId || "",
-                    shift: s.shift || "",
-                    ...quarterFields,
-                });
-            }
         });
 
         // Pad to 25 rows
@@ -384,26 +376,7 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
         setRemovedUserIds(savedRemovedIds);
         setRows(savedRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, isLoadingActiveConfig, hasLoaded, allowedMultiSkillingLevels, lineName]);
-
-    // Safeguard: Update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
-    useEffect(() => {
-        if (students.length > 0 && hasLoaded && rows.length > 0) {
-            setRows(prev => prev.map(row => {
-                if (!row.userId) return row;
-                const user = students.find(s => String(s._id || s.id) === String(row.userId));
-                if (user) {
-                    return {
-                        ...row,
-                        userName: user.fullName || user.name || row.userName,
-                        cardNo: user.cardNo || user.username || user.empId || row.cardNo,
-                        shift: row.shift || user.shift || "",
-                    };
-                }
-                return row;
-            }));
-        }
-    }, [students, hasLoaded]);
+    }, [tableData, isLoadingPlan, hasLoaded, lineName]);
 
     useEffect(() => {
         if (!departmentId) {
@@ -680,7 +653,9 @@ const MultiSkillingPlan = ({ students = [], departmentId, sectionId, lineId, lin
                                             <UserCellSelector
                                                 value={row.userName}
                                                 onChange={(userId, userName) => handleUserSelect(rowId, userId, userName)}
-                                                students={students}
+                                                departmentId={departmentId}
+                                                sectionId={sectionId}
+                                                lineId={lineId}
                                                 rowId={rowId}
                                                 handleRowFieldChange={handleRowFieldChange}
                                                 disabled={!canManage}

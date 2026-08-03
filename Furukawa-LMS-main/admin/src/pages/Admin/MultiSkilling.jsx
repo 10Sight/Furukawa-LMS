@@ -12,7 +12,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
-import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import {
     IconStars,
     IconHierarchy2,
@@ -121,19 +120,6 @@ const MultiSkilling = () => {
     const { data: createSectionsData } = useGetSectionsByDepartmentQuery(createDept, { skip: !createDept });
     const { data: linesData } = useGetLinesBySectionQuery(section, { skip: !section });
     const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
-
-    // Fetch students/operators for Plan Calander
-    const { data: studentsData } = useGetAllStudentsQuery({
-        departmentId: dept,
-        sectionId: section,
-        lineId: (line && line !== "all") ? line : undefined,
-        filterMultiSkillingLevels: "true",
-        includeTemporary: "true",
-        limit: 1000
-    }, {
-        skip: !dept || !section,
-        refetchOnMountOrArgChange: true
-    });
 
     const createSections = createSectionsData?.data || [];
     const lines = linesData?.data || [];
@@ -255,7 +241,6 @@ const MultiSkilling = () => {
         });
     }, [deptsData]);
     const sections = sectionsData?.data || [];
-    const students = studentsData?.data?.users || [];
 
     // ── Permission-filtered department/section lists ────────────────────────
     const assignableDepartments = useMemo(() => {
@@ -559,7 +544,6 @@ const MultiSkilling = () => {
                                         </Button>
                                     </div>
                                     <MultiSkillingPlan
-                                        students={students}
                                         departmentId={dept}
                                         sectionId={section}
                                         lineId={(line && line !== "all") ? line : ""}

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import React, { useEffect, useMemo, useCallback } from "react";
+import { useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { 
     useGetEvaluationTestByIdQuery, 
@@ -52,9 +52,26 @@ const EvaluationTestOperatorsPage = () => {
     };
     const canTake = hasPermission("dojo_evaluation_test:take");
 
-    // Filters states
-    const [selectedDepartment, setSelectedDepartment] = useState("all");
-    const [searchTerm, setSearchTerm] = useState("");
+    // Filters states — persisted in the URL query string so they survive navigating
+    // away to view/attempt a sheet and back (see back-button `state.from` wiring).
+    const [searchParams, setSearchParams] = useSearchParams();
+    const selectedDepartment = searchParams.get("deptId") || "all";
+    const searchTerm = searchParams.get("search") || "";
+
+    const updateParams = useCallback((updates) => {
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            Object.entries(updates).forEach(([key, value]) => {
+                const isDefault = value === null || value === undefined || value === "" || value === "all";
+                if (isDefault) {
+                    next.delete(key);
+                } else {
+                    next.set(key, String(value));
+                }
+            });
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
 
     // RTK Query hooks for dynamic hierarchy selectors
     const { data: departmentsRes } = useGetAllDepartmentsQuery({ page: 1, limit: 500 });
@@ -94,7 +111,7 @@ const EvaluationTestOperatorsPage = () => {
 
     // Reset child selectors upon parent dropdown selection change
     const handleDeptChange = (value) => {
-        setSelectedDepartment(value);
+        updateParams({ deptId: value });
     };
 
     // Compile dynamic filled column indicators (which sub-columns contain actual grades/dates)
@@ -219,7 +236,7 @@ const EvaluationTestOperatorsPage = () => {
                                     type="text"
                                     placeholder="Search operator by name or employee ID..."
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onChange={(e) => updateParams({ search: e.target.value })}
                                     className="h-9 pl-9 pr-4 py-2 border-gray-200 focus:ring-2 focus:ring-blue-100 rounded-lg text-xs"
                                 />
                             </div>

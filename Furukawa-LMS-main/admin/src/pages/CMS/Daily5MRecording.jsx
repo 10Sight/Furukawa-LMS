@@ -1690,7 +1690,7 @@ const Daily5MRecording = () => {
         }
     };
 
-    const handleAddForm = async (typeOverride = null) => {
+    const handleAddForm = (typeOverride = null) => {
         // Guard against React click events being passed as the first argument
         const normalizedType = typeof typeOverride === 'string' ? typeOverride : null;
         const activeType = normalizedType || addDialogType;
@@ -1699,11 +1699,12 @@ const Daily5MRecording = () => {
             return;
         }
 
-        try {
-            // Create an initial stub record in the database so it appears in the list 
-            // and has a persistent ID for sessions.
-            // Data Pre-filling for Play Mode
-            let initialRecordData = {};
+        // Initialize the session locally only. Nothing is written to the database
+        // here — a record is only persisted once the user actually saves data
+        // (see handleSaveRecord), so simply opening and abandoning a sheet no
+        // longer leaves behind a blank stub record.
+        // Data Pre-filling for Play Mode
+        let initialRecordData = {};
             if (isPlayMode && playUserData) {
                 const user = playUserData;
                 const recIndex = 0;
@@ -1770,47 +1771,34 @@ const Daily5MRecording = () => {
                 initialRecordData[`rec_0_${ownerField}`] = authUser.fullName;
             }
 
-            const payload = {
-                departmentId: selectedDepartment,
-                sectionId: selectedSection,
-                date: addDialogDate,
-                shift: initialRecordData['rec_0_Shift'] || "",
-                line: initialRecordData['rec_0_Line'] || initialRecordData['rec_0_StationMC'] || "",
-                formType: activeType,
-                recordData: initialRecordData
-            };
+            setFormData(initialRecordData);
+            setInitialFormData({});
+            setFormType(activeType);
+            setSelectedDate(addDialogDate);
+            setSubmittedBy(null);
+            setSubmittedById(null);
+            setCurrentRecordId(null);
+            setSessionId(null);
+            setRecordStatus('PENDING');
+            setSavedRevisionInfo(null);
 
-            const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
-            if (response.data.success) {
-                const newRecord = response.data.data;
-                setFormData({});
-                setInitialFormData({});
-                setFormType(activeType);
-                setSelectedDate(addDialogDate);
-                setSubmittedBy(null);
-                setCurrentRecordId(newRecord.id);
-                setSessionId(newRecord.sessionId);
-                setSavedRevisionInfo({ docNo: newRecord.docNo, revNo: newRecord.revNo, revDate: newRecord.revDate });
+            // Load the new record configuration (handles row counts etc)
+            if (tableConfig?.[activeType]?.bodyRows) setRowCount(tableConfig[activeType].bodyRows);
 
-                // Keep URL in sync
-                navigate(`${location.pathname}?recordId=${newRecord.id}`, { replace: true });
-
-                // Load the new record configuration (handles row counts etc)
-                if (tableConfig?.[activeType]?.bodyRows) setRowCount(tableConfig[activeType].bodyRows);
-
-                setShowFormList(false);
-                setIsAddDialogOpen(false);
-                toast.success(`${activeType.toUpperCase()} form session created`);
-
-                // Clear Play Mode after successful creation and pre-fill
-                setIsPlayMode(false);
-                setPlayUserData(null);
-                setIsAutoCreating(false);
+            // Clear any stale recordId from the URL so the fetch-by-id effect
+            // doesn't overwrite this fresh, not-yet-saved session.
+            if (urlRecordId) {
+                navigate(location.pathname, { replace: true });
             }
-        } catch (error) {
-            console.error("Error creating new form session:", error);
-            toast.error("Failed to create recording session");
-        }
+
+            setShowFormList(false);
+            setIsAddDialogOpen(false);
+            toast.success(`${activeType.toUpperCase()} form session started`);
+
+            // Clear Play Mode after successful pre-fill
+        setIsPlayMode(false);
+        setPlayUserData(null);
+        setIsAutoCreating(false);
     };
 
     // Handle "Play Mode" from All Users page
@@ -2082,7 +2070,11 @@ const Daily5MRecording = () => {
         const skipNavigate = options?.skipNavigate || false;
         const showPreview = options?.showPreview || false;
 
-        if (showPreview) {
+        {
+            // Empty-row check always applies (including the plain "Save Daily 5M"
+            // button) so a completely blank sheet can never be persisted. The
+            // stricter per-field mandatory check only applies to the
+            // Submit & Mail (preview) flow, which requires complete rows.
             let hasActiveRows = false;
             const rowErrors = [];
             for (let i = 0; i < rowCount; i++) {
@@ -2094,13 +2086,15 @@ const Daily5MRecording = () => {
                 );
                 if (!isActive) continue;
                 hasActiveRows = true;
-                const mandatoryFields = isCrimping
-                    ? getCrimpingMandatoryFields(i)
-                    : getStandardMandatoryFields(i);
-                const missingLabels = mandatoryFields
-                    .filter(f => !dataToSave[f.key]?.toString().trim())
-                    .map(f => f.label);
-                if (missingLabels.length > 0) rowErrors.push({ row: i + 1, missing: missingLabels });
+                if (showPreview) {
+                    const mandatoryFields = isCrimping
+                        ? getCrimpingMandatoryFields(i)
+                        : getStandardMandatoryFields(i);
+                    const missingLabels = mandatoryFields
+                        .filter(f => !dataToSave[f.key]?.toString().trim())
+                        .map(f => f.label);
+                    if (missingLabels.length > 0) rowErrors.push({ row: i + 1, missing: missingLabels });
+                }
             }
             if (!hasActiveRows) {
                 toast.error("The form is empty. Please fill at least one row before saving.");

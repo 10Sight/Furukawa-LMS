@@ -8,7 +8,7 @@ import Section from "../models/section.model.js";
 // @route   POST /api/sections
 // @access  Private
 export const createSection = asyncHandler(async (req, res) => {
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId, skillUpgradationDayCount, multiSkillingDayCount } = req.body;
 
     if (!name || !departmentId) {
         throw new ApiError(400, "Name and Department ID are required");
@@ -17,6 +17,13 @@ export const createSection = asyncHandler(async (req, res) => {
     const trimmedUniCode = (uniCode || "").trim();
     if (!trimmedUniCode) {
         throw new ApiError(400, "UniCode is required");
+    }
+
+    if (skillUpgradationDayCount !== undefined && skillUpgradationDayCount !== null && skillUpgradationDayCount !== "" && (!Number.isFinite(Number(skillUpgradationDayCount)) || Number(skillUpgradationDayCount) <= 0)) {
+        throw new ApiError(400, "Skill Upgradation Day Count must be a positive number");
+    }
+    if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
+        throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
     }
 
     const [existing] = await executeQuery(
@@ -34,7 +41,9 @@ export const createSection = asyncHandler(async (req, res) => {
         category,
         daily5mFormType,
         tenCycleFormType,
-        departmentId
+        departmentId,
+        skillUpgradationDayCount,
+        multiSkillingDayCount
     });
 
     res.status(201).json(
@@ -82,7 +91,7 @@ export const getAllSections = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive, skillUpgradationDayCount, multiSkillingDayCount } = req.body;
 
     let trimmedUniCode;
     if (uniCode !== undefined) {
@@ -100,6 +109,13 @@ export const updateSection = asyncHandler(async (req, res) => {
         }
     }
 
+    if (skillUpgradationDayCount !== undefined && skillUpgradationDayCount !== null && skillUpgradationDayCount !== "" && (!Number.isFinite(Number(skillUpgradationDayCount)) || Number(skillUpgradationDayCount) <= 0)) {
+        throw new ApiError(400, "Skill Upgradation Day Count must be a positive number");
+    }
+    if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
+        throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
+    }
+
     const updatedSection = await Section.update(id, {
         name,
         uniCode: trimmedUniCode,
@@ -107,7 +123,9 @@ export const updateSection = asyncHandler(async (req, res) => {
         category,
         daily5mFormType,
         tenCycleFormType,
-        isActive
+        isActive,
+        skillUpgradationDayCount,
+        multiSkillingDayCount
     });
 
     if (!updatedSection) {

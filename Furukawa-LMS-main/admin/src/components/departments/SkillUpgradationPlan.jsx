@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
@@ -25,6 +26,19 @@ const addThreeMonths = (dateStr) => {
     if (!y || !m || !d) return "";
     const date = new Date(y, m - 1 + 3, d);
     if (date.getDate() !== d) date.setDate(0);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const calculateFutureDate = (dateStr, dayCount) => {
+    if (!dateStr) return "";
+    const count = parseInt(dayCount);
+    if (!Number.isFinite(count) || count <= 0) return addThreeMonths(dateStr);
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const date = new Date(y, m - 1, d + count);
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, "0");
     const dd = String(date.getDate()).padStart(2, "0");
@@ -248,6 +262,15 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     });
     const subSections = subSectionsData?.data || [];
 
+    const { data: sectionsData } = useGetSectionsByDepartmentQuery(departmentId, {
+        skip: !departmentId,
+    });
+    const currentSection = useMemo(() => {
+        if (!sectionId) return null;
+        return (sectionsData?.data || []).find(s => String(s.id || s._id) === String(sectionId)) || null;
+    }, [sectionsData, sectionId]);
+    const skillUpgradationDayCount = currentSection?.skillUpgradationDayCount ?? null;
+
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
@@ -417,7 +440,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             const updated = { ...row, [field]: value };
             const targetField = ACTUAL_TO_PLAN[field];
             if (targetField && value && !row[targetField]) {
-                updated[targetField] = addThreeMonths(value);
+                updated[targetField] = calculateFutureDate(value, skillUpgradationDayCount);
             }
             return updated;
         }));

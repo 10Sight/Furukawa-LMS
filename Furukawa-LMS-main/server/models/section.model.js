@@ -47,6 +47,11 @@ class Section {
         this.users = typeof data.users === 'string' ? JSON.parse(data.users) : (data.users || []);
         this.sectionCount = data.sectionCount || this.users.length || 0;
 
+        this.skillUpgradationDayCount = data.skillUpgradationDayCount !== undefined && data.skillUpgradationDayCount !== null
+            ? parseInt(data.skillUpgradationDayCount) : null;
+        this.multiSkillingDayCount = data.multiSkillingDayCount !== undefined && data.multiSkillingDayCount !== null
+            ? parseInt(data.multiSkillingDayCount) : null;
+
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
     }
@@ -78,6 +83,8 @@ class Section {
                     skillMatrixApproverProcessDeptId INT NULL,
                     skillMatrixApproverProcessSectionId INT NULL,
                     skillMatrixApproverProcessLineId INT NULL,
+                    skillUpgradationDayCount INT NULL,
+                    multiSkillingDayCount INT NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId),
@@ -210,6 +217,20 @@ class Section {
                              AND name = 'skillMatrixApproverProcessLineId')
                 BEGIN
                     ALTER TABLE [sections] ADD skillMatrixApproverProcessLineId INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillUpgradationDayCount')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillUpgradationDayCount INT NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'multiSkillingDayCount')
+                BEGIN
+                    ALTER TABLE [sections] ADD multiSkillingDayCount INT NULL;
                 END
 
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
@@ -345,6 +366,7 @@ class Section {
             "skillMatrixApproverQaDeptId", "skillMatrixApproverQaSectionId", "skillMatrixApproverQaLineId",
             "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
             "skillMatrixApproverProcessDeptId", "skillMatrixApproverProcessSectionId", "skillMatrixApproverProcessLineId",
+            "skillUpgradationDayCount", "multiSkillingDayCount",
             "users", "createdAt", "updatedAt"
         ];
 
@@ -370,6 +392,10 @@ class Section {
             data.skillMatrixApproverProcessDeptId || null,
             data.skillMatrixApproverProcessSectionId || null,
             data.skillMatrixApproverProcessLineId || null,
+            data.skillUpgradationDayCount !== undefined && data.skillUpgradationDayCount !== null && data.skillUpgradationDayCount !== ""
+                ? parseInt(data.skillUpgradationDayCount) : null,
+            data.multiSkillingDayCount !== undefined && data.multiSkillingDayCount !== null && data.multiSkillingDayCount !== ""
+                ? parseInt(data.multiSkillingDayCount) : null,
             '[]',
             now,
             now
@@ -452,6 +478,14 @@ class Section {
         if (data.skillMatrixApproverProcessDeptId !== undefined) { updateFields.push("skillMatrixApproverProcessDeptId = ?"); values.push(data.skillMatrixApproverProcessDeptId); }
         if (data.skillMatrixApproverProcessSectionId !== undefined) { updateFields.push("skillMatrixApproverProcessSectionId = ?"); values.push(data.skillMatrixApproverProcessSectionId); }
         if (data.skillMatrixApproverProcessLineId !== undefined) { updateFields.push("skillMatrixApproverProcessLineId = ?"); values.push(data.skillMatrixApproverProcessLineId); }
+        if (data.skillUpgradationDayCount !== undefined) {
+            updateFields.push("skillUpgradationDayCount = ?");
+            values.push(data.skillUpgradationDayCount === null || data.skillUpgradationDayCount === "" ? null : parseInt(data.skillUpgradationDayCount));
+        }
+        if (data.multiSkillingDayCount !== undefined) {
+            updateFields.push("multiSkillingDayCount = ?");
+            values.push(data.multiSkillingDayCount === null || data.multiSkillingDayCount === "" ? null : parseInt(data.multiSkillingDayCount));
+        }
 
         if (updateFields.length === 0) return null;
 

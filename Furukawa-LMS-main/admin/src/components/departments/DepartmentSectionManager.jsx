@@ -100,6 +100,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionCategory, setNewSectionCategory] = useState("Direct");
     const [newSectionFormTypes, setNewSectionFormTypes] = useState(["standard"]);
     const [newSectionTenCycleFormTypes, setNewSectionTenCycleFormTypes] = useState(["form1"]);
+    const [newSectionSkillUpgradationDayCount, setNewSectionSkillUpgradationDayCount] = useState("");
+    const [newSectionMultiSkillingDayCount, setNewSectionMultiSkillingDayCount] = useState("");
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -111,6 +113,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editCategory, setEditCategory] = useState("Direct");
     const [editFormTypes, setEditFormTypes] = useState([]);
     const [editTenCycleFormTypes, setEditTenCycleFormTypes] = useState([]);
+    const [editSkillUpgradationDayCount, setEditSkillUpgradationDayCount] = useState("");
+    const [editMultiSkillingDayCount, setEditMultiSkillingDayCount] = useState("");
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
@@ -165,7 +169,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 description: newSectionDescription,
                 category: newSectionCategory,
                 daily5mFormType: newSectionFormTypes.join(","),
-                tenCycleFormType: newSectionTenCycleFormTypes.join(",")
+                tenCycleFormType: newSectionTenCycleFormTypes.join(","),
+                skillUpgradationDayCount: newSectionSkillUpgradationDayCount || null,
+                multiSkillingDayCount: newSectionMultiSkillingDayCount || null
             }).unwrap();
             logAction({
                 action: "CREATE_SECTION",
@@ -185,6 +191,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
             setNewSectionCategory("Direct");
             setNewSectionFormTypes(["standard"]);
             setNewSectionTenCycleFormTypes(["form1"]);
+            setNewSectionSkillUpgradationDayCount("");
+            setNewSectionMultiSkillingDayCount("");
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -220,6 +228,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditCategory(section.category || "Direct");
         setEditFormTypes(section.daily5mFormType ? section.daily5mFormType.split(",") : ["standard"]);
         setEditTenCycleFormTypes(section.tenCycleFormType ? section.tenCycleFormType.split(",") : ["form1"]);
+        setEditSkillUpgradationDayCount(section.skillUpgradationDayCount ?? "");
+        setEditMultiSkillingDayCount(section.multiSkillingDayCount ?? "");
         setIsEditDialogOpen(true);
     };
 
@@ -256,7 +266,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 description: editDescription,
                 category: editCategory,
                 daily5mFormType: editFormTypes.join(","),
-                tenCycleFormType: editTenCycleFormTypes.join(",")
+                tenCycleFormType: editTenCycleFormTypes.join(","),
+                skillUpgradationDayCount: editSkillUpgradationDayCount || null,
+                multiSkillingDayCount: editMultiSkillingDayCount || null
             }).unwrap();
             logAction({
                 action: "UPDATE_SECTION",
@@ -307,92 +319,123 @@ const DepartmentSectionManager = ({ departmentId }) => {
                         </Button>
                     )}
 
-                    <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                        <DialogContent className="sm:max-w-[425px] bg-white/95 backdrop-blur-sm border-white/20 shadow-xl">
+                    <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} className="max-w-[95vw] sm:max-w-[900px] bg-white/95 backdrop-blur-sm border-white/20 shadow-xl">
+                        <DialogContent>
                             <DialogHeader>
                                 <DialogTitle>Add New Section</DialogTitle>
                             </DialogHeader>
-                            <div className="space-y-4 py-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="name">Section Name</Label>
-                                    <Input
-                                        id="name"
-                                        placeholder="e.g., Quality Control"
-                                        value={newSectionName}
-                                        onChange={(e) => setNewSectionName(e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="uniCode">UniCode (Required, Unique)</Label>
-                                    <Input
-                                        id="uniCode"
-                                        placeholder="e.g., SEC-001"
-                                        value={newSectionUniCode}
-                                        onChange={(e) => setNewSectionUniCode(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="description">Description (Optional)</Label>
-                                    <Input
-                                        id="description"
-                                        placeholder="Brief description of the section"
-                                        value={newSectionDescription}
-                                        onChange={(e) => setNewSectionDescription(e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Category</Label>
-                                    <Select value={newSectionCategory} onValueChange={setNewSectionCategory}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Category" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="Direct">Direct</SelectItem>
-                                            <SelectItem value="Indirect">Indirect</SelectItem>
-                                            <SelectItem value="Not Applicable">Not Applicable</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-4 pt-2 border-t">
-                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {FORM_TYPES.map(type => (
-                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
-                                                <Checkbox 
-                                                    id={`new-${type.id}`} 
-                                                    checked={newSectionFormTypes.includes(type.id)}
-                                                    onCheckedChange={() => toggleFormType(type.id, 'create')}
-                                                />
-                                                <Label htmlFor={`new-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
-                                                    {type.label}
-                                                </Label>
-                                            </div>
-                                        ))}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+                                {/* Left column: core details */}
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="name">Section Name</Label>
+                                        <Input
+                                            id="name"
+                                            placeholder="e.g., Quality Control"
+                                            value={newSectionName}
+                                            onChange={(e) => setNewSectionName(e.target.value)}
+                                        />
                                     </div>
-                                    {newSectionFormTypes.length === 0 && (
-                                        <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
-                                    )}
-                                </div>
-                                <div className="space-y-4 pt-2 border-t">
-                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {TEN_CYCLE_FORM_TYPES.map(type => (
-                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
-                                                <Checkbox 
-                                                    id={`new-10c-${type.id}`} 
-                                                    checked={newSectionTenCycleFormTypes.includes(type.id)}
-                                                    onCheckedChange={() => toggleFormType(type.id, 'create', '10cycle')}
-                                                />
-                                                <Label htmlFor={`new-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
-                                                    {type.label}
-                                                </Label>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-2">
+                                        <Label htmlFor="uniCode">UniCode (Required, Unique)</Label>
+                                        <Input
+                                            id="uniCode"
+                                            placeholder="e.g., SEC-001"
+                                            value={newSectionUniCode}
+                                            onChange={(e) => setNewSectionUniCode(e.target.value)}
+                                            required
+                                        />
                                     </div>
-                                    {newSectionTenCycleFormTypes.length === 0 && (
-                                        <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
-                                    )}
+                                    <div className="space-y-2">
+                                        <Label>Category</Label>
+                                        <Select value={newSectionCategory} onValueChange={setNewSectionCategory}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select Category" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Direct">Direct</SelectItem>
+                                                <SelectItem value="Indirect">Indirect</SelectItem>
+                                                <SelectItem value="Not Applicable">Not Applicable</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="description">Description (Optional)</Label>
+                                        <Input
+                                            id="description"
+                                            placeholder="Brief description of the section"
+                                            value={newSectionDescription}
+                                            onChange={(e) => setNewSectionDescription(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Right column: form types & day counts */}
+                                <div className="space-y-4">
+                                    <div className="space-y-4">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {FORM_TYPES.map(type => (
+                                                <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                    <Checkbox
+                                                        id={`new-${type.id}`}
+                                                        checked={newSectionFormTypes.includes(type.id)}
+                                                        onCheckedChange={() => toggleFormType(type.id, 'create')}
+                                                    />
+                                                    <Label htmlFor={`new-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                        {type.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {newSectionFormTypes.length === 0 && (
+                                            <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-4 pt-2 border-t">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {TEN_CYCLE_FORM_TYPES.map(type => (
+                                                <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                    <Checkbox
+                                                        id={`new-10c-${type.id}`}
+                                                        checked={newSectionTenCycleFormTypes.includes(type.id)}
+                                                        onCheckedChange={() => toggleFormType(type.id, 'create', '10cycle')}
+                                                    />
+                                                    <Label htmlFor={`new-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                        {type.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {newSectionTenCycleFormTypes.length === 0 && (
+                                            <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="skillUpgradationDayCount">Skill Upgradation Day Count</Label>
+                                            <Input
+                                                id="skillUpgradationDayCount"
+                                                type="number"
+                                                min="1"
+                                                placeholder="Default: 3 months"
+                                                value={newSectionSkillUpgradationDayCount}
+                                                onChange={(e) => setNewSectionSkillUpgradationDayCount(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="multiSkillingDayCount">Multi-Skilling Day Count</Label>
+                                            <Input
+                                                id="multiSkillingDayCount"
+                                                type="number"
+                                                min="1"
+                                                placeholder="Default: 3 months"
+                                                value={newSectionMultiSkillingDayCount}
+                                                onChange={(e) => setNewSectionMultiSkillingDayCount(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <DialogFooter>
@@ -405,92 +448,123 @@ const DepartmentSectionManager = ({ departmentId }) => {
                     </Dialog>
 
                     {/* Edit Section Dialog */}
-                    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-                        <DialogContent className="sm:max-w-[425px] bg-white/95 backdrop-blur-sm border-white/20 shadow-xl">
+                    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} className="max-w-[95vw] sm:max-w-[900px] bg-white/95 backdrop-blur-sm border-white/20 shadow-xl">
+                        <DialogContent>
                             <DialogHeader>
                                 <DialogTitle>Edit Section</DialogTitle>
                             </DialogHeader>
-                            <div className="space-y-4 py-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="editName">Section Name</Label>
-                                    <Input
-                                        id="editName"
-                                        placeholder="e.g., Quality Control"
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="editUniCode">UniCode (Required, Unique)</Label>
-                                    <Input
-                                        id="editUniCode"
-                                        placeholder="e.g., SEC-001"
-                                        value={editUniCode}
-                                        onChange={(e) => setEditUniCode(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="editDescription">Description (Optional)</Label>
-                                    <Input
-                                        id="editDescription"
-                                        placeholder="Brief description of the section"
-                                        value={editDescription}
-                                        onChange={(e) => setEditDescription(e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Category</Label>
-                                    <Select value={editCategory} onValueChange={setEditCategory}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Category" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="Direct">Direct</SelectItem>
-                                            <SelectItem value="Indirect">Indirect</SelectItem>
-                                            <SelectItem value="Not Applicable">Not Applicable</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-4 pt-2 border-t">
-                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {FORM_TYPES.map(type => (
-                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
-                                                <Checkbox 
-                                                    id={`edit-${type.id}`} 
-                                                    checked={editFormTypes.includes(type.id)}
-                                                    onCheckedChange={() => toggleFormType(type.id, 'edit')}
-                                                />
-                                                <Label htmlFor={`edit-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
-                                                    {type.label}
-                                                </Label>
-                                            </div>
-                                        ))}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+                                {/* Left column: core details */}
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="editName">Section Name</Label>
+                                        <Input
+                                            id="editName"
+                                            placeholder="e.g., Quality Control"
+                                            value={editName}
+                                            onChange={(e) => setEditName(e.target.value)}
+                                        />
                                     </div>
-                                    {editFormTypes.length === 0 && (
-                                        <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
-                                    )}
-                                </div>
-                                <div className="space-y-4 pt-2 border-t">
-                                    <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {TEN_CYCLE_FORM_TYPES.map(type => (
-                                            <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
-                                                <Checkbox 
-                                                    id={`edit-10c-${type.id}`} 
-                                                    checked={editTenCycleFormTypes.includes(type.id)}
-                                                    onCheckedChange={() => toggleFormType(type.id, 'edit', '10cycle')}
-                                                />
-                                                <Label htmlFor={`edit-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
-                                                    {type.label}
-                                                </Label>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-2">
+                                        <Label htmlFor="editUniCode">UniCode (Required, Unique)</Label>
+                                        <Input
+                                            id="editUniCode"
+                                            placeholder="e.g., SEC-001"
+                                            value={editUniCode}
+                                            onChange={(e) => setEditUniCode(e.target.value)}
+                                            required
+                                        />
                                     </div>
-                                    {editTenCycleFormTypes.length === 0 && (
-                                        <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
-                                    )}
+                                    <div className="space-y-2">
+                                        <Label>Category</Label>
+                                        <Select value={editCategory} onValueChange={setEditCategory}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select Category" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Direct">Direct</SelectItem>
+                                                <SelectItem value="Indirect">Indirect</SelectItem>
+                                                <SelectItem value="Not Applicable">Not Applicable</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="editDescription">Description (Optional)</Label>
+                                        <Input
+                                            id="editDescription"
+                                            placeholder="Brief description of the section"
+                                            value={editDescription}
+                                            onChange={(e) => setEditDescription(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Right column: form types & day counts */}
+                                <div className="space-y-4">
+                                    <div className="space-y-4">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">Daily 5M Form Types (Select Multiple)</Label>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {FORM_TYPES.map(type => (
+                                                <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                    <Checkbox
+                                                        id={`edit-${type.id}`}
+                                                        checked={editFormTypes.includes(type.id)}
+                                                        onCheckedChange={() => toggleFormType(type.id, 'edit')}
+                                                    />
+                                                    <Label htmlFor={`edit-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                        {type.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {editFormTypes.length === 0 && (
+                                            <p className="text-[11px] text-red-500 italic">Please select at least one form type.</p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-4 pt-2 border-t">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">10-Cycle Sheet Form Types (Select Multiple)</Label>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {TEN_CYCLE_FORM_TYPES.map(type => (
+                                                <div key={type.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                    <Checkbox
+                                                        id={`edit-10c-${type.id}`}
+                                                        checked={editTenCycleFormTypes.includes(type.id)}
+                                                        onCheckedChange={() => toggleFormType(type.id, 'edit', '10cycle')}
+                                                    />
+                                                    <Label htmlFor={`edit-10c-${type.id}`} className="cursor-pointer flex-1 text-sm font-medium">
+                                                        {type.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {editTenCycleFormTypes.length === 0 && (
+                                            <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="editSkillUpgradationDayCount">Skill Upgradation Day Count</Label>
+                                            <Input
+                                                id="editSkillUpgradationDayCount"
+                                                type="number"
+                                                min="1"
+                                                placeholder="Default: 3 months"
+                                                value={editSkillUpgradationDayCount}
+                                                onChange={(e) => setEditSkillUpgradationDayCount(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="editMultiSkillingDayCount">Multi-Skilling Day Count</Label>
+                                            <Input
+                                                id="editMultiSkillingDayCount"
+                                                type="number"
+                                                min="1"
+                                                placeholder="Default: 3 months"
+                                                value={editMultiSkillingDayCount}
+                                                onChange={(e) => setEditMultiSkillingDayCount(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <DialogFooter>

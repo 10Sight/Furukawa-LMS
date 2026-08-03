@@ -51,6 +51,14 @@ const ACTUAL_TO_PLAN = {
     q3DateActual: "q4Date",
 };
 
+// The Skill Level the associate just reached in this quarter — determines how
+// many days until the next quarter's plan date (see resolveDayCountForLevel).
+const SKILL_FIELD_FOR_ACTUAL = {
+    q1DateActual: "q1Skill",
+    q2DateActual: "q2Skill",
+    q3DateActual: "q3Skill",
+};
+
 const UserCellSelector = ({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -270,6 +278,18 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         return (sectionsData?.data || []).find(s => String(s.id || s._id) === String(sectionId)) || null;
     }, [sectionsData, sectionId]);
     const skillUpgradationDayCount = currentSection?.skillUpgradationDayCount ?? null;
+    const skillUpgradationDayCounts = currentSection?.skillUpgradationDayCounts || {};
+
+    // Resolves the day count to apply once an associate reaches `level`:
+    // per-level override -> section default -> null (caller falls back to 3 months).
+    const resolveDayCountForLevel = (level) => {
+        if (level && skillUpgradationDayCounts[level]) return skillUpgradationDayCounts[level];
+        return skillUpgradationDayCount || null;
+    };
+    const formatDayCountBadge = (level) => {
+        const count = resolveDayCountForLevel(level);
+        return count ? `+${count}d` : "+3mo";
+    };
 
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -440,7 +460,9 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             const updated = { ...row, [field]: value };
             const targetField = ACTUAL_TO_PLAN[field];
             if (targetField && value && !row[targetField]) {
-                updated[targetField] = calculateFutureDate(value, skillUpgradationDayCount);
+                const levelField = SKILL_FIELD_FOR_ACTUAL[field];
+                const currentLevel = levelField ? row[levelField] : null;
+                updated[targetField] = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
             }
             return updated;
         }));
@@ -762,6 +784,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                     <SelectItem value="L4">L4</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            {row.q1Skill && (
+                                                <div className="text-[9px] text-amber-700 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
+                                                    {formatDayCountBadge(row.q1Skill)}
+                                                </div>
+                                            )}
                                         </td>
                                         {/* Date */}
                                         <td className="border-r border-slate-200 p-1 bg-amber-50/20 text-center whitespace-nowrap">
@@ -822,6 +849,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                     <SelectItem value="L4">L4</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            {row.q2Skill && (
+                                                <div className="text-[9px] text-blue-700 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
+                                                    {formatDayCountBadge(row.q2Skill)}
+                                                </div>
+                                            )}
                                         </td>
                                         {/* Date */}
                                         <td className="border-r border-slate-200 p-1 bg-blue-50/20 text-center whitespace-nowrap">
@@ -882,6 +914,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                     <SelectItem value="L4">L4</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            {row.q3Skill && (
+                                                <div className="text-[9px] text-green-700 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
+                                                    {formatDayCountBadge(row.q3Skill)}
+                                                </div>
+                                            )}
                                         </td>
                                         {/* Date */}
                                         <td className="border-r border-slate-200 p-1 bg-green-50/20 text-center whitespace-nowrap">

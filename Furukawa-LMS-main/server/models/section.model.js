@@ -2,6 +2,33 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 
+const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
+
+const safeJsonParseObject = (value) => {
+    if (value && typeof value === "object") return value;
+    if (typeof value !== "string" || !value) return {};
+    try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+};
+
+// Keeps only known L1-L4 keys with positive integer values; returns null when empty
+// so the DB stores NULL instead of '{}' for "no overrides configured".
+const normalizeDayCountsForStorage = (value) => {
+    const source = safeJsonParseObject(value);
+    const result = {};
+    for (const level of VALID_SKILL_LEVELS) {
+        const raw = source[level];
+        if (raw === undefined || raw === null || raw === "") continue;
+        const parsed = parseInt(raw);
+        if (Number.isFinite(parsed) && parsed > 0) result[level] = parsed;
+    }
+    return Object.keys(result).length > 0 ? JSON.stringify(result) : null;
+};
+
 const sectionCountSql = (sectionAlias = "s") => `
     (SELECT COUNT(*)
      FROM users u
@@ -51,6 +78,8 @@ class Section {
             ? parseInt(data.skillUpgradationDayCount) : null;
         this.multiSkillingDayCount = data.multiSkillingDayCount !== undefined && data.multiSkillingDayCount !== null
             ? parseInt(data.multiSkillingDayCount) : null;
+        this.skillUpgradationDayCounts = safeJsonParseObject(data.skillUpgradationDayCounts);
+        this.multiSkillingDayCounts = safeJsonParseObject(data.multiSkillingDayCounts);
 
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -85,6 +114,8 @@ class Section {
                     skillMatrixApproverProcessLineId INT NULL,
                     skillUpgradationDayCount INT NULL,
                     multiSkillingDayCount INT NULL,
+                    skillUpgradationDayCounts NVARCHAR(MAX) NULL,
+                    multiSkillingDayCounts NVARCHAR(MAX) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId),
@@ -233,6 +264,20 @@ class Section {
                     ALTER TABLE [sections] ADD multiSkillingDayCount INT NULL;
                 END
 
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'skillUpgradationDayCounts')
+                BEGIN
+                    ALTER TABLE [sections] ADD skillUpgradationDayCounts NVARCHAR(MAX) NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'multiSkillingDayCounts')
+                BEGIN
+                    ALTER TABLE [sections] ADD multiSkillingDayCounts NVARCHAR(MAX) NULL;
+                END
+
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
                 UPDATE [sections] SET daily5mFormType = 'crimping' 
                 WHERE (category = 'CRIMPING' OR category = 'Cutting & Crimping' OR name LIKE '%Crimping%' OR name LIKE '%Cutting%') 
@@ -367,6 +412,7 @@ class Section {
             "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
             "skillMatrixApproverProcessDeptId", "skillMatrixApproverProcessSectionId", "skillMatrixApproverProcessLineId",
             "skillUpgradationDayCount", "multiSkillingDayCount",
+            "skillUpgradationDayCounts", "multiSkillingDayCounts",
             "users", "createdAt", "updatedAt"
         ];
 
@@ -396,6 +442,8 @@ class Section {
                 ? parseInt(data.skillUpgradationDayCount) : null,
             data.multiSkillingDayCount !== undefined && data.multiSkillingDayCount !== null && data.multiSkillingDayCount !== ""
                 ? parseInt(data.multiSkillingDayCount) : null,
+            normalizeDayCountsForStorage(data.skillUpgradationDayCounts),
+            normalizeDayCountsForStorage(data.multiSkillingDayCounts),
             '[]',
             now,
             now
@@ -485,6 +533,14 @@ class Section {
         if (data.multiSkillingDayCount !== undefined) {
             updateFields.push("multiSkillingDayCount = ?");
             values.push(data.multiSkillingDayCount === null || data.multiSkillingDayCount === "" ? null : parseInt(data.multiSkillingDayCount));
+        }
+        if (data.skillUpgradationDayCounts !== undefined) {
+            updateFields.push("skillUpgradationDayCounts = ?");
+            values.push(normalizeDayCountsForStorage(data.skillUpgradationDayCounts));
+        }
+        if (data.multiSkillingDayCounts !== undefined) {
+            updateFields.push("multiSkillingDayCounts = ?");
+            values.push(normalizeDayCountsForStorage(data.multiSkillingDayCounts));
         }
 
         if (updateFields.length === 0) return null;

@@ -45,6 +45,18 @@ const TEN_CYCLE_FORM_TYPES = [
     { id: 'form3', label: 'Numerical (Form 3)' }
 ];
 
+const SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
+const emptyDayCountsByLevel = () => ({ L1: "", L2: "", L3: "", L4: "" });
+
+// Strips blank entries; returns null (no overrides) when nothing is set.
+const buildDayCountsPayload = (map) => {
+    const result = {};
+    Object.entries(map || {}).forEach(([level, val]) => {
+        if (val !== "" && val !== null && val !== undefined) result[level] = val;
+    });
+    return Object.keys(result).length > 0 ? result : null;
+};
+
 const DepartmentSectionManager = ({ departmentId }) => {
     const { data: sectionsData, isLoading, error } = useGetSectionsByDepartmentQuery(departmentId);
     const { user } = useSelector((state) => state.auth || {});
@@ -102,6 +114,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionTenCycleFormTypes, setNewSectionTenCycleFormTypes] = useState(["form1"]);
     const [newSectionSkillUpgradationDayCount, setNewSectionSkillUpgradationDayCount] = useState("");
     const [newSectionMultiSkillingDayCount, setNewSectionMultiSkillingDayCount] = useState("");
+    const [newSectionSkillUpgradationDayCounts, setNewSectionSkillUpgradationDayCounts] = useState(emptyDayCountsByLevel());
+    const [newSectionMultiSkillingDayCounts, setNewSectionMultiSkillingDayCounts] = useState(emptyDayCountsByLevel());
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -115,6 +129,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editTenCycleFormTypes, setEditTenCycleFormTypes] = useState([]);
     const [editSkillUpgradationDayCount, setEditSkillUpgradationDayCount] = useState("");
     const [editMultiSkillingDayCount, setEditMultiSkillingDayCount] = useState("");
+    const [editSkillUpgradationDayCounts, setEditSkillUpgradationDayCounts] = useState(emptyDayCountsByLevel());
+    const [editMultiSkillingDayCounts, setEditMultiSkillingDayCounts] = useState(emptyDayCountsByLevel());
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
@@ -171,7 +187,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 daily5mFormType: newSectionFormTypes.join(","),
                 tenCycleFormType: newSectionTenCycleFormTypes.join(","),
                 skillUpgradationDayCount: newSectionSkillUpgradationDayCount || null,
-                multiSkillingDayCount: newSectionMultiSkillingDayCount || null
+                multiSkillingDayCount: newSectionMultiSkillingDayCount || null,
+                skillUpgradationDayCounts: buildDayCountsPayload(newSectionSkillUpgradationDayCounts),
+                multiSkillingDayCounts: buildDayCountsPayload(newSectionMultiSkillingDayCounts)
             }).unwrap();
             logAction({
                 action: "CREATE_SECTION",
@@ -193,6 +211,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
             setNewSectionTenCycleFormTypes(["form1"]);
             setNewSectionSkillUpgradationDayCount("");
             setNewSectionMultiSkillingDayCount("");
+            setNewSectionSkillUpgradationDayCounts(emptyDayCountsByLevel());
+            setNewSectionMultiSkillingDayCounts(emptyDayCountsByLevel());
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -230,6 +250,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditTenCycleFormTypes(section.tenCycleFormType ? section.tenCycleFormType.split(",") : ["form1"]);
         setEditSkillUpgradationDayCount(section.skillUpgradationDayCount ?? "");
         setEditMultiSkillingDayCount(section.multiSkillingDayCount ?? "");
+        setEditSkillUpgradationDayCounts({ ...emptyDayCountsByLevel(), ...(section.skillUpgradationDayCounts || {}) });
+        setEditMultiSkillingDayCounts({ ...emptyDayCountsByLevel(), ...(section.multiSkillingDayCounts || {}) });
         setIsEditDialogOpen(true);
     };
 
@@ -268,7 +290,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 daily5mFormType: editFormTypes.join(","),
                 tenCycleFormType: editTenCycleFormTypes.join(","),
                 skillUpgradationDayCount: editSkillUpgradationDayCount || null,
-                multiSkillingDayCount: editMultiSkillingDayCount || null
+                multiSkillingDayCount: editMultiSkillingDayCount || null,
+                skillUpgradationDayCounts: buildDayCountsPayload(editSkillUpgradationDayCounts),
+                multiSkillingDayCounts: buildDayCountsPayload(editMultiSkillingDayCounts)
             }).unwrap();
             logAction({
                 action: "UPDATE_SECTION",
@@ -412,9 +436,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                             <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
                                         )}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                                    <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">
-                                            <Label htmlFor="skillUpgradationDayCount">Skill Upgradation Day Count</Label>
+                                            <Label htmlFor="skillUpgradationDayCount">Skill Upgradation Day Count (Default)</Label>
                                             <Input
                                                 id="skillUpgradationDayCount"
                                                 type="number"
@@ -424,8 +448,28 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                 onChange={(e) => setNewSectionSkillUpgradationDayCount(e.target.value)}
                                             />
                                         </div>
+                                        <div>
+                                            <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
+                                            <div className="grid grid-cols-4 gap-2 mt-1">
+                                                {SKILL_LEVELS.map(level => (
+                                                    <div key={level} className="space-y-1">
+                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            placeholder="Default"
+                                                            value={newSectionSkillUpgradationDayCounts[level]}
+                                                            onChange={(e) => setNewSectionSkillUpgradationDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
+                                                            className="h-8 text-xs"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">
-                                            <Label htmlFor="multiSkillingDayCount">Multi-Skilling Day Count</Label>
+                                            <Label htmlFor="multiSkillingDayCount">Multi-Skilling Day Count (Default)</Label>
                                             <Input
                                                 id="multiSkillingDayCount"
                                                 type="number"
@@ -434,6 +478,24 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                 value={newSectionMultiSkillingDayCount}
                                                 onChange={(e) => setNewSectionMultiSkillingDayCount(e.target.value)}
                                             />
+                                        </div>
+                                        <div>
+                                            <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
+                                            <div className="grid grid-cols-4 gap-2 mt-1">
+                                                {SKILL_LEVELS.map(level => (
+                                                    <div key={level} className="space-y-1">
+                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            placeholder="Default"
+                                                            value={newSectionMultiSkillingDayCounts[level]}
+                                                            onChange={(e) => setNewSectionMultiSkillingDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
+                                                            className="h-8 text-xs"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -541,9 +603,9 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                             <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
                                         )}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                                    <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">
-                                            <Label htmlFor="editSkillUpgradationDayCount">Skill Upgradation Day Count</Label>
+                                            <Label htmlFor="editSkillUpgradationDayCount">Skill Upgradation Day Count (Default)</Label>
                                             <Input
                                                 id="editSkillUpgradationDayCount"
                                                 type="number"
@@ -553,8 +615,28 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                 onChange={(e) => setEditSkillUpgradationDayCount(e.target.value)}
                                             />
                                         </div>
+                                        <div>
+                                            <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
+                                            <div className="grid grid-cols-4 gap-2 mt-1">
+                                                {SKILL_LEVELS.map(level => (
+                                                    <div key={level} className="space-y-1">
+                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            placeholder="Default"
+                                                            value={editSkillUpgradationDayCounts[level]}
+                                                            onChange={(e) => setEditSkillUpgradationDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
+                                                            className="h-8 text-xs"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">
-                                            <Label htmlFor="editMultiSkillingDayCount">Multi-Skilling Day Count</Label>
+                                            <Label htmlFor="editMultiSkillingDayCount">Multi-Skilling Day Count (Default)</Label>
                                             <Input
                                                 id="editMultiSkillingDayCount"
                                                 type="number"
@@ -563,6 +645,24 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                                 value={editMultiSkillingDayCount}
                                                 onChange={(e) => setEditMultiSkillingDayCount(e.target.value)}
                                             />
+                                        </div>
+                                        <div>
+                                            <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
+                                            <div className="grid grid-cols-4 gap-2 mt-1">
+                                                {SKILL_LEVELS.map(level => (
+                                                    <div key={level} className="space-y-1">
+                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            placeholder="Default"
+                                                            value={editMultiSkillingDayCounts[level]}
+                                                            onChange={(e) => setEditMultiSkillingDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
+                                                            className="h-8 text-xs"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

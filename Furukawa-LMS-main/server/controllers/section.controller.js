@@ -4,11 +4,31 @@ import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Section from "../models/section.model.js";
 
+const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
+
+// Validates a { L1: number, L2: number, ... } per-level day count override map.
+// Throws ApiError on malformed keys/values; silently allows undefined/null/empty (no overrides).
+const validateDayCountsMap = (map, label) => {
+    if (map === undefined || map === null || map === "") return;
+    if (typeof map !== "object" || Array.isArray(map)) {
+        throw new ApiError(400, `${label} must be an object keyed by skill level`);
+    }
+    for (const [level, value] of Object.entries(map)) {
+        if (!VALID_SKILL_LEVELS.includes(level)) {
+            throw new ApiError(400, `${label} has an invalid skill level '${level}'`);
+        }
+        if (value === undefined || value === null || value === "") continue;
+        if (!Number.isFinite(Number(value)) || Number(value) <= 0) {
+            throw new ApiError(400, `${label} for ${level} must be a positive number`);
+        }
+    }
+};
+
 // @desc    Create a new section
 // @route   POST /api/sections
 // @access  Private
 export const createSection = asyncHandler(async (req, res) => {
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId, skillUpgradationDayCount, multiSkillingDayCount } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
 
     if (!name || !departmentId) {
         throw new ApiError(400, "Name and Department ID are required");
@@ -25,6 +45,8 @@ export const createSection = asyncHandler(async (req, res) => {
     if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
         throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
     }
+    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count");
+    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count");
 
     const [existing] = await executeQuery(
         "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?)",
@@ -43,7 +65,9 @@ export const createSection = asyncHandler(async (req, res) => {
         tenCycleFormType,
         departmentId,
         skillUpgradationDayCount,
-        multiSkillingDayCount
+        multiSkillingDayCount,
+        skillUpgradationDayCounts,
+        multiSkillingDayCounts
     });
 
     res.status(201).json(
@@ -91,7 +115,7 @@ export const getAllSections = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive, skillUpgradationDayCount, multiSkillingDayCount } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
 
     let trimmedUniCode;
     if (uniCode !== undefined) {
@@ -115,6 +139,8 @@ export const updateSection = asyncHandler(async (req, res) => {
     if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
         throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
     }
+    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count");
+    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count");
 
     const updatedSection = await Section.update(id, {
         name,
@@ -125,7 +151,9 @@ export const updateSection = asyncHandler(async (req, res) => {
         tenCycleFormType,
         isActive,
         skillUpgradationDayCount,
-        multiSkillingDayCount
+        multiSkillingDayCount,
+        skillUpgradationDayCounts,
+        multiSkillingDayCounts
     });
 
     if (!updatedSection) {

@@ -51,6 +51,14 @@ const ACTUAL_TO_PLAN = {
     q3DateActual: "q4Date",
 };
 
+// The Skill Level the associate just reached in this quarter — determines how
+// many days until the next quarter's plan date (see resolveDayCountForLevel).
+const SKILL_FIELD_FOR_ACTUAL = {
+    q1DateActual: "q1Skill",
+    q2DateActual: "q2Skill",
+    q3DateActual: "q3Skill",
+};
+
 const QUARTERS = [
     { key: "q1", label: "Jan-March", headerBg: "bg-amber-50 text-amber-800", cellBg: "bg-amber-50/20" },
     { key: "q2", label: "April-June", headerBg: "bg-blue-50 text-blue-800", cellBg: "bg-blue-50/20" },
@@ -352,6 +360,18 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
         return (sectionsData?.data || []).find(s => String(s.id || s._id) === String(sectionId)) || null;
     }, [sectionsData, sectionId]);
     const multiSkillingDayCount = currentSection?.multiSkillingDayCount ?? null;
+    const multiSkillingDayCounts = currentSection?.multiSkillingDayCounts || {};
+
+    // Resolves the day count to apply once an associate reaches `level`:
+    // per-level override -> section default -> null (caller falls back to 3 months).
+    const resolveDayCountForLevel = (level) => {
+        if (level && multiSkillingDayCounts[level]) return multiSkillingDayCounts[level];
+        return multiSkillingDayCount || null;
+    };
+    const formatDayCountBadge = (level) => {
+        const count = resolveDayCountForLevel(level);
+        return count ? `+${count}d` : "+3mo";
+    };
 
     const getQuarterSubSections = (modelLine) => (modelLine ? subSections.filter(ss => ss.lineName === modelLine) : subSections);
 
@@ -493,7 +513,9 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
             const updated = { ...row, [field]: value };
             const targetField = ACTUAL_TO_PLAN[field];
             if (targetField && value && !row[targetField]) {
-                updated[targetField] = calculateFutureDate(value, multiSkillingDayCount);
+                const levelField = SKILL_FIELD_FOR_ACTUAL[field];
+                const currentLevel = levelField ? row[levelField] : null;
+                updated[targetField] = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
             }
             return updated;
         }));
@@ -806,6 +828,11 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
                                                                 <SelectItem value="L4">L4</SelectItem>
                                                             </SelectContent>
                                                         </Select>
+                                                        {key !== "q4" && row[skillField] && (
+                                                            <div className="text-[9px] text-slate-600 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
+                                                                {formatDayCountBadge(row[skillField])}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     {/* Date */}
                                                     <td className={`border-r border-slate-200 p-1 ${cellBg} text-center whitespace-nowrap`}>

@@ -605,7 +605,7 @@ const HandoverEligibilityPanel = ({ report, loading, onRunCheck }) => {
               )}
               <div className="flex-1">
                 <p className={`text-sm font-bold ${report.isEligible ? "text-green-800" : "text-red-800"}`}>
-                  {report.isEligible ? "Eligible for Handover Sheet" : "Ineligible for Handover Sheet"}
+                  {report.isEligible ? "Eligible for Handover Sheet" : "Not Eligible for Handover Sheet"}
                 </p>
                 {report.deptDetails && (
                   <p className="text-xs text-slate-500 mt-0.5">

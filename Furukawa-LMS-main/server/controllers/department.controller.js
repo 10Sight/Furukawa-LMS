@@ -2121,21 +2121,26 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
     const interviewPapers = [];
 
     if (isStrictConfig) {
+        // "Pass-any-one" rule: only one of the configured eligibility papers needs to be passed.
         eligibilityEvalIds.forEach((id) => eligibilityPapers.push(analyzeEvalRequirement(id, "Required Eligibility")));
-        const hasPassedEligibility = eligibilityPapers.every((r) => r.passed);
+        const hasPassedEligibility = eligibilityPapers.some((r) => r.passed);
         if (!hasPassedEligibility) {
             isEligible = false;
-            missingCriteria.push("Has not passed all required Dojo Eligibility Evaluation test papers.");
+            missingCriteria.push("Has not passed any of the required Dojo Eligibility Evaluation test papers.");
         }
 
         const requiresInterview = isSpecificDept && interviewEvalIds.length > 0;
         if (requiresInterview) {
-            interviewEvalIds.forEach((id) => interviewPapers.push(analyzeEvalRequirement(id, "Required Interview")));
-            interviewQuizIds.forEach((id) => interviewPapers.push(analyzeQuizRequirement(id, "Required Interview Quiz")));
-            const hasPassedInterview = interviewPapers.every((r) => r.passed);
-            if (!hasPassedInterview) {
+            const interviewEvalReqs = interviewEvalIds.map((id) => analyzeEvalRequirement(id, "Required Interview"));
+            const interviewQuizReqs = interviewQuizIds.map((id) => analyzeQuizRequirement(id, "Required Interview Quiz"));
+            interviewPapers.push(...interviewEvalReqs, ...interviewQuizReqs);
+
+            // Each configured group only needs one pass; a group with nothing configured is vacuously satisfied.
+            const hasPassedInterviewEval = interviewEvalReqs.some((r) => r.passed);
+            const hasPassedInterviewQuiz = interviewQuizReqs.length === 0 || interviewQuizReqs.some((r) => r.passed);
+            if (!hasPassedInterviewEval || !hasPassedInterviewQuiz) {
                 isEligible = false;
-                missingCriteria.push("Has not passed all required Dojo Interview Evaluation papers.");
+                missingCriteria.push("Has not passed any of the required Dojo Interview Evaluation papers and/or Interview Quizzes.");
             }
         }
     } else {

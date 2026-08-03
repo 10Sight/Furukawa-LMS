@@ -4,7 +4,7 @@ import { executeQuery } from '../db/mssqlHelper.js';
 import Department from '../models/department.model.js';
 
 /**
- * Handover Sheet Eligibility Diagnostic Tool
+ * Handover Sheet Eligibility Diagnostic Tool (Enhanced)
  * 
  * Usage:
  *   node scripts/checkHandoverEligibility.js <username_or_userId> [departmentId_or_slug]
@@ -32,16 +32,16 @@ const runDiagnostic = async () => {
     const userIdentifier = args[0];
     const deptIdentifier = args[1];
 
-    console.log("------------------------------------------------------------------");
-    console.log("   📋 HANDOVER SHEET ELIGIBILITY DIAGNOSTIC TOOL                  ");
-    console.log("------------------------------------------------------------------\n");
+    console.log("==================================================================");
+    console.log("🔍   HANDOVER SHEET ELIGIBILITY DIAGNOSTIC TOOL                  ");
+    console.log("==================================================================\n");
 
     console.log("🔌 Connecting to database...");
     await connectDB();
     console.log("✅ Connected successfully.\n");
 
     // 1. Fetch User details
-    console.log(`🔍 Fetching user info for identifier: "${userIdentifier}"...`);
+    console.log(`👤 Fetching user info for identifier: "${userIdentifier}"...`);
     const isIdNumeric = !isNaN(userIdentifier);
     const userQuery = `
         SELECT id, fullName, userName, targetDeptId, targetSectionId, isTemporary, isDeleted 
@@ -56,10 +56,7 @@ const runDiagnostic = async () => {
     }
 
     const user = users[0];
-    console.log(`👤 User Found:`);
-    console.log(`   - ID: ${user.id}`);
-    console.log(`   - Full Name: ${user.fullName}`);
-    console.log(`   - Employee Code / Username: ${user.userName}`);
+    console.log(`   - Trainee: ${user.fullName} (${user.userName})`);
     console.log(`   - Is Temporary (Trainee): ${user.isTemporary ? "Yes ✅" : "No ⚠️"}`);
     console.log(`   - Target Department ID: ${user.targetDeptId || "None (NULL) ⚠️"}`);
     console.log(`   - Target Section ID: ${user.targetSectionId || "None (NULL)"}`);
@@ -71,7 +68,6 @@ const runDiagnostic = async () => {
     let dept;
 
     if (!deptId && deptIdentifier) {
-        // Try searching department by slug
         console.log(`🔍 Searching department by slug: "${deptIdentifier}"...`);
         dept = await Department.findOne({ slug: deptIdentifier });
     } else if (deptId) {
@@ -86,209 +82,228 @@ const runDiagnostic = async () => {
         } else {
             console.error(`   Reason: No department found matching identifier: "${deptIdentifier || deptId}"`);
         }
-        console.log(getUsage());
         process.exit(1);
     }
 
-    console.log(`🏢 Department Found:`);
-    console.log(`   - ID: ${dept.id}`);
-    console.log(`   - Name: ${dept.name}`);
-    console.log(`   - Slug: ${dept.slug}`);
-    console.log(`   - Is Dojo Specific Department: ${dept.isDojoSpecificDept ? "Yes" : "No"}`);
+    console.log(`🏢 Target Department:`);
+    console.log(`   - Name: ${dept.name} (ID: ${dept.id})`);
+    console.log(`   - Dojo Specific Department: ${dept.isDojoSpecificDept ? "Yes" : "No"}`);
     console.log("");
 
-    // Parse configurations (Department model does this, but log them nicely)
-    const handoverQuizIds = dept.dojoHandoverQuizId || [];
-    const eligibilityEvalIds = dept.dojoEligibilityEvaluationId || [];
-    const interviewQuizIds = dept.dojoInterviewQuizId || [];
-    const interviewEvalIds = dept.dojoInterviewEvaluationId || [];
+    // Parse configurations
+    const handoverQuizIds = (dept.dojoHandoverQuizId || []).map(Number).filter(id => !isNaN(id) && id > 0);
+    const eligibilityEvalIds = (dept.dojoEligibilityEvaluationId || []).map(Number).filter(id => !isNaN(id) && id > 0);
+    const interviewQuizIds = (dept.dojoInterviewQuizId || []).map(Number).filter(id => !isNaN(id) && id > 0);
+    const interviewEvalIds = (dept.dojoInterviewEvaluationId || []).map(Number).filter(id => !isNaN(id) && id > 0);
     const isSpecificDept = !!dept.isDojoSpecificDept;
     const isStrictConfig = eligibilityEvalIds.length > 0;
 
-    console.log(`⚙️ Department Handover Configuration:`);
-    console.log(`   - Mode: ${isStrictConfig ? "STRICT (Dojo Eligibility Evaluation-based) 🛡️" : "LEGACY (Quiz-based fallback) 📜"}`);
-    console.log(`   - Dojo Eligibility Evaluation Test IDs: ${JSON.stringify(eligibilityEvalIds)}`);
-    console.log(`   - Dojo Handover Quiz IDs: ${JSON.stringify(handoverQuizIds)}`);
-    console.log(`   - Dojo Interview Quiz IDs: ${JSON.stringify(interviewQuizIds)}`);
-    console.log(`   - Dojo Interview Evaluation Test IDs: ${JSON.stringify(interviewEvalIds)}`);
-    console.log("");
+    console.log(`⚙️ Handover Policy Mode: ${isStrictConfig ? "STRICT (Dojo Eligibility Evaluation-based) 🛡️" : "LEGACY (Quiz-based fallback) 📜"}\n`);
 
-    // 3. Fetch Attempted Quizzes
-    console.log(`📝 Fetching quiz attempts for ${user.fullName}...`);
+    // Fetch Quiz Titles from DB
+    const allQuizIds = [...handoverQuizIds, ...interviewQuizIds];
+    const quizTitles = new Map();
+    if (allQuizIds.length > 0) {
+        const [quizzes] = await executeQuery(`SELECT id, title FROM quizzes WHERE id IN (?)`, [allQuizIds]);
+        quizzes.forEach(q => quizTitles.set(Number(q.id), q.title));
+    }
+
+    // Fetch Evaluation Test Titles from DB
+    const allEvalIds = [...eligibilityEvalIds, ...interviewEvalIds];
+    const evalTitles = new Map();
+    if (allEvalIds.length > 0) {
+        const [tests] = await executeQuery(`SELECT id, title FROM evaluation_tests WHERE id IN (?)`, [allEvalIds]);
+        tests.forEach(t => evalTitles.set(Number(t.id), t.title));
+    }
+
+    // 3. Fetch attempts from DB
     const [quizAttempts] = await executeQuery(`
-        SELECT aq.id, aq.quiz, q.title as quizTitle, aq.score, aq.status, aq.completedAt, q.isDojo, q.isHandover
+        SELECT aq.id, aq.quiz, q.title as quizTitle, aq.score, aq.status, aq.completedAt
         FROM attempted_quizzes aq
         JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
         WHERE aq.student = ? OR aq.student = ?
-        ORDER BY aq.completedAt DESC
     `, [String(user.id), user.userName]);
 
-    console.log(`   Found ${quizAttempts.length} quiz attempts:`);
-    quizAttempts.forEach(aq => {
-        const isConfiguredHandover = handoverQuizIds.includes(parseInt(aq.quiz)) || handoverQuizIds.includes(String(aq.quiz));
-        const isLegacyMatching = !isStrictConfig && aq.isDojo === 1 && aq.isHandover === 1;
-        const marker = isConfiguredHandover ? "⭐ [Configured Handover]" : (isLegacyMatching ? "✨ [Legacy Dojo Handover]" : "");
-        console.log(`     • [Quiz ${aq.quiz}] "${aq.title || aq.quizTitle}" - Score: ${aq.score}, Status: ${aq.status}, Date: ${aq.completedAt} ${marker}`);
-    });
-    console.log("");
-
-    // 4. Fetch Evaluation Test Attempts
-    console.log(`📋 Fetching evaluation test attempts for ${user.fullName}...`);
     const [evalAttempts] = await executeQuery(`
         SELECT eta.id, eta.testId, t.title as testTitle, eta.isHandoverEligible, eta.passedDate, eta.createdAt
         FROM evaluation_test_attempts eta
         LEFT JOIN evaluation_tests t ON eta.testId = t.id
         WHERE eta.userId = ?
-        ORDER BY eta.createdAt DESC
     `, [user.id]);
 
-    console.log(`   Found ${evalAttempts.length} evaluation test attempts:`);
-    evalAttempts.forEach(eta => {
-        const isConfiguredEval = eligibilityEvalIds.includes(parseInt(eta.testId)) || eligibilityEvalIds.includes(String(eta.testId));
-        const isConfiguredInterview = interviewEvalIds.includes(parseInt(eta.testId)) || interviewEvalIds.includes(String(eta.testId));
+    // Helper functions for checking paper details
+    const analyzeQuizRequirement = (quizId, label = "Handover Quiz") => {
+        const matchingAttempts = quizAttempts.filter(aq => Number(aq.quiz) === Number(quizId));
+        const passed = matchingAttempts.some(aq => aq.status === 'PASSED' || aq.status === 'PASS');
+        const title = quizTitles.get(Number(quizId)) || `Quiz ID ${quizId}`;
         
-        let marker = "";
-        if (isConfiguredEval) marker = "⭐ [Configured Eligibility Test]";
-        else if (isConfiguredInterview) marker = "🎙️ [Configured Interview Test]";
-
-        console.log(`     • [Test ${eta.testId}] "${eta.testTitle || 'Evaluation'}" - Handover Eligible: ${eta.isHandoverEligible === 1 ? "Passed ✅" : "Failed ❌"}, Passed Date: ${eta.passedDate || 'N/A'}, Date: ${eta.createdAt} ${marker}`);
-    });
-    console.log("");
-
-    // 5. Evaluate Eligibility Rules
-    console.log("🏁 Analyzing eligibility rules...\n");
-    const diagnostics = [];
-    let isEligible = true;
-
-    // Rule A: User must be temporary (trainee)
-    if (!user.isTemporary) {
-        diagnostics.push({
-            rule: "Trainee Status",
-            status: "FAILED ❌",
-            details: "User must be a temporary trainee to be handed over to shop floor. This user is marked as permanent/trainer/admin."
-        });
-        isEligible = false;
-    } else {
-        diagnostics.push({
-            rule: "Trainee Status",
-            status: "PASSED ✅",
-            details: "User is a temporary trainee."
-        });
-    }
-
-    // Rule B: Target Department Match
-    if (parseInt(user.targetDeptId) !== parseInt(dept.id)) {
-        diagnostics.push({
-            rule: "Department Assignment",
-            status: "FAILED ❌",
-            details: `User target department (ID: ${user.targetDeptId}) does not match current sheet department (ID: ${dept.id}).`
-        });
-        isEligible = false;
-    } else {
-        diagnostics.push({
-            rule: "Department Assignment",
-            status: "PASSED ✅",
-            details: `User target department matches sheet department.`
-        });
-    }
-
-    // Rule C: Test Paper / Evaluation Pass Status
-    if (isStrictConfig) {
-        // STRICT MODE: Must have evaluation_test_attempts with passed testId in dojoEligibilityEvaluationId
-        const hasPassedEval = evalAttempts.some(eta => {
-            const matchesId = eligibilityEvalIds.map(Number).includes(Number(eta.testId));
-            return matchesId && eta.isHandoverEligible === 1;
-        });
-
-        if (hasPassedEval) {
-            diagnostics.push({
-                rule: "Dojo Eligibility Test",
-                status: "PASSED ✅",
-                details: `User passed the configured Dojo Eligibility Evaluation Test (${JSON.stringify(eligibilityEvalIds)}).`
-            });
-        } else {
-            diagnostics.push({
-                rule: "Dojo Eligibility Test",
-                status: "FAILED ❌",
-                details: `No passed attempt found in evaluation_test_attempts for eligibility test IDs: ${JSON.stringify(eligibilityEvalIds)}.`
-            });
-            isEligible = false;
+        let status = "PENDING ⏳";
+        if (matchingAttempts.length > 0) {
+            status = passed ? "PASSED ✅" : "FAILED ❌";
         }
 
-        // Check Interview if required
+        return { id: quizId, title, type: "Quiz", label, status, attempts: matchingAttempts, passed };
+    };
+
+    const analyzeEvalRequirement = (testId, label = "Eligibility Test") => {
+        const matchingAttempts = evalAttempts.filter(eta => Number(eta.testId) === Number(testId));
+        const passed = matchingAttempts.some(eta => eta.isHandoverEligible === 1);
+        const title = evalTitles.get(Number(testId)) || `Test ID ${testId}`;
+
+        let status = "PENDING ⏳";
+        if (matchingAttempts.length > 0) {
+            status = passed ? "PASSED ✅" : "FAILED ❌";
+        }
+
+        return { id: testId, title, type: "Evaluation Test", label, status, attempts: matchingAttempts, passed };
+    };
+
+    const printRequirementBlock = (titleBlock, requirements) => {
+        console.log(`==================================================================`);
+        console.log(`📋 ${titleBlock}`);
+        console.log(`==================================================================`);
+        if (requirements.length === 0) {
+            console.log("   No specific requirements configured.");
+            console.log("");
+            return;
+        }
+
+        requirements.forEach(req => {
+            console.log(`• [${req.type} ${req.id}] "${req.title}" (${req.label})`);
+            console.log(`  Current Status: ${req.status}`);
+            
+            if (req.attempts.length === 0) {
+                console.log(`  Attempts: No attempts found (PENDING).`);
+            } else {
+                console.log(`  Attempts (${req.attempts.length} total):`);
+                req.attempts.forEach((att, idx) => {
+                    if (req.type === "Quiz") {
+                        console.log(`     [${idx + 1}] Date: ${att.completedAt} - Score: ${att.score} | Status: ${att.status}`);
+                    } else {
+                        console.log(`     [${idx + 1}] Date: ${att.createdAt} - Result: ${att.isHandoverEligible === 1 ? "PASSED ✅" : "FAILED ❌"} (Passed Date: ${att.passedDate || 'N/A'})`);
+                    }
+                });
+            }
+            console.log("");
+        });
+    };
+
+    let isEligible = true;
+    const missingCriteria = [];
+
+    // Analyze Trainee/Dept mismatch first
+    if (!user.isTemporary) {
+        isEligible = false;
+        missingCriteria.push("User is not marked as a Temporary Trainee (isTemporary must be true)");
+    }
+    if (parseInt(user.targetDeptId) !== parseInt(dept.id)) {
+        isEligible = false;
+        missingCriteria.push(`Trainee target department (ID ${user.targetDeptId}) does not match current sheet department (ID ${dept.id})`);
+    }
+
+    const eligibilityReqs = [];
+    const interviewReqs = [];
+
+    if (isStrictConfig) {
+        // Strict requirements mapping
+        eligibilityEvalIds.forEach(id => eligibilityReqs.push(analyzeEvalRequirement(id, "Required Eligibility")));
+        
+        const hasPassedEligibility = eligibilityReqs.every(r => r.passed);
+        if (!hasPassedEligibility) {
+            isEligible = false;
+            missingCriteria.push("Has not passed all required Dojo Eligibility Evaluation test papers.");
+        }
+
+        // Interview requirements mapping
         const requiresInterview = isSpecificDept && interviewEvalIds.length > 0;
         if (requiresInterview) {
-            const hasPassedInterview = evalAttempts.some(eta => {
-                const matchesId = interviewEvalIds.map(Number).includes(Number(eta.testId));
-                return matchesId && eta.isHandoverEligible === 1;
-            });
+            interviewEvalIds.forEach(id => interviewReqs.push(analyzeEvalRequirement(id, "Required Interview")));
+            interviewQuizIds.forEach(id => interviewReqs.push(analyzeQuizRequirement(id, "Required Interview Quiz")));
 
-            if (hasPassedInterview) {
-                diagnostics.push({
-                    rule: "Dojo Interview Test",
-                    status: "PASSED ✅",
-                    details: `User passed the required Dojo Interview Evaluation Test (${JSON.stringify(interviewEvalIds)}).`
-                });
-            } else {
-                diagnostics.push({
-                    rule: "Dojo Interview Test",
-                    status: "FAILED ❌",
-                    details: `This is a specific department requiring a passed interview, but no passed attempt was found for interview test IDs: ${JSON.stringify(interviewEvalIds)}.`
-                });
+            const hasPassedInterview = interviewReqs.every(r => r.passed);
+            if (!hasPassedInterview) {
                 isEligible = false;
+                missingCriteria.push("Has not passed all required Dojo Interview Evaluation papers.");
             }
         }
     } else {
-        // LEGACY MODE: Passed quiz OR passed evaluation test
-        const hasPassedQuiz = quizAttempts.some(aq => {
-            const matchesQuiz = handoverQuizIds.length > 0
-                ? handoverQuizIds.map(Number).includes(Number(aq.quiz))
-                : aq.isDojo === 1 && aq.isHandover === 1;
-            const statusPassed = aq.status === 'PASSED' || aq.status === 'PASS';
-            return matchesQuiz && statusPassed;
-        });
-
-        const hasPassedEval = evalAttempts.some(eta => eta.isHandoverEligible === 1);
-
-        if (hasPassedQuiz || hasPassedEval) {
-            let passedDetail = "";
-            if (hasPassedQuiz && hasPassedEval) passedDetail = "User passed both a handover quiz and an evaluation test.";
-            else if (hasPassedQuiz) passedDetail = "User passed a handover quiz.";
-            else passedDetail = "User passed an evaluation test (isHandoverEligible = 1).";
-
-            diagnostics.push({
-                rule: "Handover Test/Quiz (Legacy Mode)",
-                status: "PASSED ✅",
-                details: passedDetail
-            });
+        // Legacy Mode: Check any configured handover quizzes or falls back to any Dojo handover quiz
+        if (handoverQuizIds.length > 0) {
+            handoverQuizIds.forEach(id => eligibilityReqs.push(analyzeQuizRequirement(id, "Handover Quiz")));
         } else {
-            const quizList = handoverQuizIds.length > 0 ? JSON.stringify(handoverQuizIds) : "any Dojo Handover quiz";
-            diagnostics.push({
-                rule: "Handover Test/Quiz (Legacy Mode)",
-                status: "FAILED ❌",
-                details: `User has neither passed the configured handover quiz(zes) (${quizList}) nor has any evaluation test marked as handover eligible.`
+            // Find any attempted quizzes flagged as Dojo & Handover
+            const matchingGeneralAttempts = quizAttempts.filter(aq => aq.isDojo === 1 && aq.isHandover === 1);
+            const passedGeneral = matchingGeneralAttempts.some(aq => aq.status === 'PASSED' || aq.status === 'PASS');
+            eligibilityReqs.push({
+                id: "Any",
+                title: "Dojo Handover Quiz Fallback (Any)",
+                type: "General Quiz",
+                label: "Legacy Default",
+                status: matchingGeneralAttempts.length > 0 ? (passedGeneral ? "PASSED ✅" : "FAILED ❌") : "PENDING ⏳",
+                attempts: matchingGeneralAttempts,
+                passed: passedGeneral
             });
-            isEligible = false;
         }
+
+        // Also check if they have any passed evaluation test (isHandoverEligible = 1)
+        const hasPassedEval = evalAttempts.some(eta => eta.isHandoverEligible === 1);
+        const hasPassedQuiz = eligibilityReqs.some(r => r.passed);
+
+        if (hasPassedEval) {
+            eligibilityReqs.push({
+                id: "Any",
+                title: "Any Handover Eligible Test Attempt",
+                type: "Evaluation Test",
+                label: "Alternative Pass",
+                status: "PASSED ✅",
+                attempts: evalAttempts.filter(eta => eta.isHandoverEligible === 1),
+                passed: true
+            });
+        }
+
+        if (!hasPassedQuiz && !hasPassedEval) {
+            isEligible = false;
+            missingCriteria.push("Has not passed any of the configured handover quizzes OR any evaluation test marked as handover-eligible.");
+        }
+    }
+
+    // Print grouped lists
+    printRequirementBlock("CONFIGURED ELIGIBILITY PAPERS STATUS", eligibilityReqs);
+    if (isStrictConfig && isSpecificDept && interviewEvalIds.length > 0) {
+        printRequirementBlock("CONFIGURED INTERVIEW PAPERS STATUS", interviewReqs);
     }
 
     // 6. Summary Output
     console.log("==================================================================");
-    console.log("📊 DIAGNOSTIC RESULTS:");
+    console.log("📊 FINAL STATUS SUMMARY:");
     console.log("==================================================================");
-    diagnostics.forEach((d, i) => {
-        console.log(`${i + 1}. [${d.rule}] - Status: ${d.status}`);
-        console.log(`   Detail: ${d.details}`);
-        console.log("");
-    });
-
-    console.log("------------------------------------------------------------------");
-    if (isEligible) {
-        console.log("🟢 FINAL DIAGNOSIS: USER IS ELIGIBLE FOR THE HANDOVER SHEET!");
-        console.log(`   User "${user.fullName}" meets all eligibility criteria for department "${dept.name}".`);
+    console.log(`• Trainee Status:   ${user.isTemporary ? "PASSED ✅ (Trainee)" : "FAILED ❌ (Not a Trainee)"}`);
+    console.log(`• Dept Alignment:   ${parseInt(user.targetDeptId) === parseInt(dept.id) ? "PASSED ✅ (Matches)" : "FAILED ❌ (Mismatch)"}`);
+    
+    if (isStrictConfig) {
+        const passedEligibilityCount = eligibilityReqs.filter(r => r.passed).length;
+        console.log(`• Eligibility Tests: ${passedEligibilityCount === eligibilityReqs.length ? "PASSED ✅" : "FAILED ❌"} (${passedEligibilityCount}/${eligibilityReqs.length} passed)`);
+        
+        if (isSpecificDept && interviewEvalIds.length > 0) {
+            const passedInterviewCount = interviewReqs.filter(r => r.passed).length;
+            console.log(`• Interview Tests:   ${passedInterviewCount === interviewReqs.length ? "PASSED ✅" : "FAILED ❌"} (${passedInterviewCount}/${interviewReqs.length} passed)`);
+        }
     } else {
-        console.log("🔴 FINAL DIAGNOSIS: USER IS NOT ELIGIBLE FOR THE HANDOVER SHEET.");
-        console.log(`   User "${user.fullName}" is missing one or more required conditions for department "${dept.name}".`);
+        const passedQuiz = eligibilityReqs.some(r => r.passed && r.type !== "Evaluation Test");
+        const passedEval = evalAttempts.some(eta => eta.isHandoverEligible === 1);
+        console.log(`• Legacy Handover:  ${(passedQuiz || passedEval) ? "PASSED ✅" : "FAILED ❌"} (Requires 1 pass: Quiz Pass = ${passedQuiz ? "Yes" : "No"}, Eval Pass = ${passedEval ? "Yes" : "No"})`);
+    }
+
+    console.log("\n------------------------------------------------------------------");
+    if (isEligible) {
+        console.log("🟢 DIAGNOSIS: USER IS ELIGIBLE FOR THE HANDOVER SHEET!");
+        console.log(`   User "${user.fullName}" can be successfully added to the sheet for "${dept.name}".`);
+    } else {
+        console.log("🔴 DIAGNOSIS: USER IS NOT ELIGIBLE FOR THE HANDOVER SHEET.");
+        console.log("   Reasons for Ineligibility:");
+        missingCriteria.forEach((reason, i) => {
+            console.log(`     ${i + 1}. ${reason}`);
+        });
     }
     console.log("------------------------------------------------------------------\n");
 };

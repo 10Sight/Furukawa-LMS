@@ -1376,6 +1376,33 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
             });
         }
 
+        // Merge in admin-approved manual overrides applicable to this department + sheet date
+        // (a blanket override, or one scoped to this exact date). Naturally-eligible users are
+        // left as-is; overrides only fill in students the normal query didn't already surface.
+        const overrideRows = await HandoverEligibilityOverride.findActiveForSheet(departmentId, date);
+        if (overrideRows.length > 0) {
+            const existingIds = new Set(eligibleUsers.map(u => String(u.studentId)));
+            const overrideEntries = overrideRows
+                .filter(r => !existingIds.has(String(r.studentId)))
+                .map(r => ({
+                    studentId: r.studentId,
+                    employeeName: r.employeeName,
+                    employeeCode: r.employeeCode,
+                    targetDeptId: r.targetDeptId,
+                    sectionId: r.sectionId,
+                    lineId: r.lineId,
+                    subSectionId: r.subSectionId,
+                    stationId: r.stationId,
+                    lineName: r.lineName,
+                    stationName: r.stationName,
+                    marks: "Override",
+                    passedQuizDate: date,
+                    isAutoSuggested: true,
+                    isManualOverride: true,
+                }));
+            eligibleUsers = [...eligibleUsers, ...overrideEntries];
+        }
+
         // Interview1/Interview2 prefill — only computed for departments flagged as "specific"
         if (isSpecificDept && eligibleUsers.length > 0) {
             const interview1Map = new Map();
@@ -2038,7 +2065,7 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
             interviewPapers: [],
             traineeDetails,
             deptDetails: null,
-            overrideDetails: null,
+            overrideDetails: [],
         }, "Eligibility checked"));
     }
 
@@ -2184,15 +2211,16 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
         }
     }
 
-    const activeOverride = await HandoverEligibilityOverride.findActive(user.id, dept.id);
-    const overrideDetails = activeOverride ? {
-        overriddenBy: activeOverride.overriddenByName,
-        overriddenAt: activeOverride.createdAt,
-        reason: activeOverride.reason,
-    } : null;
+    const activeOverrides = await HandoverEligibilityOverride.findAllActive(user.id, dept.id);
+    const overrideDetails = activeOverrides.map((o) => ({
+        forDate: o.forDate,
+        overriddenBy: o.overriddenByName,
+        overriddenAt: o.createdAt,
+        reason: o.reason,
+    }));
 
     res.status(200).json(new ApiResponse(200, {
-        isEligible: isEligible || !!activeOverride,
+        isEligible: isEligible || activeOverrides.length > 0,
         naturallyEligible: isEligible,
         policyMode: isStrictConfig ? "STRICT" : "LEGACY",
         missingCriteria,
@@ -2224,9 +2252,13 @@ export const bypassHandoverEligibility = asyncHandler(async (req, res) => {
     const dept = await Department.findById(deptId);
     if (!dept) throw new ApiError("Department not found", 404);
 
+    const forDate = normalizeParam(req.body.forDate);
+    if (forDate && isNaN(Date.parse(forDate))) throw new ApiError("Invalid forDate", 400);
+
     const override = await HandoverEligibilityOverride.create({
         studentId: user.id,
         departmentId: dept.id,
+        forDate: forDate || null,
         reason: req.body.reason || null,
         overriddenBy: req.user.id,
         overriddenByName: req.user.fullName || req.user.userName || `User #${req.user.id}`,
@@ -2235,6 +2267,7 @@ export const bypassHandoverEligibility = asyncHandler(async (req, res) => {
     logAudit(req.user?.id, "BYPASS_HANDOVER_ELIGIBILITY", {
         studentId: user.id,
         departmentId: dept.id,
+        forDate: forDate || null,
         reason: req.body.reason || null,
     }, { resourceType: "HandoverEligibilityOverride", resourceId: override.id, req }).catch(err =>
         console.error("logAudit(BYPASS_HANDOVER_ELIGIBILITY) failed:", err.message)
@@ -2259,17 +2292,21 @@ export const revokeHandoverEligibilityOverride = asyncHandler(async (req, res) =
     const deptId = overrideDeptId ? await resolveDepartmentId(overrideDeptId) : user.targetDeptId;
     if (!deptId) throw new ApiError("No department context to revoke the override against", 400);
 
+    const forDate = normalizeParam(req.body.forDate) || normalizeParam(req.query.forDate);
+
     const revoked = await HandoverEligibilityOverride.revoke(
         user.id,
         deptId,
+        forDate || null,
         req.user.id,
         req.user.fullName || req.user.userName || `User #${req.user.id}`
     );
-    if (!revoked) throw new ApiError("No active handover eligibility override found for this trainee/department", 404);
+    if (!revoked) throw new ApiError("No active handover eligibility override found for this trainee/department/date", 404);
 
     logAudit(req.user?.id, "REVOKE_HANDOVER_ELIGIBILITY_OVERRIDE", {
         studentId: user.id,
         departmentId: deptId,
+        forDate: forDate || null,
     }, { resourceType: "HandoverEligibilityOverride", resourceId: revoked.id, req }).catch(err =>
         console.error("logAudit(REVOKE_HANDOVER_ELIGIBILITY_OVERRIDE) failed:", err.message)
     );

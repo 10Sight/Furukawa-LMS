@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,6 +64,8 @@ const DojoCandidateDetail = () => {
   const [eligibilityReport, setEligibilityReport] = useState(null);
   const [checkingEligibility, setCheckingEligibility] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [overrideScope, setOverrideScope] = useState("all"); // "all" | "date"
+  const [overrideForDate, setOverrideForDate] = useState("");
   const [overrideActionLoading, setOverrideActionLoading] = useState(false);
 
   const candidate = candidateData?.data;
@@ -112,20 +115,28 @@ const DojoCandidateDetail = () => {
   }, [activeTab, studentId]);
 
   const handleBypassEligibility = () => {
+    if (overrideScope === "date" && !overrideForDate) {
+      toast.error("Please pick a date for the override");
+      return;
+    }
     setOverrideActionLoading(true);
-    axiosInstance.post(`/api/departments/handover-sheet/bypass-eligibility/${studentId}`, { reason: overrideReason })
+    axiosInstance.post(`/api/departments/handover-sheet/bypass-eligibility/${studentId}`, {
+      reason: overrideReason,
+      forDate: overrideScope === "date" ? overrideForDate : null,
+    })
       .then(() => {
         toast.success("Handover eligibility manually overridden");
         setOverrideReason("");
+        setOverrideForDate("");
         fetchEligibilityReport();
       })
       .catch(err => toast.error(err.response?.data?.message || "Failed to override eligibility"))
       .finally(() => setOverrideActionLoading(false));
   };
 
-  const handleRevokeOverride = () => {
+  const handleRevokeOverride = (forDate) => {
     setOverrideActionLoading(true);
-    axiosInstance.post(`/api/departments/handover-sheet/revoke-eligibility/${studentId}`)
+    axiosInstance.post(`/api/departments/handover-sheet/revoke-eligibility/${studentId}`, { forDate: forDate || null })
       .then(() => {
         toast.success("Handover eligibility override revoked");
         fetchEligibilityReport();
@@ -509,6 +520,10 @@ const DojoCandidateDetail = () => {
             isAdminUser={isAdminUser}
             overrideReason={overrideReason}
             onOverrideReasonChange={setOverrideReason}
+            overrideScope={overrideScope}
+            onOverrideScopeChange={setOverrideScope}
+            overrideForDate={overrideForDate}
+            onOverrideForDateChange={setOverrideForDate}
             onBypass={handleBypassEligibility}
             onRevoke={handleRevokeOverride}
             actionLoading={overrideActionLoading}
@@ -605,11 +620,14 @@ const DojoCandidateDetail = () => {
 
 const HandoverEligibilityPanel = ({
   report, loading, onRunCheck, isAdminUser,
-  overrideReason, onOverrideReasonChange, onBypass, onRevoke, actionLoading,
+  overrideReason, onOverrideReasonChange,
+  overrideScope, onOverrideScopeChange,
+  overrideForDate, onOverrideForDateChange,
+  onBypass, onRevoke, actionLoading,
 }) => {
-  const hasOverride = !!report?.overrideDetails;
+  const overrides = report?.overrideDetails || [];
+  const hasOverride = overrides.length > 0;
   const showBypassControls = isAdminUser && report && !report.isEligible;
-  const showRevokeButton = isAdminUser && hasOverride;
 
   return (
     <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -657,34 +675,44 @@ const HandoverEligibilityPanel = ({
                     Evaluated against target department: <span className="font-semibold">{report.deptDetails.name}</span>
                   </p>
                 )}
-                {hasOverride && (
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Overridden by <span className="font-semibold">{report.overrideDetails.overriddenBy || "Admin"}</span>
-                    {report.overrideDetails.overriddenAt && ` on ${displayDate(report.overrideDetails.overriddenAt)}`}
-                    {report.overrideDetails.reason && ` — "${report.overrideDetails.reason}"`}
-                  </p>
-                )}
               </div>
-              <div className="flex items-center gap-2 self-start sm:self-center">
-                {report.policyMode && (
-                  <Badge variant="outline" className="text-[10px] font-mono uppercase">
-                    {report.policyMode} mode
-                  </Badge>
-                )}
-                {showRevokeButton && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs px-2 text-red-600 border-red-200 hover:bg-red-50"
-                    onClick={onRevoke}
-                    disabled={actionLoading}
-                  >
-                    <IconShieldOff className="h-3.5 w-3.5" />
-                    Revoke Override
-                  </Button>
-                )}
-              </div>
+              {report.policyMode && (
+                <Badge variant="outline" className="text-[10px] font-mono uppercase self-start sm:self-center">
+                  {report.policyMode} mode
+                </Badge>
+              )}
             </div>
+
+            {/* Active Overrides */}
+            {hasOverride && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Active Manual Overrides</p>
+                <div className="space-y-2">
+                  {overrides.map((o, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                      <div className="min-w-0 text-xs text-blue-800">
+                        <span className="font-semibold">{o.forDate ? `Approved for ${displayDate(o.forDate)}` : "Approved for all dates"}</span>
+                        {" — by "}<span className="font-semibold">{o.overriddenBy || "Admin"}</span>
+                        {o.overriddenAt && ` on ${displayDate(o.overriddenAt)}`}
+                        {o.reason && <span className="block text-slate-500 mt-0.5">"{o.reason}"</span>}
+                      </div>
+                      {isAdminUser && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs px-2 text-red-600 border-red-200 hover:bg-red-50 shrink-0"
+                          onClick={() => onRevoke(o.forDate || null)}
+                          disabled={actionLoading}
+                        >
+                          <IconShieldOff className="h-3.5 w-3.5" />
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Missing Criteria */}
             {!report.isEligible && report.missingCriteria?.length > 0 && (
@@ -711,6 +739,34 @@ const HandoverEligibilityPanel = ({
                 <p className="text-xs text-slate-500">
                   Force this candidate onto the Handover Sheet without a passed test/quiz. This is recorded separately from real test attempts and can be revoked later.
                 </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={overrideScope === "all" ? "default" : "outline"}
+                    className="h-7 text-xs px-2.5"
+                    onClick={() => onOverrideScopeChange("all")}
+                  >
+                    All Dates
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={overrideScope === "date" ? "default" : "outline"}
+                    className="h-7 text-xs px-2.5"
+                    onClick={() => onOverrideScopeChange("date")}
+                  >
+                    Specific Date
+                  </Button>
+                  {overrideScope === "date" && (
+                    <Input
+                      type="date"
+                      value={overrideForDate}
+                      onChange={(e) => onOverrideForDateChange(e.target.value)}
+                      className="h-7 text-xs w-40 bg-white"
+                    />
+                  )}
+                </div>
                 <Textarea
                   placeholder="Reason for override (optional, but recommended for audit)"
                   value={overrideReason}

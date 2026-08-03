@@ -147,7 +147,7 @@ const runDiagnostic = async () => {
 
     const analyzeEvalRequirement = (testId, label = "Eligibility Test") => {
         const matchingAttempts = evalAttempts.filter(eta => Number(eta.testId) === Number(testId));
-        const passed = matchingAttempts.some(eta => eta.isHandoverEligible === 1);
+        const passed = matchingAttempts.some(eta => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
         const title = evalTitles.get(Number(testId)) || `Test ID ${testId}`;
 
         let status = "PENDING ⏳";
@@ -180,7 +180,7 @@ const runDiagnostic = async () => {
                     if (req.type === "Quiz") {
                         console.log(`     [${idx + 1}] Date: ${att.completedAt} - Score: ${att.score} | Status: ${att.status}`);
                     } else {
-                        console.log(`     [${idx + 1}] Date: ${att.createdAt} - Result: ${att.isHandoverEligible === 1 ? "PASSED ✅" : "FAILED ❌"} (Passed Date: ${att.passedDate || 'N/A'})`);
+                        console.log(`     [${idx + 1}] Date: ${att.createdAt} - Result: ${(att.isHandoverEligible == 1 || att.isHandoverEligible === true) ? "PASSED ✅" : "FAILED ❌"} (Passed Date: ${att.passedDate || 'N/A'})`);
                     }
                 });
             }
@@ -252,7 +252,7 @@ const runDiagnostic = async () => {
         }
 
         // Also check if they have any passed evaluation test (isHandoverEligible = 1)
-        const hasPassedEval = evalAttempts.some(eta => eta.isHandoverEligible === 1);
+        const hasPassedEval = evalAttempts.some(eta => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
         const hasPassedQuiz = eligibilityReqs.some(r => r.passed);
 
         if (hasPassedEval) {
@@ -262,7 +262,7 @@ const runDiagnostic = async () => {
                 type: "Evaluation Test",
                 label: "Alternative Pass",
                 status: "PASSED ✅",
-                attempts: evalAttempts.filter(eta => eta.isHandoverEligible === 1),
+                attempts: evalAttempts.filter(eta => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true),
                 passed: true
             });
         }
@@ -287,16 +287,20 @@ const runDiagnostic = async () => {
     console.log(`• Dept Alignment:   ${parseInt(user.targetDeptId) === parseInt(dept.id) ? "PASSED ✅ (Matches)" : "FAILED ❌ (Mismatch)"}`);
     
     if (isStrictConfig) {
-        const passedEligibilityCount = eligibilityReqs.filter(r => r.passed).length;
-        console.log(`• Eligibility Tests: ${passedEligibilityCount === eligibilityReqs.length ? "PASSED ✅" : "FAILED ❌"} (${passedEligibilityCount}/${eligibilityReqs.length} passed)`);
+        const hasPassedEligibility = eligibilityReqs.length === 0 || eligibilityReqs.some(r => r.passed);
+        console.log(`• Eligibility Tests: ${hasPassedEligibility ? "PASSED ✅" : "FAILED ❌"} (${eligibilityReqs.filter(r => r.passed).length}/${eligibilityReqs.length} passed)`);
         
         if (isSpecificDept && interviewEvalIds.length > 0) {
-            const passedInterviewCount = interviewReqs.filter(r => r.passed).length;
-            console.log(`• Interview Tests:   ${passedInterviewCount === interviewReqs.length ? "PASSED ✅" : "FAILED ❌"} (${passedInterviewCount}/${interviewReqs.length} passed)`);
+            const evalReqs = interviewReqs.filter(r => r.type === "Evaluation Test");
+            const quizReqs = interviewReqs.filter(r => r.type === "Quiz");
+            const passedEval = evalReqs.length === 0 || evalReqs.some(r => r.passed);
+            const passedQuiz = quizReqs.length === 0 || quizReqs.some(r => r.passed);
+            const hasPassedInterview = passedEval && passedQuiz;
+            console.log(`• Interview Tests:   ${hasPassedInterview ? "PASSED ✅" : "FAILED ❌"} (${evalReqs.filter(r => r.passed).length}/${evalReqs.length} tests, ${quizReqs.filter(r => r.passed).length}/${quizReqs.length} quizzes passed)`);
         }
     } else {
         const passedQuiz = eligibilityReqs.some(r => r.passed && r.type !== "Evaluation Test");
-        const passedEval = evalAttempts.some(eta => eta.isHandoverEligible === 1);
+        const passedEval = evalAttempts.some(eta => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
         console.log(`• Legacy Handover:  ${(passedQuiz || passedEval) ? "PASSED ✅" : "FAILED ❌"} (Requires 1 pass: Quiz Pass = ${passedQuiz ? "Yes" : "No"}, Eval Pass = ${passedEval ? "Yes" : "No"})`);
     }
 

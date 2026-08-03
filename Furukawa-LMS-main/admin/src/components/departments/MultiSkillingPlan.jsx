@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,8 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [menuStyle, setMenuStyle] = useState(null);
+    const wrapperRef = useRef(null);
 
     useEffect(() => {
         setSearchTerm(value || "");
@@ -98,7 +101,6 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
                     departmentId: departmentId || undefined,
                     sectionId: sectionId || undefined,
                     lineId: lineId || undefined,
-                    filterMultiSkillingLevels: "true",
                     includeTemporary: "true",
                     limit: 10,
                 },
@@ -117,8 +119,30 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
         };
     }, [searchTerm, departmentId, sectionId, lineId]);
 
+    // Table cells that host this selector sit inside a scrollable/overflow-clipped
+    // container with sticky columns, so an absolutely-positioned dropdown gets cut
+    // off or covered depending on row position. Portal it to <body> and track the
+    // input's live position instead, so it always renders on top, fully visible.
+    const shouldShowMenu = showSuggestions && !disabled && searchTerm.trim().length >= MIN_SEARCH_LENGTH;
+
+    useEffect(() => {
+        if (!shouldShowMenu) return;
+        const updatePosition = () => {
+            const rect = wrapperRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            setMenuStyle({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+        };
+        updatePosition();
+        window.addEventListener("scroll", updatePosition, true);
+        window.addEventListener("resize", updatePosition);
+        return () => {
+            window.removeEventListener("scroll", updatePosition, true);
+            window.removeEventListener("resize", updatePosition);
+        };
+    }, [shouldShowMenu]);
+
     return (
-        <div className="relative w-full">
+        <div ref={wrapperRef} className="relative w-full">
             <Input
                 value={searchTerm}
                 onChange={(e) => {
@@ -135,8 +159,11 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
                 disabled={disabled}
                 className="h-8 w-full min-w-[180px] text-xs shadow-none border-slate-200 bg-white"
             />
-            {showSuggestions && !disabled && searchTerm.trim().length >= MIN_SEARCH_LENGTH && (
-                <ul className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-40 overflow-y-auto z-50 py-1 normal-case font-normal text-left">
+            {shouldShowMenu && menuStyle && createPortal(
+                <ul
+                    style={{ position: "fixed", top: menuStyle.top, left: menuStyle.left, width: menuStyle.width }}
+                    className="bg-white border border-slate-200 rounded shadow-lg max-h-40 overflow-y-auto z-[9999] py-1 normal-case font-normal text-left"
+                >
                     {isSearching ? (
                         <li className="px-2 py-1.5 text-xs text-slate-400 flex items-center gap-1.5">
                             <IconLoader className="h-3 w-3 animate-spin" /> Searching...
@@ -159,7 +186,8 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
                     ) : (
                         <li className="px-2 py-1.5 text-xs text-slate-400">No matches found</li>
                     )}
-                </ul>
+                </ul>,
+                document.body
             )}
         </div>
     );

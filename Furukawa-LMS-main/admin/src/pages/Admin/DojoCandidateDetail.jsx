@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useSelector } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGetUserByIdQuery, useUpdateUserMutation, useDeleteUserMutation } from "@/Redux/AllApi/UserApi";
 import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
@@ -8,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,7 +21,8 @@ import {
   IconSettings, IconCalendar, IconTrash, IconEdit, IconCheck,
   IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar,
   IconClipboardList, IconEye, IconClock, IconShieldCheck, IconHistory,
-  IconActivity, IconCircleCheck, IconAlertTriangle, IconLoader2
+  IconActivity, IconCircleCheck, IconAlertTriangle, IconLoader2,
+  IconShieldLock, IconShieldOff
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { getMediaUrl } from "@/utils/mediaUtils";
@@ -36,6 +39,9 @@ import { displayDate } from "@/utils/dateUtils";
 const DojoCandidateDetail = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
+
+  const currentUser = useSelector((state) => state.auth.user);
+  const isAdminUser = !!(currentUser?.isAdmin || currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN");
 
   const { data: candidateData, isLoading, refetch } = useGetUserByIdQuery(studentId);
   const [updateUser] = useUpdateUserMutation();
@@ -56,6 +62,8 @@ const DojoCandidateDetail = () => {
   const [handoverLoading, setHandoverLoading] = useState(false);
   const [eligibilityReport, setEligibilityReport] = useState(null);
   const [checkingEligibility, setCheckingEligibility] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideActionLoading, setOverrideActionLoading] = useState(false);
 
   const candidate = candidateData?.data;
   const attempts = attemptsData?.data || [];
@@ -102,6 +110,29 @@ const DojoCandidateDetail = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, studentId]);
+
+  const handleBypassEligibility = () => {
+    setOverrideActionLoading(true);
+    axiosInstance.post(`/api/departments/handover-sheet/bypass-eligibility/${studentId}`, { reason: overrideReason })
+      .then(() => {
+        toast.success("Handover eligibility manually overridden");
+        setOverrideReason("");
+        fetchEligibilityReport();
+      })
+      .catch(err => toast.error(err.response?.data?.message || "Failed to override eligibility"))
+      .finally(() => setOverrideActionLoading(false));
+  };
+
+  const handleRevokeOverride = () => {
+    setOverrideActionLoading(true);
+    axiosInstance.post(`/api/departments/handover-sheet/revoke-eligibility/${studentId}`)
+      .then(() => {
+        toast.success("Handover eligibility override revoked");
+        fetchEligibilityReport();
+      })
+      .catch(err => toast.error(err.response?.data?.message || "Failed to revoke override"))
+      .finally(() => setOverrideActionLoading(false));
+  };
 
   // Handle Delete User
   const handleDelete = async () => {
@@ -475,6 +506,12 @@ const DojoCandidateDetail = () => {
             report={eligibilityReport}
             loading={checkingEligibility}
             onRunCheck={fetchEligibilityReport}
+            isAdminUser={isAdminUser}
+            overrideReason={overrideReason}
+            onOverrideReasonChange={setOverrideReason}
+            onBypass={handleBypassEligibility}
+            onRevoke={handleRevokeOverride}
+            actionLoading={overrideActionLoading}
           />
 
           <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -566,7 +603,14 @@ const DojoCandidateDetail = () => {
   );
 };
 
-const HandoverEligibilityPanel = ({ report, loading, onRunCheck }) => {
+const HandoverEligibilityPanel = ({
+  report, loading, onRunCheck, isAdminUser,
+  overrideReason, onOverrideReasonChange, onBypass, onRevoke, actionLoading,
+}) => {
+  const hasOverride = !!report?.overrideDetails;
+  const showBypassControls = isAdminUser && report && !report.isEligible;
+  const showRevokeButton = isAdminUser && hasOverride;
+
   return (
     <Card className="border-slate-200 shadow-sm overflow-hidden">
       <CardHeader className="bg-slate-50/50 py-3 border-b">
@@ -606,18 +650,40 @@ const HandoverEligibilityPanel = ({ report, loading, onRunCheck }) => {
               <div className="flex-1">
                 <p className={`text-sm font-bold ${report.isEligible ? "text-green-800" : "text-red-800"}`}>
                   {report.isEligible ? "Eligible for Handover Sheet" : "Not Eligible for Handover Sheet"}
+                  {hasOverride && <span className="font-normal"> (Manually Overridden)</span>}
                 </p>
                 {report.deptDetails && (
                   <p className="text-xs text-slate-500 mt-0.5">
                     Evaluated against target department: <span className="font-semibold">{report.deptDetails.name}</span>
                   </p>
                 )}
+                {hasOverride && (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Overridden by <span className="font-semibold">{report.overrideDetails.overriddenBy || "Admin"}</span>
+                    {report.overrideDetails.overriddenAt && ` on ${displayDate(report.overrideDetails.overriddenAt)}`}
+                    {report.overrideDetails.reason && ` — "${report.overrideDetails.reason}"`}
+                  </p>
+                )}
               </div>
-              {report.policyMode && (
-                <Badge variant="outline" className="text-[10px] font-mono uppercase self-start sm:self-center">
-                  {report.policyMode} mode
-                </Badge>
-              )}
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                {report.policyMode && (
+                  <Badge variant="outline" className="text-[10px] font-mono uppercase">
+                    {report.policyMode} mode
+                  </Badge>
+                )}
+                {showRevokeButton && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs px-2 text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={onRevoke}
+                    disabled={actionLoading}
+                  >
+                    <IconShieldOff className="h-3.5 w-3.5" />
+                    Revoke Override
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Missing Criteria */}
@@ -632,6 +698,35 @@ const HandoverEligibilityPanel = ({ report, loading, onRunCheck }) => {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Manual Override Controls (Admin-only, ineligible candidates only) */}
+            {showBypassControls && (
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1.5">
+                  <IconShieldLock className="h-3.5 w-3.5" />
+                  Manual Eligibility Override
+                </p>
+                <p className="text-xs text-slate-500">
+                  Force this candidate onto the Handover Sheet without a passed test/quiz. This is recorded separately from real test attempts and can be revoked later.
+                </p>
+                <Textarea
+                  placeholder="Reason for override (optional, but recommended for audit)"
+                  value={overrideReason}
+                  onChange={(e) => onOverrideReasonChange(e.target.value)}
+                  className="text-xs bg-white"
+                  rows={2}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs px-3 bg-amber-600 hover:bg-amber-700 text-white"
+                  onClick={onBypass}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconShieldLock className="h-3.5 w-3.5" />}
+                  Force Handover Eligibility
+                </Button>
               </div>
             )}
 

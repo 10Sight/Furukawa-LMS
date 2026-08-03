@@ -9,6 +9,7 @@ import AttendanceLog from "../models/attendanceLog.model.js";
 import NotificationService from "../services/notification.service.js";
 import HandoverSheet from "../models/handoverSheet.model.js";
 import HandoverSheetConfig from "../models/handoverSheetConfig.model.js";
+import HandoverEligibilityOverride from "../models/handoverEligibilityOverride.model.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -2030,12 +2031,14 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
     if (!deptId) {
         return res.status(200).json(new ApiResponse(200, {
             isEligible: false,
+            naturallyEligible: false,
             policyMode: null,
             missingCriteria: ["Trainee does not have a target department assigned. Please edit their profile to assign a target department first."],
             eligibilityPapers: [],
             interviewPapers: [],
             traineeDetails,
             deptDetails: null,
+            overrideDetails: null,
         }, "Eligibility checked"));
     }
 
@@ -2181,13 +2184,95 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
         }
     }
 
+    const activeOverride = await HandoverEligibilityOverride.findActive(user.id, dept.id);
+    const overrideDetails = activeOverride ? {
+        overriddenBy: activeOverride.overriddenByName,
+        overriddenAt: activeOverride.createdAt,
+        reason: activeOverride.reason,
+    } : null;
+
     res.status(200).json(new ApiResponse(200, {
-        isEligible,
+        isEligible: isEligible || !!activeOverride,
+        naturallyEligible: isEligible,
         policyMode: isStrictConfig ? "STRICT" : "LEGACY",
         missingCriteria,
         eligibilityPapers,
         interviewPapers,
         traineeDetails,
         deptDetails: { name: dept.name, id: dept.id, isDojoSpecificDept: isSpecificDept },
+        overrideDetails,
     }, "Eligibility checked"));
+});
+
+export const bypassHandoverEligibility = asyncHandler(async (req, res) => {
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    if (!isAdmin) throw new ApiError("Only administrators can override handover eligibility", 403);
+
+    const { studentId: rawStudentId } = req.params;
+    const studentId = await resolveStudentId(rawStudentId);
+    if (!studentId) throw new ApiError("Student not found", 404);
+
+    const [userRows] = await executeQuery("SELECT id, fullName, isTemporary, targetDeptId FROM users WHERE id = ?", [studentId]);
+    if (userRows.length === 0) throw new ApiError("Student not found", 404);
+    const user = userRows[0];
+    if (!user.isTemporary) throw new ApiError("Cannot override handover eligibility for a user who is not a temporary trainee", 400);
+
+    const overrideDeptId = normalizeParam(req.body.departmentId) || normalizeParam(req.query.departmentId);
+    const deptId = overrideDeptId ? await resolveDepartmentId(overrideDeptId) : user.targetDeptId;
+    if (!deptId) throw new ApiError("Trainee does not have a target department assigned", 400);
+
+    const dept = await Department.findById(deptId);
+    if (!dept) throw new ApiError("Department not found", 404);
+
+    const override = await HandoverEligibilityOverride.create({
+        studentId: user.id,
+        departmentId: dept.id,
+        reason: req.body.reason || null,
+        overriddenBy: req.user.id,
+        overriddenByName: req.user.fullName || req.user.userName || `User #${req.user.id}`,
+    });
+
+    logAudit(req.user?.id, "BYPASS_HANDOVER_ELIGIBILITY", {
+        studentId: user.id,
+        departmentId: dept.id,
+        reason: req.body.reason || null,
+    }, { resourceType: "HandoverEligibilityOverride", resourceId: override.id, req }).catch(err =>
+        console.error("logAudit(BYPASS_HANDOVER_ELIGIBILITY) failed:", err.message)
+    );
+
+    res.status(200).json(new ApiResponse(200, override, "Handover eligibility manually overridden"));
+});
+
+export const revokeHandoverEligibilityOverride = asyncHandler(async (req, res) => {
+    const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+    if (!isAdmin) throw new ApiError("Only administrators can revoke handover eligibility overrides", 403);
+
+    const { studentId: rawStudentId } = req.params;
+    const studentId = await resolveStudentId(rawStudentId);
+    if (!studentId) throw new ApiError("Student not found", 404);
+
+    const [userRows] = await executeQuery("SELECT id, targetDeptId FROM users WHERE id = ?", [studentId]);
+    if (userRows.length === 0) throw new ApiError("Student not found", 404);
+    const user = userRows[0];
+
+    const overrideDeptId = normalizeParam(req.body.departmentId) || normalizeParam(req.query.departmentId);
+    const deptId = overrideDeptId ? await resolveDepartmentId(overrideDeptId) : user.targetDeptId;
+    if (!deptId) throw new ApiError("No department context to revoke the override against", 400);
+
+    const revoked = await HandoverEligibilityOverride.revoke(
+        user.id,
+        deptId,
+        req.user.id,
+        req.user.fullName || req.user.userName || `User #${req.user.id}`
+    );
+    if (!revoked) throw new ApiError("No active handover eligibility override found for this trainee/department", 404);
+
+    logAudit(req.user?.id, "REVOKE_HANDOVER_ELIGIBILITY_OVERRIDE", {
+        studentId: user.id,
+        departmentId: deptId,
+    }, { resourceType: "HandoverEligibilityOverride", resourceId: revoked.id, req }).catch(err =>
+        console.error("logAudit(REVOKE_HANDOVER_ELIGIBILITY_OVERRIDE) failed:", err.message)
+    );
+
+    res.status(200).json(new ApiResponse(200, revoked, "Handover eligibility override revoked"));
 });

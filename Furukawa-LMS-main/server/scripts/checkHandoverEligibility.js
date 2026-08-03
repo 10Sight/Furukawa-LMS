@@ -118,7 +118,7 @@ const runDiagnostic = async () => {
 
     // 3. Fetch attempts from DB
     const [quizAttempts] = await executeQuery(`
-        SELECT aq.id, aq.quiz, q.title as quizTitle, aq.score, aq.status, aq.completedAt
+        SELECT aq.id, aq.quiz, q.title as quizTitle, aq.score, aq.status, aq.completedAt, q.isDojo, q.isHandover
         FROM attempted_quizzes aq
         JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
         WHERE aq.student = ? OR aq.student = ?
@@ -194,11 +194,15 @@ const runDiagnostic = async () => {
     // Analyze Trainee/Dept mismatch first
     if (!user.isTemporary) {
         isEligible = false;
-        missingCriteria.push("User is not marked as a Temporary Trainee (isTemporary must be true)");
+        missingCriteria.push("Trainee has already been promoted to a permanent employee.");
+    }
+    if (user.isDeleted) {
+        isEligible = false;
+        missingCriteria.push("Trainee record is marked as deleted.");
     }
     if (parseInt(user.targetDeptId) !== parseInt(dept.id)) {
         isEligible = false;
-        missingCriteria.push(`Trainee target department (ID ${user.targetDeptId}) does not match current sheet department (ID ${dept.id})`);
+        missingCriteria.push(`Trainee's target department (ID ${user.targetDeptId ?? "none"}) does not match the department being checked (${dept.name}).`);
     }
 
     const eligibilityReqs = [];
@@ -229,7 +233,7 @@ const runDiagnostic = async () => {
 
             if (!hasPassedInterview) {
                 isEligible = false;
-                missingCriteria.push("Has not passed the required Dojo Interview Evaluation papers/quizzes.");
+                missingCriteria.push("Has not passed any of the required Dojo Interview Evaluation papers and/or Interview Quizzes.");
             }
         }
     } else {
@@ -238,7 +242,7 @@ const runDiagnostic = async () => {
             handoverQuizIds.forEach(id => eligibilityReqs.push(analyzeQuizRequirement(id, "Handover Quiz")));
         } else {
             // Find any attempted quizzes flagged as Dojo & Handover
-            const matchingGeneralAttempts = quizAttempts.filter(aq => aq.isDojo === 1 && aq.isHandover === 1);
+            const matchingGeneralAttempts = quizAttempts.filter(aq => (aq.isDojo == 1 || aq.isDojo === true) && (aq.isHandover == 1 || aq.isHandover === true));
             const passedGeneral = matchingGeneralAttempts.some(aq => aq.status === 'PASSED' || aq.status === 'PASS');
             eligibilityReqs.push({
                 id: "Any",

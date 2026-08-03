@@ -2091,13 +2091,13 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
 
     const analyzeEvalRequirement = (testId, label = "Eligibility Test") => {
         const matchingAttempts = evalAttempts.filter((eta) => Number(eta.testId) === Number(testId));
-        const passed = matchingAttempts.some((eta) => eta.isHandoverEligible === 1);
+        const passed = matchingAttempts.some((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
         const title = evalTitles.get(Number(testId)) || `Test ID ${testId}`;
         let status = "PENDING";
         if (matchingAttempts.length > 0) status = passed ? "PASSED" : "FAILED";
         return {
             id: testId, title, type: "Evaluation Test", label, status, passed,
-            attempts: matchingAttempts.map((a) => ({ result: a.isHandoverEligible === 1, passedDate: a.passedDate, createdAt: a.createdAt })),
+            attempts: matchingAttempts.map((a) => ({ result: a.isHandoverEligible == 1 || a.isHandoverEligible === true, passedDate: a.passedDate, createdAt: a.createdAt })),
         };
     };
 
@@ -2147,7 +2147,7 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
         if (handoverQuizIds.length > 0) {
             handoverQuizIds.forEach((id) => eligibilityPapers.push(analyzeQuizRequirement(id, "Handover Quiz")));
         } else {
-            const matchingGeneralAttempts = quizAttempts.filter((aq) => aq.isDojo === 1 && aq.isHandover === 1);
+            const matchingGeneralAttempts = quizAttempts.filter((aq) => (aq.isDojo == 1 || aq.isDojo === true) && (aq.isHandover == 1 || aq.isHandover === true));
             const passedGeneral = matchingGeneralAttempts.some((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
             eligibilityPapers.push({
                 id: "Any",
@@ -2160,7 +2160,7 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
             });
         }
 
-        const hasPassedEval = evalAttempts.some((eta) => eta.isHandoverEligible === 1);
+        const hasPassedEval = evalAttempts.some((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
         const hasPassedQuiz = eligibilityPapers.some((r) => r.passed);
 
         if (hasPassedEval) {
@@ -2171,7 +2171,7 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
                 label: "Alternative Pass",
                 status: "PASSED",
                 passed: true,
-                attempts: evalAttempts.filter((eta) => eta.isHandoverEligible === 1).map((a) => ({ result: true, passedDate: a.passedDate, createdAt: a.createdAt })),
+                attempts: evalAttempts.filter((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true).map((a) => ({ result: true, passedDate: a.passedDate, createdAt: a.createdAt })),
             });
         }
 

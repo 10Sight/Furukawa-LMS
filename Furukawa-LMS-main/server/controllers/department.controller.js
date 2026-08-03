@@ -1997,3 +1997,192 @@ export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
         new ApiResponse(200, formattedRows, "Student handover history fetched successfully")
     );
 });
+
+// Mirrors the logic in scripts/checkHandoverEligibility.js, but returns structured JSON
+// instead of printing to the console so the admin UI can render it directly.
+export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
+    const { studentId: rawStudentId } = req.params;
+    if (!rawStudentId) throw new ApiError("Student ID is required", 400);
+
+    const studentId = await resolveStudentId(rawStudentId);
+    if (!studentId) throw new ApiError("Student not found", 404);
+
+    const [userRows] = await executeQuery(
+        "SELECT id, fullName, userName, empId, targetDeptId, targetSectionId, isTemporary, isDeleted FROM users WHERE id = ?",
+        [studentId]
+    );
+    if (userRows.length === 0) throw new ApiError("Student not found", 404);
+    const user = userRows[0];
+
+    const overrideDeptId = normalizeParam(req.query.departmentId);
+    const deptId = overrideDeptId ? await resolveDepartmentId(overrideDeptId) : user.targetDeptId;
+
+    const traineeDetails = {
+        fullName: user.fullName,
+        userName: user.userName,
+        empId: user.empId,
+        isTemporary: !!user.isTemporary,
+        isDeleted: !!user.isDeleted,
+        targetDeptId: user.targetDeptId,
+        targetSectionId: user.targetSectionId,
+    };
+
+    if (!deptId) {
+        return res.status(200).json(new ApiResponse(200, {
+            isEligible: false,
+            policyMode: null,
+            missingCriteria: ["Trainee does not have a target department assigned. Please edit their profile to assign a target department first."],
+            eligibilityPapers: [],
+            interviewPapers: [],
+            traineeDetails,
+            deptDetails: null,
+        }, "Eligibility checked"));
+    }
+
+    const dept = await Department.findById(deptId);
+    if (!dept) throw new ApiError("Department not found", 404);
+
+    const handoverQuizIds = (dept.dojoHandoverQuizId || []).map(Number).filter((id) => !isNaN(id) && id > 0);
+    const eligibilityEvalIds = (dept.dojoEligibilityEvaluationId || []).map(Number).filter((id) => !isNaN(id) && id > 0);
+    const interviewQuizIds = (dept.dojoInterviewQuizId || []).map(Number).filter((id) => !isNaN(id) && id > 0);
+    const interviewEvalIds = (dept.dojoInterviewEvaluationId || []).map(Number).filter((id) => !isNaN(id) && id > 0);
+    const isSpecificDept = !!dept.isDojoSpecificDept;
+    const isStrictConfig = eligibilityEvalIds.length > 0;
+
+    const allQuizIds = [...handoverQuizIds, ...interviewQuizIds];
+    const quizTitles = new Map();
+    if (allQuizIds.length > 0) {
+        const [quizzes] = await executeQuery("SELECT id, title FROM quizzes WHERE id IN (?)", [allQuizIds]);
+        quizzes.forEach((q) => quizTitles.set(Number(q.id), q.title));
+    }
+
+    const allEvalIds = [...eligibilityEvalIds, ...interviewEvalIds];
+    const evalTitles = new Map();
+    if (allEvalIds.length > 0) {
+        const [tests] = await executeQuery("SELECT id, title FROM evaluation_tests WHERE id IN (?)", [allEvalIds]);
+        tests.forEach((t) => evalTitles.set(Number(t.id), t.title));
+    }
+
+    const [quizAttempts] = await executeQuery(`
+        SELECT aq.id, aq.quiz, q.title as quizTitle, aq.score, aq.status, aq.completedAt, q.isDojo, q.isHandover
+        FROM attempted_quizzes aq
+        JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+        WHERE aq.student = ? OR aq.student = ?
+    `, [String(user.id), user.userName]);
+
+    const [evalAttempts] = await executeQuery(`
+        SELECT eta.id, eta.testId, t.title as testTitle, eta.isHandoverEligible, eta.passedDate, eta.createdAt
+        FROM evaluation_test_attempts eta
+        LEFT JOIN evaluation_tests t ON eta.testId = t.id
+        WHERE eta.userId = ?
+    `, [user.id]);
+
+    const analyzeQuizRequirement = (quizId, label = "Handover Quiz") => {
+        const matchingAttempts = quizAttempts.filter((aq) => Number(aq.quiz) === Number(quizId));
+        const passed = matchingAttempts.some((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+        const title = quizTitles.get(Number(quizId)) || `Quiz ID ${quizId}`;
+        let status = "PENDING";
+        if (matchingAttempts.length > 0) status = passed ? "PASSED" : "FAILED";
+        return {
+            id: quizId, title, type: "Quiz", label, status, passed,
+            attempts: matchingAttempts.map((a) => ({ score: a.score, status: a.status, completedAt: a.completedAt })),
+        };
+    };
+
+    const analyzeEvalRequirement = (testId, label = "Eligibility Test") => {
+        const matchingAttempts = evalAttempts.filter((eta) => Number(eta.testId) === Number(testId));
+        const passed = matchingAttempts.some((eta) => eta.isHandoverEligible === 1);
+        const title = evalTitles.get(Number(testId)) || `Test ID ${testId}`;
+        let status = "PENDING";
+        if (matchingAttempts.length > 0) status = passed ? "PASSED" : "FAILED";
+        return {
+            id: testId, title, type: "Evaluation Test", label, status, passed,
+            attempts: matchingAttempts.map((a) => ({ result: a.isHandoverEligible === 1, passedDate: a.passedDate, createdAt: a.createdAt })),
+        };
+    };
+
+    let isEligible = true;
+    const missingCriteria = [];
+
+    if (!user.isTemporary) {
+        isEligible = false;
+        missingCriteria.push("Trainee has already been promoted to a permanent employee.");
+    }
+    if (user.isDeleted) {
+        isEligible = false;
+        missingCriteria.push("Trainee record is marked as deleted.");
+    }
+    if (parseInt(user.targetDeptId) !== parseInt(dept.id)) {
+        isEligible = false;
+        missingCriteria.push(`Trainee's target department (ID ${user.targetDeptId ?? "none"}) does not match the department being checked (${dept.name}).`);
+    }
+
+    const eligibilityPapers = [];
+    const interviewPapers = [];
+
+    if (isStrictConfig) {
+        eligibilityEvalIds.forEach((id) => eligibilityPapers.push(analyzeEvalRequirement(id, "Required Eligibility")));
+        const hasPassedEligibility = eligibilityPapers.every((r) => r.passed);
+        if (!hasPassedEligibility) {
+            isEligible = false;
+            missingCriteria.push("Has not passed all required Dojo Eligibility Evaluation test papers.");
+        }
+
+        const requiresInterview = isSpecificDept && interviewEvalIds.length > 0;
+        if (requiresInterview) {
+            interviewEvalIds.forEach((id) => interviewPapers.push(analyzeEvalRequirement(id, "Required Interview")));
+            interviewQuizIds.forEach((id) => interviewPapers.push(analyzeQuizRequirement(id, "Required Interview Quiz")));
+            const hasPassedInterview = interviewPapers.every((r) => r.passed);
+            if (!hasPassedInterview) {
+                isEligible = false;
+                missingCriteria.push("Has not passed all required Dojo Interview Evaluation papers.");
+            }
+        }
+    } else {
+        if (handoverQuizIds.length > 0) {
+            handoverQuizIds.forEach((id) => eligibilityPapers.push(analyzeQuizRequirement(id, "Handover Quiz")));
+        } else {
+            const matchingGeneralAttempts = quizAttempts.filter((aq) => aq.isDojo === 1 && aq.isHandover === 1);
+            const passedGeneral = matchingGeneralAttempts.some((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+            eligibilityPapers.push({
+                id: "Any",
+                title: "Dojo Handover Quiz Fallback (Any)",
+                type: "General Quiz",
+                label: "Legacy Default",
+                status: matchingGeneralAttempts.length > 0 ? (passedGeneral ? "PASSED" : "FAILED") : "PENDING",
+                passed: passedGeneral,
+                attempts: matchingGeneralAttempts.map((a) => ({ score: a.score, status: a.status, completedAt: a.completedAt })),
+            });
+        }
+
+        const hasPassedEval = evalAttempts.some((eta) => eta.isHandoverEligible === 1);
+        const hasPassedQuiz = eligibilityPapers.some((r) => r.passed);
+
+        if (hasPassedEval) {
+            eligibilityPapers.push({
+                id: "Any",
+                title: "Any Handover Eligible Test Attempt",
+                type: "Evaluation Test",
+                label: "Alternative Pass",
+                status: "PASSED",
+                passed: true,
+                attempts: evalAttempts.filter((eta) => eta.isHandoverEligible === 1).map((a) => ({ result: true, passedDate: a.passedDate, createdAt: a.createdAt })),
+            });
+        }
+
+        if (!hasPassedQuiz && !hasPassedEval) {
+            isEligible = false;
+            missingCriteria.push("Has not passed any of the configured handover quizzes OR any evaluation test marked as handover-eligible.");
+        }
+    }
+
+    res.status(200).json(new ApiResponse(200, {
+        isEligible,
+        policyMode: isStrictConfig ? "STRICT" : "LEGACY",
+        missingCriteria,
+        eligibilityPapers,
+        interviewPapers,
+        traineeDetails,
+        deptDetails: { name: dept.name, id: dept.id, isDojoSpecificDept: isSpecificDept },
+    }, "Eligibility checked"));
+});

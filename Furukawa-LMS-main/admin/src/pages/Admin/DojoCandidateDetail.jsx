@@ -19,7 +19,7 @@ import {
   IconSettings, IconCalendar, IconTrash, IconEdit, IconCheck,
   IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar,
   IconClipboardList, IconEye, IconClock, IconShieldCheck, IconHistory,
-  IconActivity
+  IconActivity, IconCircleCheck, IconAlertTriangle, IconLoader2
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { getMediaUrl } from "@/utils/mediaUtils";
@@ -54,6 +54,8 @@ const DojoCandidateDetail = () => {
   const [evalLoading, setEvalLoading] = useState(false);
   const [handoverHistory, setHandoverHistory] = useState([]);
   const [handoverLoading, setHandoverLoading] = useState(false);
+  const [eligibilityReport, setEligibilityReport] = useState(null);
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
 
   const candidate = candidateData?.data;
   const attempts = attemptsData?.data || [];
@@ -83,6 +85,22 @@ const DojoCandidateDetail = () => {
         .catch(() => toast.error("Failed to load handover history"))
         .finally(() => setHandoverLoading(false));
     }
+  }, [activeTab, studentId]);
+
+  const fetchEligibilityReport = () => {
+    if (!studentId) return;
+    setCheckingEligibility(true);
+    axiosInstance.get(`/api/departments/handover-sheet/eligibility-check/${studentId}`)
+      .then(res => setEligibilityReport(res.data?.data || null))
+      .catch(() => toast.error("Failed to run eligibility check"))
+      .finally(() => setCheckingEligibility(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === "handover" && studentId) {
+      fetchEligibilityReport();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, studentId]);
 
   // Handle Delete User
@@ -453,6 +471,12 @@ const DojoCandidateDetail = () => {
 
         {/* ── Handover Sheet Tab ── */}
         <TabsContent value="handover" className="space-y-6 mt-6">
+          <HandoverEligibilityPanel
+            report={eligibilityReport}
+            loading={checkingEligibility}
+            onRunCheck={fetchEligibilityReport}
+          />
+
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50/50 py-3 border-b">
               <div className="flex items-center justify-between">
@@ -538,6 +562,123 @@ const DojoCandidateDetail = () => {
         onClose={() => setAttemptModalOpen(false)}
         canEdit={true}
       />
+    </div>
+  );
+};
+
+const HandoverEligibilityPanel = ({ report, loading, onRunCheck }) => {
+  return (
+    <Card className="border-slate-200 shadow-sm overflow-hidden">
+      <CardHeader className="bg-slate-50/50 py-3 border-b">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <IconShieldCheck className="h-4 w-4" />
+            Handover Sheet Eligibility Diagnostics
+          </CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs px-2"
+            onClick={onRunCheck}
+            disabled={loading}
+          >
+            {loading ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconRefresh className="h-3.5 w-3.5" />}
+            Run Check
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6">
+        {loading && !report ? (
+          <div className="space-y-3">
+            {[1, 2].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : !report ? (
+          <p className="text-sm text-slate-400 text-center py-6">Unable to load eligibility diagnostics.</p>
+        ) : (
+          <div className="space-y-5">
+            {/* Status Banner */}
+            <div className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border p-4 ${report.isEligible ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+              {report.isEligible ? (
+                <IconCircleCheck className="h-6 w-6 text-green-600 shrink-0" />
+              ) : (
+                <IconAlertTriangle className="h-6 w-6 text-red-600 shrink-0" />
+              )}
+              <div className="flex-1">
+                <p className={`text-sm font-bold ${report.isEligible ? "text-green-800" : "text-red-800"}`}>
+                  {report.isEligible ? "Eligible for Handover Sheet" : "Ineligible for Handover Sheet"}
+                </p>
+                {report.deptDetails && (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Evaluated against target department: <span className="font-semibold">{report.deptDetails.name}</span>
+                  </p>
+                )}
+              </div>
+              {report.policyMode && (
+                <Badge variant="outline" className="text-[10px] font-mono uppercase self-start sm:self-center">
+                  {report.policyMode} mode
+                </Badge>
+              )}
+            </div>
+
+            {/* Missing Criteria */}
+            {!report.isEligible && report.missingCriteria?.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Reasons for Ineligibility</p>
+                <ul className="space-y-1">
+                  {report.missingCriteria.map((reason, i) => (
+                    <li key={i} className="text-xs text-red-700 flex items-start gap-2">
+                      <span className="mt-1 h-1 w-1 rounded-full bg-red-500 shrink-0" />
+                      {reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Eligibility Papers */}
+            {report.eligibilityPapers?.length > 0 && (
+              <RequirementList title="Configured Eligibility Papers" items={report.eligibilityPapers} />
+            )}
+
+            {/* Interview Papers */}
+            {report.interviewPapers?.length > 0 && (
+              <RequirementList title="Configured Interview Papers" items={report.interviewPapers} />
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+const RequirementList = ({ title, items }) => (
+  <div className="space-y-1.5">
+    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</p>
+    <div className="border rounded-lg divide-y overflow-hidden">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 bg-white">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-800 truncate">{item.title}</p>
+            <p className="text-[10px] text-slate-400">{item.label} &middot; {item.type}</p>
+          </div>
+          <RequirementStatusBadge status={item.status} />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const RequirementStatusBadge = ({ status }) => {
+  const map = {
+    PASSED: { label: "Passed", cls: "bg-green-100 text-green-700 border-green-200" },
+    FAILED: { label: "Failed", cls: "bg-red-100 text-red-700 border-red-200" },
+    PENDING: { label: "Pending", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  };
+  const cfg = map[status] || map.PENDING;
+  return (
+    <div className="flex flex-col items-end gap-0.5 shrink-0">
+      <Badge variant="outline" className={`text-[10px] px-2 py-0 h-5 ${cfg.cls}`}>{cfg.label}</Badge>
+      {status === "PENDING" && <span className="text-[9px] text-slate-400 leading-none">No attempts made yet</span>}
     </div>
   );
 };

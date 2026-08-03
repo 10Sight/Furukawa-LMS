@@ -39,6 +39,7 @@ import {
     getHandoverSheetHistory,
     sendHandoverPDF,
     getStudentHandoverHistory,
+    getHandoverEligibilityDetails,
     getHandoverSheetsMonitoring,
     deleteHandoverSheet,
     bulkDeleteHandoverSheets,
@@ -120,6 +121,7 @@ router.post("/handover-sheet/config/save", verifyJWT, authorizeRole([SYSTEM_PERM
 router.get("/handover-sheet/history/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetHistory);
 router.post("/handover-sheet/pdf/send", verifyJWT, sendHandoverPDF);
 router.get("/handover-sheet/student/:studentId", verifyJWT, getStudentHandoverHistory);
+router.get("/handover-sheet/eligibility-check/:studentId", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverEligibilityDetails);
 
 // Dojo Hiring Configs
 router.get("/dojo-hiring/configs", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getDojoHiringConfigs);

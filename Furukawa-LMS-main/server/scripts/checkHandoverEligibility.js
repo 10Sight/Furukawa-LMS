@@ -208,10 +208,10 @@ const runDiagnostic = async () => {
         // Strict requirements mapping
         eligibilityEvalIds.forEach(id => eligibilityReqs.push(analyzeEvalRequirement(id, "Required Eligibility")));
         
-        const hasPassedEligibility = eligibilityReqs.every(r => r.passed);
+        const hasPassedEligibility = eligibilityReqs.length === 0 || eligibilityReqs.some(r => r.passed);
         if (!hasPassedEligibility) {
             isEligible = false;
-            missingCriteria.push("Has not passed all required Dojo Eligibility Evaluation test papers.");
+            missingCriteria.push("Has not passed any of the required Dojo Eligibility Evaluation test papers.");
         }
 
         // Interview requirements mapping
@@ -220,10 +220,16 @@ const runDiagnostic = async () => {
             interviewEvalIds.forEach(id => interviewReqs.push(analyzeEvalRequirement(id, "Required Interview")));
             interviewQuizIds.forEach(id => interviewReqs.push(analyzeQuizRequirement(id, "Required Interview Quiz")));
 
-            const hasPassedInterview = interviewReqs.every(r => r.passed);
+            const evalReqs = interviewReqs.filter(r => r.type === "Evaluation Test");
+            const quizReqs = interviewReqs.filter(r => r.type === "Quiz");
+
+            const passedEval = evalReqs.length === 0 || evalReqs.some(r => r.passed);
+            const passedQuiz = quizReqs.length === 0 || quizReqs.some(r => r.passed);
+            const hasPassedInterview = passedEval && passedQuiz;
+
             if (!hasPassedInterview) {
                 isEligible = false;
-                missingCriteria.push("Has not passed all required Dojo Interview Evaluation papers.");
+                missingCriteria.push("Has not passed the required Dojo Interview Evaluation papers/quizzes.");
             }
         }
     } else {

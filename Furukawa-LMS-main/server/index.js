@@ -52,6 +52,7 @@ import sectionHeadRoutes from "./routes/sectionHead.routes.js";
 import sectionRoutes from "./routes/section.routes.js";
 import subSectionRoutes from "./routes/subSection.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
+import User from "./models/auth.model.js";
 import timelineScheduler from "./services/timelineScheduler.js";
 import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
@@ -472,6 +473,11 @@ const startServer = async () => {
         sixteenDayEligibilityScheduler.init();
         planNotificationScheduler.init();
         headcountReportScheduler.init();
+
+        // Initialize the users table first and fully await it: its migrations/backfills/index
+        // creation touch `users` heavily, and letting it run unawaited alongside the later
+        // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
+        await User.init();
 
         // Initialize Core Tables
         await HandoverSheet.init();

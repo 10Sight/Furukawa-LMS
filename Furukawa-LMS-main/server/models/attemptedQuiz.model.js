@@ -111,17 +111,33 @@ class QuizAttempt {
 
             // One-time backfill for rows created before the hierarchy snapshot columns existed.
             // Only touches rows still missing a snapshot, so it's a cheap no-op on subsequent boots.
-            await executeQuery(`
-                UPDATE aq SET
+            // Split into two sargable passes (student-as-id, then studentEmpId) instead of a single
+            // OR-joined UPDATE, so each can use an index seek instead of a full table scan.
+            const backfillSetClause = `
                     studentIsTemporary = COALESCE(u.isTemporary, 0),
                     studentDeptId = COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END),
                     studentSectionId = COALESCE(u.sectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END),
                     studentLineId = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END),
                     studentSubSectionId = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
-                FROM attempted_quizzes aq
-                JOIN users u ON CAST(u.id AS NVARCHAR(255)) = aq.student OR (aq.studentEmpId IS NOT NULL AND u.empId = aq.studentEmpId)
+            `;
+            const backfillWhereClause = `
                 WHERE aq.studentDeptId IS NULL AND aq.studentSectionId IS NULL
                   AND aq.studentLineId IS NULL AND aq.studentSubSectionId IS NULL
+            `;
+
+            await executeQuery(`
+                UPDATE aq SET ${backfillSetClause}
+                FROM attempted_quizzes aq
+                JOIN users u ON u.id = TRY_CAST(aq.student AS INT)
+                ${backfillWhereClause}
+            `);
+
+            await executeQuery(`
+                UPDATE aq SET ${backfillSetClause}
+                FROM attempted_quizzes aq
+                JOIN users u ON u.empId = aq.studentEmpId
+                ${backfillWhereClause}
+                  AND aq.studentEmpId IS NOT NULL
             `);
         } catch (error) {
             logger.error("Failed to initialize QuizAttempt table", error);

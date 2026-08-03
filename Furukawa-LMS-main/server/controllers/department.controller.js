@@ -2107,26 +2107,38 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
         WHERE eta.userId = ?
     `, [user.id]);
 
+    // dateRule documents how getHandoverSheet's eligibleUsers query actually gates on this paper's
+    // date, since that's a completely separate check from "has this been passed" and is the #1
+    // reason a "PASSED" paper here still doesn't make someone searchable on a given sheet date:
+    //   EXACT_DATE     -> only surfaces on a sheet built for this exact date (quiz completedAt / interview passedDate)
+    //   ON_OR_AFTER    -> surfaces on this date or any later sheet date (evaluation passedDate)
+    //   INFORMATIONAL  -> not date-gated at all (interview quiz — only feeds the interview1/2 display columns)
     const analyzeQuizRequirement = (quizId, label = "Handover Quiz") => {
         const matchingAttempts = quizAttempts.filter((aq) => Number(aq.quiz) === Number(quizId));
-        const passed = matchingAttempts.some((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+        const passingAttempt = matchingAttempts.find((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+        const passed = !!passingAttempt;
         const title = quizTitles.get(Number(quizId)) || `Quiz ID ${quizId}`;
         let status = "PENDING";
         if (matchingAttempts.length > 0) status = passed ? "PASSED" : "FAILED";
         return {
             id: quizId, title, type: "Quiz", label, status, passed,
+            passedDate: passingAttempt?.completedAt || null,
+            dateRule: label === "Required Interview Quiz" ? "INFORMATIONAL" : "EXACT_DATE",
             attempts: matchingAttempts.map((a) => ({ score: a.score, status: a.status, completedAt: a.completedAt })),
         };
     };
 
     const analyzeEvalRequirement = (testId, label = "Eligibility Test") => {
         const matchingAttempts = evalAttempts.filter((eta) => Number(eta.testId) === Number(testId));
-        const passed = matchingAttempts.some((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
+        const passingAttempt = matchingAttempts.find((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
+        const passed = !!passingAttempt;
         const title = evalTitles.get(Number(testId)) || `Test ID ${testId}`;
         let status = "PENDING";
         if (matchingAttempts.length > 0) status = passed ? "PASSED" : "FAILED";
         return {
             id: testId, title, type: "Evaluation Test", label, status, passed,
+            passedDate: passingAttempt?.passedDate || null,
+            dateRule: label === "Required Interview" ? "EXACT_DATE" : "ON_OR_AFTER",
             attempts: matchingAttempts.map((a) => ({ result: a.isHandoverEligible == 1 || a.isHandoverEligible === true, passedDate: a.passedDate, createdAt: a.createdAt })),
         };
     };
@@ -2178,7 +2190,8 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
             handoverQuizIds.forEach((id) => eligibilityPapers.push(analyzeQuizRequirement(id, "Handover Quiz")));
         } else {
             const matchingGeneralAttempts = quizAttempts.filter((aq) => (aq.isDojo == 1 || aq.isDojo === true) && (aq.isHandover == 1 || aq.isHandover === true));
-            const passedGeneral = matchingGeneralAttempts.some((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+            const passingGeneralAttempt = matchingGeneralAttempts.find((aq) => aq.status === 'PASSED' || aq.status === 'PASS');
+            const passedGeneral = !!passingGeneralAttempt;
             eligibilityPapers.push({
                 id: "Any",
                 title: "Dojo Handover Quiz Fallback (Any)",
@@ -2186,6 +2199,8 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
                 label: "Legacy Default",
                 status: matchingGeneralAttempts.length > 0 ? (passedGeneral ? "PASSED" : "FAILED") : "PENDING",
                 passed: passedGeneral,
+                passedDate: passingGeneralAttempt?.completedAt || null,
+                dateRule: "EXACT_DATE",
                 attempts: matchingGeneralAttempts.map((a) => ({ score: a.score, status: a.status, completedAt: a.completedAt })),
             });
         }
@@ -2194,6 +2209,7 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
         const hasPassedQuiz = eligibilityPapers.some((r) => r.passed);
 
         if (hasPassedEval) {
+            const passingAttempts = evalAttempts.filter((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true);
             eligibilityPapers.push({
                 id: "Any",
                 title: "Any Handover Eligible Test Attempt",
@@ -2201,7 +2217,9 @@ export const getHandoverEligibilityDetails = asyncHandler(async (req, res) => {
                 label: "Alternative Pass",
                 status: "PASSED",
                 passed: true,
-                attempts: evalAttempts.filter((eta) => eta.isHandoverEligible == 1 || eta.isHandoverEligible === true).map((a) => ({ result: true, passedDate: a.passedDate, createdAt: a.createdAt })),
+                passedDate: passingAttempts[0]?.passedDate || null,
+                dateRule: "ON_OR_AFTER",
+                attempts: passingAttempts.map((a) => ({ result: true, passedDate: a.passedDate, createdAt: a.createdAt })),
             });
         }
 

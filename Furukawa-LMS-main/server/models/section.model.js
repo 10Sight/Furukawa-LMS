@@ -360,11 +360,14 @@ class Section {
             await executeQuery(uniqueIndexQuery);
             logger.info("Checked/Created sections table and migrated columns in MSSQL");
 
-            // Initial sync for all sections
-            const [sections] = await executeQuery("SELECT id FROM [sections]");
-            for (const s of sections) {
-                await Section.syncUserList(s.id);
-            }
+            // Startup full-table resync removed: section.users is kept current incrementally by
+            // Section.syncUserList, called from user create/update/import flows (see
+            // user.controller.js). Re-running it for every section here was a per-row OPENJSON scan
+            // against `users` on every boot, causing lock contention on startup.
+            // const [sections] = await executeQuery("SELECT id FROM [sections]");
+            // for (const s of sections) {
+            //     await Section.syncUserList(s.id);
+            // }
         } catch (error) {
             logger.error("Failed to initialize Section table", error);
         }

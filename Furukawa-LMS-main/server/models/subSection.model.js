@@ -119,11 +119,14 @@ class SubSection {
             await executeQuery(query);
             logger.info("SubSection table initialized successfully");
 
-            // Initial sync for all sub-sections
-            const [subSections] = await executeQuery("SELECT id FROM [sub_sections]");
-            for (const ss of subSections) {
-                await SubSection.syncUserList(ss.id);
-            }
+            // Startup full-table resync removed: sub_sections.users is kept current incrementally by
+            // SubSection.syncUserList, called from user create/update/import flows (see
+            // user.controller.js). Re-running it for every sub-section here was a per-row scan
+            // against `users`/`machine_assignments` on every boot, causing lock contention on startup.
+            // const [subSections] = await executeQuery("SELECT id FROM [sub_sections]");
+            // for (const ss of subSections) {
+            //     await SubSection.syncUserList(ss.id);
+            // }
         } catch (error) {
             logger.error("Failed to initialize SubSection table", error);
         }

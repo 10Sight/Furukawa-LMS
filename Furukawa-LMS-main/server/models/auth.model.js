@@ -381,6 +381,8 @@ class User {
                 // resolution and direct filters.
                 { name: 'idx_users_lineId', ddl: 'CREATE INDEX idx_users_lineId ON users(lineId)' },
                 { name: 'idx_users_subSectionId', ddl: 'CREATE INDEX idx_users_subSectionId ON users(subSectionId)' },
+                // Speeds up the sectionId IS NULL scans in the startup hierarchy-ID backfill.
+                { name: 'idx_users_sectionId', ddl: 'CREATE INDEX idx_users_sectionId ON users(sectionId)' },
                 // Drives the contractor-name correlated lookup.
                 { name: 'idx_users_contractorId', ddl: 'CREATE INDEX idx_users_contractorId ON users(contractorId)' },
                 // Composite covering the near-universal base predicate present in essentially every
@@ -391,7 +393,11 @@ class User {
                 try {
                     const [existsIdx] = await executeQuery(`SELECT name FROM sys.indexes WHERE name = '${idx.name}' AND object_id = OBJECT_ID('users')`);
                     if (existsIdx.length === 0) {
-                        await executeQuery(idx.ddl);
+                        // Building an index over an already-populated `users` table for the first
+                        // time is a genuine one-time cost that can exceed the standard 30s query
+                        // timeout; route it through the long-running pool (5 min) like other known
+                        // long operations (bulk import/restore). Only runs once per index, ever.
+                        await executeQuery(idx.ddl, [], { longRunning: true });
                     }
                 } catch (err) {
                     console.error(`Migration error for ${idx.name} index:`, err);
@@ -1390,8 +1396,10 @@ class User {
     }
 }
 
-// Initialize table asynchronously
-// Not awaiting here to avoid blocking import, but errors will be logged if it fails
-User.init().catch(err => console.error("Failed to initialize User table:", err));
+// Initialization is explicitly awaited in index.js's startup sequence (before Section/Line/
+// SubSection/UserHierarchySnapshot init), instead of self-invoking here. User.init() runs many
+// ALTER/UPDATE/CREATE INDEX statements against `users`; firing it unawaited at import time let it
+// race against those later, already-awaited inits that also hit `users`, causing lock contention
+// and query timeouts (CREATE INDEX blocked behind a concurrent full-table scan, or vice versa).
 
 export default User;

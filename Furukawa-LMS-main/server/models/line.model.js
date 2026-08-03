@@ -177,11 +177,14 @@ class Line {
                 `);
                 logger.info("Line table initialized successfully");
 
-                // Trigger an initial sync for all lines to populate the new 'users' column
-                const [lines] = await executeQuery("SELECT id FROM [lines]");
-                for (const line of lines) {
-                    await Line.syncUserList(line.id);
-                }
+                // Startup full-table resync removed: lines.users is kept current incrementally by
+                // Line.syncUserList, called from user create/update/import flows (see
+                // user.controller.js). Re-running it for every line here was a per-row OPENJSON scan
+                // against `users`/`sub_sections` on every boot, causing lock contention on startup.
+                // const [lines] = await executeQuery("SELECT id FROM [lines]");
+                // for (const line of lines) {
+                //     await Line.syncUserList(line.id);
+                // }
                 break; // Success, exit loop
             } catch (error) {
                 if (error.message.toLowerCase().includes('deadlock') && attempts < maxAttempts) {

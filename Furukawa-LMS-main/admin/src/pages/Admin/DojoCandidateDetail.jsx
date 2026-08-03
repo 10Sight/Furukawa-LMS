@@ -627,7 +627,10 @@ const HandoverEligibilityPanel = ({
 }) => {
   const overrides = report?.overrideDetails || [];
   const hasOverride = overrides.length > 0;
-  const showBypassControls = isAdminUser && report && !report.isEligible;
+  // Always offered to admins, even when naturallyEligible is true: the real Handover Sheet search
+  // gates on exact/on-or-after passedDate rules this "eligible" verdict doesn't check, so a
+  // naturally-eligible candidate can still fail to appear for a specific sheet date.
+  const showBypassControls = isAdminUser && !!report;
 
   return (
     <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -729,7 +732,8 @@ const HandoverEligibilityPanel = ({
               </div>
             )}
 
-            {/* Manual Override Controls (Admin-only, ineligible candidates only) */}
+            {/* Manual Override Controls (Admin-only). Shown even when naturallyEligible is true,
+                because the real Handover Sheet search date-gates separately from this verdict. */}
             {showBypassControls && (
               <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/50 p-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1.5">
@@ -737,7 +741,10 @@ const HandoverEligibilityPanel = ({
                   Manual Eligibility Override
                 </p>
                 <p className="text-xs text-slate-500">
-                  Force this candidate onto the Handover Sheet without a passed test/quiz. This is recorded separately from real test attempts and can be revoked later.
+                  {report.naturallyEligible
+                    ? "This candidate meets the eligibility criteria, but the Handover Sheet search only shows them for dates matching their passed-test date rules (see \"Passed on\" notes below). If they're not showing up when building a sheet for a specific date, approve them for that date here."
+                    : "Force this candidate onto the Handover Sheet without a passed test/quiz."}
+                  {" "}This is recorded separately from real test attempts and can be revoked later.
                 </p>
                 <div className="flex items-center gap-2">
                   <Button
@@ -781,7 +788,7 @@ const HandoverEligibilityPanel = ({
                   disabled={actionLoading}
                 >
                   {actionLoading ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconShieldLock className="h-3.5 w-3.5" />}
-                  Force Handover Eligibility
+                  {report.naturallyEligible ? "Approve for Handover Sheet" : "Force Handover Eligibility"}
                 </Button>
               </div>
             )}
@@ -802,6 +809,12 @@ const HandoverEligibilityPanel = ({
   );
 };
 
+const DATE_RULE_NOTES = {
+  EXACT_DATE: "Only appears in Handover Sheet search for this exact date",
+  ON_OR_AFTER: "Appears in Handover Sheet search for this date or any later date",
+  INFORMATIONAL: "Not date-gated — used only to prefill the Interview column",
+};
+
 const RequirementList = ({ title, items }) => (
   <div className="space-y-1.5">
     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</p>
@@ -811,6 +824,12 @@ const RequirementList = ({ title, items }) => (
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-800 truncate">{item.title}</p>
             <p className="text-[10px] text-slate-400">{item.label} &middot; {item.type}</p>
+            {item.passed && item.passedDate && (
+              <p className="text-[10px] text-blue-600 mt-0.5">
+                Passed on {displayDate(item.passedDate)}
+                {DATE_RULE_NOTES[item.dateRule] && <span className="text-slate-400"> — {DATE_RULE_NOTES[item.dateRule]}</span>}
+              </p>
+            )}
           </div>
           <RequirementStatusBadge status={item.status} />
         </div>

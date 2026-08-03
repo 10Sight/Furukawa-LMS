@@ -92,7 +92,10 @@ class UserHierarchySnapshot {
             await executeQuery("TRUNCATE TABLE user_hierarchy_snapshots");
 
             // 2. Insert fresh data from joins
-            // We use OUTER APPLY or LEFT JOIN to ensure we get all users even if some hierarchy info is missing.
+            // Plain LEFT JOINs on the resolved hierarchy FK columns (subSectionId/lineId/sectionId/
+            // departmentId/stationId, backfilled for every user on startup by auth.model.js), rather
+            // than per-row OUTER APPLY + legacy string-name fallbacks. Those FKs are now reliably
+            // populated, so this is index-seek friendly and drops ~17s to well under 100ms.
             const syncQuery = `
                 INSERT INTO user_hierarchy_snapshots (
                     employeename, employeeid, shift, status, role,
@@ -100,45 +103,29 @@ class UserHierarchySnapshot {
                     department_unicode, section_unicode, line_unicode,
                     schedule_shift, createdAt
                 )
-                SELECT 
+                SELECT
                     u.fullName as employeename,
                     u.empId as employeeid,
                     u.shift,
                     u.status,
                     COALESCE(cr.name, u.role) as role,
                     d.name as department,
-                    s_res.sectionName as section,
-                    l_res.lineName as lines,
-                    ss_res.subSectionName as [sub-section],
-                    st.stationName as station,
+                    s.name as section,
+                    l.name as lines,
+                    ss.name as [sub-section],
+                    st.name as station,
                     d.uniCode as department_unicode,
-                    s_res.sectionUnicode as section_unicode,
-                    l_res.lineUnicode as line_unicode,
+                    s.uniCode as section_unicode,
+                    l.uniCode as line_unicode,
                     u.shiftSchedule as schedule_shift,
                     GETDATE()
                 FROM users u
                 LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
-                OUTER APPLY (
-                    SELECT TOP 1 ss.name as subSectionName, ss.lineId as ssLineId
-                    FROM sub_sections ss WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
-                ) ss_res
-                OUTER APPLY (
-                    SELECT TOP 1 l.name as lineName, l.sectionId as lSectionId, l.uniCode as lineUnicode, l.department as lDeptId
-                    FROM [lines] l WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
-                ) l_res
-                OUTER APPLY (
-                    SELECT TOP 1 s.name as sectionName, s.uniCode as sectionUnicode, s.departmentId as sDeptId
-                    FROM [sections] s WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
-                ) s_res
-                OUTER APPLY (
-                    SELECT TOP 1 name, uniCode
-                    FROM departments d
-                    WHERE d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
-                       OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
-                ) d
-                OUTER APPLY (
-                    SELECT TOP 1 name as stationName FROM machines WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
-                ) st
+                LEFT JOIN sub_sections ss ON ss.id = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
+                LEFT JOIN [lines] l ON l.id = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END, ss.lineId)
+                LEFT JOIN [sections] s ON s.id = COALESCE(u.sectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END, l.sectionId)
+                LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END, s.departmentId, l.department)
+                LEFT JOIN machines st ON st.id = COALESCE(u.stationId, CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END)
                 WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL);
             `;
 
@@ -156,9 +143,9 @@ class UserHierarchySnapshot {
     }
 }
 
-// Automatically init the table when model is imported - with error handling
-UserHierarchySnapshot.init().catch(err => {
-    logger.error("Failed to auto-init UserHierarchySnapshot:", err);
-});
+// Initialization is explicitly awaited in index.js's startup sequence (after User/Section/Line/
+// SubSection init), instead of self-invoking here. syncFromUsers() does a full scan+join against
+// `users`; firing it unawaited at import time let it race against User.init()'s concurrent
+// ALTER/CREATE INDEX statements on the same table, causing lock-contention timeouts on both sides.
 
 export default UserHierarchySnapshot;

@@ -566,7 +566,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
   if (req.query.designation) {
     const designations = req.query.designation.split(",").map(d => d.trim()).filter(Boolean);
-    if (designations.length > 0) {
+    if (designations.includes("[No Designation]")) {
+      whereClauses.push("(u.designation IS NULL OR u.designation = '')");
+    } else if (designations.length > 0) {
       whereClauses.push(`u.designation IN (${designations.map(() => "?").join(",")})`);
       params.push(...designations);
     }

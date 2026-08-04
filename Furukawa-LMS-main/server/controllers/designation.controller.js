@@ -19,16 +19,18 @@ export const getUniqueDesignations = asyncHandler(async (req, res) => {
 export const getDesignationsWithCounts = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery(`
     SELECT
-      u.designation,
+      COALESCE(NULLIF(u.designation, ''), '[No Designation]') AS designation,
       COUNT(*) AS totalCount,
       SUM(CASE WHEN (u.status IS NULL OR u.status != 'LEFT') THEN 1 ELSE 0 END) AS activeCount,
       CASE WHEN ds.designation IS NOT NULL THEN 1 ELSE 0 END AS isShuttered
     FROM users u
-    LEFT JOIN designation_shutters ds ON ds.designation = u.designation
-    WHERE u.designation IS NOT NULL AND u.designation != '' AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+    LEFT JOIN designation_shutters ds ON ds.designation = COALESCE(NULLIF(u.designation, ''), '[No Designation]')
+    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
       AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-    GROUP BY u.designation, ds.designation
-    ORDER BY u.designation ASC
+      AND (u.isTrainer = 0 OR u.isTrainer IS NULL)
+      AND ((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))
+    GROUP BY COALESCE(NULLIF(u.designation, ''), '[No Designation]'), ds.designation
+    ORDER BY designation ASC
   `);
   res.json(new ApiResponse(200, rows, "Designations with counts fetched successfully"));
 });

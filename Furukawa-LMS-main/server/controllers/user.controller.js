@@ -15,7 +15,7 @@ import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
-import { statusHistoryChanged, buildStatusHistoryEntry } from "../utils/statusHistory.js";
+import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -1187,16 +1187,23 @@ export const updateUser = asyncHandler(async (req, res) => {
     data.leavingDate = new Date().toISOString().split('T')[0];
   }
 
-  // Reset leaving details if status is changed from LEFT to an active status (like PRESENT or ON_LEAVE)
+  // Reset leaving details if status is changed from LEFT to an active status (like PRESENT or ON_LEAVE).
+  // The rejoining date is always recorded in statusHistory (via rejoiningDate below), but the
+  // main joiningDate column is frozen once it has a value -- only backfilled if it was empty --
+  // so it keeps reading as the user's original hire date across rejoin cycles.
+  let rejoiningDate = null;
   if (data.status !== undefined && data.status !== "LEFT" && oldUser.status === "LEFT") {
     data.leavingDate = null;
     data.reasonOfLeaving = null;
 
-    // Auto-set/update joiningDate to today's date when returning from LEFT status,
-    // but allow the request to override it if a new, different joiningDate was explicitly provided.
-    const isNewJoiningDateProvided = data.joiningDate !== undefined && data.joiningDate !== oldUser.joiningDate;
-    if (!isNewJoiningDateProvided) {
-      data.joiningDate = new Date().toISOString().split('T')[0];
+    rejoiningDate = (data.joiningDate !== undefined && data.joiningDate)
+      ? data.joiningDate
+      : new Date().toISOString().split('T')[0];
+
+    if (oldUser.joiningDate) {
+      delete data.joiningDate; // preserve the original joining date already on file
+    } else {
+      data.joiningDate = rejoiningDate;
     }
   }
 
@@ -1280,19 +1287,20 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // Append a statusHistory entry atomically in SQL (JSON_MODIFY) rather than reading the
-  // column into JS and writing it back, so concurrent updates to the same user can't
-  // silently drop each other's entries. Checked against the *effective* post-update
-  // values, since status===LEFT auto-sets/clears leavingDate above.
-  if (statusHistoryChanged(oldUser, data)) {
-    updates.push("statusHistory = JSON_MODIFY(ISNULL(statusHistory, '[]'), 'append $', JSON_QUERY(?))");
-    values.push(buildStatusHistoryEntry({
-      status: data.status !== undefined ? data.status : oldUser.status,
-      joiningDate: data.joiningDate !== undefined ? data.joiningDate : oldUser.joiningDate,
-      leavingDate: data.leavingDate !== undefined ? data.leavingDate : oldUser.leavingDate,
-      changedBy: req.user?.id,
-      changedByName: req.user?.fullName,
-    }));
+  // Checked against the *effective* post-update values, since status===LEFT auto-sets/
+  // clears leavingDate above. Transitioning into LEFT (or a plain date correction) updates
+  // the last history entry in place; rejoining from LEFT appends a new one.
+  const updatedStatusHistory = getUpdatedStatusHistory(
+    oldUser.statusHistory,
+    { status: oldUser.status, joiningDate: oldUser.joiningDate, leavingDate: oldUser.leavingDate },
+    // rejoiningDate (set above when LEFT -> active) always wins here, even when the main
+    // joiningDate column itself was frozen/deleted from `data`.
+    { status: data.status, joiningDate: rejoiningDate ?? data.joiningDate, leavingDate: data.leavingDate },
+    { changedBy: req.user?.id, changedByName: req.user?.fullName }
+  );
+  if (updatedStatusHistory) {
+    updates.push("statusHistory = ?");
+    values.push(JSON.stringify(updatedStatusHistory));
   }
 
   for (const f of fieldsToUpdate) {
@@ -3312,28 +3320,28 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
 
   const placeholders = userIds.map(() => "?").join(",");
 
-  // Each user keeps their own joiningDate in the snapshot (only status/leavingDate change
-  // here), so fetch it first and build one history entry per user. Applied via a single
-  // set-based UPDATE...FROM...JOIN(VALUES) statement -- still one round trip regardless of
-  // how many users are selected, but each row's statusHistory entry stays accurate.
-  const [existingRows] = await executeQuery(`SELECT id, joiningDate FROM users WHERE id IN (${placeholders})`, userIds);
-  const joiningDateById = new Map(existingRows.map(r => [r.id, r.joiningDate]));
+  // Each user keeps their own status/joiningDate/statusHistory snapshot, so fetch them
+  // first and compute one updated history array per user (transitioning into LEFT updates
+  // the last entry in place rather than appending). Applied via a single set-based
+  // UPDATE...FROM...JOIN(VALUES) statement -- still one round trip regardless of how many
+  // users are selected.
+  const [existingRows] = await executeQuery(`SELECT id, status, joiningDate, statusHistory FROM users WHERE id IN (${placeholders})`, userIds);
 
-  const historyValuesSql = userIds.map(() => "(?, ?)").join(",");
-  const historyValuesParams = userIds.flatMap(id => [
-    id,
-    buildStatusHistoryEntry({
-      status: "LEFT",
-      joiningDate: joiningDateById.get(id) ?? null,
-      leavingDate,
-      changedBy: req.user?.id,
-      changedByName: req.user?.fullName,
-    }),
-  ]);
+  const historyValuesSql = existingRows.map(() => "(?, ?)").join(",");
+  const historyValuesParams = existingRows.flatMap(row => {
+    const updated = getUpdatedStatusHistory(
+      row.statusHistory,
+      { status: row.status, joiningDate: row.joiningDate, leavingDate: undefined },
+      { status: "LEFT", leavingDate },
+      { changedBy: req.user?.id, changedByName: req.user?.fullName }
+    );
+    // No-op (e.g. already LEFT with this same leavingDate): leave history untouched.
+    return [row.id, updated ? JSON.stringify(updated) : (row.statusHistory || "[]")];
+  });
 
   await executeQuery(
     `UPDATE u SET u.status = 'LEFT', u.leavingDate = ?, u.reasonOfLeaving = ?, u.updatedAt = GETDATE(),
-       u.statusHistory = JSON_MODIFY(ISNULL(u.statusHistory, '[]'), 'append $', JSON_QUERY(v.entry))
+       u.statusHistory = v.entry
      FROM users u
      JOIN (VALUES ${historyValuesSql}) AS v(id, entry) ON u.id = v.id`,
     [leavingDate, reasonOfLeaving, ...historyValuesParams]

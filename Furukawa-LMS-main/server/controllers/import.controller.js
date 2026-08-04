@@ -18,7 +18,7 @@ import {
     syncStudentSkillProgress,
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
-import { buildStatusHistoryEntry } from "../utils/statusHistory.js";
+import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -708,29 +708,36 @@ const processSingleEmployeeRow = async ({
                 if (userData.stationId) updatedData.stations = JSON.stringify([userData.stationId]);
             }
 
-            // Append a statusHistory entry atomically in SQL (JSON_MODIFY) whenever this row's
-            // diff above touched status/joiningDate/leavingDate, using the same snapshot
-            // approach as updateUser/bulkUpdateStatusLeft.
-            const statusHistoryTouched = ['status', 'joiningDate', 'leavingDate'].some(k => updatedData[k] !== undefined);
-            let statusHistoryParam = null;
-            if (statusHistoryTouched) {
-                statusHistoryParam = buildStatusHistoryEntry({
-                    status: updatedData.status !== undefined ? updatedData.status : existingUser.status,
-                    joiningDate: updatedData.joiningDate !== undefined ? updatedData.joiningDate : existingUser.joiningDate,
-                    leavingDate: updatedData.leavingDate !== undefined ? updatedData.leavingDate : existingUser.leavingDate,
-                    changedBy: updatedBy,
-                    changedByName: updatedByName,
-                });
+            // Rejoining (LEFT -> active): the statusHistory entry always records the actual
+            // rejoining date, but the main joiningDate column is frozen once it already has a
+            // value -- only backfilled if it was empty -- mirroring updateUser's rule.
+            let rejoiningDate = null;
+            const isRejoining = existingUser.status === "LEFT" && updatedData.status !== undefined && updatedData.status !== "LEFT";
+            if (isRejoining) {
+                rejoiningDate = updatedData.joiningDate || new Date().toISOString().split('T')[0];
+                if (existingUser.joiningDate) {
+                    delete updatedData.joiningDate; // preserve the original joining date already on file
+                } else {
+                    updatedData.joiningDate = rejoiningDate;
+                }
             }
+
+            // Compute the updated statusHistory array whenever this row's diff above touched
+            // status/joiningDate/leavingDate, using the same in-place/append rules as
+            // updateUser/bulkUpdateStatusLeft.
+            const updatedStatusHistory = getUpdatedStatusHistory(
+                existingUser.statusHistory,
+                { status: existingUser.status, joiningDate: existingUser.joiningDate, leavingDate: existingUser.leavingDate },
+                { status: updatedData.status, joiningDate: rejoiningDate ?? updatedData.joiningDate, leavingDate: updatedData.leavingDate },
+                { changedBy: updatedBy, changedByName: updatedByName }
+            );
 
             if (Object.keys(updatedData).length > 0) {
                 const updateFields = Object.keys(updatedData).map(k => `${k} = ?`).join(', ');
                 const values = [...Object.values(updatedData), existingUser.id];
 
-                const statusHistorySql = statusHistoryTouched
-                    ? ", statusHistory = JSON_MODIFY(ISNULL(statusHistory, '[]'), 'append $', JSON_QUERY(?))"
-                    : "";
-                if (statusHistoryTouched) values.splice(-1, 0, statusHistoryParam);
+                const statusHistorySql = updatedStatusHistory ? ", statusHistory = ?" : "";
+                if (updatedStatusHistory) values.splice(-1, 0, JSON.stringify(updatedStatusHistory));
 
                 await executeQuery(`UPDATE users SET ${updateFields}${statusHistorySql}, updatedAt = GETDATE(), isDeleted = 0 WHERE id = ?`, values);
 

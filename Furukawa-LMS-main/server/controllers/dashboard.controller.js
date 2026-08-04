@@ -2,7 +2,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
-import { getDesignationShutterExclusionSql, getEligibleUserSql } from "../utils/userEligibility.js";
+import { getEligibleUserSql } from "../utils/userEligibility.js";
 import logger from "../logger/winston.logger.js";
 
 /*
@@ -277,13 +277,28 @@ const parseMultiParam = (value) => {
 };
 
 
-// One source of truth for the first Daily Manpower Trend graph's Total Manpower population.
-// Every lower Total Manpower comparison graph must use this exact rule so its category sum
-// equals the first graph's Total Manpower bar for the same hierarchy/state/district filters.
-const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
+// Dynamic designation shutter rule used by every dashboard/report employee population.
+// A shutter may be stored by designation name (for example Supervisor) or by its
+// designation id (for example 1090), so both values are compared safely.
+const getDashboardDesignationShutterExclusionSql = (alias = "u") => `
+    AND NOT EXISTS (
+        SELECT 1
+        FROM designation_shutters ds
+        WHERE NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))), '') IS NOT NULL
+          AND (
+                UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ds.designation))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))))
+                OR UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ds.id))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${alias}.designation))))
+              )
+    )
+`;
+
+// Base population shared by every Dashboard Total Manpower / Users Total query.
+// Employee lifecycle for these graphs is applied separately from users.statusHistory.
+const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
     AND ${alias}.isDeleted = 0
     AND ${alias}.isTemporary = 0
-    AND ${alias}.status = 'PRESENT'
     AND ISNULL(${alias}.designation, '') NOT IN (
         '1076',
         '1077',
@@ -292,6 +307,15 @@ const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
         'Supervisor',
         'Staff'
     )
+    ${getDashboardDesignationShutterExclusionSql(alias)}
+`;
+
+// TENURE GRAPHS ONLY:
+// Keep their existing current-status population unchanged. Tenure calculations continue
+// to use the dedicated users.joiningDate and users.leavingDate columns as requested.
+const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
+    ${getTotalManpowerBaseEligibilitySql(alias)}
+    AND ${alias}.status = 'PRESENT'
 `;
 
 
@@ -871,41 +895,48 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let todayHasAttendance = false;
     try {
-        const checkTodaySql = `
-            SELECT TOP 1 1 
+        // TODAY DATE FIX (top three graphs only):
+        // Previously this gate checked only Shift A. If today's attendance existed in
+        // another selected shift, General shift, or with Shift = ALL, the dashboard
+        // incorrectly fell back to yesterday and today's date disappeared.
+        // Reuse the existing shift matcher: selected shift checks that shift; ALL checks
+        // any attendance row for today. No graph calculation/filter logic is changed.
+        let checkTodaySql = `
+            SELECT TOP 1 1
             FROM attendance_logs al
             WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, ?, 23)
-              AND (
-                  UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'SHIFT A'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A SHIFT'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A-SHIFT'
-              )
         `;
-        const [todayCheckRows] = await executeQuery(checkTodaySql, [todayStr]);
+        const todayCheckParams = [todayStr];
+        checkTodaySql = addShiftFilter(checkTodaySql, todayCheckParams, "al");
+
+        const [todayCheckRows] = await executeQuery(checkTodaySql, todayCheckParams);
         todayHasAttendance = todayCheckRows && todayCheckRows.length > 0;
     } catch (checkErr) {
-        console.warn("[DASHBOARD] Today Shift A check failed:", checkErr.message);
+        console.warn("[DASHBOARD] Today attendance check failed:", checkErr.message);
     }
 
     const effectiveDateStr = todayHasAttendance ? todayStr : yesterdayStr;
+
+    // AUGUST 1 / TODAY FIX — FIRST THREE GRAPHS ONLY:
+    // The top graph range must always end on the actual India date. Previously,
+    // when the attendance availability gate returned false for any reason, the
+    // requested/current date was silently replaced with yesterday. That removed
+    // today's date from Manpower, Attrition and Absenteeism even though the date
+    // and attendance rows existed. Keep effectiveDateStr unchanged for the lower
+    // graph/master logic; only the first-three-graph range is made independent.
+    const topGraphEffectiveDateStr = todayStr;
 
     let rangeStart;
     let rangeEnd;
 
     if (startDate) {
-        rangeStart = parseDateLocal(startDate) || parseDateLocal(effectiveDateStr);
-        rangeEnd = parseDateLocal(endDate || startDate) || parseDateLocal(effectiveDateStr);
-
-        if (startDate === todayStr && !todayHasAttendance) {
-            rangeStart = parseDateLocal(effectiveDateStr);
-        }
-        if ((endDate || startDate) === todayStr && !todayHasAttendance) {
-            rangeEnd = parseDateLocal(effectiveDateStr);
-        }
+        // Never replace an explicitly selected today date with yesterday.
+        rangeStart = parseDateLocal(startDate) || parseDateLocal(topGraphEffectiveDateStr);
+        rangeEnd = parseDateLocal(endDate || startDate) || parseDateLocal(topGraphEffectiveDateStr);
     } else {
-        rangeEnd = parseDateLocal(effectiveDateStr);
-        rangeStart = parseDateLocal(effectiveDateStr);
+        // Default 30-day top graph range always includes the actual current date.
+        rangeEnd = parseDateLocal(topGraphEffectiveDateStr);
+        rangeStart = parseDateLocal(topGraphEffectiveDateStr);
         rangeStart.setDate(rangeStart.getDate() - 29);
     }
 
@@ -956,27 +987,86 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         )
     `;
 
-    // Common date-wise active employee rule used by all Users Total / master graphs.
-    // Existing eligibility remains unchanged:
-    // isDeleted = 0, isTemporary = 0, valid empId and shutter designation exclusion.
-    // Blank/invalid joiningDate is treated as an old existing employee.
-    // Valid joiningDate adds the employee from that exact date.
-    // leavingDate removes an employee ONLY when users.status = LEFT.
-    // PRESENT / ACTIVE / ON-LEAVE or any non-LEFT status remains counted even if leavingDate is filled.
-    // For LEFT status, valid leavingDate removes the employee from that exact date.
-    const getActiveUserAsOfDateSql = (alias = "u", asOfDate) => {
-        const joiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
-        const leavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
-        const employeeStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
-        const safeAsOfDate = String(asOfDate || sqlEndDate).replace(/'/g, "''");
+    // Total Manpower lifecycle rule:
+    // 1) statusHistory is authoritative when it contains at least one valid joiningDate.
+    // 2) Each history item represents one employment interval: joiningDate <= selected date
+    //    and leavingDate is blank/null or selected date <= leavingDate.
+    // 3) Therefore a LEFT -> PRESENT rejoin creates a gap that is not counted, and the user
+    //    starts counting again from the new joiningDate.
+    // 4) Old users without a usable statusHistory array retain the previous column fallback.
+    // 5) Tenure graphs do not call this helper; they keep users.joiningDate/leavingDate directly.
+    const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
+        const historyJsonSql = `CASE
+            WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
+            THEN CAST(${alias}.statusHistory AS NVARCHAR(MAX))
+            ELSE N'[]'
+        END`;
 
-        return `
-            AND (${joiningDateSql} IS NULL OR ${joiningDateSql} <= CONVERT(DATE, '${safeAsOfDate}', 23))
-            AND (
-                    ${employeeStatusSql} <> 'LEFT'
-                    OR ${leavingDateSql} IS NULL
-                    OR ${leavingDateSql} > CONVERT(DATE, '${safeAsOfDate}', 23)
+        const historyJoiningDateSql = userDateToDateSql(
+            `JSON_VALUE(historyRow.[value], '$.joiningDate')`
+        );
+        const historyLeavingDateSql = userDateToDateSql(
+            `JSON_VALUE(historyRow.[value], '$.leavingDate')`
+        );
+
+        const legacyJoiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
+        const legacyLeavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
+        const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
+
+        return `(
+            EXISTS (
+                SELECT 1
+                FROM OPENJSON(${historyJsonSql}) historyRow
+                CROSS APPLY (
+                    SELECT
+                        ${historyJoiningDateSql} AS joiningDate,
+                        ${historyLeavingDateSql} AS leavingDate
+                ) historyPeriod
+                WHERE historyPeriod.joiningDate IS NOT NULL
+                  AND historyPeriod.joiningDate <= ${asOfDateSql}
+                  AND (
+                        historyPeriod.leavingDate IS NULL
+                        OR historyPeriod.leavingDate >= ${asOfDateSql}
+                      )
+            )
+            OR (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM OPENJSON(${historyJsonSql}) historyRow
+                    CROSS APPLY (
+                        SELECT ${historyJoiningDateSql} AS joiningDate
+                    ) validHistoryPeriod
+                    WHERE validHistoryPeriod.joiningDate IS NOT NULL
                 )
+                AND (
+                    (
+                        ${legacyStatusSql} = 'PRESENT'
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                    OR (
+                        ${legacyStatusSql} = 'LEFT'
+                        AND ${legacyLeavingDateSql} IS NOT NULL
+                        AND ${legacyLeavingDateSql} >= ${asOfDateSql}
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                )
+            )
+        )`;
+    };
+
+    const getActiveUserAsOfDateSql = (alias = "u", asOfDate) => {
+        const safeAsOfDate = String(asOfDate || sqlEndDate).replace(/'/g, "''");
+        return `
+            AND ${getStatusHistoryActiveConditionSql(
+                alias,
+                `CONVERT(DATE, '${safeAsOfDate}', 23)`
+            )}
         `;
     };
 
@@ -1001,6 +1091,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND ${leaveDateSql} IS NOT NULL
                   ${attritionHierCondition}
                   ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
                   -- NOTE: Attrition me employee tabhi count hoga jab users.status = LEFT ho.
                   -- leavingDate sirf employee ke exact left date ko determine karegi.
                   -- PRESENT status employee leavingDate filled hone par bhi attrition me count nahi hoga.
@@ -1031,6 +1122,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
                   ${attritionHierCondition}
                   ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
                   -- NOTE: Attrition me pehle users.status = LEFT check hoga.
                   -- leavingDate employee ko uske exact left date par show karegi.
                   -- PRESENT status employee attrition graph me count nahi hoga.
@@ -1103,12 +1195,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS cnt
                 FROM attendance_logs al
                 INNER JOIN users u ON al.userId = u.id
-                WHERE al.[date] >= '${sqlStartDate}'
-                  AND al.[date] <= '${sqlEndDate}'
+                WHERE CONVERT(DATE, al.[date]) >= CONVERT(DATE, '${sqlStartDate}', 23)
+                  AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, '${sqlEndDate}', 23)
                   ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
                   AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
                   ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
             `;
             const gateParams = [];
             attendanceGateSql = addShiftFilter(attendanceGateSql, gateParams, "al");
@@ -1349,7 +1442,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND ISNULL(u.isTemporary, 0) = 0
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
                   ${scheduleHierCondition}
                 GROUP BY d.fullDate
             `;
@@ -1416,10 +1509,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let snapshotTotal = 0;
 
-    // TOTAL MANPOWER (2647 LOGIC):
-    // Exact users-table eligibility requested for the first Dashboard graph:
-    // isDeleted = 0, isTemporary = 0, status = PRESENT, and fixed designation exclusions.
-    // No joiningDate/leavingDate or non-LEFT fallback is applied here.
+    // TOTAL MANPOWER — statusHistory DATE-WISE EMPLOYMENT INTERVAL LOGIC.
+    // A user is counted for every date covered by any statusHistory interval.
+    // Example: LEFT interval ends 20-Jul and PRESENT interval starts 04-Aug:
+    // count through 20-Jul, exclude 21-Jul to 03-Aug, count again from 04-Aug.
+    // Users without valid statusHistory continue through the legacy column fallback.
     const userHierConditions = [];
     const userHierParams = [];
 
@@ -1455,20 +1549,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WITH DateRange AS (
                 SELECT CONVERT(DATE, valuesTable.fullDate, 23) AS fullDate
                 FROM (VALUES ${dateValuesSql}) valuesTable(fullDate)
-            ),
-            EligibleUsers AS (
-                SELECT DISTINCT
-                    u.id AS userId
-                FROM users u
-                WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
-                  ${userHierCondition}
             )
             SELECT
                 CONVERT(VARCHAR, d.fullDate, 23) AS fullDate,
-                COUNT(DISTINCT eu.userId) AS total
+                COUNT(DISTINCT CASE
+                    WHEN ${getStatusHistoryActiveConditionSql("u", "d.fullDate")}
+                    THEN u.id
+                END) AS total
             FROM DateRange d
-            LEFT JOIN EligibleUsers eu ON 1 = 1
+            LEFT JOIN users u
+                ON 1=1
+               ${getTotalManpowerBaseEligibilitySql("u")}
+               ${userHierCondition}
             GROUP BY d.fullDate
             ORDER BY d.fullDate
         `;
@@ -1480,14 +1572,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         snapshotTotal = Number(dailyHeadcountByDate[sqlEndDate] || 0);
     } catch (e) {
-        console.warn("[DASHBOARD] Total Manpower query failed; same-rule fallback used:", e.message);
+        console.warn("[DASHBOARD] statusHistory Total Manpower query failed; same-rule fallback used:", e.message);
 
         try {
             let fallbackSql = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", sqlEndDate)}
                   ${userHierCondition}
             `;
 
@@ -1508,8 +1601,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     try {
         let attSql = `
             SELECT
-                CONVERT(VARCHAR, al.[date], 23) AS fullDate,
-                DAY(al.[date]) AS dayNum,
+                CONVERT(VARCHAR(10), CONVERT(DATE, al.[date]), 23) AS fullDate,
+                DAY(CONVERT(DATE, al.[date])) AS dayNum,
                 -- Manpower present count rule:
                 -- Match final dashboard eligibility logic:
                 -- attendance_logs.payCode = users.empId, employee is matched directly with users,
@@ -1522,17 +1615,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             FROM attendance_logs al
             INNER JOIN users u ON al.userId = u.id
             WHERE 1=1
-              AND al.[date] >= '${sqlStartDate}'
-              AND al.[date] <= '${sqlEndDate}'
+              AND CONVERT(DATE, al.[date]) >= CONVERT(DATE, '${sqlStartDate}', 23)
+              AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, '${sqlEndDate}', 23)
               ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
               ${hierCondition}
               ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
         `;
         const attParams = [];
         attSql = addShiftFilter(attSql, attParams, "al");
         attSql += `
-            GROUP BY al.[date], DAY(al.[date])
-            ORDER BY al.[date]
+            GROUP BY CONVERT(DATE, al.[date])
+            ORDER BY CONVERT(DATE, al.[date])
         `;
 
         const [attRows] = await executeQuery(attSql, attParams);
@@ -1545,7 +1639,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     try {
         let unmappedSql = `
             SELECT
-                CONVERT(VARCHAR, unm.[date], 23) AS fullDate,
+                CONVERT(VARCHAR(10), CONVERT(DATE, unm.[date]), 23) AS fullDate,
                 COUNT(DISTINCT unm.payCode) AS unmappedCount
             FROM attendance_unmapped_logs unm
             WHERE UPPER(LTRIM(RTRIM(unm.status))) IN ('P','PRESENT')
@@ -1556,7 +1650,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const unmappedParams = [];
         unmappedSql = addShiftFilter(unmappedSql, unmappedParams, "unm");
         unmappedSql += `
-            GROUP BY unm.[date]
+            GROUP BY CONVERT(DATE, unm.[date])
         `;
         const [unmappedRows] = await executeQuery(unmappedSql, unmappedParams);
         dailyUnmapped = unmappedRows;
@@ -1791,6 +1885,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // users.empId must be valid, isTemporary = 0, not deleted,
         // designation must not be shuttered/off. No snapshot match is required.
         sqlText += getEligibleUserSql(alias);
+        sqlText += getDashboardDesignationShutterExclusionSql(alias);
 
         return sqlText;
     }
@@ -1945,12 +2040,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
             `;
             const params = [];
             sqlText = addUserMasterHierarchyFilters(sqlText, params, "u");
             sqlText = addStateDistrictFilters(sqlText, params, { includeState, includeDistrict });
-            // First graph Total Manpower intentionally ignores shift and joining/leaving dates.
+            // Total Manpower ignores shift, but uses statusHistory as of the active graph date.
             sqlText += `
                 GROUP BY ${columnSql}
                 ORDER BY total DESC
@@ -2024,15 +2120,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
             `;
 
             const params = [];
             sqlText = addUserMasterHierarchyFilters(sqlText, params, "u");
             sqlText = addStateDistrictFilters(sqlText, params, { includeState, includeDistrict });
 
-            // Same denominator as the first graph Total Manpower bar. Shift and date-lifecycle
-            // filters are intentionally not applied because the first graph does not apply them.
+            // Same denominator as the first graph Total Manpower bar. Shift is ignored;
+            // statusHistory lifecycle is evaluated for usersTotalAsOfDate.
             const [rows] = await executeQuery(sqlText, params);
             return Number(rows?.[0]?.total || 0);
         } catch (e) {
@@ -2122,7 +2219,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
                   ${resolvedMasterExtraWhere}
             `;
 
@@ -2254,6 +2352,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                   AND al.status IN ('P','PRESENT','Present')
                   ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
             `;
 
             const attendanceParams = [];
@@ -2278,7 +2377,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
             `;
 
             const masterParams = [];
@@ -2301,7 +2401,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
             `;
             const denominatorParams = [];
             denominatorSql = addRawUserHierarchyFilters(denominatorSql, denominatorParams, "u");
@@ -2511,7 +2612,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT u.id) AS totalHeadcount
             FROM users u
             WHERE 1=1
-              ${getFirstGraphTotalManpowerEligibilitySql("u")}
+              ${getTotalManpowerBaseEligibilitySql("u")}
+                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
         `;
         const contractorTotalParams = [];
         contractorTotalSql = applyContractorHierarchyAndLocationFilters(contractorTotalSql, contractorTotalParams);
@@ -2530,6 +2632,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
               AND al.status IN ('P','PRESENT','Present')
               ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
               ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
         `;
         const contractorPresentParams = [];
         contractorPresentSql = applyContractorHierarchyAndLocationFilters(contractorPresentSql, contractorPresentParams);
@@ -2671,7 +2774,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     masterHoliday,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
-                        "Dashboard Total Manpower/Users Total bars use the original correct users-table eligibility plus date-wise joiningDate and leavingDate. Blank/invalid joiningDate remains included. Valid joiningDate adds from that date; valid leavingDate is counted in attrition and removes the employee from Total Manpower on the same date. Attendance absence never hides manpower data.",
+                        "Dashboard Total Manpower/Users Total bars use statusHistory employment intervals for the relevant date. A rejoined employee is excluded during the LEFT-to-rejoin gap and counted again from the new joiningDate. Users without valid history use the legacy joiningDate/leavingDate fallback. Attendance absence never hides manpower data.",
                 },
                 debug: {
                     requiredStartDate: sqlStartDate,
@@ -2895,6 +2998,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
           AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
           ${hierCondition}
           ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
     `;
 
     const params = [];
@@ -3363,7 +3467,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
         `;
 
         const attendanceParams = [sqlStartDate, sqlEndDate];
@@ -3404,7 +3508,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND u.empId != ''
                   AND ${joinDateSQL} IS NOT NULL
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
             ) parsed
             WHERE tenureDays IS NOT NULL
               AND tenureDays >= 0
@@ -3436,7 +3540,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${joinDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${joinDateSQL}, al.[date]) BETWEEN ? AND ?
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
             `;
 
             const customAttendanceParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
@@ -3460,7 +3564,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ${joinDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${joinDateSQL}, al.[date]) BETWEEN ? AND ?
                   ${hierCondition}
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
             `;
 
             const customAbsenteeismParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
@@ -3575,7 +3679,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
                   -- Shift behavior remains unchanged.
         `;
 
@@ -3618,7 +3722,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isTemporary, 0) = 0
                   AND u.empId IS NOT NULL
                   AND LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100)))) != ''
-                  ${getDesignationShutterExclusionSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
                   -- Shift behavior remains unchanged.
             `;
 

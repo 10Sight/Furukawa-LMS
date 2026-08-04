@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { format } from 'date-fns';
 import { useGetAllStudentsQuery } from '@/Redux/AllApi/InstructorApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetCoursesQuery } from '@/Redux/AllApi/CourseApi';
@@ -119,7 +120,30 @@ const Home = () => {
   }, [logAction]);
 
   // API calls for all stats
-  const { data: studentsData, isLoading: studentsLoading } = useGetAllStudentsQuery();
+  const { data: studentsData, isLoading: studentsLoading } = useGetAllStudentsQuery({
+    page: 1,
+    limit: 30,
+    search: "",
+    status: "",
+    unit: "",
+    departmentId: "",
+    sectionId: "",
+    lineId: "",
+    subSectionId: "",
+    stationId: "",
+    dateFrom: "",
+    dateTo: "",
+    shift: "",
+    date: format(new Date(), "yyyy-MM-dd"),
+    joiningDateFrom: "",
+    joiningDateTo: "",
+    leavingDateFrom: "",
+    leavingDateTo: "",
+    includeLeft: "false",
+    designation: "",
+    assignmentStatus: "",
+    assignmentType: "",
+  });
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery();
   const { data: coursesData, isLoading: coursesLoading } = useGetCoursesQuery({
     page: 1,
@@ -133,7 +157,7 @@ const Home = () => {
   const totalDojoUsers = dojoStats?.data?.totalDojoUsers || 0;
 
   // Extract counts from API responses
-  const totalStudents = studentsData?.data?.totalUsers || 0;
+  const totalStudents = studentsData?.data?.counts?.totalHeadcount ?? studentsData?.data?.totalUsers ?? 0;
   const totalDepartments = departmentsData?.data?.totalDepartments || 0;
   const totalCourses = coursesData?.data?.total || 0;
 

@@ -11,7 +11,7 @@ const truncateForLog = (text) => (text.length > 300 ? `${text.slice(0, 300)}...`
 // catalog locks, producing the multi-second [SLOW QUERY] warnings. These are queued to run one
 // at a time below; normal application queries are unaffected and still run concurrently.
 const SCHEMA_QUERY_PATTERN =
-    /\b(sysobjects|information_schema|sys\.(?:columns|indexes|tables|foreign_keys|objects)|objectproperty|col_length)\b|\b(?:create|alter|drop)\b\s+(?:unique\s+)?(?:table|index|column)\b/i;
+    /\b(sysobjects|information_schema|sys\.\w+|objectproperty|col_length)\b|\b(?:create|alter|drop)\b\s+(?:unique\s+)?(?:table|index|column)\b/i;
 
 // Chain that schema/DDL queries are serialized onto, one at a time, in call order.
 let schemaQueuePromise = Promise.resolve();

@@ -19,6 +19,7 @@ import {
     useUpdateSectionMutation,
     useDeleteSectionMutation,
 } from "@/Redux/AllApi/SectionApi";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import { IconPlus, IconEdit, IconLoader, IconCheck, IconX, IconTrash, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -45,9 +46,6 @@ const TEN_CYCLE_FORM_TYPES = [
     { id: 'form3', label: 'Numerical (Form 3)' }
 ];
 
-const SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
-const emptyDayCountsByLevel = () => ({ L1: "", L2: "", L3: "", L4: "" });
-
 // Strips blank entries; returns null (no overrides) when nothing is set.
 const buildDayCountsPayload = (map) => {
     const result = {};
@@ -57,8 +55,19 @@ const buildDayCountsPayload = (map) => {
     return Object.keys(result).length > 0 ? result : null;
 };
 
+// Name of the level a section member on `levels[index]` upgrades into next.
+// The last configured level has no real "next" level, so it repeats itself (already at max).
+const getNextLevelName = (index, levels) => {
+    if (index + 1 < levels.length) {
+        return levels[index + 1].name;
+    }
+    return levels[index]?.name || "";
+};
+
 const DepartmentSectionManager = ({ departmentId }) => {
     const { data: sectionsData, isLoading, error } = useGetSectionsByDepartmentQuery(departmentId);
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeLevels = useMemo(() => activeConfigData?.data?.levels || [], [activeConfigData]);
     const { user } = useSelector((state) => state.auth || {});
 
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
@@ -114,8 +123,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionTenCycleFormTypes, setNewSectionTenCycleFormTypes] = useState(["form1"]);
     const [newSectionSkillUpgradationDayCount, setNewSectionSkillUpgradationDayCount] = useState("");
     const [newSectionMultiSkillingDayCount, setNewSectionMultiSkillingDayCount] = useState("");
-    const [newSectionSkillUpgradationDayCounts, setNewSectionSkillUpgradationDayCounts] = useState(emptyDayCountsByLevel());
-    const [newSectionMultiSkillingDayCounts, setNewSectionMultiSkillingDayCounts] = useState(emptyDayCountsByLevel());
+    const [newSectionSkillUpgradationDayCounts, setNewSectionSkillUpgradationDayCounts] = useState({});
+    const [newSectionMultiSkillingDayCounts, setNewSectionMultiSkillingDayCounts] = useState({});
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -129,8 +138,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editTenCycleFormTypes, setEditTenCycleFormTypes] = useState([]);
     const [editSkillUpgradationDayCount, setEditSkillUpgradationDayCount] = useState("");
     const [editMultiSkillingDayCount, setEditMultiSkillingDayCount] = useState("");
-    const [editSkillUpgradationDayCounts, setEditSkillUpgradationDayCounts] = useState(emptyDayCountsByLevel());
-    const [editMultiSkillingDayCounts, setEditMultiSkillingDayCounts] = useState(emptyDayCountsByLevel());
+    const [editSkillUpgradationDayCounts, setEditSkillUpgradationDayCounts] = useState({});
+    const [editMultiSkillingDayCounts, setEditMultiSkillingDayCounts] = useState({});
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
@@ -211,8 +220,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
             setNewSectionTenCycleFormTypes(["form1"]);
             setNewSectionSkillUpgradationDayCount("");
             setNewSectionMultiSkillingDayCount("");
-            setNewSectionSkillUpgradationDayCounts(emptyDayCountsByLevel());
-            setNewSectionMultiSkillingDayCounts(emptyDayCountsByLevel());
+            setNewSectionSkillUpgradationDayCounts({});
+            setNewSectionMultiSkillingDayCounts({});
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -250,8 +259,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditTenCycleFormTypes(section.tenCycleFormType ? section.tenCycleFormType.split(",") : ["form1"]);
         setEditSkillUpgradationDayCount(section.skillUpgradationDayCount ?? "");
         setEditMultiSkillingDayCount(section.multiSkillingDayCount ?? "");
-        setEditSkillUpgradationDayCounts({ ...emptyDayCountsByLevel(), ...(section.skillUpgradationDayCounts || {}) });
-        setEditMultiSkillingDayCounts({ ...emptyDayCountsByLevel(), ...(section.multiSkillingDayCounts || {}) });
+        setEditSkillUpgradationDayCounts({ ...(section.skillUpgradationDayCounts || {}) });
+        setEditMultiSkillingDayCounts({ ...(section.multiSkillingDayCounts || {}) });
         setIsEditDialogOpen(true);
     };
 
@@ -450,20 +459,41 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </div>
                                         <div>
                                             <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
-                                            <div className="grid grid-cols-4 gap-2 mt-1">
-                                                {SKILL_LEVELS.map(level => (
-                                                    <div key={level} className="space-y-1">
-                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            placeholder="Default"
-                                                            value={newSectionSkillUpgradationDayCounts[level]}
-                                                            onChange={(e) => setNewSectionSkillUpgradationDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
-                                                            className="h-8 text-xs"
-                                                        />
-                                                    </div>
-                                                ))}
+                                            <div className="mt-1 border rounded-md overflow-hidden">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="text-[10px] h-8">Current Skill</TableHead>
+                                                            <TableHead className="text-[10px] h-8"></TableHead>
+                                                            <TableHead className="text-[10px] h-8">Next Skill Upgradation Plan</TableHead>
+                                                            <TableHead className="text-[10px] h-8">No. of Days</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {activeLevels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} className="text-xs text-slate-400 text-center py-3">No active skill levels configured</TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                        {activeLevels.map((level, index) => (
+                                                            <TableRow key={level.name}>
+                                                                <TableCell className="text-xs font-medium py-1">{level.name}</TableCell>
+                                                                <TableCell className="text-xs text-slate-400 py-1">→</TableCell>
+                                                                <TableCell className="text-xs py-1">{getNextLevelName(index, activeLevels)}</TableCell>
+                                                                <TableCell className="py-1">
+                                                                    <Input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        placeholder="Default"
+                                                                        value={newSectionSkillUpgradationDayCounts[level.name] ?? ""}
+                                                                        onChange={(e) => setNewSectionSkillUpgradationDayCounts(prev => ({ ...prev, [level.name]: e.target.value }))}
+                                                                        className="h-8 text-xs w-24"
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </div>
                                         </div>
                                     </div>
@@ -481,20 +511,41 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </div>
                                         <div>
                                             <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
-                                            <div className="grid grid-cols-4 gap-2 mt-1">
-                                                {SKILL_LEVELS.map(level => (
-                                                    <div key={level} className="space-y-1">
-                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            placeholder="Default"
-                                                            value={newSectionMultiSkillingDayCounts[level]}
-                                                            onChange={(e) => setNewSectionMultiSkillingDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
-                                                            className="h-8 text-xs"
-                                                        />
-                                                    </div>
-                                                ))}
+                                            <div className="mt-1 border rounded-md overflow-hidden">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="text-[10px] h-8">Current Skill</TableHead>
+                                                            <TableHead className="text-[10px] h-8"></TableHead>
+                                                            <TableHead className="text-[10px] h-8">Next Skill Upgradation Plan</TableHead>
+                                                            <TableHead className="text-[10px] h-8">No. of Days</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {activeLevels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} className="text-xs text-slate-400 text-center py-3">No active skill levels configured</TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                        {activeLevels.map((level, index) => (
+                                                            <TableRow key={level.name}>
+                                                                <TableCell className="text-xs font-medium py-1">{level.name}</TableCell>
+                                                                <TableCell className="text-xs text-slate-400 py-1">→</TableCell>
+                                                                <TableCell className="text-xs py-1">{getNextLevelName(index, activeLevels)}</TableCell>
+                                                                <TableCell className="py-1">
+                                                                    <Input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        placeholder="Default"
+                                                                        value={newSectionMultiSkillingDayCounts[level.name] ?? ""}
+                                                                        onChange={(e) => setNewSectionMultiSkillingDayCounts(prev => ({ ...prev, [level.name]: e.target.value }))}
+                                                                        className="h-8 text-xs w-24"
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </div>
                                         </div>
                                     </div>
@@ -617,20 +668,41 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </div>
                                         <div>
                                             <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
-                                            <div className="grid grid-cols-4 gap-2 mt-1">
-                                                {SKILL_LEVELS.map(level => (
-                                                    <div key={level} className="space-y-1">
-                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            placeholder="Default"
-                                                            value={editSkillUpgradationDayCounts[level]}
-                                                            onChange={(e) => setEditSkillUpgradationDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
-                                                            className="h-8 text-xs"
-                                                        />
-                                                    </div>
-                                                ))}
+                                            <div className="mt-1 border rounded-md overflow-hidden">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="text-[10px] h-8">Current Skill</TableHead>
+                                                            <TableHead className="text-[10px] h-8"></TableHead>
+                                                            <TableHead className="text-[10px] h-8">Next Skill Upgradation Plan</TableHead>
+                                                            <TableHead className="text-[10px] h-8">No. of Days</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {activeLevels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} className="text-xs text-slate-400 text-center py-3">No active skill levels configured</TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                        {activeLevels.map((level, index) => (
+                                                            <TableRow key={level.name}>
+                                                                <TableCell className="text-xs font-medium py-1">{level.name}</TableCell>
+                                                                <TableCell className="text-xs text-slate-400 py-1">→</TableCell>
+                                                                <TableCell className="text-xs py-1">{getNextLevelName(index, activeLevels)}</TableCell>
+                                                                <TableCell className="py-1">
+                                                                    <Input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        placeholder="Default"
+                                                                        value={editSkillUpgradationDayCounts[level.name] ?? ""}
+                                                                        onChange={(e) => setEditSkillUpgradationDayCounts(prev => ({ ...prev, [level.name]: e.target.value }))}
+                                                                        className="h-8 text-xs w-24"
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </div>
                                         </div>
                                     </div>
@@ -648,20 +720,41 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         </div>
                                         <div>
                                             <Label className="text-slate-500 font-bold uppercase text-[10px]">Override by Current Skill Level</Label>
-                                            <div className="grid grid-cols-4 gap-2 mt-1">
-                                                {SKILL_LEVELS.map(level => (
-                                                    <div key={level} className="space-y-1">
-                                                        <Label className="text-[10px] text-slate-500">{level}</Label>
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            placeholder="Default"
-                                                            value={editMultiSkillingDayCounts[level]}
-                                                            onChange={(e) => setEditMultiSkillingDayCounts(prev => ({ ...prev, [level]: e.target.value }))}
-                                                            className="h-8 text-xs"
-                                                        />
-                                                    </div>
-                                                ))}
+                                            <div className="mt-1 border rounded-md overflow-hidden">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="text-[10px] h-8">Current Skill</TableHead>
+                                                            <TableHead className="text-[10px] h-8"></TableHead>
+                                                            <TableHead className="text-[10px] h-8">Next Skill Upgradation Plan</TableHead>
+                                                            <TableHead className="text-[10px] h-8">No. of Days</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {activeLevels.length === 0 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} className="text-xs text-slate-400 text-center py-3">No active skill levels configured</TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                        {activeLevels.map((level, index) => (
+                                                            <TableRow key={level.name}>
+                                                                <TableCell className="text-xs font-medium py-1">{level.name}</TableCell>
+                                                                <TableCell className="text-xs text-slate-400 py-1">→</TableCell>
+                                                                <TableCell className="text-xs py-1">{getNextLevelName(index, activeLevels)}</TableCell>
+                                                                <TableCell className="py-1">
+                                                                    <Input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        placeholder="Default"
+                                                                        value={editMultiSkillingDayCounts[level.name] ?? ""}
+                                                                        onChange={(e) => setEditMultiSkillingDayCounts(prev => ({ ...prev, [level.name]: e.target.value }))}
+                                                                        className="h-8 text-xs w-24"
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </div>
                                         </div>
                                     </div>

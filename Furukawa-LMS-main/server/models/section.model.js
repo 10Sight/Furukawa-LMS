@@ -1,8 +1,18 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+import CourseLevelConfig from "./courseLevelConfig.model.js";
 
 const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
+
+// Resolves the set of valid skill level names from the active Course Level
+// Config, falling back to the legacy L1-L4 set if none exists.
+const getValidSkillLevelNames = async () => {
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    return activeConfig && activeConfig.levels.length > 0
+        ? activeConfig.levels.map(l => l.name)
+        : VALID_SKILL_LEVELS;
+};
 
 const safeJsonParseObject = (value) => {
     if (value && typeof value === "object") return value;
@@ -15,13 +25,17 @@ const safeJsonParseObject = (value) => {
     }
 };
 
-// Keeps only known L1-L4 keys with positive integer values; returns null when empty
+// Keeps only known skill level keys with positive integer values; returns null when empty
 // so the DB stores NULL instead of '{}' for "no overrides configured".
-const normalizeDayCountsForStorage = (value) => {
+const normalizeDayCountsForStorage = (value, validLevels) => {
     const source = safeJsonParseObject(value);
     const result = {};
-    for (const level of VALID_SKILL_LEVELS) {
-        const raw = source[level];
+    for (const level of validLevels) {
+        let raw = source[level];
+        if (raw === undefined || raw === null || raw === "") {
+            const foundKey = Object.keys(source).find(k => k.toUpperCase() === level.toUpperCase());
+            if (foundKey) raw = source[foundKey];
+        }
         if (raw === undefined || raw === null || raw === "") continue;
         const parsed = parseInt(raw);
         if (Number.isFinite(parsed) && parsed > 0) result[level] = parsed;
@@ -408,6 +422,7 @@ class Section {
     }
 
     static async create(data) {
+        const validLevels = await getValidSkillLevelNames();
         const fields = [
             "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive",
             "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
@@ -445,8 +460,8 @@ class Section {
                 ? parseInt(data.skillUpgradationDayCount) : null,
             data.multiSkillingDayCount !== undefined && data.multiSkillingDayCount !== null && data.multiSkillingDayCount !== ""
                 ? parseInt(data.multiSkillingDayCount) : null,
-            normalizeDayCountsForStorage(data.skillUpgradationDayCounts),
-            normalizeDayCountsForStorage(data.multiSkillingDayCounts),
+            normalizeDayCountsForStorage(data.skillUpgradationDayCounts, validLevels),
+            normalizeDayCountsForStorage(data.multiSkillingDayCounts, validLevels),
             '[]',
             now,
             now
@@ -509,6 +524,8 @@ class Section {
     static async update(id, data) {
         const updateFields = [];
         const values = [];
+        const needsValidLevels = data.skillUpgradationDayCounts !== undefined || data.multiSkillingDayCounts !== undefined;
+        const validLevels = needsValidLevels ? await getValidSkillLevelNames() : null;
 
         if (data.name !== undefined) { updateFields.push("name = ?"); values.push(data.name); }
         if (data.uniCode !== undefined) { updateFields.push("uniCode = ?"); values.push(data.uniCode); }
@@ -539,11 +556,11 @@ class Section {
         }
         if (data.skillUpgradationDayCounts !== undefined) {
             updateFields.push("skillUpgradationDayCounts = ?");
-            values.push(normalizeDayCountsForStorage(data.skillUpgradationDayCounts));
+            values.push(normalizeDayCountsForStorage(data.skillUpgradationDayCounts, validLevels));
         }
         if (data.multiSkillingDayCounts !== undefined) {
             updateFields.push("multiSkillingDayCounts = ?");
-            values.push(normalizeDayCountsForStorage(data.multiSkillingDayCounts));
+            values.push(normalizeDayCountsForStorage(data.multiSkillingDayCounts, validLevels));
         }
 
         if (updateFields.length === 0) return null;

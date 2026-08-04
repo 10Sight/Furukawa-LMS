@@ -191,7 +191,32 @@ const formatTodayDate = () => {
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const yyyy = now.getFullYear();
-    return `${dd} - ${mm} - ${yyyy}`;
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+// Accepts either the current "YYYY-MM-DD" format or the legacy "DD - MM - YYYY" format
+// (still present on old saved sheets) and normalizes it for the <input type="date"> box.
+const convertToYYYYMMDD = (dateStr) => {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const legacyMatch = /^(\d{2})\s*-\s*(\d{2})\s*-\s*(\d{4})$/.exec(dateStr);
+    if (legacyMatch) {
+        const [, dd, mm, yyyy] = legacyMatch;
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    return '';
+};
+
+// Formats a "YYYY-MM-DD" value back to the certificate's original "DD - MM - YYYY" display
+// style for read-only viewing/printing; legacy values already in that style pass through.
+const formatDateForDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    if (isoMatch) {
+        const [, yyyy, mm, dd] = isoMatch;
+        return `${dd} - ${mm} - ${yyyy}`;
+    }
+    return dateStr;
 };
 
 const getPeriodFromDate = (date = new Date()) => {
@@ -850,12 +875,21 @@ const SkillMatrixCertificate = ({
                             <div className="flex border-b border-black">
                                 <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Date of evaluation</div>
                                 <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
-                                    <input
-                                        type="text"
-                                        className="w-full text-center outline-none bg-transparent cursor-not-allowed"
-                                        value={headerData.dateOfEvaluation}
-                                        disabled={true}
-                                    />
+                                    {isEditable ? (
+                                        <input
+                                            type="date"
+                                            className="w-full text-center outline-none bg-transparent"
+                                            value={convertToYYYYMMDD(headerData.dateOfEvaluation)}
+                                            onChange={e => setHeaderData(prev => ({ ...prev, dateOfEvaluation: e.target.value }))}
+                                        />
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            className="w-full text-center outline-none bg-transparent cursor-not-allowed"
+                                            value={formatDateForDisplay(headerData.dateOfEvaluation)}
+                                            disabled={true}
+                                        />
+                                    )}
                                 </div>
                             </div >
                             <div className="flex border-b border-black">

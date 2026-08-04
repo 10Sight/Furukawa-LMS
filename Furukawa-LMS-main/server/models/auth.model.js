@@ -388,6 +388,9 @@ class User {
                 // Composite covering the near-universal base predicate present in essentially every
                 // list query, so SQL Server can narrow the row set before any correlated join work.
                 { name: 'idx_users_scope', ddl: 'CREATE INDEX idx_users_scope ON users(isDeleted, isTemporary, isEmployee, isTrainer)' },
+                // Narrows the `u.fullName LIKE '%term%'` search clause to an index scan instead of
+                // a full clustered index scan (userName/empId already have their own indexes above).
+                { name: 'idx_users_fullName', ddl: 'CREATE INDEX idx_users_fullName ON users(fullName)' },
             ];
             for (const idx of additionalIndexes) {
                 try {

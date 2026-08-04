@@ -80,6 +80,9 @@ const emptyQuarterFields = (obj = {}) => {
 
 const MIN_SEARCH_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 300;
+// Shared across every UserCellSelector instance (one per row) so the same search
+// term/department/section/line combo is fetched once per sheet session, not once per row.
+const userSearchCache = new Map();
 
 const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabled, departmentId, sectionId, lineId }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
@@ -100,6 +103,13 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
             setIsSearching(false);
             return;
         }
+        const cacheKey = `${trimmed.toLowerCase()}|${departmentId || ""}|${sectionId || ""}|${lineId || ""}`;
+        const cached = userSearchCache.get(cacheKey);
+        if (cached) {
+            setSuggestions(cached);
+            setIsSearching(false);
+            return;
+        }
         let cancelled = false;
         setIsSearching(true);
         const timer = setTimeout(() => {
@@ -114,7 +124,9 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
                 },
             }).then((response) => {
                 if (cancelled) return;
-                setSuggestions(response?.data?.data?.users || []);
+                const users = response?.data?.data?.users || [];
+                userSearchCache.set(cacheKey, users);
+                setSuggestions(users);
             }).catch(() => {
                 if (!cancelled) setSuggestions([]);
             }).finally(() => {

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import User from "../models/auth.model.js";
+import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 
 export const DEFAULT_SKILL_CONFIG = {
     headerDefaults: {
@@ -109,6 +110,132 @@ export const isLevelFullyOK = (evalData, skillCertConfig, levelIdx) => {
     const items = skillCertConfig?.levels?.[levelIdx]?.items;
     if (!items || items.length === 0) return false;
     return items.every((_, iIdx) => evalData[`${levelIdx}-${iIdx}`]?.standard === 'OK');
+};
+
+// Mirrors admin/src/components/departments/SkillUpgradationPlan.jsx's addThreeMonths/calculateFutureDate
+// so auto-synced plan dates land on the same day a manual admin edit would produce.
+const addThreeMonths = (dateStr) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const date = new Date(y, m - 1 + 3, d);
+    if (date.getDate() !== d) date.setDate(0);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const calculateFutureDate = (dateStr, dayCount) => {
+    const count = parseInt(dayCount, 10);
+    if (!Number.isFinite(count) || count <= 0) return addThreeMonths(dateStr);
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const date = new Date(y, m - 1, d + count);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const EMPTY_UPGRADATION_ROW = {
+    userName: "", cardNo: "", shift: "", modelLine: "", station: "",
+    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
+    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
+    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
+    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "",
+};
+
+/**
+ * Syncs a passed Skill Matrix Certificate evaluation into the student's Skill Upgradation
+ * Plan row for the evaluation's department/section/year. The target quarter is derived from
+ * the evaluation sheet's own `period` (e.g. "2026-Q2"), not by scanning for "the next open
+ * quarter" — that keeps repeat saves of the same sheet idempotent (they overwrite the same
+ * quarter slot) instead of cascading extra quarters forward on every save.
+ */
+export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, dateOfEvaluation, period, activeConfig }) => {
+    if (!earnedLevelName || earnedLevelName === 'L0' || !activeConfig?.levels?.length) return;
+
+    const evalDate = dateOfEvaluation && !isNaN(new Date(dateOfEvaluation).getTime())
+        ? dateOfEvaluation
+        : new Date().toISOString().slice(0, 10);
+    const year = new Date(evalDate).getFullYear();
+
+    const periodMatch = /^(\d{4})-Q([1-4])$/.exec(period || "");
+    const quarter = periodMatch
+        ? parseInt(periodMatch[2], 10)
+        : Math.floor(new Date(evalDate).getMonth() / 3) + 1;
+
+    const [uRows] = await executeQuery(
+        "SELECT fullName, empId, departmentId, sectionId, subSectionId, lineId, shift FROM users WHERE id = ?",
+        [studentId]
+    );
+    const user = uRows[0];
+    if (!user || !user.departmentId) return;
+
+    const [sRows] = await executeQuery(
+        "SELECT skillUpgradationDayCount, skillUpgradationDayCounts FROM [sections] WHERE id = ?",
+        [user.sectionId]
+    );
+    const sectionRow = sRows[0] || {};
+    let perLevelDayCounts = {};
+    if (sectionRow.skillUpgradationDayCounts) {
+        try { perLevelDayCounts = JSON.parse(sectionRow.skillUpgradationDayCounts); } catch (e) { perLevelDayCounts = {}; }
+    }
+
+    const existingPlan = await SkillUpgradationPlan.findByHierarchy(user.departmentId, user.sectionId, year);
+    const tableData = existingPlan ? { ...existingPlan.tableData } : {};
+
+    const userKey = String(studentId);
+    let row = tableData[userKey];
+    if (!row) {
+        let modelLine = "";
+        let station = "";
+        if (user.lineId) {
+            const [lRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [user.lineId]);
+            modelLine = lRows[0]?.name || "";
+        }
+        if (user.subSectionId) {
+            const [ssRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [user.subSectionId]);
+            station = ssRows[0]?.name || "";
+        }
+        row = { ...EMPTY_UPGRADATION_ROW, userName: user.fullName || "", cardNo: user.empId || "", shift: user.shift || "", modelLine, station };
+    }
+
+    row[`q${quarter}DateActual`] = evalDate;
+    row[`q${quarter}Skill`] = earnedLevelName;
+    row[`q${quarter}Status`] = 'Completed';
+
+    if (quarter < 4) {
+        const earnedObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());
+        const nextObj = earnedObj ? activeConfig.levels.find(l => l.order === earnedObj.order + 1) : null;
+
+        if (nextObj) {
+            const nextQ = quarter + 1;
+            const nextAlreadyCompleted = row[`q${nextQ}Status`] === 'Completed';
+            const existingNextObj = row[`q${nextQ}Skill`]
+                ? activeConfig.levels.find(l => l.name.toUpperCase() === String(row[`q${nextQ}Skill`]).toUpperCase())
+                : null;
+            const wouldRegressPlan = existingNextObj && nextObj.order < existingNextObj.order;
+
+            if (!nextAlreadyCompleted && !wouldRegressPlan) {
+                const dayCount = perLevelDayCounts[earnedLevelName] ?? sectionRow.skillUpgradationDayCount ?? null;
+                row[`q${nextQ}Skill`] = nextObj.name;
+                row[`q${nextQ}Date`] = calculateFutureDate(evalDate, dayCount);
+                row[`q${nextQ}Status`] = 'Planned';
+            }
+        }
+    }
+
+    tableData[userKey] = row;
+
+    await SkillUpgradationPlan.upsert({
+        departmentId: user.departmentId,
+        sectionId: user.sectionId,
+        year,
+        selectedLines: existingPlan?.selectedLines || [],
+        tableData,
+        userName: "auto-sync",
+    });
 };
 
 export const getPeriodFromDate = (date = new Date()) => {

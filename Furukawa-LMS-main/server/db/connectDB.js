@@ -23,7 +23,10 @@ const baseConfig = {
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        connectionTimeout: CONNECTION_TIMEOUT,
+        // tedious reads this as `connectTimeout` (no "ion"), not `connectionTimeout` — the
+        // latter is only checked at the top level of the config object. Getting the key
+        // wrong here silently falls back to the driver's 15s default instead of this value.
+        connectTimeout: CONNECTION_TIMEOUT,
         // The DB server's OS clock runs in local (IST) time, not UTC. Tedious defaults to
         // useUTC: true, which mislabels GETDATE()'s naive local value as if it were UTC,
         // shifting every DATETIME read from the DB by the local UTC offset (+5:30 here).

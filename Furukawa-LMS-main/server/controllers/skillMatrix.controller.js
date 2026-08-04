@@ -16,7 +16,8 @@ import {
     isLevelFullyOK,
     getPeriodFromDate,
     DEFAULT_SKILL_CONFIG,
-    syncStudentSkillProgress
+    syncStudentSkillProgress,
+    syncToSkillUpgradationPlan
 } from "../utils/skillMatrix.util.js";
 
 // Helper to safely parse JSON
@@ -826,6 +827,7 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
     }
 
     const updatedBy = req.user.id;
+    const resolvedPeriod = period || existingSheet.period || getPeriodFromDate();
     const evaluation = await SkillMatrixEvaluation.upsert({
         id: sheetId,
         studentId,
@@ -836,7 +838,7 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
         opinion,
         updatedBy,
         sheetIndex: existingSheet.sheetIndex,
-        period: period || existingSheet.period || getPeriodFromDate(),
+        period: resolvedPeriod,
         isActive: existingSheet.isActive ? 1 : 0,
         earnedLevel: earnedLevelName,
         efficiency: calculatedEfficiency
@@ -862,6 +864,20 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
             newLevel = syncResult.newLevel;
         } catch (err) {
             console.error("[SkillMatrixEvaluation] Failed to sync operator skill progress:", err);
+        }
+
+        if (earnedLevelName !== 'L0') {
+            try {
+                await syncToSkillUpgradationPlan({
+                    studentId,
+                    earnedLevelName,
+                    dateOfEvaluation: headerData?.dateOfEvaluation,
+                    period: resolvedPeriod,
+                    activeConfig
+                });
+            } catch (err) {
+                console.error("[SkillMatrixEvaluation] Failed to sync skill upgradation plan:", err);
+            }
         }
     }
 

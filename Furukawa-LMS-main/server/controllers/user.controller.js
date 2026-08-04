@@ -1847,9 +1847,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     }
   }
   if (req.query.search) {
-    const t = `%${req.query.search}%`;
+    const term = req.query.search.trim();
     whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
-    params.push(t, t, t);
+    params.push(`%${term}%`, `${term}%`, `${term}%`);
   }
   const deptIds = toIdList(req.query.departmentId);
   const sectIds = toIdList(req.query.sectionId);

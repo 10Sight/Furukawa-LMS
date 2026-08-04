@@ -3,18 +3,28 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Section from "../models/section.model.js";
+import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 
 const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
 
+// Resolves the set of valid skill level names (uppercased) from the active
+// Course Level Config, falling back to the legacy L1-L4 set if none exists.
+const getValidSkillLevels = async () => {
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    return activeConfig && activeConfig.levels.length > 0
+        ? activeConfig.levels.map(l => l.name.toUpperCase())
+        : VALID_SKILL_LEVELS;
+};
+
 // Validates a { L1: number, L2: number, ... } per-level day count override map.
 // Throws ApiError on malformed keys/values; silently allows undefined/null/empty (no overrides).
-const validateDayCountsMap = (map, label) => {
+const validateDayCountsMap = (map, label, validLevels) => {
     if (map === undefined || map === null || map === "") return;
     if (typeof map !== "object" || Array.isArray(map)) {
         throw new ApiError(400, `${label} must be an object keyed by skill level`);
     }
     for (const [level, value] of Object.entries(map)) {
-        if (!VALID_SKILL_LEVELS.includes(level)) {
+        if (!validLevels.includes(level.toUpperCase())) {
             throw new ApiError(400, `${label} has an invalid skill level '${level}'`);
         }
         if (value === undefined || value === null || value === "") continue;
@@ -45,8 +55,9 @@ export const createSection = asyncHandler(async (req, res) => {
     if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
         throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
     }
-    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count");
-    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count");
+    const createValidLevels = await getValidSkillLevels();
+    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count", createValidLevels);
+    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count", createValidLevels);
 
     const [existing] = await executeQuery(
         "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?)",
@@ -139,8 +150,9 @@ export const updateSection = asyncHandler(async (req, res) => {
     if (multiSkillingDayCount !== undefined && multiSkillingDayCount !== null && multiSkillingDayCount !== "" && (!Number.isFinite(Number(multiSkillingDayCount)) || Number(multiSkillingDayCount) <= 0)) {
         throw new ApiError(400, "Multi-Skilling Day Count must be a positive number");
     }
-    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count");
-    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count");
+    const updateValidLevels = await getValidSkillLevels();
+    validateDayCountsMap(skillUpgradationDayCounts, "Skill Upgradation Day Count", updateValidLevels);
+    validateDayCountsMap(multiSkillingDayCounts, "Multi-Skilling Day Count", updateValidLevels);
 
     const updatedSection = await Section.update(id, {
         name,

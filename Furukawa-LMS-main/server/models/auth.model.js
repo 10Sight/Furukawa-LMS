@@ -469,24 +469,26 @@ class User {
             // Ensure idCard has a filtered unique index (duplicates are no longer allowed for phoneNumber's
             // former role — idCard is now the unique identifier instead)
             try {
-                // Existing data may contain duplicate idCard values; null out all but the
-                // most recently updated record for each duplicate so the unique index can be created
-                // without deleting any user records.
-                await executeQuery(`
-                    WITH CTE AS (
-                        SELECT id,
-                               ROW_NUMBER() OVER (PARTITION BY idCard ORDER BY updatedAt DESC, id DESC) as rn
-                        FROM users
-                        WHERE idCard IS NOT NULL
-                    )
-                    UPDATE users
-                    SET idCard = NULL
-                    WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
-                `);
-
+                // Check index existence first: once it exists, duplicates can never reoccur, so the
+                // full-table dedup scan below only needs to run once rather than on every startup.
                 const [existsIdCardFiltered] = await executeQuery("SELECT name FROM sys.indexes WHERE name = 'UQ_users_idCard_Filtered'");
                 if (existsIdCardFiltered.length === 0) {
-                    await executeQuery("CREATE UNIQUE INDEX UQ_users_idCard_Filtered ON users(idCard) WHERE idCard IS NOT NULL");
+                    // Existing data may contain duplicate idCard values; null out all but the
+                    // most recently updated record for each duplicate so the unique index can be created
+                    // without deleting any user records. Scans the whole table, so use the long-running pool.
+                    await executeQuery(`
+                        WITH CTE AS (
+                            SELECT id,
+                                   ROW_NUMBER() OVER (PARTITION BY idCard ORDER BY updatedAt DESC, id DESC) as rn
+                            FROM users
+                            WHERE idCard IS NOT NULL
+                        )
+                        UPDATE users
+                        SET idCard = NULL
+                        WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
+                    `, [], { longRunning: true });
+
+                    await executeQuery("CREATE UNIQUE INDEX UQ_users_idCard_Filtered ON users(idCard) WHERE idCard IS NOT NULL", [], { longRunning: true });
                 }
             } catch (err) {
                 console.error("Migration error for idCard unique index:", err);

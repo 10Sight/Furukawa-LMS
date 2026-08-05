@@ -142,6 +142,7 @@ const SYSTEM_PERMISSIONS = {
   SKILL_UPGRADATION_READ: "skill_upgradation:read",
   SKILL_UPGRADATION_UPDATE: "skill_upgradation:update",
   SKILL_UPGRADATION_DELETE: "skill_upgradation:delete",
+  SKILL_UPGRADATION_OVERRIDE_DATES: "skill_upgradation:override_dates",
 
   HANDOVER_SHEET_EDIT_LAYOUT: "handover_sheet:edit_layout",
   HANDOVER_SHEET_READ: "handover_sheet:read",
@@ -564,7 +565,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_UPDATE, name: "Edit Skill Upgradation Plan", description: "Edit and save changes to existing skill upgradation plans" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_DELETE, name: "Delete Skill Upgradation Plan", description: "Permanently delete skill upgradation plan records" },
         { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_EDIT_LAYOUT, name: "Edit Skill Upgradation Layout", description: "Modify the table configuration and structure of skill upgradation sheets" },
-        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" }
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_VIEW_HISTORY, name: "View Skill Upgradation History", description: "View the history of layout changes for skill upgradation sheets" },
+        { id: SYSTEM_PERMISSIONS.SKILL_UPGRADATION_OVERRIDE_DATES, name: "Override Date Restrictions", description: "Allows selecting any past or future date in the Skill Upgradation Plan's date fields, bypassing the today-or-later restriction" }
       ],
       "Handover Sheet": [
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, name: "View Handover Sheet", description: "View handover sheet records" },

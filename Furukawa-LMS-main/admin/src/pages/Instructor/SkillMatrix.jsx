@@ -5,7 +5,7 @@ import { useGetMyDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetLinesByDepartmentQuery } from '@/Redux/AllApi/LineApi';
 import { useGetMachinesByLineQuery } from '@/Redux/AllApi/MachineApi';
 import { useGetActiveConfigQuery } from '@/Redux/AllApi/CourseLevelConfigApi';
-import { useGetSkillMatrixQuery, useSaveSkillMatrixMutation } from '@/Redux/AllApi/SkillMatrixApi';
+import { useGetSkillMatrixQuery, useSaveSkillMatrixMutation, useGetEvaluationListQuery } from '@/Redux/AllApi/SkillMatrixApi';
 import { toast } from "sonner";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -115,6 +115,35 @@ const InstructorSkillMatrix = () => {
     const { data: evalLinesData } = useGetLinesByDepartmentQuery(evalDepartment, {
         skip: !evalDepartment
     });
+
+    // Fetch all evaluation sheets for the department, used to show latest doc number / signature status per operator
+    const { data: evaluationsListData, refetch: refetchEvaluationsList } = useGetEvaluationListQuery({
+        departmentId: evalDepartment || selectedDepartment
+    }, {
+        skip: !(evalDepartment || selectedDepartment)
+    });
+
+    // Map studentId -> latest evaluation sheet (active sheet if present, else highest sheetIndex)
+    const latestSheetByStudentId = React.useMemo(() => {
+        const map = {};
+        const rows = evaluationsListData?.data || [];
+        rows.forEach(row => {
+            const key = String(row.studentId);
+            const existing = map[key];
+            if (!existing) {
+                map[key] = row;
+                return;
+            }
+            const rowIsActive = row.isActive === true || row.isActive === 1;
+            const existingIsActive = existing.isActive === true || existing.isActive === 1;
+            if (rowIsActive && !existingIsActive) {
+                map[key] = row;
+            } else if (rowIsActive === existingIsActive && (row.sheetIndex || 0) > (existing.sheetIndex || 0)) {
+                map[key] = row;
+            }
+        });
+        return map;
+    }, [evaluationsListData]);
 
     // Memoize Department Users for Evaluation Tab
     const evalDepartmentUsers = React.useMemo(() => {
@@ -1213,7 +1242,7 @@ const InstructorSkillMatrix = () => {
                                     }
                                     departmentId={evalDepartment || selectedDepartment}
                                     onSaved={() => {
-                                        [refetchDepartments, refetchMatrix].forEach(fn => {
+                                        [refetchDepartments, refetchMatrix, refetchEvaluationsList].forEach(fn => {
                                             try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
                                         });
                                     }}
@@ -1232,18 +1261,24 @@ const InstructorSkillMatrix = () => {
                                             <th className="p-3 border-b text-left">Emp ID</th>
                                             <th className="p-3 border-b text-left">Current Level</th>
                                             <th className="p-3 border-b text-left">Type</th>
+                                            <th className="p-3 border-b text-left">Document Number</th>
+                                            <th className="p-3 border-b text-left">Approved / Confirmed Status</th>
                                             <th className="p-3 border-b text-center">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {paginatedEvalUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} className="text-center py-10 text-gray-400 italic">
+                                                <td colSpan={7} className="text-center py-10 text-gray-400 italic">
                                                     No operators found matching the criteria.
                                                 </td>
                                             </tr>
                                         ) : (
-                                            paginatedEvalUsers.map(u => (
+                                            paginatedEvalUsers.map(u => {
+                                                const latestSheet = latestSheetByStudentId[String(u._id)];
+                                                const approved = latestSheet?.docData?.approved || "";
+                                                const confirmed = latestSheet?.docData?.confirmed || "";
+                                                return (
                                                 <tr
                                                     key={u._id}
                                                     className="hover:bg-muted/30 border-b text-xs transition-colors duration-150 cursor-pointer"
@@ -1253,6 +1288,17 @@ const InstructorSkillMatrix = () => {
                                                     <td className="p-3">{u.cardNo || u.empId || "-"}</td>
                                                     <td className="p-3 font-semibold text-blue-600">{u.level || "-"}</td>
                                                     <td className="p-3">{u.type || "-"}</td>
+                                                    <td className="p-3">{latestSheet?.docData?.docNo || "—"}</td>
+                                                    <td className="p-3">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <span className={approved ? (approved.startsWith('Approved') ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold') : 'text-gray-400 italic'}>
+                                                                {approved || "Not approved"}
+                                                            </span>
+                                                            <span className={confirmed ? (confirmed.startsWith('Approved') ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold') : 'text-gray-400 italic'}>
+                                                                {confirmed || "Not confirmed"}
+                                                            </span>
+                                                        </div>
+                                                    </td>
                                                     <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
                                                         <Button
                                                             size="xs"
@@ -1263,7 +1309,8 @@ const InstructorSkillMatrix = () => {
                                                         </Button>
                                                     </td>
                                                 </tr>
-                                            ))
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>

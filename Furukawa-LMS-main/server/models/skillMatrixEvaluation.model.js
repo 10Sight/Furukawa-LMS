@@ -221,6 +221,7 @@ class SkillMatrixEvaluation {
             SELECT
                 sme.id, sme.studentId, sme.departmentId, sme.sheetIndex, sme.period,
                 sme.isActive, sme.earnedLevel, sme.efficiency, sme.createdAt, sme.updatedAt,
+                sme.docData,
                 u.fullName, u.empId, u.cardNo,
                 d.name AS departmentName,
                 sec.name AS sectionName,

@@ -292,6 +292,7 @@ const sanitize = (val) => (val && val !== "N/A" && val.toLowerCase() !== "none")
 export const formatUser = (u) => {
   const assignments = parseJSON(u.assignments, []);
   const currentSkill = parseJSON(u.currentSkill, {});
+  const lastEvalDocData = u.lastEvalDocData !== undefined ? parseJSON(u.lastEvalDocData, {}) : null;
 
   // Resolve TRUE primary level: Check against sub-section ID since currentSkill is keyed by subSectionId
   let resolvedPrimaryLevel = null;
@@ -350,10 +351,16 @@ export const formatUser = (u) => {
     targetLineId: u.targetLineId,
     targetSubSectionId: u.targetSubSectionId,
     targetStationId: u.targetStationId,
-    mentorLimit: u.mentorLimit != null ? Number(u.mentorLimit) : 0
+    mentorLimit: u.mentorLimit != null ? Number(u.mentorLimit) : 0,
+    ...(lastEvalDocData !== null ? {
+      lastEvalDocNo: lastEvalDocData?.docNo || null,
+      lastEvalApproved: lastEvalDocData?.approved || null,
+      lastEvalConfirmed: lastEvalDocData?.confirmed || null
+    } : {})
   };
   delete formatted.password;
   delete formatted.refreshToken;
+  delete formatted.lastEvalDocData;
   return formatted;
 };
 
@@ -723,12 +730,12 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const includeEvaluationInfo = req.query.includeEvaluationInfo === "true";
   const evalJoinSQL = includeEvaluationInfo ? `
     OUTER APPLY (
-      SELECT TOP 1 sme.updatedAt as lastEvalDate, sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod
+      SELECT TOP 1 sme.updatedAt as lastEvalDate, sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod, sme.docData as lastEvalDocData
       FROM skill_matrix_evaluations sme
       WHERE sme.studentId = u.id
       ORDER BY sme.sheetIndex DESC, sme.createdAt DESC
     ) eval_res` : "";
-  const evalSelectSQL = includeEvaluationInfo ? ", eval_res.lastEvalDate, eval_res.lastEvalSheetIndex, eval_res.lastEvalPeriod" : "";
+  const evalSelectSQL = includeEvaluationInfo ? ", eval_res.lastEvalDate, eval_res.lastEvalSheetIndex, eval_res.lastEvalPeriod, eval_res.lastEvalDocData" : "";
 
   // --- NEW: Calculate Present/Absent counts for the cards ---
   const excludeCounts = req.query.excludeCounts === "true";

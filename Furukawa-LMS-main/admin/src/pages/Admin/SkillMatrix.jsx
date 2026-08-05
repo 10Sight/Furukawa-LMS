@@ -2535,19 +2535,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                         <th className="p-3 border-b text-left">Current Level</th>
                                         <th className="p-3 border-b text-left">Primary Station (Sub-Section)</th>
                                         <th className="p-3 border-b text-left">Current Sheet (Year)</th>
+                                        <th className="p-3 border-b text-left">Document Number</th>
+                                        <th className="p-3 border-b text-left">Approved / Confirmed Status</th>
                                         <th className="p-3 border-b text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {isEvalUsersFetching ? (
                                         <tr>
-                                            <td colSpan={7} className="text-center py-10">
+                                            <td colSpan={9} className="text-center py-10">
                                                 <IconLoader className="animate-spin h-6 w-6 mx-auto text-gray-400" />
                                             </td>
                                         </tr>
                                     ) : paginatedEvalUsers.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="text-center py-10 text-gray-400 italic">
+                                            <td colSpan={9} className="text-center py-10 text-gray-400 italic">
                                                 No operators found matching the criteria.
                                             </td>
                                         </tr>
@@ -2572,6 +2574,17 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     <td className="p-3">{stationLabel || "-"}</td>
                                                     <td className="p-3">
                                                         {u.lastEvalSheetIndex ? `Sheet ${u.lastEvalSheetIndex}${evalYear ? ` (${evalYear})` : ""}` : "-"}
+                                                    </td>
+                                                    <td className="p-3">{u.lastEvalDocNo || "—"}</td>
+                                                    <td className="p-3">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <span className={u.lastEvalApproved ? (u.lastEvalApproved.startsWith('Approved') ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold') : 'text-gray-400 italic'}>
+                                                                {u.lastEvalApproved || "Not approved"}
+                                                            </span>
+                                                            <span className={u.lastEvalConfirmed ? (u.lastEvalConfirmed.startsWith('Approved') ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold') : 'text-gray-400 italic'}>
+                                                                {u.lastEvalConfirmed || "Not confirmed"}
+                                                            </span>
+                                                        </div>
                                                     </td>
                                                     <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
                                                         <Button

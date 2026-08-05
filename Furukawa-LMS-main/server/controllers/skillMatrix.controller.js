@@ -955,7 +955,11 @@ const saveSkillMatrixEvaluation = asyncHandler(async (req, res) => {
 const listAllEvaluationSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId, search } = req.query;
     const rows = await SkillMatrixEvaluation.listAll({ departmentId, sectionId, lineId, subSectionId, search });
-    res.status(200).json(new ApiResponse(200, rows, "Evaluation sheets fetched successfully"));
+    const parsedRows = (rows || []).map(row => ({
+        ...row,
+        docData: parseJSON(row.docData, {})
+    }));
+    res.status(200).json(new ApiResponse(200, parsedRows, "Evaluation sheets fetched successfully"));
 });
 
 /**

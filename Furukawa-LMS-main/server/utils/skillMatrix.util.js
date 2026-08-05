@@ -165,11 +165,14 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
         ? parseInt(periodMatch[2], 10)
         : Math.floor(new Date(evalDate).getMonth() / 3) + 1;
 
-    const [uRows] = await executeQuery(
-        "SELECT fullName, empId, departmentId, sectionId, subSectionId, lineId, shift FROM users WHERE id = ?",
-        [studentId]
-    );
-    const user = uRows[0];
+    // User.findById resolves departmentId/sectionId/lineId through the same
+    // COALESCE(own column, derived from lineId/subSectionId) fallback chain used
+    // everywhere else in the app (see User.findOne/findById in auth.model.js) — a
+    // raw `SELECT sectionId FROM users` here would miss students whose section is
+    // only derivable via their line/sub-section, and silently sync into the wrong
+    // (or a NULL-section) plan that never shows up under the section the admin
+    // actually selects in the Skill Upgradation Plan screen.
+    const user = await User.findById(studentId);
     if (!user || !user.departmentId) return;
 
     const [sRows] = await executeQuery(
@@ -188,17 +191,14 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
     const userKey = String(studentId);
     let row = tableData[userKey];
     if (!row) {
-        let modelLine = "";
-        let station = "";
-        if (user.lineId) {
-            const [lRows] = await executeQuery("SELECT name FROM [lines] WHERE id = ?", [user.lineId]);
-            modelLine = lRows[0]?.name || "";
-        }
-        if (user.subSectionId) {
-            const [ssRows] = await executeQuery("SELECT name FROM sub_sections WHERE id = ?", [user.subSectionId]);
-            station = ssRows[0]?.name || "";
-        }
-        row = { ...EMPTY_UPGRADATION_ROW, userName: user.fullName || "", cardNo: user.empId || "", shift: user.shift || "", modelLine, station };
+        row = {
+            ...EMPTY_UPGRADATION_ROW,
+            userName: user.fullName || "",
+            cardNo: user.empId || "",
+            shift: user.shift || "",
+            modelLine: user.lineName || "",
+            station: user.subSectionName || "",
+        };
     }
 
     row[`q${quarter}DateActual`] = evalDate;

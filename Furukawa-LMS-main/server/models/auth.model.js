@@ -532,9 +532,22 @@ class User {
             await migrationHelper.ensureColumnExists('users', 'targetSubSectionId', 'INT NULL');
             await migrationHelper.ensureColumnExists('users', 'targetStationId', 'INT NULL');
 
-            // Ensure email is nullable
+            // Ensure email is nullable (only if it isn't already, so a routine restart doesn't
+            // take a schema-modification lock on the whole table every time)
             try {
-                await executeQuery("ALTER TABLE users ALTER COLUMN email NVARCHAR(255) NULL");
+                const [emailColRows] = await executeQuery(`
+                    SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'email'
+                `);
+                const emailCol = emailColRows[0];
+                const emailAlreadyApplied = emailCol
+                    && emailCol.DATA_TYPE.toLowerCase() === 'nvarchar'
+                    && emailCol.CHARACTER_MAXIMUM_LENGTH === 255
+                    && emailCol.IS_NULLABLE === 'YES';
+                if (!emailAlreadyApplied) {
+                    await executeQuery("ALTER TABLE users ALTER COLUMN email NVARCHAR(255) NULL", [], { longRunning: true });
+                }
             } catch (err) {
                 console.error("Migration error making email nullable:", err);
             }

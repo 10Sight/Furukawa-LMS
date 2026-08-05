@@ -155,11 +155,11 @@ export const normalizeEvaluationDate = (dateStr) => {
 };
 
 const EMPTY_UPGRADATION_ROW = {
-    userName: "", cardNo: "", shift: "", modelLine: "", station: "",
-    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
-    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
-    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
-    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "",
+    userName: "", cardNo: "", modelLine: "", station: "",
+    q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "", q1Shift: "",
+    q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "", q2Shift: "",
+    q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "", q3Shift: "",
+    q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "", q4Shift: "",
 };
 
 /**
@@ -210,15 +210,16 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
             ...EMPTY_UPGRADATION_ROW,
             userName: user.fullName || "",
             cardNo: user.empId || "",
-            shift: user.shift || "",
             modelLine: user.lineName || "",
             station: user.subSectionName || "",
+            q1Shift: user.shift || "", q2Shift: user.shift || "", q3Shift: user.shift || "", q4Shift: user.shift || "",
         };
     }
 
     row[`q${quarter}DateActual`] = evalDate;
     row[`q${quarter}Skill`] = earnedLevelName;
     row[`q${quarter}Status`] = 'Completed';
+    row[`q${quarter}Shift`] = user.shift || row[`q${quarter}Shift`] || "";
 
     if (quarter < 4) {
         const earnedObj = activeConfig.levels.find(l => l.name.toUpperCase() === earnedLevelName.toUpperCase());

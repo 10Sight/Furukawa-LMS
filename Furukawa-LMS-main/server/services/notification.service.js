@@ -328,7 +328,7 @@ class NotificationService {
                 await this._fillMultiSkillSheet(worksheet, departmentId, formData, highlightUserIds);
                 break;
             case "Skill Upgradation Sheet":
-                await this._fillMultiSkillSheet(worksheet, departmentId, formData, highlightUserIds);
+                await this._fillSkillUpgradationSheet(worksheet, departmentId, formData, highlightUserIds);
                 break;
             case "Handover Sheet":
                 await this._fillHandoverSheet(worksheet, departmentId, formData);
@@ -543,6 +543,128 @@ class NotificationService {
         // --- Footer Section ---
         const footerRowNumber = worksheet.lastRow.number + 2;
         worksheet.mergeCells(footerRowNumber, 1, footerRowNumber, 18);
+        const footerCell = worksheet.getCell(footerRowNumber, 1);
+        footerCell.value = 'FRM-WH-QA-236 | REV: 01 | REV DATE: 01.01.2023 | PAGE: 1 OF 1';
+        footerCell.font = { italic: true, size: 9 };
+        footerCell.alignment = { horizontal: 'center' };
+    }
+
+    // Skill Upgradation Plan's tableData already carries each row's own userName/cardNo/
+    // modelLine/station (denormalized at save time, same as the live admin table), so rows
+    // are built straight from tableData rather than re-querying students by department —
+    // that also avoids _fillMultiSkillSheet's broad department-name/id matching, which isn't
+    // scoped to the specific section/year this plan actually belongs to.
+    static async _fillSkillUpgradationSheet(worksheet, departmentId, formData, highlightUserIds = new Set()) {
+        const { year, tableData = {} } = formData || {};
+
+        const department = await Department.findById(departmentId);
+        if (!department) {
+            logger.warn(`[NotificationService] Department ${departmentId} not found for Skill Upgradation Sheet`);
+            return;
+        }
+
+        const rows = Object.entries(tableData).filter(([userId, row]) =>
+            userId !== '__removedUserIds' && row && typeof row === 'object' && (row.userName || row.cardNo)
+        );
+
+        // --- Header Section ---
+        worksheet.mergeCells(1, 1, 1, 25);
+        const companyCell = worksheet.getCell(1, 1);
+        companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
+        companyCell.font = { bold: true, size: 10 };
+        companyCell.alignment = { horizontal: 'right' };
+
+        worksheet.mergeCells(2, 1, 2, 25);
+        const titleCell = worksheet.getCell(2, 1);
+        titleCell.value = 'SKILL UPGRADATION PLAN & ACTUAL SHEET';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center' };
+
+        worksheet.mergeCells(3, 1, 3, 25);
+        const infoCell = worksheet.getCell(3, 1);
+        infoCell.value = `Department: ${department.name} | Year: ${year || new Date().getFullYear()} | Date: ${new Date().toLocaleDateString()}`;
+        infoCell.font = { bold: true };
+
+        // --- Table Headers ---
+        // Row 4: static columns (A-E) + 4 quarter group headers spanning 5 columns each
+        const row4Values = [
+            'Sr. No', 'Associates Name', 'Card No', 'Model & Line', 'Station',
+            'Jan-March', '', '', '', '',
+            'April-June', '', '', '', '',
+            'July-Sep', '', '', '', '',
+            'Oct-Dec', '', '', '', ''
+        ];
+        const row4 = worksheet.addRow(row4Values);
+
+        // Row 5: sub-headers, repeated per quarter
+        const quarterSubHeaders = ['Shift', 'Skill Level', 'Updation Date (Plan)', 'Updation Date (Actual)', 'Status'];
+        const row5Values = ['', '', '', '', '', ...quarterSubHeaders, ...quarterSubHeaders, ...quarterSubHeaders, ...quarterSubHeaders];
+        const row5 = worksheet.addRow(row5Values);
+
+        ['A', 'B', 'C', 'D', 'E'].forEach(col => worksheet.mergeCells(`${col}4:${col}5`));
+        worksheet.mergeCells('F4:J4');
+        worksheet.mergeCells('K4:O4');
+        worksheet.mergeCells('P4:T4');
+        worksheet.mergeCells('U4:Y4');
+
+        [row4, row5].forEach(row => {
+            row.eachCell(cell => this._applyHeaderStyle(cell));
+        });
+
+        // Set column widths
+        worksheet.getColumn(1).width = 8;
+        worksheet.getColumn(2).width = 25;
+        worksheet.getColumn(3).width = 15;
+        worksheet.getColumn(4).width = 18;
+        worksheet.getColumn(5).width = 15;
+        for (let i = 6; i <= 25; i++) {
+            worksheet.getColumn(i).width = 15;
+        }
+
+        // --- Data Rows ---
+        rows.forEach(([userId, data], index) => {
+            const rowValues = [
+                index + 1,
+                data.userName || "",
+                data.cardNo || "",
+                data.modelLine || "",
+                data.station || "",
+                data.q1Shift || data.shift || "",
+                data.q1Skill || "",
+                data.q1Date || "",
+                data.q1DateActual || "",
+                data.q1Status || "",
+                data.q2Shift || data.shift || "",
+                data.q2Skill || "",
+                data.q2Date || "",
+                data.q2DateActual || "",
+                data.q2Status || "",
+                data.q3Shift || data.shift || "",
+                data.q3Skill || "",
+                data.q3Date || "",
+                data.q3DateActual || "",
+                data.q3Status || "",
+                data.q4Shift || data.shift || "",
+                data.q4Skill || "",
+                data.q4Date || "",
+                data.q4DateActual || "",
+                data.q4Status || ""
+            ];
+
+            const row = worksheet.addRow(rowValues);
+            const isHighlighted = highlightUserIds && highlightUserIds.has(userId);
+            row.eachCell(cell => {
+                this._applyBorderStyle(cell);
+                if (isHighlighted) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF59D' } };
+                    cell.font = { ...(cell.font || {}), bold: true };
+                }
+            });
+        });
+
+        // --- Footer Section ---
+        const footerRowNumber = worksheet.lastRow.number + 2;
+        worksheet.mergeCells(footerRowNumber, 1, footerRowNumber, 25);
         const footerCell = worksheet.getCell(footerRowNumber, 1);
         footerCell.value = 'FRM-WH-QA-236 | REV: 01 | REV DATE: 01.01.2023 | PAGE: 1 OF 1';
         footerCell.font = { italic: true, size: 9 };

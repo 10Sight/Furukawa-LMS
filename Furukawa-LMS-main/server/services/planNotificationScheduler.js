@@ -145,7 +145,9 @@ class PlanNotificationScheduler {
                             userId,
                             userName: row.userName || '—',
                             cardNo: row.cardNo || '—',
-                            shift: row.shift || '—',
+                            // Skill Upgradation Plan stores Shift per-quarter (q1Shift, q2Shift,
+                            // ...); older saved plans only have a row-level shift, hence the fallback.
+                            shift: row[`${q.key}Shift`] || row.shift || '—',
                             // Multi-Skilling Plan stores Model & Line / Station per-quarter
                             // (q1ModelLine, q2ModelLine, ...); Skill Upgradation Plan still
                             // stores a single row-level modelLine/station, hence the fallback.

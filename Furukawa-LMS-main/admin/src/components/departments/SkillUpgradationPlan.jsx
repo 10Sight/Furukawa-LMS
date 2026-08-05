@@ -322,13 +322,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 userId,
                 userName: student.fullName || student.name || data.userName || "",
                 cardNo: student.cardNo || student.username || student.empId || data.cardNo || "",
-                shift: data.shift || "",
                 modelLine: data.modelLine || student.lineName || "",
                 station: data.station || student.subSectionName || "",
-                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
-                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
-                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
-                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
+                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "", q1Shift: data.q1Shift || data.shift || student.shift || "",
+                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "", q2Shift: data.q2Shift || data.shift || student.shift || "",
+                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || student.shift || "",
+                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || student.shift || "",
             });
         });
 
@@ -345,13 +344,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 userId,
                 userName: data.userName || "",
                 cardNo: data.cardNo || "",
-                shift: data.shift || "",
                 modelLine: data.modelLine || "",
                 station: data.station || "",
-                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "",
-                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "",
-                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "",
-                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "",
+                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "", q1Shift: data.q1Shift || data.shift || "",
+                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "", q2Shift: data.q2Shift || data.shift || "",
+                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || "",
+                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || "",
             });
         });
 
@@ -361,11 +359,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         for (let i = 0; i < BLANK_PADDING; i++) {
             finalRows.push({
                 rowId: `temp-${baseCount + i}-${Math.random()}`,
-                userId: "", userName: "", cardNo: "", shift: "", modelLine: "", station: "",
-                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
-                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
-                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
-                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "",
+                userId: "", userName: "", cardNo: "", modelLine: "", station: "",
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "", q1Shift: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "", q2Shift: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "", q3Shift: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "", q4Shift: "",
             });
         }
 
@@ -435,13 +433,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 userId: "",
                 userName: "",
                 cardNo: "",
-                shift: "",
                 modelLine: "",
                 station: "",
-                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
-                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "",
-                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "",
-                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: ""
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "", q1Shift: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "", q2Shift: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "", q3Shift: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "", q4Shift: ""
             }
         ]);
     };
@@ -487,25 +484,28 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 currentLineData[row.userId] = {
                     userName: row.userName || "",
                     cardNo: row.cardNo || "",
-                    shift: row.shift,
                     modelLine: row.modelLine || "",
                     station: row.station || "",
                     q1Skill: row.q1Skill,
                     q1Date: row.q1Date,
                     q1DateActual: row.q1DateActual,
                     q1Status: row.q1Status,
+                    q1Shift: row.q1Shift,
                     q2Skill: row.q2Skill,
                     q2Date: row.q2Date,
                     q2DateActual: row.q2DateActual,
                     q2Status: row.q2Status,
+                    q2Shift: row.q2Shift,
                     q3Skill: row.q3Skill,
                     q3Date: row.q3Date,
                     q3DateActual: row.q3DateActual,
                     q3Status: row.q3Status,
+                    q3Shift: row.q3Shift,
                     q4Skill: row.q4Skill,
                     q4Date: row.q4Date,
                     q4DateActual: row.q4DateActual,
-                    q4Status: row.q4Status
+                    q4Status: row.q4Status,
+                    q4Shift: row.q4Shift
                 };
             }
         });
@@ -632,7 +632,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar overscroll-contain"
                     style={{ WebkitOverflowScrolling: "touch" }}
                 >
-                    <table className="w-full min-w-[2600px] border-separate border-spacing-0 text-sm table-auto">
+                    <table className="w-full min-w-[2900px] border-separate border-spacing-0 text-sm table-auto">
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}
                             <tr className="h-12 [&>th]:border-b [&>th]:border-slate-300">
@@ -641,30 +641,33 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                 <th rowSpan="2" className={`${stickyFrozenHeader} w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '290px' }}>Card No</th>
                                 <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '410px' }}>Model & Line</th>
                                 <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`} style={{ left: '580px' }}>Station</th>
-                                <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Shift</th>
-                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap`}>Jan-March</th>
-                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap`}>April-June</th>
-                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap`}>July-Sep</th>
-                                <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap`}>Oct-Dec</th>
+                                <th colSpan="5" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap`}>Jan-March</th>
+                                <th colSpan="5" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap`}>April-June</th>
+                                <th colSpan="5" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-green-50 text-green-800 whitespace-nowrap`}>July-Sep</th>
+                                <th colSpan="5" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-purple-50 text-purple-800 whitespace-nowrap`}>Oct-Dec</th>
                                 <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-left font-bold align-middle whitespace-nowrap`}>Action</th>
                             </tr>
                             <tr className="bg-slate-50 [&>th]:border-b [&>th]:border-slate-300">
                                 {/* Jan-March */}
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Shift</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-amber-50 text-amber-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* April-June */}
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Shift</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-blue-50 text-blue-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* July-Sep */}
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Shift</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-green-50 text-green-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Status</th>
                                 {/* Oct-Dec */}
+                                <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Shift</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Skill Level</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Plan)</th>
                                 <th className={`${stickySubHeader} border-r border-slate-300 bg-purple-50 text-purple-800 p-1 text-center text-xs font-semibold whitespace-nowrap`}>Updation Date (Actual)</th>
@@ -747,11 +750,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                 </SelectContent>
                                             </Select>
                                         </td>
+                                        {/* Jan-March */}
                                         {/* Shift */}
-                                        <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
+                                        <td className="border-r border-slate-200 p-1 bg-amber-50/20 text-center whitespace-nowrap">
                                             <Select
-                                                value={row.shift || ""}
-                                                onValueChange={(val) => handleRowFieldChange(rowId, "shift", val)}
+                                                value={row.q1Shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q1Shift", val)}
                                                 disabled={!canManage}
                                             >
                                                 <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
@@ -765,8 +769,6 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                 </SelectContent>
                                             </Select>
                                         </td>
-
-                                        {/* Jan-March */}
                                         {/* Skill Level */}
                                         <td className="border-r border-slate-200 p-1 bg-amber-50/20 whitespace-nowrap">
                                             <Select
@@ -832,6 +834,24 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                         </td>
 
                                         {/* April-June */}
+                                        {/* Shift */}
+                                        <td className="border-r border-slate-200 p-1 bg-blue-50/20 text-center whitespace-nowrap">
+                                            <Select
+                                                value={row.q2Shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q2Shift", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="A">A</SelectItem>
+                                                    <SelectItem value="B">B</SelectItem>
+                                                    <SelectItem value="C">C</SelectItem>
+                                                    <SelectItem value="G">G</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
                                         {/* Skill Level */}
                                         <td className="border-r border-slate-200 p-1 bg-blue-50/20 whitespace-nowrap">
                                             <Select
@@ -897,6 +917,24 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                         </td>
 
                                         {/* July-Sep */}
+                                        {/* Shift */}
+                                        <td className="border-r border-slate-200 p-1 bg-green-50/20 text-center whitespace-nowrap">
+                                            <Select
+                                                value={row.q3Shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q3Shift", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="A">A</SelectItem>
+                                                    <SelectItem value="B">B</SelectItem>
+                                                    <SelectItem value="C">C</SelectItem>
+                                                    <SelectItem value="G">G</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
                                         {/* Skill Level */}
                                         <td className="border-r border-slate-200 p-1 bg-green-50/20 whitespace-nowrap">
                                             <Select
@@ -962,6 +1000,24 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                         </td>
 
                                         {/* Oct-Dec */}
+                                        {/* Shift */}
+                                        <td className="border-r border-slate-200 p-1 bg-purple-50/20 text-center whitespace-nowrap">
+                                            <Select
+                                                value={row.q4Shift || ""}
+                                                onValueChange={(val) => handleRowFieldChange(rowId, "q4Shift", val)}
+                                                disabled={!canManage}
+                                            >
+                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                                                    <SelectValue placeholder="-" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="A">A</SelectItem>
+                                                    <SelectItem value="B">B</SelectItem>
+                                                    <SelectItem value="C">C</SelectItem>
+                                                    <SelectItem value="G">G</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
                                         {/* Skill Level */}
                                         <td className="border-r border-slate-200 p-1 bg-purple-50/20 whitespace-nowrap">
                                             <Select
@@ -1041,7 +1097,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
                             {filteredRows.length === 0 && (
                                 <tr>
-                                    <td colSpan="23" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
+                                    <td colSpan="26" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
                                         No rows match the search filter.
                                     </td>
                                 </tr>

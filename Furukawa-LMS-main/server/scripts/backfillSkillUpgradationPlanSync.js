@@ -1,7 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
-import { syncToSkillUpgradationPlan } from "../utils/skillMatrix.util.js";
+import { syncToSkillUpgradationPlan, normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 
 // One-time backfill for evaluations that were saved (and passed a level) before
 // syncToSkillUpgradationPlan resolved a student's department/section through the
@@ -17,20 +17,6 @@ import { syncToSkillUpgradationPlan } from "../utils/skillMatrix.util.js";
 // Usage:
 //   node scripts/backfillSkillUpgradationPlanSync.js          (dry run, logs only)
 //   node scripts/backfillSkillUpgradationPlanSync.js --apply  (writes changes)
-
-// Mirrors admin/src/components/admin/SkillMatrixCertificate.jsx's convertToYYYYMMDD so
-// old sheets saved with the legacy "DD - MM - YYYY" evaluation date still resync with
-// their real date instead of falling back to today's date.
-const convertToYYYYMMDD = (dateStr) => {
-    if (!dateStr) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    const legacyMatch = /^(\d{2})\s*-\s*(\d{2})\s*-\s*(\d{4})$/.exec(dateStr);
-    if (legacyMatch) {
-        const [, dd, mm, yyyy] = legacyMatch;
-        return `${yyyy}-${mm}-${dd}`;
-    }
-    return null;
-};
 
 const parseJSON = (data, fallback = {}) => {
     if (typeof data === "string") {
@@ -57,7 +43,7 @@ async function backfill() {
 
     for (const sheet of sheets) {
         const headerData = parseJSON(sheet.headerData, {});
-        const dateOfEvaluation = convertToYYYYMMDD(headerData.dateOfEvaluation);
+        const dateOfEvaluation = normalizeEvaluationDate(headerData.dateOfEvaluation);
 
         console.log(`[sheet ${sheet.id}] studentId=${sheet.studentId} level=${sheet.earnedLevel} period=${sheet.period} evalDate=${dateOfEvaluation || "(unparsable — will default to today)"}`);
 

@@ -1,11 +1,13 @@
 import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 import SkillUpgradationPlanConfig from "../models/skillUpgradationPlanConfig.model.js";
+import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { syncAllPassedEvaluationsForPlan } from "../utils/skillMatrix.util.js";
 
 // Get skill upgradation plan by department
 export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res) => {
@@ -58,7 +60,7 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         }
     }
 
-    const saved = await SkillUpgradationPlan.upsert({
+    let saved = await SkillUpgradationPlan.upsert({
         departmentId: parseInt(departmentId),
         sectionId: sectionId ? parseInt(sectionId) : null,
         year: year ? parseInt(year) : null,
@@ -67,6 +69,28 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
         ...revisionSnapshot,
     });
+
+    // Brand-new, still-empty plan: auto-populate it with whatever's already been evaluated
+    // and passed for students in this department/section, so "Create Plan" doesn't start
+    // blank when certificates were already filled out before the plan existed.
+    const incomingTableDataIsEmpty = !tableData || Object.keys(tableData).length === 0;
+    if (!existing && incomingTableDataIsEmpty) {
+        try {
+            const activeConfig = await CourseLevelConfig.getActiveConfig();
+            await syncAllPassedEvaluationsForPlan({
+                departmentId: parseInt(departmentId),
+                sectionId: sectionId ? parseInt(sectionId) : null,
+                activeConfig
+            });
+            saved = await SkillUpgradationPlan.findByHierarchy(
+                parseInt(departmentId),
+                sectionId ? parseInt(sectionId) : null,
+                year ? parseInt(year) : null
+            );
+        } catch (err) {
+            console.error("[SkillUpgradationPlan] Failed to auto-populate new plan from evaluations:", err);
+        }
+    }
 
     const action = existing ? "SAVE_SKILL_UPGRADATION_PLAN" : "CREATE_SKILL_UPGRADATION_PLAN";
     const rowCount = Object.keys(saved.tableData || {}).filter(k => k !== "__removedUserIds").length;

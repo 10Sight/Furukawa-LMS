@@ -137,6 +137,23 @@ const calculateFutureDate = (dateStr, dayCount) => {
     return `${yyyy}-${mm}-${dd}`;
 };
 
+// Mirrors admin/src/components/admin/SkillMatrixCertificate.jsx's convertToYYYYMMDD.
+// Old sheets saved before the date-picker fix still hold "DD - MM - YYYY" in headerData
+// until someone re-touches the field, so any caller passing a raw dateOfEvaluation through
+// (live saves of un-edited old sheets, the backfill script, plan auto-populate) needs this —
+// centralized here so `new Date("04 - 08 - 2026")` (which silently fails to parse) can't
+// cause the sync to fall back to "today" for a certificate evaluated on a real past date.
+export const normalizeEvaluationDate = (dateStr) => {
+    if (!dateStr) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const legacyMatch = /^(\d{2})\s*-\s*(\d{2})\s*-\s*(\d{4})$/.exec(dateStr);
+    if (legacyMatch) {
+        const [, dd, mm, yyyy] = legacyMatch;
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    return null;
+};
+
 const EMPTY_UPGRADATION_ROW = {
     userName: "", cardNo: "", shift: "", modelLine: "", station: "",
     q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "",
@@ -155,9 +172,7 @@ const EMPTY_UPGRADATION_ROW = {
 export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, dateOfEvaluation, period, activeConfig }) => {
     if (!earnedLevelName || earnedLevelName === 'L0' || !activeConfig?.levels?.length) return;
 
-    const evalDate = dateOfEvaluation && !isNaN(new Date(dateOfEvaluation).getTime())
-        ? dateOfEvaluation
-        : new Date().toISOString().slice(0, 10);
+    const evalDate = normalizeEvaluationDate(dateOfEvaluation) || new Date().toISOString().slice(0, 10);
     const year = new Date(evalDate).getFullYear();
 
     const periodMatch = /^(\d{4})-Q([1-4])$/.exec(period || "");
@@ -236,6 +251,52 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
         tableData,
         userName: "auto-sync",
     });
+};
+
+/**
+ * Populates a brand-new Skill Upgradation Plan with every already-passed, active evaluation
+ * for students who resolve (via the same sectionId/lineId/subSectionId fallback chain
+ * User.findById uses) into the given department/section, so a plan created after
+ * certificates were already evaluated doesn't start blank. Reuses syncToSkillUpgradationPlan
+ * per student so the same idempotent/no-downgrade quarter logic applies here as it does on
+ * every certificate save.
+ */
+export const syncAllPassedEvaluationsForPlan = async ({ departmentId, sectionId, activeConfig }) => {
+    if (!departmentId || !activeConfig?.levels?.length) return;
+
+    const [rows] = await executeQuery(
+        `SELECT DISTINCT sme.studentId, sme.headerData, sme.period, sme.earnedLevel
+         FROM skill_matrix_evaluations sme
+         JOIN users u ON u.id = sme.studentId
+         OUTER APPLY (
+             SELECT TOP 1 ss.lineId as ssLineId FROM sub_sections ss WHERE ss.id = u.subSectionId
+         ) ss_res
+         OUTER APPLY (
+             SELECT TOP 1 l.sectionId as lSectionId, l.department as lDeptId FROM [lines] l WHERE l.id = COALESCE(u.lineId, ss_res.ssLineId)
+         ) l_res
+         OUTER APPLY (
+             SELECT TOP 1 s.departmentId as sDeptId FROM [sections] s WHERE s.id = COALESCE(u.sectionId, l_res.lSectionId)
+         ) s_res
+         WHERE sme.isActive = 1 AND sme.earnedLevel IS NOT NULL AND sme.earnedLevel <> 'L0'
+           AND COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId) = ?
+           AND (? IS NULL OR COALESCE(u.sectionId, l_res.lSectionId) = ?)`,
+        [departmentId, sectionId, sectionId]
+    );
+
+    for (const row of rows) {
+        const headerData = typeof row.headerData === 'string' ? JSON.parse(row.headerData || '{}') : (row.headerData || {});
+        try {
+            await syncToSkillUpgradationPlan({
+                studentId: row.studentId,
+                earnedLevelName: row.earnedLevel,
+                dateOfEvaluation: headerData.dateOfEvaluation,
+                period: row.period,
+                activeConfig
+            });
+        } catch (err) {
+            console.error(`[syncAllPassedEvaluationsForPlan] Failed for studentId=${row.studentId}:`, err.message);
+        }
+    }
 };
 
 export const getPeriodFromDate = (date = new Date()) => {

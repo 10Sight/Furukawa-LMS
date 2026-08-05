@@ -445,8 +445,23 @@ class User {
                         ALTER TABLE users DROP CONSTRAINT UQ_users_phoneNumber;
                 `);
 
-                // 2. Make column nullable
-                await executeQuery("ALTER TABLE users ALTER COLUMN phoneNumber NVARCHAR(50) NULL");
+                // 2. Make column nullable (only if it isn't already, so a routine restart
+                // doesn't take a schema-modification lock on the whole table every time)
+                const [colRows] = await executeQuery(`
+                    SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'phoneNumber'
+                `);
+                const col = colRows[0];
+                const alreadyApplied = col
+                    && col.DATA_TYPE.toLowerCase() === 'nvarchar'
+                    && col.CHARACTER_MAXIMUM_LENGTH === 50
+                    && col.IS_NULLABLE === 'YES';
+                if (!alreadyApplied) {
+                    // Same reasoning as the index builds above: altering an already-populated
+                    // column can exceed the standard 30s timeout, so use the long-running pool.
+                    await executeQuery("ALTER TABLE users ALTER COLUMN phoneNumber NVARCHAR(50) NULL", [], { longRunning: true });
+                }
             } catch (err) {
                 console.error("Migration error for phoneNumber:", err);
             }

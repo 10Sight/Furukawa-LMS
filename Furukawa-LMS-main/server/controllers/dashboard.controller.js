@@ -295,10 +295,36 @@ const getDashboardDesignationShutterExclusionSql = (alias = "u") => `
 `;
 
 // Base population shared by every Dashboard Total Manpower / Users Total query.
-// Employee lifecycle for these graphs is applied separately from users.statusHistory.
+// Keep this aligned with the SDP employee population before applying date-wise statusHistory.
+// Historical reconstruction needs PRESENT and LEFT users, but every other current status is excluded.
 const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
-    AND ${alias}.isDeleted = 0
-    AND ${alias}.isTemporary = 0
+    AND ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ISNULL(${alias}.isEmployee, 0) = 1
+    AND ${alias}.empId IS NOT NULL
+    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
+    AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, ''))))) IN ('PRESENT', 'LEFT')
+    AND ISNULL(${alias}.designation, '') NOT IN (
+        '1076',
+        '1077',
+        '1081',
+        'DRIVER',
+        'Supervisor',
+        'Staff'
+    )
+    ${getDashboardDesignationShutterExclusionSql(alias)}
+`;
+
+// Rejoining Trend uses the same employee/master exclusions as Total Manpower,
+// but current status is intentionally not restricted. Rejoin events are historical
+// statusHistory events and must remain visible even if the employee later became
+// LEFT, ON_LEAVE, or another employment status.
+const getRejoiningTrendBaseEligibilitySql = (alias = "u") => `
+    AND ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ISNULL(${alias}.isEmployee, 0) = 1
+    AND ${alias}.empId IS NOT NULL
+    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
     AND ISNULL(${alias}.designation, '') NOT IN (
         '1076',
         '1077',
@@ -314,7 +340,17 @@ const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
 // Keep their existing current-status population unchanged. Tenure calculations continue
 // to use the dedicated users.joiningDate and users.leavingDate columns as requested.
 const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
-    ${getTotalManpowerBaseEligibilitySql(alias)}
+    AND ${alias}.isDeleted = 0
+    AND ${alias}.isTemporary = 0
+    AND ISNULL(${alias}.designation, '') NOT IN (
+        '1076',
+        '1077',
+        '1081',
+        'DRIVER',
+        'Supervisor',
+        'Staff'
+    )
+    ${getDashboardDesignationShutterExclusionSql(alias)}
     AND ${alias}.status = 'PRESENT'
 `;
 
@@ -989,12 +1025,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     // Total Manpower lifecycle rule:
     // 1) statusHistory is authoritative when it contains at least one valid joiningDate.
-    // 2) Each history item represents one employment interval: joiningDate <= selected date
-    //    and leavingDate is blank/null or selected date <= leavingDate.
-    // 3) Therefore a LEFT -> PRESENT rejoin creates a gap that is not counted, and the user
-    //    starts counting again from the new joiningDate.
-    // 4) Old users without a usable statusHistory array retain the previous column fallback.
-    // 5) Tenure graphs do not call this helper; they keep users.joiningDate/leavingDate directly.
+    // 2) Only PRESENT employment periods are active/open. A closed LEFT period is counted
+    //    only for its historical worked dates: joiningDate <= date < leavingDate.
+    // 3) An open history period is counted only when both history status and users.status
+    //    are PRESENT. Other statuses cannot enter Total Manpower.
+    // 4) leavingDate is exclusive, so an employee LEFT on 23-Jul is removed on 23-Jul itself.
+    // 5) A rejoined employee starts counting again from the new joiningDate.
+    // 6) Old users without usable history retain the PRESENT/LEFT legacy-column fallback.
+    // 7) Tenure graphs do not call this helper; they keep users.joiningDate/leavingDate directly.
     const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
         const historyJsonSql = `CASE
             WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
@@ -1008,6 +1046,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         const historyLeavingDateSql = userDateToDateSql(
             `JSON_VALUE(historyRow.[value], '$.leavingDate')`
         );
+        const historyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(
+            NVARCHAR(100),
+            ISNULL(JSON_VALUE(historyRow.[value], '$.status'), '')
+        ))))`;
 
         const legacyJoiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
         const legacyLeavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
@@ -1019,14 +1061,29 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 FROM OPENJSON(${historyJsonSql}) historyRow
                 CROSS APPLY (
                     SELECT
+                        ${historyStatusSql} AS employmentStatus,
                         ${historyJoiningDateSql} AS joiningDate,
                         ${historyLeavingDateSql} AS leavingDate
                 ) historyPeriod
                 WHERE historyPeriod.joiningDate IS NOT NULL
                   AND historyPeriod.joiningDate <= ${asOfDateSql}
                   AND (
-                        historyPeriod.leavingDate IS NULL
-                        OR historyPeriod.leavingDate >= ${asOfDateSql}
+                        (
+                            historyPeriod.employmentStatus = 'PRESENT'
+                            AND (
+                                historyPeriod.leavingDate IS NULL
+                                OR historyPeriod.leavingDate > ${asOfDateSql}
+                            )
+                            AND (
+                                historyPeriod.leavingDate IS NOT NULL
+                                OR ${legacyStatusSql} = 'PRESENT'
+                            )
+                        )
+                        OR (
+                            historyPeriod.employmentStatus = 'LEFT'
+                            AND historyPeriod.leavingDate IS NOT NULL
+                            AND historyPeriod.leavingDate > ${asOfDateSql}
+                        )
                       )
             )
             OR (
@@ -1049,7 +1106,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     OR (
                         ${legacyStatusSql} = 'LEFT'
                         AND ${legacyLeavingDateSql} IS NOT NULL
-                        AND ${legacyLeavingDateSql} >= ${asOfDateSql}
+                        AND ${legacyLeavingDateSql} > ${asOfDateSql}
                         AND (
                             ${legacyJoiningDateSql} IS NULL
                             OR ${legacyJoiningDateSql} <= ${asOfDateSql}
@@ -1068,6 +1125,171 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 `CONVERT(DATE, '${safeAsOfDate}', 23)`
             )}
         `;
+    };
+
+    // PERFORMANCE FIX:
+    // SQL Server only fetches the eligible employee rows. statusHistory is parsed once
+    // in Node.js, which avoids correlated OPENJSON calls for every graph date and avoids
+    // SQL Server aggregate/subquery errors.
+    const parseManpowerDateKey = (value) => {
+        if (value === null || value === undefined) return null;
+
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return (
+                value.getFullYear() * 10000
+                + (value.getMonth() + 1) * 100
+                + value.getDate()
+            );
+        }
+
+        const raw = String(value).trim();
+        const upper = raw.toUpperCase();
+        if (!raw || upper === 'NULL' || upper === 'UNDEFINED' || upper === 'INVALID DATE') {
+            return null;
+        }
+
+        let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (match) {
+            const year = Number(match[1]);
+            const month = Number(match[2]);
+            const day = Number(match[3]);
+            if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                return year * 10000 + month * 100 + day;
+            }
+        }
+
+        // Match the SQL helper priority: DD/MM/YYYY and DD-MM-YYYY before US formats.
+        match = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+        if (match) {
+            const day = Number(match[1]);
+            const month = Number(match[2]);
+            const year = Number(match[3]);
+            if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                return year * 10000 + month * 100 + day;
+            }
+        }
+
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+            return (
+                parsed.getFullYear() * 10000
+                + (parsed.getMonth() + 1) * 100
+                + parsed.getDate()
+            );
+        }
+
+        return null;
+    };
+
+    const getValidStatusHistoryPeriods = (userRow = {}) => {
+        let history = userRow.statusHistory;
+
+        if (typeof history === 'string') {
+            const trimmed = history.trim();
+            if (!trimmed) return [];
+            try {
+                history = JSON.parse(trimmed);
+            } catch (_) {
+                return [];
+            }
+        }
+
+        if (!Array.isArray(history)) return [];
+
+        return history
+            .map((item) => ({
+                status: String(item?.status || '').trim().toUpperCase(),
+                joiningDateKey: parseManpowerDateKey(item?.joiningDate),
+                leavingDateKey: parseManpowerDateKey(item?.leavingDate),
+            }))
+            .filter((item) => item.joiningDateKey !== null);
+    };
+
+    // REJOINING TREND ONLY:
+    // statusHistory ka first valid joiningDate original joining hai and graph me show nahi hoga.
+    // Second, third, fourth... every valid joiningDate is a separate rejoin event and is shown
+    // on its own date. users.joiningDate fallback intentionally use nahi hota.
+    const getStatusHistoryRejoiningDateKeys = (userRow = {}) => {
+        let history = userRow.statusHistory;
+
+        if (typeof history === 'string') {
+            const trimmed = history.trim();
+            if (!trimmed) return [];
+            try {
+                history = JSON.parse(trimmed);
+            } catch (_) {
+                return [];
+            }
+        }
+
+        if (!Array.isArray(history) || history.length < 2) return [];
+
+        const validJoiningDateKeys = history
+            .map((item) => parseManpowerDateKey(item?.joiningDate))
+            .filter((dateKey) => dateKey !== null);
+
+        // First valid joiningDate = original joining. Remaining dates = rejoining events.
+        return validJoiningDateKeys.slice(1);
+    };
+
+    const prepareManpowerUser = (userRow = {}) => ({
+        id: userRow.id,
+        currentStatus: String(userRow.status || '').trim().toUpperCase(),
+        historyPeriods: getValidStatusHistoryPeriods(userRow),
+        legacyJoiningDateKey: parseManpowerDateKey(userRow.joiningDate),
+        legacyLeavingDateKey: parseManpowerDateKey(userRow.leavingDate),
+    });
+
+    const isUserActiveForManpowerDate = (preparedUser, asOfDateValue) => {
+        const asOfDateKey = parseManpowerDateKey(asOfDateValue);
+        if (asOfDateKey === null) return false;
+
+        const currentStatus = preparedUser?.currentStatus || '';
+        const historyPeriods = preparedUser?.historyPeriods || [];
+
+        if (historyPeriods.length > 0) {
+            return historyPeriods.some((period) => {
+                if (period.joiningDateKey > asOfDateKey) return false;
+
+                // Closed LEFT period reconstructs only dates actually worked.
+                if (period.status === 'LEFT') {
+                    return (
+                        period.leavingDateKey !== null
+                        && asOfDateKey < period.leavingDateKey
+                    );
+                }
+
+                if (period.status !== 'PRESENT') return false;
+
+                // Closed PRESENT period is historical and uses the same exclusive leaving date.
+                if (period.leavingDateKey !== null) {
+                    return asOfDateKey < period.leavingDateKey;
+                }
+
+                // Open/current period is valid only when the current users.status is PRESENT.
+                return currentStatus === 'PRESENT';
+            });
+        }
+
+        // Legacy fallback for users without any valid statusHistory joiningDate.
+        const joinedByDate = (
+            preparedUser.legacyJoiningDateKey === null
+            || preparedUser.legacyJoiningDateKey <= asOfDateKey
+        );
+
+        if (currentStatus === 'PRESENT') {
+            return joinedByDate;
+        }
+
+        if (currentStatus === 'LEFT') {
+            return (
+                joinedByDate
+                && preparedUser.legacyLeavingDateKey !== null
+                && asOfDateKey < preparedUser.legacyLeavingDateKey
+            );
+        }
+
+        return false;
     };
 
     let dailyHeadcountByDate = {};
@@ -1508,11 +1730,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     };
 
     let snapshotTotal = 0;
+    let rejoiningData = [];
 
     // TOTAL MANPOWER — statusHistory DATE-WISE EMPLOYMENT INTERVAL LOGIC.
-    // A user is counted for every date covered by any statusHistory interval.
+    // Open/current periods count only when status is PRESENT.
+    // A closed LEFT period still counts its actual historical worked dates.
     // Example: LEFT interval ends 20-Jul and PRESENT interval starts 04-Aug:
-    // count through 20-Jul, exclude 21-Jul to 03-Aug, count again from 04-Aug.
+    // count through 19-Jul, exclude 20-Jul to 03-Aug, count again from 04-Aug.
+    // Every date is calculated independently; no end-date snapshot is copied across the range.
     // Users without valid statusHistory continue through the legacy column fallback.
     const userHierConditions = [];
     const userHierParams = [];
@@ -1541,59 +1766,122 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         : "";
 
     try {
-        const dateValuesSql = loopDates
-            .map((dateObj) => `('${formatDateLocal(dateObj)}')`)
-            .join(",");
-
-        const dailyHeadcountSql = `
-            WITH DateRange AS (
-                SELECT CONVERT(DATE, valuesTable.fullDate, 23) AS fullDate
-                FROM (VALUES ${dateValuesSql}) valuesTable(fullDate)
-            )
+        // Fetch the eligible employee population once. Date-wise active counts are then
+        // calculated in memory, so there is no OPENJSON x date cross-product in SQL Server.
+        const eligibleManpowerSql = `
             SELECT
-                CONVERT(VARCHAR, d.fullDate, 23) AS fullDate,
-                COUNT(DISTINCT CASE
-                    WHEN ${getStatusHistoryActiveConditionSql("u", "d.fullDate")}
-                    THEN u.id
-                END) AS total
-            FROM DateRange d
-            LEFT JOIN users u
-                ON 1=1
-               ${getTotalManpowerBaseEligibilitySql("u")}
-               ${userHierCondition}
-            GROUP BY d.fullDate
-            ORDER BY d.fullDate
+                u.id,
+                u.status,
+                u.joiningDate,
+                u.leavingDate,
+                u.statusHistory
+            FROM users u
+            WHERE 1=1
+              ${getTotalManpowerBaseEligibilitySql("u")}
+              ${userHierCondition}
         `;
 
-        const [headcountRows] = await executeQuery(dailyHeadcountSql, userHierParams);
-        dailyHeadcountByDate = Object.fromEntries(
-            (headcountRows || []).map((row) => [String(row.fullDate), Number(row.total || 0)])
+        const [eligibleManpowerRows] = await executeQuery(
+            eligibleManpowerSql,
+            [...userHierParams]
         );
 
+        const manpowerUsers = (eligibleManpowerRows || []).map(prepareManpowerUser);
+        const headcountEntries = loopDates.map((dateObj) => {
+            const dateStr = formatDateLocal(dateObj);
+            let total = 0;
+
+            for (const userRow of manpowerUsers) {
+                if (isUserActiveForManpowerDate(userRow, dateStr)) {
+                    total += 1;
+                }
+            }
+
+            return [dateStr, total];
+        });
+
+        dailyHeadcountByDate = Object.fromEntries(headcountEntries);
         snapshotTotal = Number(dailyHeadcountByDate[sqlEndDate] || 0);
     } catch (e) {
-        console.warn("[DASHBOARD] statusHistory Total Manpower query failed; same-rule fallback used:", e.message);
+        // Do not launch one heavy fallback query per date. That old fallback caused
+        // 30 x ~2-second queries and blocked every dashboard graph for minutes.
+        console.warn(
+            "[DASHBOARD] Total Manpower employee fetch failed; no per-date SQL fallback executed:",
+            e.message
+        );
+        snapshotTotal = 0;
+        dailyHeadcountByDate = Object.fromEntries(
+            loopDates.map((dateObj) => [formatDateLocal(dateObj), 0])
+        );
+    }
 
-        try {
-            let fallbackSql = `
-                SELECT COUNT(DISTINCT u.id) AS total
-                FROM users u
-                WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", sqlEndDate)}
-                  ${userHierCondition}
-            `;
+    // DAILY REJOINING TREND — second and every later statusHistory joiningDate.
+    // Each unique employee is counted at most once on one date, so duplicate users rows
+    // with the same empId cannot inflate the graph. Third/fourth rejoin dates still appear
+    // independently on their respective dates.
+    try {
+        const rejoiningTrendSql = `
+            SELECT
+                u.id,
+                u.empId,
+                u.statusHistory
+            FROM users u
+            WHERE 1=1
+              ${getRejoiningTrendBaseEligibilitySql("u")}
+              ${userHierCondition}
+        `;
 
-            const [fallbackRows] = await executeQuery(fallbackSql, userHierParams);
-            snapshotTotal = Number(fallbackRows?.[0]?.total || 0);
-            dailyHeadcountByDate = Object.fromEntries(
-                loopDates.map((dateObj) => [formatDateLocal(dateObj), snapshotTotal])
-            );
-        } catch (fallbackError) {
-            console.warn("[DASHBOARD] Total Manpower fallback failed:", fallbackError.message);
-            snapshotTotal = 0;
-            dailyHeadcountByDate = {};
+        const [rejoiningCandidateRows] = await executeQuery(
+            rejoiningTrendSql,
+            [...userHierParams]
+        );
+
+        const rejoiningCountByDateKey = new Map();
+        const seenEmployeeDateEvents = new Set();
+
+        for (const userRow of rejoiningCandidateRows || []) {
+            const employeeKey = String(userRow?.empId || '').trim().toUpperCase();
+            if (!employeeKey) continue;
+
+            const rejoiningDateKeys = getStatusHistoryRejoiningDateKeys(userRow);
+
+            for (const rejoiningDateKey of rejoiningDateKeys) {
+                // One employee can rejoin on multiple different dates, but duplicate user rows
+                // must not count the same employee again on the same date.
+                const eventKey = `${employeeKey}::${rejoiningDateKey}`;
+                if (seenEmployeeDateEvents.has(eventKey)) continue;
+
+                seenEmployeeDateEvents.add(eventKey);
+                rejoiningCountByDateKey.set(
+                    rejoiningDateKey,
+                    Number(rejoiningCountByDateKey.get(rejoiningDateKey) || 0) + 1
+                );
+            }
         }
+
+        rejoiningData = loopDates.map((dateObj) => {
+            const fullDate = formatDateLocal(dateObj);
+            const dateKey = parseManpowerDateKey(fullDate);
+            const day = dateObj.getDate();
+            const monthShort = dateObj.toLocaleString("en-US", { month: "short" });
+
+            return {
+                fullDate,
+                day: `${day} ${monthShort}`,
+                rejoinedCount: Number(rejoiningCountByDateKey.get(dateKey) || 0),
+            };
+        });
+    } catch (rejoiningTrendError) {
+        console.warn(
+            "[DASHBOARD] Rejoining trend employee fetch failed:",
+            rejoiningTrendError.message
+        );
+
+        rejoiningData = loopDates.map((dateObj) => ({
+            fullDate: formatDateLocal(dateObj),
+            day: `${dateObj.getDate()} ${dateObj.toLocaleString("en-US", { month: "short" })}`,
+            rejoinedCount: 0,
+        }));
     }
 
     let dailyAttendance = [];
@@ -1922,6 +2210,84 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         return sqlText;
     }
 
+
+    // ============================================================
+    // PERFORMANCE: Resolve the active Total Manpower population once.
+    // ============================================================
+    // Previously every Skill/Gender/State/District/Designation/Education/Contractor
+    // master query re-ran the same correlated OPENJSON(statusHistory) condition.
+    // Build the filtered active-user id set once for usersTotalAsOfDate and reuse it.
+    let activeUserSetReady = false;
+    let activeUserIds = [];
+
+    try {
+        const activeUserParams = [];
+
+        let activeUserSql = `
+            SELECT
+                u.id,
+                u.status,
+                u.joiningDate,
+                u.leavingDate,
+                u.statusHistory
+            FROM users u
+            WHERE 1=1
+              ${getTotalManpowerBaseEligibilitySql("u")}
+        `;
+
+        activeUserSql = addUserMasterHierarchyFilters(
+            activeUserSql,
+            activeUserParams,
+            "u"
+        );
+        activeUserSql = addStateDistrictFilters(
+            activeUserSql,
+            activeUserParams,
+            {
+                includeState: true,
+                includeDistrict: true,
+                alias: "u",
+            }
+        );
+
+        const [activeCandidateRows] = await executeQuery(
+            activeUserSql,
+            activeUserParams
+        );
+
+        activeUserIds = (activeCandidateRows || [])
+            .map(prepareManpowerUser)
+            .filter((userRow) => (
+                isUserActiveForManpowerDate(userRow, usersTotalAsOfDate)
+            ))
+            .map((userRow) => Number(userRow.id))
+            .filter((id) => Number.isInteger(id) && id > 0);
+
+        activeUserSetReady = true;
+    } catch (activeUserError) {
+        console.warn(
+            "[DASHBOARD] Active-user employee fetch failed; lifecycle SQL fallback will be used:",
+            activeUserError.message
+        );
+        activeUserIds = [];
+        activeUserSetReady = false;
+    }
+
+    // Never fall back to the old correlated statusHistory SQL for every lower graph.
+    // If the one-time employee fetch fails, return an empty Total Manpower population
+    // instead of blocking the whole dashboard with repeated 30-second queries.
+    const activeUserIdFilterSql = activeUserSetReady
+        ? (
+            activeUserIds.length
+                ? ` AND u.id IN (${activeUserIds.join(",")})`
+                : " AND 1 = 0"
+        )
+        : " AND 1 = 0";
+
+    const activeUsersTotal = activeUserSetReady
+        ? activeUserIds.length
+        : null;
+
     const attendanceMasterBaseFrom = `
         FROM attendance_logs al
         INNER JOIN users u
@@ -2040,8 +2406,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+                  ${activeUserIdFilterSql}
             `;
             const params = [];
             sqlText = addUserMasterHierarchyFilters(sqlText, params, "u");
@@ -2115,13 +2480,19 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
 
     const getUsersTotalDenominator = async ({ includeState = true, includeDistrict = true } = {}) => {
+        // All current dashboard callers use the same hierarchy + state + district filter set.
+        // Return the already-resolved active-user count instead of re-running the same query
+        // once for every graph.
+        if (activeUserSetReady && includeState && includeDistrict) {
+            return Number(activeUsersTotal || 0);
+        }
+
         try {
             let sqlText = `
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+                  ${activeUserIdFilterSql}
             `;
 
             const params = [];
@@ -2219,8 +2590,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+                  ${activeUserIdFilterSql}
                   ${resolvedMasterExtraWhere}
             `;
 
@@ -2377,8 +2747,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+                  ${activeUserIdFilterSql}
             `;
 
             const masterParams = [];
@@ -2401,8 +2770,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS total
                 FROM users u
                 WHERE 1=1
-                  ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+                  ${activeUserIdFilterSql}
             `;
             const denominatorParams = [];
             denominatorSql = addRawUserHierarchyFilters(denominatorSql, denominatorParams, "u");
@@ -2612,8 +2980,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT u.id) AS totalHeadcount
             FROM users u
             WHERE 1=1
-              ${getTotalManpowerBaseEligibilitySql("u")}
-                  ${getActiveUserAsOfDateSql("u", usersTotalAsOfDate)}
+              ${activeUserIdFilterSql}
         `;
         const contractorTotalParams = [];
         contractorTotalSql = applyContractorHierarchyAndLocationFilters(contractorTotalSql, contractorTotalParams);
@@ -2752,6 +3119,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             200,
             {
                 manpowerData,
+                rejoiningData,
                 holidays: topHolidayRows,
                 absenteeismData,
                 attritionData,
@@ -2774,7 +3142,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     masterHoliday,
                     shift: selectedShiftValue || "ALL",
                     attendanceLogic:
-                        "Dashboard Total Manpower/Users Total bars use statusHistory employment intervals for the relevant date. A rejoined employee is excluded during the LEFT-to-rejoin gap and counted again from the new joiningDate. Users without valid history use the legacy joiningDate/leavingDate fallback. Attendance absence never hides manpower data.",
+                        "Dashboard Total Manpower/Users Total bars use statusHistory employment intervals for the relevant date. An employee is removed on the leavingDate itself, excluded during the LEFT-to-rejoin gap, and counted again from the new joiningDate. Users without valid history use the legacy joiningDate/leavingDate fallback. Attendance absence never hides manpower data.",
                 },
                 debug: {
                     requiredStartDate: sqlStartDate,

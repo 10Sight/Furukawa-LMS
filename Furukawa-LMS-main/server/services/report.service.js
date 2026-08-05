@@ -140,31 +140,33 @@ const getIndiaYesterday = () => {
 
 
 
-// Same designation exclusion used by the first Dashboard manpower graph.
-
+// Dynamic designation shutter rule used by every dashboard/report employee population.
+// A shutter may be stored by designation name (for example Supervisor) or by its
+// designation id (for example 1090), so both values are compared safely.
 const getDesignationShutterExclusionSql = (alias = "u") => `
-
     AND NOT EXISTS (
-
         SELECT 1
-
         FROM designation_shutters ds
-
-        WHERE ds.designation IS NOT NULL
-
-          AND ds.designation = ${alias}.designation
-
+        WHERE NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))), '') IS NOT NULL
+          AND (
+                UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ds.designation))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))))
+                OR UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ds.id))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${alias}.designation))))
+              )
     )
-
 `;
 
-
-// Exact Total Manpower population used by the Dashboard's first Daily Manpower Trend graph.
-// Both report Available columns use this same helper to prevent future logic drift.
-const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
-    AND ${alias}.isDeleted = 0
-    AND ${alias}.isTemporary = 0
-    AND ${alias}.status = 'PRESENT'
+// Base eligibility shared with Dashboard Total Manpower.
+// Keep this aligned with the SDP employee population before applying date lifecycle.
+// Historical reconstruction needs PRESENT and LEFT users; all other current statuses are excluded.
+const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
+    AND ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ISNULL(${alias}.isEmployee, 0) = 1
+    AND ${alias}.empId IS NOT NULL
+    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
+    AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, ''))))) IN ('PRESENT', 'LEFT')
     AND ISNULL(${alias}.designation, '') NOT IN (
         '1076',
         '1077',
@@ -173,6 +175,7 @@ const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
         'Supervisor',
         'Staff'
     )
+    ${getDesignationShutterExclusionSql(alias)}
 `;
 
 
@@ -206,6 +209,173 @@ const userDateToDateSql = (columnSql) => `
     )
 
 `;
+
+
+// Same statusHistory employment-interval rule as Dashboard Total Manpower.
+// Open/current periods count only when history status and users.status are PRESENT.
+// Closed LEFT periods count only their historical worked dates.
+// The report date is authoritative, so both Daily Manpower and Daily Management
+// Available/Total Manpower values match the Dashboard first graph for that date.
+// leavingDate is exclusive: the employee is removed on the leavingDate itself.
+const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
+
+    const historyJsonSql = `CASE
+
+        WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
+
+        THEN CAST(${alias}.statusHistory AS NVARCHAR(MAX))
+
+        ELSE N'[]'
+
+    END`;
+
+    const historyJoiningDateSql = userDateToDateSql(
+
+        `JSON_VALUE(historyRow.[value], '$.joiningDate')`
+
+    );
+
+    const historyLeavingDateSql = userDateToDateSql(
+
+        `JSON_VALUE(historyRow.[value], '$.leavingDate')`
+
+    );
+
+    const historyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(
+
+        NVARCHAR(100),
+
+        ISNULL(JSON_VALUE(historyRow.[value], '$.status'), '')
+
+    ))))`;
+
+    const legacyJoiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
+
+    const legacyLeavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
+
+    const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
+
+    return `(
+
+        EXISTS (
+
+            SELECT 1
+
+            FROM OPENJSON(${historyJsonSql}) historyRow
+
+            CROSS APPLY (
+
+                SELECT
+
+                    ${historyStatusSql} AS employmentStatus,
+
+                    ${historyJoiningDateSql} AS joiningDate,
+
+                    ${historyLeavingDateSql} AS leavingDate
+
+            ) historyPeriod
+
+            WHERE historyPeriod.joiningDate IS NOT NULL
+
+              AND historyPeriod.joiningDate <= ${asOfDateSql}
+
+              AND (
+
+                    (
+
+                        historyPeriod.employmentStatus = 'PRESENT'
+
+                        AND (
+
+                            historyPeriod.leavingDate IS NULL
+
+                            OR historyPeriod.leavingDate > ${asOfDateSql}
+
+                        )
+
+                        AND (
+
+                            historyPeriod.leavingDate IS NOT NULL
+
+                            OR ${legacyStatusSql} = 'PRESENT'
+
+                        )
+
+                    )
+
+                    OR (
+
+                        historyPeriod.employmentStatus = 'LEFT'
+
+                        AND historyPeriod.leavingDate IS NOT NULL
+
+                        AND historyPeriod.leavingDate > ${asOfDateSql}
+
+                    )
+
+                  )
+
+        )
+
+        OR (
+
+            NOT EXISTS (
+
+                SELECT 1
+
+                FROM OPENJSON(${historyJsonSql}) historyRow
+
+                CROSS APPLY (
+
+                    SELECT ${historyJoiningDateSql} AS joiningDate
+
+                ) validHistoryPeriod
+
+                WHERE validHistoryPeriod.joiningDate IS NOT NULL
+
+            )
+
+            AND (
+
+                (
+
+                    ${legacyStatusSql} = 'PRESENT'
+
+                    AND (
+
+                        ${legacyJoiningDateSql} IS NULL
+
+                        OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+
+                    )
+
+                )
+
+                OR (
+
+                    ${legacyStatusSql} = 'LEFT'
+
+                    AND ${legacyLeavingDateSql} IS NOT NULL
+
+                    AND ${legacyLeavingDateSql} > ${asOfDateSql}
+
+                    AND (
+
+                        ${legacyJoiningDateSql} IS NULL
+
+                        OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+
+                    )
+
+                )
+
+            )
+
+        )
+
+    )`;
+
+};
 
 
 
@@ -849,21 +1019,20 @@ async function fetchLineRequirements(dbPool, monthNumber, yearVal, reportDay = 1
 
 // STEP 3: Fetch Total Manpower directly from users
 
-// EXACT SAME LOGIC AS DASHBOARD FIRST DAILY MANPOWER TREND GRAPH.
+// EXACT SAME statusHistory DATE-WISE LOGIC AS DASHBOARD FIRST GRAPH.
 
-// IMPORTANT:
+// - Base eligibility remains isDeleted=0, isTemporary=0 and fixed designation exclusions.
 
-// - NO user_hierarchy_snapshots verification
+// - Open/current history counts only when history status and users.status are PRESENT.
 
-// - NO isEmployee, empId, joiningDate, or leavingDate condition
+// - A closed LEFT interval counts only joiningDate <= reportDate < leavingDate.
 
-// - isDeleted = 0, isTemporary = 0, status = PRESENT
+// - leavingDate is excluded, so LEFT-to-rejoin gaps start on the leavingDate itself.
+// - The new PRESENT interval counts again from its joiningDate.
 
-// - same fixed designation exclusions as the first graph
+// - Legacy joiningDate/leavingDate/status is used only when valid history is unavailable.
 
-// - Department uses users.departmentId
-
-// - Section uses the Dashboard's 3-way hierarchy rule
+// - Department/Section/Line hierarchy logic remains unchanged.
 
 // =================================================
 
@@ -871,9 +1040,8 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
     try {
 
-        // AVAILABLE M/P (2647 LOGIC):
-        // Exact users-table eligibility requested for the report Available column.
-        // No joiningDate/leavingDate, empId, or non-LEFT fallback is applied.
+        const reportDateSql = `CONVERT(DATE, @reportDate, 23)`;
+
         const eligibleUsersCte = `
 
             WITH EligibleUsers AS (
@@ -894,7 +1062,9 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
                 WHERE 1=1
 
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+
+                  AND ${getStatusHistoryActiveConditionSql("u", reportDateSql)}
 
             )
 
@@ -980,22 +1150,34 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
-        // Section manpower keeps the existing canonical one-section hierarchy rule.
         const sectionPromise = dbPool.request()
+
             .input("reportDate", reportDateStr)
+
             .query(`
+
                 ${eligibleUsersCte}
 
                 SELECT
+
                     s.id AS sectionId,
+
                     COUNT(DISTINCT eu.id) AS cnt
+
                 FROM sections s
+
                 LEFT JOIN EligibleUsers eu
+
                     ON eu.departmentId = s.departmentId
+
                    AND ${getDashboardSectionMatchSql("eu", "s")}
+
                 WHERE ISNULL(s.isActive, 1) = 1
+
                 GROUP BY s.id
+
             `);
+
 
 
         const [totalResult, departmentResult, lineResult, sectionResult] = await Promise.all([
@@ -1046,7 +1228,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
         console.log(
 
-            `[fetchActiveManpowerMaps] PRESENT-ONLY ${reportDateStr}: total=${total}, departments=${byDepartment.size}, sections=${bySection.size}, lines=${byLine.size}`
+            `[fetchActiveManpowerMaps] STATUS-HISTORY ${reportDateStr}: total=${total}, departments=${byDepartment.size}, sections=${bySection.size}, lines=${byLine.size}`
 
         );
 
@@ -1077,9 +1259,6 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 }
 
 
-
-
-// =================================================
 
 // STEP 4: Fetch Dashboard-exact attendance maps for yesterday
 
@@ -2575,7 +2754,7 @@ async function _buildManagementBuffer() {
 
 
 
-        // Handover/Available manpower uses the exact Dashboard Total Manpower bar logic.
+        // Handover/Available manpower uses the exact Dashboard statusHistory Total Manpower logic.
 
         // No user_hierarchy_snapshots verification is used.
 

@@ -464,16 +464,6 @@ const startServer = async () => {
         // Validate DB Connection
         await connectDB();
 
-        // Initialize Schedulers
-        timelineScheduler.init();
-        departmentStatusScheduler.init();
-        reportScheduler.init();
-        handoverNotificationScheduler.init();
-        sixteenDayMonitoringScheduler.init();
-        sixteenDayEligibilityScheduler.init();
-        planNotificationScheduler.init();
-        headcountReportScheduler.init();
-
         // Initialize the users table first and fully await it: its migrations/backfills/index
         // creation touch `users` heavily, and letting it run unawaited alongside the later
         // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
@@ -513,6 +503,17 @@ const startServer = async () => {
         await MenteeFeedback.init();
         await import("./models/abnormalCondition.model.js").then(m => m.default.init());
         await import("./models/designationShutter.model.js").then(m => m.default.init());
+
+        // Initialize Schedulers only after every table/migration init above has completed, so
+        // their cron ticks can never race a still-running migration for locks on the same tables.
+        timelineScheduler.init();
+        departmentStatusScheduler.init();
+        reportScheduler.init();
+        handoverNotificationScheduler.init();
+        sixteenDayMonitoringScheduler.init();
+        sixteenDayEligibilityScheduler.init();
+        planNotificationScheduler.init();
+        headcountReportScheduler.init();
 
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);

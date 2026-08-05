@@ -85,8 +85,15 @@ const normalizeDate = (val) => {
         return `${year}-${month}-${day}`;
     }
 
-    const str = val.toString().trim();
+    let str = val.toString().trim();
     if (!str) return null;
+
+    // Normalize typo'd separators (e.g. "30-07.2026" or "30.07.2026") to hyphens so the
+    // matchers below see a consistent DD-MM-YYYY shape instead of silently falling through
+    // to the ambiguous `new Date(str)` fallback.
+    if (/^\d{1,4}[.\-/]\d{1,2}[.\-/]\d{1,4}$/.test(str)) {
+        str = str.replace(/\./g, '-');
+    }
 
     // 1. Try DD-MMM-YY or DD-MMM-YYYY (e.g. 01-Jun-26 or 01-Jun-2026)
     const dmmmyy = parseDDMMMYY(str);
@@ -133,6 +140,27 @@ const normalizeDate = (val) => {
             return `${year}-${month}-${day}`;
         }
     }
+
+    return null;
+};
+
+/**
+ * Validates DOB / Joining Date / Leaving Date business rules shared across all import flows.
+ * Expected Handover is intentionally excluded -- it's a forward-looking target date, not a
+ * historical record, so future values there are expected and valid.
+ * Dates are expected already normalized to YYYY-MM-DD, so string comparison is chronological.
+ * Returns an error message if a rule is violated, or null if the dates are all consistent.
+ */
+const validateImportDates = ({ dob, joiningDate, leavingDate }) => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    if (dob && dob > todayStr) return `Date of Birth (${dob}) cannot be a future date.`;
+    if (joiningDate && joiningDate > todayStr) return `Joining Date (${joiningDate}) cannot be a future date.`;
+    if (leavingDate && leavingDate > todayStr) return `Leaving Date (${leavingDate}) cannot be a future date.`;
+
+    if (dob && joiningDate && joiningDate < dob) return `Joining Date (${joiningDate}) cannot be before Date of Birth (${dob}).`;
+    if (joiningDate && leavingDate && leavingDate < joiningDate) return `Leaving Date (${leavingDate}) cannot be before Joining Date (${joiningDate}).`;
 
     return null;
 };
@@ -451,6 +479,19 @@ const processSingleEmployeeRow = async ({
             [logId, rowNumber, JSON.stringify(row), "FAILED", error]
         );
         return { status: "FAILED", rowNumber, error };
+    }
+
+    const dateError = validateImportDates({
+        dob: normalizedRow.dob,
+        joiningDate: normalizedRow.joiningDate,
+        leavingDate: normalizedRow.leavingDate,
+    });
+    if (dateError) {
+        await executeQuery(
+            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+            [logId, rowNumber, JSON.stringify(row), "FAILED", dateError]
+        );
+        return { status: "FAILED", rowNumber, error: dateError };
     }
 
     try {
@@ -1290,6 +1331,13 @@ export const importInstructors = async (req, res) => {
                     continue;
                 }
 
+                const joiningDate = normalizeDate(row.joiningDate);
+                const dateError = validateImportDates({ joiningDate });
+                if (dateError) {
+                    results.failed.push({ row: rowNumber, data: row, error: dateError });
+                    continue;
+                }
+
                 // Prepare user data for User.create
                 const userData = {
                     fullName: row.fullName.trim(),
@@ -1303,7 +1351,7 @@ export const importInstructors = async (req, res) => {
                     isEmployee: false,
                     isAdmin: false,
                     isTrainer: true,
-                    joiningDate: normalizeDate(row.joiningDate),
+                    joiningDate,
                     status: "PRESENT",
                     createdBy: req.user?.id || null,
                     createdByName: req.user?.fullName || null,
@@ -1598,6 +1646,13 @@ export const importDojoUsers = async (req, res) => {
                 const contractorId = contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null;
                 if (!contractorId) {
                     throw new Error(`Contractor '${normalizedRow.contractor}' does not exist in the database. Please add it first or match the name exactly.`);
+                }
+
+                // Expected Handover is intentionally excluded here -- it's a forward-looking
+                // target date, so only DOB/Joining Date are checked for DOJO candidates.
+                const dojoDateError = validateImportDates({ dob: normalizedRow.dob, joiningDate: normalizedRow.joiningDate });
+                if (dojoDateError) {
+                    throw new Error(dojoDateError);
                 }
 
                 // Check for duplicate username (Employee Code)

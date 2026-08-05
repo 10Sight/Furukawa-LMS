@@ -469,55 +469,66 @@ const startServer = async () => {
         // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
         await User.init();
 
-        // Initialize Core Tables
-        await HandoverSheet.init();
-        await Requirement.init();
-        await SectionHead.init();
-
-        await HeadcountReport.init();
-        await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
-        await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
-        await MonitoringConfig.init();
-        await HandoverSheetConfig.init();
-        await MultiSkillingPlanConfig.init();
-        await SkillUpgradationPlan.init();
-        await SkillUpgradationPlanConfig.init();
-        await SkillMatrixDashboardConfig.init();
-        await Course.init();
-        await Quiz.init();
-        await EvaluationTest.init();
-        await EvaluationTestAttempt.init();
-
-        // Initialize Hierarchy in Order: Section -> Line -> SubSection
-        const Section = (await import("./models/section.model.js")).default;
-        await Section.init();
-        await Line.init();
-        await SubSection.init();
-
-        await LineRequirement.init();
-        await LineRequirementHistory.init();
-        await RevisionRecord.init();
-        await RevisionHistory.init();
-        await ReportClub.init();
-        await UserHierarchySnapshot.init();
-        await MenteeFeedback.init();
-        await import("./models/abnormalCondition.model.js").then(m => m.default.init());
-        await import("./models/designationShutter.model.js").then(m => m.default.init());
-
-        // Initialize Schedulers only after every table/migration init above has completed, so
-        // their cron ticks can never race a still-running migration for locks on the same tables.
-        timelineScheduler.init();
-        departmentStatusScheduler.init();
-        reportScheduler.init();
-        handoverNotificationScheduler.init();
-        sixteenDayMonitoringScheduler.init();
-        sixteenDayEligibilityScheduler.init();
-        planNotificationScheduler.init();
-        headcountReportScheduler.init();
-
         server.listen(PORT, () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
         });
+
+        // Every other table/migration init, plus the schedulers, run in the background after
+        // the server is already accepting connections — only the users table blocks startup.
+        // NOTE: routes touching these tables can 404/error until this chain finishes.
+        (async () => {
+            try {
+                // Initialize Core Tables
+                await HandoverSheet.init();
+                await Requirement.init();
+                await SectionHead.init();
+
+                await HeadcountReport.init();
+                await import("./models/skillMatrixConfig.model.js").then(m => m.SkillMatrixConfig.init());
+                await import("./models/skillMatrixEvaluation.model.js").then(m => m.SkillMatrixEvaluation.init());
+                await MonitoringConfig.init();
+                await HandoverSheetConfig.init();
+                await MultiSkillingPlanConfig.init();
+                await SkillUpgradationPlan.init();
+                await SkillUpgradationPlanConfig.init();
+                await SkillMatrixDashboardConfig.init();
+                await Course.init();
+                await Quiz.init();
+                await EvaluationTest.init();
+                await EvaluationTestAttempt.init();
+
+                // Initialize Hierarchy in Order: Section -> Line -> SubSection
+                const Section = (await import("./models/section.model.js")).default;
+                await Section.init();
+                await Line.init();
+                await SubSection.init();
+
+                await LineRequirement.init();
+                await LineRequirementHistory.init();
+                await RevisionRecord.init();
+                await RevisionHistory.init();
+                await ReportClub.init();
+                await UserHierarchySnapshot.init();
+                await MenteeFeedback.init();
+                await import("./models/abnormalCondition.model.js").then(m => m.default.init());
+                await import("./models/designationShutter.model.js").then(m => m.default.init());
+
+                // Initialize Schedulers only after every table/migration init above has completed, so
+                // their cron ticks can never race a still-running migration for locks on the same tables.
+                timelineScheduler.init();
+                departmentStatusScheduler.init();
+                reportScheduler.init();
+                handoverNotificationScheduler.init();
+                sixteenDayMonitoringScheduler.init();
+                sixteenDayEligibilityScheduler.init();
+                planNotificationScheduler.init();
+                headcountReportScheduler.init();
+
+                logger.info("Background table initialization complete — all tables and schedulers ready.");
+            } catch (error) {
+                logger.error("Background table initialization failed:", error);
+            }
+        })();
 
         // Graceful shutdown handling
         process.on('SIGINT', () => {

@@ -120,8 +120,7 @@ class EvaluationTestAttempt {
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentLineId', 'INT NULL');
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentSubSectionId', 'INT NULL');
 
-            // One-time backfill for rows created before the snapshot columns existed.
-            // Only touches rows still missing a snapshot, so it's a cheap no-op on subsequent boots.
+            // 1. Backfill for attempts with non-null userId (uses Primary Key index seek)
             await executeQuery(`
                 UPDATE a SET
                     studentIsTemporary = COALESCE(u.isTemporary, 0),
@@ -130,9 +129,26 @@ class EvaluationTestAttempt {
                     studentLineId = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END),
                     studentSubSectionId = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
                 FROM evaluation_test_attempts a
-                JOIN users u ON a.userId = u.id OR (a.userId IS NULL AND a.employeeNo = u.empId)
+                JOIN users u ON a.userId = u.id
                 WHERE a.studentDeptId IS NULL AND a.studentSectionId IS NULL
                   AND a.studentLineId IS NULL AND a.studentSubSectionId IS NULL
+                  AND a.userId IS NOT NULL
+            `);
+
+            // 2. Backfill for attempts without userId (uses empId index seek)
+            await executeQuery(`
+                UPDATE a SET
+                    studentIsTemporary = COALESCE(u.isTemporary, 0),
+                    studentDeptId = COALESCE(u.departmentId, CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END),
+                    studentSectionId = COALESCE(u.sectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END),
+                    studentLineId = COALESCE(u.lineId, CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END),
+                    studentSubSectionId = COALESCE(u.subSectionId, CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END)
+                FROM evaluation_test_attempts a
+                JOIN users u ON a.employeeNo = u.empId
+                WHERE a.studentDeptId IS NULL AND a.studentSectionId IS NULL
+                  AND a.studentLineId IS NULL AND a.studentSubSectionId IS NULL
+                  AND a.userId IS NULL
+                  AND a.employeeNo IS NOT NULL
             `);
         } catch (error) {
             logger.error("Failed to initialize evaluation_test_attempts table", error);

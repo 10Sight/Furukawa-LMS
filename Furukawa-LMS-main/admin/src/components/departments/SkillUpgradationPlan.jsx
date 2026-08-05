@@ -636,11 +636,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}
                             <tr className="h-12 [&>th]:border-b [&>th]:border-slate-300">
-                                <th rowSpan="2" className={`${stickyFrozenHeader} left-0 w-[70px] min-w-[70px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Sr. No</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[70px] w-[220px] min-w-[220px] border-r border-slate-300 bg-slate-100 p-2 text-center align-middle whitespace-nowrap`}>Associates Name</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[290px] w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Card No</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} left-[410px] w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`}>Model & Line</th>
-                                <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Station</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[70px] min-w-[70px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: 0 }}>Sr. No</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[220px] min-w-[220px] border-r border-slate-300 bg-slate-100 p-2 text-center align-middle whitespace-nowrap`} style={{ left: '70px' }}>Associates Name</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '290px' }}>Card No</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '410px' }}>Model & Line</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`} style={{ left: '580px' }}>Station</th>
                                 <th rowSpan="2" className={`${stickyHeader} border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`}>Shift</th>
                                 <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-amber-50 text-amber-800 whitespace-nowrap`}>Jan-March</th>
                                 <th colSpan="4" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold bg-blue-50 text-blue-800 whitespace-nowrap`}>April-June</th>
@@ -681,8 +681,8 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
                                 return (
                                     <tr key={rowId} className="group hover:bg-slate-50/50 transition-colors [&>td]:border-b [&>td]:border-slate-200">
-                                        <td className={`${stickyFrozenCell} left-0 w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`}>{index + 1}</td>
-                                        <td className={`${stickyFrozenCell} left-[70px] w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`}>
+                                        <td className={`${stickyFrozenCell} w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`} style={{ left: 0 }}>{index + 1}</td>
+                                        <td className={`${stickyFrozenCell} w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`} style={{ left: '70px' }}>
                                             <UserCellSelector
                                                 value={row.userName}
                                                 onChange={(userId, userName, lineName, subSectionName) => {
@@ -697,7 +697,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                                 disabled={!canManage}
                                             />
                                         </td>
-                                        <td className={`${stickyFrozenCell} left-[290px] w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-bold text-slate-800 whitespace-nowrap`}>
+                                        <td className={`${stickyFrozenCell} w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-bold text-slate-800 whitespace-nowrap`} style={{ left: '290px' }}>
                                             <Input
                                                 value={row.cardNo || ""}
                                                 disabled={true}
@@ -707,7 +707,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             />
                                         </td>
                                         {/* Model & Line */}
-                                        <td className={`${stickyFrozenCell} left-[410px] w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`}>
+                                        <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap`} style={{ left: '410px' }}>
                                             <Select
                                                 value={row.modelLine || ""}
                                                 onValueChange={(val) => {
@@ -729,7 +729,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                             </Select>
                                         </td>
                                         {/* Station */}
-                                        <td className="border-r border-slate-200 p-1 whitespace-nowrap">
+                                        <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`} style={{ left: '580px' }}>
                                             <Select
                                                 value={row.station || ""}
                                                 onValueChange={(val) => handleRowFieldChange(rowId, "station", val)}

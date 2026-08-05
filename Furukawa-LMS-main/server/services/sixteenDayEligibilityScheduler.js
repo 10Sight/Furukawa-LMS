@@ -104,17 +104,25 @@ class SixteenDayEligibilityScheduler {
         try {
             // Approved-but-not-yet-started candidates in this department (and section, if configured)
             // who haven't already been notified for this specific approval.
+            // ApprovedHandovers scans handover_sheets/OPENJSON once (O(M)) instead of the previous
+            // per-user CROSS APPLY, which re-scanned and re-parsed handover_sheets for every user in
+            // the department (O(N*M)) and was timing out on large datasets.
             let query = `
-                SELECT u.id AS studentId, u.fullName, u.empId, u.departmentId, u.sectionId, ho.handoverApprovedAt
-                FROM users u
-                CROSS APPLY (
-                    SELECT TOP 1 JSON_VALUE(entry.value, '$.statusActionAt') as handoverApprovedAt
+                WITH ApprovedHandovers AS (
+                    SELECT
+                        TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS studentId,
+                        JSON_VALUE(entry.value, '$.statusActionAt') AS handoverApprovedAt,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+                            ORDER BY hs.createdAt DESC
+                        ) as rn
                     FROM handover_sheets hs
                     CROSS APPLY OPENJSON(hs.entries) as entry
-                    WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
-                      AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
-                    ORDER BY hs.createdAt DESC
-                ) ho
+                    WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+                )
+                SELECT u.id AS studentId, u.fullName, u.empId, u.departmentId, u.sectionId, ho.handoverApprovedAt
+                FROM users u
+                INNER JOIN ApprovedHandovers ho ON u.id = ho.studentId AND ho.rn = 1
                 WHERE u.departmentId = ?
                   AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
                   AND (u.status IS NULL OR u.status != 'LEFT')

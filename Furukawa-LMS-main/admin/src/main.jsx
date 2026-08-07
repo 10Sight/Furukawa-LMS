@@ -1,23 +1,28 @@
 // import { StrictMode } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    if (confirm('New content available. Reload?')) {
-      updateSW(true);
-    }
-  },
-})
-
 import { createRoot } from 'react-dom/client'
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import './index.css'
 import App from './App.jsx'
 import { Provider } from 'react-redux'
 import store from './Redux/store.js'
 import AuthProvider from './components/AuthProvider.jsx'
 import { SocketProvider } from './contexts/SocketContext.jsx'
+
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    toast('A new version is available', {
+      description: 'Reload to get the latest features and fixes.',
+      duration: Infinity,
+      action: {
+        label: 'Reload',
+        onClick: () => updateSW(true),
+      },
+    })
+  },
+})
 
 createRoot(document.getElementById('root')).render(
   <Provider store={store}>

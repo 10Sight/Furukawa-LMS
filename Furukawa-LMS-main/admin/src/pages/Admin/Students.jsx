@@ -34,6 +34,7 @@ import {
 import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/DesignationApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import ExportColumnSelectorModal from "@/components/common/ExportColumnSelectorModal";
 import { Calendar as CalendarRange } from "@/components/ui/calendar";
 import { IconChevronDown } from "@tabler/icons-react";
 import {
@@ -203,6 +204,7 @@ const Students = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
   const location = useLocation();
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -1383,8 +1385,41 @@ const Students = () => {
     });
   };
 
-  const handleExportExcel = async () => {
-    const toastId = toast.loading("Preparing Excel file...");
+  const exportableColumns = useMemo(() => [
+    { header: "Employee Code", key: "empId", width: 15 },
+    { header: "Card No.", key: "idCard", width: 15 },
+    { header: "Name", key: "fullName", width: 25 },
+    { header: "Username", key: "userName", width: 20 },
+    { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
+    { header: "Gender", key: "gender", width: 10 },
+    { header: "Unit", key: "unit", width: 12 },
+    { header: "Department", key: "department", width: 25 },
+    { header: "Section", key: "section", width: 20 },
+    { header: "Line", key: "line", width: 15 },
+    { header: "Sub Section", key: "subSection", width: 20 },
+    { header: "Station No.", key: "stationNo", width: 15 },
+    { header: "Supervisor", key: "supervisor", width: 20 },
+    { header: "Incharge", key: "incharge", width: 20 },
+    { header: "Mentor", key: "mentor", width: 20 },
+    { header: "Designation", key: "designation", width: 20 },
+    { header: "Contractor", key: "contractor", width: 20 },
+    { header: "DOB", key: "dob", width: 15 },
+    { header: "D.O.J.", key: "joiningDate", width: 15 },
+    { header: "Education", key: "education", width: 20 },
+    { header: "Distt", key: "district", width: 15 },
+    { header: "State", key: "state", width: 15 },
+    { header: "PIN", key: "pin", width: 10 },
+    { header: "Bus Route", key: "busRoute", width: 15 },
+    { header: "E-Mail ID", key: "email", width: 30 },
+    { header: "Mobile No", key: "phoneNumber", width: 15 },
+    { header: "Level", key: "currentLevel", width: 10 },
+    { header: "Efficiency (%)", key: "currentEffeciency", width: 15 },
+    { header: "Date of Leaving", key: "leavingDate", width: 15 },
+    { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
+    { header: "Status", key: "status", width: 15 },
+  ], []);
+
+  const handleExportExcel = async (selectedKeys, reportProgress = () => {}) => {
     try {
       // Paginate through all records — backend may cap single-page results
       const PAGE_SIZE = 100;
@@ -1421,56 +1456,26 @@ const Students = () => {
         const batch = result?.data?.users || [];
         totalUsers = result?.data?.totalUsers ?? 0;
         allStudents = [...allStudents, ...batch];
+        reportProgress({ phase: "fetching", current: allStudents.length, total: totalUsers });
 
         if (batch.length === 0) break;
         page++;
       }
 
       if (allStudents.length === 0) {
-        toast.dismiss(toastId);
-        showToast("error", "No data to export");
-        return;
+        throw new Error("No data to export");
       }
+
+      reportProgress({ phase: "generating", current: 0, total: allStudents.length });
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Operators');
 
-      worksheet.columns = [
-        { header: "Employee Code", key: "empId", width: 15 },
-        { header: "Card No.", key: "idCard", width: 15 },
-        { header: "Name", key: "fullName", width: 25 },
-        { header: "Username", key: "userName", width: 20 },
-        { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
-        { header: "Gender", key: "gender", width: 10 },
-        { header: "Unit", key: "unit", width: 12 },
-        { header: "Department", key: "department", width: 25 },
-        { header: "Section", key: "section", width: 20 },
-        { header: "Line", key: "line", width: 15 },
-        { header: "Sub Section", key: "subSection", width: 20 },
-        { header: "Station No.", key: "stationNo", width: 15 },
-        { header: "Supervisor", key: "supervisor", width: 20 },
-        { header: "Incharge", key: "incharge", width: 20 },
-        { header: "Mentor", key: "mentor", width: 20 },
-        { header: "Designation", key: "designation", width: 20 },
-        { header: "Contractor", key: "contractor", width: 20 },
-        { header: "DOB", key: "dob", width: 15 },
-        { header: "D.O.J.", key: "joiningDate", width: 15 },
-        { header: "Education", key: "education", width: 20 },
-        { header: "Distt", key: "district", width: 15 },
-        { header: "State", key: "state", width: 15 },
-        { header: "PIN", key: "pin", width: 10 },
-        { header: "Bus Route", key: "busRoute", width: 15 },
-        { header: "E-Mail ID", key: "email", width: 30 },
-        { header: "Mobile No", key: "phoneNumber", width: 15 },
-        { header: "Level", key: "currentLevel", width: 10 },
-        { header: "Efficiency (%)", key: "currentEffeciency", width: 15 },
-        { header: "Date of Leaving", key: "leavingDate", width: 15 },
-        { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
-        { header: "Status", key: "status", width: 15 },
-      ];
+      worksheet.columns = exportableColumns.filter((col) => selectedKeys.includes(col.key));
 
-      allStudents.forEach((student) => {
-        worksheet.addRow({
+      for (let i = 0; i < allStudents.length; i++) {
+        const student = allStudents[i];
+        const fullRow = {
           empId: student.empId || "",
           idCard: student.idCard || "",
           fullName: student.fullName || "",
@@ -1502,8 +1507,20 @@ const Students = () => {
           leavingDate: safeDateFormat(student.leavingDate, "yyyy-MM-dd"),
           reasonOfLeaving: student.reasonOfLeaving || "",
           status: student.status || "PRESENT",
+        };
+
+        const filteredRow = {};
+        selectedKeys.forEach((k) => {
+          filteredRow[k] = fullRow[k];
         });
-      });
+
+        worksheet.addRow(filteredRow);
+
+        if (i % 200 === 0 || i === allStudents.length - 1) {
+          reportProgress({ phase: "generating", current: i + 1, total: allStudents.length });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
 
       // Style header row
       worksheet.getRow(1).font = { bold: true };
@@ -1513,16 +1530,16 @@ const Students = () => {
         fgColor: { argb: 'FFE0E0E0' }
       };
 
+      reportProgress({ phase: "saving", current: 0, total: 0 });
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       saveAs(blob, `Operators_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
 
-      toast.dismiss(toastId);
       showToast("success", `Exported ${allStudents.length} operators successfully!`);
     } catch (error) {
       console.error("Export error:", error);
-      toast.dismiss(toastId);
-      showToast("error", "Failed to export data");
+      showToast("error", error?.message === "No data to export" ? "No data to export" : "Failed to export data");
+      throw error;
     }
   };
 
@@ -2178,7 +2195,7 @@ const Students = () => {
 
               <Button
                 variant="outline"
-                onClick={handleExportExcel}
+                onClick={() => setIsExportModalOpen(true)}
                 className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
               >
                 <IconDownload className="h-4 w-4 mr-2" />
@@ -4654,6 +4671,16 @@ const Students = () => {
         <StudentLevelManager />
       </TabsContent>
     </Tabs>
+
+    <ExportColumnSelectorModal
+      isOpen={isExportModalOpen}
+      onOpenChange={setIsExportModalOpen}
+      columns={exportableColumns}
+      onExport={handleExportExcel}
+      storageKey="export_columns_students"
+      title="Customize Export Columns"
+      description="Choose which columns you want to include in the operators Excel export. Your selection is automatically saved."
+    />
     </>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from "react-dom";
 import * as XLSX from 'xlsx';
 import {
@@ -22,6 +22,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { format } from "date-fns";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
+import ExportColumnSelectorModal from "@/components/common/ExportColumnSelectorModal";
 import {
     Table,
     TableBody,
@@ -175,6 +176,7 @@ const DojoHiring = () => {
             .catch((err) => console.error("Failed to log page view:", err));
     }, [canRead, logAction]);
 
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -696,8 +698,36 @@ const DojoHiring = () => {
         }
     };
 
-    const handleExportExcel = async () => {
-        const toastId = toast.loading("Preparing Excel file...");
+    const exportableColumns = useMemo(() => [
+        { header: "Candidate Name", key: "fullName", width: 25 },
+        { header: "Employee ID", key: "empId", width: 20 },
+        { header: "Card No.", key: "idCard", width: 20 },
+        { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
+        { header: "Gender", key: "gender", width: 10 },
+        { header: "Designation", key: "designation", width: 20 },
+        { header: "Onboarding Status", key: "status", width: 15 },
+        { header: "Mobile No", key: "phoneNumber", width: 15 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Department", key: "deptName", width: 25 },
+        { header: "Section", key: "sectionName", width: 20 },
+        { header: "Line", key: "lineName", width: 15 },
+        { header: "Sub Section", key: "subSectionName", width: 20 },
+        { header: "Station No.", key: "stationName", width: 15 },
+        { header: "DOB", key: "dob", width: 15 },
+        { header: "Date of Joining", key: "joiningDate", width: 15 },
+        { header: "Education", key: "education", width: 20 },
+        { header: "District", key: "district", width: 15 },
+        { header: "State", key: "state", width: 15 },
+        { header: "PIN", key: "pin", width: 10 },
+        { header: "Bus Route", key: "busRoute", width: 15 },
+        { header: "Date of Leaving", key: "leavingDate", width: 15 },
+        { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
+        { header: "Contractor", key: "contractor", width: 20 },
+        { header: "Expected Handover Date", key: "expectedHandover", width: 20 },
+        { header: "Dojo Shift", key: "dojoShift", width: 15 },
+    ], []);
+
+    const handleExportExcel = async (selectedKeys, reportProgress = () => {}) => {
         try {
             const PAGE_SIZE = 100;
             let allCandidates = [];
@@ -719,51 +749,26 @@ const DojoHiring = () => {
                 const batch = result?.data?.users || [];
                 totalUsers = result?.data?.totalUsers ?? 0;
                 allCandidates = [...allCandidates, ...batch];
+                reportProgress({ phase: "fetching", current: allCandidates.length, total: totalUsers });
 
                 if (batch.length === 0) break;
                 page++;
             }
 
             if (allCandidates.length === 0) {
-                toast.dismiss(toastId);
-                toast.error("No data to export");
-                return;
+                throw new Error("No data to export");
             }
+
+            reportProgress({ phase: "generating", current: 0, total: allCandidates.length });
 
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Dojo Candidates');
 
-            worksheet.columns = [
-                { header: "Candidate Name", key: "fullName", width: 25 },
-                { header: "Employee ID", key: "empId", width: 20 },
-                { header: "Card No.", key: "idCard", width: 20 },
-                { header: "Father / Husband Name", key: "fatherHusbandName", width: 25 },
-                { header: "Gender", key: "gender", width: 10 },
-                { header: "Designation", key: "designation", width: 20 },
-                { header: "Onboarding Status", key: "status", width: 15 },
-                { header: "Mobile No", key: "phoneNumber", width: 15 },
-                { header: "Email", key: "email", width: 30 },
-                { header: "Department", key: "deptName", width: 25 },
-                { header: "Section", key: "sectionName", width: 20 },
-                { header: "Line", key: "lineName", width: 15 },
-                { header: "Sub Section", key: "subSectionName", width: 20 },
-                { header: "Station No.", key: "stationName", width: 15 },
-                { header: "DOB", key: "dob", width: 15 },
-                { header: "Date of Joining", key: "joiningDate", width: 15 },
-                { header: "Education", key: "education", width: 20 },
-                { header: "District", key: "district", width: 15 },
-                { header: "State", key: "state", width: 15 },
-                { header: "PIN", key: "pin", width: 10 },
-                { header: "Bus Route", key: "busRoute", width: 15 },
-                { header: "Date of Leaving", key: "leavingDate", width: 15 },
-                { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
-                { header: "Contractor", key: "contractor", width: 20 },
-                { header: "Expected Handover Date", key: "expectedHandover", width: 20 },
-                { header: "Dojo Shift", key: "dojoShift", width: 15 },
-            ];
+            worksheet.columns = exportableColumns.filter((col) => selectedKeys.includes(col.key));
 
-            allCandidates.forEach((candidate) => {
-                worksheet.addRow({
+            for (let i = 0; i < allCandidates.length; i++) {
+                const candidate = allCandidates[i];
+                const fullRow = {
                     fullName: candidate.fullName || "",
                     empId: candidate.empId || "",
                     idCard: candidate.idCard || "",
@@ -790,8 +795,20 @@ const DojoHiring = () => {
                     contractor: candidate.contractor || "",
                     expectedHandover: safeDateFormat(candidate.expectedHandover, "yyyy-MM-dd"),
                     dojoShift: candidate.dojoShift || "",
+                };
+
+                const filteredRow = {};
+                selectedKeys.forEach((k) => {
+                    filteredRow[k] = fullRow[k];
                 });
-            });
+
+                worksheet.addRow(filteredRow);
+
+                if (i % 200 === 0 || i === allCandidates.length - 1) {
+                    reportProgress({ phase: "generating", current: i + 1, total: allCandidates.length });
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                }
+            }
 
             // Style header row
             worksheet.getRow(1).font = { bold: true };
@@ -801,16 +818,16 @@ const DojoHiring = () => {
                 fgColor: { argb: 'FFE0E0E0' }
             };
 
+            reportProgress({ phase: "saving", current: 0, total: 0 });
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             saveAs(blob, `Dojo_Candidates_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
 
-            toast.dismiss(toastId);
             toast.success(`Exported ${allCandidates.length} candidates successfully!`);
         } catch (error) {
             console.error("Export error:", error);
-            toast.dismiss(toastId);
-            toast.error("Failed to export data");
+            toast.error(error?.message === "No data to export" ? "No data to export" : "Failed to export data");
+            throw error;
         }
     };
 
@@ -1183,7 +1200,7 @@ const DojoHiring = () => {
                             <div className="flex gap-3">
                                 <Button
                                     variant="outline"
-                                    onClick={handleExportExcel}
+                                    onClick={() => setIsExportModalOpen(true)}
                                     className="border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-6 py-5 h-auto flex gap-2 items-center font-bold"
                                 >
                                     <IconDownload className="w-5 h-5" />
@@ -2214,6 +2231,16 @@ const DojoHiring = () => {
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+
+                <ExportColumnSelectorModal
+                    isOpen={isExportModalOpen}
+                    onOpenChange={setIsExportModalOpen}
+                    columns={exportableColumns}
+                    onExport={handleExportExcel}
+                    storageKey="export_columns_dojohiring"
+                    title="Customize Export Columns"
+                    description="Choose which columns you want to include in the Dojo candidates Excel export. Your selection is automatically saved."
+                />
 
             </div>
         </>

@@ -83,22 +83,6 @@ const StudentDashboard = () => {
     fetchDashboardData();
   }, []);
 
-  // Service Worker registration
-  useEffect(() => {
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            // Service worker registered successfully
-          })
-          .catch((registrationError) => {
-            // Service worker registration failed
-          });
-      });
-    }
-  }, []);
-
   const calculateCourseProgress = () => {
     if (!dashboardData.course?.modules) return 0;
     const totalModules = dashboardData.course.modules.length;

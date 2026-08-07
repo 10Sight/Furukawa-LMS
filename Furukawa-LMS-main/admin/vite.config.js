@@ -10,6 +10,12 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}']
+      },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
         name: 'Furukawa Minda LMS',
@@ -35,11 +41,8 @@ export default defineConfig({
       },
       devOptions: {
         enabled: true,
-        suppressWarnings: true
-      },
-      workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
+        suppressWarnings: true,
+        type: 'module'
       }
     })
   ],

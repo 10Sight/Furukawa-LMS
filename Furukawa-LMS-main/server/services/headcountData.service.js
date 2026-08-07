@@ -34,7 +34,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Fetch all eligible users to calculate daily active counts
     // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary
+        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory
         FROM users u
         WHERE u.isEmployee = 1
         ${getEligibleUserSql('u')}
@@ -159,6 +159,32 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         if (isNaN(d.getTime())) return null;
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     };
+
+    // Rejoining: per statusHistory.js, a fresh history entry is only ever pushed when a user
+    // transitions OUT of LEFT (rejoins) — every other change updates the last entry in place.
+    // So entries after the first (genesis) one are rejoin events, and their joiningDate is the
+    // rejoin date. Deduped per user per date in case of duplicate/same-day history entries.
+    const getRejoiningYMDs = (statusHistoryRaw) => {
+        let history;
+        try {
+            history = typeof statusHistoryRaw === 'string' ? JSON.parse(statusHistoryRaw || '[]') : statusHistoryRaw;
+        } catch (e) {
+            history = [];
+        }
+        if (!Array.isArray(history) || history.length < 2) return [];
+        return history.slice(1).map(entry => toYMD(entry?.joiningDate)).filter(Boolean);
+    };
+
+    const rejoiningUsersByDate = {};
+    allEligibleUsers.forEach(u => {
+        const seenDatesForUser = new Set();
+        getRejoiningYMDs(u.statusHistory).forEach(dYMD => {
+            if (seenDatesForUser.has(dYMD)) return;
+            seenDatesForUser.add(dYMD);
+            if (!rejoiningUsersByDate[dYMD]) rejoiningUsersByDate[dYMD] = new Set();
+            rejoiningUsersByDate[dYMD].add(u.id);
+        });
+    });
 
     const todayObj = new Date();
     const todayYMD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
@@ -969,6 +995,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Hiring Plan_${item.dateKey}`] = (requirementAvailable && attendanceAvailable && dayPresent > 0)
             ? Math.max(0, productionPlanRequirement - dayPresent)
             : 0;
+
+        tableData[`Rejoining_${item.dateKey}`] = rejoiningUsersByDate[item.dateKey]?.size || 0;
 
         // `${club.name} Headcount required` — same FN01 (days 1-15) / FN02 (day 16+) split as
         // the aggregate production-plan row, scoped to each club's own sectionIds.

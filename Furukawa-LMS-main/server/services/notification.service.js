@@ -2204,6 +2204,7 @@ class NotificationService {
             ...clubRowsFor("Headcount required"),
             { type: "spacer" },
             { label: "Hiring Plan" },
+            { label: "Rejoining" },
             { type: "spacer" },
             { label: "Hiring Actual", bg: "orange-100" },
             { type: "spacer" },

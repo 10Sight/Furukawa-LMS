@@ -240,6 +240,47 @@ const EvaluationTestMonitoring = () => {
     }
   }, [attemptsLoading, currentPage, totalPages, updateParams]);
 
+  // Centered pagination with ellipses (e.g. 1, 2, 3 ... 245, 246, 247)
+  const [goToPageInput, setGoToPageInput] = useState("");
+
+  const getPageNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let last;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    range.forEach((i) => {
+      if (last) {
+        if (i - last === 2) {
+          rangeWithDots.push(last + 1);
+        } else if (i - last !== 1) {
+          rangeWithDots.push("...");
+        }
+      }
+      rangeWithDots.push(i);
+      last = i;
+    });
+
+    return rangeWithDots;
+  };
+
+  const handleGoToPage = (e) => {
+    e.preventDefault();
+    const pageNum = parseInt(goToPageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      updateParams({ page: pageNum });
+      setGoToPageInput("");
+    } else {
+      toast.error(`Enter a page number between 1 and ${totalPages}`);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Page Title */}
@@ -597,31 +638,65 @@ const EvaluationTestMonitoring = () => {
       </Card>
 
       {/* Pagination Footer */}
-      {filteredAttempts.length > itemsPerPage && (
-        <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-150/60">
-          <p className="text-slate-400 text-sm font-medium">
-            Showing <span className="text-slate-900 font-bold">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-slate-900 font-bold">{Math.min(currentPage * itemsPerPage, filteredAttempts.length)}</span> of <span className="text-slate-900 font-bold">{filteredAttempts.length}</span> entries
+      {totalPages > 1 && (
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            Showing {paginatedAttempts.length} of{" "}
+            {filteredAttempts.length} attempts
           </p>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              disabled={currentPage === 1}
-              onClick={() => updateParams({ page: currentPage - 1 })}
-              className="rounded-lg border-gray-250"
-            >
-              Previous
-            </Button>
+          <div className="flex flex-wrap items-center justify-center gap-1">
             <Button
               variant="outline"
               size="sm"
-              disabled={currentPage >= totalPages}
+              disabled={currentPage === 1}
+              onClick={() => updateParams({ page: currentPage - 1 })}
+            >
+              Previous
+            </Button>
+            {getPageNumbers().map((page, idx) =>
+              page === "..." ? (
+                <span
+                  key={`dots-${idx}`}
+                  className="px-2 text-sm text-muted-foreground select-none"
+                >
+                  ...
+                </span>
+              ) : (
+                <Button
+                  key={page}
+                  variant={page === currentPage ? "default" : "outline"}
+                  size="sm"
+                  className="w-9 px-0"
+                  onClick={() => updateParams({ page })}
+                >
+                  {page}
+                </Button>
+              )
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === totalPages}
               onClick={() => updateParams({ page: currentPage + 1 })}
-              className="rounded-lg border-gray-250"
             >
               Next
             </Button>
           </div>
+          <form onSubmit={handleGoToPage} className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Go to page</span>
+            <Input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={goToPageInput}
+              onChange={(e) => setGoToPageInput(e.target.value)}
+              className="h-8 w-20"
+              placeholder={String(currentPage)}
+            />
+            <Button type="submit" variant="outline" size="sm">
+              Go
+            </Button>
+          </form>
         </div>
       )}
 

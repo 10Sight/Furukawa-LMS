@@ -233,12 +233,12 @@ const EvaluationTestMonitoring = () => {
   const totalPages = Math.ceil(filteredAttempts.length / itemsPerPage) || 1;
 
   // Clamp an out-of-range page from the URL (e.g. returning from a stale link, or a
-  // filter/delete shrinking the result set) back within bounds.
+  // filter/delete shrinking the result set) back within bounds once the data has loaded.
   useEffect(() => {
-    if (currentPage > totalPages) {
+    if (!attemptsLoading && currentPage > totalPages) {
       updateParams({ page: totalPages });
     }
-  }, [currentPage, totalPages, updateParams]);
+  }, [attemptsLoading, currentPage, totalPages, updateParams]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">

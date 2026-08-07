@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -84,7 +84,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 // term/department/section/line combo is fetched once per sheet session, not once per row.
 const userSearchCache = new Map();
 
-const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabled, departmentId, sectionId, lineId }) => {
+const UserCellSelector = React.memo(({ value, onChange, rowId, handleRowFieldChange, disabled, departmentId, sectionId, lineId }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
@@ -211,7 +211,8 @@ const UserCellSelector = ({ value, onChange, rowId, handleRowFieldChange, disabl
             )}
         </div>
     );
-};
+});
+UserCellSelector.displayName = "UserCellSelector";
 
 const HorizontalScrollbar = React.memo(({ containerRef }) => {
     const trackRef = useRef(null);
@@ -327,6 +328,204 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
 });
 HorizontalScrollbar.displayName = "HorizontalScrollbar";
 
+const MultiSkillingRow = React.memo(function MultiSkillingRow({
+    row,
+    index,
+    lines,
+    subSections,
+    canManage,
+    departmentId,
+    sectionId,
+    lineId,
+    onFieldChange,
+    onUserSelect,
+    onQuarterLineChange,
+    onRemove,
+    formatDayCountBadge,
+    stickyFrozenCell,
+}) {
+    const rowId = row.rowId;
+
+    return (
+        <tr className="group hover:bg-slate-50/50 transition-colors [&>td]:border-b [&>td]:border-slate-200">
+            <td className={`${stickyFrozenCell} left-0 w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`}>{index + 1}</td>
+            <td className={`${stickyFrozenCell} left-[70px] w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`}>
+                <UserCellSelector
+                    value={row.userName}
+                    onChange={(userId, userName) => onUserSelect(rowId, userId, userName)}
+                    departmentId={departmentId}
+                    sectionId={sectionId}
+                    lineId={lineId}
+                    rowId={rowId}
+                    handleRowFieldChange={onFieldChange}
+                    disabled={!canManage}
+                />
+            </td>
+            <td className={`${stickyFrozenCell} left-[290px] w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-mono text-slate-700 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`}>
+                <Input
+                    value={row.cardNo || ""}
+                    disabled={true}
+                    className="h-8 w-full min-w-[90px] text-xs shadow-none bg-slate-50 border-slate-200 text-center font-bold"
+                    placeholder="Card No"
+                    readOnly
+                />
+            </td>
+            {/* Shift */}
+            <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
+                <Select
+                    value={row.shift || ""}
+                    onValueChange={(val) => onFieldChange(rowId, "shift", val)}
+                    disabled={!canManage}
+                >
+                    <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
+                        <SelectValue placeholder="-" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="A">A</SelectItem>
+                        <SelectItem value="B">B</SelectItem>
+                        <SelectItem value="C">C</SelectItem>
+                        <SelectItem value="G">G</SelectItem>
+                    </SelectContent>
+                </Select>
+            </td>
+
+            {QUARTERS.map(({ key, cellBg }) => {
+                const modelLineField = `${key}ModelLine`;
+                const stationField = `${key}Station`;
+                const skillField = `${key}Skill`;
+                const dateField = `${key}Date`;
+                const dateActualField = `${key}DateActual`;
+                const statusField = `${key}Status`;
+                const quarterSubSections = row[modelLineField]
+                    ? subSections.filter(ss => ss.lineName === row[modelLineField])
+                    : subSections;
+
+                return (
+                    <React.Fragment key={key}>
+                        {/* Model & Line */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
+                            <Select
+                                value={row[modelLineField] || ""}
+                                onValueChange={(val) => onQuarterLineChange(rowId, key, val)}
+                                disabled={!canManage}
+                            >
+                                <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
+                                    <SelectValue placeholder="Select Model/Line" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {lines.map((l) => (
+                                        <SelectItem key={l.id || l._id} value={l.name}>
+                                            {l.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </td>
+                        {/* Station */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
+                            <Select
+                                value={row[stationField] || ""}
+                                onValueChange={(val) => onFieldChange(rowId, stationField, val)}
+                                disabled={!canManage}
+                            >
+                                <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
+                                    <SelectValue placeholder="Select Station" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {quarterSubSections.map((ss) => (
+                                        <SelectItem key={ss.id || ss._id} value={ss.name}>
+                                            {ss.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </td>
+                        {/* Skill Level */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
+                            <Select
+                                value={row[skillField] || ""}
+                                onValueChange={(val) => onFieldChange(rowId, skillField, val)}
+                                disabled={!canManage}
+                            >
+                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                    <SelectValue placeholder="-" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="L1">L1</SelectItem>
+                                    <SelectItem value="L2">L2</SelectItem>
+                                    <SelectItem value="L3">L3</SelectItem>
+                                    <SelectItem value="L4">L4</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {key !== "q4" && row[skillField] && (
+                                <div className="text-[9px] text-slate-600 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
+                                    {formatDayCountBadge(row[skillField])}
+                                </div>
+                            )}
+                        </td>
+                        {/* Date */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} text-center whitespace-nowrap`}>
+                            <input
+                                type="date"
+                                value={row[dateField] || ""}
+                                min={new Date().toLocaleDateString('en-CA')}
+                                onChange={(e) => onFieldChange(rowId, dateField, e.target.value)}
+                                disabled={!canManage}
+                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                            />
+                        </td>
+                        {/* Date Actual */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} text-center whitespace-nowrap`}>
+                            <input
+                                type="date"
+                                value={row[dateActualField] || ""}
+                                min={new Date().toLocaleDateString('en-CA')}
+                                onChange={(e) => onFieldChange(rowId, dateActualField, e.target.value)}
+                                disabled={!canManage}
+                                className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
+                            />
+                        </td>
+                        {/* Status */}
+                        <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
+                            <Select
+                                value={row[statusField] || ""}
+                                onValueChange={(val) => onFieldChange(rowId, statusField, val)}
+                                disabled={!canManage}
+                            >
+                                <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
+                                    <SelectValue placeholder="Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Planned">Planned</SelectItem>
+                                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                    <SelectItem value="Completed">Completed</SelectItem>
+                                    <SelectItem value="N/A">N/A</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </td>
+                    </React.Fragment>
+                );
+            })}
+
+            {/* Action */}
+            <td className="p-2 text-center no-print whitespace-nowrap">
+                {canManage && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onRemove(rowId, row.userId)}
+                        className="text-red-500 hover:text-red-700 p-1 h-auto"
+                        title="Remove Row"
+                    >
+                        <IconTrash className="w-4 h-4 text-red-500 hover:text-red-700" />
+                    </Button>
+                )}
+            </td>
+        </tr>
+    );
+});
+MultiSkillingRow.displayName = "MultiSkillingRow";
+
 const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", year }) => {
     const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
@@ -372,20 +571,18 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
         return (sectionsData?.data || []).find(s => String(s.id || s._id) === String(sectionId)) || null;
     }, [sectionsData, sectionId]);
     const multiSkillingDayCount = currentSection?.multiSkillingDayCount ?? null;
-    const multiSkillingDayCounts = currentSection?.multiSkillingDayCounts || {};
+    const multiSkillingDayCounts = currentSection?.multiSkillingDayCounts;
 
     // Resolves the day count to apply once an associate reaches `level`:
     // per-level override -> section default -> null (caller falls back to 3 months).
-    const resolveDayCountForLevel = (level) => {
-        if (level && multiSkillingDayCounts[level]) return multiSkillingDayCounts[level];
+    const resolveDayCountForLevel = useCallback((level) => {
+        if (level && multiSkillingDayCounts?.[level]) return multiSkillingDayCounts[level];
         return multiSkillingDayCount || null;
-    };
-    const formatDayCountBadge = (level) => {
+    }, [multiSkillingDayCounts, multiSkillingDayCount]);
+    const formatDayCountBadge = useCallback((level) => {
         const count = resolveDayCountForLevel(level);
         return count ? `+${count}d` : "+3mo";
-    };
-
-    const getQuarterSubSections = (modelLine) => (modelLine ? subSections.filter(ss => ss.lineName === modelLine) : subSections);
+    }, [resolveDayCountForLevel]);
 
     const [tableData, setTableData] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -497,7 +694,7 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
         };
     }, [departmentId, sectionId, year]);
 
-    const handleAddRow = () => {
+    const handleAddRow = useCallback(() => {
         setRows(prev => [
             ...prev,
             {
@@ -509,17 +706,17 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
                 ...emptyQuarterFields(),
             }
         ]);
-    };
+    }, []);
 
-    const handleRemoveEmployee = (rowId, userId) => {
+    const handleRemoveEmployee = useCallback((rowId, userId) => {
         setRows(prev => prev.filter(row => row.rowId !== rowId));
         if (userId) {
             setRemovedUserIds(prev => new Set([...prev, String(userId)]));
         }
         toast.success("Row removed from sheet");
-    };
+    }, []);
 
-    const handleRowFieldChange = (rowId, field, value) => {
+    const handleRowFieldChange = useCallback((rowId, field, value) => {
         setRows(prev => prev.map(row => {
             if (row.rowId !== rowId) return row;
             const updated = { ...row, [field]: value };
@@ -531,22 +728,27 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
             }
             return updated;
         }));
-    };
+    }, [resolveDayCountForLevel]);
 
-    const handleUserSelect = (rowId, userId, userName) => {
-        handleRowFieldChange(rowId, "userId", userId);
-        handleRowFieldChange(rowId, "userName", userName);
-        QUARTERS.forEach(({ key }) => {
-            handleRowFieldChange(rowId, `${key}ModelLine`, "");
-            handleRowFieldChange(rowId, `${key}Station`, "");
-            handleRowFieldChange(rowId, `${key}Skill`, "");
-        });
-    };
+    const handleUserSelect = useCallback((rowId, userId, userName) => {
+        setRows(prev => prev.map(row => {
+            if (row.rowId !== rowId) return row;
+            const cleared = {};
+            QUARTERS.forEach(({ key }) => {
+                cleared[`${key}ModelLine`] = "";
+                cleared[`${key}Station`] = "";
+                cleared[`${key}Skill`] = "";
+            });
+            return { ...row, userId, userName, ...cleared };
+        }));
+    }, []);
 
-    const handleQuarterLineChange = (rowId, quarterKey, val) => {
-        handleRowFieldChange(rowId, `${quarterKey}ModelLine`, val);
-        handleRowFieldChange(rowId, `${quarterKey}Station`, ""); // Reset station when line changes
-    };
+    const handleQuarterLineChange = useCallback((rowId, quarterKey, val) => {
+        setRows(prev => prev.map(row => {
+            if (row.rowId !== rowId) return row;
+            return { ...row, [`${quarterKey}ModelLine`]: val, [`${quarterKey}Station`]: "" };
+        }));
+    }, []);
 
     const filteredRows = useMemo(() => {
         if (!searchText.trim()) return rows;
@@ -557,7 +759,7 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
         );
     }, [rows, searchText]);
 
-    const handleSave = async (sendEmail = false) => {
+    const handleSave = useCallback(async (sendEmail = false) => {
         if (!departmentId) return;
 
         // Convert this line's rows to tableData format
@@ -614,7 +816,7 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
         } finally {
             setIsSaving(false);
         }
-    };
+    }, [departmentId, sectionId, year, rows, tableData, removedUserIds]);
 
     const handlePrint = () => {
         window.print();
@@ -728,186 +930,25 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
                         </thead>
 
                         <tbody className="bg-white">
-                            {filteredRows.map((row, index) => {
-                                const rowId = row.rowId;
-
-                                return (
-                                    <tr key={rowId} className="group hover:bg-slate-50/50 transition-colors [&>td]:border-b [&>td]:border-slate-200">
-                                        <td className={`${stickyFrozenCell} left-0 w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`}>{index + 1}</td>
-                                        <td className={`${stickyFrozenCell} left-[70px] w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`}>
-                                            <UserCellSelector
-                                                value={row.userName}
-                                                onChange={(userId, userName) => handleUserSelect(rowId, userId, userName)}
-                                                departmentId={departmentId}
-                                                sectionId={sectionId}
-                                                lineId={lineId}
-                                                rowId={rowId}
-                                                handleRowFieldChange={handleRowFieldChange}
-                                                disabled={!canManage}
-                                            />
-                                        </td>
-                                        <td className={`${stickyFrozenCell} left-[290px] w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-mono text-slate-700 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`}>
-                                            <Input
-                                                value={row.cardNo || ""}
-                                                disabled={true}
-                                                className="h-8 w-full min-w-[90px] text-xs shadow-none bg-slate-50 border-slate-200 text-center font-bold"
-                                                placeholder="Card No"
-                                                readOnly
-                                            />
-                                        </td>
-                                        {/* Shift */}
-                                        <td className="border-r border-slate-200 p-1 text-center whitespace-nowrap">
-                                            <Select
-                                                value={row.shift || ""}
-                                                onValueChange={(val) => handleRowFieldChange(rowId, "shift", val)}
-                                                disabled={!canManage}
-                                            >
-                                                <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none mx-auto">
-                                                    <SelectValue placeholder="-" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="A">A</SelectItem>
-                                                    <SelectItem value="B">B</SelectItem>
-                                                    <SelectItem value="C">C</SelectItem>
-                                                    <SelectItem value="G">G</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </td>
-
-                                        {QUARTERS.map(({ key, cellBg }) => {
-                                            const modelLineField = `${key}ModelLine`;
-                                            const stationField = `${key}Station`;
-                                            const skillField = `${key}Skill`;
-                                            const dateField = `${key}Date`;
-                                            const dateActualField = `${key}DateActual`;
-                                            const statusField = `${key}Status`;
-                                            const quarterSubSections = getQuarterSubSections(row[modelLineField]);
-
-                                            return (
-                                                <React.Fragment key={key}>
-                                                    {/* Model & Line */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
-                                                        <Select
-                                                            value={row[modelLineField] || ""}
-                                                            onValueChange={(val) => handleQuarterLineChange(rowId, key, val)}
-                                                            disabled={!canManage}
-                                                        >
-                                                            <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
-                                                                <SelectValue placeholder="Select Model/Line" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {lines.map((l) => (
-                                                                    <SelectItem key={l.id || l._id} value={l.name}>
-                                                                        {l.name}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </td>
-                                                    {/* Station */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
-                                                        <Select
-                                                            value={row[stationField] || ""}
-                                                            onValueChange={(val) => handleRowFieldChange(rowId, stationField, val)}
-                                                            disabled={!canManage}
-                                                        >
-                                                            <SelectTrigger className="h-8 w-full min-w-[150px] bg-white border-slate-200 text-xs shadow-none">
-                                                                <SelectValue placeholder="Select Station" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {quarterSubSections.map((ss) => (
-                                                                    <SelectItem key={ss.id || ss._id} value={ss.name}>
-                                                                        {ss.name}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </td>
-                                                    {/* Skill Level */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
-                                                        <Select
-                                                            value={row[skillField] || ""}
-                                                            onValueChange={(val) => handleRowFieldChange(rowId, skillField, val)}
-                                                            disabled={!canManage}
-                                                        >
-                                                            <SelectTrigger className="h-8 w-full min-w-[70px] bg-white border-slate-200 text-xs shadow-none">
-                                                                <SelectValue placeholder="-" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="L1">L1</SelectItem>
-                                                                <SelectItem value="L2">L2</SelectItem>
-                                                                <SelectItem value="L3">L3</SelectItem>
-                                                                <SelectItem value="L4">L4</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                        {key !== "q4" && row[skillField] && (
-                                                            <div className="text-[9px] text-slate-600 font-semibold text-center mt-0.5" title="Days until next plan date, based on this skill level">
-                                                                {formatDayCountBadge(row[skillField])}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    {/* Date */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} text-center whitespace-nowrap`}>
-                                                        <input
-                                                            type="date"
-                                                            value={row[dateField] || ""}
-                                                            min={new Date().toLocaleDateString('en-CA')}
-                                                            onChange={(e) => handleRowFieldChange(rowId, dateField, e.target.value)}
-                                                            disabled={!canManage}
-                                                            className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
-                                                        />
-                                                    </td>
-                                                    {/* Date Actual */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} text-center whitespace-nowrap`}>
-                                                        <input
-                                                            type="date"
-                                                            value={row[dateActualField] || ""}
-                                                            min={new Date().toLocaleDateString('en-CA')}
-                                                            onChange={(e) => handleRowFieldChange(rowId, dateActualField, e.target.value)}
-                                                            disabled={!canManage}
-                                                            className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
-                                                        />
-                                                    </td>
-                                                    {/* Status */}
-                                                    <td className={`border-r border-slate-200 p-1 ${cellBg} whitespace-nowrap`}>
-                                                        <Select
-                                                            value={row[statusField] || ""}
-                                                            onValueChange={(val) => handleRowFieldChange(rowId, statusField, val)}
-                                                            disabled={!canManage}
-                                                        >
-                                                            <SelectTrigger className="h-8 w-full min-w-[110px] bg-white border-slate-200 text-xs shadow-none">
-                                                                <SelectValue placeholder="Status" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="Planned">Planned</SelectItem>
-                                                                <SelectItem value="Ongoing">Ongoing</SelectItem>
-                                                                <SelectItem value="Completed">Completed</SelectItem>
-                                                                <SelectItem value="N/A">N/A</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </td>
-                                                </React.Fragment>
-                                            );
-                                        })}
-
-                                        {/* Action */}
-                                        <td className="p-2 text-center no-print whitespace-nowrap">
-                                            {canManage && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleRemoveEmployee(rowId, row.userId)}
-                                                    className="text-red-500 hover:text-red-700 p-1 h-auto"
-                                                    title="Remove Row"
-                                                >
-                                                    <IconTrash className="w-4 h-4 text-red-500 hover:text-red-700" />
-                                                </Button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-
+                            {filteredRows.map((row, index) => (
+                                <MultiSkillingRow
+                                    key={row.rowId}
+                                    row={row}
+                                    index={index}
+                                    lines={lines}
+                                    subSections={subSections}
+                                    canManage={canManage}
+                                    departmentId={departmentId}
+                                    sectionId={sectionId}
+                                    lineId={lineId}
+                                    onFieldChange={handleRowFieldChange}
+                                    onUserSelect={handleUserSelect}
+                                    onQuarterLineChange={handleQuarterLineChange}
+                                    onRemove={handleRemoveEmployee}
+                                    formatDayCountBadge={formatDayCountBadge}
+                                    stickyFrozenCell={stickyFrozenCell}
+                                />
+                            ))}
                             {filteredRows.length === 0 && (
                                 <tr>
                                     <td colSpan="29" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">

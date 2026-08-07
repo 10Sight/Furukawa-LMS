@@ -315,6 +315,9 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         if (evalOperatorsPage > evalOperatorsTotalPages) setEvalOperatorsPage(evalOperatorsTotalPages);
     }, [evalOperatorsTotalPages, evalOperatorsPage]);
 
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeConfig = activeConfigData?.data;
+
     // Observance Form Data
     const { data: observanceSectionsData } = useGetSectionsByDepartmentQuery(observanceDepartment, { skip: !observanceDepartment });
     const { data: observanceLinesData } = useGetLinesBySectionQuery(observanceSection, { skip: !observanceSection });
@@ -335,6 +338,17 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         return base;
     }, [observanceDepartment, observanceSection, observanceLine, observanceSubSection, obsMachinesBySubSectionData, obsMachinesByLineData, obsMachinesBySectionData, obsMachinesByDepartmentData]);
 
+    // Only the first two active levels (L1/L2) are ever eligible for the Observance sheet.
+    const observanceLevelFilter = React.useMemo(() => {
+        const levels = [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        return levels.slice(0, 2).map(l => l.name).filter(Boolean).join(",");
+    }, [activeConfig]);
+
+    // A station filter needs the full (unpaginated) candidate set client-side, since it also
+    // matches on currentSkill (per sub-section) which the backend filter doesn't account for.
+    // Without a station filter, pagination happens server-side to avoid loading everyone upfront.
+    const hasObservanceStationFilter = Boolean(observanceStation && observanceStation !== "All" && observanceStation !== "undefined");
+
     // Fetch users for observance search based on observance hierarchy
     const { data: observanceUsersData, isFetching: isObservanceUsersFetching } = useGetAllUsersQuery({
         departmentId: observanceDepartment || undefined,
@@ -345,15 +359,16 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         includeTemporary: "true",
         search: debouncedObservanceSearchText || undefined,
         excludeCounts: "true",
-        limit: 1000
-    }, { skip: !observanceDepartment });
+        currentLevel: observanceLevelFilter || undefined,
+        page: hasObservanceStationFilter ? 1 : observanceOperatorsPage,
+        limit: hasObservanceStationFilter ? 1000 : observanceOperatorsPerPage
+    }, { skip: !observanceDepartment || !activeConfig });
 
-    // Client-side station filtering for observance users (search is server-side)
+    // Client-side station filtering for observance users (search/level/pagination are server-side)
     const filteredObservanceUsers = React.useMemo(() => {
         let users = observanceUsersData?.data?.users || [];
 
-        // Filter by selected station if selected
-        if (observanceStation && observanceStation !== "All" && observanceStation !== "undefined") {
+        if (hasObservanceStationFilter) {
             const observanceMachine = activeObservanceMachines.find(m => String(m._id || m.id) === String(observanceStation));
             const subSecId = observanceMachine?.subSectionId;
             users = users.filter(u => {
@@ -364,14 +379,21 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
 
         return users;
-    }, [observanceUsersData, observanceStation]);
+    }, [observanceUsersData, observanceStation, hasObservanceStationFilter, activeObservanceMachines]);
 
-    const observanceOperatorsTotalPages = Math.max(1, Math.ceil(filteredObservanceUsers.length / observanceOperatorsPerPage));
+    const observanceOperatorsTotalUsers = hasObservanceStationFilter
+        ? filteredObservanceUsers.length
+        : (observanceUsersData?.data?.totalUsers || 0);
+
+    const observanceOperatorsTotalPages = hasObservanceStationFilter
+        ? Math.max(1, Math.ceil(filteredObservanceUsers.length / observanceOperatorsPerPage))
+        : (observanceUsersData?.data?.totalPages || 1);
 
     const paginatedObservanceUsers = React.useMemo(() => {
+        if (!hasObservanceStationFilter) return filteredObservanceUsers;
         const start = (observanceOperatorsPage - 1) * observanceOperatorsPerPage;
         return filteredObservanceUsers.slice(start, start + observanceOperatorsPerPage);
-    }, [filteredObservanceUsers, observanceOperatorsPage]);
+    }, [filteredObservanceUsers, observanceOperatorsPage, hasObservanceStationFilter]);
 
     useEffect(() => {
         setObservanceOperatorsPage(1);
@@ -928,6 +950,19 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     const currentSectionObj = (sectionsData?.data || []).find(
         s => String(s.id || s._id) === String(selectedSection)
     );
+    // Hides the 10-Cycle / Operator Observance tabs when the selected section opts out.
+    // With no section selected yet, both tabs stay visible.
+    const hideTenCycle = currentSectionObj?.hideTenCycle === true || currentSectionObj?.hideTenCycle === 1;
+    const hideOperatorObservance = currentSectionObj?.hideOperatorObservance === true || currentSectionObj?.hideOperatorObservance === 1;
+
+    useEffect(() => {
+        if (isEmbeddedView) return;
+        if ((hideTenCycle && activeTab === "cycle10") || (hideOperatorObservance && activeTab === "observance")) {
+            handleTabChange("skillMatrix");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hideTenCycle, hideOperatorObservance, activeTab, isEmbeddedView]);
+
     const canSignSkillMatrix = React.useMemo(() => {
         const result = {};
         SKILL_MATRIX_SIGNATURE_ROLES.forEach(role => {
@@ -951,9 +986,6 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
     };
 
     const handlePrint = () => window.print();
-
-    const { data: activeConfigData } = useGetActiveConfigQuery();
-    const activeConfig = activeConfigData?.data;
 
     const handleLevelChange = async (userId, nextLevel) => {
         try {
@@ -1291,10 +1323,14 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                             <TabsTrigger value="skillUpgradation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Plan for Skill Upgradation</TabsTrigger>
                             <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">OJT</TabsTrigger>
                             <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Test Paper</TabsTrigger>
-                            <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">10 Cycle</TabsTrigger>
+                            {!hideTenCycle && (
+                                <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">10 Cycle</TabsTrigger>
+                            )}
                             <TabsTrigger value="evaluation" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Check Sheet of Skill Evaluation</TabsTrigger>
                             <TabsTrigger value="skillMatrix" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Skill Matrix</TabsTrigger>
-                            <TabsTrigger value="observance" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Operator Observance</TabsTrigger>
+                            {!hideOperatorObservance && (
+                                <TabsTrigger value="observance" className="text-xs font-bold px-5 py-2.5 rounded-md transition-all">Operator Observance</TabsTrigger>
+                            )}
                         </TabsList>
                     </div>
                 )}
@@ -2637,10 +2673,22 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                 </ConditionalTabsContent>
 
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="cycle10" className="space-y-6">
-                    <Cycle10 />
+                    {hideTenCycle ? (
+                        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                            The 10-Cycle sheet is disabled for the selected section.
+                        </div>
+                    ) : (
+                        <Cycle10 />
+                    )}
                 </ConditionalTabsContent>
 
                 <ConditionalTabsContent isEmbedded={isEmbeddedView} value="observance" className="space-y-6">
+                    {hideOperatorObservance ? (
+                        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                            The Operator Observance sheet is disabled for the selected section.
+                        </div>
+                    ) : (
+                    <>
                     {/* Control Bar for selecting operator */}
                     <div className="no-print p-6 bg-white border rounded-lg shadow-sm space-y-4 mb-6 text-black">
                         <div className="flex justify-between items-center border-b pb-2">
@@ -2861,11 +2909,11 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     )}
                                 </tbody>
                             </table>
-                            {filteredObservanceUsers.length > 0 && (
+                            {observanceOperatorsTotalUsers > 0 && (
                                 <div className="flex justify-between items-center px-3 py-2 border-t bg-gray-50 text-xs">
                                     <span className="text-gray-500">
                                         Showing {(observanceOperatorsPage - 1) * observanceOperatorsPerPage + 1}
-                                        {"-"}{Math.min(observanceOperatorsPage * observanceOperatorsPerPage, filteredObservanceUsers.length)} of {filteredObservanceUsers.length} operators
+                                        {"-"}{Math.min(observanceOperatorsPage * observanceOperatorsPerPage, observanceOperatorsTotalUsers)} of {observanceOperatorsTotalUsers} operators
                                     </span>
                                     <div className="flex gap-2 items-center">
                                         <Button
@@ -2893,6 +2941,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                 </div>
                             )}
                         </div>
+                    )}
+                    </>
                     )}
                 </ConditionalTabsContent>
 

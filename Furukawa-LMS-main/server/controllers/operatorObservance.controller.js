@@ -46,6 +46,42 @@ const getDerivedLevel1CompletionDate = async (studentId) => {
     return null;
 };
 
+const getDerivedLevel2CompletionDate = async (studentId) => {
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    const levels = [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    // "Level-2 complete" date is interpreted as entry date into 3rd active level (typically L3).
+    const thirdLevelName = levels[2]?.name;
+    if (!thirdLevelName) return null;
+
+    const [progressRows] = await executeQuery(
+        "SELECT currentLevel, levelStartDate, updatedAt, createdAt FROM progress WHERE student = ?",
+        [studentId]
+    );
+
+    const targetNorm = normalizeLevel(thirdLevelName);
+    const matchedProgress = (progressRows || [])
+        .filter((row) => normalizeLevel(row.currentLevel) === targetNorm)
+        .map((row) => row.levelStartDate || row.updatedAt || row.createdAt)
+        .filter(Boolean)
+        .sort((a, b) => new Date(b) - new Date(a))[0];
+
+    if (matchedProgress) return matchedProgress;
+
+    // Fallback: If level transition date isn't in progress history, use skill-upgradation certificate date for that level.
+    const [certRows] = await executeQuery(
+        `SELECT TOP 1 issueDate, createdAt
+         FROM certificates
+         WHERE student = ? AND type = 'SKILL_UPGRADATION' AND level = ?
+         ORDER BY issueDate DESC, createdAt DESC`,
+        [String(studentId), thirdLevelName]
+    );
+
+    if (certRows.length > 0) return certRows[0].issueDate || certRows[0].createdAt || null;
+
+    return null;
+};
+
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
     if (!studentId) return null;
@@ -194,6 +230,7 @@ export const getObservanceByStudent = asyncHandler(async (req, res) => {
 
     const observance = await OperatorObservance.findByStudentId(resolvedId);
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
+    const derivedLevel2Date = await getDerivedLevel2CompletionDate(resolvedId);
 
     logAudit(req.user?.id, "VIEW_OPERATOR_OBSERVANCE_SHEET",
         { studentId: resolvedId, operatorNameCode: observance?.operatorNameCode || "" },
@@ -202,12 +239,13 @@ export const getObservanceByStudent = asyncHandler(async (req, res) => {
 
     // If no record exists, return an empty structure so frontend can initialize
     if (!observance) {
-        return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date, preparedBy: "", checkedBy: "", verifiedBy: "", status: "Draft" }, "No existing observance record"));
+        return res.json(new ApiResponse(200, { isNew: true, studentId: resolvedId, level1Date: derivedLevel1Date, level2Date: derivedLevel2Date, preparedBy: "", checkedBy: "", verifiedBy: "", status: "Draft" }, "No existing observance record"));
     }
 
     const responseData = {
         ...observance,
         level1Date: observance.level1Date || derivedLevel1Date || null,
+        level2Date: observance.level2Date || derivedLevel2Date || null,
         preparedBy: observance.preparedBy || "",
         checkedBy: observance.checkedBy || "",
         verifiedBy: observance.verifiedBy || "",
@@ -231,6 +269,8 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
 
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
     const finalLevel1Date = data.level1Date || derivedLevel1Date || null;
+    const derivedLevel2Date = await getDerivedLevel2CompletionDate(resolvedId);
+    const finalLevel2Date = data.level2Date || derivedLevel2Date || null;
     const userSavingName = req.user?.fullName || req.user?.name || "System";
 
     let observance = await OperatorObservance.findByStudentId(resolvedId);
@@ -244,6 +284,7 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         observance.lineName = data.lineName;
         observance.processName = data.processName;
         observance.level1Date = finalLevel1Date;
+        observance.level2Date = finalLevel2Date;
         observance.operatorNameCode = data.operatorNameCode;
         observance.observanceData = data.observanceData;
         observance.checkedBy = data.checkedBy || "";
@@ -291,12 +332,21 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         // assignment (frozen at creation, same as everything else here).
         const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [resolvedId]);
         const student = studentRows[0] || {};
+
+        if (student.sectionId) {
+            const [secs] = await executeQuery("SELECT hideOperatorObservance FROM [sections] WHERE id = ?", [student.sectionId]);
+            if (secs.length > 0 && (secs[0].hideOperatorObservance === true || secs[0].hideOperatorObservance === 1)) {
+                throw new ApiError("The Operator Observance sheet is disabled for this student's section", 403);
+            }
+        }
+
         const revision = await RevisionRecordService.getLatestForSheet('operator-observance', student.departmentId || null, student.sectionId || null);
 
         const newRecord = await OperatorObservance.create({
             studentId: resolvedId,
             ...data,
             level1Date: finalLevel1Date,
+            level2Date: finalLevel2Date,
             preparedBy: data.preparedBy || userSavingName,
             checkedBy: data.checkedBy || "",
             verifiedBy: data.verifiedBy || "",

@@ -7,6 +7,7 @@ import { useGetStudentProgressQuery } from "@/Redux/AllApi/ProgressApi";
 import { useGetStudentSubmissionsQuery } from "@/Redux/AllApi/SubmissionApi";
 import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import {
   Card,
   CardContent,
@@ -156,6 +157,39 @@ const StudentDetail = () => {
   const allDepts = deptListData?.data?.departments || [];
 
   const student = studentData?.data;
+
+  const studentDepartmentId = typeof student?.department === 'object'
+    ? (student.department?._id || student.department?.id)
+    : student?.department;
+
+  const { data: studentSectionsData } = useGetSectionsByDepartmentQuery(studentDepartmentId, {
+    skip: !studentDepartmentId,
+  });
+
+  // A check sheet tab stays visible unless ALL of the student's assigned sections hide it;
+  // a student with no assigned sections defaults to visible.
+  const shouldHideObservance = useMemo(() => {
+    const sections = studentSectionsData?.data || [];
+    if (!student || sections.length === 0) return false;
+
+    const assignedSectionIds = new Set();
+    if (student.sectionId) assignedSectionIds.add(String(student.sectionId));
+    (student.assignments || []).forEach((a) => {
+      if (a?.sectionId) assignedSectionIds.add(String(a.sectionId));
+    });
+    if (assignedSectionIds.size === 0) return false;
+
+    const assignedSections = sections.filter(s => assignedSectionIds.has(String(s.id || s._id)));
+    if (assignedSections.length === 0) return false;
+
+    return assignedSections.every(s => s.hideOperatorObservance === true || s.hideOperatorObservance === 1);
+  }, [student, studentSectionsData]);
+
+  useEffect(() => {
+    if (shouldHideObservance && activeTab === "observance") {
+      setActiveTab("overview");
+    }
+  }, [shouldHideObservance, activeTab]);
 
   // A user has rejoined if their statusHistory records more than one distinct
   // joiningDate -- i.e. joiningDate was set, then later changed to a new date
@@ -1157,7 +1191,9 @@ const StudentDetail = () => {
           <TabsTrigger value="submissions">Submissions ({stats.totalSubmissions})</TabsTrigger>
           <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
           <TabsTrigger value="ojt">On Job Training</TabsTrigger>
-          <TabsTrigger value="observance">Operator Observance</TabsTrigger>
+          {!shouldHideObservance && (
+            <TabsTrigger value="observance">Operator Observance</TabsTrigger>
+          )}
           <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
           <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
           <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
@@ -1785,11 +1821,17 @@ const StudentDetail = () => {
 
 
         <TabsContent value="observance">
-          <OperatorObservanceSheet
-            studentId={studentId}
-            studentName={student?.fullName || ""}
-            employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
-          />
+          {shouldHideObservance ? (
+            <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+              The Operator Observance sheet is disabled for this student's section.
+            </div>
+          ) : (
+            <OperatorObservanceSheet
+              studentId={studentId}
+              studentName={student?.fullName || ""}
+              employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="handover" className="space-y-6 mt-6">

@@ -70,6 +70,13 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
     const [deps] = await executeQuery("SELECT id FROM departments WHERE id = ?", [departmentId]);
     if (deps.length === 0) throw new ApiError("Department not found", 404);
 
+    if (sectionId) {
+        const [secs] = await executeQuery("SELECT hideTenCycle FROM [sections] WHERE id = ?", [sectionId]);
+        if (secs.length > 0 && (secs[0].hideTenCycle === true || secs[0].hideTenCycle === 1)) {
+            throw new ApiError("The 10-Cycle sheet is disabled for this section", 403);
+        }
+    }
+
     // Freeze whatever the Revision Table currently says for this form — this sheet
     // keeps this snapshot for its whole lifetime; updateTenCycleSheetById never
     // touches these columns.

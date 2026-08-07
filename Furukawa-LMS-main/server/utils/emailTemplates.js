@@ -1516,6 +1516,7 @@ export const generateObservanceStatusEmail = ({
     lineName,
     processName,
     level1Date,
+    level2Date,
     preparedBy,
     checkedBy,
     verifiedBy,
@@ -1580,6 +1581,10 @@ export const generateObservanceStatusEmail = ({
                     <tr>
                         <td style="padding:7px 0;color:#6b7280;font-weight:600;">Level-1 Complete Date</td>
                         <td style="padding:7px 0;color:#111827;">${level1Date || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Level-2 Complete Date</td>
+                        <td style="padding:7px 0;color:#111827;">${level2Date || '-'}</td>
                     </tr>
                     <tr>
                         <td style="padding:7px 0;color:#6b7280;font-weight:600;">Status</td>

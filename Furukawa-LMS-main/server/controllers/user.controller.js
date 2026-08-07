@@ -570,6 +570,16 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     whereClauses.push(`u.role IN (${roles.map(() => "?").join(",")})`);
     params.push(...roles);
   }
+  if (req.query.currentLevel) {
+    const levels = req.query.currentLevel.split(",").map(l => l.trim()).filter(Boolean);
+    if (levels.length) {
+      const ph = levels.map(() => "?").join(",");
+      // Operators who haven't been assigned a level yet (NULL/empty currentLevel) default to
+      // the first level in the requested set, so they still surface in level-1 filtered views.
+      whereClauses.push(`(u.currentLevel IN (${ph}) OR u.currentLevel IS NULL OR u.currentLevel = '')`);
+      params.push(...levels);
+    }
+  }
   if (req.query.customRoleId) { whereClauses.push("u.customRoleId = ?"); params.push(req.query.customRoleId); }
   if (req.query.designation) {
     const designations = req.query.designation.split(",").map(d => d.trim()).filter(Boolean);

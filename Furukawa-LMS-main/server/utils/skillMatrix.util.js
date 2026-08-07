@@ -332,7 +332,7 @@ export const getSpeedCellItemIndex = (levelIdx, items) => {
  * fires the handover/max-level notification hooks. Shared by the manual Skill Matrix
  * Certificate save flow and bulk imports so both paths apply identical business rules.
  */
-export const syncStudentSkillProgress = async ({ studentId, subSectionId, calculatedEfficiency, earnedLevelName, activeConfig }) => {
+export const syncStudentSkillProgress = async ({ studentId, subSectionId, calculatedEfficiency, earnedLevelName, activeConfig, issuedBy }) => {
     const student = await User.findById(studentId);
     if (!student) return { levelUpgraded: false };
 
@@ -403,6 +403,34 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
             const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("./handover.util.js");
             await checkAndProcessHandover(studentId, newGlobalLevelName);
             await checkAndProcessMaxLevelNotification(studentId, newGlobalLevelName);
+
+            // Record a SKILL_UPGRADATION certificate so the Operator Observance Sheet can
+            // derive "Date of Level-N Complete" from it (see operatorObservance.controller.js
+            // getDerivedLevel1CompletionDate/getDerivedLevel2CompletionDate fallback).
+            try {
+                const Certificate = (await import("../models/certificate.model.js")).default;
+                const existingCert = await Certificate.findOne({
+                    student: String(studentId),
+                    type: 'SKILL_UPGRADATION',
+                    level: newGlobalLevelName,
+                });
+
+                if (!existingCert) {
+                    await Certificate.create({
+                        student: String(studentId),
+                        course: '',
+                        issuedBy: String(issuedBy || 'SYSTEM'),
+                        grade: 'PASS',
+                        issueDate: new Date(),
+                        type: 'SKILL_UPGRADATION',
+                        level: newGlobalLevelName,
+                        status: 'ACTIVE',
+                        metadata: {},
+                    });
+                }
+            } catch (certErr) {
+                console.error(`[syncStudentSkillProgress] Failed to create skill upgradation certificate for ${studentId}:`, certErr);
+            }
         }
     }
 

@@ -358,6 +358,7 @@ const applySkillMatrixFromImportRow = async ({ userId, subSectionId, departmentI
             calculatedEfficiency: calculatedEff,
             earnedLevelName,
             activeConfig,
+            issuedBy: updatedBy || 'SYSTEM',
         });
     } catch (syncErr) {
         console.error(`[applySkillMatrixFromImportRow] Failed to sync user stats for ${userId}:`, syncErr);

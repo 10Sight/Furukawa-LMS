@@ -858,7 +858,8 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
                 subSectionId,
                 calculatedEfficiency,
                 earnedLevelName,
-                activeConfig
+                activeConfig,
+                issuedBy: updatedBy
             });
             levelUpgraded = syncResult.levelUpgraded;
             newLevel = syncResult.newLevel;

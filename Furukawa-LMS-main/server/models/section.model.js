@@ -70,6 +70,8 @@ class Section {
         this.tenCycleFormType = data.tenCycleFormType || "form1";
         this.departmentId = data.departmentId;
         this.isActive = data.isActive !== undefined ? !!data.isActive : true;
+        this.hideTenCycle = data.hideTenCycle !== undefined ? !!data.hideTenCycle : false;
+        this.hideOperatorObservance = data.hideOperatorObservance !== undefined ? !!data.hideOperatorObservance : false;
 
         this.daily5mApproverDeptId = data.daily5mApproverDeptId || null;
         this.daily5mApproverSectionId = data.daily5mApproverSectionId || null;
@@ -114,6 +116,8 @@ class Section {
                     tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
                     departmentId INT NOT NULL,
                     isActive BIT DEFAULT 1,
+                    hideTenCycle BIT DEFAULT 0,
+                    hideOperatorObservance BIT DEFAULT 0,
                     daily5mApproverDeptId INT NULL,
                     daily5mApproverSectionId INT NULL,
                     daily5mApproverLineId INT NULL,
@@ -292,6 +296,20 @@ class Section {
                     ALTER TABLE [sections] ADD multiSkillingDayCounts NVARCHAR(MAX) NULL;
                 END
 
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'hideTenCycle')
+                BEGIN
+                    ALTER TABLE [sections] ADD hideTenCycle BIT DEFAULT 0;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns
+                             WHERE object_id = OBJECT_ID('sections')
+                             AND name = 'hideOperatorObservance')
+                BEGIN
+                    ALTER TABLE [sections] ADD hideOperatorObservance BIT DEFAULT 0;
+                END
+
                 -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
                 UPDATE [sections] SET daily5mFormType = 'crimping' 
                 WHERE (category = 'CRIMPING' OR category = 'Cutting & Crimping' OR name LIKE '%Crimping%' OR name LIKE '%Cutting%') 
@@ -425,6 +443,7 @@ class Section {
         const validLevels = await getValidSkillLevelNames();
         const fields = [
             "name", "uniCode", "description", "category", "daily5mFormType", "tenCycleFormType", "departmentId", "isActive",
+            "hideTenCycle", "hideOperatorObservance",
             "daily5mApproverDeptId", "daily5mApproverSectionId", "daily5mApproverLineId",
             "skillMatrixApproverQaDeptId", "skillMatrixApproverQaSectionId", "skillMatrixApproverQaLineId",
             "skillMatrixApproverSafetyDeptId", "skillMatrixApproverSafetySectionId", "skillMatrixApproverSafetyLineId",
@@ -444,6 +463,8 @@ class Section {
             data.tenCycleFormType || "form1",
             data.departmentId,
             data.isActive !== undefined ? data.isActive : true,
+            data.hideTenCycle !== undefined ? data.hideTenCycle : false,
+            data.hideOperatorObservance !== undefined ? data.hideOperatorObservance : false,
             data.daily5mApproverDeptId || null,
             data.daily5mApproverSectionId || null,
             data.daily5mApproverLineId || null,
@@ -534,6 +555,8 @@ class Section {
         if (data.daily5mFormType !== undefined) { updateFields.push("daily5mFormType = ?"); values.push(data.daily5mFormType); }
         if (data.tenCycleFormType !== undefined) { updateFields.push("tenCycleFormType = ?"); values.push(data.tenCycleFormType); }
         if (data.isActive !== undefined) { updateFields.push("isActive = ?"); values.push(data.isActive); }
+        if (data.hideTenCycle !== undefined) { updateFields.push("hideTenCycle = ?"); values.push(data.hideTenCycle); }
+        if (data.hideOperatorObservance !== undefined) { updateFields.push("hideOperatorObservance = ?"); values.push(data.hideOperatorObservance); }
         if (data.daily5mApproverDeptId !== undefined) { updateFields.push("daily5mApproverDeptId = ?"); values.push(data.daily5mApproverDeptId); }
         if (data.daily5mApproverSectionId !== undefined) { updateFields.push("daily5mApproverSectionId = ?"); values.push(data.daily5mApproverSectionId); }
         if (data.daily5mApproverLineId !== undefined) { updateFields.push("daily5mApproverLineId = ?"); values.push(data.daily5mApproverLineId); }

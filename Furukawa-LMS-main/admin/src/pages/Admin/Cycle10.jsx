@@ -120,6 +120,12 @@ const Cycle10 = () => {
         return sections.filter(s => assignedIds.includes(String(s._id || s.id)));
     }, [sections, user, isAdmin]);
 
+    // Sections that hide the 10-Cycle sheet stay visible in the view/filter dropdown
+    // (so existing sheets remain reachable) but are excluded from the "Add Sheet" picker.
+    const assignableCreateSections = useMemo(() => {
+        return assignableSections.filter(s => !(s.hideTenCycle === true || s.hideTenCycle === 1));
+    }, [assignableSections]);
+
     const isRestricted = !isAdmin && user && (
         (user.departments?.length > 0) || user.departmentId ||
         (user.sections?.length > 0) || user.sectionId
@@ -301,6 +307,11 @@ const Cycle10 = () => {
     const handleCreateSheet = async () => {
         if (!createDepartmentId) {
             toast.error("Please select department");
+            return;
+        }
+        const chosenSection = sections.find(s => String(s.id || s._id) === String(createSectionId));
+        if (chosenSection && (chosenSection.hideTenCycle === true || chosenSection.hideTenCycle === 1)) {
+            toast.error("The 10-Cycle sheet is disabled for this section");
             return;
         }
         try {
@@ -1804,17 +1815,17 @@ const Cycle10 = () => {
                                     setCreateSectionId(v);
                                     setCreateLineId("");
                                     setCreateSubSectionId("");
-                                    const selectedSec = assignableSections.find(s => String(s.id || s._id) === v);
+                                    const selectedSec = assignableCreateSections.find(s => String(s.id || s._id) === v);
                                     if (selectedSec && selectedSec.tenCycleFormType) {
                                         const available = selectedSec.tenCycleFormType.split(",");
                                         if (available.length > 0) setCreateFormType(available[0]);
                                     }
-                                }} disabled={!createDepartmentId || (isRestricted && assignableSections.length <= 1)}>
+                                }} disabled={!createDepartmentId || (isRestricted && assignableCreateSections.length <= 1)}>
                                     <SelectTrigger className="h-9 text-xs">
                                         <SelectValue placeholder="Select section" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {assignableSections.map((sec) => (
+                                        {assignableCreateSections.map((sec) => (
                                             <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
                                                 {sec.name}
                                             </SelectItem>

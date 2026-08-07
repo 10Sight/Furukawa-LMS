@@ -275,6 +275,21 @@ const MultiSkilling = () => {
         (authUser.sections?.length > 0) || authUser.sectionId
     );
 
+    // Hides the 10-Cycle tab when the currently selected section has hideTenCycle set.
+    // With no section selected yet, the tab stays visible.
+    const activeSectionObj = useMemo(() => {
+        if (!section) return null;
+        return assignableSections.find(s => String(s.id || s._id) === String(section)) || null;
+    }, [assignableSections, section]);
+    const hideTenCycle = activeSectionObj?.hideTenCycle === true || activeSectionObj?.hideTenCycle === 1;
+
+    useEffect(() => {
+        if (hideTenCycle && activeTab === "cycle10") {
+            handleTabChange("planCalendar");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hideTenCycle, activeTab]);
+
     useEffect(() => {
         if (!isRestricted) return;
         if (assignableDepartments.length === 1 && !dept) {
@@ -438,7 +453,9 @@ const MultiSkilling = () => {
                     <TabsTrigger value="ojt" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">OJT</TabsTrigger>
                     <TabsTrigger value="testPaper" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">Test Papers</TabsTrigger>
                     <TabsTrigger value="daily5m" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">5M</TabsTrigger>
-                    <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">10 Cycle</TabsTrigger>
+                    {!hideTenCycle && (
+                        <TabsTrigger value="cycle10" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">10 Cycle</TabsTrigger>
+                    )}
                     <TabsTrigger value="threeDay" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">3 Days</TabsTrigger>
                     <TabsTrigger value="evaluation" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">Skill Evaluation</TabsTrigger>
                     <TabsTrigger value="skillMatrix" className="text-xs font-bold px-5 py-2.5 rounded-lg transition-all data-[state=active]:bg-amber-500 data-[state=active]:text-white">Skill Matrix</TabsTrigger>
@@ -659,7 +676,13 @@ const MultiSkilling = () => {
 
                 {/* 10 Cycle Tab */}
                 <TabsContent value="cycle10" className="space-y-6">
-                    <Cycle10 />
+                    {hideTenCycle ? (
+                        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                            The 10-Cycle sheet is disabled for the selected section.
+                        </div>
+                    ) : (
+                        <Cycle10 />
+                    )}
                 </TabsContent>
 
                 {/* 3 Days Tab */}

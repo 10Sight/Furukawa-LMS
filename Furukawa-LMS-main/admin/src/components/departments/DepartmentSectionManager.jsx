@@ -125,6 +125,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [newSectionMultiSkillingDayCount, setNewSectionMultiSkillingDayCount] = useState("");
     const [newSectionSkillUpgradationDayCounts, setNewSectionSkillUpgradationDayCounts] = useState({});
     const [newSectionMultiSkillingDayCounts, setNewSectionMultiSkillingDayCounts] = useState({});
+    const [newSectionHideTenCycle, setNewSectionHideTenCycle] = useState(false);
+    const [newSectionHideOperatorObservance, setNewSectionHideOperatorObservance] = useState(false);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -140,6 +142,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
     const [editMultiSkillingDayCount, setEditMultiSkillingDayCount] = useState("");
     const [editSkillUpgradationDayCounts, setEditSkillUpgradationDayCounts] = useState({});
     const [editMultiSkillingDayCounts, setEditMultiSkillingDayCounts] = useState({});
+    const [editHideTenCycle, setEditHideTenCycle] = useState(false);
+    const [editHideOperatorObservance, setEditHideOperatorObservance] = useState(false);
 
     const [expandedSectionId, setExpandedSectionId] = useState(null);
     const [categoryFilter, setCategoryFilter] = useState("All");
@@ -195,6 +199,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 category: newSectionCategory,
                 daily5mFormType: newSectionFormTypes.join(","),
                 tenCycleFormType: newSectionTenCycleFormTypes.join(","),
+                hideTenCycle: newSectionHideTenCycle,
+                hideOperatorObservance: newSectionHideOperatorObservance,
                 skillUpgradationDayCount: newSectionSkillUpgradationDayCount || null,
                 multiSkillingDayCount: newSectionMultiSkillingDayCount || null,
                 skillUpgradationDayCounts: buildDayCountsPayload(newSectionSkillUpgradationDayCounts),
@@ -222,6 +228,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
             setNewSectionMultiSkillingDayCount("");
             setNewSectionSkillUpgradationDayCounts({});
             setNewSectionMultiSkillingDayCounts({});
+            setNewSectionHideTenCycle(false);
+            setNewSectionHideOperatorObservance(false);
             setIsCreateDialogOpen(false);
         } catch (error) {
             toast.error(error.data?.message || "Failed to create section");
@@ -261,6 +269,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
         setEditMultiSkillingDayCount(section.multiSkillingDayCount ?? "");
         setEditSkillUpgradationDayCounts({ ...(section.skillUpgradationDayCounts || {}) });
         setEditMultiSkillingDayCounts({ ...(section.multiSkillingDayCounts || {}) });
+        setEditHideTenCycle(section.hideTenCycle === true || section.hideTenCycle === 1);
+        setEditHideOperatorObservance(section.hideOperatorObservance === true || section.hideOperatorObservance === 1);
         setIsEditDialogOpen(true);
     };
 
@@ -298,6 +308,8 @@ const DepartmentSectionManager = ({ departmentId }) => {
                 category: editCategory,
                 daily5mFormType: editFormTypes.join(","),
                 tenCycleFormType: editTenCycleFormTypes.join(","),
+                hideTenCycle: editHideTenCycle,
+                hideOperatorObservance: editHideOperatorObservance,
                 skillUpgradationDayCount: editSkillUpgradationDayCount || null,
                 multiSkillingDayCount: editMultiSkillingDayCount || null,
                 skillUpgradationDayCounts: buildDayCountsPayload(editSkillUpgradationDayCounts),
@@ -444,6 +456,29 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         {newSectionTenCycleFormTypes.length === 0 && (
                                             <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
                                         )}
+                                    </div>
+                                    <div className="space-y-2 pt-2 border-t">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">Check Sheet Visibility</Label>
+                                        <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox
+                                                id="new-hide-ten-cycle"
+                                                checked={newSectionHideTenCycle}
+                                                onCheckedChange={(checked) => setNewSectionHideTenCycle(!!checked)}
+                                            />
+                                            <Label htmlFor="new-hide-ten-cycle" className="cursor-pointer flex-1 text-sm font-medium">
+                                                Hide 10-Cycle Sheet for this section
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox
+                                                id="new-hide-observance"
+                                                checked={newSectionHideOperatorObservance}
+                                                onCheckedChange={(checked) => setNewSectionHideOperatorObservance(!!checked)}
+                                            />
+                                            <Label htmlFor="new-hide-observance" className="cursor-pointer flex-1 text-sm font-medium">
+                                                Hide Operator Observance Sheet for this section
+                                            </Label>
+                                        </div>
                                     </div>
                                     <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">
@@ -653,6 +688,29 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                         {editTenCycleFormTypes.length === 0 && (
                                             <p className="text-[11px] text-red-500 italic">Please select at least one 10-cycle form type.</p>
                                         )}
+                                    </div>
+                                    <div className="space-y-2 pt-2 border-t">
+                                        <Label className="text-slate-500 font-bold uppercase text-[10px]">Check Sheet Visibility</Label>
+                                        <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox
+                                                id="edit-hide-ten-cycle"
+                                                checked={editHideTenCycle}
+                                                onCheckedChange={(checked) => setEditHideTenCycle(!!checked)}
+                                            />
+                                            <Label htmlFor="edit-hide-ten-cycle" className="cursor-pointer flex-1 text-sm font-medium">
+                                                Hide 10-Cycle Sheet for this section
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                            <Checkbox
+                                                id="edit-hide-observance"
+                                                checked={editHideOperatorObservance}
+                                                onCheckedChange={(checked) => setEditHideOperatorObservance(!!checked)}
+                                            />
+                                            <Label htmlFor="edit-hide-observance" className="cursor-pointer flex-1 text-sm font-medium">
+                                                Hide Operator Observance Sheet for this section
+                                            </Label>
+                                        </div>
                                     </div>
                                     <div className="space-y-3 pt-2 border-t">
                                         <div className="space-y-2">

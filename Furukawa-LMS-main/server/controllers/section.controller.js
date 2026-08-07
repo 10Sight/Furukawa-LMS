@@ -38,7 +38,7 @@ const validateDayCountsMap = (map, label, validLevels) => {
 // @route   POST /api/sections
 // @access  Private
 export const createSection = asyncHandler(async (req, res) => {
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, departmentId, hideTenCycle, hideOperatorObservance, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
 
     if (!name || !departmentId) {
         throw new ApiError(400, "Name and Department ID are required");
@@ -75,6 +75,8 @@ export const createSection = asyncHandler(async (req, res) => {
         daily5mFormType,
         tenCycleFormType,
         departmentId,
+        hideTenCycle,
+        hideOperatorObservance,
         skillUpgradationDayCount,
         multiSkillingDayCount,
         skillUpgradationDayCounts,
@@ -104,7 +106,7 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
 // @access  Private
 export const getAllSections = asyncHandler(async (req, res) => {
     const { departmentId } = req.query;
-    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive, daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId FROM [sections]";
+    let querySQL = "SELECT id, name, uniCode, description, category, departmentId, isActive, hideTenCycle, hideOperatorObservance, daily5mApproverDeptId, daily5mApproverSectionId, daily5mApproverLineId FROM [sections]";
     let params = [];
 
     if (departmentId && departmentId !== "ALL" && departmentId !== "undefined" && departmentId !== "null") {
@@ -126,7 +128,7 @@ export const getAllSections = asyncHandler(async (req, res) => {
 // @access  Private
 export const updateSection = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
+    const { name, uniCode, description, category, daily5mFormType, tenCycleFormType, isActive, hideTenCycle, hideOperatorObservance, skillUpgradationDayCount, multiSkillingDayCount, skillUpgradationDayCounts, multiSkillingDayCounts } = req.body;
 
     let trimmedUniCode;
     if (uniCode !== undefined) {
@@ -162,6 +164,8 @@ export const updateSection = asyncHandler(async (req, res) => {
         daily5mFormType,
         tenCycleFormType,
         isActive,
+        hideTenCycle,
+        hideOperatorObservance,
         skillUpgradationDayCount,
         multiSkillingDayCount,
         skillUpgradationDayCounts,

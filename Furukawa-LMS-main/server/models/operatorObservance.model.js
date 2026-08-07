@@ -7,6 +7,7 @@ class OperatorObservance {
         this.lineName = data.lineName || "";
         this.processName = data.processName || "";
         this.level1Date = data.level1Date ? new Date(data.level1Date) : null;
+        this.level2Date = data.level2Date ? new Date(data.level2Date) : null;
         this.operatorNameCode = data.operatorNameCode || "";
 
         // Storing the complex table data as JSON
@@ -42,6 +43,7 @@ class OperatorObservance {
                     lineName VARCHAR(255),
                     processName VARCHAR(255),
                     level1Date DATETIME,
+                    level2Date DATETIME,
                     operatorNameCode VARCHAR(255),
                     observanceData NVARCHAR(MAX),
                     checkedBy VARCHAR(255),
@@ -77,6 +79,10 @@ class OperatorObservance {
                 BEGIN
                     ALTER TABLE operator_observances ADD revDate VARCHAR(255) NULL;
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'level2Date')
+                BEGIN
+                    ALTER TABLE operator_observances ADD level2Date DATETIME NULL;
+                END
             END
         `;
         await executeQuery(query);
@@ -90,16 +96,16 @@ class OperatorObservance {
 
     static async create(data) {
         const {
-            studentId, lineName, processName, level1Date, operatorNameCode,
+            studentId, lineName, processName, level1Date, level2Date, operatorNameCode,
             observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory,
             docNo, revNo, revDate
         } = data;
 
         const query = `
             INSERT INTO operator_observances
-            (studentId, lineName, processName, level1Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory, docNo, revNo, revDate)
+            (studentId, lineName, processName, level1Date, level2Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory, docNo, revNo, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -107,6 +113,7 @@ class OperatorObservance {
             lineName,
             processName,
             level1Date ? new Date(level1Date) : null,
+            level2Date ? new Date(level2Date) : null,
             operatorNameCode,
             JSON.stringify(observanceData || {}),
             checkedBy,
@@ -126,7 +133,7 @@ class OperatorObservance {
     async save() {
         const query = `
             UPDATE operator_observances SET
-            lineName = ?, processName = ?, level1Date = ?, operatorNameCode = ?,
+            lineName = ?, processName = ?, level1Date = ?, level2Date = ?, operatorNameCode = ?,
             observanceData = ?, checkedBy = ?, verifiedBy = ?, preparedBy = ?, status = ?, revHistory = ?, updatedAt = GETDATE()
             WHERE id = ?
         `;
@@ -135,6 +142,7 @@ class OperatorObservance {
             this.lineName,
             this.processName,
             this.level1Date,
+            this.level2Date,
             this.operatorNameCode,
             JSON.stringify(this.observanceData),
             this.checkedBy,

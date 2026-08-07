@@ -134,6 +134,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         lineName: "",
         processName: "",
         level1Date: "",
+        level2Date: "",
         operatorNameCode: "",
         preparedBy: "",
         checkedBy: "",
@@ -241,6 +242,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         lineName: data.lineName || assignmentLineName || "",
                         processName: data.processName || assignmentProcessName || "",
                         level1Date: data.level1Date ? new Date(data.level1Date).toISOString().split('T')[0] : "",
+                        level2Date: data.level2Date ? new Date(data.level2Date).toISOString().split('T')[0] : "",
                         operatorNameCode: defaultOperatorNameCode || "",
                         preparedBy: data.preparedBy || "",
                         checkedBy: data.checkedBy || "",
@@ -258,6 +260,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         lineName: assignmentLineName || prev.lineName,
                         processName: assignmentProcessName || prev.processName,
                         level1Date: data.level1Date ? new Date(data.level1Date).toISOString().split('T')[0] : prev.level1Date,
+                        level2Date: data.level2Date ? new Date(data.level2Date).toISOString().split('T')[0] : prev.level2Date,
                         operatorNameCode: defaultOperatorNameCode || prev.operatorNameCode,
                         preparedBy: prev.preparedBy || authUser?.fullName || authUser?.name || "",
                         checkedBy: "",
@@ -318,6 +321,16 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
             }
             if (value > todayStr) {
                 toast.error("Date of Level-1 Complete cannot be in the future");
+                return;
+            }
+        }
+        if (field === 'level2Date' && value) {
+            if (value < todayStr) {
+                toast.error("Date of Level-2 Complete cannot be in the past");
+                return;
+            }
+            if (value > todayStr) {
+                toast.error("Date of Level-2 Complete cannot be in the future");
                 return;
             }
         }
@@ -614,6 +627,16 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={headerData.level1Date}
                                 onChange={e => handleHeaderChange('level1Date', e.target.value)}
                                 disabled={!isEditMode || isCellLocked('header', 'level1Date')}
+                                min={todayStr}
+                                max={todayStr}
+                            />
+                            <span className="font-semibold mt-2">Date of Level-2 Complete-</span>
+                            <Input
+                                type="date"
+                                className="h-8 border-b border-black rounded-none border-t-0 border-x-0 focus-visible:ring-0 px-0 disabled:opacity-70 disabled:cursor-default"
+                                value={headerData.level2Date}
+                                onChange={e => handleHeaderChange('level2Date', e.target.value)}
+                                disabled={!isEditMode || isCellLocked('header', 'level2Date')}
                                 min={todayStr}
                                 max={todayStr}
                             />

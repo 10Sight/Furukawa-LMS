@@ -235,6 +235,7 @@ class NotificationService {
                     lineName: formData?.lineName || "",
                     processName: formData?.processName || "",
                     level1Date: formData?.level1Date || "",
+                    level2Date: formData?.level2Date || "",
                     preparedBy: formData?.preparedBy || "",
                     checkedBy: formData?.checkedBy || "",
                     verifiedBy: formData?.verifiedBy || "",
@@ -1105,7 +1106,15 @@ class NotificationService {
         worksheet.mergeCells('J6:K6');
         worksheet.getRow(6).font = { bold: true, size: 10 };
 
-        worksheet.addRow([]); // Blank row 7
+        const level2Row = worksheet.addRow([
+            '', '', '',
+            '', '', '',
+            'Date of Level-2 Complete:-', formData.level2Date ? new Date(formData.level2Date).toLocaleDateString() : ''
+        ]);
+        worksheet.mergeCells(level2Row.number, 7, level2Row.number, 8);
+        level2Row.font = { bold: true, size: 10 };
+
+        worksheet.addRow([]); // Blank row
 
         // --- Table Headers ---
         // Level labels row (L1 spans 1st & 2nd Observance, L2 spans 3rd & 4th Observance)

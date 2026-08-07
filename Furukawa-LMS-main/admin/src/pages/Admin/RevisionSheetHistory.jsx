@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import RevisionRecordList from '@/components/admin/revision/RevisionRecordList';
 import RevisionHistoryList from '@/components/admin/revision/RevisionHistoryList';
 import RevisionEditModal from '@/components/admin/revision/RevisionEditModal';
+import RevisionHistoryModal from '@/components/admin/revision/RevisionHistoryModal';
 
 // Per-sheet detail page: the global default plus every department/section
 // override for this sheetKey, and the sheet's full audit log history.
@@ -32,6 +33,7 @@ const RevisionSheetHistory = () => {
     const [overrideTarget, setOverrideTarget] = useState(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [logsRecord, setLogsRecord] = useState(null);
 
     const fetchRecords = useCallback(async () => {
         setLoadingRecords(true);
@@ -141,6 +143,7 @@ const RevisionSheetHistory = () => {
                                 loading={loadingRecords}
                                 canEdit={canEdit}
                                 onEdit={handleEdit}
+                                onViewLogs={setLogsRecord}
                                 linkToDetail={false}
                             />
                         </TabsContent>
@@ -158,6 +161,12 @@ const RevisionSheetHistory = () => {
                 onOpenChange={handleModalOpenChange}
                 onSave={handleSave}
                 saving={saving}
+            />
+
+            <RevisionHistoryModal
+                record={logsRecord}
+                open={!!logsRecord}
+                onOpenChange={(open) => !open && setLogsRecord(null)}
             />
         </div>
     );

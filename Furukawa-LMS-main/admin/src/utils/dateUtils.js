@@ -16,6 +16,13 @@ export const parseCustomDate = (val) => {
   const str = String(val).trim();
   if (!str || str.toLowerCase() === "null") return null;
 
+  // If the string contains a time component (has a colon ':'), parse it directly
+  // to preserve hours, minutes, and seconds.
+  if (str.includes(":")) {
+    const parsed = new Date(str);
+    if (isValid(parsed)) return parsed;
+  }
+
   // 1. Try DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY (e.g. 20/04/1982)
   const dmyMatch = str.match(/^(\d{1,2})[-/. ](\d{1,2})[-/. ](\d{2,4})$/);
   if (dmyMatch) {

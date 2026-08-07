@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +35,7 @@ const TEN_CYCLE_FORM_TYPES = [
 const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) => {
     const navigate = useNavigate();
     const { data: linesData, isLoading, error } = useGetLinesBySectionQuery(sectionId);
+    const { user } = useSelector((state) => state.auth || {});
 
     const totalInLines = React.useMemo(() => {
         if (!linesData?.data) return 0;
@@ -358,6 +360,7 @@ const SectionLineManager = ({ sectionId, departmentId, sectionUserCount = 0 }) =
                                     placeholder="e.g., L1-XYZ"
                                     value={editUniCode}
                                     onChange={(e) => setEditUniCode(e.target.value)}
+                                    disabled={!user?.isAdmin}
                                 />
                             </div>
                             <div className="space-y-2">

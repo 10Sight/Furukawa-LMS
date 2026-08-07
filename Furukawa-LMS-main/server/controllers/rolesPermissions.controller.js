@@ -658,7 +658,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.REVISION_READ, name: "View Revision Table", description: "View the document revision table and sheet override history" },
         { id: SYSTEM_PERMISSIONS.REVISION_CREATE, name: "Create Department Overrides", description: "Add department-level revision overrides for a sheet" },
         { id: SYSTEM_PERMISSIONS.REVISION_UPDATE, name: "Update Revisions", description: "Edit default or department-override revision records" },
-        { id: SYSTEM_PERMISSIONS.DEPT_REVISION_LOGS_READ, name: "View Department Revision Logs", description: "View the department revision logs page" }
+        { id: SYSTEM_PERMISSIONS.DEPT_REVISION_LOGS_READ, name: "View Department Revision Logs", description: "View the Revision Table's audit log history, filtered to a department/section" }
       ],
       "Settings Management": [
         { id: SYSTEM_PERMISSIONS.SETTINGS_CHANGE_PASSWORD, name: "Change Password", description: "Allow user to change their own login password from the Settings page" },

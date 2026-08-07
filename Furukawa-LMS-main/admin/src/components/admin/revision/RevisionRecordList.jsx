@@ -10,9 +10,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, History } from 'lucide-react';
 
-const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, linkToDetail = true, emptyMessage }) => {
+const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, onViewLogs, linkToDetail = true, emptyMessage }) => {
     const navigate = useNavigate();
 
     const goToHistory = (record) => {
@@ -45,6 +45,7 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, 
                         <TableHead>Rev. Date</TableHead>
                         <TableHead>Affected Sr. No. / Page</TableHead>
                         <TableHead>Change Details</TableHead>
+                        {onViewLogs && <TableHead className="w-16 text-right">Logs</TableHead>}
                         {canEdit && <TableHead className="w-24 text-right">Action</TableHead>}
                     </TableRow>
                 </TableHeader>
@@ -82,6 +83,13 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, 
                                     <div className="text-muted-foreground text-sm">{record.changeDetailsHi}</div>
                                 )}
                             </TableCell>
+                            {onViewLogs && (
+                                <TableCell className="text-right whitespace-nowrap">
+                                    <Button variant="ghost" size="icon" title="View history" onClick={stopAnd(onViewLogs, record)}>
+                                        <History className="h-4 w-4" />
+                                    </Button>
+                                </TableCell>
+                            )}
                             {canEdit && (
                                 <TableCell className="text-right whitespace-nowrap">
                                     <Button variant="ghost" size="icon" title="Edit this record" onClick={stopAnd(onEdit, record)}>

@@ -6,10 +6,20 @@ import { getIcon } from "./IconRegistry";
 
 const normalizeAllowedPages = (user) => {
     const allowedPages = user?.customRole?.allowedPages;
+    let pages;
     if (typeof allowedPages === 'string') {
-        try { return JSON.parse(allowedPages); } catch (e) { return []; }
+        try { pages = JSON.parse(allowedPages); } catch (e) { pages = []; }
+    } else {
+        pages = Array.isArray(allowedPages) ? allowedPages : [];
     }
-    return Array.isArray(allowedPages) ? allowedPages : [];
+
+    // Legacy roles assigned to the now-removed standalone "dept-revision-logs"
+    // page get folded into "revision-table" — its history tab covers the same
+    // department/section-scoped logs.
+    if (pages.includes('dept-revision-logs') && !pages.includes('revision-table')) {
+        return [...pages, 'revision-table'];
+    }
+    return pages;
 };
 
 export const hasRestrictions = (user) => {
@@ -255,7 +265,6 @@ export const PAGE_REGISTRY = [
     // { key: "incharges", label: "Incharges", labelKey: "nav.incharges", layout: "admin", link: "/admin/incharges", icon: "IconUserCheck" },
     { key: "line-requirements", label: "Line Requirements", labelKey: "nav.lineRequirements", layout: "admin", link: "/admin/line-requirements", icon: "IconSettings" },
     { key: "revision-table", label: "Revision Table", labelKey: "nav.revisionTable", layout: "admin", link: "/admin/revision-table", icon: "IconHistory" },
-    { key: "dept-revision-logs", label: "Dept. Revision Logs", labelKey: "nav.deptRevisionLogs", layout: "admin", link: "/admin/dept-revision-logs", icon: "IconHistory" },
     // { key: "report-clubbing", label: "Report Clubbing", layout: "admin", link: "/admin/report-clubbing", icon: "IconLayersDifference" },
     { key: "learning", label: "Improvement Evidence", labelKey: "nav.learning", layout: "admin", link: "/admin/learning", icon: "IconBook" },
     { key: "data-management", label: "Data Management", labelKey: "nav.dataManagement", layout: "admin", link: "/admin/data-management", icon: "IconDatabase" },

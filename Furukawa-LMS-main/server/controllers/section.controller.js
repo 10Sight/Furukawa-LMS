@@ -137,12 +137,23 @@ export const updateSection = asyncHandler(async (req, res) => {
             throw new ApiError(400, "UniCode is required");
         }
 
-        const [existing] = await executeQuery(
-            "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?) AND id != ?",
-            [trimmedUniCode, id]
-        );
-        if (existing.length > 0) {
-            throw new ApiError(400, `Section with UniCode '${trimmedUniCode}' already exists`);
+        const section = await Section.findById(id);
+        if (!section) {
+            throw new ApiError(404, "Section not found");
+        }
+
+        if (section.uniCode !== trimmedUniCode) {
+            if (!req.user?.isAdmin) {
+                throw new ApiError(403, "Only administrators can change the Section UniCode");
+            }
+
+            const [existing] = await executeQuery(
+                "SELECT id FROM [sections] WHERE LOWER(LTRIM(RTRIM(uniCode))) = LOWER(?) AND id != ?",
+                [trimmedUniCode, id]
+            );
+            if (existing.length > 0) {
+                throw new ApiError(400, `Section with UniCode '${trimmedUniCode}' already exists`);
+            }
         }
     }
 

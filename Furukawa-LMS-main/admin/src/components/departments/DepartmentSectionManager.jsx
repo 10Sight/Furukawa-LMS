@@ -621,6 +621,7 @@ const DepartmentSectionManager = ({ departmentId }) => {
                                             value={editUniCode}
                                             onChange={(e) => setEditUniCode(e.target.value)}
                                             required
+                                            disabled={!user?.isAdmin}
                                         />
                                     </div>
                                     <div className="space-y-2">

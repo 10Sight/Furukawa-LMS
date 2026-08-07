@@ -2212,6 +2212,7 @@ const Departments = () => {
                     value={formData.uniCode}
                     onChange={handleInputChange}
                     placeholder="Enter unique code"
+                    disabled={!user?.isAdmin}
                   />
                 </div>
               </div>

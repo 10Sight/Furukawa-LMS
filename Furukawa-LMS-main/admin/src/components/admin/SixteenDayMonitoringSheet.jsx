@@ -1078,7 +1078,7 @@ const SixteenDayMonitoringSheet = ({
                 try {
                     const d = parse(val, "dd-MMM-yy", new Date());
                     if (!prevMaxDate || d > prevMaxDate) prevMaxDate = d;
-                } catch (e) {}
+                } catch (e) { }
             }
         }
         let nextMinDate = null;
@@ -1088,7 +1088,7 @@ const SixteenDayMonitoringSheet = ({
                 try {
                     const d = parse(val, "dd-MMM-yy", new Date());
                     if (!nextMinDate || d < nextMinDate) nextMinDate = d;
-                } catch (e) {}
+                } catch (e) { }
             }
         }
         return (date) => {
@@ -1735,7 +1735,7 @@ const SixteenDayMonitoringSheet = ({
                                                 {cat.target && (
                                                     <React.Fragment>
                                                         <tr className="border-b border-black bg-yellow-100 min-h-[3rem]">
-                                                            <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Target:</td>
+                                                            <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Target % :</td>
                                                             <td className="border-r border-black text-center font-bold text-[14px]">{cat.target}</td>
                                                             {daysDetailed.map(d => (
                                                                 <td key={d} colSpan="11" className={`border-r border-black text-center font-bold text-[14px] h-12 ${dayPrefixBlurClass(d)}`}>100%</td>
@@ -1745,7 +1745,7 @@ const SixteenDayMonitoringSheet = ({
                                                             ))}
                                                             <td className="bg-white p-0 border-l border-black">
                                                                 <div className="flex w-full h-full divide-x divide-black min-h-[3rem]">
-                                                                    <div className="flex-1 px-3 flex items-center font-extrabold bg-white text-[14px]">Target:</div>
+                                                                    <div className="flex-1 px-3 flex items-center font-extrabold bg-white text-[14px]">Target % :</div>
                                                                     <div className="min-w-[100px] px-3 flex items-center justify-end font-extrabold bg-white text-[15px]">{cat.target || '100%'}</div>
                                                                 </div>
                                                             </td>
@@ -2352,14 +2352,14 @@ const SixteenDayMonitoringSheet = ({
                         )}
                     </div>
                     <DialogFooter className="gap-2">
-                        <Button 
-                            variant="ghost" 
+                        <Button
+                            variant="ghost"
                             onClick={() => { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }}
                             className="text-xs"
                         >
                             Cancel
                         </Button>
-                        <Button 
+                        <Button
                             disabled={adminRemarkText.trim().length < 10}
                             onClick={() => {
                                 handleSave(pendingSaveParams.finalStatus, pendingSaveParams.isSubmit, adminRemarkText.trim());

@@ -186,7 +186,11 @@ export const updateLine = asyncHandler(async (req, res) => {
         }
     }
 
-    if (uniCode && uniCode !== line.uniCode) {
+    if (uniCode !== undefined && uniCode !== line.uniCode) {
+        if (!req.user?.isAdmin) {
+            throw new ApiError(403, "Only administrators can change the Line UniCode");
+        }
+
         const [duplicate] = await executeQuery(
             "SELECT id FROM [lines] WHERE uniCode = ? AND id != ?",
             [uniCode, id]

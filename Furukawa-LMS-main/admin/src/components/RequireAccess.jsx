@@ -12,10 +12,12 @@ const RequireAccess = ({ children, allow }) => {
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    // Check if the user has the required permission
+    // Check if the user has the required permission. `allow` may be a single
+    // string or an array of alternatives (any one of which grants access).
+    const allowList = Array.isArray(allow) ? allow : [allow];
     const isAdmin = !!user.isAdmin;
-    const hasRoleFlag = !!user[allow] || isAdmin;
-    const hasGranularPermission = user.customRole?.permissions?.includes(allow);
+    const hasRoleFlag = isAdmin || allowList.some((a) => !!user[a]);
+    const hasGranularPermission = allowList.some((a) => user.customRole?.permissions?.includes(a));
 
     // Layout-based permission fallback
     let hasLayoutPermission = false;
@@ -25,17 +27,17 @@ const RequireAccess = ({ children, allow }) => {
         // This prevents the infinite loop between LandingPage and Layout roots.
         const allowedPages = user.customRole?.allowedPages;
         const normalizedPages = typeof allowedPages === 'string' ? JSON.parse(allowedPages || '[]') : (allowedPages || []);
-        
+
         if (normalizedPages.length > 0) {
             hasLayoutPermission = true;
         }
     } else if (user.customRole?.targetLayout) {
         const layout = user.customRole.targetLayout.toLowerCase();
-        if (allow === 'isAdmin' && (layout === 'admin' || layout === 'superadmin')) {
+        if (allowList.includes('isAdmin') && (layout === 'admin' || layout === 'superadmin')) {
             hasLayoutPermission = true;
-        } else if (allow === 'isTrainer' && (layout === 'trainer' || layout === 'instructor')) {
+        } else if (allowList.includes('isTrainer') && (layout === 'trainer' || layout === 'instructor')) {
             hasLayoutPermission = true;
-        } else if (allow === 'isEmployee' && (layout === 'student' || layout === 'employee')) {
+        } else if (allowList.includes('isEmployee') && (layout === 'student' || layout === 'employee')) {
             hasLayoutPermission = true;
         }
     }

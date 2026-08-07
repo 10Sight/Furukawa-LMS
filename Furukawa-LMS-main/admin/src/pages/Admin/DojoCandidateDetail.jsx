@@ -35,7 +35,7 @@ import {
 import axiosInstance from "@/Helper/axiosInstance";
 import SixteenDayMonitoringSheet from "@/components/admin/SixteenDayMonitoringSheet";
 import MenteeFeedbackMonitoringSheet from "@/components/admin/MenteeFeedbackMonitoringSheet";
-import { displayDate } from "@/utils/dateUtils";
+import { displayDate, safeDateFormat } from "@/utils/dateUtils";
 
 const DojoCandidateDetail = () => {
   const { studentId } = useParams();
@@ -405,7 +405,14 @@ const DojoCandidateDetail = () => {
                           <AttemptTypeBadge quiz={attempt.quiz} />
                         </TableCell>
                         <TableCell className="text-xs text-slate-500">
-                          {attempt.attemptedAt ? new Date(attempt.attemptedAt).toLocaleDateString() : "—"}
+                          {attempt.attemptedAt ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span>{safeDateFormat(attempt.attemptedAt, "dd MMM yyyy")}</span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {safeDateFormat(attempt.attemptedAt, "hh:mm a")}
+                              </span>
+                            </div>
+                          ) : "—"}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-mono text-xs">
@@ -483,7 +490,14 @@ const DojoCandidateDetail = () => {
                           {attempt.educatorName || "—"}
                         </TableCell>
                         <TableCell className="text-xs text-slate-500">
-                          {attempt.createdAt ? new Date(attempt.createdAt).toLocaleDateString() : "—"}
+                          {attempt.createdAt ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span>{safeDateFormat(attempt.createdAt, "dd MMM yyyy")}</span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {safeDateFormat(attempt.createdAt, "hh:mm a")}
+                              </span>
+                            </div>
+                          ) : "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button

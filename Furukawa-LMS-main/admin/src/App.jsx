@@ -89,7 +89,6 @@ const Incharge = lazy(() => import("./pages/Admin/Incharge"));
 const LineRequirementManager = lazy(() => import("./pages/Admin/LineRequirementManager.jsx"));
 const RevisionTable = lazy(() => import("./pages/Admin/RevisionTable.jsx"));
 const RevisionSheetHistory = lazy(() => import("./pages/Admin/RevisionSheetHistory.jsx"));
-const DepartmentRevisionLogs = lazy(() => import("./pages/Admin/DepartmentRevisionLogs.jsx"));
 const DPRManage = lazy(() => import("./pages/Admin/DPRManage"));
 const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitoring"));
 const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
@@ -303,18 +302,13 @@ const App = () => {
             <Route path="incharges" element={<Incharge />} />
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="revision-table" element={
-              <RequireAccess allow="revision:read">
+              <RequireAccess allow={["revision:read", "dept_revision_logs:read"]}>
                 <RevisionTable />
               </RequireAccess>
             } />
             <Route path="revision-table/:sheetKey" element={
-              <RequireAccess allow="revision:read">
+              <RequireAccess allow={["revision:read", "dept_revision_logs:read"]}>
                 <RevisionSheetHistory />
-              </RequireAccess>
-            } />
-            <Route path="dept-revision-logs" element={
-              <RequireAccess allow="dept_revision_logs:read">
-                <DepartmentRevisionLogs />
               </RequireAccess>
             } />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />

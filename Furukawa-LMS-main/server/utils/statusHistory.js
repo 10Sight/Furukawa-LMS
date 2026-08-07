@@ -44,9 +44,14 @@ export const getUpdatedStatusHistory = (existingHistory, current, next, changedB
     const leavingDateChanged = next.leavingDate !== undefined && (next.leavingDate || null) !== (current.leavingDate || null);
     if (!statusChanged && !joiningDateChanged && !leavingDateChanged) return null;
 
-    const nextStatus = next.status !== undefined ? next.status : current.status;
+    let nextStatus = next.status !== undefined ? next.status : current.status;
     const nextJoiningDate = next.joiningDate !== undefined ? next.joiningDate : current.joiningDate;
     const nextLeavingDate = next.leavingDate !== undefined ? next.leavingDate : current.leavingDate;
+
+    // If a leaving date is present on this stint, the status for that stint must be "LEFT"
+    if (nextLeavingDate && nextStatus !== "LEFT") {
+        nextStatus = "LEFT";
+    }
 
     const history = parseHistory(existingHistory);
     const changedAt = new Date().toISOString();

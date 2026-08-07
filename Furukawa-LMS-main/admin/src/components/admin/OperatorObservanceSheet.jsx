@@ -687,10 +687,12 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
 
                         {/* Observance labels row */}
                         <div className="flex items-center justify-center p-2 border-b border-black h-12">Period for Inspection--&gt;</div>
+                        {/* Level 1 */}
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">1st Observance</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">2nd Observance</div>
-                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">3rd Observance</div>
-                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">4th Observance</div>
+                        {/* Level 2 */}
+                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">1st Observance</div>
+                        <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">2nd Observance</div>
 
                         {/* Sub headers */}
                         <div className="border-b border-black p-2 flex items-center justify-center">Check Contents</div>

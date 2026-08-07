@@ -838,6 +838,37 @@ class User {
                 console.error("Error during statusHistory genesis backfill migration:", statusHistoryBackfillErr);
             }
 
+            // One-time backfill: for statusHistory entries that already carry a leavingDate
+            // but weren't marked "LEFT" (rows saved before that rule existed), correct the
+            // status in place so old data matches the new invariant.
+            try {
+                const [rows] = await executeQuery(
+                    "SELECT id, statusHistory FROM users WHERE statusHistory LIKE '%leavingDate%' AND statusHistory NOT LIKE '%\"status\":\"LEFT\"%'"
+                );
+                for (const row of rows) {
+                    let history;
+                    try {
+                        history = JSON.parse(row.statusHistory || "[]");
+                    } catch (e) {
+                        continue;
+                    }
+                    if (!Array.isArray(history)) continue;
+
+                    let changed = false;
+                    for (const entry of history) {
+                        if (entry && entry.leavingDate && entry.status !== "LEFT") {
+                            entry.status = "LEFT";
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        await executeQuery("UPDATE users SET statusHistory = ? WHERE id = ?", [JSON.stringify(history), row.id]);
+                    }
+                }
+            } catch (statusHistoryLeftBackfillErr) {
+                console.error("Error during statusHistory LEFT-status backfill migration:", statusHistoryLeftBackfillErr);
+            }
+
             console.log("Users table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating users table in MSSQL:", error);

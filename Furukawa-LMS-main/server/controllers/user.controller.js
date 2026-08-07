@@ -16,12 +16,6 @@ import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
-import {
-  getDashboardDesignationShutterExclusionSql,
-  getDesignationExclusionSql,
-  prepareManpowerUser,
-  isUserActiveForManpowerDate,
-} from "../utils/manpowerEligibility.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -2101,23 +2095,11 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const assignmentClause = buildAssignmentClause(req.query.assignmentStatus, req.query.assignmentType);
   if (assignmentClause) whereClauses.push(assignmentClause);
 
-  // Build counts query: same hierarchy/search scope as the list, but eligibility aligned to
-  // the MPS dashboard's Total Headcount population (dashboard.controller.js
-  // getTotalManpowerBaseEligibilitySql) instead of the page's own broader isEmployee-OR-CUSTOM
-  // / name-only-shutter rules, so the "Present Operators" card matches the Daily Manpower
-  // Trend graph for the same date.
+  // Build counts query: same scope (search, hierarchy, role) but without status/shift/attendance filters
   const countsWhereClauses = whereClauses.filter(c =>
     c !== "u.status = ?" &&
     c !== "(u.status IS NULL OR u.status != 'LEFT')" &&
-    c !== "((u.isEmployee = 1) OR (u.role = 'CUSTOM' AND (u.isTrainer = 0 OR u.isTrainer IS NULL)))" &&
-    !c.includes("al.") &&
-    !c.includes("designation_shutters")
-  );
-  countsWhereClauses.push(
-    "u.isEmployee = 1",
-    "u.empId IS NOT NULL AND u.empId != ''",
-    getDesignationExclusionSql("u").replace(/^\s*AND\s+/i, ""),
-    getDashboardDesignationShutterExclusionSql("u").replace(/^\s*AND\s+/i, "")
+    !c.includes("al.")
   );
   const countsParams = statusParamAdded
     ? [...params.slice(0, statusParamIndex), ...params.slice(statusParamIndex + 1)]
@@ -2159,62 +2141,35 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
   `, [...attendanceParams, ...params, offset, limit], { label: "getAllStudents.select" });
 
-  // Raw rows only (no SQL-side status aggregation): presentCount/leftCount/onLeaveCount are
-  // reconstructed in JS below via isUserActiveForManpowerDate, the same date-aware statusHistory
-  // rule the MPS dashboard's Total Headcount / Daily Manpower Trend graph uses, so a user who
-  // has since left (or rejoined) still counts correctly for a historical date instead of only
-  // reflecting their current status column.
   const statusCountsQueryPromise = executeQuery(`
-    SELECT u.id, u.status, u.statusHistory, u.joiningDate, u.leavingDate, u.updatedAt
+    SELECT
+      COUNT(*) as totalHeadcount,
+      SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
+      SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
+      SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount
     FROM users u ${getHierarchyFilterJoinSQL}
     ${countsWhereSQL}
-  `, countsParams, { label: "getAllStudents.statusCountsRaw" });
+  `, countsParams, { label: "getAllStudents.statusCounts" });
 
   // None of these 3 queries depend on each other's results, only the same WHERE/params —
   // run concurrently instead of sequentially (previously ~3x the wall-clock cost per request).
   const requestStartedAt = Date.now();
-  const [[cnt], [students], [rawStatusRows]] = await Promise.all([
+  const [[cnt], [students], [statusCountsData]] = await Promise.all([
     cntQueryPromise,
     studentsQueryPromise,
     statusCountsQueryPromise,
   ]);
   logger.debug(`[getAllStudents] total=${Date.now() - requestStartedAt}ms rows=${students.length}/${cnt[0].total}`);
 
-  // Defaults to today, matching the dashboard's default Daily Manpower Trend date when no
-  // explicit date filter is applied.
-  const countsTargetDateRaw = req.query.date || req.query.dateTo || req.query.dateFrom;
-  const countsTargetDate = /^\d{4}-\d{2}-\d{2}$/.test(countsTargetDateRaw || "")
-    ? countsTargetDateRaw
-    : new Date().toISOString().split('T')[0];
-
-  let presentCount = 0;
-  let leftCount = 0;
-  let onLeaveCount = 0;
-  for (const row of rawStatusRows) {
-    const rowStatus = String(row.status || '').trim().toUpperCase();
-    // Only PRESENT/LEFT users are eligible for date-wise roster reconstruction, matching
-    // dashboard.controller.js getTotalManpowerBaseEligibilitySql.
-    if (rowStatus === 'PRESENT' || rowStatus === 'LEFT') {
-      if (isUserActiveForManpowerDate(prepareManpowerUser(row), countsTargetDate)) {
-        presentCount++;
-      } else if (rowStatus === 'LEFT') {
-        leftCount++;
-      }
-    } else if (rowStatus === 'ON_LEAVE') {
-      onLeaveCount++;
-    }
-  }
-  const totalHeadcount = presentCount + leftCount + onLeaveCount;
-
   res.json(new ApiResponse(200, {
     users: students.map(formatUser),
     totalUsers: cnt[0].total,
     totalPages: Math.ceil(cnt[0].total / limit),
     counts: {
-      totalHeadcount,
-      presentCount,
-      onLeaveCount,
-      leftCount,
+      totalHeadcount: statusCountsData[0]?.totalHeadcount || 0,
+      presentCount: statusCountsData[0]?.presentCount || 0,
+      onLeaveCount: statusCountsData[0]?.onLeaveCount || 0,
+      leftCount: statusCountsData[0]?.leftCount || 0,
     }
   }, "Students fetched successfully"));
 });

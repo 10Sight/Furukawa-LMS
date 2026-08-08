@@ -1,6 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import HeadcountReport from "../models/headcountReport.model.js";
-import { getEligibleUserSql, getDesignationShutterLeftJoinSql, getEligibleUserConditionViaJoin } from "../utils/userEligibility.js";
+import { getEligibleUserSql, getDesignationShutterLeftJoinSql, getEligibleUserConditionViaJoin, getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 
 /**
  * Computes the Associates Headcount Report tableData live from real sources
@@ -622,7 +622,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
           AND COALESCE(leavingDate, updatedAt) >= ? AND COALESCE(leavingDate, updatedAt) < ?
           AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-          AND (u.[designation] IS NULL OR u.[designation] = '' OR u.[designation] NOT IN (SELECT designation FROM designation_shutters))
+          AND (u.[designation] IS NULL OR u.[designation] = '' OR ${getDesignationShutterExclusionCondition("u")})
     `;
     const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart, start, nextMonthStart]);
 

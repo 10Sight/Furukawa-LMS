@@ -3,14 +3,15 @@ import DesignationShutter from "../models/designationShutter.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 
 export const getUniqueDesignations = asyncHandler(async (req, res) => {
   const [rows] = await executeQuery(`
-    SELECT DISTINCT designation
-    FROM users
-    WHERE designation IS NOT NULL AND designation != '' AND (isDeleted = 0 OR isDeleted IS NULL)
-      AND designation NOT IN (SELECT designation FROM designation_shutters)
-    ORDER BY designation ASC
+    SELECT DISTINCT u.designation
+    FROM users u
+    WHERE u.designation IS NOT NULL AND u.designation != '' AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+      AND ${getDesignationShutterExclusionCondition("u")}
+    ORDER BY u.designation ASC
   `);
   const designations = rows.map(r => r.designation);
   res.json(new ApiResponse(200, designations, "Unique designations fetched successfully"));

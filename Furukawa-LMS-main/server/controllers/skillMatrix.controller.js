@@ -19,6 +19,7 @@ import {
     syncStudentSkillProgress,
     syncToSkillUpgradationPlan
 } from "../utils/skillMatrix.util.js";
+import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -628,7 +629,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
           AND u.role IN ('STUDENT', 'CUSTOM')
           AND (u.status IS NULL OR u.status != 'LEFT')
           AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-          AND (u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))
+          AND (u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR ${getDesignationShutterExclusionCondition("u")})
     `;
 
     const [rows] = await executeQuery(sql);

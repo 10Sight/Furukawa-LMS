@@ -2,7 +2,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
-import { getEligibleUserSql } from "../utils/userEligibility.js";
+import { getEligibleUserSql, getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 import logger from "../logger/winston.logger.js";
 
 /*
@@ -282,19 +282,8 @@ const parseMultiParam = (value) => {
 // If a designation is present in designation_shutters, matching employees are hidden;
 // if it is not present there, the designation is not hidden by this rule.
 // A shutter may be stored by designation name or by designation id, so both values are compared safely.
-const getDashboardDesignationShutterExclusionSql = (alias = "u") => `
-    AND NOT EXISTS (
-        SELECT 1
-        FROM designation_shutters ds
-        WHERE NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))), '') IS NOT NULL
-          AND (
-                UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ds.designation))))
-                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.designation))))
-                OR UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ds.id))))
-                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${alias}.designation))))
-              )
-    )
-`;
+// Shared with the rest of the app via userEligibility.js so this logic can't drift out of sync again.
+const getDashboardDesignationShutterExclusionSql = (alias = "u") => getDesignationShutterExclusionSql(alias);
 
 // Base population shared by every Dashboard Total Manpower / Users Total query.
 // Keep this aligned with the SDP employee population before applying date-wise statusHistory.

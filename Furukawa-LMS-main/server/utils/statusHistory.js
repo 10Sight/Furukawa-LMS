@@ -1,13 +1,34 @@
 // Shared logic for tracking status/joiningDate/leavingDate changes on the users table.
 
+// joiningDate/leavingDate reach these functions in two different shapes: a plain
+// "YYYY-MM-DD" string from request bodies, or a native JS Date from a DB SELECT (the mssql
+// driver returns DATE columns as Date objects). Embedding a Date directly into an object that
+// later goes through JSON.stringify silently calls .toISOString(), which stamps on a UTC
+// time-of-day and can shift the calendar date by a day depending on how that Date was
+// constructed. Normalizing to a bare date string here keeps statusHistory entries exact
+// regardless of which shape the caller had on hand.
+const formatDateStr = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) {
+        const year = val.getFullYear();
+        const month = String(val.getMonth() + 1).padStart(2, '0');
+        const day = String(val.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    if (typeof val === 'string') {
+        return val.split('T')[0];
+    }
+    return val;
+};
+
 // Builds the JSON string for a single, brand-new history entry. Used only when a user is
 // first created (auth.model.js, user.controller.js createUser) to seed the genesis entry.
 // Updates to an *existing* user's history go through getUpdatedStatusHistory below.
 export const buildStatusHistoryEntry = ({ status, joiningDate, leavingDate, changedBy, changedByName }) => {
     return JSON.stringify({
         status: status ?? null,
-        joiningDate: joiningDate ?? null,
-        leavingDate: leavingDate ?? null,
+        joiningDate: formatDateStr(joiningDate),
+        leavingDate: formatDateStr(leavingDate),
         changedBy: changedBy ?? null,
         changedByName: changedByName ?? null,
         changedAt: new Date().toISOString(),
@@ -40,13 +61,13 @@ const parseHistory = (existingHistory) => {
 //     corrections to dates with no status change) updates the last entry in place.
 export const getUpdatedStatusHistory = (existingHistory, current, next, changedByInfo) => {
     const statusChanged = next.status !== undefined && (next.status || null) !== (current.status || null);
-    const joiningDateChanged = next.joiningDate !== undefined && (next.joiningDate || null) !== (current.joiningDate || null);
-    const leavingDateChanged = next.leavingDate !== undefined && (next.leavingDate || null) !== (current.leavingDate || null);
+    const joiningDateChanged = next.joiningDate !== undefined && formatDateStr(next.joiningDate) !== formatDateStr(current.joiningDate);
+    const leavingDateChanged = next.leavingDate !== undefined && formatDateStr(next.leavingDate) !== formatDateStr(current.leavingDate);
     if (!statusChanged && !joiningDateChanged && !leavingDateChanged) return null;
 
     let nextStatus = next.status !== undefined ? next.status : current.status;
-    const nextJoiningDate = next.joiningDate !== undefined ? next.joiningDate : current.joiningDate;
-    const nextLeavingDate = next.leavingDate !== undefined ? next.leavingDate : current.leavingDate;
+    const nextJoiningDate = formatDateStr(next.joiningDate !== undefined ? next.joiningDate : current.joiningDate);
+    const nextLeavingDate = formatDateStr(next.leavingDate !== undefined ? next.leavingDate : current.leavingDate);
 
     // If a leaving date is present on this stint, the status for that stint must be "LEFT"
     if (nextLeavingDate && nextStatus !== "LEFT") {

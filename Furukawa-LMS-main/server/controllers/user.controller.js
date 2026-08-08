@@ -16,6 +16,7 @@ import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -509,7 +510,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(
-      "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+      `(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR ${getDesignationShutterExclusionCondition("u")})`
     );
   }
   if (req.query.dojoHandoverPassedOnly === "true") {
@@ -650,7 +651,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: If filtering for 'PRESENT', push the filter into the subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     let subqueryWhere;
     if (start && end) {
@@ -667,7 +668,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
                MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs
         ${subqueryWhere}
         GROUP BY userId
@@ -686,13 +687,13 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     if (dateFrom && dateTo) {
       whereClauses.push("al.presentDaysCount > 0");
     } else {
-      whereClauses.push("al.logStatus = 'Present'");
+      whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
     }
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) {
       whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
     } else {
-      whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+      whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
     }
   } else if (status) {
     whereClauses.push("u.status = ?");
@@ -785,11 +786,11 @@ export const getAllUsers = asyncHandler(async (req, res) => {
 
     countsQueryPromise = executeQuery(`
       SELECT
-        SUM(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as presentCount,
-        SUM(CASE WHEN (al.logStatus != 'Present' OR al.userId IS NULL) AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as absentCount,
+        SUM(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as presentCount,
+        SUM(CASE WHEN (al.logStatus NOT IN ('P', 'PRESENT', 'Present') OR al.userId IS NULL) AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as absentCount,
         SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-        AVG(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
-        AVG(CASE WHEN al.logStatus = 'Present' AND ${notLeftYetSQL} THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND ${notLeftYetSQL} THEN 0 ELSE NULL END) as overallEfficiency,
+        AVG(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
+        AVG(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND ${notLeftYetSQL} THEN 0 ELSE NULL END) as overallEfficiency,
         AVG(CASE WHEN ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
       FROM users u
       ${getHierarchyFilterJoinSQL}
@@ -1754,7 +1755,7 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -1762,7 +1763,7 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
                MAX(status) as logStatus, 
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs 
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
@@ -1779,10 +1780,10 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
-    else whereClauses.push("al.logStatus = 'Present'");
+    else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
-    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
@@ -1829,7 +1830,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let params = [];
   if (req.query.ignoreShutter !== "true") {
     whereClauses.push(
-      "(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR u.designation NOT IN (SELECT designation FROM designation_shutters))"
+      `(u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR ${getDesignationShutterExclusionCondition("u")})`
     );
   }
   if (req.query.dojoHandoverPassedOnly === "true") {
@@ -1988,7 +1989,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -1996,7 +1997,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
                MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
@@ -2027,10 +2028,10 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
-    else whereClauses.push("al.logStatus = 'Present'");
+    else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
-    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
@@ -2263,7 +2264,7 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -2271,7 +2272,7 @@ export const getAllMentors = asyncHandler(async (req, res) => {
                MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
@@ -2288,10 +2289,10 @@ export const getAllMentors = asyncHandler(async (req, res) => {
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
-    else whereClauses.push("al.logStatus = 'Present'");
+    else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
-    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
@@ -2502,7 +2503,7 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -2510,7 +2511,7 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
                MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
@@ -2527,10 +2528,10 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
-    else whereClauses.push("al.logStatus = 'Present'");
+    else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
-    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
@@ -2595,7 +2596,7 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status = 'Present'" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -2603,7 +2604,7 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
                MAX(status) as logStatus,
                MAX(shift) as logShift,
                MAX([date]) as logDate,
-               COUNT(CASE WHEN status = 'Present' THEN 1 END) as presentDaysCount
+               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
         FROM attendance_logs
         WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}
         GROUP BY userId
@@ -2620,10 +2621,10 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
 
   if (upperStatus === "PRESENT") {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
-    else whereClauses.push("al.logStatus = 'Present'");
+    else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
   } else if (upperStatus === "ABSENT") {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
-    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus != 'Present')");
+    else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);

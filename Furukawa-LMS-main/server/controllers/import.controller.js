@@ -261,13 +261,13 @@ const syncDepartmentStudents = async (userId, departmentId) => {
 
 
 /**
- * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON-LEAVE)
+ * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON_LEAVE)
  */
 const normalizeStatus = (val) => {
     if (!val) return "PRESENT";
     const v = val.toString().trim().toUpperCase().replace(/[\s\-_]+/g, '');
     if (v === "LEFT" || v === "LEAVING" || v === "RESIGNED" || v === "TERMINATED") return "LEFT";
-    if (v === "ONLEAVE" || v === "LEAVE") return "ON-LEAVE";
+    if (v === "ONLEAVE" || v === "LEAVE") return "ON_LEAVE";
     return "PRESENT";
 };
 

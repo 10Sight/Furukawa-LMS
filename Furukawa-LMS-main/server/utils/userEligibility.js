@@ -1,15 +1,28 @@
 /**
  * Bare boolean condition (no leading AND) — safe to embed inside a WHERE
  * clause or a CASE WHEN expression.
+ *
+ * Trims whitespace and compares case-insensitively, and matches a shutter
+ * stored either by designation name or by designation_shutters.id, since
+ * shutters may be recorded either way. Pass alias = "" for an unaliased
+ * `designation` column.
  */
-export const getDesignationShutterExclusionCondition = (alias = "u") => `
+export const getDesignationShutterExclusionCondition = (alias = "u") => {
+    const col = alias ? `${alias}.designation` : "designation";
+    return `
     NOT EXISTS (
         SELECT 1
         FROM designation_shutters ds
-        WHERE ds.designation IS NOT NULL
-          AND ds.designation = ${alias}.designation
+        WHERE NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${col}))), '') IS NOT NULL
+          AND (
+                UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ds.designation))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${col}))))
+                OR UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ds.id))))
+                    = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${col}))))
+              )
     )
 `;
+};
 
 export const getEligibleUserCondition = (alias = "u") => `
     ISNULL(${alias}.isDeleted, 0) = 0
@@ -37,8 +50,16 @@ export const getEligibleUserSql = (alias = "u") =>
  * nested in SUM()/COUNT(), LEFT JOIN designation_shutters up front and use
  * this join-based condition instead of the subquery-based one above.
  */
-export const getDesignationShutterLeftJoinSql = (usersAlias = "u", shutterAlias = "ds") =>
-    `LEFT JOIN designation_shutters ${shutterAlias} ON ${shutterAlias}.designation = ${usersAlias}.designation`;
+export const getDesignationShutterLeftJoinSql = (usersAlias = "u", shutterAlias = "ds") => `
+    LEFT JOIN designation_shutters ${shutterAlias}
+        ON NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${usersAlias}.designation))), '') IS NOT NULL
+       AND (
+             UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${shutterAlias}.designation))))
+                 = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${usersAlias}.designation))))
+          OR UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${shutterAlias}.id))))
+                 = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${usersAlias}.designation))))
+       )
+`;
 
 export const getEligibleUserConditionViaJoin = (usersAlias = "u", shutterAlias = "ds") => `
     ISNULL(${usersAlias}.isDeleted, 0) = 0

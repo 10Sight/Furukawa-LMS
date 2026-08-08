@@ -278,8 +278,10 @@ const parseMultiParam = (value) => {
 
 
 // Dynamic designation shutter rule used by every dashboard/report employee population.
-// A shutter may be stored by designation name (for example Supervisor) or by its
-// designation id (for example 1090), so both values are compared safely.
+// designation_shutters is the ONLY source of truth for designation hiding.
+// If a designation is present in designation_shutters, matching employees are hidden;
+// if it is not present there, the designation is not hidden by this rule.
+// A shutter may be stored by designation name or by designation id, so both values are compared safely.
 const getDashboardDesignationShutterExclusionSql = (alias = "u") => `
     AND NOT EXISTS (
         SELECT 1
@@ -304,14 +306,6 @@ const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
     AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, ''))))) IN ('PRESENT', 'LEFT')
-    AND ISNULL(${alias}.designation, '') NOT IN (
-        '1076',
-        '1077',
-        '1081',
-        'DRIVER',
-        'Supervisor',
-        'Staff'
-    )
     ${getDashboardDesignationShutterExclusionSql(alias)}
 `;
 
@@ -325,14 +319,6 @@ const getRejoiningTrendBaseEligibilitySql = (alias = "u") => `
     AND ISNULL(${alias}.isEmployee, 0) = 1
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
-    AND ISNULL(${alias}.designation, '') NOT IN (
-        '1076',
-        '1077',
-        '1081',
-        'DRIVER',
-        'Supervisor',
-        'Staff'
-    )
     ${getDashboardDesignationShutterExclusionSql(alias)}
 `;
 
@@ -342,14 +328,6 @@ const getRejoiningTrendBaseEligibilitySql = (alias = "u") => `
 const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
     AND ${alias}.isDeleted = 0
     AND ${alias}.isTemporary = 0
-    AND ISNULL(${alias}.designation, '') NOT IN (
-        '1076',
-        '1077',
-        '1081',
-        'DRIVER',
-        'Supervisor',
-        'Staff'
-    )
     ${getDashboardDesignationShutterExclusionSql(alias)}
     AND ${alias}.status = 'PRESENT'
 `;

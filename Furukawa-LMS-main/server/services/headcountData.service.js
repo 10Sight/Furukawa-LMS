@@ -172,7 +172,10 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             history = [];
         }
         if (!Array.isArray(history) || history.length < 2) return [];
-        return history.slice(1).map(entry => toYMD(entry?.joiningDate)).filter(Boolean);
+        const genesisYMD = toYMD(history[0]?.joiningDate);
+        return history.slice(1)
+            .map(entry => toYMD(entry?.joiningDate))
+            .filter(dYMD => dYMD && dYMD !== genesisYMD);
     };
 
     const rejoiningUsersByDate = {};

@@ -191,13 +191,13 @@ const StudentDetail = () => {
     }
   }, [shouldHideObservance, activeTab]);
 
-  // A user has rejoined if their statusHistory records more than one distinct
-  // joiningDate -- i.e. joiningDate was set, then later changed to a new date
-  // (typically after a LEFT -> PRESENT transition).
+  // A user has rejoined if their statusHistory records a subsequent joiningDate
+  // that differs from their original genesis joiningDate.
   const hasRejoined = useMemo(() => {
     const history = student?.statusHistory || [];
-    const joiningDates = new Set(history.map((h) => h.joiningDate).filter(Boolean));
-    return joiningDates.size > 1;
+    if (history.length < 2) return false;
+    const genesisDate = history[0]?.joiningDate;
+    return history.slice(1).some((h) => h.joiningDate && h.joiningDate !== genesisDate);
   }, [student?.statusHistory]);
 
   const [logAction] = useLogActionMutation();

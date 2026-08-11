@@ -427,12 +427,13 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
                 });
 
                 if (!existingCert) {
+                    const certIssueDate = normalizeEvaluationDate(dateOfEvaluation) || new Date().toISOString().slice(0, 10);
                     await Certificate.create({
                         student: String(studentId),
                         course: '',
                         issuedBy: String(issuedBy || 'SYSTEM'),
                         grade: 'PASS',
-                        issueDate: new Date(),
+                        issueDate: certIssueDate,
                         type: 'SKILL_UPGRADATION',
                         level: newGlobalLevelName,
                         status: 'ACTIVE',

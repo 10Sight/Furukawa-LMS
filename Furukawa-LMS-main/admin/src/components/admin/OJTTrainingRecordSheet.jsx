@@ -198,6 +198,26 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
         }
     };
 
+    // Approves/rejects/resets the sheet itself (Checked By). This is intentionally decoupled
+    // from individual trainee rows — the backend only grants a trainee's OJT badge based on
+    // their own row-level result, so sheet approval alone does not approve any trainee.
+    const handleSheetStatusUpdate = async (newStatus) => {
+        if (!ojtId) {
+            toast.error("OJT ID is missing");
+            return;
+        }
+        try {
+            await updateOnJobTraining({
+                id: ojtId,
+                data: { result: newStatus }
+            }).unwrap();
+            toast.success(newStatus === "Pending" ? "Sheet status reset" : `Sheet ${newStatus.toLowerCase()} successfully!`);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || "Failed to update sheet status");
+        }
+    };
+
     const renderRowApproval = (index) => {
         const rec = trainingData.attendanceRecords[index];
         if (!rec || (!rec.name && !rec.ecode)) return null;
@@ -749,13 +769,54 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                 <div className="p-1 flex items-center h-8 justify-between">
                                     <div className="flex items-center gap-2">
                                         <span className="font-bold">Checked By :-</span>
-                                        {ojtData?.data?.result && ojtData?.data?.result !== "Pending" && (
-                                            <span className="text-blue-900 font-bold uppercase">
-                                                {ojtData.data.result === "Approved"
-                                                    ? (ojtData.data.approverName || "--")
-                                                    : `Rejected By: ${ojtData.data.approverName || "--"}`}
-                                            </span>
-                                        )}
+                                        {(() => {
+                                            const sheetResult = ojtData?.data?.result || "Pending";
+                                            const canSignOff = !readOnly && hasSignOffPermission();
+
+                                            if (sheetResult === "Pending") {
+                                                if (!canSignOff) return null;
+                                                return (
+                                                    <div className="flex items-center gap-1.5 no-print">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSheetStatusUpdate("Approved")}
+                                                            title="Approve Sheet"
+                                                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 transition-colors duration-150"
+                                                        >
+                                                            <IconCheck className="w-3.5 h-3.5" /> Approve
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSheetStatusUpdate("Rejected")}
+                                                            title="Reject Sheet"
+                                                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors duration-150"
+                                                        >
+                                                            <IconX className="w-3.5 h-3.5" /> Reject
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-blue-900 font-bold uppercase">
+                                                        {sheetResult === "Approved"
+                                                            ? (ojtData.data.approverName || "--")
+                                                            : `Rejected By: ${ojtData.data.approverName || "--"}`}
+                                                    </span>
+                                                    {canSignOff && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSheetStatusUpdate("Pending")}
+                                                            title="Reset"
+                                                            className="text-gray-500 hover:text-gray-700 text-[9px] underline no-print"
+                                                        >
+                                                            Reset
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>

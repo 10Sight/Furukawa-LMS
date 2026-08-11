@@ -88,10 +88,13 @@ class NotificationService {
             if (formData) formData.departmentName = deptName;
 
             // 5. Generate Excel Report based on Form Name.
-            // Skill Matrix Sheet is excluded: its station columns vary per department, so the
-            // email links straight to the sheet instead of attaching a copy (see the button-only
-            // template below).
-            const skipAttachment = formName === "Skill Matrix Sheet";
+            // Skill Matrix Sheet is excluded because its station columns vary per department, and
+            // the OJT sheets are excluded because they link straight to the live sheet instead —
+            // the email links straight to the sheet instead of attaching a copy (see the button-only
+            // templates below).
+            const skipAttachment = formName === "Skill Matrix Sheet"
+                || formName === "On Job Training Record Sheet"
+                || formName === "On Job Training Evaluation Sheet";
             let filename = null;
             let buffer = null;
             if (!skipAttachment) {
@@ -242,6 +245,30 @@ class NotificationService {
                     status: formData?.status || "Submitted",
                     portalUrl: reviewUrl
                 });
+            }
+
+            if (formName === "On Job Training Record Sheet" || formName === "On Job Training Evaluation Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";
+                const reviewUrl = `${adminUrl}/admin/on-job-training?ojtId=${formData?.ojtId || ""}`;
+                const sheetLabel = formName === "On Job Training Record Sheet" ? "Training Record Sheet" : "Practical Evaluation Sheet";
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Hello,</p>
+                        <p>The <strong>On Job Training ${sheetLabel}</strong> for department <strong>${deptName}</strong> has been updated.</p>
+                        <p>Click below to open the sheet directly in the portal. If you're not signed in, you'll be asked to log in first and will land on this sheet right after.</p>
+
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}"
+                               style="background-color: #1d4ed8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                                Open OJT Sheet
+                            </a>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>FME Digital Portal</strong></p>
+                    </div>
+                `;
             }
 
             if (formName === "Dojo Evaluation Sheet") {

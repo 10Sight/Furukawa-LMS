@@ -508,9 +508,10 @@ export const updateOnJobTraining = async (req, res, next) => {
 
             // Per-student approval map. The sheet's primary `student` (used by single-trainee
             // Evaluation sheets, which have no attendanceRecords) always follows the sheet-level
-            // result. Attendance-row trainees follow their own row's `result`; rows saved before
-            // row-level approval existed have no `result` yet, so they fall back to the sheet-level
-            // result to keep older sheets working.
+            // result — it's a 1-to-1 evaluation. Attendance-row trainees (group Record sheets)
+            // are decoupled from the sheet-level result: each trainee's badge eligibility depends
+            // solely on their own row's `result`, so approving the sheet under "Checked By" does
+            // NOT grant badges to everyone listed — each trainee must be approved individually.
             const studentApprovalMap = new Map();
             if (updatedOJT.student) {
                 studentApprovalMap.set(String(updatedOJT.student), sheetApproved);
@@ -526,9 +527,7 @@ export const updateOnJobTraining = async (req, res, next) => {
                 matchedUsers.forEach(u => {
                     const row = attendanceRecords.find(r => r.ecode && (r.ecode === u.empId || r.ecode === u.userName));
                     if (!row) return;
-                    const rowApproved = row.result !== undefined
-                        ? (row.result === "Approved" || row.result === "Pass")
-                        : sheetApproved;
+                    const rowApproved = row.result === "Approved" || row.result === "Pass";
                     studentApprovalMap.set(String(u.id), rowApproved);
                 });
             }

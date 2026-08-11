@@ -294,7 +294,6 @@ const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
     AND ISNULL(${alias}.isEmployee, 0) = 1
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
-    AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, ''))))) IN ('PRESENT', 'LEFT')
     ${getDashboardDesignationShutterExclusionSql(alias)}
 `;
 
@@ -319,6 +318,16 @@ const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
     AND ${alias}.isTemporary = 0
     ${getDashboardDesignationShutterExclusionSql(alias)}
     AND ${alias}.status = 'PRESENT'
+`;
+
+
+// Attendance employee identity validation.
+// Keep the existing attendance_logs.userId -> users.id join untouched,
+// and additionally require attendance payCode to match users.empId for PRESENT attendance counts.
+const getAttendancePayCodeMatchSql = (attendanceAlias = "al", userAlias = "u") => `
+    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${attendanceAlias}.payCode))))
+    =
+    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${userAlias}.empId))))
 `;
 
 
@@ -990,16 +999,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         )
     `;
 
-    // Total Manpower lifecycle rule:
-    // 1) statusHistory is authoritative when it contains at least one valid joiningDate.
-    // 2) Only PRESENT employment periods are active/open. A closed LEFT period is counted
-    //    only for its historical worked dates: joiningDate <= date < leavingDate.
-    // 3) An open history period is counted only when both history status and users.status
-    //    are PRESENT. Other statuses cannot enter Total Manpower.
-    // 4) leavingDate is exclusive, so an employee LEFT on 23-Jul is removed on 23-Jul itself.
-    // 5) A rejoined employee starts counting again from the new joiningDate.
-    // 6) Old users without usable history retain the PRESENT/LEFT legacy-column fallback.
-    // 7) Tenure graphs do not call this helper; they keep users.joiningDate/leavingDate directly.
+    // Total Manpower / Attendance lifecycle rule:
+    // statusHistory is authoritative whenever it contains a valid joiningDate.
+    // Objects with the same joiningDate belong to the same employment period.
+    // The period ends on the effective leavingDate (exclusive).
+    // If no leavingDate exists for that joiningDate, the latest statusHistory object
+    // for that joiningDate must be PRESENT.
+    // This supports repeated leave/rejoin cycles without counting the LEFT gap.
     const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
         const historyJsonSql = `CASE
             WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
@@ -1007,60 +1013,66 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             ELSE N'[]'
         END`;
 
-        const historyJoiningDateSql = userDateToDateSql(
-            `JSON_VALUE(historyRow.[value], '$.joiningDate')`
-        );
-        const historyLeavingDateSql = userDateToDateSql(
-            `JSON_VALUE(historyRow.[value], '$.leavingDate')`
-        );
-        const historyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(
-            NVARCHAR(100),
-            ISNULL(JSON_VALUE(historyRow.[value], '$.status'), '')
-        ))))`;
-
         const legacyJoiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
         const legacyLeavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
         const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
 
+        const historyJoiningDateFor = (rowAlias) => userDateToDateSql(
+            `JSON_VALUE(${rowAlias}.[value], '$.joiningDate')`
+        );
+        const historyLeavingDateFor = (rowAlias) => userDateToDateSql(
+            `JSON_VALUE(${rowAlias}.[value], '$.leavingDate')`
+        );
+
         return `(
             EXISTS (
                 SELECT 1
-                FROM OPENJSON(${historyJsonSql}) historyRow
+                FROM OPENJSON(${historyJsonSql}) periodSeed
                 CROSS APPLY (
-                    SELECT
-                        ${historyStatusSql} AS employmentStatus,
-                        ${historyJoiningDateSql} AS joiningDate,
-                        ${historyLeavingDateSql} AS leavingDate
-                ) historyPeriod
-                WHERE historyPeriod.joiningDate IS NOT NULL
-                  AND historyPeriod.joiningDate <= ${asOfDateSql}
+                    SELECT ${historyJoiningDateFor("periodSeed")} AS joiningDate
+                ) seed
+                OUTER APPLY (
+                    SELECT MAX(${historyLeavingDateFor("periodClose")}) AS leavingDate
+                    FROM OPENJSON(${historyJsonSql}) periodClose
+                    WHERE ${historyJoiningDateFor("periodClose")} = seed.joiningDate
+                ) closeInfo
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        UPPER(LTRIM(RTRIM(CONVERT(
+                            NVARCHAR(100),
+                            ISNULL(JSON_VALUE(latestRow.[value], '$.status'), '')
+                        )))) AS latestStatus
+                    FROM OPENJSON(${historyJsonSql}) latestRow
+                    WHERE ${historyJoiningDateFor("latestRow")} = seed.joiningDate
+                    ORDER BY
+                        COALESCE(
+                            TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt'), 127),
+                            TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt')),
+                            CONVERT(DATETIME2, '1900-01-01')
+                        ) DESC,
+                        TRY_CONVERT(INT, latestRow.[key]) DESC
+                ) latestInfo
+                WHERE seed.joiningDate IS NOT NULL
+                  AND seed.joiningDate <= ${asOfDateSql}
                   AND (
                         (
-                            historyPeriod.employmentStatus = 'PRESENT'
-                            AND (
-                                historyPeriod.leavingDate IS NULL
-                                OR historyPeriod.leavingDate > ${asOfDateSql}
-                            )
-                            AND (
-                                historyPeriod.leavingDate IS NOT NULL
-                                OR ${legacyStatusSql} = 'PRESENT'
-                            )
+                            closeInfo.leavingDate IS NOT NULL
+                            AND closeInfo.leavingDate > ${asOfDateSql}
                         )
                         OR (
-                            historyPeriod.employmentStatus = 'LEFT'
-                            AND historyPeriod.leavingDate IS NOT NULL
-                            AND historyPeriod.leavingDate > ${asOfDateSql}
+                            closeInfo.leavingDate IS NULL
+                            AND latestInfo.latestStatus = 'PRESENT'
                         )
-                      )
+                  )
             )
             OR (
                 NOT EXISTS (
                     SELECT 1
-                    FROM OPENJSON(${historyJsonSql}) historyRow
+                    FROM OPENJSON(${historyJsonSql}) anyHistoryRow
                     CROSS APPLY (
-                        SELECT ${historyJoiningDateSql} AS joiningDate
-                    ) validHistoryPeriod
-                    WHERE validHistoryPeriod.joiningDate IS NOT NULL
+                        SELECT ${historyJoiningDateFor("anyHistoryRow")} AS joiningDate
+                    ) validHistory
+                    WHERE validHistory.joiningDate IS NOT NULL
                 )
                 AND (
                     (
@@ -1163,13 +1175,56 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         if (!Array.isArray(history)) return [];
 
-        return history
-            .map((item) => ({
-                status: String(item?.status || '').trim().toUpperCase(),
-                joiningDateKey: parseManpowerDateKey(item?.joiningDate),
-                leavingDateKey: parseManpowerDateKey(item?.leavingDate),
-            }))
-            .filter((item) => item.joiningDateKey !== null);
+        const periodsByJoiningDate = new Map();
+
+        history.forEach((item, index) => {
+            const joiningDateKey = parseManpowerDateKey(item?.joiningDate);
+            if (joiningDateKey === null) return;
+
+            const leavingDateKey = parseManpowerDateKey(item?.leavingDate);
+            const status = String(item?.status || '').trim().toUpperCase();
+            const changedAtMs = item?.changedAt
+                ? new Date(item.changedAt).getTime()
+                : Number.NaN;
+
+            const existing = periodsByJoiningDate.get(joiningDateKey) || {
+                joiningDateKey,
+                leavingDateKey: null,
+                latestStatus: '',
+                latestChangedAtMs: Number.NEGATIVE_INFINITY,
+                latestIndex: -1,
+            };
+
+            if (
+                leavingDateKey !== null
+                && (
+                    existing.leavingDateKey === null
+                    || leavingDateKey > existing.leavingDateKey
+                )
+            ) {
+                existing.leavingDateKey = leavingDateKey;
+            }
+
+            const comparableChangedAt = Number.isNaN(changedAtMs)
+                ? Number.NEGATIVE_INFINITY
+                : changedAtMs;
+
+            if (
+                comparableChangedAt > existing.latestChangedAtMs
+                || (
+                    comparableChangedAt === existing.latestChangedAtMs
+                    && index > existing.latestIndex
+                )
+            ) {
+                existing.latestStatus = status;
+                existing.latestChangedAtMs = comparableChangedAt;
+                existing.latestIndex = index;
+            }
+
+            periodsByJoiningDate.set(joiningDateKey, existing);
+        });
+
+        return Array.from(periodsByJoiningDate.values());
     };
 
     // REJOINING TREND ONLY:
@@ -1218,27 +1273,19 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             return historyPeriods.some((period) => {
                 if (period.joiningDateKey > asOfDateKey) return false;
 
-                // Closed LEFT period reconstructs only dates actually worked.
-                if (period.status === 'LEFT') {
-                    return (
-                        period.leavingDateKey !== null
-                        && asOfDateKey < period.leavingDateKey
-                    );
-                }
-
-                if (period.status !== 'PRESENT') return false;
-
-                // Closed PRESENT period is historical and uses the same exclusive leaving date.
+                // leavingDate is exclusive:
+                // joining 01, leaving 10 => active only 01..09.
                 if (period.leavingDateKey !== null) {
                     return asOfDateKey < period.leavingDateKey;
                 }
 
-                // Open/current period is valid only when the current users.status is PRESENT.
-                return currentStatus === 'PRESENT';
+                // Open employment period is controlled only by the latest
+                // statusHistory status for this joiningDate.
+                return period.latestStatus === 'PRESENT';
             });
         }
 
-        // Legacy fallback for users without any valid statusHistory joiningDate.
+        // Preserve legacy fallback only for users with no usable statusHistory joiningDate.
         const joinedByDate = (
             preparedUser.legacyJoiningDateKey === null
             || preparedUser.legacyJoiningDateKey <= asOfDateKey
@@ -1862,13 +1909,26 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 -- Match final dashboard eligibility logic:
                 -- attendance_logs.payCode = users.empId, employee is matched directly with users,
                 -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
-                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN u.id END) AS mappedPresentCount,
+                COUNT(DISTINCT CASE
+                    WHEN al.status IN ('P','PRESENT','Present')
+                     AND attendanceEligibility.isEligibleAttendance = 1
+                    THEN u.id
+                END) AS mappedPresentCount,
                 CAST(0 AS INT) AS unmappedPresentCount,
-                COUNT(DISTINCT CASE WHEN al.status IN ('P','PRESENT','Present') THEN u.id END) AS totalPresentCount,
+                COUNT(DISTINCT CASE
+                    WHEN al.status IN ('P','PRESENT','Present')
+                     AND attendanceEligibility.isEligibleAttendance = 1
+                    THEN u.id
+                END) AS totalPresentCount,
                 COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY','Absent','Leave','Half Day') THEN u.id END) AS absentCount,
                 COUNT(DISTINCT u.id) AS totalCount
             FROM attendance_logs al
             INNER JOIN users u ON al.userId = u.id
+            OUTER APPLY (
+                SELECT 1 AS isEligibleAttendance
+                WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+                  AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+            ) attendanceEligibility
             WHERE 1=1
               AND CONVERT(DATE, al.[date]) >= CONVERT(DATE, '${sqlStartDate}', 23)
               AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, '${sqlEndDate}', 23)
@@ -2265,6 +2325,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
           AND al.status IN ('P', 'PRESENT', 'Present')
+          AND ${getAttendancePayCodeMatchSql("al", "u")}
+          AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
           ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
     `;
 
@@ -2687,6 +2749,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 WHERE al.[date] >= '${masterSqlStartDate}'
                   AND al.[date] <= '${masterSqlEndDate}'
                   AND al.status IN ('P','PRESENT','Present')
+                  AND ${getAttendancePayCodeMatchSql("al", "u")}
+                  AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
                   ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   ${getEligibleUserSql("u")}
                   ${getDashboardDesignationShutterExclusionSql("u")}
@@ -2964,6 +3028,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             WHERE al.[date] >= '${masterSqlStartDate}'
               AND al.[date] <= '${masterSqlEndDate}'
               AND al.status IN ('P','PRESENT','Present')
+              AND ${getAttendancePayCodeMatchSql("al", "u")}
+              AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
               ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
               ${getEligibleUserSql("u")}
                   ${getDashboardDesignationShutterExclusionSql("u")}
@@ -3136,6 +3202,94 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
     } = req.query;
 
     const selectedShiftValue = shift && String(shift).trim().toUpperCase() !== 'ALL' ? String(shift).trim() : null;
+
+    const attendanceDateToDateSql = (columnSql) => `
+        COALESCE(
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 23),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 103),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 105),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 120),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 121)
+        )
+    `;
+
+    const attendanceStatusHistoryActiveSql = (alias = "u", asOfDateSql) => {
+        const historyJsonSql = `CASE
+            WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
+            THEN CAST(${alias}.statusHistory AS NVARCHAR(MAX))
+            ELSE N'[]'
+        END`;
+        const joiningFor = (rowAlias) => attendanceDateToDateSql(`JSON_VALUE(${rowAlias}.[value], '$.joiningDate')`);
+        const leavingFor = (rowAlias) => attendanceDateToDateSql(`JSON_VALUE(${rowAlias}.[value], '$.leavingDate')`);
+
+        const legacyJoiningDateSql = attendanceDateToDateSql(`${alias}.joiningDate`);
+        const legacyLeavingDateSql = attendanceDateToDateSql(`${alias}.leavingDate`);
+        const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
+
+        return `(
+            EXISTS (
+            SELECT 1
+            FROM OPENJSON(${historyJsonSql}) periodSeed
+            CROSS APPLY (SELECT ${joiningFor("periodSeed")} AS joiningDate) seed
+            OUTER APPLY (
+                SELECT MAX(${leavingFor("periodClose")}) AS leavingDate
+                FROM OPENJSON(${historyJsonSql}) periodClose
+                WHERE ${joiningFor("periodClose")} = seed.joiningDate
+            ) closeInfo
+            OUTER APPLY (
+                SELECT TOP (1)
+                    UPPER(LTRIM(RTRIM(CONVERT(
+                        NVARCHAR(100),
+                        ISNULL(JSON_VALUE(latestRow.[value], '$.status'), '')
+                    )))) AS latestStatus
+                FROM OPENJSON(${historyJsonSql}) latestRow
+                WHERE ${joiningFor("latestRow")} = seed.joiningDate
+                ORDER BY
+                    COALESCE(
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt'), 127),
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt')),
+                        CONVERT(DATETIME2, '1900-01-01')
+                    ) DESC,
+                    TRY_CONVERT(INT, latestRow.[key]) DESC
+            ) latestInfo
+            WHERE seed.joiningDate IS NOT NULL
+              AND seed.joiningDate <= ${asOfDateSql}
+              AND (
+                    (closeInfo.leavingDate IS NOT NULL AND closeInfo.leavingDate > ${asOfDateSql})
+                    OR (closeInfo.leavingDate IS NULL AND latestInfo.latestStatus = 'PRESENT')
+              )
+            )
+            OR (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM OPENJSON(${historyJsonSql}) anyHistoryRow
+                    CROSS APPLY (
+                        SELECT ${joiningFor("anyHistoryRow")} AS joiningDate
+                    ) validHistory
+                    WHERE validHistory.joiningDate IS NOT NULL
+                )
+                AND (
+                    (
+                        ${legacyStatusSql} = 'PRESENT'
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                    OR (
+                        ${legacyStatusSql} = 'LEFT'
+                        AND ${legacyLeavingDateSql} IS NOT NULL
+                        AND ${legacyLeavingDateSql} > ${asOfDateSql}
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                )
+            )
+        )`;
+    };
+
 
     const addShiftFilter = (sqlText, params, alias = "al") => {
         if (!selectedShiftValue) return sqlText;
@@ -3322,13 +3476,22 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         SELECT
             CONVERT(VARCHAR, al.[date], 23) AS fullDate,
             DAY(al.[date]) AS dayNum,
-            COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT') THEN u.id END) AS present,
+            COUNT(DISTINCT CASE
+                WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('P','PRESENT')
+                 AND attendanceEligibility.isEligibleAttendance = 1
+                THEN u.id
+            END) AS present,
             COUNT(DISTINCT CASE WHEN UPPER(LTRIM(RTRIM(al.status))) IN ('ABSENT','LEAVE','HALF DAY') THEN u.id END) AS absent,
             COUNT(DISTINCT u.id) AS total
         FROM attendance_logs al
         INNER JOIN users u
             ON al.userId = u.id
             AND ISNULL(u.isTemporary, 0) = 0
+        OUTER APPLY (
+            SELECT 1 AS isEligibleAttendance
+            WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+              AND ${attendanceStatusHistoryActiveSql("u", "CONVERT(DATE, al.[date])")}
+        ) attendanceEligibility
         WHERE CONVERT(DATE, al.[date]) >= '${sqlStartDate}'
           AND CONVERT(DATE, al.[date]) <= '${sqlEndDate}'
           ${hierCondition}
@@ -3375,6 +3538,94 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         shift && String(shift).trim().toUpperCase() !== "ALL"
             ? String(shift).trim()
             : null;
+
+    const tenureDateToDateSql = (columnSql) => `
+        COALESCE(
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 23),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 103),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 105),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 120),
+            TRY_CONVERT(DATE, NULLIF(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ${columnSql}))), ''), 'NULL'), 121)
+        )
+    `;
+
+    const tenureStatusHistoryActiveSql = (alias = "u", asOfDateSql) => {
+        const historyJsonSql = `CASE
+            WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
+            THEN CAST(${alias}.statusHistory AS NVARCHAR(MAX))
+            ELSE N'[]'
+        END`;
+        const joiningFor = (rowAlias) => tenureDateToDateSql(`JSON_VALUE(${rowAlias}.[value], '$.joiningDate')`);
+        const leavingFor = (rowAlias) => tenureDateToDateSql(`JSON_VALUE(${rowAlias}.[value], '$.leavingDate')`);
+
+        const legacyJoiningDateSql = tenureDateToDateSql(`${alias}.joiningDate`);
+        const legacyLeavingDateSql = tenureDateToDateSql(`${alias}.leavingDate`);
+        const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
+
+        return `(
+            EXISTS (
+            SELECT 1
+            FROM OPENJSON(${historyJsonSql}) periodSeed
+            CROSS APPLY (SELECT ${joiningFor("periodSeed")} AS joiningDate) seed
+            OUTER APPLY (
+                SELECT MAX(${leavingFor("periodClose")}) AS leavingDate
+                FROM OPENJSON(${historyJsonSql}) periodClose
+                WHERE ${joiningFor("periodClose")} = seed.joiningDate
+            ) closeInfo
+            OUTER APPLY (
+                SELECT TOP (1)
+                    UPPER(LTRIM(RTRIM(CONVERT(
+                        NVARCHAR(100),
+                        ISNULL(JSON_VALUE(latestRow.[value], '$.status'), '')
+                    )))) AS latestStatus
+                FROM OPENJSON(${historyJsonSql}) latestRow
+                WHERE ${joiningFor("latestRow")} = seed.joiningDate
+                ORDER BY
+                    COALESCE(
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt'), 127),
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt')),
+                        CONVERT(DATETIME2, '1900-01-01')
+                    ) DESC,
+                    TRY_CONVERT(INT, latestRow.[key]) DESC
+            ) latestInfo
+            WHERE seed.joiningDate IS NOT NULL
+              AND seed.joiningDate <= ${asOfDateSql}
+              AND (
+                    (closeInfo.leavingDate IS NOT NULL AND closeInfo.leavingDate > ${asOfDateSql})
+                    OR (closeInfo.leavingDate IS NULL AND latestInfo.latestStatus = 'PRESENT')
+              )
+            )
+            OR (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM OPENJSON(${historyJsonSql}) anyHistoryRow
+                    CROSS APPLY (
+                        SELECT ${joiningFor("anyHistoryRow")} AS joiningDate
+                    ) validHistory
+                    WHERE validHistory.joiningDate IS NOT NULL
+                )
+                AND (
+                    (
+                        ${legacyStatusSql} = 'PRESENT'
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                    OR (
+                        ${legacyStatusSql} = 'LEFT'
+                        AND ${legacyLeavingDateSql} IS NOT NULL
+                        AND ${legacyLeavingDateSql} > ${asOfDateSql}
+                        AND (
+                            ${legacyJoiningDateSql} IS NULL
+                            OR ${legacyJoiningDateSql} <= ${asOfDateSql}
+                        )
+                    )
+                )
+            )
+        )`;
+    };
+
 
     const safeName = (s) => String(s || "").replace(/'/g, "''");
 
@@ -3801,6 +4052,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
+                  AND ${getAttendancePayCodeMatchSql("al", "u")}
+                  AND ${tenureStatusHistoryActiveSql("u", "CONVERT(DATE, al.[date])")}
                   ${hierCondition}
                   ${getDashboardDesignationShutterExclusionSql("u")}
         `;
@@ -3872,6 +4125,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
                   AND u.empId != ''
+                  AND ${getAttendancePayCodeMatchSql("al", "u")}
+                  AND ${tenureStatusHistoryActiveSql("u", "CONVERT(DATE, al.[date])")}
                   AND ${joinDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${joinDateSQL}, al.[date]) BETWEEN ? AND ?
                   ${hierCondition}
@@ -3927,11 +4182,13 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                     END AS tenureDays
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  AND ${tenureStatusHistoryActiveSql("u", "CONVERT(DATE, ?)")}
                   ${hierCondition}
         `;
 
         const masterTenureParams = [
+            usersTotalAsOfDate,
             usersTotalAsOfDate,
             usersTotalAsOfDate,
         ];
@@ -3958,12 +4215,14 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 SELECT COUNT(DISTINCT u.id) AS totalCount
                 FROM users u
                 WHERE 1=1
-                  ${getFirstGraphTotalManpowerEligibilitySql("u")}
+                  ${getTotalManpowerBaseEligibilitySql("u")}
+                  AND ${tenureStatusHistoryActiveSql("u", "CONVERT(DATE, ?)")}
                   AND ${joinDateSQL} IS NOT NULL
                   AND DATEDIFF(DAY, ${joinDateSQL}, CONVERT(DATE, ?)) BETWEEN ? AND ?
                   ${hierCondition}
             `;
             const customMasterParams = [
+                usersTotalAsOfDate,
                 usersTotalAsOfDate,
                 customFromDays,
                 customToDays,

@@ -3194,6 +3194,8 @@ const DashboardHome = () => {
     const [designationFilter, setDesignationFilter] = useState(defaultFilter);
     const [educationFilter, setEducationFilter] = useState(defaultFilter);
     const [showEmployeeMasterGraphs, setShowEmployeeMasterGraphs] = useState(true);
+    const [showRejoiningTrend, setShowRejoiningTrend] = useState(false);
+    const [rejoiningVisibleDays, setRejoiningVisibleDays] = useState(15);
 
     const [selectedMasterState, setSelectedMasterState] = useState(["ALL"]);
     const [selectedMasterDistrict, setSelectedMasterDistrict] = useState(["ALL"]);
@@ -3421,6 +3423,8 @@ const DashboardHome = () => {
     };
 
     const manpowerData = normalizeTopGraphRange(manpowerStats?.data?.manpowerData || [], manpowerFilter);
+    const rejoiningData = normalizeTopGraphRange(manpowerStats?.data?.rejoiningData || [], manpowerFilter);
+    const rejoiningChartData = rejoiningData.slice(-rejoiningVisibleDays);
     const attritionData = normalizeTopGraphRange(attritionStats?.data?.attritionData || [], attritionFilter);
     const absenteeismData = normalizeTopGraphRange(absenteeismStats?.data?.absenteeismData || [], absenteeismFilter);
 
@@ -3761,6 +3765,114 @@ const DashboardHome = () => {
                             { color: '#e7ae12', label: 'Current Headcount' },
                         ]}
                     />
+
+                    <div className="mt-4 border-t border-slate-200 pt-4 px-4">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowRejoiningTrend(prev => !prev)}
+                            className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                        >
+                            {showRejoiningTrend ? (
+                                <EyeOff className="w-4 h-4" />
+                            ) : (
+                                <Eye className="w-4 h-4" />
+                            )}
+                            {showRejoiningTrend ? "Hide Rejoining Trend" : "Show Rejoining Trend"}
+                        </Button>
+
+                        {showRejoiningTrend && (
+                            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                                <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+                                    <div>
+                                        <h3 className="text-base font-bold text-slate-800">
+                                            Daily Employee Rejoining Trend
+                                        </h3>
+                                        <p className="text-sm text-slate-500 mt-1">
+                                            Only second and later joiningDate entries from statusHistory are counted as rejoining events
+                                        </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 p-1">
+                                        {[10, 15].map(days => (
+                                            <Button
+                                                key={days}
+                                                type="button"
+                                                size="sm"
+                                                variant={rejoiningVisibleDays === days ? "default" : "ghost"}
+                                                className={`h-8 px-3 text-sm ${rejoiningVisibleDays === days
+                                                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                                                    : "text-slate-600"
+                                                }`}
+                                                onClick={() => setRejoiningVisibleDays(days)}
+                                            >
+                                                Last {days} Days
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <ScrollableTopChart
+                                    dataLength={rejoiningChartData.length}
+                                    scrollToStart={false}
+                                >
+                                    {(manpowerLoading || manpowerFetching) && <ChartLoader />}
+                                    {!(manpowerLoading || manpowerFetching) && rejoiningChartData.length === 0 && (
+                                        <EmptyState text="No rejoining data found for selected filters" />
+                                    )}
+
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart
+                                            data={rejoiningChartData}
+                                            margin={{ top: 48, right: 30, left: 4, bottom: 8 }}
+                                            barCategoryGap="35%"
+                                        >
+                                            <defs>
+                                                <linearGradient id="rejoiningTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#16a34a" stopOpacity={1} />
+                                                    <stop offset="100%" stopColor="#15803d" stopOpacity={0.86} />
+                                                </linearGradient>
+                                            </defs>
+
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+
+                                            <XAxis
+                                                dataKey="day"
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
+                                                dy={8}
+                                                interval={0}
+                                            />
+
+                                            <YAxis
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
+                                                allowDecimals={false}
+                                                width={36}
+                                            />
+
+                                            <Bar
+                                                dataKey="rejoinedCount"
+                                                name="Employees Rejoined"
+                                                fill="url(#rejoiningTrendGrad)"
+                                                radius={[5, 5, 0, 0]}
+                                                barSize={42}
+                                                label={renderBarValueLabel("#166534", "", 13)}
+                                            />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </ScrollableTopChart>
+
+                                <SimpleLegend
+                                    items={[
+                                        { color: '#16a34a', label: 'Employees Rejoined' },
+                                    ]}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
 

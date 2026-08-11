@@ -314,25 +314,13 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     };
 
     const handleHeaderChange = (field, value) => {
-        if (field === 'level1Date' && value) {
-            if (value < todayStr) {
-                toast.error("Date of Level-1 Complete cannot be in the past");
-                return;
-            }
-            if (value > todayStr) {
-                toast.error("Date of Level-1 Complete cannot be in the future");
-                return;
-            }
+        if (field === 'level1Date' && value && value > todayStr) {
+            toast.error("Date of Level-1 Complete cannot be in the future");
+            return;
         }
-        if (field === 'level2Date' && value) {
-            if (value < todayStr) {
-                toast.error("Date of Level-2 Complete cannot be in the past");
-                return;
-            }
-            if (value > todayStr) {
-                toast.error("Date of Level-2 Complete cannot be in the future");
-                return;
-            }
+        if (field === 'level2Date' && value && value > todayStr) {
+            toast.error("Date of Level-2 Complete cannot be in the future");
+            return;
         }
         setHeaderData(prev => ({ ...prev, [field]: value }));
     };
@@ -375,15 +363,9 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     };
 
     const handleTableChange = (rowId, colId, subField, value) => {
-        if (rowId === 'columnDates' && value) {
-            if (value < todayStr) {
-                toast.error("Inspection date cannot be in the past");
-                return;
-            }
-            if (value > todayStr) {
-                toast.error("Inspection date cannot be in the future");
-                return;
-            }
+        if (rowId === 'columnDates' && value && value > todayStr) {
+            toast.error("Inspection date cannot be in the future");
+            return;
         }
         setTableData(prev => {
             const row = prev[rowId] || {};
@@ -627,7 +609,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={headerData.level1Date}
                                 onChange={e => handleHeaderChange('level1Date', e.target.value)}
                                 disabled={!isEditMode || isCellLocked('header', 'level1Date')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                             <span className="font-semibold mt-2">Date of Level-2 Complete-</span>
@@ -637,7 +618,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={headerData.level2Date}
                                 onChange={e => handleHeaderChange('level2Date', e.target.value)}
                                 disabled={!isEditMode || isCellLocked('header', 'level2Date')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -705,7 +685,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs1 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs1')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -717,7 +696,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs1Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs1Re')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -730,7 +708,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs2 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs2')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -742,7 +719,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs2Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs2Re')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -755,7 +731,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs3 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs3')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -767,7 +742,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs3Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs3Re')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -780,7 +754,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs4 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs4')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>
@@ -792,7 +765,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs4Re || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4Re', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs4Re')}
-                                min={todayStr}
                                 max={todayStr}
                             />
                         </div>

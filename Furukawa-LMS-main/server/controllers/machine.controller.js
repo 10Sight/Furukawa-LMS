@@ -132,9 +132,9 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
         const ids = subSectionId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
         if (ids.length > 0) {
             const [rows] = await executeQuery(`
-                SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+                SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel as subSectionMinimumRequiredLevel,
                 ${machineCountSql}
-                FROM machines m 
+                FROM machines m
                 LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
                 WHERE m.subSectionId IN (${ids.join(',')}) ORDER BY m.createdAt DESC`);
             machines = rows;
@@ -145,9 +145,9 @@ export const getMachinesBySubSection = asyncHandler(async (req, res) => {
             throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
         }
         const [rows] = await executeQuery(`
-            SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+            SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel as subSectionMinimumRequiredLevel,
             ${machineCountSql}
-            FROM machines m 
+            FROM machines m
             LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
             WHERE m.subSectionId = ? ORDER BY m.createdAt DESC`, [parsedId]);
         machines = rows;
@@ -177,11 +177,11 @@ export const getMachinesByLine = asyncHandler(async (req, res) => {
 
     const idsString = lineIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel,
+        SELECT m.*, ss.name as subSectionName, ss.minimumRequiredLevel as subSectionMinimumRequiredLevel,
         ${machineCountSql}
         FROM machines m
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE m.line IN (${idsString}) 
+        WHERE m.line IN (${idsString})
         ORDER BY m.createdAt DESC
     `);
 
@@ -209,12 +209,12 @@ export const getMachinesBySection = asyncHandler(async (req, res) => {
 
     const idsString = sectionIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
+        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel as subSectionMinimumRequiredLevel,
         ${machineCountSql}
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.sectionId IN (${idsString}) 
+        WHERE l.sectionId IN (${idsString})
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
     `);
 
@@ -242,12 +242,12 @@ export const getMachinesByDepartment = asyncHandler(async (req, res) => {
 
     const idsString = departmentIds.join(',');
     const [machines] = await executeQuery(`
-        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel,
+        SELECT m.*, l.name as lineName, ss.name as subSectionName, ss.minimumRequiredLevel as subSectionMinimumRequiredLevel,
         ${machineCountSql}
         FROM machines m
         JOIN [lines] l ON m.line = l.id
         LEFT JOIN sub_sections ss ON m.subSectionId = ss.id
-        WHERE l.department IN (${idsString}) 
+        WHERE l.department IN (${idsString})
         ORDER BY l.name ASC, ss.name ASC, m.name ASC
     `);
 

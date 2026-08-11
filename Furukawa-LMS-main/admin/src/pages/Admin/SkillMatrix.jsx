@@ -1161,7 +1161,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     name: subName,
                     count: 1,
                     indices: [index],
-                    minimumRequiredLevel: m.minimumRequiredLevel || null
+                    minimumRequiredLevel: m.subSectionMinimumRequiredLevel || m.minimumRequiredLevel || null
                 });
             }
         });

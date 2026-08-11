@@ -84,6 +84,11 @@ class OperatorObservance {
                     ALTER TABLE operator_observances ADD level2Date DATETIME NULL;
                 END
             END
+
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_operator_observances_studentId' AND object_id = OBJECT_ID('operator_observances'))
+            BEGIN
+                CREATE INDEX idx_operator_observances_studentId ON operator_observances(studentId);
+            END
         `;
         await executeQuery(query);
     }

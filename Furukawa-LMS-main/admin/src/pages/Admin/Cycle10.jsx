@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,8 @@ const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const { user } = useSelector(state => state.auth);
     const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
     const canCreate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:create') || user?.customRole?.permissions?.includes('ten_cycle:manage');
@@ -130,6 +132,18 @@ const Cycle10 = () => {
         (user.departments?.length > 0) || user.departmentId ||
         (user.sections?.length > 0) || user.sectionId
     );
+
+    // Emailed links always point at /admin/10-cycle. A custom-role user without
+    // admin access lands there via ProtectedRoute/RequireAccess's permissive
+    // layout fallback and would render the page inside the wrong (admin) shell,
+    // so bounce them to the equivalent /portal route, and vice versa.
+    useEffect(() => {
+        if (!user) return;
+        const targetBase = isAdmin ? '/admin/10-cycle' : '/portal/10-cycle';
+        if (location.pathname !== targetBase && (location.pathname === '/admin/10-cycle' || location.pathname === '/portal/10-cycle')) {
+            navigate(`${targetBase}${location.search || ''}`, { replace: true });
+        }
+    }, [user, isAdmin, location.pathname, location.search, navigate]);
 
     useEffect(() => {
         if (!isRestricted) return;

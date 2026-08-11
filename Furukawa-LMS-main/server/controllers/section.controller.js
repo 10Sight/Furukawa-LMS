@@ -4,8 +4,25 @@ import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Section from "../models/section.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
+import { getCustomRoleScope } from "./user.controller.js";
 
 const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
+
+// Confines a list of section rows to a CUSTOM-role user's assigned departments/sections, so the
+// department-filter dropdowns (and any client widening/dropping departmentId) can't be used to
+// enumerate sections outside their profile. Non-CUSTOM users, and CUSTOM users on a full-access
+// layout with no assignments, are left unrestricted.
+const filterSectionsByUserScope = (sections, user) => {
+    if (user?.role !== 'CUSTOM') return sections;
+    const { isFullAccessLayout, allowedDepts, allowedSections } = getCustomRoleScope(user);
+    if (allowedDepts.length === 0 && allowedSections.length === 0) {
+        return isFullAccessLayout ? sections : [];
+    }
+    return sections.filter(s =>
+        (allowedSections.length > 0 && allowedSections.includes(String(s.id))) ||
+        (allowedDepts.length > 0 && allowedDepts.includes(String(s.departmentId)))
+    );
+};
 
 // Resolves the set of valid skill level names (uppercased) from the active
 // Course Level Config, falling back to the legacy L1-L4 set if none exists.
@@ -97,7 +114,7 @@ export const getSectionsByDepartment = asyncHandler(async (req, res) => {
     const sections = await Section.findByDepartment(departmentId);
 
     res.status(200).json(
-        new ApiResponse(200, sections, "Sections fetched successfully")
+        new ApiResponse(200, filterSectionsByUserScope(sections, req.user), "Sections fetched successfully")
     );
 });
 
@@ -119,7 +136,7 @@ export const getAllSections = asyncHandler(async (req, res) => {
     const [sections] = await executeQuery(querySQL, params);
 
     res.status(200).json(
-        new ApiResponse(200, sections, "Sections fetched successfully")
+        new ApiResponse(200, filterSectionsByUserScope(sections, req.user), "Sections fetched successfully")
     );
 });
 

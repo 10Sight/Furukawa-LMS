@@ -432,6 +432,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         // stationId removed to prevent UI clearing when filtering by station (users aren't linked to stations)
         role: "STUDENT,CUSTOM",
         includeTemporary: "false",
+        includeEvaluationInfo: "true",
         limit: 1000
     }, { skip: !selectedDepartment || !isMatrixOpen });
 
@@ -629,8 +630,10 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                         return `${years}.${months}`;
                     })(),
                     certDate: savedUserEntry?.certDate || (() => {
-                        if (!user.updatedAt) return "";
-                        const dateObj = new Date(user.updatedAt);
+                        const rawDate = user.lastEvalDate || user.updatedAt;
+                        if (!rawDate) return "";
+                        const dateObj = new Date(rawDate);
+                        if (isNaN(dateObj.getTime())) return "";
                         return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
                     })(),
                     position: savedUserEntry?.position || "",

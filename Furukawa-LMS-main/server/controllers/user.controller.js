@@ -17,6 +17,7 @@ import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
+import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -341,6 +342,12 @@ export const formatUser = (u) => {
       lastEvalDocNo: lastEvalDocData?.docNo || null,
       lastEvalApproved: lastEvalDocData?.approved || null,
       lastEvalConfirmed: lastEvalDocData?.confirmed || null
+    } : {}),
+    // lastEvalDate comes from the evaluation sheet's headerData.dateOfEvaluation (either
+    // "YYYY-MM-DD" from the date-picker or legacy "DD - MM - YYYY"), falling back in SQL to
+    // the sheet's updatedAt — normalize both to ISO so callers can safely `new Date(...)` it.
+    ...(u.lastEvalDate !== undefined ? {
+      lastEvalDate: normalizeEvaluationDate(u.lastEvalDate) || u.lastEvalDate || null
     } : {})
   };
   delete formatted.password;
@@ -477,6 +484,84 @@ const buildPassedTestPaperClause = (req) => {
     )`,
     params
   };
+};
+
+// Resolves the department/section ids a CUSTOM-role user's profile is restricted to, plus
+// whether their custom role's targetLayout grants full (unrestricted) access when no
+// departments/sections are assigned. Exported so section.controller.js can apply the same
+// scope when filtering the department/section dropdown data those pages read from.
+export const getCustomRoleScope = (user) => {
+  const targetLayout = String(user?.customRole?.targetLayout || '').toLowerCase();
+  const isFullAccessLayout = ['admin', 'superadmin', 'trainer', 'instructor'].includes(targetLayout);
+
+  let allowedDepts = [];
+  if (user?.departmentId) allowedDepts.push(String(user.departmentId));
+  try {
+    const parsedDepts = typeof user?.departments === 'string' ? JSON.parse(user.departments) : (user?.departments || []);
+    if (Array.isArray(parsedDepts)) parsedDepts.forEach(d => {
+      const id = (d && typeof d === 'object') ? String(d.id ?? d._id ?? '') : String(d);
+      if (id) allowedDepts.push(id);
+    });
+  } catch (e) { /* ignore parse errors */ }
+  allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+  let allowedSections = [];
+  if (user?.sectionId) allowedSections.push(String(user.sectionId));
+  try {
+    const parsedSections = typeof user?.sections === 'string' ? JSON.parse(user.sections) : (user?.sections || []);
+    if (Array.isArray(parsedSections)) parsedSections.forEach(s => {
+      const id = (s && typeof s === 'object') ? String(s.id ?? s._id ?? '') : String(s);
+      if (id) allowedSections.push(id);
+    });
+  } catch (e) { /* ignore parse errors */ }
+  allowedSections = [...new Set(allowedSections)].filter(Boolean);
+
+  return { isFullAccessLayout, allowedDepts, allowedSections };
+};
+
+// Confines a users-table query (aliased `u`, joined via getHierarchyFilterJoinSQL/getHierarchyJoinSQL
+// so `d` and `s_res` are available) to the requesting CUSTOM-role user's assigned
+// departments/sections, so mentor/supervisor/incharge/candidate lookups can't be widened past
+// their profile via query params -- the backend is the source of truth, not the dropdown UI.
+// Full-access layouts (admin/superadmin/trainer/instructor) with no assignments are left
+// unrestricted; a restricted user with no assignments at all is blocked outright (1=0).
+const applyUserScopeRestriction = (req, whereClauses, params) => {
+  if (req.user?.role !== 'CUSTOM') return;
+  const { isFullAccessLayout, allowedDepts, allowedSections } = getCustomRoleScope(req.user);
+
+  if (allowedDepts.length === 0 && allowedSections.length === 0) {
+    if (!isFullAccessLayout) whereClauses.push("1=0");
+    return;
+  }
+
+  const scopeConditions = [];
+  if (allowedDepts.length > 0) {
+    const ph = allowedDepts.map(() => '?').join(',');
+    scopeConditions.push(`(
+      u.departmentId IN (${ph})
+      OR u.department IN (${ph})
+      OR d.id IN (${ph})
+      OR (u.isTemporary = 1 AND u.targetDeptId IN (${ph}))
+      OR EXISTS (
+        SELECT 1 FROM OPENJSON(ISNULL(u.departments, '[]')) WITH (deptId INT '$') WHERE deptId IN (${ph})
+      )
+    )`);
+    params.push(...allowedDepts, ...allowedDepts, ...allowedDepts, ...allowedDepts, ...allowedDepts);
+  }
+  if (allowedSections.length > 0) {
+    const ph = allowedSections.map(() => '?').join(',');
+    scopeConditions.push(`(
+      u.sectionId IN (${ph})
+      OR s_res.sectionId IN (${ph})
+      OR (u.isTemporary = 1 AND u.targetSectionId IN (${ph}))
+      OR EXISTS (
+        SELECT 1 FROM OPENJSON(ISNULL(u.sections, '[]')) WITH (sectId INT '$') WHERE sectId IN (${ph})
+      )
+    )`);
+    params.push(...allowedSections, ...allowedSections, ...allowedSections);
+  }
+
+  whereClauses.push(`(${scopeConditions.join(' OR ')})`);
 };
 
 /**
@@ -706,6 +791,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     params.push(filterDate, scheduleShift);
   }
 
+  applyUserScopeRestriction(req, whereClauses, params);
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
 
   const includeHandoverMarks = req.query.includeHandoverMarks === "true";
@@ -725,7 +812,9 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const includeEvaluationInfo = req.query.includeEvaluationInfo === "true";
   const evalJoinSQL = includeEvaluationInfo ? `
     OUTER APPLY (
-      SELECT TOP 1 sme.updatedAt as lastEvalDate, sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod, sme.docData as lastEvalDocData
+      SELECT TOP 1
+        COALESCE(JSON_VALUE(sme.headerData, '$.dateOfEvaluation'), CONVERT(varchar(10), sme.updatedAt, 23)) as lastEvalDate,
+        sme.sheetIndex as lastEvalSheetIndex, sme.period as lastEvalPeriod, sme.docData as lastEvalDocData
       FROM skill_matrix_evaluations sme
       WHERE sme.studentId = u.id
       ORDER BY sme.sheetIndex DESC, sme.createdAt DESC
@@ -2288,6 +2377,8 @@ export const getAllMentors = asyncHandler(async (req, res) => {
     params.push(shift);
   }
 
+  applyUserScopeRestriction(req, whereClauses, params);
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
   const [[cnt], [users]] = await Promise.all([
     executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params], { label: "getAllMentors.count" }),
@@ -2527,6 +2618,8 @@ export const getAllSupervisors = asyncHandler(async (req, res) => {
     params.push(shift);
   }
 
+  applyUserScopeRestriction(req, whereClauses, params);
+
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
   const [[cnt], [users]] = await Promise.all([
     executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${attendanceJoinSQL} ${whereSQL}`, [...attendanceParams, ...params], { label: "getAllSupervisors.count" }),
@@ -2619,6 +2712,8 @@ export const getAllIncharges = asyncHandler(async (req, res) => {
     else whereClauses.push("u.shift = ?");
     params.push(shift);
   }
+
+  applyUserScopeRestriction(req, whereClauses, params);
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
   const [[cnt], [users]] = await Promise.all([

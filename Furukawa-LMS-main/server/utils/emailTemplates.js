@@ -1011,7 +1011,8 @@ export const generateTenCycleSheetEmail = ({
     formType,
     date,
     entries,
-    portalUrl
+    portalUrl,
+    submittedBy
 }) => {
     const formDisplayName = {
         'form1': '10-Cycle Checklist',
@@ -1083,8 +1084,10 @@ export const generateTenCycleSheetEmail = ({
                 <div class="info-cell value">${date || 'N/A'}</div>
             </div>
             <div class="info-row">
+                <div class="info-cell label">Submitted By:</div>
+                <div class="info-cell value">${submittedBy || 'N/A'}</div>
                 <div class="info-cell label">Status:</div>
-                <div class="info-cell value" colspan="3"><strong style="color: #2563eb;">SUBMITTED</strong></div>
+                <div class="info-cell value"><strong style="color: #2563eb;">SUBMITTED</strong></div>
             </div>
         </div>
 

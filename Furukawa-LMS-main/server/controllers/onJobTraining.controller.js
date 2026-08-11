@@ -128,7 +128,7 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
         const { studentId } = req.params;
 
         // Resolve student ID
-        const [users] = await executeQuery("SELECT id, userName, empId FROM users WHERE CAST(id AS NVARCHAR(50)) = ? OR userName = ?", [studentId, studentId]);
+        const [users] = await executeQuery("SELECT id, userName, empId FROM users WHERE id = TRY_CAST(? AS INT) OR userName = ?", [studentId, studentId]);
         if (users.length === 0) return next(new ApiError("Student not found", 404));
         const user = users[0];
         const userId = user.id;
@@ -136,18 +136,18 @@ export const getStudentOnJobTrainings = async (req, res, next) => {
         const empId = user.empId;
 
         const [ojts] = await executeQuery(`
-            SELECT ojt.*, 
-                   d.name as deptName, 
+            SELECT ojt.*,
+                   d.name as deptName,
                    s.name as sectionName,
-                   l.name as lineName, 
+                   l.name as lineName,
                    ss.name as subSectionName,
                    m.name as machineName, m.name as machineDisplayName
             FROM on_job_trainings ojt
-            LEFT JOIN departments d ON ojt.department = CAST(d.id AS NVARCHAR(50)) OR ojt.department = d.name
-            LEFT JOIN sections s ON ojt.section = CAST(s.id AS NVARCHAR(50)) OR ojt.section = s.name
-            LEFT JOIN [lines] l ON ojt.line = CAST(l.id AS NVARCHAR(50)) OR ojt.line = l.name
-            LEFT JOIN [sub_sections] ss ON ojt.subSection = CAST(ss.id AS NVARCHAR(50)) OR ojt.subSection = ss.name
-            LEFT JOIN machines m ON ojt.machine = CAST(m.id AS NVARCHAR(50)) OR ojt.machine = m.name
+            LEFT JOIN departments d ON d.id = TRY_CAST(ojt.department AS INT) OR (TRY_CAST(ojt.department AS INT) IS NULL AND ojt.department = d.name)
+            LEFT JOIN sections s ON s.id = TRY_CAST(ojt.section AS INT) OR (TRY_CAST(ojt.section AS INT) IS NULL AND ojt.section = s.name)
+            LEFT JOIN [lines] l ON l.id = TRY_CAST(ojt.line AS INT) OR (TRY_CAST(ojt.line AS INT) IS NULL AND ojt.line = l.name)
+            LEFT JOIN [sub_sections] ss ON ss.id = TRY_CAST(ojt.subSection AS INT) OR (TRY_CAST(ojt.subSection AS INT) IS NULL AND ojt.subSection = ss.name)
+            LEFT JOIN machines m ON m.id = TRY_CAST(ojt.machine AS INT) OR (TRY_CAST(ojt.machine AS INT) IS NULL AND ojt.machine = m.name)
             WHERE ojt.student = ?
                OR (ojt.attendanceRecords LIKE ? AND ? IS NOT NULL AND ? != '')
                OR (ojt.attendanceRecords LIKE ? AND ? IS NOT NULL AND ? != '')
@@ -210,14 +210,14 @@ export const getOnJobTrainingById = async (req, res, next) => {
                    uc.fullName as creatorName,
                    uu.fullName as approverName
             FROM on_job_trainings ojt
-            LEFT JOIN departments d ON ojt.department = CAST(d.id AS NVARCHAR(50)) OR ojt.department = d.name
-            LEFT JOIN sections s ON ojt.section = CAST(s.id AS NVARCHAR(50)) OR ojt.section = s.name
-            LEFT JOIN [lines] l ON ojt.line = CAST(l.id AS NVARCHAR(50)) OR ojt.line = l.name
-            LEFT JOIN [sub_sections] ss ON ojt.subSection = CAST(ss.id AS NVARCHAR(50)) OR ojt.subSection = ss.name
-            LEFT JOIN machines m ON ojt.machine = CAST(m.id AS NVARCHAR(50)) OR ojt.machine = m.name
-            LEFT JOIN users u ON ojt.student = CAST(u.id AS NVARCHAR(50)) OR ojt.student = u.userName
-            LEFT JOIN users uc ON CAST(ojt.createdBy AS NVARCHAR(50)) = CAST(uc.id AS NVARCHAR(50)) OR ojt.createdBy = uc.userName
-            LEFT JOIN users uu ON CAST(ojt.updatedBy AS NVARCHAR(50)) = CAST(uu.id AS NVARCHAR(50)) OR ojt.updatedBy = uu.userName
+            LEFT JOIN departments d ON d.id = TRY_CAST(ojt.department AS INT) OR (TRY_CAST(ojt.department AS INT) IS NULL AND ojt.department = d.name)
+            LEFT JOIN sections s ON s.id = TRY_CAST(ojt.section AS INT) OR (TRY_CAST(ojt.section AS INT) IS NULL AND ojt.section = s.name)
+            LEFT JOIN [lines] l ON l.id = TRY_CAST(ojt.line AS INT) OR (TRY_CAST(ojt.line AS INT) IS NULL AND ojt.line = l.name)
+            LEFT JOIN [sub_sections] ss ON ss.id = TRY_CAST(ojt.subSection AS INT) OR (TRY_CAST(ojt.subSection AS INT) IS NULL AND ojt.subSection = ss.name)
+            LEFT JOIN machines m ON m.id = TRY_CAST(ojt.machine AS INT) OR (TRY_CAST(ojt.machine AS INT) IS NULL AND ojt.machine = m.name)
+            LEFT JOIN users u ON u.id = TRY_CAST(ojt.student AS INT) OR (TRY_CAST(ojt.student AS INT) IS NULL AND ojt.student = u.userName)
+            LEFT JOIN users uc ON uc.id = TRY_CAST(ojt.createdBy AS INT) OR (TRY_CAST(ojt.createdBy AS INT) IS NULL AND ojt.createdBy = uc.userName)
+            LEFT JOIN users uu ON uu.id = TRY_CAST(ojt.updatedBy AS INT) OR (TRY_CAST(ojt.updatedBy AS INT) IS NULL AND ojt.updatedBy = uu.userName)
             WHERE ojt.id = ?
         `, [id]);
 
@@ -298,14 +298,14 @@ export const getOnJobTrainingByShareToken = async (req, res, next) => {
                    uc.fullName as creatorName,
                    uu.fullName as approverName
             FROM on_job_trainings ojt
-            LEFT JOIN departments d ON ojt.department = CAST(d.id AS NVARCHAR(50)) OR ojt.department = d.name
-            LEFT JOIN sections s ON ojt.section = CAST(s.id AS NVARCHAR(50)) OR ojt.section = s.name
-            LEFT JOIN [lines] l ON ojt.line = CAST(l.id AS NVARCHAR(50)) OR ojt.line = l.name
-            LEFT JOIN [sub_sections] ss ON ojt.subSection = CAST(ss.id AS NVARCHAR(50)) OR ojt.subSection = ss.name
-            LEFT JOIN machines m ON ojt.machine = CAST(m.id AS NVARCHAR(50)) OR ojt.machine = m.name
-            LEFT JOIN users u ON ojt.student = CAST(u.id AS NVARCHAR(50)) OR ojt.student = u.userName
-            LEFT JOIN users uc ON CAST(ojt.createdBy AS NVARCHAR(50)) = CAST(uc.id AS NVARCHAR(50)) OR ojt.createdBy = uc.userName
-            LEFT JOIN users uu ON CAST(ojt.updatedBy AS NVARCHAR(50)) = CAST(uu.id AS NVARCHAR(50)) OR ojt.updatedBy = uu.userName
+            LEFT JOIN departments d ON d.id = TRY_CAST(ojt.department AS INT) OR (TRY_CAST(ojt.department AS INT) IS NULL AND ojt.department = d.name)
+            LEFT JOIN sections s ON s.id = TRY_CAST(ojt.section AS INT) OR (TRY_CAST(ojt.section AS INT) IS NULL AND ojt.section = s.name)
+            LEFT JOIN [lines] l ON l.id = TRY_CAST(ojt.line AS INT) OR (TRY_CAST(ojt.line AS INT) IS NULL AND ojt.line = l.name)
+            LEFT JOIN [sub_sections] ss ON ss.id = TRY_CAST(ojt.subSection AS INT) OR (TRY_CAST(ojt.subSection AS INT) IS NULL AND ojt.subSection = ss.name)
+            LEFT JOIN machines m ON m.id = TRY_CAST(ojt.machine AS INT) OR (TRY_CAST(ojt.machine AS INT) IS NULL AND ojt.machine = m.name)
+            LEFT JOIN users u ON u.id = TRY_CAST(ojt.student AS INT) OR (TRY_CAST(ojt.student AS INT) IS NULL AND ojt.student = u.userName)
+            LEFT JOIN users uc ON uc.id = TRY_CAST(ojt.createdBy AS INT) OR (TRY_CAST(ojt.createdBy AS INT) IS NULL AND ojt.createdBy = uc.userName)
+            LEFT JOIN users uu ON uu.id = TRY_CAST(ojt.updatedBy AS INT) OR (TRY_CAST(ojt.updatedBy AS INT) IS NULL AND ojt.updatedBy = uu.userName)
             WHERE ojt.shareToken = ?
         `, [token]);
 
@@ -367,14 +367,14 @@ export const getAllOnJobTrainings = async (req, res, next) => {
                    uc.fullName as creatorName,
                    uu.fullName as approverName
             FROM on_job_trainings ojt
-            LEFT JOIN departments d ON ojt.department = CAST(d.id AS NVARCHAR(50)) OR ojt.department = d.name
-            LEFT JOIN sections s ON ojt.section = CAST(s.id AS NVARCHAR(50)) OR ojt.section = s.name
-            LEFT JOIN [lines] l ON ojt.line = CAST(l.id AS NVARCHAR(50)) OR ojt.line = l.name
-            LEFT JOIN [sub_sections] ss ON ojt.subSection = CAST(ss.id AS NVARCHAR(50)) OR ojt.subSection = ss.name
-            LEFT JOIN machines m ON ojt.machine = CAST(m.id AS NVARCHAR(50)) OR ojt.machine = m.name
-            LEFT JOIN users u ON ojt.student = CAST(u.id AS NVARCHAR(50)) OR ojt.student = u.userName
-            LEFT JOIN users uc ON CAST(ojt.createdBy AS NVARCHAR(50)) = CAST(uc.id AS NVARCHAR(50)) OR ojt.createdBy = uc.userName
-            LEFT JOIN users uu ON CAST(ojt.updatedBy AS NVARCHAR(50)) = CAST(uu.id AS NVARCHAR(50)) OR ojt.updatedBy = uu.userName
+            LEFT JOIN departments d ON d.id = TRY_CAST(ojt.department AS INT) OR (TRY_CAST(ojt.department AS INT) IS NULL AND ojt.department = d.name)
+            LEFT JOIN sections s ON s.id = TRY_CAST(ojt.section AS INT) OR (TRY_CAST(ojt.section AS INT) IS NULL AND ojt.section = s.name)
+            LEFT JOIN [lines] l ON l.id = TRY_CAST(ojt.line AS INT) OR (TRY_CAST(ojt.line AS INT) IS NULL AND ojt.line = l.name)
+            LEFT JOIN [sub_sections] ss ON ss.id = TRY_CAST(ojt.subSection AS INT) OR (TRY_CAST(ojt.subSection AS INT) IS NULL AND ojt.subSection = ss.name)
+            LEFT JOIN machines m ON m.id = TRY_CAST(ojt.machine AS INT) OR (TRY_CAST(ojt.machine AS INT) IS NULL AND ojt.machine = m.name)
+            LEFT JOIN users u ON u.id = TRY_CAST(ojt.student AS INT) OR (TRY_CAST(ojt.student AS INT) IS NULL AND ojt.student = u.userName)
+            LEFT JOIN users uc ON uc.id = TRY_CAST(ojt.createdBy AS INT) OR (TRY_CAST(ojt.createdBy AS INT) IS NULL AND ojt.createdBy = uc.userName)
+            LEFT JOIN users uu ON uu.id = TRY_CAST(ojt.updatedBy AS INT) OR (TRY_CAST(ojt.updatedBy AS INT) IS NULL AND ojt.updatedBy = uu.userName)
             WHERE 1=1
         `;
         const params = [];

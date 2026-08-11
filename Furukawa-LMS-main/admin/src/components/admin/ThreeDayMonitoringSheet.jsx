@@ -127,6 +127,13 @@ const ThreeDayMonitoringSheet = ({
     const authUser = useSelector(state => state.auth.user);
     const canVerify = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('three_day:verify');
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('three_day:approve');
+    const canEdit = authUser?.isAdmin || authUser?.isTrainer ||
+        authUser?.customRole?.permissions?.includes('three_day:edit') ||
+        authUser?.customRole?.permissions?.includes('three_day:manage');
+    const canEditSubmitted = authUser?.isAdmin || authUser?.isTrainer ||
+        authUser?.customRole?.permissions?.includes('three_day:edit_submitted') ||
+        authUser?.customRole?.permissions?.includes('three_day:manage');
+    const isOwner = !!studentId && String(authUser?.id || authUser?._id) === String(studentId);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [config, setConfig] = useState(DEFAULT_MONITORING_CONFIG);
@@ -145,12 +152,9 @@ const ThreeDayMonitoringSheet = ({
     const [historyAttempts, setHistoryAttempts] = useState([]);
     const [selectedAttemptId, setSelectedAttemptId] = useState("");
     const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
-    const isLocked = status === "Submitted" &&
-        !authUser?.isAdmin &&
-        !authUser?.isTrainer &&
-        !canVerify &&
-        !canApprove &&
-        !authUser?.customRole?.permissions?.includes('three_day:manage');
+    const isLocked = status === "Submitted"
+        ? !canEditSubmitted && !canVerify && !canApprove
+        : !isOwner && !canEdit;
 
     useEffect(() => {
         if (studentId) fetchData();

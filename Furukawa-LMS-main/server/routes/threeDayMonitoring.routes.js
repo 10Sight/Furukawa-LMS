@@ -14,11 +14,11 @@ import authorizeRoles from "../middlewares/authrization.middleware.js";
 
 const router = Router();
 
-router.get("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), listThreeDayMonitoring);
+router.get("/", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage", "three_day:edit", "three_day:edit_submitted"), listThreeDayMonitoring);
 
-router.get("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage"), getThreeDayMonitoring);
-router.get("/:studentId/history", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage"), getStudentThreeDayMonitoringHistory);
-router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), saveThreeDayMonitoring);
+router.get("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage", "three_day:edit", "three_day:edit_submitted"), getThreeDayMonitoring);
+router.get("/:studentId/history", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage", "three_day:edit", "three_day:edit_submitted"), getStudentThreeDayMonitoringHistory);
+router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage", "three_day:edit", "three_day:edit_submitted"), saveThreeDayMonitoring);
 router.post("/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), sendThreeDayMonitoringEmail);
 
 // 3 Day Monitoring Config

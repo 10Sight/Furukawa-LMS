@@ -95,6 +95,21 @@ class SkillMatrixEvaluation {
                 END
             `);
 
+            // Speeds up the "latest active sheet per student" lookup (getAllUsers'
+            // includeEvaluationInfo OUTER APPLY, findActiveByStudentId) from a full scan to
+            // an index seek: (studentId, isActive) covers the WHERE, INCLUDE covers the SELECT.
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes
+                    WHERE name = 'idx_sme_student_active' AND object_id = OBJECT_ID('skill_matrix_evaluations')
+                )
+                BEGIN
+                    CREATE NONCLUSTERED INDEX idx_sme_student_active
+                    ON skill_matrix_evaluations (studentId, isActive)
+                    INCLUDE (sheetIndex, period, earnedLevel, efficiency, updatedAt);
+                END
+            `);
+
             // Run automated migration for legacy single-sheet records
             await this.migrateExisting();
 

@@ -79,7 +79,7 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
                         OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
                     )
                     AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-                    AND CAST(ojt.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+                    AND ojt.createdAt >= CAST(GETDATE() AS DATE) AND ojt.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
                 )
                 AND EXISTS (
                     SELECT 1 FROM attempted_quizzes aq
@@ -87,7 +87,7 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
                     WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
                       AND (aq.status = 'PASSED' OR aq.status = 'PASS')
                       AND q.isMultiSkilling = 1
-                      AND CAST(aq.createdAt AS DATE) = CAST(GETDATE() AS DATE)
+                      AND aq.createdAt >= CAST(GETDATE() AS DATE) AND aq.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
                 )
             )
         )
@@ -117,10 +117,16 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: User can access if they are the owner OR have management permissions
+    // Authorization check: User can access if they are the owner OR have management/edit permissions
     const isOwner = String(req.user.id) === String(sid);
-    const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                 (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('three_day:manage'));
+    const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
+                                (req.user.role === 'CUSTOM' && (
+                                    req.user.customRole?.permissions?.includes('three_day:manage') ||
+                                    req.user.customRole?.permissions?.includes('three_day:edit') ||
+                                    req.user.customRole?.permissions?.includes('three_day:edit_submitted') ||
+                                    req.user.customRole?.permissions?.includes('three_day:verify') ||
+                                    req.user.customRole?.permissions?.includes('three_day:approve')
+                                ));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to view this monitoring record", 403);
@@ -165,10 +171,16 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    // Authorization check: Only Trainers, Admins, or Custom Roles with manage permission can save
+    // Authorization check: Only Trainers, Admins, or Custom Roles with manage/edit/edit_submitted/verify/approve permissions can save
     const isOwner = String(req.user.id) === String(sid);
-    const hasManagePermission = req.user.isAdmin || req.user.isTrainer || 
-                                (req.user.role === 'CUSTOM' && req.user.customRole?.permissions?.includes('three_day:manage'));
+    const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
+                                (req.user.role === 'CUSTOM' && (
+                                    req.user.customRole?.permissions?.includes('three_day:manage') ||
+                                    req.user.customRole?.permissions?.includes('three_day:edit') ||
+                                    req.user.customRole?.permissions?.includes('three_day:edit_submitted') ||
+                                    req.user.customRole?.permissions?.includes('three_day:verify') ||
+                                    req.user.customRole?.permissions?.includes('three_day:approve')
+                                ));
 
     if (!isOwner && !hasManagePermission) {
         throw new ApiError("You do not have permission to save this monitoring record", 403);
@@ -185,6 +197,21 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         sheet = await ThreeDayMonitoring.findById(recordId);
     } else if (!isNewAttempt) {
         sheet = await ThreeDayMonitoring.findByStudentId(sid);
+    }
+
+    if (sheet && sheet.status === "Submitted" && !isNewAttempt) {
+        // Verifiers/approvers must still be able to save their sign-off on a submitted
+        // sheet, so they're exempted alongside the explicit edit_submitted/manage grant.
+        const canEditSubmitted = req.user.isAdmin || req.user.isTrainer ||
+                                (req.user.role === 'CUSTOM' && (
+                                    req.user.customRole?.permissions?.includes('three_day:manage') ||
+                                    req.user.customRole?.permissions?.includes('three_day:edit_submitted') ||
+                                    req.user.customRole?.permissions?.includes('three_day:verify') ||
+                                    req.user.customRole?.permissions?.includes('three_day:approve')
+                                ));
+        if (!canEditSubmitted) {
+            throw new ApiError("This monitoring sheet has already been submitted and cannot be edited", 403);
+        }
     }
 
     if (sheet && !isNewAttempt) {

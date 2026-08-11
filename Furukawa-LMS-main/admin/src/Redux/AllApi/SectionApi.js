@@ -23,6 +23,15 @@ export const sectionApi = createApi({
             providesTags: (result, error, departmentId) => [{ type: 'Section', id: `dept-${departmentId}` }],
         }),
 
+        getAllSections: builder.query({
+            query: (departmentId) => ({
+                url: "/api/sections",
+                method: "GET",
+                params: departmentId && departmentId !== "ALL" ? { departmentId } : {},
+            }),
+            providesTags: ['Section'],
+        }),
+
         updateSection: builder.mutation({
             query: ({ id, ...data }) => ({
                 url: `/api/sections/${id}`,
@@ -45,6 +54,7 @@ export const sectionApi = createApi({
 export const {
     useCreateSectionMutation,
     useGetSectionsByDepartmentQuery,
+    useGetAllSectionsQuery,
     useUpdateSectionMutation,
     useDeleteSectionMutation,
 } = sectionApi;

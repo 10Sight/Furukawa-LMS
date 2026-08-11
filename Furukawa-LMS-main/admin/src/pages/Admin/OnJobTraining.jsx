@@ -114,8 +114,31 @@ const OnJobTraining = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // navigator.clipboard is only available in secure contexts (HTTPS/localhost). When the
+    // admin is opened over plain HTTP on a LAN IP, fall back to the legacy execCommand method
+    // via a hidden textarea so "Copy Link" still works.
+    const fallbackCopy = (text) => {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        let success = false;
+        try {
+            success = document.execCommand("copy");
+        } catch {
+            success = false;
+        }
+        document.body.removeChild(textarea);
+        return success;
+    };
+
     const handleCopyLink = async (ojt) => {
-        if (!ojt.shareToken) {
+        const ojtId = ojt.id || ojt._id;
+        if (!ojt.shareToken && !ojtId) {
             toast.error("Share link is not available for this record");
             return;
         }
@@ -124,13 +147,30 @@ const OnJobTraining = () => {
         const lanIp = lanIpData?.data?.lanIp;
         const port = window.location.port ? `:${window.location.port}` : "";
         const origin = lanIp ? `${window.location.protocol}//${lanIp}${port}` : window.location.origin;
-        const link = `${origin}/ojt/share/${ojt.shareToken}`;
+
+        // The public share view relies on navigator.clipboard-style secure-context APIs elsewhere
+        // in the page and is meant for no-login viewing, so only offer it when we're actually in a
+        // secure context (HTTPS or localhost). Over plain HTTP on a LAN IP, link to the guarded admin
+        // view instead — it requires login and redirects back to this sheet once signed in.
+        const link = window.isSecureContext && ojt.shareToken
+            ? `${origin}/ojt/share/${ojt.shareToken}`
+            : `${origin}/admin/on-job-training?ojtId=${ojtId}`;
+
         try {
-            await navigator.clipboard.writeText(link);
+            let copied = false;
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(link);
+                copied = true;
+            } else {
+                copied = fallbackCopy(link);
+            }
+
+            if (!copied) throw new Error("Copy command failed");
+
             toast.success("Link copied to clipboard");
             logAction({
                 action: 'COPY_ON_JOB_TRAINING_SHARE_LINK',
-                details: { ojtId: ojt.id || ojt._id }
+                details: { ojtId }
             }).unwrap().catch((err) => console.error("Failed to log copy link:", err));
         } catch {
             toast.error("Failed to copy link");

@@ -208,7 +208,12 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
                 }
 
                 if (to) {
-                    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/10-cycle-sheet?id=${id}`;
+                    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/10-cycle?id=${id}`;
+                    const submitterName = req.user?.fullName || req.user?.name || "";
+                    const submitterUserName = req.user?.userName || "";
+                    const submittedBy = submitterUserName
+                        ? `${submitterName || submitterUserName} (${submitterUserName})`
+                        : submitterName;
                     const html = emailTemplates.generateTenCycleSheetEmail({
                         departmentName,
                         sectionName,
@@ -217,7 +222,8 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
                         formType,
                         date: new Date().toISOString().split('T')[0],
                         entries: updated.entries,
-                        portalUrl
+                        portalUrl,
+                        submittedBy
                     });
 
                     await sendMail(to, `10-Cycle Sheet Submitted: ${departmentName} - ${lineName}`, html, [], cc);

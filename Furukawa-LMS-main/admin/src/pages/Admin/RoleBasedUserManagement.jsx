@@ -8,7 +8,7 @@ import {
 } from "@/Redux/AllApi/UserApi";
 import { useUserRegisterMutation } from "@/Redux/AllApi/AuthApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
-import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetSectionsByDepartmentQuery, useGetAllSectionsQuery } from "@/Redux/AllApi/SectionApi";
 import {
   Table,
   TableBody,
@@ -110,10 +110,36 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
 
   const userPermissions = authUser?.customRole?.permissions || [];
 
+  // A CUSTOM-role user whose profile carries specific department/section assignments is
+  // restricted to that scope: the dropdown filters must not offer "All Departments"/"All
+  // Sections" (which would just re-request data the backend now silently scopes down anyway),
+  // and should default to the user's own assignment instead of an unscoped "ALL".
+  const isCustomRoleUser = authUser?.role === "CUSTOM";
+  const assignedDeptIds = useMemo(() => {
+    const ids = [];
+    if (authUser?.departmentId) ids.push(String(authUser.departmentId));
+    (Array.isArray(authUser?.departments) ? authUser.departments : []).forEach((d) => {
+      const id = d && typeof d === "object" ? (d.id ?? d._id) : d;
+      if (id) ids.push(String(id));
+    });
+    return [...new Set(ids)];
+  }, [authUser]);
+  const assignedSectionIds = useMemo(() => {
+    const ids = [];
+    if (authUser?.sectionId) ids.push(String(authUser.sectionId));
+    (Array.isArray(authUser?.sections) ? authUser.sections : []).forEach((s) => {
+      const id = s && typeof s === "object" ? (s.id ?? s._id) : s;
+      if (id) ids.push(String(id));
+    });
+    return [...new Set(ids)];
+  }, [authUser]);
+  const hasAssignedDepts = isCustomRoleUser && assignedDeptIds.length > 0;
+  const hasAssignedSections = isCustomRoleUser && assignedSectionIds.length > 0;
+
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [departmentFilter, setDepartmentFilter] = useState("ALL");
-  const [sectionFilter, setSectionFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState(() => (hasAssignedDepts ? assignedDeptIds[0] : "ALL"));
+  const [sectionFilter, setSectionFilter] = useState(() => (hasAssignedSections ? assignedSectionIds[0] : "ALL"));
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -176,6 +202,13 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
     departmentFilter,
     { skip: departmentFilter === "ALL" }
   );
+  // A section-restricted user with no department assignment has no departmentId to scope
+  // the filter by (departmentFilter stays "ALL"), so fall back to the department-agnostic
+  // endpoint -- the backend still confines the result to their assigned sections.
+  const { data: allSectionsRes } = useGetAllSectionsQuery(undefined, {
+    skip: departmentFilter !== "ALL" || !hasAssignedSections,
+  });
+  const sectionSourceData = departmentFilter === "ALL" ? allSectionsRes?.data : filterSectionRes?.data;
 
   // Reset to page 1 whenever a filter or the search term changes
   useEffect(() => {
@@ -183,29 +216,48 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   }, [searchTerm, departmentFilter, sectionFilter, statusFilter, selectedMonth]);
 
   const departmentOptions = useMemo(() => {
-    const options = [{ value: "ALL", label: "All Departments" }];
+    const options = hasAssignedDepts ? [] : [{ value: "ALL", label: "All Departments" }];
     (deptRes?.data?.departments || []).forEach((dept) => {
-      options.push({ value: String(dept.id), label: dept.name });
+      if (!hasAssignedDepts || assignedDeptIds.includes(String(dept.id))) {
+        options.push({ value: String(dept.id), label: dept.name });
+      }
     });
     return options;
-  }, [deptRes]);
+  }, [deptRes, hasAssignedDepts, assignedDeptIds]);
 
   const sectionOptions = useMemo(() => {
-    const options = [{ value: "ALL", label: "All Sections" }];
-    (filterSectionRes?.data || []).forEach((sec) => {
-      options.push({ value: String(sec.id), label: sec.name });
+    const options = hasAssignedSections ? [] : [{ value: "ALL", label: "All Sections" }];
+    (sectionSourceData || []).forEach((sec) => {
+      if (!hasAssignedSections || assignedSectionIds.includes(String(sec.id))) {
+        options.push({ value: String(sec.id), label: sec.name });
+      }
     });
     return options;
-  }, [filterSectionRes]);
+  }, [sectionSourceData, hasAssignedSections, assignedSectionIds]);
 
-  const hasActiveFilters = departmentFilter !== "ALL" || sectionFilter !== "ALL" || statusFilter !== "ALL" || !!searchTerm;
+  // Keeps the section filter pointing at a value that's actually present in the current
+  // options (e.g. after the department filter changes and narrows/replaces the section list).
+  useEffect(() => {
+    const validValues = sectionOptions.map((o) => o.value);
+    if (validValues.length > 0 && !validValues.includes(sectionFilter)) {
+      setSectionFilter(validValues[0]);
+    }
+  }, [sectionOptions]);
+
+  // A restricted user's dropdown never actually offers "ALL", so their forced default is
+  // the locked-in assignment rather than "ALL" -- compare against that instead, otherwise
+  // the Clear button/badges would treat their mandatory scope as a user-chosen filter.
+  const defaultDepartmentFilter = hasAssignedDepts ? assignedDeptIds[0] : "ALL";
+  const defaultSectionFilter = hasAssignedSections ? assignedSectionIds[0] : "ALL";
+
+  const hasActiveFilters = departmentFilter !== defaultDepartmentFilter || sectionFilter !== defaultSectionFilter || statusFilter !== "ALL" || !!searchTerm;
 
   const activeFilters = useMemo(() => {
     const filters = [];
-    if (departmentFilter !== "ALL") {
+    if (departmentFilter !== defaultDepartmentFilter) {
       filters.push({ label: "Department", value: departmentOptions.find((o) => o.value === departmentFilter)?.label });
     }
-    if (sectionFilter !== "ALL") {
+    if (sectionFilter !== defaultSectionFilter) {
       filters.push({ label: "Section", value: sectionOptions.find((o) => o.value === sectionFilter)?.label });
     }
     if (statusFilter !== "ALL") {
@@ -215,18 +267,18 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
       filters.push({ label: "Search", value: searchTerm });
     }
     return filters;
-  }, [departmentFilter, sectionFilter, statusFilter, searchTerm, departmentOptions, sectionOptions]);
+  }, [departmentFilter, sectionFilter, statusFilter, searchTerm, departmentOptions, sectionOptions, defaultDepartmentFilter, defaultSectionFilter]);
 
   const clearFilters = () => {
-    setDepartmentFilter("ALL");
-    setSectionFilter("ALL");
+    setDepartmentFilter(defaultDepartmentFilter);
+    setSectionFilter(defaultSectionFilter);
     setStatusFilter("ALL");
     setSearchTerm("");
   };
 
   const handleDepartmentFilterChange = (val) => {
     setDepartmentFilter(val);
-    setSectionFilter("ALL");
+    if (!hasAssignedSections) setSectionFilter("ALL");
   };
 
   const handleInputChange = (e) => {
@@ -469,7 +521,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                 options={sectionOptions}
                 placeholder="Section"
                 className="w-48"
-                disabled={departmentFilter === "ALL"}
+                disabled={departmentFilter === "ALL" && !hasAssignedSections}
               />
               <FilterSelect
                 value={statusFilter}

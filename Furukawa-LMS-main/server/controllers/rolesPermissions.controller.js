@@ -123,6 +123,8 @@ const SYSTEM_PERMISSIONS = {
   THREE_DAY_MANAGE: "three_day:manage",
   THREE_DAY_VERIFY: "three_day:verify",
   THREE_DAY_APPROVE: "three_day:approve",
+  THREE_DAY_EDIT: "three_day:edit",
+  THREE_DAY_EDIT_SUBMITTED: "three_day:edit_submitted",
 
   // Mentee Feedback Management
   MENTEE_FEEDBACK_MANAGE: "mentee_feedback:manage",
@@ -550,7 +552,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_LAYOUT, name: "Edit 3-Day Monitoring Layout", description: "Modify the structure and categories of 3-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_MANAGE, name: "Manage 3-Day Monitoring", description: "Manage 3-day monitoring records" },
         { id: SYSTEM_PERMISSIONS.THREE_DAY_VERIFY, name: "Verify 3-Day Monitoring", description: "Verify 3-day monitoring records (Area Incharge sign-off)" },
-        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" }
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_APPROVE, name: "Approve 3-Day Monitoring", description: "Approve 3-day monitoring records (Dept. Head sign-off)" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT, name: "Edit 3-Day Monitoring", description: "Edit and save 3-day monitoring sheets that are still in Draft" },
+        { id: SYSTEM_PERMISSIONS.THREE_DAY_EDIT_SUBMITTED, name: "Edit Submitted 3-Day Monitoring", description: "Edit and save 3-day monitoring sheets that have already been submitted" }
       ],
       "Mentee Feedback": [
         { id: SYSTEM_PERMISSIONS.MENTEE_FEEDBACK_MANAGE, name: "Manage Mentee Feedback", description: "Fill out and manage mentee feedback monitoring sheets" },

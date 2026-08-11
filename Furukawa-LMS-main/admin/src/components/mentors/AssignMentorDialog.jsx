@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useSelector } from "react-redux";
 import { toast } from "sonner";
 import { useGetAllUsersQuery, useUpdateUserMutation } from "@/Redux/AllApi/UserApi";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
-import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetSectionsByDepartmentQuery, useGetAllSectionsQuery } from "@/Redux/AllApi/SectionApi";
 import {
   Dialog,
   DialogContent,
@@ -33,9 +34,38 @@ const CANDIDATE_PAGE_LIMIT = 10;
 // from Mentor" action in reverse. This does not touch any user's `mentor` field
 // or the Handover-Sheet-driven mentee assignment/stats shown elsewhere.
 const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
+  const authUser = useSelector((state) => state.auth.user);
+
+  // Same restriction model as RoleBasedUserManagement: a CUSTOM-role user with department/
+  // section assignments on their profile is confined to that scope in this candidate search
+  // too, so promoting a mentor can't be used to route around the management page's restriction.
+  const isCustomRoleUser = authUser?.role === "CUSTOM";
+  const assignedDeptIds = useMemo(() => {
+    const ids = [];
+    if (authUser?.departmentId) ids.push(String(authUser.departmentId));
+    (Array.isArray(authUser?.departments) ? authUser.departments : []).forEach((d) => {
+      const id = d && typeof d === "object" ? (d.id ?? d._id) : d;
+      if (id) ids.push(String(id));
+    });
+    return [...new Set(ids)];
+  }, [authUser]);
+  const assignedSectionIds = useMemo(() => {
+    const ids = [];
+    if (authUser?.sectionId) ids.push(String(authUser.sectionId));
+    (Array.isArray(authUser?.sections) ? authUser.sections : []).forEach((s) => {
+      const id = s && typeof s === "object" ? (s.id ?? s._id) : s;
+      if (id) ids.push(String(id));
+    });
+    return [...new Set(ids)];
+  }, [authUser]);
+  const hasAssignedDepts = isCustomRoleUser && assignedDeptIds.length > 0;
+  const hasAssignedSections = isCustomRoleUser && assignedSectionIds.length > 0;
+  const defaultDepartmentFilter = hasAssignedDepts ? assignedDeptIds[0] : "ALL";
+  const defaultSectionFilter = hasAssignedSections ? assignedSectionIds[0] : "ALL";
+
   const [search, setSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("ALL");
-  const [sectionFilter, setSectionFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState(defaultDepartmentFilter);
+  const [sectionFilter, setSectionFilter] = useState(defaultSectionFilter);
   const [page, setPage] = useState(1);
   const [selectedUserIds, setSelectedUserIds] = useState(new Set());
   const [isAssigning, setIsAssigning] = useState(false);
@@ -43,11 +73,12 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
   useEffect(() => {
     if (open) {
       setSearch("");
-      setDepartmentFilter("ALL");
-      setSectionFilter("ALL");
+      setDepartmentFilter(defaultDepartmentFilter);
+      setSectionFilter(defaultSectionFilter);
       setPage(1);
       setSelectedUserIds(new Set());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -73,26 +104,46 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
   const { data: sectionRes } = useGetSectionsByDepartmentQuery(departmentFilter, {
     skip: !open || departmentFilter === "ALL",
   });
+  // A section-restricted user with no department assignment has no departmentId to scope
+  // by (departmentFilter stays "ALL"); fall back to the department-agnostic endpoint, which
+  // the backend still confines to their assigned sections.
+  const { data: allSectionsRes } = useGetAllSectionsQuery(undefined, {
+    skip: !open || departmentFilter !== "ALL" || !hasAssignedSections,
+  });
+  const sectionSourceData = departmentFilter === "ALL" ? allSectionsRes?.data : sectionRes?.data;
 
   const departmentOptions = useMemo(() => {
-    const options = [{ value: "ALL", label: "All Departments" }];
+    const options = hasAssignedDepts ? [] : [{ value: "ALL", label: "All Departments" }];
     (deptRes?.data?.departments || []).forEach((dept) => {
-      options.push({ value: String(dept.id), label: dept.name });
+      if (!hasAssignedDepts || assignedDeptIds.includes(String(dept.id))) {
+        options.push({ value: String(dept.id), label: dept.name });
+      }
     });
     return options;
-  }, [deptRes]);
+  }, [deptRes, hasAssignedDepts, assignedDeptIds]);
 
   const sectionOptions = useMemo(() => {
-    const options = [{ value: "ALL", label: "All Sections" }];
-    (sectionRes?.data || []).forEach((sec) => {
-      options.push({ value: String(sec.id), label: sec.name });
+    const options = hasAssignedSections ? [] : [{ value: "ALL", label: "All Sections" }];
+    (sectionSourceData || []).forEach((sec) => {
+      if (!hasAssignedSections || assignedSectionIds.includes(String(sec.id))) {
+        options.push({ value: String(sec.id), label: sec.name });
+      }
     });
     return options;
-  }, [sectionRes]);
+  }, [sectionSourceData, hasAssignedSections, assignedSectionIds]);
+
+  // Keeps the section filter pointing at a value present in the current options (e.g. after
+  // the department filter changes and narrows/replaces the section list).
+  useEffect(() => {
+    const validValues = sectionOptions.map((o) => o.value);
+    if (validValues.length > 0 && !validValues.includes(sectionFilter)) {
+      setSectionFilter(validValues[0]);
+    }
+  }, [sectionOptions]);
 
   const handleDepartmentFilterChange = (val) => {
     setDepartmentFilter(val);
-    setSectionFilter("ALL");
+    if (!hasAssignedSections) setSectionFilter("ALL");
   };
 
   const [updateUser] = useUpdateUserMutation();
@@ -175,7 +226,7 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
               options={sectionOptions}
               placeholder="Section"
               className="w-48"
-              disabled={departmentFilter === "ALL"}
+              disabled={departmentFilter === "ALL" && !hasAssignedSections}
             />
           </div>
 

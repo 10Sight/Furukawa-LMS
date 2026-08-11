@@ -332,7 +332,7 @@ export const getSpeedCellItemIndex = (levelIdx, items) => {
  * fires the handover/max-level notification hooks. Shared by the manual Skill Matrix
  * Certificate save flow and bulk imports so both paths apply identical business rules.
  */
-export const syncStudentSkillProgress = async ({ studentId, subSectionId, calculatedEfficiency, earnedLevelName, activeConfig, issuedBy }) => {
+export const syncStudentSkillProgress = async ({ studentId, subSectionId, calculatedEfficiency, earnedLevelName, activeConfig, issuedBy, dateOfEvaluation }) => {
     const student = await User.findById(studentId);
     if (!student) return { levelUpgraded: false };
 
@@ -434,55 +434,75 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
         }
     }
 
-    if (skillMapChanged && targetSubSectionId) {
+    // Mirrors SkillMatrix.jsx's own certDate formatting (toLocaleDateString('en-GB') with '/'
+    // swapped for '.') so a synced date reads identically to one an admin typed in by hand.
+    const normalizedCertDate = (() => {
+        if (!dateOfEvaluation) return null;
+        const iso = normalizeEvaluationDate(dateOfEvaluation);
+        if (!iso) return null;
+        const [yyyy, mm, dd] = iso.split('-');
+        return `${dd}.${mm}.${yyyy}`;
+    })();
+
+    if ((skillMapChanged && targetSubSectionId) || normalizedCertDate) {
         try {
-            const matrixLevelName = earnedLevelName.includes('-') ? earnedLevelName : earnedLevelName.replace('L', 'L-');
+            const matrixLevelName = earnedLevelName ? (earnedLevelName.includes('-') ? earnedLevelName : earnedLevelName.replace('L', 'L-')) : null;
 
-            const [machinesInSubSec] = await executeQuery(
-                "SELECT id FROM machines WHERE subSectionId = ?",
-                [targetSubSectionId]
-            );
-            const machineIds = machinesInSubSec.map(m => String(m.id));
-
-            if (machineIds.length > 0) {
-                const studentIdStr = String(studentId);
-                const [matchingMatrices] = await executeQuery(
-                    `SELECT DISTINCT sm.id, sm.entries
-                     FROM (SELECT id, entries FROM skill_matrices WHERE ISJSON(entries) = 1) sm
-                     CROSS APPLY OPENJSON(sm.entries) WITH (userId NVARCHAR(50) '$.userId') je
-                     WHERE je.userId = ?`,
-                    [studentIdStr]
+            let machineIds = [];
+            if (skillMapChanged && targetSubSectionId) {
+                const [machinesInSubSec] = await executeQuery(
+                    "SELECT id FROM machines WHERE subSectionId = ?",
+                    [targetSubSectionId]
                 );
+                machineIds = machinesInSubSec.map(m => String(m.id));
+            }
 
-                for (const matrix of matchingMatrices) {
-                    let entriesList = matrix.entries;
-                    try {
-                        entriesList = typeof entriesList === 'string' ? JSON.parse(entriesList) : (entriesList || []);
-                    } catch (e) {
-                        entriesList = [];
+            const studentIdStr = String(studentId);
+            // CHARINDEX pre-filter avoids running OPENJSON over every skill_matrices row —
+            // only rows whose raw JSON text contains the operator's ID get parsed.
+            const [matchingMatrices] = await executeQuery(
+                `SELECT DISTINCT sm.id, sm.entries
+                 FROM (SELECT id, entries FROM skill_matrices WHERE ISJSON(entries) = 1 AND CHARINDEX(?, entries) > 0) sm
+                 CROSS APPLY OPENJSON(sm.entries) WITH (userId NVARCHAR(50) '$.userId') je
+                 WHERE je.userId = ?`,
+                [studentIdStr, studentIdStr]
+            );
+
+            for (const matrix of matchingMatrices) {
+                let entriesList = matrix.entries;
+                try {
+                    entriesList = typeof entriesList === 'string' ? JSON.parse(entriesList) : (entriesList || []);
+                } catch (e) {
+                    entriesList = [];
+                }
+                if (!Array.isArray(entriesList)) continue;
+
+                let matrixChanged = false;
+                for (const entry of entriesList) {
+                    const entryUserId = String(entry.userId || entry._id || "");
+                    if (entryUserId !== studentIdStr) continue;
+
+                    if (normalizedCertDate && entry.certDate !== normalizedCertDate) {
+                        entry.certDate = normalizedCertDate;
+                        matrixChanged = true;
                     }
-                    if (!Array.isArray(entriesList)) continue;
 
-                    let matrixChanged = false;
-                    for (const entry of entriesList) {
-                        const entryUserId = String(entry.userId || entry._id || "");
-                        if (entryUserId === studentIdStr && entry.stations && Array.isArray(entry.stations)) {
-                            for (const s of entry.stations) {
-                                const stationIdStr = String(s.machineId || s._id || "");
-                                if (machineIds.includes(stationIdStr) && s.curr !== matrixLevelName) {
-                                    s.curr = matrixLevelName;
-                                    matrixChanged = true;
-                                }
+                    if (matrixLevelName && machineIds.length > 0 && entry.stations && Array.isArray(entry.stations)) {
+                        for (const s of entry.stations) {
+                            const stationIdStr = String(s.machineId || s._id || "");
+                            if (machineIds.includes(stationIdStr) && s.curr !== matrixLevelName) {
+                                s.curr = matrixLevelName;
+                                matrixChanged = true;
                             }
                         }
                     }
+                }
 
-                    if (matrixChanged) {
-                        await executeQuery(
-                            "UPDATE skill_matrices SET entries = ?, updatedAt = GETDATE() WHERE id = ?",
-                            [JSON.stringify(entriesList), matrix.id]
-                        );
-                    }
+                if (matrixChanged) {
+                    await executeQuery(
+                        "UPDATE skill_matrices SET entries = ?, updatedAt = GETDATE() WHERE id = ?",
+                        [JSON.stringify(entriesList), matrix.id]
+                    );
                 }
             }
         } catch (syncErr) {

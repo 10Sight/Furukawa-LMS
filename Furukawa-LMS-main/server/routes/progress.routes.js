@@ -55,9 +55,9 @@ router.get("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer",
 router.post("/ten-cycle-check/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "ten_cycle:manage"), saveTenCycleCheck);
 
 // 3 Day Monitoring
-router.get("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage", "sixteen_day:manage"), getThreeDayMonitoring);
-router.post("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), saveThreeDayMonitoring);
-router.post("/three-day-monitoring/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage"), sendThreeDayMonitoringEmail);
+router.get("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:manage", "sixteen_day:manage", "three_day:edit", "three_day:edit_submitted"), getThreeDayMonitoring);
+router.post("/three-day-monitoring/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage", "three_day:edit", "three_day:edit_submitted"), saveThreeDayMonitoring);
+router.post("/three-day-monitoring/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:manage", "three_day:edit_submitted"), sendThreeDayMonitoringEmail);
 
 // 3 Day Monitoring Config
 router.get("/three-day-monitoring/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:edit_layout", "three_day:manage"), getThreeDayMonitoringConfig);

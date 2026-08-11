@@ -48,7 +48,10 @@ const ThreeDayMonitoring = () => {
     // Permissions logic
     const { isEmployee, hasManagePermission, canEditLayout } = useMemo(() => {
         const permissions = authUser?.customRole?.permissions || [];
-        const managePerm = permissions.includes('three_day:manage') || isAdmin;
+        const managePerm = permissions.includes('three_day:manage') ||
+            permissions.includes('three_day:edit') ||
+            permissions.includes('three_day:edit_submitted') ||
+            isAdmin;
         const editLayoutPerm = permissions.includes('three_day:edit_layout') || isAdmin;
 
         const isSubject = authUser?.role === 'STUDENT' ||

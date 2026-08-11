@@ -1823,18 +1823,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     params.push(...dojoClause.params);
   }
 
-  // Skill Upgradation Plan only wants operators whose 16-Day Monitoring Sheet has
-  // actually been signed off — matches the same "Approved By" signature check the
-  // sync-to-plan trigger uses. Legacy operators who joined before the sheet existed
-  // are backfilled with an approved record (scripts/backfillLegacySixteenDaySheets.js)
-  // rather than exempted here, so this stays a single, simple EXISTS check.
-  if (req.query.sixteenDayApprovedOnly === "true") {
-    whereClauses.push(`EXISTS (
-      SELECT 1 FROM sixteen_day_monitorings sdm
-      WHERE sdm.studentId = u.id AND sdm.approvedBy LIKE '%Approved By%'
-    )`);
-  }
-
   const isDojoVal = req.query.isDojo === "true" || req.query.isDojo === true;
   if (isDojoVal) {
     whereClauses.push("(u.isTemporary = 1)");

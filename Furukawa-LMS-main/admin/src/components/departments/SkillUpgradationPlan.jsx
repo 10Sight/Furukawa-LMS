@@ -491,7 +491,7 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
 });
 SkillUpgradationRow.displayName = "SkillUpgradationRow";
 
-const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, lineId, lineName = "", year, isReadOnly = false }) => {
+const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, lineId, year, isReadOnly = false }) => {
     const liveRevisionInfo = useRevisionInfo("skill-upgradation-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
@@ -575,13 +575,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
 
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const finalRows = [];
-        const addedUserIds = new Set();
 
         // 1. Auto-populate all currently eligible students (skip removed ones)
         students.forEach((student) => {
             const userId = String(student._id || student.id);
             if (savedRemovedIds.has(userId)) return;
-            addedUserIds.add(userId);
             const data = tableData[userId] || {};
             finalRows.push({
                 rowId: userId,
@@ -597,27 +595,12 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             });
         });
 
-        // 1b. Preserve rows already saved in this sheet for users no longer in the eligible list
-        // (e.g. manually added, or added before an approval status changed).
-        // Only keep rows matching the currently selected line, since tableData spans all lines in the section.
-        Object.keys(tableData || {}).forEach((userId) => {
-            if (userId === "__removedUserIds") return;
-            if (addedUserIds.has(userId) || savedRemovedIds.has(userId)) return;
-            const data = tableData[userId] || {};
-            if (lineName && data.modelLine !== lineName) return;
-            finalRows.push({
-                rowId: userId,
-                userId,
-                userName: data.userName || "",
-                cardNo: data.cardNo || "",
-                modelLine: data.modelLine || "",
-                station: data.station || "",
-                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "", q1Shift: data.q1Shift || data.shift || "",
-                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "", q2Shift: data.q2Shift || data.shift || "",
-                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || "",
-                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || "",
-            });
-        });
+        // Users already saved in tableData but no longer in the current eligible
+        // list (e.g. their 16-Day sheet approval lapsed, or they moved sections)
+        // are intentionally left out of finalRows — hidden from view, but their
+        // data in tableData is untouched (handleSave only overwrites userIds that
+        // are currently visible/eligible) and reappears automatically if they
+        // become eligible again.
 
         // 2. Always append 10 blank rows at the bottom for manual entry
         const BLANK_PADDING = 10;
@@ -636,7 +619,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setRemovedUserIds(savedRemovedIds);
         setRows(finalRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, hasLoaded, lineName]);
+    }, [tableData, students, isLoadingPlan, hasLoaded]);
 
     // Safeguard: update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
     useEffect(() => {

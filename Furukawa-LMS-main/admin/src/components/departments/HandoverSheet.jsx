@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,8 @@ import UserAutocomplete from '../common/UserAutocomplete';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetAllMentorsQuery } from "@/Redux/AllApi/InstructorApi";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { departmentApi } from "@/Redux/AllApi/DepartmentApi";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 
 const INTERVIEW_OPTIONS = [
@@ -155,8 +157,9 @@ const MentorSelect = ({ departmentId, sectionId, value, onValueChange, className
     );
 };
 
-const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: propShift = null, viewOnly = false, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
+const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId = null, shift: propShift = null, viewOnly = false, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
     const authUser = useSelector(state => state.auth.user);
+    const dispatch = useDispatch();
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasHandoverBypass = authUser?.customRole?.permissions?.includes('dojo:handover_sheet');
     const canAccessAll = isAdmin || hasHandoverBypass;
@@ -165,6 +168,20 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
     const canApprove = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:approve')) && !viewOnly;
     const canEditLayout = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_layout')) && !viewOnly;
     const canEditSaved = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_saved');
+    const canEditSection = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_section')) && !viewOnly;
+    const canDeleteRow = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:delete_row')) && !viewOnly;
+
+    const [localSectionId, setLocalSectionId] = useState(sectionId);
+    useEffect(() => {
+        setLocalSectionId(sectionId);
+    }, [sectionId]);
+    const { data: departmentSectionsData } = useGetSectionsByDepartmentQuery(departmentId, { skip: !departmentId || !canEditSection });
+    const departmentSections = departmentSectionsData?.data || [];
+    // Radix's SelectValue only resolves a label once its matching SelectItem has mounted (i.e. the
+    // dropdown has been opened), so we compute the label ourselves to avoid a blank trigger on first
+    // load or after the section-change refetch remounts this Select.
+    const selectedSectionLabel = departmentSections.find(s => String(s.id) === String(localSectionId))?.name
+        || (String(localSectionId || "") === String(sectionId || "") ? sectionName : "");
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -435,10 +452,29 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
     };
 
     const removeRow = (index) => {
-        const newEntries = entries.filter((_, i) => i !== index).map((entry, i) => ({
-            ...entry,
-            sn: i + 1
-        }));
+        const entry = entries[index];
+        if (entry?.employeeName && !window.confirm(`Are you sure you want to remove ${entry.employeeName} from this sheet?`)) {
+            return;
+        }
+        let newEntries = entries.filter((_, i) => i !== index);
+        if (newEntries.length === 0) {
+            newEntries = [{
+                sn: 1,
+                studentId: "",
+                employeeName: "",
+                empCode: "",
+                marks: "0%",
+                department: sectionName || departmentName || "",
+                process: "",
+                mentor: "",
+                interview1: "",
+                interview2: "",
+                interviewStatus: "",
+                statusActionBy: ""
+            }];
+        } else {
+            newEntries = newEntries.map((e, i) => ({ ...e, sn: i + 1 }));
+        }
         setEntries(newEntries);
     };
 
@@ -546,7 +582,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             const response = await axiosInstance.post(`/api/departments/${departmentId}/handover-sheet`, {
                 sheetId: sheetId || null,
                 departmentId,
-                sectionId: sectionId || null,
+                sectionId: localSectionId || null,
                 shift: propShift || null,
                 date,
                 entries,
@@ -559,6 +595,15 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
             if (isSubmit) {
                 setIsSubmitted(true);
                 setSubmittedAt(new Date().toISOString());
+            }
+
+            // The dashboard/monitoring sheet list is cached under the 'Department' tag but this save
+            // goes through a raw axios call (not an RTK Query mutation), so invalidate it manually —
+            // otherwise the list (and thus the section shown when re-opening this sheet) stays stale.
+            dispatch(departmentApi.util.invalidateTags(['Department']));
+
+            if (setSectionId && String(localSectionId || "") !== String(sectionId || "")) {
+                setSectionId(localSectionId || null);
             }
 
             setOriginalEntries(JSON.parse(JSON.stringify(entries)));
@@ -786,7 +831,22 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                             <div className="space-y-4 text-right">
                                 <div className="flex items-center justify-end gap-2">
                                     <span>To:</span>
-                                    <span className="text-blue-600">{(sectionName ? `${sectionName}` : departmentName) || "Department"}</span>
+                                    {canManage && isEditable && canEditSection ? (
+                                        <Select value={localSectionId ? String(localSectionId) : ""} onValueChange={(val) => setLocalSectionId(val)}>
+                                            <SelectTrigger className="h-8 w-48 text-blue-600 font-medium">
+                                                <SelectValue placeholder="Select Section">
+                                                    {selectedSectionLabel || "Select Section"}
+                                                </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {departmentSections.map((s) => (
+                                                    <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    ) : (
+                                        <span className="text-blue-600">{(sectionName ? `${sectionName}` : departmentName) || "Department"}</span>
+                                    )}
                                 </div>
                                 <div className="flex items-center justify-end gap-2">
                                     <span>Date:</span>
@@ -894,6 +954,9 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                 <th className="border p-2">Approve / Reject</th>
                                             </>
                                         )}
+                                        {canManage && isEditable && canDeleteRow && (
+                                            <th className="border p-2 no-print">Action</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -940,7 +1003,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                             <ProcessSelect
                                                                 key={`process-select-${index}`}
                                                                 departmentId={departmentId}
-                                                                sectionId={sectionId}
+                                                                sectionId={localSectionId}
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
@@ -1031,7 +1094,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                             <ProcessSelect
                                                                 key={`process-select-def-${index}`}
                                                                 departmentId={departmentId}
-                                                                sectionId={sectionId}
+                                                                sectionId={localSectionId}
                                                                 value={entry.process || ""}
                                                                 onValueChange={(val) => handleEntryChange(index, 'process', val)}
                                                             />
@@ -1120,6 +1183,18 @@ const HandoverSheet = ({ departmentId, sectionId = null, sheetId = null, shift: 
                                                         )}
                                                     </td>
                                                 </>
+                                            )}
+                                            {canManage && isEditable && canDeleteRow && (
+                                                <td className="border p-1 text-center no-print">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={() => removeRow(index)}
+                                                    >
+                                                        <IconTrash className="h-4 w-4" />
+                                                    </Button>
+                                                </td>
                                             )}
                                         </tr>
                                     ))}

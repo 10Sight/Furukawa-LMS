@@ -9,9 +9,13 @@ const subSectionCountSql = (subSectionAlias = "ss") => `
        AND ISNULL(u.isTemporary, 0) = 0
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
-       AND EXISTS (
-           SELECT 1 FROM OPENJSON(ISNULL(u.subSections, '[]'))
-           WHERE TRY_CAST([value] AS INT) = ${subSectionAlias}.id
+       AND (
+           u.subSectionId = ${subSectionAlias}.id
+           OR EXISTS (
+               SELECT 1 FROM machine_assignments ma
+               JOIN machines m ON ma.machine_id = m.id
+               WHERE ma.user_id = u.id AND m.subSectionId = ${subSectionAlias}.id
+           )
        )
     ) as subSectionCount
 `;

@@ -150,6 +150,8 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_APPROVE: "handover_sheet:approve",
   HANDOVER_SHEET_DELETE: "handover_sheet:delete",
   HANDOVER_SHEET_EDIT_SAVED: "handover_sheet:edit_saved",
+  HANDOVER_SHEET_EDIT_SECTION: "handover_sheet:edit_section",
+  HANDOVER_SHEET_DELETE_ROW: "handover_sheet:delete_row",
   DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
   DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
@@ -351,6 +353,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.SKILL_UPGRADATION_DELETE,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ,
       SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SECTION,
+      SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE_ROW,
       SYSTEM_PERMISSIONS.LEARNING_READ,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_CREATE,
@@ -575,7 +579,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, name: "Edit Handover Sheet Layout", description: "Modify the table configuration and structure of handover sheets" },
         { id: SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET, name: "Access All in Handover Sheet", description: "Allows unrestricted access to all departments, sections, sub-sections, and stations in Handover Sheets" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE, name: "Delete Handover Sheet", description: "Permanently delete handover sheet records" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" }
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SECTION, name: "Edit Handover Sheet Section", description: "Change the target section (\"To:\") of a handover sheet" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE_ROW, name: "Delete Handover Sheet Row", description: "Remove a trainee row from a handover sheet" }
       ],
       "10-Cycle Sheet": [
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet (Full Access)", description: "Super-permission: full create, read, update, and delete access to 10-cycle sheets" },

@@ -11,9 +11,12 @@ const machineCountSql = `
        AND ISNULL(u.isTemporary, 0) = 0
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
-       AND EXISTS (
-           SELECT 1 FROM OPENJSON(ISNULL(u.stations, '[]'))
-           WHERE TRY_CAST([value] AS INT) = m.id
+       AND (
+           u.stationId = m.id
+           OR EXISTS (
+               SELECT 1 FROM machine_assignments ma
+               WHERE ma.user_id = u.id AND ma.machine_id = m.id
+           )
        )
     ) as machineCount
 `;

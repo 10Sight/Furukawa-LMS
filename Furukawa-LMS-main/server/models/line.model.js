@@ -9,9 +9,13 @@ const lineCountSql = (lineAlias = "l") => `
        AND ISNULL(u.isTemporary, 0) = 0
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
-       AND EXISTS (
-           SELECT 1 FROM OPENJSON(ISNULL(u.lines, '[]'))
-           WHERE TRY_CAST([value] AS INT) = ${lineAlias}.id
+       AND (
+           u.lineId = ${lineAlias}.id
+           OR EXISTS (
+               SELECT 1 FROM machine_assignments ma
+               JOIN machines m ON ma.machine_id = m.id
+               WHERE ma.user_id = u.id AND m.line = ${lineAlias}.id
+           )
        )
     ) as lineCount
 `;

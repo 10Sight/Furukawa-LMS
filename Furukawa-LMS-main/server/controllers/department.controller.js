@@ -1532,6 +1532,27 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const canApprove = isAdmin || userPermissions.includes('handover_sheet:approve');
 
     if (sheet) {
+        // Prevent changing the target section without permission
+        const requestedSectionId = sectionId || null;
+        const existingSectionId = sheet.sectionId || null;
+        if (String(requestedSectionId || '') !== String(existingSectionId || '')) {
+            const canEditSection = isAdmin || userPermissions.includes('handover_sheet:edit_section');
+            if (!canEditSection) {
+                throw new ApiError("You do not have permission to change the section of this handover sheet", 403);
+            }
+        }
+
+        // Prevent removing rows without permission
+        const existingStudentIds = new Set((sheet.entries || []).map(e => e.studentId && String(e.studentId)).filter(Boolean));
+        const requestedStudentIds = new Set((entries || []).map(e => e.studentId && String(e.studentId)).filter(Boolean));
+        const hasDeletedRow = [...existingStudentIds].some(id => !requestedStudentIds.has(id));
+        if (hasDeletedRow) {
+            const canDeleteRow = isAdmin || userPermissions.includes('handover_sheet:delete_row');
+            if (!canDeleteRow) {
+                throw new ApiError("You do not have permission to delete rows from this handover sheet", 403);
+            }
+        }
+
         const contentChanged = hasContentChanged(sheet, entries, metadata);
         if (contentChanged) {
             const canEditSaved = isAdmin || userPermissions.includes('handover_sheet:edit_saved');
@@ -1605,6 +1626,7 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
 
     if (sheet) {
         sheet.date = date;
+        sheet.sectionId = sectionId || null;
         sheet.shift = shift || sheet.shift || null;
         sheet.entries = entries;
         sheet.signatures = signatures;

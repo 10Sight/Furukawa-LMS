@@ -526,6 +526,7 @@ const HandoverSheetPage = () => {
                     <HandoverSheet
                         departmentId={activeSheet.departmentId}
                         sectionId={activeSheet.sectionId === "0" || !activeSheet.sectionId ? null : activeSheet.sectionId}
+                        setSectionId={(sId) => setActiveSheet(prev => prev ? { ...prev, sectionId: sId || "" } : null)}
                         sheetId={activeSheet.id}
                         shift={activeSheet.shift}
                         viewOnly={sheetMode === 'view'}

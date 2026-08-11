@@ -82,6 +82,65 @@ class SkillMatrix {
                     ADD CONSTRAINT uq_skill_matrix_dept_line_month UNIQUE (department, line, month);
                 END
             `);
+
+            // Migration: month-based schema with full hierarchy columns (section/subSection/station)
+            // and a nullable `line`, superseding the dept/line/month-only shape created above.
+            await executeQuery(`
+                IF COL_LENGTH('skill_matrices', 'section') IS NULL
+                    ALTER TABLE skill_matrices ADD section VARCHAR(255);
+
+                IF COL_LENGTH('skill_matrices', 'subSection') IS NULL
+                    ALTER TABLE skill_matrices ADD subSection VARCHAR(255);
+
+                IF COL_LENGTH('skill_matrices', 'station') IS NULL
+                    ALTER TABLE skill_matrices ADD station VARCHAR(255);
+            `);
+
+            // Drop old narrow constraint if present
+            await executeQuery(`
+                IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_dept_line_month')
+                BEGIN
+                    ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_dept_line_month;
+                END
+            `);
+
+            // Ensure line is NULLable in DB (we drop the uq_skill_matrix_full_hierarchy constraint if exists, alter line to nullable, then let the unique constraint block recreate it)
+            await executeQuery(`
+                IF EXISTS (
+                    SELECT 1 FROM sys.columns c
+                    INNER JOIN sys.objects o ON c.object_id = o.object_id
+                    WHERE o.name = 'skill_matrices' AND c.name = 'line' AND c.is_nullable = 0
+                )
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_full_hierarchy')
+                    BEGIN
+                        ALTER TABLE skill_matrices DROP CONSTRAINT uq_skill_matrix_full_hierarchy;
+                    END
+                    ALTER TABLE skill_matrices ALTER COLUMN line VARCHAR(255) NULL;
+                END
+            `);
+
+            // Ensure broad unique constraint exists (including all hierarchy levels)
+            await executeQuery(`
+                IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE type = 'UQ' AND name = 'uq_skill_matrix_full_hierarchy')
+                BEGIN
+                    -- First, clean up any existing duplicates that would violate the new constraint
+                    -- We keep the most recently updated record for each unique combination
+                    WITH CTE AS (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY department, section, line, subSection, station, month
+                                   ORDER BY updatedAt DESC, id DESC
+                               ) AS rn
+                        FROM skill_matrices
+                    )
+                    DELETE FROM skill_matrices WHERE id IN (SELECT id FROM CTE WHERE rn > 1);
+
+                    -- Now add the constraint
+                    ALTER TABLE skill_matrices
+                    ADD CONSTRAINT uq_skill_matrix_full_hierarchy UNIQUE (department, section, line, subSection, station, month);
+                END
+            `);
         } catch (error) {
             logger.error("Failed to initialize SkillMatrix table", error);
         }

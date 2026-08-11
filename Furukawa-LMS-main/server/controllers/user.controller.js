@@ -196,41 +196,25 @@ const handleInstructorAssignments = async (userId, departmentIds) => {
 // display join — in particular the `ma` all-stations subquery (UNION ALL + FOR JSON PATH),
 // which was previously being evaluated per row on every COUNT(*)/status-counts query too.
 const getHierarchyFilterJoinSQL = `
-  OUTER APPLY (
-    SELECT TOP 1 ss.id as subSectionId, ss.name as subSectionName, ss.lineId as ssLineId
-    FROM sub_sections ss
-    WHERE ss.id = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
-  ) ss_res
-  OUTER APPLY (
-    SELECT TOP 1 l.id as lineId, l.name as lineName, l.sectionId as lSectionId, l.department as lDeptId
-    FROM [lines] l
-    WHERE l.id = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
-  ) l_res
-  OUTER APPLY (
-    SELECT TOP 1 s.id as sectionId, s.name as sectionName, s.departmentId as sDeptId
-    FROM [sections] s
-    WHERE s.id = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
-  ) s_res
-  OUTER APPLY (
-    SELECT TOP 1 d.id, d.name as deptName, d.instructor as deptInstructor
-    FROM departments d
-    WHERE d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
-       OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
-  ) d
+  LEFT JOIN (SELECT id as subSectionId, name as subSectionName, lineId as ssLineId FROM sub_sections) ss_res
+    ON ss_res.subSectionId = COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END))
+  LEFT JOIN (SELECT id as lineId, name as lineName, sectionId as lSectionId, department as lDeptId FROM [lines]) l_res
+    ON l_res.lineId = COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), ss_res.ssLineId)
+  LEFT JOIN (SELECT id as sectionId, name as sectionName, departmentId as sDeptId FROM [sections]) s_res
+    ON s_res.sectionId = COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), l_res.lSectionId)
+  LEFT JOIN (SELECT id, name as deptName, instructor as deptInstructor FROM departments) d
+    ON d.id = COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), s_res.sDeptId, l_res.lDeptId)
+       OR (u.departmentId IS NULL AND u.targetDeptId IS NULL AND (u.department = d.deptName OR TRY_CAST(u.department AS INT) = d.id))
 `;
 
 // Station name, contractor name, and the full all-stations assignment list — only ever
 // selected for display, never referenced in a WHERE clause. Must be appended after
 // getHierarchyFilterJoinSQL since the `ma` subquery below reads s_res/d from it.
 const getHierarchyDisplayJoinSQL = `
-  OUTER APPLY (
-    SELECT TOP 1 name as stationName FROM machines
-    WHERE id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
-  ) st
-  OUTER APPLY (
-    SELECT TOP 1 name as contractorName FROM contractors
-    WHERE id = u.contractorId
-  ) c_res
+  LEFT JOIN (SELECT id, name as stationName FROM machines) st
+    ON st.id = COALESCE(u.stationId, (CASE WHEN u.isTemporary = 1 THEN u.targetStationId ELSE NULL END))
+  LEFT JOIN (SELECT id, name as contractorName FROM contractors) c_res
+    ON c_res.id = u.contractorId
   OUTER APPLY (
     SELECT
         (SELECT

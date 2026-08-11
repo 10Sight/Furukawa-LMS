@@ -193,7 +193,7 @@ class HandoverSheet {
     async save() {
         const query = `
             UPDATE handover_sheets
-            SET date = ?, shift = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE(), isSubmitted = ?, submittedAt = ?, remarksHistory = ?
+            SET date = ?, sectionId = ?, shift = ?, entries = ?, signatures = ?, metadata = ?, updatedBy = ?, updatedAt = GETDATE(), isSubmitted = ?, submittedAt = ?, remarksHistory = ?
             WHERE id = ?
         `;
         const entriesStr = JSON.stringify(this.entries);
@@ -205,6 +205,7 @@ class HandoverSheet {
 
         await executeQuery(query, [
             this.date,
+            this.sectionId || null,
             this.shift || null,
             entriesStr,
             signaturesStr,

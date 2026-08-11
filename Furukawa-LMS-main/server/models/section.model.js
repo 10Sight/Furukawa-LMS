@@ -50,9 +50,14 @@ const sectionCountSql = (sectionAlias = "s") => `
        AND ISNULL(u.isTemporary, 0) = 0
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
-       AND EXISTS (
-           SELECT 1 FROM OPENJSON(ISNULL(u.sections, '[]'))
-           WHERE TRY_CAST([value] AS INT) = ${sectionAlias}.id
+       AND (
+           u.sectionId = ${sectionAlias}.id
+           OR EXISTS (
+               SELECT 1 FROM machine_assignments ma
+               JOIN machines m ON ma.machine_id = m.id
+               JOIN [lines] l ON m.line = l.id
+               WHERE ma.user_id = u.id AND l.sectionId = ${sectionAlias}.id
+           )
        )
     ) as sectionCount
 `;

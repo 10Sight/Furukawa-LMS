@@ -103,7 +103,7 @@ const SkillUpgradationWrapper = () => {
         return rawUsers.filter(user =>
             (user.isTemporary === 0 || user.isTemporary === "0" || !user.isTemporary) &&
             (user.isDeleted === 0 || user.isDeleted === "0" || !user.isDeleted) &&
-            (user.status || "").toUpperCase() === "PRESENT"
+            (user.status || "").toUpperCase() !== "LEFT"
         );
     }, [studentsData]);
 

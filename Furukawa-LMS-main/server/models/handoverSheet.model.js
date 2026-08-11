@@ -123,6 +123,22 @@ class HandoverSheet {
                 console.log("Added shift column to handover_sheets");
             } catch (e) { }
         }
+
+        // Migration: Add index on departmentId if missing. This column is queried
+        // heavily (16-Day Monitoring list/get/save) to narrow rows before the
+        // CROSS APPLY OPENJSON entries scan, so it needs an index to be effective.
+        try {
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes WHERE name = 'idx_handover_sheets_departmentId' AND object_id = OBJECT_ID('handover_sheets')
+                )
+                BEGIN
+                    CREATE INDEX idx_handover_sheets_departmentId ON handover_sheets(departmentId)
+                END
+            `);
+        } catch (e) {
+            console.log("Failed to create idx_handover_sheets_departmentId:", e.message);
+        }
     }
 
     static async findById(id) {

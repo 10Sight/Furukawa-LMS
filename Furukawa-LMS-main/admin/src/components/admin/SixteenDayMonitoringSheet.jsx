@@ -1308,7 +1308,7 @@ const SixteenDayMonitoringSheet = ({
                                         <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {headerInfo.employeeCode}</div>
                                     </div>
                                     <div className="flex border-b border-black h-10 items-center">
-                                        <div className="w-40 p-1 font-bold">Station Name</div>
+                                        <div className="w-40 p-1 font-bold">Process Name</div>
                                         <div className="flex-1 p-1 border-l border-black h-full">
                                             <input
                                                 disabled={readOnly || isLocked || isCellLocked('processName', 'header')}
@@ -1320,7 +1320,7 @@ const SixteenDayMonitoringSheet = ({
                                         </div>
                                     </div>
                                     <div className="flex h-10 items-center">
-                                        <div className="w-40 p-1 font-bold">Dept. / Section</div>
+                                        <div className="w-40 p-1 font-bold">Deptt.</div>
                                         <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {typeof headerInfo.dept === 'string' ? headerInfo.dept : (headerInfo.dept?.name || headerInfo.dept?._id || "")}</div>
                                     </div>
                                 </div>
@@ -1720,15 +1720,7 @@ const SixteenDayMonitoringSheet = ({
                                                             </td>
                                                         ))}
                                                         <td className="bg-blue-100/50 p-0 h-full border-l border-black">
-                                                            <div className="relative flex items-center justify-center min-w-[250px] h-10">
-                                                                <span className="invisible whitespace-pre px-4 text-[15px] font-bold">{gridData[`${cat.id}_eval_total`] || "00"}</span>
-                                                                <input
-                                                                    disabled={true}
-                                                                    className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-[15px] font-bold outline-none text-blue-900"
-                                                                    value={gridData[`${cat.id}_eval_total`] || ""}
-                                                                    onChange={e => handleGridChange(cat.id, 'eval_total', e.target.value)}
-                                                                />
-                                                            </div>
+                                                            <div className="relative flex items-center justify-center min-w-[250px] h-10" />
                                                         </td>
                                                     </tr>
                                                 )}
@@ -1745,7 +1737,7 @@ const SixteenDayMonitoringSheet = ({
                                                             ))}
                                                             <td className="bg-white p-0 border-l border-black">
                                                                 <div className="flex w-full h-full divide-x divide-black min-h-[3rem]">
-                                                                    <div className="flex-1 px-3 flex items-center font-extrabold bg-white text-[14px]">Target % :</div>
+                                                                    <div className="flex-1 px-3 flex items-center font-extrabold bg-white text-[14px]">Plan % :</div>
                                                                     <div className="min-w-[100px] px-3 flex items-center justify-end font-extrabold bg-white text-[15px]">{cat.target || '100%'}</div>
                                                                 </div>
                                                             </td>
@@ -1806,8 +1798,8 @@ const SixteenDayMonitoringSheet = ({
                                 <table className="w-full border-collapse text-[14px]">
                                     <tbody>
                                         <tr className="border-b border-black h-12">
-                                            <td rowSpan="5" className="border-r border-black font-bold text-center bg-blue-50/20 text-[14px]">6</td>
-                                            <td rowSpan="5" className="border-r border-black font-bold p-2 bg-blue-50/20 text-center align-middle text-[14px]">Attendance</td>
+                                            <td rowSpan="3" className="border-r border-black font-bold text-center bg-blue-50/20 text-[14px]">6</td>
+                                            <td rowSpan="3" className="border-r border-black font-bold p-2 bg-blue-50/20 text-center align-middle text-[14px]">Attendance</td>
                                             <td className="border-r border-black font-bold p-2 text-[14px]">Total no. of Monitoring day's :</td>
                                             <td className="min-w-[100px] border-r border-black font-bold text-center bg-gray-50 text-[14px]">Date</td>
                                             {Array.from({ length: 16 }, (_, i) => {
@@ -1898,44 +1890,6 @@ const SixteenDayMonitoringSheet = ({
                                                     />
                                                 </div>
                                             </td>
-                                        </tr>
-                                        <tr className="border-t border-black h-12">
-                                            <td className="border-r border-black font-bold p-2 text-[14px] uppercase">Checked By: Sign</td>
-                                            <td className="min-w-[100px] border-r border-black font-bold text-center text-[14px]">-</td>
-                                            {Array.from({ length: 16 }, (_, i) => {
-                                                const val = gridData[`attendance_checked_${i + 1}`] || "";
-                                                return (
-                                                    <td key={i} className={`border-r border-black p-0 h-full ${dayBlurClass(i + 1)}`}>
-                                                        <div className="relative flex items-center justify-center min-w-[50px] h-12">
-                                                            <input
-                                                                disabled={readOnly || isLocked || isCellLocked(`attendance_checked_${i + 1}`, 'grid')}
-                                                                className="w-full h-full text-center bg-transparent border-none text-[11px] font-bold outline-none text-blue-900 placeholder:text-gray-300 px-1"
-                                                                placeholder="SIGN"
-                                                                value={val}
-                                                                onChange={e => handleGridChange('attendance', `checked_${i + 1}`, e.target.value)}
-                                                                onFocus={(e) => {
-                                                                    if (!val && !readOnly && !isLocked && !isCellLocked(`attendance_checked_${i + 1}`, 'grid')) {
-                                                                        handleGridChange('attendance', `checked_${i + 1}`, loggedInName);
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                );
-                                            })}
-                                            <td className="bg-blue-100/50 p-0 h-full border-l border-black"></td>
-                                        </tr>
-                                        <tr className="border-black h-12">
-                                            <td className="border-r border-black font-bold p-2 text-[14px] uppercase">GAP OBSERVED</td>
-                                            <td className="min-w-[100px] border-r border-black p-0 h-full">
-                                                <input
-                                                    disabled={readOnly || isLocked || isCellLocked('attendGap', 'grid')}
-                                                    className="w-full h-full text-center border-none outline-none font-bold text-[14px] text-blue-900"
-                                                    value={gridData[`attendGap`] || "0"}
-                                                    onChange={(e) => handleGridChange('attendGap', '', e.target.value)}
-                                                />
-                                            </td>
-                                            <td colSpan="17" className="border-r border-black bg-gray-50/10"></td>
                                         </tr>
                                     </tbody>
                                 </table>

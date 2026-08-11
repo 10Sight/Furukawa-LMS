@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import NotificationService from "../services/notification.service.js";
 import SixteenDayMonitoring from "../models/sixteenDayMonitoring.model.js";
+import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 import MenteeFeedback from "../models/menteeFeedback.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
@@ -38,6 +39,19 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
     }
 
     let query = `
+        WITH ApprovedHandovers AS (
+            SELECT
+                TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) as studentId,
+                JSON_VALUE(entry.value, '$.statusActionAt') as handoverApprovedAt,
+                ROW_NUMBER() OVER (
+                    PARTITION BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+                    ORDER BY hs.createdAt DESC
+                ) as rn
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) as entry
+            WHERE hs.departmentId = ?
+              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+        )
         SELECT
             u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId, u.status as userStatus,
             d.name as departmentName, s.name as sectionName,
@@ -58,25 +72,11 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             FROM sixteen_day_monitorings
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
-        OUTER APPLY (
-            SELECT TOP 1 JSON_VALUE(entry.value, '$.statusActionAt') as handoverApprovedAt
-            FROM handover_sheets hs
-            CROSS APPLY OPENJSON(hs.entries) as entry
-            WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
-              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
-            ORDER BY hs.createdAt DESC
-        ) ho
+        INNER JOIN ApprovedHandovers ho ON ho.studentId = u.id AND ho.rn = 1
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-        AND EXISTS (
-            SELECT 1 
-            FROM handover_sheets hs
-            CROSS APPLY OPENJSON(hs.entries) as entry
-            WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
-              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
-        )
     `;
-    const params = [departmentId];
+    const params = [departmentId, departmentId];
 
     if (sectionId && sectionId !== "0") {
         query += " AND u.sectionId = ?";
@@ -156,17 +156,30 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
         data = await SixteenDayMonitoring.findByStudentId(sid);
     }
     
-    // Fetch handover marks & approval date to pre-populate if needed
+    // Resolve the candidate's current name, code, dept/section, and departmentId from the users table
+    const [userRows] = await executeQuery(`
+        SELECT u.fullName, u.empId, u.status, u.departmentId, d.name as departmentName, s.name as sectionName
+        FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        LEFT JOIN sections s ON u.sectionId = s.id
+        WHERE u.id = ?
+    `, [sid]);
+    const student = userRows.length > 0 ? userRows[0] : null;
+
+    // Fetch handover marks & approval date to pre-populate if needed.
+    // Scoping to the student's departmentId first lets SQL Server filter out
+    // unrelated handover_sheets rows before expanding/parsing their entries JSON.
     const [handoverRows] = await executeQuery(`
-        SELECT TOP 1 
+        SELECT TOP 1
             JSON_VALUE(entry.value, '$.marks') as marks,
             JSON_VALUE(entry.value, '$.statusActionAt') as handoverDate
         FROM handover_sheets
         CROSS APPLY OPENJSON(entries) as entry
-        WHERE JSON_VALUE(entry.value, '$.studentId') = ?
+        WHERE departmentId = ?
+        AND JSON_VALUE(entry.value, '$.studentId') = ?
         AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
         ORDER BY createdAt DESC
-    `, [sid]);
+    `, [student?.departmentId ?? null, sid]);
 
     const handoverInfo = handoverRows.length > 0 ? handoverRows[0] : null;
 
@@ -178,16 +191,6 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
         isEligible = Date.now() >= eligibleAtMs;
     }
     const canOverrideEligibility = !!(req.user.isAdmin || req.user.isTrainer);
-
-    // Resolve the candidate's current name, code, and dept/section from the users table
-    const [userRows] = await executeQuery(`
-        SELECT u.fullName, u.empId, u.status, d.name as departmentName, s.name as sectionName
-        FROM users u
-        LEFT JOIN departments d ON u.departmentId = d.id
-        LEFT JOIN sections s ON u.sectionId = s.id
-        WHERE u.id = ?
-    `, [sid]);
-    const student = userRows.length > 0 ? userRows[0] : null;
     const resolvedDept = student
         ? [student.departmentName, student.sectionName].filter(Boolean).join(" / ")
         : "";
@@ -274,8 +277,9 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         throw new ApiError("You do not have permission to save this monitoring record", 403);
     }
 
-    const [userStatusRows] = await executeQuery("SELECT status FROM users WHERE id = ?", [sid]);
+    const [userStatusRows] = await executeQuery("SELECT status, departmentId FROM users WHERE id = ?", [sid]);
     const isLeftUser = userStatusRows.length > 0 && userStatusRows[0].status === 'LEFT';
+    const studentDepartmentId = userStatusRows.length > 0 ? userStatusRows[0].departmentId : null;
 
     // Eligibility gate: only applies before the very first attempt is created.
     // Admins/Trainers can override and start monitoring early.
@@ -283,14 +287,17 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     if (!canOverrideEligibility) {
         const existingAttempt = await SixteenDayMonitoring.findByStudentId(sid);
         if (!existingAttempt) {
+            // Scoping to the student's departmentId lets SQL Server filter out
+            // unrelated handover_sheets rows before expanding/parsing their entries JSON.
             const [approvalRows] = await executeQuery(`
                 SELECT TOP 1 JSON_VALUE(entry.value, '$.statusActionAt') as approvedAt
                 FROM handover_sheets hs
                 CROSS APPLY OPENJSON(hs.entries) as entry
-                WHERE JSON_VALUE(entry.value, '$.studentId') = ?
+                WHERE hs.departmentId = ?
+                  AND JSON_VALUE(entry.value, '$.studentId') = ?
                   AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
                 ORDER BY hs.createdAt DESC
-            `, [sid]);
+            `, [studentDepartmentId, sid]);
             const approvedAt = approvalRows[0]?.approvedAt;
             if (approvedAt) {
                 const eligibleAtMs = getNextCalendarDayMidnightIST(approvedAt).getTime();
@@ -414,6 +421,18 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             revNo: revision?.revNo,
             revDate: revision?.revDate,
         });
+    }
+
+    // Sync to Skill Upgradation Plan the moment the approval signature transitions
+    // into "Approved" (first attempt creation or a later edit to an existing sheet).
+    const wasApproved = (oldApprovedBy || "").toLowerCase().includes("approved by");
+    const isApprovedNow = (approvedBy || "").toLowerCase().includes("approved by");
+    if (isApprovedNow && !wasApproved) {
+        try {
+            await SkillUpgradationPlan.syncSixteenDayApproval(sid, new Date());
+        } catch (err) {
+            console.error("[SixteenDayMonitoring] Failed to sync to SkillUpgradationPlan:", err);
+        }
     }
 
     // --- Audit Logging ---

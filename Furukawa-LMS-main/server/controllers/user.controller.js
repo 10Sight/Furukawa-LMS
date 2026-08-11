@@ -1801,7 +1801,7 @@ export const getAllInstructors = asyncHandler(async (req, res) => {
  */
 export const getAllStudents = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page) || 1, 1);
-  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 3000);
   const offset = (page - 1) * limit;
 
   let whereClauses = [

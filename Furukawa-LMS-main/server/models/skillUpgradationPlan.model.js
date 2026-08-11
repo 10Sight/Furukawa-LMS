@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 class SkillUpgradationPlan {
     // Constructor to initialize SkillUpgradationPlan object
@@ -203,6 +204,116 @@ class SkillUpgradationPlan {
 
         if (rows.length === 0) return null;
         return this.findByHierarchy(departmentId, sectionId, year);
+    }
+
+    // Syncs a student's 16-day approval date into the Skill Upgradation Plan
+    // for their department/section/year, stamping the Updation Date (Plan) of
+    // whichever quarter the approval fell in.
+    static async syncSixteenDayApproval(studentId, approveDateStr) {
+        const userQuery = `
+            SELECT
+                u.id, u.fullName, u.empId, u.departmentId, u.sectionId, u.lineId, u.subSectionId, u.shift,
+                l.name as lineName,
+                ss.name as subSectionName
+            FROM users u
+            LEFT JOIN [lines] l ON u.lineId = l.id
+            LEFT JOIN sub_sections ss ON u.subSectionId = ss.id
+            WHERE u.id = ?
+        `;
+        const [users] = await executeQuery(userQuery, [studentId]);
+        if (users.length === 0) return;
+        const student = users[0];
+
+        if (!student.departmentId || !student.sectionId) {
+            console.log(`[syncSixteenDayApproval] Student ${studentId} lacks departmentId or sectionId`);
+            return;
+        }
+
+        const dateObj = new Date(approveDateStr);
+        if (isNaN(dateObj.getTime())) {
+            console.error(`[syncSixteenDayApproval] Invalid approve date: ${approveDateStr}`);
+            return;
+        }
+        const year = dateObj.getFullYear();
+        const month = dateObj.getMonth() + 1; // 1-indexed
+
+        let quarterKey = "";
+        if (month >= 1 && month <= 3) quarterKey = "q1";
+        else if (month >= 4 && month <= 6) quarterKey = "q2";
+        else if (month >= 7 && month <= 9) quarterKey = "q3";
+        else if (month >= 10 && month <= 12) quarterKey = "q4";
+        if (!quarterKey) return;
+
+        const yyyy = dateObj.getFullYear();
+        const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+        const dd = String(dateObj.getDate()).padStart(2, "0");
+        const formattedApproveDate = `${yyyy}-${mm}-${dd}`;
+
+        const plan = await this.findByHierarchy(student.departmentId, student.sectionId, year);
+
+        let tableData = {};
+        if (plan) {
+            tableData = typeof plan.tableData === "string" ? JSON.parse(plan.tableData) : plan.tableData || {};
+        }
+
+        const studentKey = String(studentId);
+        if (!tableData[studentKey]) {
+            tableData[studentKey] = {
+                userName: student.fullName || "",
+                cardNo: student.empId || "",
+                modelLine: student.lineName || "",
+                station: student.subSectionName || "",
+                q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "", q1Shift: "",
+                q2Skill: "", q2Date: "", q2DateActual: "", q2Status: "", q2Shift: "",
+                q3Skill: "", q3Date: "", q3DateActual: "", q3Status: "", q3Shift: "",
+                q4Skill: "", q4Date: "", q4DateActual: "", q4Status: "", q4Shift: "",
+            };
+        }
+
+        tableData[studentKey][`${quarterKey}Date`] = formattedApproveDate;
+
+        if (!tableData[studentKey][`${quarterKey}Shift`] && student.shift) {
+            tableData[studentKey][`${quarterKey}Shift`] = student.shift;
+        }
+        if (!tableData[studentKey][`${quarterKey}Status`]) {
+            tableData[studentKey][`${quarterKey}Status`] = "Planned";
+        }
+
+        if (tableData.__removedUserIds) {
+            tableData.__removedUserIds = tableData.__removedUserIds.filter(id => String(id) !== studentKey);
+        }
+
+        if (plan) {
+            await executeQuery(
+                `UPDATE skill_upgradation_plans
+                 SET tableData = ?, updatedAt = GETDATE()
+                 WHERE id = ?`,
+                [JSON.stringify(tableData), plan.id]
+            );
+        } else {
+            const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan', student.departmentId, student.sectionId);
+            const docNo = revision?.docNo || null;
+            const revNo = revision?.revNo || null;
+            const revDate = revision?.revDate || null;
+
+            await executeQuery(
+                `INSERT INTO skill_upgradation_plans
+                 (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    student.departmentId,
+                    student.sectionId,
+                    year,
+                    JSON.stringify([]),
+                    JSON.stringify(tableData),
+                    "System",
+                    "System",
+                    docNo,
+                    revNo,
+                    revDate
+                ]
+            );
+        }
     }
 
     // Delete a skill upgradation plan by id

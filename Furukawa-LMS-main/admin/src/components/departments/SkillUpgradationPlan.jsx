@@ -60,6 +60,33 @@ const SKILL_FIELD_FOR_ACTUAL = {
     q3DateActual: "q3Skill",
 };
 
+// Confirms a manually entered date actually falls within the quarter/year column
+// it was typed into, since the table's quarter columns are otherwise unenforced.
+const validateDateForQuarter = (dateStr, quarterKey, year) => {
+    if (!dateStr) return { valid: true };
+    const [y, m] = dateStr.split("-").map(Number);
+    if (!y || !m) return { valid: false, reason: "Invalid date format" };
+
+    if (year && y !== parseInt(year)) {
+        return { valid: false, reason: `Year must be ${year}` };
+    }
+
+    if (quarterKey === "q1" && (m < 1 || m > 3)) {
+        return { valid: false, reason: "Date must be in Jan-March (Q1)" };
+    }
+    if (quarterKey === "q2" && (m < 4 || m > 6)) {
+        return { valid: false, reason: "Date must be in April-June (Q2)" };
+    }
+    if (quarterKey === "q3" && (m < 7 || m > 9)) {
+        return { valid: false, reason: "Date must be in July-Sep (Q3)" };
+    }
+    if (quarterKey === "q4" && (m < 10 || m > 12)) {
+        return { valid: false, reason: "Date must be in Oct-Dec (Q4)" };
+    }
+
+    return { valid: true };
+};
+
 const QUARTERS = [
     { key: "q1", label: "Jan-March", headerBg: "bg-amber-50 text-amber-800", cellBg: "bg-amber-50/20", badgeColor: "text-amber-700" },
     { key: "q2", label: "April-June", headerBg: "bg-blue-50 text-blue-800", cellBg: "bg-blue-50/20", badgeColor: "text-blue-700" },
@@ -691,18 +718,51 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     }, []);
 
     const handleRowFieldChange = useCallback((rowId, field, value) => {
+        const dateMatch = field.match(/^(q1|q2|q3|q4)(Date|DateActual)$/);
+        if (dateMatch && value) {
+            const quarterKey = dateMatch[1];
+            const validation = validateDateForQuarter(value, quarterKey, year);
+            if (!validation.valid) {
+                toast.error(`Invalid date: ${validation.reason}`);
+                return;
+            }
+        }
+
         setRows(prev => prev.map(row => {
             if (row.rowId !== rowId) return row;
             const updated = { ...row, [field]: value };
-            const targetField = ACTUAL_TO_PLAN[field];
-            if (targetField && value && !row[targetField]) {
+
+            // If actual date is updated, calculate and place the next plan date in
+            // whichever quarter it actually falls into (skill level can push it past
+            // the immediately-following quarter, e.g. a Q1 actual + long day-count
+            // lands the next plan date in Q3, not Q2).
+            const actualDateMatch = field.match(/^(q1|q2|q3|q4)DateActual$/);
+            if (actualDateMatch && value) {
                 const levelField = SKILL_FIELD_FOR_ACTUAL[field];
                 const currentLevel = levelField ? row[levelField] : null;
-                updated[targetField] = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
+                const futureDate = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
+
+                if (futureDate) {
+                    const [, fMonth] = futureDate.split("-").map(Number);
+                    let targetQuarterKey = "";
+                    if (fMonth >= 1 && fMonth <= 3) targetQuarterKey = "q1";
+                    else if (fMonth >= 4 && fMonth <= 6) targetQuarterKey = "q2";
+                    else if (fMonth >= 7 && fMonth <= 9) targetQuarterKey = "q3";
+                    else if (fMonth >= 10 && fMonth <= 12) targetQuarterKey = "q4";
+
+                    if (targetQuarterKey) {
+                        const targetPlanField = `${targetQuarterKey}Date`;
+                        const oldTargetField = ACTUAL_TO_PLAN[field];
+                        if (oldTargetField && oldTargetField !== targetPlanField) {
+                            updated[oldTargetField] = "";
+                        }
+                        updated[targetPlanField] = futureDate;
+                    }
+                }
             }
             return updated;
         }));
-    }, [resolveDayCountForLevel]);
+    }, [resolveDayCountForLevel, year]);
 
     const handleUserSelect = useCallback((rowId, userId, userName, lineName, subSectionName) => {
         setRows(prev => prev.map(row => {

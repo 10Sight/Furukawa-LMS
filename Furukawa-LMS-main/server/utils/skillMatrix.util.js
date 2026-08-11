@@ -154,6 +154,17 @@ export const normalizeEvaluationDate = (dateStr) => {
     return null;
 };
 
+// Converts a headerData.dateOfEvaluation value (either "YYYY-MM-DD" or legacy "DD - MM - YYYY")
+// into the "DD.MM.YYYY" format SkillMatrix.jsx's own certDate column uses, so a synced date
+// reads identically to one an admin typed in by hand. Returns null if unparsable/absent.
+export const formatCertDate = (dateOfEvaluation) => {
+    if (!dateOfEvaluation) return null;
+    const iso = normalizeEvaluationDate(dateOfEvaluation);
+    if (!iso) return null;
+    const [yyyy, mm, dd] = iso.split('-');
+    return `${dd}.${mm}.${yyyy}`;
+};
+
 const EMPTY_UPGRADATION_ROW = {
     userName: "", cardNo: "", modelLine: "", station: "",
     q1Skill: "", q1Date: "", q1DateActual: "", q1Status: "", q1Shift: "",
@@ -434,15 +445,7 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
         }
     }
 
-    // Mirrors SkillMatrix.jsx's own certDate formatting (toLocaleDateString('en-GB') with '/'
-    // swapped for '.') so a synced date reads identically to one an admin typed in by hand.
-    const normalizedCertDate = (() => {
-        if (!dateOfEvaluation) return null;
-        const iso = normalizeEvaluationDate(dateOfEvaluation);
-        if (!iso) return null;
-        const [yyyy, mm, dd] = iso.split('-');
-        return `${dd}.${mm}.${yyyy}`;
-    })();
+    const normalizedCertDate = formatCertDate(dateOfEvaluation);
 
     if ((skillMapChanged && targetSubSectionId) || normalizedCertDate) {
         try {

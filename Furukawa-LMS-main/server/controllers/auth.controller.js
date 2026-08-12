@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { executeQuery } from "../db/mssqlHelper.js";
 
 import User from "../models/auth.model.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -477,6 +478,12 @@ export const dojoRegister = asyncHandler(async (req, res) => {
   const createdUser = sanitizeUser(user);
 
   if (!createdUser) throw new ApiError("Something went wrong in registering Dojo Candidate!", 400);
+
+  // Create an entry in import_logs for tracking manual creation in the Import Logs list
+  await executeQuery(
+    "INSERT INTO import_logs (fileName, importType, totalRows, successCount, failCount, updatedCount, importedBy) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [`Manual Registration - ${fullName} (${empId})`, "DOJO_CANDIDATE", 1, 1, 0, 0, req.user?.id || null]
+  );
 
   await logAudit(user.id, "REGISTER_DOJO", { role: "STUDENT", isTemporary: true }, { req });
 

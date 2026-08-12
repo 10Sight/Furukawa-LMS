@@ -983,8 +983,8 @@ export const importEmployees = async (req, res) => {
 
         // Finalize Import Log summary
         await executeQuery(
-            "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
-            [results.success.length, results.failed.length, results.updatedCount, logId]
+            "UPDATE import_logs SET totalRows = ?, successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+            [results.success.length + results.failed.length, results.success.length, results.failed.length, results.updatedCount, logId]
         );
 
         // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
@@ -1076,8 +1076,8 @@ export const finalizeImportEmployees = async (req, res) => {
     });
 
     await executeQuery(
-        "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
-        [successCount, failCount, updatedCount, logId]
+        "UPDATE import_logs SET totalRows = ?, successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+        [successCount + failCount, successCount, failCount, updatedCount, logId]
     );
 
     // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
@@ -1184,8 +1184,8 @@ export const importEmployeesFull = async (req, res) => {
         }
 
         await executeQuery(
-            "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
-            [results.success.length, results.failed.length, results.updatedCount, logId]
+            "UPDATE import_logs SET totalRows = ?, successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+            [results.success.length + results.failed.length, results.success.length, results.failed.length, results.updatedCount, logId]
         );
 
         // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
@@ -1276,8 +1276,8 @@ export const finalizeImportEmployeesFull = async (req, res) => {
     });
 
     await executeQuery(
-        "UPDATE import_logs SET successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
-        [successCount, failCount, updatedCount, logId]
+        "UPDATE import_logs SET totalRows = ?, successCount = ?, failCount = ?, updatedCount = ? WHERE id = ?",
+        [successCount + failCount, successCount, failCount, updatedCount, logId]
     );
 
     // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
@@ -1736,8 +1736,8 @@ export const importDojoUsers = async (req, res) => {
         }
 
         await executeQuery(
-            "UPDATE import_logs SET successCount = ?, failCount = ? WHERE id = ?",
-            [results.success.length, results.failed.length, logId]
+            "UPDATE import_logs SET totalRows = ?, successCount = ?, failCount = ? WHERE id = ?",
+            [results.success.length + results.failed.length, results.success.length, results.failed.length, logId]
         );
 
         // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired

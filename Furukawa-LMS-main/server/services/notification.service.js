@@ -2345,7 +2345,18 @@ class NotificationService {
             headerDates.forEach(dateObj => {
                 const dateKey = toDateKey(dateObj);
                 const cellVal = tableData[`${rowKey}_${dateKey}`];
-                rowData[dateKey] = (cellVal === undefined || cellVal === null || cellVal === '') ? 0 : cellVal;
+                if (cellVal === undefined || cellVal === null || cellVal === '') {
+                    rowData[dateKey] = 0;
+                } else {
+                    // headcountData.service.js stores most of these as strings (e.g.
+                    // String(netAvailableHeadcountTotal)). Left as text, a cell like "0" sorts
+                    // as greater than the number 0 in spreadsheet comparisons, so the new
+                    // formulas' `>0` guards below would wrongly take the division branch and
+                    // divide by that same "0" — coerce numeric-looking values to real numbers
+                    // so every data cell the formulas reference is an actual number.
+                    const numVal = Number(cellVal);
+                    rowData[dateKey] = Number.isNaN(numVal) ? cellVal : numVal;
+                }
             });
 
             const row = worksheet.addRow(rowData);

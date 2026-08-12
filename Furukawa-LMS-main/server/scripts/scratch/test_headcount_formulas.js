@@ -44,6 +44,11 @@ const rows = [
 ];
 
 // Synthetic tableData: day1=2026-01-01 .. day3=2026-01-03
+// Deliberately mirrors headcountData.service.js's actual types: "Headcount available",
+// club rows, and Available_*/Assigned_* are stored as STRINGS (String(x)), which is the real
+// bug reported against the deployed sheet — a "0" string sorts as greater than the number 0
+// in spreadsheet comparisons, so an unguarded `>0` check wrongly takes the division branch.
+// Day 2's "Headcount available" is the string "0" specifically to reproduce that case.
 const tableData = {
     'Headcount required as per production plan_2026-01-01': 50,
     'Headcount required as per production plan_2026-01-02': 50,
@@ -54,12 +59,12 @@ const tableData = {
     'Hiring Plan_2026-01-01': 10,
     'Hiring Plan_2026-01-02': 0,
     'Hiring Plan_2026-01-03': 5,
-    'Headcount available_2026-01-01': 48,
-    'Headcount available_2026-01-02': 47,
-    'Headcount available_2026-01-03': 46,
-    'Absent_2026-01-01': 3,
-    'Absent_2026-01-02': 2,
-    'Absent_2026-01-03': 1,
+    'Headcount available_2026-01-01': '48',
+    'Headcount available_2026-01-02': '0',
+    'Headcount available_2026-01-03': '46',
+    'Absent_2026-01-01': '3',
+    'Absent_2026-01-02': '2',
+    'Absent_2026-01-03': '1',
     'Left in nos (Daily)_2026-01-01': 1,
     'Left in nos (Daily)_2026-01-02': 0,
     'Left in nos (Daily)_2026-01-03': 2,
@@ -103,7 +108,12 @@ rows.forEach(item => {
     for (let day = 1; day <= daysInMonth; day++) {
         const dateKey = toDateKey(day);
         const cellVal = tableData[`${rowKey}_${dateKey}`];
-        rowData[dateKey] = (cellVal === undefined || cellVal === null || cellVal === '') ? 0 : cellVal;
+        if (cellVal === undefined || cellVal === null || cellVal === '') {
+            rowData[dateKey] = 0;
+        } else {
+            const numVal = Number(cellVal);
+            rowData[dateKey] = Number.isNaN(numVal) ? cellVal : numVal;
+        }
     }
     const row = worksheet.addRow(rowData);
     rowIndexMap[rowKey] = row.number;
@@ -221,6 +231,22 @@ const attendanceTotalRow = rowIndexMap['Attendance_Total'];
 const availTotalRow = rowIndexMap['Available_Total'];
 const assignedTotalRow = rowIndexMap['Assigned_Total'];
 check('Shift Attendance Total day1', attendanceTotalRow, 3, 'IF(C' + availTotalRow + '>0,(C' + assignedTotalRow + '/C' + availTotalRow + ')*100,0)', 0);
+
+// --- The actual reported bug: "Headcount available" was a STRING ("48", "0", "46") in the
+// source data (matching headcountData.service.js's String(x) storage). Confirm the fix wrote
+// it as a real ExcelJS number type (ValueType.Number = 2), not a string (ValueType.String = 3)
+// — a string "0" sorts greater than the number 0 in spreadsheet comparisons, which is exactly
+// what caused Absenteeism %'s `>0` guard to wrongly take the division branch and divide by it.
+const headcountAvailCellDay1 = ws2.getRow(headcountAvailRow).getCell(3);
+const headcountAvailCellDay2 = ws2.getRow(headcountAvailRow).getCell(4);
+const isNumberType = (cell) => cell.type === ExcelJS.ValueType.Number;
+console.log(`${isNumberType(headcountAvailCellDay1) ? 'PASS' : 'FAIL'} Headcount available day1 is a real number (type=${headcountAvailCellDay1.type}, value=${headcountAvailCellDay1.value})`);
+console.log(`${isNumberType(headcountAvailCellDay2) ? 'PASS' : 'FAIL'} Headcount available day2 ("0" string in source) is a real number (type=${headcountAvailCellDay2.type}, value=${headcountAvailCellDay2.value})`);
+if (!isNumberType(headcountAvailCellDay1)) failures++;
+if (!isNumberType(headcountAvailCellDay2)) failures++;
+
+// And with a real numeric 0, Absenteeism %'s guard now correctly skips the division on day 2.
+check('Absenteeism % day2 (zero-denominator guard)', absenteeismRow, 4, 'IF(D' + headcountAvailRow + '>0,(D' + absentRow + '/D' + headcountAvailRow + ')*100,0)', 0);
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

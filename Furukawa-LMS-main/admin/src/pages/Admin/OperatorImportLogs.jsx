@@ -38,6 +38,10 @@ const OperatorImportLogs = () => {
         return logsData.data.filter(log => log.importType === importTypeFilter);
     }, [logsData, importTypeFilter]);
 
+    const isManualRegistration = (log) => log.fileName?.startsWith("Manual Registration -");
+    const excelLogs = React.useMemo(() => filteredLogs.filter(log => !isManualRegistration(log)), [filteredLogs]);
+    const manualLogs = React.useMemo(() => filteredLogs.filter(log => isManualRegistration(log)), [filteredLogs]);
+
     const handleLogClick = (id) => {
         setSelectedLogId(id);
     };
@@ -75,101 +79,136 @@ const OperatorImportLogs = () => {
             <Card className="border-none shadow-sm bg-white/50 backdrop-blur-sm">
                 <CardContent className="p-6">
                     {!selectedLogId ? (
-                        <div className="space-y-4">
-                            <div className="rounded-md border overflow-hidden">
-                                <Table>
-                                    <TableHeader className="bg-muted/50">
-                                        <TableRow>
-                                            <TableHead>Date & Time</TableHead>
-                                            <TableHead>File Name</TableHead>
-                                            <TableHead className="text-center">Total Rows</TableHead>
-                                            <TableHead className="text-center">Successful</TableHead>
-                                            <TableHead className="text-center">Failed</TableHead>
-                                            <TableHead className="text-right">Actions</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {isLoadingLogs ? (
-                                            <TableRow>
-                                                <TableCell colSpan={6} className="h-60 text-center">
-                                                    <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                                        <IconLoader className="h-8 w-8 animate-spin text-orange-500" />
-                                                        <p>Loading import history...</p>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : filteredLogs?.length > 0 ? (
-                                            filteredLogs.map((log) => (
-                                                <TableRow 
-                                                    key={log.id} 
-                                                    className="cursor-pointer hover:bg-muted/30 transition-colors" 
-                                                    onClick={() => handleLogClick(log.id)}
-                                                >
-                                                    <TableCell className="whitespace-nowrap font-medium">
-                                                        <div className="flex items-center gap-2">
-                                                            <IconCalendar className="h-4 w-4 text-muted-foreground" />
-                                                            {format(new Date(log.createdAt), "dd MMM yyyy, hh:mm a")}
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="max-w-[300px] truncate">
-                                                        <div className="flex items-center gap-2 font-mono text-sm text-blue-600">
-                                                            <IconFileText className="h-4 w-4 text-muted-foreground" />
-                                                            {log.fileName}
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-center font-bold text-lg">{log.totalRows}</TableCell>
-                                                    <TableCell className="text-center">
-                                                        <div className="flex flex-col items-center">
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1">
-                                                                {log.successCount}
-                                                            </Badge>
-                                                            <span className="text-[10px] text-muted-foreground mt-1 font-bold">Total Success</span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-center">
-                                                        <div className="flex flex-col items-center">
-                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-3 py-1">
-                                                                {log.updatedCount || 0}
-                                                            </Badge>
-                                                            <span className="text-[10px] text-muted-foreground mt-1 font-bold">Updated</span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-center">
-                                                        <div className="flex flex-col items-center">
-                                                            <Badge variant="outline" className={log.failCount > 0 ? "bg-red-50 text-red-700 border-red-200 px-3 py-1" : "bg-gray-50 text-gray-400 border-gray-200 px-3 py-1"}>
-                                                                {log.failCount}
-                                                            </Badge>
-                                                            <span className="text-[10px] text-muted-foreground mt-1 font-bold">Failed</span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="ghost" size="sm" className="gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 font-medium">
-                                                            View Details
-                                                            <IconChevronRight className="h-4 w-4" />
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={6} className="h-60 text-center">
-                                                    <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                                        <IconHistory className="h-12 w-12 text-muted-foreground/30" />
-                                                        <p className="text-lg font-medium">No import records found</p>
-                                                        <p className="text-sm">When you import {isDojo ? "candidates" : "operators"} from Excel, they will appear here.</p>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </div>
+                        <Tabs defaultValue="excel" className="w-full">
+                            <TabsList className="bg-muted/50 p-1 h-auto mb-4">
+                                <TabsTrigger value="excel" className="data-[state=active]:bg-white px-4 h-9 gap-2 font-semibold">
+                                    <IconFileText className="h-4 w-4" />
+                                    Excel Imports ({excelLogs.length})
+                                </TabsTrigger>
+                                <TabsTrigger value="manual" className="data-[state=active]:bg-white px-4 h-9 gap-2 font-semibold">
+                                    <IconHistory className="h-4 w-4" />
+                                    Manual Registrations ({manualLogs.length})
+                                </TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value="excel" className="m-0">
+                                <ImportLogsTable
+                                    logs={excelLogs}
+                                    isLoading={isLoadingLogs}
+                                    onLogClick={handleLogClick}
+                                    emptyTitle="No Excel import records found"
+                                    emptyDescription={`When you import ${isDojo ? "candidates" : "operators"} from Excel, they will appear here.`}
+                                />
+                            </TabsContent>
+
+                            <TabsContent value="manual" className="m-0">
+                                <ImportLogsTable
+                                    logs={manualLogs}
+                                    isLoading={isLoadingLogs}
+                                    onLogClick={handleLogClick}
+                                    emptyTitle="No manual registration records found"
+                                    emptyDescription={`When you manually register ${isDojo ? "candidates" : "operators"}, they will appear here.`}
+                                />
+                            </TabsContent>
+                        </Tabs>
                     ) : (
                         <LogDetailsView logId={selectedLogId} />
                     )}
                 </CardContent>
             </Card>
+        </div>
+    );
+};
+
+const ImportLogsTable = ({ logs, isLoading, onLogClick, emptyTitle, emptyDescription }) => {
+    return (
+        <div className="rounded-md border overflow-hidden">
+            <Table>
+                <TableHeader className="bg-muted/50">
+                    <TableRow>
+                        <TableHead>Date & Time</TableHead>
+                        <TableHead>File Name</TableHead>
+                        <TableHead className="text-center">Total Rows</TableHead>
+                        <TableHead className="text-center">Successful</TableHead>
+                        <TableHead className="text-center">Failed</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {isLoading ? (
+                        <TableRow>
+                            <TableCell colSpan={6} className="h-60 text-center">
+                                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                                    <IconLoader className="h-8 w-8 animate-spin text-orange-500" />
+                                    <p>Loading import history...</p>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ) : logs?.length > 0 ? (
+                        logs.map((log) => (
+                            <TableRow
+                                key={log.id}
+                                className="cursor-pointer hover:bg-muted/30 transition-colors"
+                                onClick={() => onLogClick(log.id)}
+                            >
+                                <TableCell className="whitespace-nowrap font-medium">
+                                    <div className="flex items-center gap-2">
+                                        <IconCalendar className="h-4 w-4 text-muted-foreground" />
+                                        {format(new Date(log.createdAt), "dd MMM yyyy, hh:mm a")}
+                                    </div>
+                                </TableCell>
+                                <TableCell className="max-w-[300px] truncate">
+                                    <div className="flex items-center gap-2 font-mono text-sm text-blue-600">
+                                        <IconFileText className="h-4 w-4 text-muted-foreground" />
+                                        {log.fileName}
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-center font-bold text-lg">{log.totalRows}</TableCell>
+                                <TableCell className="text-center">
+                                    <div className="flex flex-col items-center">
+                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1">
+                                            {log.successCount}
+                                        </Badge>
+                                        <span className="text-[10px] text-muted-foreground mt-1 font-bold">Total Success</span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                    <div className="flex flex-col items-center">
+                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-3 py-1">
+                                            {log.updatedCount || 0}
+                                        </Badge>
+                                        <span className="text-[10px] text-muted-foreground mt-1 font-bold">Updated</span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                    <div className="flex flex-col items-center">
+                                        <Badge variant="outline" className={log.failCount > 0 ? "bg-red-50 text-red-700 border-red-200 px-3 py-1" : "bg-gray-50 text-gray-400 border-gray-200 px-3 py-1"}>
+                                            {log.failCount}
+                                        </Badge>
+                                        <span className="text-[10px] text-muted-foreground mt-1 font-bold">Failed</span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="sm" className="gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 font-medium">
+                                        View Details
+                                        <IconChevronRight className="h-4 w-4" />
+                                    </Button>
+                                </TableCell>
+                            </TableRow>
+                        ))
+                    ) : (
+                        <TableRow>
+                            <TableCell colSpan={6} className="h-60 text-center">
+                                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                                    <IconHistory className="h-12 w-12 text-muted-foreground/30" />
+                                    <p className="text-lg font-medium">{emptyTitle}</p>
+                                    <p className="text-sm">{emptyDescription}</p>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
         </div>
     );
 };

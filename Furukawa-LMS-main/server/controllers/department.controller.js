@@ -1531,6 +1531,27 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
     const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
     const canApprove = isAdmin || userPermissions.includes('handover_sheet:approve');
 
+    // Date restriction: future dates are blocked for everyone; a past date is only allowed
+    // when it's actually being set (a new sheet, or an existing sheet's date being changed) --
+    // routine saves/approvals of an already-past-dated sheet (e.g. one an admin backdated)
+    // must not require this permission, matching how edit_section/delete_row/edit_saved below
+    // only gate on the requested value actually differing from what's already stored.
+    if (date) {
+        // Computed in Asia/Kolkata regardless of the app server's own timezone -- see
+        // user.controller.js's identical todayStr for why (server may run in UTC).
+        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        if (date > todayStr) {
+            throw new ApiError("Handover sheet date cannot be in the future", 400);
+        }
+        const isDateChanged = (sheet?.date || null) !== date;
+        if (date < todayStr && isDateChanged) {
+            const canSelectPastDate = isAdmin || userPermissions.includes('handover_sheet:select_past_date');
+            if (!canSelectPastDate) {
+                throw new ApiError("You do not have permission to select a past date for a handover sheet", 403);
+            }
+        }
+    }
+
     if (sheet) {
         // Prevent changing the target section without permission
         const requestedSectionId = sectionId || null;

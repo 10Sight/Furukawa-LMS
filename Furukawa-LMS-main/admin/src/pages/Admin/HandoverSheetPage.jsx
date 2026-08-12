@@ -195,6 +195,7 @@ const HandoverSheetPage = () => {
     const hasReadPermission = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:read') || hasHandoverBypass;
     const canManage = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:manage');
     const canDelete = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:delete');
+    const canSelectPastDates = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:select_past_date');
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState(searchParams.get('subTab') || 'sheets');
@@ -892,7 +893,7 @@ const HandoverSheetPage = () => {
                             <input
                                 type="date"
                                 value={createDate}
-                                min={todayStr}
+                                min={canSelectPastDates ? undefined : todayStr}
                                 max={todayStr}
                                 onChange={(e) => setCreateDate(e.target.value)}
                                 className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"

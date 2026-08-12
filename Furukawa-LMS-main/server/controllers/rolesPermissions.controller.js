@@ -154,6 +154,7 @@ const SYSTEM_PERMISSIONS = {
   HANDOVER_SHEET_EDIT_SAVED: "handover_sheet:edit_saved",
   HANDOVER_SHEET_EDIT_SECTION: "handover_sheet:edit_section",
   HANDOVER_SHEET_DELETE_ROW: "handover_sheet:delete_row",
+  HANDOVER_SHEET_SELECT_PAST_DATE: "handover_sheet:select_past_date",
   DOJO_HANDOVER_SHEET: "dojo:handover_sheet",
   DOJO_SIXTEENDAY_MONITORING: "dojo:sixteenday_monitoring",
 
@@ -585,7 +586,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE, name: "Delete Handover Sheet", description: "Permanently delete handover sheet records" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SAVED, name: "Edit Saved Handover Sheet", description: "Edit handover sheets that have already been saved or submitted" },
         { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_SECTION, name: "Edit Handover Sheet Section", description: "Change the target section (\"To:\") of a handover sheet" },
-        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE_ROW, name: "Delete Handover Sheet Row", description: "Remove a trainee row from a handover sheet" }
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE_ROW, name: "Delete Handover Sheet Row", description: "Remove a trainee row from a handover sheet" },
+        { id: SYSTEM_PERMISSIONS.HANDOVER_SHEET_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows creating or backdating a handover sheet to a date before today (future dates remain blocked for everyone)" }
       ],
       "10-Cycle Sheet": [
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_MANAGE, name: "Manage 10-Cycle Sheet (Full Access)", description: "Super-permission: full create, read, update, and delete access to 10-cycle sheets" },

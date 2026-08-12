@@ -61,19 +61,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         if (row.dateKey) dashboardPresentMap[row.dateKey] = Number(row.presentCount) || 0;
     });
 
-    // Date-aware "is this user part of the roster as of dDate" check, used by activeCount/
-    // activeInClub (Total Headcount) below — a user who has since left still counts correctly
-    // on days before they actually left.
-    const isRosterActiveOnDate = (u, dDate) => {
-        const join = u.joiningDate ? new Date(u.joiningDate) : null;
-        if (join && join > dDate) return false;
-        if (u.status?.toLowerCase() === 'left') {
-            const left = new Date(u.leavingDate || u.updatedAt);
-            if (left <= dDate) return false;
-        }
-        return true;
-    };
-
     // 2. Global Attendance Stats
     // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) even though
     // only the employee-only columns are selected below, because totalUploaded (COUNT(*)) is a
@@ -160,6 +147,92 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     };
 
+    // Determines whether a user was on an active employment stint on dDate, and that stint's
+    // joiningDate, by walking statusHistory rather than just the current joiningDate/status
+    // columns — so a user who left and later rejoined is evaluated against the stint that was
+    // actually open on dDate, not their latest one. Per getUpdatedStatusHistory in
+    // statusHistory.js, a fresh entry is only ever pushed on rejoin; every other change mutates
+    // the last entry in place, so each entry normally corresponds to exactly one stint.
+    const getUserActiveStintOnDate = (u, dDate) => {
+        let history = [];
+        try {
+            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
+        } catch (e) {
+            history = [];
+        }
+
+        const validHistoryEntries = Array.isArray(history)
+            ? history.filter(h => h && h.joiningDate)
+            : [];
+
+        if (validHistoryEntries.length === 0) {
+            // Fallback to legacy columns for users with no usable statusHistory.
+            const join = u.joiningDate ? new Date(u.joiningDate) : null;
+            let isActive = true;
+            if (join && join > dDate) isActive = false;
+            if (u.status?.toLowerCase() === 'left') {
+                const left = new Date(u.leavingDate || u.updatedAt);
+                if (left <= dDate) isActive = false;
+            }
+            return { active: isActive, joiningDate: join };
+        }
+
+        // Group by joiningDate — normally one group per stint, but grouped defensively in case
+        // of duplicate/same-day entries.
+        const periods = {};
+        validHistoryEntries.forEach((entry, idx) => {
+            const joinStr = toYMD(entry.joiningDate);
+            if (!joinStr) return;
+            if (!periods[joinStr]) periods[joinStr] = [];
+            periods[joinStr].push({ entry, idx });
+        });
+
+        let activeStintJoinDate = null;
+        let isActive = false;
+
+        Object.keys(periods).forEach(joinStr => {
+            const joinDateObj = new Date(joinStr);
+            if (joinDateObj > dDate) return;
+
+            const group = periods[joinStr];
+            let maxLeavingDate = null;
+            group.forEach(({ entry }) => {
+                if (entry.leavingDate) {
+                    const lDate = new Date(entry.leavingDate);
+                    if (!maxLeavingDate || lDate > maxLeavingDate) {
+                        maxLeavingDate = lDate;
+                    }
+                }
+            });
+
+            const sortedGroup = [...group].sort((a, b) => {
+                const aTime = a.entry.changedAt ? new Date(a.entry.changedAt).getTime() : 0;
+                const bTime = b.entry.changedAt ? new Date(b.entry.changedAt).getTime() : 0;
+                if (bTime !== aTime) return bTime - aTime;
+                return b.idx - a.idx;
+            });
+            const latestStatus = (sortedGroup[0]?.entry?.status || '').toUpperCase().trim();
+
+            // Active for this stint if either it hasn't been left yet as of dDate (leavingDate
+            // in the future), or no leaving date was ever recorded and the latest status isn't
+            // LEFT — matching the roster-active rule used everywhere else in the codebase
+            // (ON_LEAVE/SUSPENDED/BANNED/null all still count as roster-active; only LEFT excludes).
+            const periodActive = maxLeavingDate ? (maxLeavingDate > dDate) : (latestStatus !== 'LEFT');
+
+            if (periodActive) {
+                isActive = true;
+                activeStintJoinDate = joinDateObj;
+            }
+        });
+
+        return { active: isActive, joiningDate: activeStintJoinDate };
+    };
+
+    // Date-aware "is this user part of the roster as of dDate" check, used by activeCount/
+    // activeInClub (Total Headcount) below — a user who has since left still counts correctly
+    // on days before they actually left.
+    const isRosterActiveOnDate = (u, dDate) => getUserActiveStintOnDate(u, dDate).active;
+
     // Rejoining: per statusHistory.js, a fresh history entry is only ever pushed when a user
     // transitions OUT of LEFT (rejoins) — every other change updates the last entry in place.
     // So entries after the first (genesis) one are rejoin events, and their joiningDate is the
@@ -210,10 +283,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     });
 
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
-    // Total: users-table roster, date-aware — joined by dateObj, and either not yet left as of
-    // dateObj, or officially left by dateObj but still punched Present that specific day
-    // (presentSet). Above 3 Months: same join/left rule but NO attendance_logs fallback, plus a
-    // tenure >= 3 months check (joiningDate <= dateObj minus 3 months). Both are 0 for future dates.
+    // Total: users-table roster, date-aware via statusHistory stints (getUserActiveStintOnDate)
+    // — active on the stint open as of dateObj, or officially left by dateObj but still punched
+    // Present that specific day (presentSet). Above 3 Months: same stint-active rule but NO
+    // attendance_logs fallback, plus a tenure >= 3 months check (that stint's joiningDate <=
+    // dateObj minus 3 months). Both are 0 for future dates.
     const getNetAvailableHeadcount = (dateKey, dateObj, targetSectionIds = null) => {
         if (dateKey > todayYMD) return { countTotal: 0, countAbove3Months: 0 };
 
@@ -226,12 +300,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         allEligibleUsers.forEach(u => {
             if (targetSectionIds && !targetSectionIds.includes(String(u.sectionId))) return;
 
-            const join = u.joiningDate ? new Date(u.joiningDate) : null;
-            if (join && join > dateObj) return;
-
-            const isLeft = u.status?.toLowerCase() === 'left';
-            const left = isLeft ? new Date(u.leavingDate || u.updatedAt) : null;
-            const stillActive = !isLeft || left > dateObj;
+            const { active: stillActive, joiningDate: stintJoinDate } = getUserActiveStintOnDate(u, dateObj);
+            const join = stintJoinDate || (u.joiningDate ? new Date(u.joiningDate) : null);
 
             if (stillActive || presentSet.has(`${u.id}|${dateKey}`)) countTotal++;
             if (stillActive && join && join <= threeMonthsBefore) countAbove3Months++;
@@ -296,10 +366,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             getNetAvailableHeadcount(dKey, dDate);
 
         dailyTotalsMap[dKey] = totalPA;
-        tableData[`Headcount available_${dKey}`] = headcountAvailable;
+        // Swapped: "Headcount available" now shows the on-roll roster count (formerly Net
+        // Available Headcount Total), and "Net Available Headcount Total" now shows the
+        // attendance-present count (formerly Headcount available).
+        tableData[`Headcount available_${dKey}`] = String(netAvailableHeadcountTotal);
         tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
         tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
-        tableData[`Net Available Headcount Total_${dKey}`] = String(netAvailableHeadcountTotal);
+        tableData[`Net Available Headcount Total_${dKey}`] = headcountAvailable;
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(netAvailableAbove3Months);
         tableData[`Absent_${dKey}`] = String(absent);
@@ -395,8 +468,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
     // 3. Dynamic Club Headcount rows
     // Keyed by club.id so the leading previous-month reference column (populated further
-    // below, outside this loop) can reuse each club's dashboard-matching present map / absent map.
-    const clubDashboardPresentMapByClubId = {};
+    // below, outside this loop) can reuse each club's absent map.
     const clubAbsentMapByClubId = {};
     for (const club of reportingClubs) {
         const clubName = club.name;
@@ -437,29 +509,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         });
         clubAbsentMapByClubId[club.id] = clubPresentMap;
 
-        // `${clubName} Headcount available` — same MPS-dashboard-matching present rule as the
-        // global one above, scoped to this club's sections.
-        const clubDashboardPresentSql = `
-            SELECT
-                CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-                COUNT(DISTINCT CASE WHEN al.status IN ('P', 'PRESENT', 'Present') THEN u.id END) AS presentCount
-            FROM attendance_logs al
-            INNER JOIN users u ON al.userId = u.id
-            WHERE al.[date] >= ? AND al.[date] <= ?
-              AND u.sectionId IN (${placeholders})
-              ${getEligibleUserSql('u')}
-            GROUP BY al.[date]
-        `;
-        const [clubDashboardPresentRows] = await executeQuery(
-            clubDashboardPresentSql,
-            [prevMonthLastDateKey, end, ...sectionIds]
-        );
-        const clubDashboardPresentMap = {};
-        clubDashboardPresentRows.forEach(row => {
-            if (row.dateKey) clubDashboardPresentMap[row.dateKey] = Number(row.presentCount) || 0;
-        });
-        clubDashboardPresentMapByClubId[club.id] = clubDashboardPresentMap;
-
         const normalizedSectionIds = sectionIds.map(String);
 
         for (let d = 1; d <= totalDays; d++) {
@@ -470,7 +519,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             const activeInClub = allEligibleUsers.filter(u =>
                 normalizedSectionIds.includes(String(u.sectionId)) && isRosterActiveOnDate(u, dDate)
             ).length;
-            const clubHeadcountAvailable = clubDashboardPresentMap[dKey] || 0;
 
             // Same attendance_logs-direct rule as the global Absent row above.
             const absent = (dKey <= todayYMD) ? (row.absentCount || 0) : 0;
@@ -481,9 +529,12 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 ? (row.presentCount || 0) + (row.absentCount || 0)
                 : 0;
 
-            const { countAbove3Months: clubCountAbove3 } = getNetAvailableHeadcount(dKey, dDate, normalizedSectionIds);
+            const { countTotal: clubNetAvailableTotal, countAbove3Months: clubCountAbove3 } =
+                getNetAvailableHeadcount(dKey, dDate, normalizedSectionIds);
 
-            tableData[`${clubName} Headcount available_${dKey}`] = String(clubHeadcountAvailable);
+            // Swapped: "Headcount available" now shows the on-roll roster count (formerly held
+            // by Net Available Headcount Total), matching the global-row swap above.
+            tableData[`${clubName} Headcount available_${dKey}`] = String(clubNetAvailableTotal);
             tableData[`${clubName} absent_${dKey}`] = String(absent);
             tableData[`${clubName} Total Headcount (Present + Absent)_${dKey}`] = String(clubTotalHeadcountPresentAbsent);
             tableData[`${clubName} Net Available Headcount Above 3 Months_${dKey}`] = String(clubCountAbove3);
@@ -741,13 +792,15 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     });
 
     // Headcount available (and per-club Headcount available) for this leading reference
-    // column — dashboardPresentSql/clubDashboardPresentSql above already include
-    // prevMonthLastDateKey in their query range.
-    tableData[`Headcount available_${prevMonthLastDateKey}`] = dashboardPresentMap[prevMonthLastDateKey] || 0;
-
+    // column — dashboardPresentSql above already includes prevMonthLastDateKey in its query
+    // range, and getNetAvailableHeadcount is date-driven so no separate range concern applies.
     const { countTotal: prevMonthNetTotal, countAbove3Months: prevMonthNetAbove3 } =
         getNetAvailableHeadcount(prevMonthLastDateKey, prevMonthLastDateObj);
-    tableData[`Net Available Headcount Total_${prevMonthLastDateKey}`] = String(prevMonthNetTotal);
+
+    // Swapped, matching the daily-loop swap above: "Headcount available" shows the roster
+    // count, "Net Available Headcount Total" shows the attendance-present count.
+    tableData[`Headcount available_${prevMonthLastDateKey}`] = String(prevMonthNetTotal);
+    tableData[`Net Available Headcount Total_${prevMonthLastDateKey}`] = dashboardPresentMap[prevMonthLastDateKey] || 0;
     tableData[`Net Available Headcount Above 3 Months_${prevMonthLastDateKey}`] = String(prevMonthNetAbove3);
 
     // Absent / Total Headcount / Absenteeism % for the leading reference column —
@@ -771,9 +824,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     }
 
     reportingClubs.forEach(club => {
-        const clubHeadcountAvailable = clubDashboardPresentMapByClubId[club.id]?.[prevMonthLastDateKey] || 0;
-        tableData[`${club.name} Headcount available_${prevMonthLastDateKey}`] = String(clubHeadcountAvailable);
-
         let clubSectionIds = [];
         try {
             clubSectionIds = JSON.parse(club.sectionIds || "[]");
@@ -781,8 +831,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             clubSectionIds = [];
         }
         const normalizedClubSectionIds = clubSectionIds.map(String);
-        const { countAbove3Months: clubPrevMonthAbove3 } =
+        const { countTotal: clubPrevMonthNetTotal, countAbove3Months: clubPrevMonthAbove3 } =
             getNetAvailableHeadcount(prevMonthLastDateKey, prevMonthLastDateObj, normalizedClubSectionIds);
+
+        // Swapped, matching the daily club-wise loop above.
+        tableData[`${club.name} Headcount available_${prevMonthLastDateKey}`] = String(clubPrevMonthNetTotal);
 
         // Absent / Total Headcount / Absenteeism % for the leading reference column, scoped to
         // this club's sections.
@@ -985,12 +1038,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Headcount required as per sale plan_${item.dateKey}`] = dashboardRequirementPlan.salesPlan;
 
         // Hiring Plan = requirement - present, where "present" is the same attendance_logs-derived
-        // headcount as the "Headcount available" row above. Shows 0 instead of a misleading number
-        // whenever: there's no requirement row for the month, no attendance data for the day (e.g.
-        // the leading previous-month reference column), or present is 0 (0 attendance minus a
-        // requirement should read as "no data to size a gap from", not "hire the full requirement").
-        // Otherwise capped at 0 so a fully/over-staffed day doesn't show a negative hiring need.
-        const presentRaw = tableData[`Headcount available_${item.dateKey}`];
+        // headcount now held by "Net Available Headcount Total" (post Headcount-available swap).
+        // Shows 0 instead of a misleading number whenever: there's no requirement row for the
+        // month, no attendance data for the day (e.g. the leading previous-month reference
+        // column), or present is 0 (0 attendance minus a requirement should read as "no data to
+        // size a gap from", not "hire the full requirement"). Otherwise capped at 0 so a
+        // fully/over-staffed day doesn't show a negative hiring need.
+        const presentRaw = tableData[`Net Available Headcount Total_${item.dateKey}`];
         const attendanceAvailable = presentRaw !== undefined && presentRaw !== null;
         const requirementAvailable = !!dashboardRequirementPlanEntry;
         const dayPresent = Number(presentRaw) || 0;

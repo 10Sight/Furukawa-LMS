@@ -14,6 +14,18 @@ const VALID_SKILL_LEVELS = ["L1", "L2", "L3", "L4"];
 // layout with no assignments, are left unrestricted.
 const filterSectionsByUserScope = (sections, user) => {
     if (user?.role !== 'CUSTOM') return sections;
+
+    // Access-all bypass permissions: department.controller.js's getAllDepartments/
+    // getHandoverSheetsMonitoring already treat these as full department access, so a user
+    // with one of these sees every department in the dropdown. Without the same bypass here,
+    // picking a department they aren't explicitly assigned to hits getCustomRoleScope's
+    // allowedDepts=[] branch and silently returns [] sections instead of respecting the bypass.
+    const permissions = user?.customRole?.permissions || [];
+    const hasBypass = permissions.includes('dojo:handover_sheet') ||
+        permissions.includes('dojo:sixteenday_monitoring') ||
+        permissions.includes('test_paper:access_all');
+    if (hasBypass) return sections;
+
     const { isFullAccessLayout, allowedDepts, allowedSections } = getCustomRoleScope(user);
     if (allowedDepts.length === 0 && allowedSections.length === 0) {
         return isFullAccessLayout ? sections : [];

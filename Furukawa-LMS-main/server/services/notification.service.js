@@ -2329,6 +2329,11 @@ class NotificationService {
         });
 
         // 9. Fill data rows
+        // rowIndexMap records each row's number as it's added, keyed the same way tableData
+        // cells are keyed (dataKey || label) — needed below to wire live Excel formulas between
+        // rows. These numbers are relative to *before* the title row is inserted in step 10,
+        // which shifts every existing row down by one; corrected right after that insertion.
+        const rowIndexMap = {};
         rows.forEach(item => {
             if (item.type === 'spacer') {
                 worksheet.addRow({});
@@ -2344,6 +2349,7 @@ class NotificationService {
             });
 
             const row = worksheet.addRow(rowData);
+            rowIndexMap[rowKey] = row.number;
             applyRowStyles(row, item.bg);
             if (item.bold) row.font = { bold: true };
         });
@@ -2354,6 +2360,108 @@ class NotificationService {
         const titleRow = worksheet.getRow(1);
         titleRow.font = { bold: true, size: 14, color: { argb: 'FFFF0000' } };
         titleRow.alignment = { horizontal: 'center' };
+
+        // 11. Live Excel formulas for the rows headcountData.service.js derives from other
+        // rows, so opening the sheet in Excel shows the dynamic formula rather than just a
+        // frozen number — mirroring that JS computation exactly, column by column, rather than
+        // recomputing it independently. Formulas are only added for rows whose backend source
+        // value is itself another visible cell in this sheet: Attrition % Daily/Cumulative and
+        // Weekly Attrition % are deliberately left as plain values, because their denominator
+        // (a carried-forward attendance-upload count, `lastKnownTotal` in headcountData.service.js)
+        // isn't any single exported row and can't be reproduced by a cell-reference formula
+        // without silently diverging from the cached value on recalculation.
+        Object.keys(rowIndexMap).forEach(key => { rowIndexMap[key] += 1; });
+
+        const colLetter = (colNumber) => {
+            let letters = '';
+            let n = colNumber;
+            while (n > 0) {
+                const rem = (n - 1) % 26;
+                letters = String.fromCharCode(65 + rem) + letters;
+                n = Math.floor((n - 1) / 26);
+            }
+            return letters;
+        };
+
+        // Keeps the value already computed by headcountData.service.js as the formula's cached
+        // `result`, so the cell still displays correctly before Excel recalculates it.
+        const setFormula = (rowNumber, colNumber, formula) => {
+            if (!rowNumber) return;
+            const cell = worksheet.getRow(rowNumber).getCell(colNumber);
+            cell.value = { formula, result: cell.value };
+        };
+
+        const prodReqRow = rowIndexMap["Headcount required as per production plan"];
+        const netAvailTotalRow = rowIndexMap["Net Available Headcount Total"];
+        const hiringPlanRow = rowIndexMap["Hiring Plan"];
+        const dailyLeftRow = rowIndexMap["Left in nos (Daily)"];
+        const separatedCumRow = rowIndexMap["Separated (Cumulative)"];
+        const actualSepRow = rowIndexMap["Actual Separations (Cumulative)"];
+        const expectedSepRow = rowIndexMap["Expected Separations (Cumulative)"];
+        const gapRow = rowIndexMap["Gap"];
+        const headcountAvailRow = rowIndexMap["Headcount available"];
+        const absentRow = rowIndexMap["Absent"];
+        const absenteeismRow = rowIndexMap["Absenteeism %"];
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const colNumber = day + 2;
+            const L = colLetter(colNumber);
+            const prevL = colLetter(colNumber - 1);
+
+            // Hiring Plan = requirement - present, floored at 0 — but forced to exactly 0
+            // whenever "Net Available Headcount Total" is blank/0 (matching headcountData.service.js's
+            // dayPresent > 0 guard), rather than showing the full requirement.
+            if (hiringPlanRow && prodReqRow && netAvailTotalRow) {
+                setFormula(hiringPlanRow, colNumber, `IF(N(${L}${netAvailTotalRow})=0,0,MAX(0,${L}${prodReqRow}-${L}${netAvailTotalRow}))`);
+            }
+
+            if (separatedCumRow && dailyLeftRow) {
+                const formula = day === 1
+                    ? `${L}${dailyLeftRow}`
+                    : `${prevL}${separatedCumRow}+${L}${dailyLeftRow}`;
+                setFormula(separatedCumRow, colNumber, formula);
+            }
+
+            if (actualSepRow && separatedCumRow) {
+                setFormula(actualSepRow, colNumber, `${L}${separatedCumRow}`);
+            }
+
+            if (gapRow && actualSepRow && expectedSepRow) {
+                setFormula(gapRow, colNumber, `${L}${actualSepRow}-${L}${expectedSepRow}`);
+            }
+
+            if (absenteeismRow && headcountAvailRow && absentRow) {
+                setFormula(absenteeismRow, colNumber, `IF(${L}${headcountAvailRow}>0,(${L}${absentRow}/${L}${headcountAvailRow})*100,0)`);
+            }
+        }
+
+        // Club-specific Absenteeism %
+        activeClubs.forEach(club => {
+            const clubHeadcountAvailRow = rowIndexMap[`${club.name} Headcount available`];
+            const clubAbsentRow = rowIndexMap[`${club.name} absent`];
+            const clubAbsenteeismRow = rowIndexMap[`${club.name} Absenteeism %`];
+            if (!clubHeadcountAvailRow || !clubAbsentRow || !clubAbsenteeismRow) return;
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const colNumber = day + 2;
+                const L = colLetter(colNumber);
+                setFormula(clubAbsenteeismRow, colNumber, `IF(${L}${clubHeadcountAvailRow}>0,(${L}${clubAbsentRow}/${L}${clubHeadcountAvailRow})*100,0)`);
+            }
+        });
+
+        // Shift-wise Attendance % (Total + each individual shift)
+        ['Total', 'A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'].forEach(shiftSuffix => {
+            const availRow = rowIndexMap[`Available_${shiftSuffix}`];
+            const assignedRow = rowIndexMap[`Assigned_${shiftSuffix}`];
+            const attendanceRow = rowIndexMap[`Attendance_${shiftSuffix}`];
+            if (!availRow || !assignedRow || !attendanceRow) return;
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const colNumber = day + 2;
+                const L = colLetter(colNumber);
+                setFormula(attendanceRow, colNumber, `IF(${L}${availRow}>0,(${L}${assignedRow}/${L}${availRow})*100,0)`);
+            }
+        });
     }
 }
 

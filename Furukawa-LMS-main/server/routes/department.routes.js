@@ -74,7 +74,20 @@ router.get("/progress/all", verifyJWT, authorizeRoles("isAdmin", "isTrainer", "S
 
 // General routes
 // General routes
-router.get("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.DEPARTMENT_READ, SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET]), getAllDepartments);
+// Also allowed for custom roles that only need the department dropdown for their own
+// workflows (e.g. filtering the DOJO evaluation test operators list); getAllDepartments
+// itself scopes the returned rows to the requester's assigned departments for these roles.
+router.get("/", verifyJWT, authorizeAnyPermission([
+  SYSTEM_PERMISSIONS.DEPARTMENT_READ,
+  SYSTEM_PERMISSIONS.DOJO_HANDOVER_SHEET,
+  SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
+  SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW,
+  SYSTEM_PERMISSIONS.DOJO_HIRING_READ,
+  SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
+  SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE,
+  SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
+  SYSTEM_PERMISSIONS.EVALUATION_READ
+]), getAllDepartments);
 router.get("/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentById);
 router.get("/:id/trainees", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentTrainees);
 router.get("/:id/progress", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.DEPARTMENT_READ]), getDepartmentProgress);

@@ -87,8 +87,19 @@ const checkUserDeletePrivilege = async (req, res, next) => {
 // Create user (admin/super-admin only) - sends welcome email with credentials
 router.post("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_CREATE, SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, SYSTEM_PERMISSIONS.MENTOR_CREATE]), checkUserManagementPrivilege, createUser);
 
-// Get all users (admin/super-admin only)
-router.get("/", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllUsers);
+// Get all users - full list for admin/super-admin, scoped to the requester's
+// assigned departments/sections (via applyUserScopeRestriction in getAllUsers) for
+// custom roles that only need to look up users within their own workflows.
+router.get("/", verifyJWT, authorizeAnyPermission([
+  SYSTEM_PERMISSIONS.USER_READ,
+  SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_TAKE,
+  SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_VIEW,
+  SYSTEM_PERMISSIONS.DOJO_HIRING_READ,
+  SYSTEM_PERMISSIONS.MULTI_SKILLING_MANAGE,
+  SYSTEM_PERMISSIONS.SKILL_UPGRADATION_MANAGE,
+  SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
+  SYSTEM_PERMISSIONS.EVALUATION_READ
+]), getAllUsers);
 
 // Get all instructors (admin/super-admin only)
 router.get("/instructors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllInstructors);

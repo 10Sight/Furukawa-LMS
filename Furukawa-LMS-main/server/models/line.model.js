@@ -178,6 +178,20 @@ class Line {
                     BEGIN
                         ALTER TABLE [lines] ADD [users] NVARCHAR(MAX) DEFAULT '[]';
                     END
+
+                    -- Backfill for databases where [lines] was created before these indexes
+                    -- existed (they were previously only added inside the CREATE TABLE branch
+                    -- above). Without idx_section, the correlated EXISTS join in
+                    -- section.model.js's sectionCountSql falls back to a full scan of [lines]
+                    -- per section per matching user, making section list/detail fetches crawl.
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_section' AND object_id = OBJECT_ID('lines'))
+                    BEGIN
+                        CREATE INDEX idx_section ON [lines](sectionId);
+                    END
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_department' AND object_id = OBJECT_ID('lines'))
+                    BEGIN
+                        CREATE INDEX idx_department ON [lines](department);
+                    END
                 `);
                 logger.info("Line table initialized successfully");
 

@@ -174,6 +174,23 @@ class Machine {
 
             await executeQuery(createMachinesInfo);
             await executeQuery(createAssignmentsTable);
+
+            // Backfill for databases where [machines] was created before these indexes existed
+            // (they were previously only added inside the CREATE TABLE branch above). Without
+            // idx_line, the correlated EXISTS join in section.model.js's sectionCountSql falls
+            // back to a full scan of machines per section per matching user, making section
+            // list/detail fetches crawl.
+            await this.asyncExecute(`
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_line' AND object_id = OBJECT_ID('machines'))
+                BEGIN
+                    CREATE INDEX idx_line ON machines(line);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_subsection' AND object_id = OBJECT_ID('machines'))
+                BEGIN
+                    CREATE INDEX idx_subsection ON machines(subSectionId);
+                END
+            `);
+
             logger.info("Machine tables initialized successfully");
         } catch (error) {
             logger.error("Failed to initialize Machine tables", error);

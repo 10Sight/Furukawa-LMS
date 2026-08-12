@@ -170,7 +170,6 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
     const canEditSaved = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_saved');
     const canEditSection = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:edit_section')) && !viewOnly;
     const canDeleteRow = (isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:delete_row')) && !viewOnly;
-    const canSelectPastDates = isAdmin || authUser?.customRole?.permissions?.includes('handover_sheet:select_past_date');
 
     const [localSectionId, setLocalSectionId] = useState(sectionId);
     useEffect(() => {
@@ -857,7 +856,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                         onChange={(e) => setDate(e.target.value)}
                                         className="w-40 h-8"
                                         disabled={viewOnly}
-                                        min={canSelectPastDates ? undefined : new Date().toISOString().split('T')[0]}
+                                        min={isNewSheet ? new Date().toISOString().split('T')[0] : undefined}
                                         max={new Date().toISOString().split('T')[0]}
                                     />
                                     {propShift && (

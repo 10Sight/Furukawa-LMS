@@ -342,8 +342,9 @@ const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, 
         const currentReqSkill = formData[`rec_${recIndex}_ReqSkill`];
         if (currentProcess && !currentReqSkill && machines.length > 0) {
             const machine = machines.find(m => m.name === currentProcess);
-            if (machine?.minimumRequiredLevel) {
-                onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+            const machineLevel = machine?.minimumRequiredLevel || machine?.subSectionMinimumRequiredLevel;
+            if (machineLevel) {
+                onInputChange(recIndex, 'ReqSkill', machineLevel);
             }
         }
     }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
@@ -357,7 +358,7 @@ const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, 
                 onInputChange(recIndex, 'Process', val);
                 // Auto-set ReqSkill from the selected machine's minimumRequiredLevel
                 const selectedMachine = machines.find(m => m.name === val);
-                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || "");
+                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || selectedMachine?.subSectionMinimumRequiredLevel || "");
             }}
             disabled={!subSectionId}
         >
@@ -388,8 +389,9 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
                 // If it's a exact match for machine name but not the new format, upgrade it
                 if (currentValue === machine.name && currentValue !== newDisplayName) {
                     onInputChange(recIndex, 'Process', newDisplayName);
-                    if (machine.minimumRequiredLevel) {
-                        onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+                    const machineLevel = machine.minimumRequiredLevel || machine.subSectionMinimumRequiredLevel;
+                    if (machineLevel) {
+                        onInputChange(recIndex, 'ReqSkill', machineLevel);
                     }
                 }
             }
@@ -405,8 +407,9 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
                 const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
                 return displayName === currentProcess || m.name === currentProcess;
             });
-            if (machine?.minimumRequiredLevel) {
-                onInputChange(recIndex, 'ReqSkill', machine.minimumRequiredLevel);
+            const machineLevel = machine?.minimumRequiredLevel || machine?.subSectionMinimumRequiredLevel;
+            if (machineLevel) {
+                onInputChange(recIndex, 'ReqSkill', machineLevel);
             }
         }
     }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
@@ -423,7 +426,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
                     const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
                     return displayName === val || m.name === val;
                 });
-                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || "");
+                onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || selectedMachine?.subSectionMinimumRequiredLevel || "");
             }}
             disabled={disabled || !lineId}
         >

@@ -524,6 +524,31 @@ const getLowerGraphQueryParams = (filter, extra = {}) => ({
     ...extra,
 });
 
+
+// PERFORMANCE-ONLY request reuse key.
+// masterAttendanceMode/scope/_holidayRevision do not change employee/data eligibility.
+// This key is used only to decide whether a graph can reuse the already-loaded full
+// dashboard response instead of firing another identical dashboard request.
+const getDashboardReuseKey = (params = {}) => {
+    const normalize = (value) => {
+        if (value === undefined || value === null || value === "") return "ALL";
+        const text = String(value).trim();
+        if (!text || text.toUpperCase() === "ALL") return "ALL";
+        return text;
+    };
+
+    return JSON.stringify({
+        department: normalize(params.department),
+        section: normalize(params.section),
+        line: normalize(params.line),
+        startDate: params.startDate || "",
+        endDate: params.endDate || "",
+        shift: normalize(params.shift),
+        stateFilter: normalize(params.stateFilter),
+        districtFilter: normalize(params.districtFilter),
+    });
+};
+
 const ChartLoader = () => (
     <div className="absolute inset-0 flex items-center justify-center bg-white/75 rounded-xl z-10">
         <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
@@ -1568,6 +1593,80 @@ const GraphFilterBar = ({
     );
 };
 
+
+
+const DateRangeOnlyFilter = ({ value, onChange }) => {
+    const [open, setOpen] = useState(false);
+
+    const handleSelect = (range) => {
+        if (!range?.from) {
+            onChange(undefined);
+            return;
+        }
+
+        onChange({
+            from: range.from,
+            to: range.to || undefined,
+        });
+
+        if (range.to) {
+            setOpen(false);
+        }
+    };
+
+    return (
+        <div className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 p-1">
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className={`h-8 justify-start text-left font-normal px-2 ${!value?.from ? "text-muted-foreground" : "text-slate-700"}`}
+                    >
+                        <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                        {value?.from ? (
+                            value.to ? (
+                                <span className="text-xs">
+                                    {value.from.toLocaleDateString()} – {value.to.toLocaleDateString()}
+                                </span>
+                            ) : (
+                                <span className="text-xs">
+                                    {value.from.toLocaleDateString()}
+                                </span>
+                            )
+                        ) : (
+                            <span className="text-xs">Date range</span>
+                        )}
+                    </Button>
+                </PopoverTrigger>
+
+                <PopoverContent className="w-auto p-0" align="end">
+                    <CalendarComponent
+                        initialFocus
+                        mode="range"
+                        defaultMonth={value?.from}
+                        selected={value}
+                        onSelect={handleSelect}
+                        numberOfMonths={2}
+                    />
+                </PopoverContent>
+            </Popover>
+
+            {value?.from && (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                    onClick={() => onChange(undefined)}
+                    title="Reset date range"
+                >
+                    <RotateCw className="w-4 h-4" />
+                </Button>
+            )}
+        </div>
+    );
+};
 
 const splitAxisLabelIntoLines = (value = "", maxCharsPerLine = 11, maxLines = 3) => {
     const words = String(value || "")
@@ -2797,11 +2896,19 @@ const TenureFullWidthChart = ({
     );
 };
 
-const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = false, holidayRevision = 0) => {
+const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = false, holidayRevision = 0, enabled = true) => {
     const [tenureStats, setTenureStats] = useState(null);
     const [tenureLoading, setTenureLoading] = useState(false);
 
     useEffect(() => {
+        // Avoid competing with the initial full dashboard request. The tenure request
+        // starts immediately after the base dashboard request settles, so SQL Server
+        // is not hit by both heavy endpoints at the same instant.
+        if (!enabled) {
+            setTenureLoading(false);
+            return;
+        }
+
         setTenureLoading(true);
         setTenureStats(null);
 
@@ -2859,6 +2966,7 @@ const useTenureStats = (filter, customTenureRange, shouldUseCustomTenureRange = 
         customTenureRange?.to,
         filter.shift,
         holidayRevision,
+        enabled,
     ]);
 
     return { tenureStats, tenureLoading };
@@ -3151,11 +3259,9 @@ const DashboardHome = () => {
         contractorPrefix: "percentage",
         skill: "percentage",
         gender: "percentage",
-        leaderExpert: "percentage",
         state: "percentage",
         district: "percentage",
         employeeGender: "percentage",
-        designation: "percentage",
         education: "percentage",
     });
 
@@ -3167,14 +3273,12 @@ const DashboardHome = () => {
 
     const [pieChartViews, setPieChartViews] = useState({
         // Middle charts now also support Pie/Bar toggle.
-        // Skill and Leader/Expert default to bar because pie becomes hard to read when categories are many.
+        // Skill defaults to bar because pie becomes hard to read when categories are many.
         skill: "bar",
         gender: "bar",
-        leaderExpert: "bar",
         state: "bar",
         district: "bar",
         employeeGender: "bar",
-        designation: "bar",
     });
 
     const setPieChartView = (key, value) => {
@@ -3187,15 +3291,15 @@ const DashboardHome = () => {
     const [contractorPrefixFilter, setContractorPrefixFilter] = useState(defaultFilter);
     const [skillFilter, setSkillFilter] = useState(defaultFilter);
     const [genderFilter, setGenderFilter] = useState(defaultFilter);
-    const [leaderExpertFilter, setLeaderExpertFilter] = useState(defaultFilter);
     const [stateFilter, setStateFilter] = useState(defaultFilter);
     const [districtFilter, setDistrictFilter] = useState(defaultFilter);
     const [employeeGenderFilter, setEmployeeGenderFilter] = useState(defaultFilter);
-    const [designationFilter, setDesignationFilter] = useState(defaultFilter);
     const [educationFilter, setEducationFilter] = useState(defaultFilter);
     const [showEmployeeMasterGraphs, setShowEmployeeMasterGraphs] = useState(true);
     const [showRejoiningTrend, setShowRejoiningTrend] = useState(false);
-    const [rejoiningVisibleDays, setRejoiningVisibleDays] = useState(15);
+    const [rejoiningVisibleDays, setRejoiningVisibleDays] = useState(30);
+    const [rejoiningDateRange, setRejoiningDateRange] = useState(undefined);
+    const [handoverDateRange, setHandoverDateRange] = useState(undefined);
 
     const [selectedMasterState, setSelectedMasterState] = useState(["ALL"]);
     const [selectedMasterDistrict, setSelectedMasterDistrict] = useState(["ALL"]);
@@ -3218,7 +3322,6 @@ const DashboardHome = () => {
 
         setDistrictFilter(nextStateFilter);
         setEmployeeGenderFilter(nextStateFilter);
-        setDesignationFilter(nextStateFilter);
     }, [
         serializeMultiValue(stateFilter.department),
         serializeMultiValue(stateFilter.section),
@@ -3290,112 +3393,190 @@ const DashboardHome = () => {
         });
     }, [manpowerFilter]);
 
+    // INITIAL LOAD PERFORMANCE:
+    // One full dashboard request supplies every graph while filters are equivalent.
+    // A graph-specific request starts only after that graph's effective filters differ.
+    // No graph condition is changed; only duplicate API calls are avoided.
+    const baseDashboardParams = getDashboardQueryParams(manpowerFilter, {});
+    const baseDashboardReuseKey = getDashboardReuseKey(baseDashboardParams);
+
     const {
         data: manpowerStats,
         isLoading: manpowerLoading,
         isFetching: manpowerFetching,
-    } = useGetDashboardStatsQuery(getDashboardQueryParams(manpowerFilter, {}));
+    } = useGetDashboardStatsQuery(baseDashboardParams);
 
+    const rejoiningEffectiveFilter = {
+        ...manpowerFilter,
+        dateRange: rejoiningDateRange,
+    };
+    const rejoiningQueryParams = getDashboardQueryParams(rejoiningEffectiveFilter, {
+        scope: "manpower",
+    });
+    const rejoiningUsesBase = getDashboardReuseKey(rejoiningQueryParams) === baseDashboardReuseKey;
     const {
-        data: attritionStats,
-        isLoading: attritionLoading,
-        isFetching: attritionFetching,
-    } = useGetDashboardStatsQuery(getDashboardQueryParams(attritionFilter, { shift: "ALL" }));
+        data: rejoiningScopedStats,
+        isLoading: rejoiningScopedLoading,
+        isFetching: rejoiningScopedFetching,
+    } = useGetDashboardStatsQuery(rejoiningQueryParams, { skip: rejoiningUsesBase });
+    const rejoiningStats = rejoiningUsesBase ? manpowerStats : rejoiningScopedStats;
+    const rejoiningLoading = rejoiningUsesBase ? manpowerLoading : rejoiningScopedLoading;
+    const rejoiningFetching = rejoiningUsesBase ? manpowerFetching : rejoiningScopedFetching;
 
+    const handoverEffectiveFilter = {
+        ...manpowerFilter,
+        dateRange: handoverDateRange,
+    };
+    const handoverQueryParams = getDashboardQueryParams(handoverEffectiveFilter, {
+        scope: "manpower",
+    });
+    const handoverUsesBase = getDashboardReuseKey(handoverQueryParams) === baseDashboardReuseKey;
     const {
-        data: absenteeismStats,
-        isLoading: absenteeismLoading,
-        isFetching: absenteeismFetching,
+        data: handoverScopedStats,
+        isLoading: handoverScopedLoading,
+        isFetching: handoverScopedFetching,
+    } = useGetDashboardStatsQuery(handoverQueryParams, { skip: handoverUsesBase });
+    const handoverStats = handoverUsesBase ? manpowerStats : handoverScopedStats;
+    const handoverLoading = handoverUsesBase ? manpowerLoading : handoverScopedLoading;
+    const handoverFetching = handoverUsesBase ? manpowerFetching : handoverScopedFetching;
+
+    const attritionQueryParams = getDashboardQueryParams(attritionFilter, {
+        shift: "ALL",
+        scope: "attrition",
+    });
+    const attritionUsesBase = getDashboardReuseKey(attritionQueryParams) === baseDashboardReuseKey;
+    const {
+        data: attritionScopedStats,
+        isLoading: attritionScopedLoading,
+        isFetching: attritionScopedFetching,
+    } = useGetDashboardStatsQuery(attritionQueryParams, { skip: attritionUsesBase });
+    const attritionStats = attritionUsesBase ? manpowerStats : attritionScopedStats;
+    const attritionLoading = attritionUsesBase ? manpowerLoading : attritionScopedLoading;
+    const attritionFetching = attritionUsesBase ? manpowerFetching : attritionScopedFetching;
+
+    const absenteeismQueryParams = getDashboardQueryParams(absenteeismFilter, {
+        shift: "ALL",
+        scope: "absenteeism",
+    });
+    const absenteeismUsesBase = getDashboardReuseKey(absenteeismQueryParams) === baseDashboardReuseKey;
+    const {
+        data: absenteeismScopedStats,
+        isLoading: absenteeismScopedLoading,
+        isFetching: absenteeismScopedFetching,
+    } = useGetDashboardStatsQuery(absenteeismQueryParams, { skip: absenteeismUsesBase });
+    const absenteeismStats = absenteeismUsesBase ? manpowerStats : absenteeismScopedStats;
+    const absenteeismLoading = absenteeismUsesBase ? manpowerLoading : absenteeismScopedLoading;
+    const absenteeismFetching = absenteeismUsesBase ? manpowerFetching : absenteeismScopedFetching;
+
+    const contractorPrefixQueryParams = getLowerDashboardQueryParams(contractorPrefixFilter, {
+        scope: "contractor",
+    });
+    const contractorPrefixUsesBase = getDashboardReuseKey(contractorPrefixQueryParams) === baseDashboardReuseKey;
+    const {
+        data: contractorPrefixScopedStats,
+        isLoading: contractorPrefixScopedLoading,
+        isFetching: contractorPrefixScopedFetching,
+    } = useGetDashboardStatsQuery(contractorPrefixQueryParams, { skip: contractorPrefixUsesBase });
+    const contractorPrefixStats = contractorPrefixUsesBase ? manpowerStats : contractorPrefixScopedStats;
+    const contractorPrefixLoading = contractorPrefixUsesBase ? manpowerLoading : contractorPrefixScopedLoading;
+    const contractorPrefixFetching = contractorPrefixUsesBase ? manpowerFetching : contractorPrefixScopedFetching;
+
+    const educationQueryParams = getLowerDashboardQueryParams(educationFilter, {
+        scope: "education",
+    });
+    const educationUsesBase = getDashboardReuseKey(educationQueryParams) === baseDashboardReuseKey;
+    const {
+        data: educationScopedStats,
+        isLoading: educationScopedLoading,
+        isFetching: educationScopedFetching,
+    } = useGetDashboardStatsQuery(educationQueryParams, { skip: educationUsesBase });
+    const educationStats = educationUsesBase ? manpowerStats : educationScopedStats;
+    const educationLoading = educationUsesBase ? manpowerLoading : educationScopedLoading;
+    const educationFetching = educationUsesBase ? manpowerFetching : educationScopedFetching;
+
+    const skillQueryParams = getLowerDashboardQueryParams(skillFilter, {
+        masterAttendanceMode: "YES",
+        scope: "skill",
+    });
+    const skillUsesBase = getDashboardReuseKey(skillQueryParams) === baseDashboardReuseKey;
+    const {
+        data: skillScopedStats,
+        isLoading: skillScopedLoading,
+        isFetching: skillScopedFetching,
+    } = useGetDashboardStatsQuery(skillQueryParams, { skip: skillUsesBase });
+    const skillStats = skillUsesBase ? manpowerStats : skillScopedStats;
+    const skillLoading = skillUsesBase ? manpowerLoading : skillScopedLoading;
+    const skillFetching = skillUsesBase ? manpowerFetching : skillScopedFetching;
+
+    const genderQueryParams = getLowerDashboardQueryParams(genderFilter, {
+        masterAttendanceMode: "YES",
+        scope: "gender",
+    });
+    const genderUsesBase = getDashboardReuseKey(genderQueryParams) === baseDashboardReuseKey;
+    const {
+        data: genderScopedStats,
+        isLoading: genderScopedLoading,
+        isFetching: genderScopedFetching,
+    } = useGetDashboardStatsQuery(genderQueryParams, { skip: genderUsesBase });
+    const genderStats = genderUsesBase ? manpowerStats : genderScopedStats;
+    const genderLoading = genderUsesBase ? manpowerLoading : genderScopedLoading;
+    const genderFetching = genderUsesBase ? manpowerFetching : genderScopedFetching;
+
+    const stateQueryParams = getLowerDashboardQueryParams(stateFilter, {
+        stateFilter: serializeMultiValue(selectedMasterState),
+        masterAttendanceMode: "YES",
+        scope: "state",
+    });
+    const stateUsesBase = getDashboardReuseKey(stateQueryParams) === baseDashboardReuseKey;
+    const {
+        data: stateScopedStats,
+        isLoading: stateScopedLoading,
+        isFetching: stateScopedFetching,
     } = useGetDashboardStatsQuery(
-        getDashboardQueryParams(absenteeismFilter, { shift: "ALL" })
+        stateQueryParams,
+        { skip: !showEmployeeMasterGraphs || stateUsesBase }
     );
+    const stateStats = stateUsesBase ? manpowerStats : stateScopedStats;
+    const stateLoading = stateUsesBase ? manpowerLoading : stateScopedLoading;
+    const stateFetching = stateUsesBase ? manpowerFetching : stateScopedFetching;
 
+    const districtQueryParams = getLowerDashboardQueryParams(getStateLinkedFilter(districtFilter), {
+        stateFilter: serializeMultiValue(selectedMasterState),
+        districtFilter: serializeMultiValue(selectedMasterDistrict),
+        masterAttendanceMode: "YES",
+        scope: "district",
+    });
+    const districtUsesBase = getDashboardReuseKey(districtQueryParams) === baseDashboardReuseKey;
     const {
-        data: contractorPrefixStats,
-        isLoading: contractorPrefixLoading,
-        isFetching: contractorPrefixFetching,
-    } = useGetDashboardStatsQuery(getLowerDashboardQueryParams(contractorPrefixFilter, {}));
-
-    const {
-        data: educationStats,
-        isLoading: educationLoading,
-        isFetching: educationFetching,
-    } = useGetDashboardStatsQuery(getLowerDashboardQueryParams(educationFilter, {}));
-
-    const {
-        data: skillStats,
-        isLoading: skillLoading,
-        isFetching: skillFetching,
+        data: districtScopedStats,
+        isLoading: districtScopedLoading,
+        isFetching: districtScopedFetching,
     } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(skillFilter, { masterAttendanceMode: "YES" })
+        districtQueryParams,
+        { skip: !showEmployeeMasterGraphs || districtUsesBase }
     );
+    const districtStats = districtUsesBase ? manpowerStats : districtScopedStats;
+    const districtLoading = districtUsesBase ? manpowerLoading : districtScopedLoading;
+    const districtFetching = districtUsesBase ? manpowerFetching : districtScopedFetching;
 
+    const employeeGenderQueryParams = getLowerDashboardQueryParams(getStateLinkedFilter(employeeGenderFilter), {
+        stateFilter: serializeMultiValue(selectedMasterState),
+        districtFilter: serializeMultiValue(selectedMasterDistrict),
+        masterAttendanceMode: "YES",
+        scope: "employeegender",
+    });
+    const employeeGenderUsesBase = getDashboardReuseKey(employeeGenderQueryParams) === baseDashboardReuseKey;
     const {
-        data: genderStats,
-        isLoading: genderLoading,
-        isFetching: genderFetching,
+        data: employeeGenderScopedStats,
+        isLoading: employeeGenderScopedLoading,
+        isFetching: employeeGenderScopedFetching,
     } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(genderFilter, { masterAttendanceMode: "YES" })
+        employeeGenderQueryParams,
+        { skip: !showEmployeeMasterGraphs || employeeGenderUsesBase }
     );
-
-    const {
-        data: leaderExpertStats,
-        isLoading: leaderExpertLoading,
-        isFetching: leaderExpertFetching,
-    } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(leaderExpertFilter, { masterAttendanceMode: "YES" })
-    );
-
-    const {
-        data: stateStats,
-        isLoading: stateLoading,
-        isFetching: stateFetching,
-    } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(stateFilter, {
-            stateFilter: serializeMultiValue(selectedMasterState),
-            masterAttendanceMode: "YES",
-        }),
-        { skip: !showEmployeeMasterGraphs }
-    );
-
-    const {
-        data: districtStats,
-        isLoading: districtLoading,
-        isFetching: districtFetching,
-    } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(getStateLinkedFilter(districtFilter), {
-            stateFilter: serializeMultiValue(selectedMasterState),
-            districtFilter: serializeMultiValue(selectedMasterDistrict),
-            masterAttendanceMode: "YES",
-        }),
-        { skip: !showEmployeeMasterGraphs }
-    );
-
-    const {
-        data: employeeGenderStats,
-        isLoading: employeeGenderLoading,
-        isFetching: employeeGenderFetching,
-    } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(getStateLinkedFilter(employeeGenderFilter), {
-            stateFilter: serializeMultiValue(selectedMasterState),
-            districtFilter: serializeMultiValue(selectedMasterDistrict),
-            masterAttendanceMode: "YES",
-        }),
-        { skip: !showEmployeeMasterGraphs }
-    );
-
-    const {
-        data: designationStats,
-        isLoading: designationLoading,
-        isFetching: designationFetching,
-    } = useGetDashboardStatsQuery(
-        getLowerDashboardQueryParams(getStateLinkedFilter(designationFilter), {
-            stateFilter: serializeMultiValue(selectedMasterState),
-            districtFilter: serializeMultiValue(selectedMasterDistrict),
-            masterAttendanceMode: "YES",
-        }),
-        { skip: !showEmployeeMasterGraphs }
-    );
+    const employeeGenderStats = employeeGenderUsesBase ? manpowerStats : employeeGenderScopedStats;
+    const employeeGenderLoading = employeeGenderUsesBase ? manpowerLoading : employeeGenderScopedLoading;
+    const employeeGenderFetching = employeeGenderUsesBase ? manpowerFetching : employeeGenderScopedFetching;
 
     const shouldUseCustomTenureRange =
         attendanceTenureBucket === "CUSTOM" ||
@@ -3406,7 +3587,8 @@ const DashboardHome = () => {
         tenureFilter,
         customTenureRange,
         shouldUseCustomTenureRange,
-        holidayRevision
+        holidayRevision,
+        !manpowerLoading && !manpowerFetching
     );
 
     const normalizeTopGraphRange = (data = [], graphFilter = defaultFilter) => {
@@ -3423,23 +3605,32 @@ const DashboardHome = () => {
     };
 
     const manpowerData = normalizeTopGraphRange(manpowerStats?.data?.manpowerData || [], manpowerFilter);
-    const rejoiningData = normalizeTopGraphRange(manpowerStats?.data?.rejoiningData || [], manpowerFilter);
-    const rejoiningChartData = rejoiningData.slice(-rejoiningVisibleDays);
+    const rejoiningSource =
+        rejoiningStats?.data?.rejoiningData
+        ?? rejoiningStats?.rejoiningData
+        ?? rejoiningStats?.data?.data?.rejoiningData
+        ?? [];
+    const rejoiningData = normalizeTopGraphRange(rejoiningSource, rejoiningEffectiveFilter);
+    const rejoiningChartData = rejoiningDateRange?.from
+        ? rejoiningData
+        : rejoiningData.slice(-rejoiningVisibleDays);
+    const handoverSource =
+        handoverStats?.data?.handoverData
+        ?? handoverStats?.handoverData
+        ?? handoverStats?.data?.data?.handoverData
+        ?? [];
+    const handoverData = normalizeTopGraphRange(handoverSource, handoverEffectiveFilter);
     const attritionData = normalizeTopGraphRange(attritionStats?.data?.attritionData || [], attritionFilter);
     const absenteeismData = normalizeTopGraphRange(absenteeismStats?.data?.absenteeismData || [], absenteeismFilter);
 
     const skillPieData = normalizeSkillLevelChartData(skillStats?.data?.pieCharts?.skillLevels || []);
     const genderPieData = genderStats?.data?.pieCharts?.gender || [];
-    const leaderExpertPieData = leaderExpertStats?.data?.pieCharts?.leaderExpert || [];
-    const leaderExpertTotalEmployees =
-        leaderExpertStats?.data?.pieCharts?.leaderExpertTotalEmployees || 0;
     const contractorPrefixData =
         contractorPrefixStats?.data?.pieCharts?.contractorPrefix || [];
     const educationData = educationStats?.data?.pieCharts?.education || [];
     const statePieData = stateStats?.data?.pieCharts?.state || [];
     const districtPieData = districtStats?.data?.pieCharts?.district || [];
     const employeeGenderPieData = employeeGenderStats?.data?.pieCharts?.gender || [];
-    const designationPieData = designationStats?.data?.pieCharts?.designation || [];
 
     const stateOptions = employeeGenderStats?.data?.pieCharts?.stateOptions
         || stateStats?.data?.pieCharts?.stateOptions
@@ -3451,10 +3642,8 @@ const DashboardHome = () => {
 
     const SKILL_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
     const GENDER_COLORS = ['#0ea5e9', '#ec4899', '#64748b']; // Male = blue, Female = pink
-    const LEADER_EXPERT_COLORS = ['#2563eb', '#f59e0b'];
     const STATE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#64748b'];
     const DISTRICT_COLORS = ['#0f766e', '#7c3aed', '#dc2626', '#0284c7', '#ca8a04', '#059669', '#db2777', '#475569', '#f97316'];
-    const DESIGNATION_COLORS = ['#475569', '#2563eb', '#9333ea', '#ea580c', '#16a34a', '#0891b2', '#be123c', '#4f46e5', '#ca8a04'];
 
     const buildTenureData = (
         stats,
@@ -3778,7 +3967,7 @@ const DashboardHome = () => {
                             ) : (
                                 <Eye className="w-4 h-4" />
                             )}
-                            {showRejoiningTrend ? "Hide Rejoining Trend" : "Show Rejoining Trend"}
+                            {showRejoiningTrend ? "Hide Rejoining & Handover Trends" : "Show Rejoining & Handover Trends"}
                         </Button>
 
                         {showRejoiningTrend && (
@@ -3793,31 +3982,41 @@ const DashboardHome = () => {
                                         </p>
                                     </div>
 
-                                    <div className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 p-1">
-                                        {[10, 15].map(days => (
-                                            <Button
-                                                key={days}
-                                                type="button"
-                                                size="sm"
-                                                variant={rejoiningVisibleDays === days ? "default" : "ghost"}
-                                                className={`h-8 px-3 text-sm ${rejoiningVisibleDays === days
-                                                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                                                    : "text-slate-600"
-                                                }`}
-                                                onClick={() => setRejoiningVisibleDays(days)}
-                                            >
-                                                Last {days} Days
-                                            </Button>
-                                        ))}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <DateRangeOnlyFilter
+                                            value={rejoiningDateRange}
+                                            onChange={setRejoiningDateRange}
+                                        />
+
+                                        <div className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 p-1">
+                                            {[10, 15, 30].map(days => (
+                                                <Button
+                                                    key={days}
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={!rejoiningDateRange?.from && rejoiningVisibleDays === days ? "default" : "ghost"}
+                                                    className={`h-8 px-3 text-sm ${!rejoiningDateRange?.from && rejoiningVisibleDays === days
+                                                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                                                        : "text-slate-600"
+                                                    }`}
+                                                    onClick={() => {
+                                                        setRejoiningDateRange(undefined);
+                                                        setRejoiningVisibleDays(days);
+                                                    }}
+                                                >
+                                                    Last {days} Days
+                                                </Button>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
 
                                 <ScrollableTopChart
                                     dataLength={rejoiningChartData.length}
-                                    scrollToStart={false}
+                                    scrollToStart={Boolean(rejoiningDateRange?.from)}
                                 >
-                                    {(manpowerLoading || manpowerFetching) && <ChartLoader />}
-                                    {!(manpowerLoading || manpowerFetching) && rejoiningChartData.length === 0 && (
+                                    {(rejoiningLoading || rejoiningFetching) && <ChartLoader />}
+                                    {!(rejoiningLoading || rejoiningFetching) && rejoiningChartData.length === 0 && (
                                         <EmptyState text="No rejoining data found for selected filters" />
                                     )}
 
@@ -3875,6 +4074,108 @@ const DashboardHome = () => {
                     </div>
                 </CardContent>
             </Card>
+
+            {showRejoiningTrend && (
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-visible">
+                <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div>
+                            <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                                <UserCheck className="w-5 h-5 text-emerald-600" />
+                                Daily Joining & Handover Trend
+                                {(handoverLoading || handoverFetching) && (
+                                    <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                                )}
+                            </CardTitle>
+                            <p className="text-sm text-slate-500 mt-1">
+                                Joined = original statusHistory joiningDate · Handover Completed = handover sheet studentId match
+                            </p>
+                        </div>
+
+                        <DateRangeOnlyFilter
+                            value={handoverDateRange}
+                            onChange={setHandoverDateRange}
+                        />
+                    </div>
+                </CardHeader>
+
+                <CardContent className="px-2 pb-4 pt-2">
+                    <ScrollableTopChart
+                        dataLength={handoverData.length}
+                        scrollToStart={Boolean(handoverDateRange?.from)}
+                    >
+                        {(handoverLoading || handoverFetching) && <ChartLoader />}
+                        {!(handoverLoading || handoverFetching) && handoverData.length === 0 && (
+                            <EmptyState text="No joining or handover data found" />
+                        )}
+
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                                data={handoverData}
+                                margin={{ top: 48, right: 28, left: 4, bottom: 8 }}
+                                barCategoryGap="28%"
+                                barGap={2}
+                            >
+                                <defs>
+                                    <linearGradient id="handoverJoinedGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#2563eb" stopOpacity={1} />
+                                        <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.85} />
+                                    </linearGradient>
+                                    <linearGradient id="handoverCompletedGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#16a34a" stopOpacity={1} />
+                                        <stop offset="100%" stopColor="#15803d" stopOpacity={0.85} />
+                                    </linearGradient>
+                                </defs>
+
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+
+                                <XAxis
+                                    dataKey="day"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
+                                    dy={8}
+                                    interval={0}
+                                />
+
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#475569', fontSize: 13, fontWeight: 900 }}
+                                    allowDecimals={false}
+                                    width={36}
+                                />
+
+                                <Bar
+                                    dataKey="joinedCount"
+                                    name="Employees Joined"
+                                    fill="url(#handoverJoinedGrad)"
+                                    radius={[5, 5, 0, 0]}
+                                    barSize={34}
+                                    label={renderBarValueLabel("#1d4ed8", "", 13)}
+                                />
+
+                                <Bar
+                                    dataKey="handoverCount"
+                                    name="Handover Completed"
+                                    fill="url(#handoverCompletedGrad)"
+                                    radius={[5, 5, 0, 0]}
+                                    barSize={34}
+                                    label={renderBarValueLabel("#166534", "", 13)}
+                                />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </ScrollableTopChart>
+
+                    <SimpleLegend
+                        items={[
+                            { color: '#2563eb', label: 'Employees Joined' },
+                            { color: '#16a34a', label: 'Handover Completed' },
+                        ]}
+                    />
+                </CardContent>
+            </Card>
+            )}
 
             <FullWidthToggleChartCard
                 title="Daily Attrition Rate"
@@ -3983,37 +4284,6 @@ const DashboardHome = () => {
                         onChartViewChange={(value) => setPieChartView("gender", value)}
                         straightXAxisLabels={true}
                     />
-                </div>
-            </div>
-
-            <div className="w-full overflow-x-auto pb-2">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch min-w-[760px]">
-                    <HighchartsPieCard
-                        title="Line Leader / Expert Distribution"
-                        subtitle={getPreviousAttendanceDateLabel(leaderExpertStats)}
-                        data={leaderExpertPieData.map(item => ({
-                            name: item.name,
-                            value: item.value,
-                            percentage: item.percentage,
-                            totalEmployees: item.totalEmployees || leaderExpertTotalEmployees,
-                            attendanceValue: item.attendanceValue ?? item.value,
-                            masterValue: item.masterValue,
-                        }))}
-                        colors={LEADER_EXPERT_COLORS}
-                        icon={Briefcase}
-                        filter={leaderExpertFilter}
-                        setFilter={setLeaderExpertFilter}
-                        departments={departments}
-                        isLoading={leaderExpertLoading || leaderExpertFetching}
-                        valueMode={graphValueModes.leaderExpert}
-                        onValueModeChange={(value) => setGraphValueMode("leaderExpert", value)}
-                        chartView={pieChartViews.leaderExpert}
-                        onChartViewChange={(value) => setPieChartView("leaderExpert", value)}
-                        straightXAxisLabels={true}
-                        useCustomPercentage={true}
-                    />
-
-                    <div className="hidden md:block" />
                 </div>
             </div>
 
@@ -4175,22 +4445,6 @@ const DashboardHome = () => {
                             />
                         </div>
 
-                        <HighchartsPieCard
-                            title="Role Distribution"
-                            subtitle={getPreviousAttendanceDateLabel(designationStats)}
-                            data={designationPieData.map(item => ({ ...item, name: item.name, value: item.value, attendanceValue: item.attendanceValue ?? item.value, masterValue: item.masterValue }))}
-                            colors={DESIGNATION_COLORS}
-                            icon={Briefcase}
-                            filter={designationFilter}
-                            setFilter={setDesignationFilter}
-                            departments={departments}
-                            isLoading={designationLoading || designationFetching}
-                            valueMode={graphValueModes.designation}
-                            onValueModeChange={(value) => setGraphValueMode("designation", value)}
-                            chartView={pieChartViews.designation}
-                            onChartViewChange={(value) => setPieChartView("designation", value)}
-                            straightXAxisLabels={true}
-                        />
                     </div>
                 </div>
             )}

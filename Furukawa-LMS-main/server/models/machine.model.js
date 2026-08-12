@@ -275,6 +275,6 @@ class Machine {
 }
 
 // Initialize table
-Machine.init();
+// Machine.init();
 
 export default Machine;

@@ -17,6 +17,7 @@ const PRIORITY_MODELS = [
     'section.model.js', 
     'customRole.model.js',        // Referenced by lines
     'line.model.js',           // Referenced by machines
+    'subSection.model.js',     // Referenced by machines
     'machine.model.js',        // Referenced by requirements
     'course.model.js',         // Often referenced
     'module.model.js',         // Parent of lessons

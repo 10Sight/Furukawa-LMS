@@ -497,11 +497,12 @@ const startServer = async () => {
                 await EvaluationTest.init();
                 await EvaluationTestAttempt.init();
 
-                // Initialize Hierarchy in Order: Section -> Line -> SubSection
+                // Initialize Hierarchy in Order: Section -> Line -> SubSection -> Machine
                 const Section = (await import("./models/section.model.js")).default;
                 await Section.init();
                 await Line.init();
                 await SubSection.init();
+                await Machine.init();
 
                 await LineRequirement.init();
                 await LineRequirementHistory.init();

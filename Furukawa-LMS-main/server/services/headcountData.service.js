@@ -147,85 +147,159 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     };
 
+    // Timezone-safe day-only key (YYYYMMDD as a number). Ported verbatim (local-time getters,
+    // not UTC) from dashboard.controller.js's parseManpowerDateKey so statusHistory-based
+    // active-stint determination below matches the MPS dashboard's Daily Manpower Trend graph
+    // exactly, including its date-string-format priority (ISO, then DD/MM/YYYY, then Date()).
+    const parseManpowerDateKey = (value) => {
+        if (value === null || value === undefined) return null;
+
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return (
+                value.getFullYear() * 10000
+                + (value.getMonth() + 1) * 100
+                + value.getDate()
+            );
+        }
+
+        const raw = String(value).trim();
+        const upper = raw.toUpperCase();
+        if (!raw || upper === 'NULL' || upper === 'UNDEFINED' || upper === 'INVALID DATE') {
+            return null;
+        }
+
+        let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (match) {
+            const y = Number(match[1]);
+            const m = Number(match[2]);
+            const d = Number(match[3]);
+            if (y > 0 && m >= 1 && m <= 12 && d >= 1 && d <= 31) return y * 10000 + m * 100 + d;
+        }
+
+        // DD/MM/YYYY or DD-MM-YYYY before US formats, matching the SQL-side helper priority.
+        match = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+        if (match) {
+            const d = Number(match[1]);
+            const m = Number(match[2]);
+            const y = Number(match[3]);
+            if (y > 0 && m >= 1 && m <= 12 && d >= 1 && d <= 31) return y * 10000 + m * 100 + d;
+        }
+
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.getFullYear() * 10000 + (parsed.getMonth() + 1) * 100 + parsed.getDate();
+        }
+
+        return null;
+    };
+
     // Determines whether a user was on an active employment stint on dDate, and that stint's
     // joiningDate, by walking statusHistory rather than just the current joiningDate/status
     // columns — so a user who left and later rejoined is evaluated against the stint that was
-    // actually open on dDate, not their latest one. Per getUpdatedStatusHistory in
-    // statusHistory.js, a fresh entry is only ever pushed on rejoin; every other change mutates
-    // the last entry in place, so each entry normally corresponds to exactly one stint.
+    // actually open on dDate, not their latest one. Ported from dashboard.controller.js's
+    // isUserActiveForManpowerDate/getValidStatusHistoryPeriods so "Headcount available" matches
+    // the MPS dashboard's Daily Manpower Trend graph exactly: numeric day-only comparisons
+    // instead of Date-object ones, and a stint with no recorded leavingDate is only active while
+    // its latest statusHistory status is explicitly PRESENT (ON_LEAVE/SUSPENDED/BANNED do not
+    // count as active here, matching the graph even though that differs from the broader
+    // "anything but LEFT" rule used for other roster purposes elsewhere in this file).
     const getUserActiveStintOnDate = (u, dDate) => {
-        let history = [];
-        try {
-            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
-        } catch (e) {
-            history = [];
-        }
+        const asOfDateKey = parseManpowerDateKey(dDate);
+        if (asOfDateKey === null) return { active: false, joiningDate: null };
 
-        const validHistoryEntries = Array.isArray(history)
-            ? history.filter(h => h && h.joiningDate)
-            : [];
-
-        if (validHistoryEntries.length === 0) {
-            // Fallback to legacy columns for users with no usable statusHistory.
-            const join = u.joiningDate ? new Date(u.joiningDate) : null;
-            let isActive = true;
-            if (join && join > dDate) isActive = false;
-            if (u.status?.toLowerCase() === 'left') {
-                const left = new Date(u.leavingDate || u.updatedAt);
-                if (left <= dDate) isActive = false;
+        let history = u.statusHistory;
+        if (typeof history === 'string') {
+            const trimmed = history.trim();
+            if (!trimmed) {
+                history = [];
+            } else {
+                try {
+                    history = JSON.parse(trimmed);
+                } catch (e) {
+                    history = [];
+                }
             }
-            return { active: isActive, joiningDate: join };
         }
+        if (!Array.isArray(history)) history = [];
 
-        // Group by joiningDate — normally one group per stint, but grouped defensively in case
-        // of duplicate/same-day entries.
-        const periods = {};
-        validHistoryEntries.forEach((entry, idx) => {
-            const joinStr = toYMD(entry.joiningDate);
-            if (!joinStr) return;
-            if (!periods[joinStr]) periods[joinStr] = [];
-            periods[joinStr].push({ entry, idx });
+        const periodsByJoiningDate = new Map();
+        history.forEach((item, index) => {
+            const joiningDateKey = parseManpowerDateKey(item?.joiningDate);
+            if (joiningDateKey === null) return;
+
+            const leavingDateKey = parseManpowerDateKey(item?.leavingDate);
+            const status = String(item?.status || '').trim().toUpperCase();
+            const changedAtMs = item?.changedAt ? new Date(item.changedAt).getTime() : Number.NaN;
+
+            const existing = periodsByJoiningDate.get(joiningDateKey) || {
+                joiningDateKey,
+                leavingDateKey: null,
+                latestStatus: '',
+                latestChangedAtMs: Number.NEGATIVE_INFINITY,
+                latestIndex: -1,
+            };
+
+            if (leavingDateKey !== null && (existing.leavingDateKey === null || leavingDateKey > existing.leavingDateKey)) {
+                existing.leavingDateKey = leavingDateKey;
+            }
+
+            const comparableChangedAt = Number.isNaN(changedAtMs) ? Number.NEGATIVE_INFINITY : changedAtMs;
+            if (comparableChangedAt > existing.latestChangedAtMs || (comparableChangedAt === existing.latestChangedAtMs && index > existing.latestIndex)) {
+                existing.latestStatus = status;
+                existing.latestChangedAtMs = comparableChangedAt;
+                existing.latestIndex = index;
+            }
+
+            periodsByJoiningDate.set(joiningDateKey, existing);
         });
 
-        let activeStintJoinDate = null;
-        let isActive = false;
+        const periods = Array.from(periodsByJoiningDate.values());
 
-        Object.keys(periods).forEach(joinStr => {
-            const joinDateObj = new Date(joinStr);
-            if (joinDateObj > dDate) return;
+        if (periods.length > 0) {
+            let isActive = false;
+            let activeStintJoinDateKey = null;
 
-            const group = periods[joinStr];
-            let maxLeavingDate = null;
-            group.forEach(({ entry }) => {
-                if (entry.leavingDate) {
-                    const lDate = new Date(entry.leavingDate);
-                    if (!maxLeavingDate || lDate > maxLeavingDate) {
-                        maxLeavingDate = lDate;
-                    }
+            periods.forEach((period) => {
+                if (period.joiningDateKey > asOfDateKey) return;
+
+                // leavingDate is exclusive: joining 01, leaving 10 => active only 01..09.
+                const periodActive = period.leavingDateKey !== null
+                    ? asOfDateKey < period.leavingDateKey
+                    : period.latestStatus === 'PRESENT';
+
+                if (periodActive) {
+                    isActive = true;
+                    activeStintJoinDateKey = period.joiningDateKey;
                 }
             });
 
-            const sortedGroup = [...group].sort((a, b) => {
-                const aTime = a.entry.changedAt ? new Date(a.entry.changedAt).getTime() : 0;
-                const bTime = b.entry.changedAt ? new Date(b.entry.changedAt).getTime() : 0;
-                if (bTime !== aTime) return bTime - aTime;
-                return b.idx - a.idx;
-            });
-            const latestStatus = (sortedGroup[0]?.entry?.status || '').toUpperCase().trim();
-
-            // Active for this stint if either it hasn't been left yet as of dDate (leavingDate
-            // in the future), or no leaving date was ever recorded and the latest status isn't
-            // LEFT — matching the roster-active rule used everywhere else in the codebase
-            // (ON_LEAVE/SUSPENDED/BANNED/null all still count as roster-active; only LEFT excludes).
-            const periodActive = maxLeavingDate ? (maxLeavingDate > dDate) : (latestStatus !== 'LEFT');
-
-            if (periodActive) {
-                isActive = true;
-                activeStintJoinDate = joinDateObj;
+            let joiningDateObj = null;
+            if (activeStintJoinDateKey !== null) {
+                const y = Math.floor(activeStintJoinDateKey / 10000);
+                const m = Math.floor((activeStintJoinDateKey % 10000) / 100) - 1;
+                const d = activeStintJoinDateKey % 100;
+                joiningDateObj = new Date(y, m, d);
             }
-        });
 
-        return { active: isActive, joiningDate: activeStintJoinDate };
+            return { active: isActive, joiningDate: joiningDateObj };
+        }
+
+        // Legacy fallback for users with no usable statusHistory joiningDate — matches
+        // isUserActiveForManpowerDate's fallback exactly.
+        const currentStatus = String(u.status || '').trim().toUpperCase();
+        const legacyJoiningDateKey = parseManpowerDateKey(u.joiningDate);
+        const legacyLeavingDateKey = parseManpowerDateKey(u.leavingDate);
+        const joinedByDate = (legacyJoiningDateKey === null || legacyJoiningDateKey <= asOfDateKey);
+
+        let isActive = false;
+        if (currentStatus === 'PRESENT') {
+            isActive = joinedByDate;
+        } else if (currentStatus === 'LEFT') {
+            isActive = joinedByDate && legacyLeavingDateKey !== null && asOfDateKey < legacyLeavingDateKey;
+        }
+
+        const join = u.joiningDate ? new Date(u.joiningDate) : null;
+        return { active: isActive, joiningDate: join };
     };
 
     // Date-aware "is this user part of the roster as of dDate" check, used by activeCount/

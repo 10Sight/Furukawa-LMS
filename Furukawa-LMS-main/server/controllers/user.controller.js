@@ -523,14 +523,18 @@ export const getCustomRoleScope = (user) => {
 // so `d` and `s_res` are available) to the requesting CUSTOM-role user's assigned
 // departments/sections, so mentor/supervisor/incharge/candidate lookups can't be widened past
 // their profile via query params -- the backend is the source of truth, not the dropdown UI.
-// Full-access layouts (admin/superadmin/trainer/instructor) with no assignments are left
-// unrestricted; a restricted user with no assignments at all is blocked outright (1=0).
+// Full-access layouts (admin/superadmin/trainer/instructor) are always left unrestricted,
+// regardless of whether departments/sections happen to be assigned on their profile (those
+// assignments may just reflect their "home" department, not an access boundary). A restricted
+// (non-full-access) user with no assignments at all is blocked outright (1=0).
 const applyUserScopeRestriction = (req, whereClauses, params) => {
   if (req.user?.role !== 'CUSTOM') return;
   const { isFullAccessLayout, allowedDepts, allowedSections } = getCustomRoleScope(req.user);
 
+  if (isFullAccessLayout) return;
+
   if (allowedDepts.length === 0 && allowedSections.length === 0) {
-    if (!isFullAccessLayout) whereClauses.push("1=0");
+    whereClauses.push("1=0");
     return;
   }
 

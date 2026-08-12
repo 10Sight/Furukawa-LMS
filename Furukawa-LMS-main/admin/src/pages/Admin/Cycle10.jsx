@@ -109,7 +109,7 @@ const Cycle10 = () => {
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
         if (user?.departmentId) rawAssigned.push(user.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!user || isAdmin || assignedIds.length === 0) return departments;
         return departments.filter(d => assignedIds.includes(String(d._id || d.id)));
     }, [departments, user, isAdmin]);
@@ -117,7 +117,7 @@ const Cycle10 = () => {
     const assignableSections = useMemo(() => {
         const rawAssigned = Array.isArray(user?.sections) ? [...user.sections] : [];
         if (user?.sectionId) rawAssigned.push(user.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!user || isAdmin || assignedIds.length === 0) return sections;
         return sections.filter(s => assignedIds.includes(String(s._id || s.id)));
     }, [sections, user, isAdmin]);

@@ -5,8 +5,8 @@ import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 const machineCountSql = (machineAlias = "m") => `
     (SELECT COUNT(*)
      FROM users u
-     WHERE ISNULL(u.isDeleted, 0) = 0
-       AND ISNULL(u.isTemporary, 0) = 0
+     WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+       AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
        AND (
@@ -188,6 +188,22 @@ class Machine {
                 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_subsection' AND object_id = OBJECT_ID('machines'))
                 BEGIN
                     CREATE INDEX idx_subsection ON machines(subSectionId);
+                END
+            `);
+
+            // Same backfill for machine_assignments: idx_machine/idx_user were previously only
+            // added inside the CREATE TABLE branch above, so databases where the table already
+            // existed never got them. Without idx_user, the EXISTS correlated subquery in
+            // sectionCountSql/lineCountSql/etc. does a full scan of machine_assignments for
+            // every user row it checks.
+            await this.asyncExecute(`
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_machine' AND object_id = OBJECT_ID('machine_assignments'))
+                BEGIN
+                    CREATE INDEX idx_machine ON machine_assignments(machine_id);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_user' AND object_id = OBJECT_ID('machine_assignments'))
+                BEGIN
+                    CREATE INDEX idx_user ON machine_assignments(user_id);
                 END
             `);
 

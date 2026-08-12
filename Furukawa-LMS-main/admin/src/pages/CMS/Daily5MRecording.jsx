@@ -1325,7 +1325,7 @@ const Daily5MRecording = () => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
 
-        const assignedIds = rawAssigned.map(id => String(id)).filter(id => id && id !== "null" && id !== "undefined");
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(id => id && id !== "null" && id !== "undefined");
 
         if (!authUser || isAdmin || assignedIds.length === 0) return allDepts;
 
@@ -1339,7 +1339,7 @@ const Daily5MRecording = () => {
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
 
-        const assignedIds = rawAssigned.map(id => String(id)).filter(id => id && id !== "null" && id !== "undefined");
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(id => id && id !== "null" && id !== "undefined");
 
         if (!authUser || isAdmin || assignedIds.length === 0) return allSections;
 

@@ -356,7 +356,7 @@ const HandoverSheetPage = () => {
         const allDepts = departments || [];
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || canAccessAll || assignedIds.length === 0) return allDepts;
         return allDepts.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departments, authUser, canAccessAll]);
@@ -365,7 +365,7 @@ const HandoverSheetPage = () => {
         const allSections = createSections || [];
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || canAccessAll || assignedIds.length === 0) return allSections;
         return allSections.filter(s => assignedIds.includes(String(s.id || s._id)));
     }, [createSections, authUser, canAccessAll]);

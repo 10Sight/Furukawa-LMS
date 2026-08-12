@@ -391,6 +391,14 @@ class User {
                 // Narrows the `u.fullName LIKE '%term%'` search clause to an index scan instead of
                 // a full clustered index scan (userName/empId already have their own indexes above).
                 { name: 'idx_users_fullName', ddl: 'CREATE INDEX idx_users_fullName ON users(fullName)' },
+                // Composite indexes for the section/line/subSection/machine trainee-count subqueries
+                // (sectionCountSql etc.) so `u.sectionId = ? AND u.status = 'PRESENT' AND ...` can
+                // seek on hierarchy ID + status directly instead of scanning idx_users_sectionId and
+                // re-filtering status/isDeleted/isTemporary per row.
+                { name: 'idx_users_section_active', ddl: 'CREATE INDEX idx_users_section_active ON users(sectionId, status, isDeleted, isTemporary)' },
+                { name: 'idx_users_line_active', ddl: 'CREATE INDEX idx_users_line_active ON users(lineId, status, isDeleted, isTemporary)' },
+                { name: 'idx_users_subSection_active', ddl: 'CREATE INDEX idx_users_subSection_active ON users(subSectionId, status, isDeleted, isTemporary)' },
+                { name: 'idx_users_station_active', ddl: 'CREATE INDEX idx_users_station_active ON users(stationId, status, isDeleted, isTemporary)' },
             ];
             for (const idx of additionalIndexes) {
                 try {

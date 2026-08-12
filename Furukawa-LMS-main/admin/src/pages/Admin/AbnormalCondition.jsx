@@ -108,13 +108,14 @@ export default function AbnormalCondition() {
     const assignableDepartments = useMemo(() => {
         if (!authUser) return [];
         const allDepts = departments || [];
-        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
 
         if (isMasterAdmin && assignedIds.length === 0) return allDepts;
 
         return allDepts.filter((d) =>
-            assignedIds.includes(d.id) || assignedIds.includes(d._id)
+            assignedIds.includes(String(d.id || d._id))
         );
     }, [departments, authUser, isMasterAdmin]);
 

@@ -135,8 +135,9 @@ const Daily5MDashboard = () => {
         const allDepts = departmentsData?.data?.departments || [];
 
         // Handle both multiple assigned departments AND the primary departmentId
-        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
 
         if (!authUser || assignedIds.length === 0) {
             return allDepts;
@@ -144,12 +145,7 @@ const Daily5MDashboard = () => {
 
         // User has specific department assignments
         return allDepts.filter(dept =>
-            assignedIds.includes(dept.id) ||
-            assignedIds.includes(dept._id) ||
-            assignedIds.includes(String(dept.id)) ||
-            assignedIds.includes(String(dept._id)) ||
-            assignedIds.includes(Number(dept.id)) ||
-            assignedIds.includes(Number(dept._id))
+            assignedIds.includes(String(dept.id || dept._id))
         );
     }, [departmentsData, authUser]);
 

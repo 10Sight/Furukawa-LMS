@@ -111,7 +111,7 @@ const SkillUpgradationWrapper = () => {
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || isAdmin || assignedIds.length === 0) return departments;
         return departments.filter(d => assignedIds.includes(String(d.id || d._id)));
     }, [departments, authUser, isAdmin]);
@@ -119,7 +119,7 @@ const SkillUpgradationWrapper = () => {
     const assignableSections = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || isAdmin || assignedIds.length === 0) return sections;
         return sections.filter(s => assignedIds.includes(String(s.id || s._id)));
     }, [sections, authUser, isAdmin]);

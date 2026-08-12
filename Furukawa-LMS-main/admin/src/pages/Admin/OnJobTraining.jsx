@@ -198,7 +198,7 @@ const OnJobTraining = () => {
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
         if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || isAdmin || assignedIds.length === 0) return departments;
         return departments.filter(d => assignedIds.includes(String(d._id || d.id)));
     }, [departments, authUser, isAdmin]);
@@ -206,7 +206,7 @@ const OnJobTraining = () => {
     const assignableSections = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
         if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
-        const assignedIds = rawAssigned.map(id => String(id)).filter(Boolean);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
         if (!authUser || isAdmin || assignedIds.length === 0) return sections;
         return sections.filter(s => assignedIds.includes(String(s._id || s.id)));
     }, [sections, authUser, isAdmin]);

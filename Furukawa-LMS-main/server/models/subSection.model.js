@@ -5,8 +5,8 @@ import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 const subSectionCountSql = (subSectionAlias = "ss") => `
     (SELECT COUNT(*)
      FROM users u
-     WHERE ISNULL(u.isDeleted, 0) = 0
-       AND ISNULL(u.isTemporary, 0) = 0
+     WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+       AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
        AND u.status = 'PRESENT'
        ${getDesignationShutterExclusionSql("u")}
        AND (

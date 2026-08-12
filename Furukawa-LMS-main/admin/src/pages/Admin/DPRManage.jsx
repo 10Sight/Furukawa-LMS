@@ -74,13 +74,14 @@ const DPRManage = () => {
     // Filter departments based on user assignment for sub-section selection
     const assignableDepartments = React.useMemo(() => {
         const allDepts = departments || [];
-        const assignedIds = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) assignedIds.push(authUser.departmentId);
-        
+        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
+        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
+
         if (!authUser || (isAdmin && assignedIds.length === 0)) return allDepts;
-        
+
         return allDepts.filter(dept =>
-            assignedIds.includes(dept.id) || assignedIds.includes(dept._id)
+            assignedIds.includes(String(dept.id || dept._id))
         );
     }, [departments, authUser, isAdmin]);
 

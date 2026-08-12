@@ -558,7 +558,7 @@ const applyUserScopeRestriction = (req, whereClauses, params) => {
         SELECT 1 FROM OPENJSON(ISNULL(u.sections, '[]')) WITH (sectId INT '$') WHERE sectId IN (${ph})
       )
     )`);
-    params.push(...allowedSections, ...allowedSections, ...allowedSections);
+    params.push(...allowedSections, ...allowedSections, ...allowedSections, ...allowedSections);
   }
 
   whereClauses.push(`(${scopeConditions.join(' OR ')})`);

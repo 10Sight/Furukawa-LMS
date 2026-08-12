@@ -339,29 +339,14 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const todayObj = new Date();
     const todayYMD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
-    // Actual PRESENT punches per (userId, date). Used by Net Available Headcount Total below
-    // (a user officially LEFT as of dDate still counts if they punched Present that specific
-    // day) and later by the Shift-wise Attendance percentage. Range starts at
-    // prevMonthLastDateKey so the leading reference column has punch data too.
-    const [attendancePresenceRows] = await executeQuery(`
-        SELECT userId, CONVERT(VARCHAR, [date], 23) AS dateKey, MAX(status) AS status
-        FROM attendance_logs
-        WHERE [date] >= ? AND [date] <= ?
-        GROUP BY userId, [date]
-    `, [prevMonthLastDateKey, end]);
-    const presentSet = new Set();
-    attendancePresenceRows.forEach(row => {
-        if (row.dateKey && String(row.status || '').toUpperCase() === 'PRESENT') {
-            presentSet.add(`${row.userId}|${row.dateKey}`);
-        }
-    });
-
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
-    // Total: users-table roster, date-aware via statusHistory stints (getUserActiveStintOnDate)
-    // — active on the stint open as of dateObj, or officially left by dateObj but still punched
-    // Present that specific day (presentSet). Above 3 Months: same stint-active rule but NO
-    // attendance_logs fallback, plus a tenure >= 3 months check (that stint's joiningDate <=
-    // dateObj minus 3 months). Both are 0 for future dates.
+    // Both: users-table roster, date-aware via statusHistory stints (getUserActiveStintOnDate)
+    // — active on the stint open as of dateObj. No attendance_logs fallback for either figure:
+    // "Headcount available" is fed by countTotal and must match the MPS dashboard's Daily
+    // Manpower Trend "Total Headcount" bar (totalManpower) exactly, which is purely
+    // statusHistory-driven with no attendance-punch fallback of its own. Above 3 Months adds a
+    // tenure >= 3 months check (that stint's joiningDate <= dateObj minus 3 months). Both are 0
+    // for future dates.
     const getNetAvailableHeadcount = (dateKey, dateObj, targetSectionIds = null) => {
         if (dateKey > todayYMD) return { countTotal: 0, countAbove3Months: 0 };
 
@@ -374,10 +359,14 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         allEligibleUsers.forEach(u => {
             if (targetSectionIds && !targetSectionIds.includes(String(u.sectionId))) return;
 
-            const { active: stillActive, joiningDate: stintJoinDate } = getUserActiveStintOnDate(u, dateObj);
+            // Pass the string dateKey (not dateObj) so the "as of" date is parsed by
+            // parseManpowerDateKey's string branch — matching dashboard.controller.js's calling
+            // convention exactly (it always passes a formatted date string, never a Date
+            // instance) and sidestepping any local-vs-UTC skew from `new Date(dKey)`.
+            const { active: stillActive, joiningDate: stintJoinDate } = getUserActiveStintOnDate(u, dateKey);
             const join = stintJoinDate || (u.joiningDate ? new Date(u.joiningDate) : null);
 
-            if (stillActive || presentSet.has(`${u.id}|${dateKey}`)) countTotal++;
+            if (stillActive) countTotal++;
             if (stillActive && join && join <= threeMonthsBefore) countAbove3Months++;
         });
 

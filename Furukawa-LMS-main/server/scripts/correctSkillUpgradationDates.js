@@ -1,116 +1,183 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 
-// One-time correction for the 6 mismatched dates found by checkMismatchedSkillUpgradationDates.js
-// (all pre-date the quarter-bound restrictions added to the UI/auto-sync). Each entry below
-// moves a specific field's value into the field it actually belongs to, or clamps it to the
-// start of the quarter it was auto-synced into.
+// Generic correction for skill_upgradation_plans rows where a q{n}Date / q{n}DateActual
+// value doesn't actually fall within quarter n (see checkMismatchedSkillUpgradationDates.js).
+// Works against whichever database server this is run against — it scans every plan
+// instead of relying on hardcoded plan/user IDs, since those differ per environment.
+//
+// Two distinct historical bugs produced these mismatches (both now fixed at the source in
+// admin/src/components/departments/SkillUpgradationPlan.jsx's handleRowFieldChange and
+// server/utils/skillMatrix.util.js's syncToSkillUpgradationPlan), and each needs a different
+// repair:
+//
+//   1. A q{n}DateActual (or a plan Date whose true month is LATER than its declared quarter)
+//      is a real, correctly-computed date that just got filed under the wrong quarter key
+//      (the old ACTUAL_TO_PLAN mapping moved it to "the next quarter" blindly, without
+//      checking which quarter the computed date's month actually fell in). Fix: RELOCATE the
+//      value (and, for DateActual, its paired Skill/Status) to the quarter it truly belongs
+//      to — but only if that quarter's own fields are still empty, so real data already
+//      recorded there is never overwritten.
+//
+//   2. A q{n}Date whose true month is the SAME quarter as (or earlier than) its own declared
+//      quarter is a plan target that was calculated from too short a day-count, landing back
+//      in-or-before the quarter it was supposed to be a *future* target for. Fix: CLAMP it to
+//      the first day of its own declared quarter, since the slot itself is correct — only the
+//      calculated day was wrong.
+//
+// A date whose year doesn't match the plan's year at all can't be placed anywhere in this
+// plan, so it's simply cleared.
 //
 // Usage:
 //   node scripts/correctSkillUpgradationDates.js          (dry run, logs only)
 //   node scripts/correctSkillUpgradationDates.js --apply  (writes changes)
 
-const CORRECTIONS = [
-    {
-        planId: 4,
-        userId: "19625",
-        description: "Move Q3 completion (actual date + earned skill) out of the Q1 cells it was mistakenly saved under, and move its auto-synced next-quarter plan date into Q4 (it was landing in Q2 instead).",
-        apply: (row) => {
-            const next = { ...row };
-            next.q3DateActual = row.q1DateActual;
-            next.q3Skill = row.q1Skill;
-            next.q1Date = "";
-            next.q1DateActual = "";
-            next.q1Skill = "";
-            next.q4Date = row.q2Date;
-            next.q2Date = "";
-            return next;
-        },
-    },
-    {
-        planId: 5,
-        userId: "16824",
-        description: "Clamp Q4 plan date (was a July date, same quarter as the Q3 completion it was calculated from) to the start of Q4.",
-        apply: (row) => ({ ...row, q4Date: "2026-10-01" }),
-    },
-    {
-        planId: 5,
-        userId: "17294",
-        description: "Clamp Q4 plan date (was an August date, same quarter as the Q3 completion it was calculated from) to the start of Q4.",
-        apply: (row) => ({ ...row, q4Date: "2026-10-01" }),
-    },
-    {
-        planId: 5,
-        userId: "19711",
-        description: "Clamp Q4 plan date (was an August date, same quarter as the Q3 completion it was calculated from) to the start of Q4.",
-        apply: (row) => ({ ...row, q4Date: "2026-10-01" }),
-    },
-];
+const QUARTER_KEYS = ["q1", "q2", "q3", "q4"];
+const QUARTER_INDEX = { q1: 1, q2: 2, q3: 3, q4: 4 };
+const QUARTER_START_MONTH_DAY = { q1: "01-01", q2: "04-01", q3: "07-01", q4: "10-01" };
+
+const parseDate = (val) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val || "");
+    if (!match) return null;
+    return { year: parseInt(match[1], 10), month: parseInt(match[2], 10) };
+};
+
+const monthToQuarterKey = (month) => (month ? `q${Math.floor((month - 1) / 3) + 1}` : null);
+
+// Returns the field's true quarter key if its value's year matches the plan year, else null
+// (unparsable or a different year entirely — can't be placed anywhere in this plan).
+const trueQuarterOf = (val, planYear) => {
+    const parsed = parseDate(val);
+    if (!parsed || parsed.year !== planYear) return null;
+    return monthToQuarterKey(parsed.month);
+};
+
+function correctRow(row, planYear, planId, userId, log) {
+    const next = { ...row };
+    let changed = false;
+
+    // --- DateActual (real, historical completion dates): always relocate to the quarter
+    // they truly fall in, moving the paired Skill/Status along so a quarter's data stays
+    // internally consistent. Never clamp an actual date — that would falsify history.
+    for (const q of QUARTER_KEYS) {
+        const actualField = `${q}DateActual`;
+        const actualVal = next[actualField];
+        if (!actualVal) continue;
+
+        const trueQ = trueQuarterOf(actualVal, planYear);
+        if (trueQ === q) continue; // already correct
+
+        if (!trueQ) {
+            log(`plan ${planId} user ${userId}: ${actualField} "${actualVal}" is unparsable or a different year — cleared`);
+            next[actualField] = "";
+            changed = true;
+            continue;
+        }
+
+        const targetActualField = `${trueQ}DateActual`;
+        if (next[targetActualField]) {
+            log(`plan ${planId} user ${userId}: ${actualField} "${actualVal}" belongs in ${trueQ} but ${targetActualField} is already "${next[targetActualField]}" — SKIPPED, needs manual review`);
+            continue;
+        }
+
+        next[targetActualField] = actualVal;
+        next[actualField] = "";
+        changed = true;
+        log(`plan ${planId} user ${userId}: moved ${actualField} ("${actualVal}") -> ${targetActualField}`);
+
+        const sourceSkillField = `${q}Skill`;
+        const targetSkillField = `${trueQ}Skill`;
+        if (next[sourceSkillField] && !next[targetSkillField]) {
+            log(`plan ${planId} user ${userId}: moved ${sourceSkillField} ("${next[sourceSkillField]}") -> ${targetSkillField}`);
+            next[targetSkillField] = next[sourceSkillField];
+            next[sourceSkillField] = "";
+        }
+
+        const sourceStatusField = `${q}Status`;
+        const targetStatusField = `${trueQ}Status`;
+        if (next[sourceStatusField] && !next[targetStatusField]) {
+            next[targetStatusField] = next[sourceStatusField];
+            next[sourceStatusField] = "";
+        }
+    }
+
+    // --- Date (forward plan targets): relocate if the true month is a LATER quarter than
+    // declared (a valid date filed under the wrong slot); clamp to the declared quarter's
+    // start if the true month is the same quarter or earlier (a mis-calculated day, but the
+    // slot itself is right).
+    for (const q of QUARTER_KEYS) {
+        const dateField = `${q}Date`;
+        const dateVal = next[dateField];
+        if (!dateVal) continue;
+
+        const parsed = parseDate(dateVal);
+        const trueQ = parsed && parsed.year === planYear ? monthToQuarterKey(parsed.month) : null;
+        if (trueQ === q) continue; // already correct
+
+        if (trueQ && QUARTER_INDEX[trueQ] > QUARTER_INDEX[q]) {
+            const targetDateField = `${trueQ}Date`;
+            if (next[targetDateField]) {
+                log(`plan ${planId} user ${userId}: ${dateField} "${dateVal}" belongs in ${trueQ} but ${targetDateField} is already "${next[targetDateField]}" — SKIPPED, needs manual review`);
+                continue;
+            }
+            next[targetDateField] = dateVal;
+            next[dateField] = "";
+            changed = true;
+            log(`plan ${planId} user ${userId}: moved ${dateField} ("${dateVal}") -> ${targetDateField}`);
+        } else {
+            const clamped = `${planYear}-${QUARTER_START_MONTH_DAY[q]}`;
+            next[dateField] = clamped;
+            changed = true;
+            log(`plan ${planId} user ${userId}: clamped ${dateField} "${dateVal}" -> "${clamped}" (start of ${q})`);
+        }
+    }
+
+    return { row: next, changed };
+}
 
 async function correct() {
     const apply = process.argv.includes("--apply");
     console.log(apply ? "Running in APPLY mode — changes will be written." : "Running in DRY RUN mode — no changes will be written. Pass --apply to write.");
 
-    const planIds = [...new Set(CORRECTIONS.map(c => c.planId))];
-    const [plans] = await executeQuery(
-        `SELECT id, tableData FROM skill_upgradation_plans WHERE id IN (${planIds.map(() => "?").join(",")})`,
-        planIds
-    );
-    const planById = new Map(plans.map(p => [p.id, p]));
+    const [plans] = await executeQuery(`SELECT id, year, tableData FROM skill_upgradation_plans`);
+    console.log(`Found ${plans.length} plan(s).`);
 
-    let corrected = 0;
-    let skipped = 0;
+    let plansChanged = 0;
+    let rowsCorrected = 0;
 
-    // Group corrections by plan so each plan is only read/written once even if it
-    // has multiple affected users.
-    const byPlan = new Map();
-    for (const c of CORRECTIONS) {
-        if (!byPlan.has(c.planId)) byPlan.set(c.planId, []);
-        byPlan.get(c.planId).push(c);
-    }
-
-    for (const [planId, corrections] of byPlan.entries()) {
-        const planRow = planById.get(planId);
-        if (!planRow) {
-            console.log(`[plan ${planId}] Not found in database — skipping ${corrections.length} correction(s).`);
-            skipped += corrections.length;
+    for (const plan of plans) {
+        const planYear = parseInt(plan.year, 10);
+        if (!Number.isFinite(planYear)) {
+            console.log(`[plan ${plan.id}] Skipping — no valid year on this plan.`);
             continue;
         }
 
-        const tableData = typeof planRow.tableData === "string" ? JSON.parse(planRow.tableData) : planRow.tableData || {};
+        const tableData = typeof plan.tableData === "string" ? JSON.parse(plan.tableData) : plan.tableData || {};
         let planChanged = false;
 
-        for (const c of corrections) {
-            const row = tableData[c.userId];
-            if (!row) {
-                console.log(`[plan ${planId}] User ${c.userId} not found in tableData — skipping.`);
-                skipped++;
-                continue;
-            }
+        for (const [userId, row] of Object.entries(tableData)) {
+            if (userId === "__removedUserIds" || !row || typeof row !== "object") continue;
 
-            const before = { ...row };
-            const after = c.apply(row);
-            tableData[c.userId] = after;
-            planChanged = true;
-            corrected++;
-
-            console.log(`[plan ${planId}] User ${c.userId}: ${c.description}`);
-            for (const key of Object.keys(after)) {
-                if (before[key] !== after[key]) {
-                    console.log(`    ${key}: ${JSON.stringify(before[key] ?? "")} -> ${JSON.stringify(after[key] ?? "")}`);
-                }
+            const { row: correctedRow, changed } = correctRow(row, planYear, plan.id, userId, console.log);
+            if (changed) {
+                tableData[userId] = correctedRow;
+                planChanged = true;
+                rowsCorrected++;
             }
         }
 
-        if (apply && planChanged) {
-            await executeQuery(
-                `UPDATE skill_upgradation_plans SET tableData = ?, updatedAt = GETDATE() WHERE id = ?`,
-                [JSON.stringify(tableData), planId]
-            );
-            console.log(`[plan ${planId}] Saved.`);
+        if (planChanged) {
+            plansChanged++;
+            if (apply) {
+                await executeQuery(
+                    `UPDATE skill_upgradation_plans SET tableData = ?, updatedAt = GETDATE() WHERE id = ?`,
+                    [JSON.stringify(tableData), plan.id]
+                );
+                console.log(`[plan ${plan.id}] Saved.`);
+            }
         }
     }
 
-    console.log(`\nDone. Corrected ${corrected} record(s), skipped ${skipped}.`);
+    console.log(`\nDone. ${rowsCorrected} row(s) corrected across ${plansChanged} plan(s).`);
     if (!apply) {
         console.log("This was a dry run — re-run with --apply to write these changes.");
     }

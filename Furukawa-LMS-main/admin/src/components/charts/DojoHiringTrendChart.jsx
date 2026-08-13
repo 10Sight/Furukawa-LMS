@@ -175,13 +175,30 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const apiStart = data?.data?.start   || '';
     const apiEnd   = data?.data?.end     || '';
 
+    // Current period key (same format as `period` values) so today's slot/label can be
+    // located and highlighted regardless of the active timeframe.
+    const currentPeriodKey = useMemo(() => {
+        const now = new Date();
+        if (groupBy === 'daily') return formatDate(now);
+        if (groupBy === 'monthly') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        return String(now.getFullYear());
+    }, [groupBy]);
+
     // Pad with zero-rows so every period in the window always has a bar
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
 
-    const categories   = trend.map(r => formatPeriodLabel(r.period, groupBy, language));
+    const todaySlotIdx = trend.findIndex(r => r.period === currentPeriodKey);
+
+    const categories = useMemo(() => trend.map(r => {
+        const label = formatPeriodLabel(r.period, groupBy, language);
+        const isToday = r.period === currentPeriodKey;
+        return isToday
+            ? `<span style="color:#2563eb;font-weight:900;text-decoration:underline">${label}</span>`
+            : `<span style="color:#64748b;font-weight:600">${label}</span>`;
+    }), [trend, groupBy, language, currentPeriodKey]);
     const totalSeries  = trend.map(r => Number(r.total)       || 0);
     const maleSeries   = trend.map(r => Number(r.maleCount)   || 0);
     const femaleSeries = trend.map(r => Number(r.femaleCount) || 0);
@@ -221,6 +238,18 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const needsScroll   = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
+    // Center the scrollable viewport on today's slot when possible; otherwise default to
+    // the right edge (most recent data), matching prior behavior.
+    const scrollPositionX = useMemo(() => {
+        if (!needsScroll || todaySlotIdx === -1) return 1;
+        const viewportWidth = 800;
+        const targetPx = todaySlotIdx * SLOT_WIDTH;
+        const maxScrollPx = (categories.length * SLOT_WIDTH) - viewportWidth;
+        if (maxScrollPx <= 0) return 1;
+        const centeredPx = targetPx - (viewportWidth / 2);
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [needsScroll, todaySlotIdx, categories.length]);
+
     const basePlotOptions = {
         column: {
             borderRadius: 4,
@@ -236,11 +265,15 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             height: 360,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            // scrollablePlotArea expands the inner canvas; scrollPositionX:1 = start at right
+            // Extra breathing room below the date labels so the horizontal scrollbar
+            // (rendered right under the plot area when scrollablePlotArea is active)
+            // doesn't sit flush against them.
+            marginBottom: needsScroll ? 55 : 40,
+            // scrollablePlotArea expands the inner canvas; scrollPositionX centers on today
             ...(needsScroll && {
                 scrollablePlotArea: {
                     minWidth: scrollMinWidth,
-                    scrollPositionX: 1,
+                    scrollPositionX,
                 },
             }),
         },
@@ -250,7 +283,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             categories,
             crosshair: true,
             labels: {
-                style: { fontSize: '11px', color: '#64748b' },
+                useHTML: true,
+                style: { fontSize: '11px', textAlign: 'center' },
                 rotation: 0,
                 align: 'center',
             },
@@ -332,7 +366,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             color: '#3b82f6',
         }],
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, totalSeries, needsScroll, scrollMinWidth, viewMode, t]);
+    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
 
     const genderOptions = useMemo(() => ({
         ...baseChart,
@@ -356,7 +390,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
                 : []),
         ],
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, maleSeries, femaleSeries, otherSeries, needsScroll, scrollMinWidth, viewMode, t]);
+    }), [categories, maleSeries, femaleSeries, otherSeries, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
 
     // ── Render ────────────────────────────────────────────────────────────────
     const cfg = INPUT_CONFIG[timeframe];

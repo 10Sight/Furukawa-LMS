@@ -144,9 +144,18 @@ const ContractorWiseOperatorChart = () => {
         return map;
     }, [contractorsData]);
 
-    const { periods, contractorNames, flatPoints, categories, groupSeparators } = useMemo(() => {
+    // Current period key (same format as `period` values) so today's slot/label can be
+    // located and highlighted regardless of the active timeframe.
+    const currentPeriodKey = useMemo(() => {
+        const now = new Date();
+        if (timeframe === 'daily') return formatDate(now);
+        if (timeframe === 'monthly') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        return String(now.getFullYear());
+    }, [timeframe]);
+
+    const { periods, contractorNames, flatPoints, categories, groupSeparators, todaySlotIdx } = useMemo(() => {
         if (!allUsers.length || !startDate || !endDate)
-            return { periods: [], contractorNames: [], flatPoints: [], categories: [], groupSeparators: [] };
+            return { periods: [], contractorNames: [], flatPoints: [], categories: [], groupSeparators: [], todaySlotIdx: -1 };
 
         const start = new Date(`${startDate}T00:00:00`);
         const end   = new Date(`${endDate}T23:59:59`);
@@ -184,17 +193,21 @@ const ContractorWiseOperatorChart = () => {
         // plus a null placeholder for periods with no data so every date
         // still appears on the x-axis.
         const flatPoints = [];
+        let todaySlotIdx = -1;
 
         periods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, timeframe, language);
+            const isToday = period === currentPeriodKey;
             const present = contractorNames.filter(n => (matrix[period]?.[n] || 0) > 0);
 
             if (!present.length) {
+                if (isToday && todaySlotIdx === -1) todaySlotIdx = flatPoints.length;
                 flatPoints.push({
                     y:          null,
                     color:      'transparent',
                     contractor: '',
                     periodLabel,
+                    period,
                     isDateSlot: true,
                     isEmpty:    true,
                 });
@@ -207,13 +220,16 @@ const ContractorWiseOperatorChart = () => {
 
             present.forEach((name, gi) => {
                 const ci = contractorMap.get(name);
+                const isDateSlot = gi === midIdx;
+                if (isDateSlot && isToday && todaySlotIdx === -1) todaySlotIdx = flatPoints.length;
                 flatPoints.push({
                     y:          matrix[period][name],
                     color:      CONTRACTOR_COLORS[ci % CONTRACTOR_COLORS.length],
                     contractor: name,
                     periodLabel,
-                    isDateSlot: gi === midIdx,
-                    shiftDate:  isEven && gi === midIdx,
+                    period,
+                    isDateSlot,
+                    shiftDate:  isEven && isDateSlot,
                     isEmpty:    false,
                 });
             });
@@ -225,8 +241,12 @@ const ContractorWiseOperatorChart = () => {
         //                     + date line visible only on the middle bar of the group;
         //                       hidden placeholder on other bars keeps all label heights equal
         const categories = flatPoints.map(p => {
+            const isToday = p.period === currentPeriodKey;
+
             if (p.isEmpty) {
-                return `<span style="color:#94a3b8;font-size:11px;font-weight:600">${p.periodLabel}</span>`;
+                const color  = isToday ? '#2563eb' : '#94a3b8';
+                const weight = isToday ? '900' : '600';
+                return `<span style="color:${color};font-size:11px;font-weight:${weight}">${p.periodLabel}</span>`;
             }
 
             const nameHtml = p.contractor
@@ -234,8 +254,11 @@ const ContractorWiseOperatorChart = () => {
                 .map(w => `<span style="color:${p.color};font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
                 .join('<br/>');
 
+            const dateColor      = isToday ? '#2563eb' : '#64748b';
+            const dateWeight     = isToday ? '900' : '800';
+            const dateDecoration = isToday ? ';text-decoration:underline' : '';
             const dateLine = p.isDateSlot
-                ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px${p.shiftDate ? ';margin-right:96px' : ''}">${p.periodLabel}</span>`
+                ? `<br/><span style="color:${dateColor};font-size:13px;font-weight:${dateWeight};display:inline-block;margin-top:8px${p.shiftDate ? ';margin-right:96px' : ''}${dateDecoration}">${p.periodLabel}</span>`
                 : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
 
             return nameHtml + dateLine;
@@ -260,8 +283,8 @@ const ContractorWiseOperatorChart = () => {
             i = j;
         }
 
-        return { periods, contractorNames, flatPoints, categories, groupSeparators };
-    }, [allUsers, contractorIdToName, timeframe, startDate, endDate, language]);
+        return { periods, contractorNames, flatPoints, categories, groupSeparators, todaySlotIdx };
+    }, [allUsers, contractorIdToName, timeframe, startDate, endDate, language, currentPeriodKey]);
 
     // Summary
     const totalOperators = flatPoints.reduce((sum, p) => sum + (p.y || 0), 0);
@@ -291,6 +314,18 @@ const ContractorWiseOperatorChart = () => {
     const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
 
+    // Center the scrollable viewport on today's slot when possible; otherwise default to
+    // the right edge (most recent data), matching prior behavior.
+    const scrollPositionX = useMemo(() => {
+        if (!needsScroll || todaySlotIdx === -1) return 1;
+        const viewportWidth = 800;
+        const targetPx = todaySlotIdx * SLOT_WIDTH;
+        const maxScrollPx = (flatPoints.length * SLOT_WIDTH) - viewportWidth;
+        if (maxScrollPx <= 0) return 1;
+        const centeredPx = targetPx - (viewportWidth / 2);
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [needsScroll, todaySlotIdx, flatPoints.length]);
+
     const chartOptions = useMemo(() => ({
         chart: {
             type: 'column',
@@ -300,7 +335,7 @@ const ContractorWiseOperatorChart = () => {
             animation: { duration: 400 },
             marginBottom: 170,
             marginTop: 60,
-            ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 } }),
+            ...(needsScroll && { scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX } }),
         },
         title:   { text: '' },
         credits: { enabled: false },
@@ -375,7 +410,7 @@ const ContractorWiseOperatorChart = () => {
             data:  flatPoints,
             showInLegend: false,
         }],
-    }), [categories, flatPoints, groupSeparators, needsScroll, scrollMinWidth]);
+    }), [categories, flatPoints, groupSeparators, needsScroll, scrollMinWidth, scrollPositionX]);
 
     const cfg        = INPUT_CONFIG[timeframe];
     const hasAnyData = flatPoints.length > 0;

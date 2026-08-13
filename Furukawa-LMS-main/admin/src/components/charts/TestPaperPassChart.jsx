@@ -140,7 +140,7 @@ const INPUT_CONFIG = {
 };
 
 /* ── Reusable sub-chart ── */
-const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSeries, categories, chartKey, needsScroll, scrollMinWidth }) => {
+const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSeries, categories, chartKey, needsScroll, scrollMinWidth, scrollPositionX }) => {
     const { t } = useTranslate();
     const totalPassed   = passedSeries.reduce((a, b) => a + b, 0);
     const totalFailed   = failedSeries.reduce((a, b) => a + b, 0);
@@ -156,7 +156,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
             ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1 },
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: scrollPositionX ?? 1 },
             }),
         },
         title:   { text: '' },
@@ -168,7 +168,8 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             lineColor:     '#e9ecef',
             gridLineWidth: 0,
             labels: {
-                style:    { fontSize: '11px', color: '#64748b' },
+                useHTML:  true,
+                style:    { fontSize: '11px', textAlign: 'center' },
                 rotation: 0,
                 align:    'center',
             },
@@ -237,7 +238,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             { type: 'column', name: t('charts.passed'), data: passedSeries, color: '#16a34a' },
             { type: 'column', name: t('charts.failed'), data: failedSeries, color: '#dc2626' },
         ],
-    }), [categories, passedSeries, failedSeries, needsScroll, scrollMinWidth, t]);
+    }), [categories, passedSeries, failedSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
 
     return (
         <div className="space-y-3">
@@ -308,12 +309,29 @@ const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
     const apiStart         = statsData?.data?.start         || '';
     const apiEnd           = statsData?.data?.end           || '';
 
+    // Current period key (same format as `period` values) so today's slot/label can be
+    // located and highlighted regardless of the active timeframe.
+    const currentPeriodKey = useMemo(() => {
+        const now = new Date();
+        if (groupBy === 'daily') return formatDate(now);
+        if (groupBy === 'monthly') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        return String(now.getFullYear());
+    }, [groupBy]);
+
     const { periods, resultRows } = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrendByResult),
         [groupBy, apiStart, apiEnd, rawTrendByResult]
     );
 
-    const categories = periods.map(p => formatPeriodLabel(p, groupBy, language));
+    const todaySlotIdx = periods.indexOf(currentPeriodKey);
+
+    const categories = useMemo(() => periods.map(p => {
+        const label = formatPeriodLabel(p, groupBy, language);
+        const isToday = p === currentPeriodKey;
+        return isToday
+            ? `<span style="color:#2563eb;font-weight:900;text-decoration:underline">${label}</span>`
+            : `<span style="color:#64748b;font-weight:600">${label}</span>`;
+    }), [periods, groupBy, language, currentPeriodKey]);
 
     const theoreticalPassedSeries = resultRows.map(r => Number(r.passedTheoretical) || 0);
     const theoreticalFailedSeries = resultRows.map(r => Number(r.failedTheoretical) || 0);
@@ -336,6 +354,18 @@ const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
     const SLOT_WIDTH     = 72;
     const needsScroll    = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+
+    // Center the scrollable viewport on today's slot when possible; otherwise default to
+    // the right edge (most recent data), matching prior behavior.
+    const scrollPositionX = useMemo(() => {
+        if (!needsScroll || todaySlotIdx === -1) return 1;
+        const viewportWidth = 800;
+        const targetPx = todaySlotIdx * SLOT_WIDTH;
+        const maxScrollPx = (categories.length * SLOT_WIDTH) - viewportWidth;
+        if (maxScrollPx <= 0) return 1;
+        const centeredPx = targetPx - (viewportWidth / 2);
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [needsScroll, todaySlotIdx, categories.length]);
 
     const cfg = INPUT_CONFIG[timeframe];
     const chartKeyBase = `${timeframe}-${startDate}-${endDate}-${departmentId}-${isDojo}-${quizId}`;
@@ -488,6 +518,7 @@ const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
                         chartKey={`theoretical-${chartKeyBase}`}
                         needsScroll={needsScroll}
                         scrollMinWidth={scrollMinWidth}
+                        scrollPositionX={scrollPositionX}
                     />
                 )}
             </CardContent>

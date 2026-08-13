@@ -221,7 +221,7 @@ export const translations = {
 
     // Sixteen-Day Monitoring Comparison Chart
     "charts.sixteenDayMonitoringComparison": "16-Day Monitoring Comparison",
-    "charts.sixteenDayMonitoringComparisonDesc": "Expected vs Actual 16-Day Monitoring completions by date — grouped by target department",
+    "charts.sixteenDayMonitoringComparisonDesc": "Due (handover approval + 16 working days) vs Approved-complete 16-Day Monitoring by date — grouped by target department",
     "charts.failedToLoadSixteenDay": "Failed to load 16-day monitoring comparison.",
     "charts.noSixteenDayData": "No 16-day monitoring data found for this period.",
     "charts.expectedMonitoring": "Expected Monitoring",
@@ -965,7 +965,7 @@ export const translations = {
 
     // Sixteen-Day Monitoring Comparison Chart
     "charts.sixteenDayMonitoringComparison": "16-दिवसीय निगरानी तुलना",
-    "charts.sixteenDayMonitoringComparisonDesc": "तारीख के अनुसार अपेक्षित बनाम वास्तविक 16-दिवसीय निगरानी पूर्णता - लक्ष्य विभाग द्वारा समूहीकृत",
+    "charts.sixteenDayMonitoringComparisonDesc": "देय तिथि (हैंडओवर स्वीकृति + 16 कार्य दिवस) बनाम स्वीकृत-पूर्ण 16-दिवसीय निगरानी - लक्ष्य विभाग द्वारा समूहीकृत",
     "charts.failedToLoadSixteenDay": "16-दिवसीय निगरानी तुलना लोड करने में विफल।",
     "charts.noSixteenDayData": "इस अवधि के लिए कोई 16-दिवसीय निगरानी डेटा नहीं मिला।",
     "charts.expectedMonitoring": "अपेक्षित निगरानी",
@@ -1708,7 +1708,7 @@ export const translations = {
 
     // Sixteen-Day Monitoring Comparison Chart
     "charts.sixteenDayMonitoringComparison": "16日間モニタリング比較",
-    "charts.sixteenDayMonitoringComparisonDesc": "日付ごとの予定 vs 実績 16日間モニタリング完了数 — 対象部門別グループ化",
+    "charts.sixteenDayMonitoringComparisonDesc": "期限（引き継ぎ承認 + 16営業日）vs 承認完了済み16日間モニタリング — 対象部門別グループ化",
     "charts.failedToLoadSixteenDay": "16日間モニタリング比較の読み込みに失敗しました。",
     "charts.noSixteenDayData": "この期間の16日間モニタリングデータが見つかりません。",
     "charts.expectedMonitoring": "予定モニタリング数",
@@ -2451,7 +2451,7 @@ export const translations = {
 
     // Sixteen-Day Monitoring Comparison Chart
     "charts.sixteenDayMonitoringComparison": "16天监控对比",
-    "charts.sixteenDayMonitoringComparisonDesc": "按日期的计划 vs 实际16天监控完成数 — 按目标部门分组",
+    "charts.sixteenDayMonitoringComparisonDesc": "到期（交接批准 + 16个工作日）vs 已批准完成的16天监控 — 按目标部门分组",
     "charts.failedToLoadSixteenDay": "16天监控对比数据加载失败。",
     "charts.noSixteenDayData": "未找到该时段的16天监控数据。",
     "charts.expectedMonitoring": "计划监控数",
@@ -3194,7 +3194,7 @@ export const translations = {
 
     // Sixteen-Day Monitoring Comparison Chart
     "charts.sixteenDayMonitoringComparison": "Сравнение 16-дневного мониторинга",
-    "charts.sixteenDayMonitoringComparisonDesc": "Ожидаемое vs Фактическое количество завершений 16-дневного мониторинга по датам — сгруппировано по целевому отделу",
+    "charts.sixteenDayMonitoringComparisonDesc": "Срок (одобрение передачи + 16 рабочих дней) vs Утверждённые завершения 16-дневного мониторинга — сгруппировано по целевому отделу",
     "charts.failedToLoadSixteenDay": "Не удалось загрузить сравнение 16-дневного мониторинга.",
     "charts.noSixteenDayData": "Данные 16-дневного мониторинга за этот период не найдены.",
     "charts.expectedMonitoring": "Ожидаемый мониторинг",

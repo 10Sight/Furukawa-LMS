@@ -10,7 +10,7 @@ import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend, IconLoader } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -94,30 +94,78 @@ const QUARTERS = [
     { key: "q4", label: "Oct-Dec", headerBg: "bg-purple-50 text-purple-800", cellBg: "bg-purple-50/20", badgeColor: "text-purple-700" },
 ];
 
-const UserCellSelector = React.memo(({ value, onChange, students, rowId, handleRowFieldChange, disabled }) => {
+const MIN_SEARCH_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+// Shared across every UserCellSelector instance (one per row) so the same search
+// term/department/section/line combo is fetched once per sheet session, not once per row.
+const userSearchCache = new Map();
+
+const UserCellSelector = React.memo(({ value, onChange, rowId, handleRowFieldChange, disabled, departmentId, sectionId, lineId }) => {
     const [searchTerm, setSearchTerm] = useState(value || "");
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [menuStyle, setMenuStyle] = useState(null);
+    // Once a name is selected, show it as static (word-wrapped) text instead of
+    // the search input, so the row isn't stuck showing an editable field forever.
+    // Clicking the text (or clearing it) drops back into edit mode.
+    const [isEditing, setIsEditing] = useState(!value);
     const wrapperRef = useRef(null);
 
     useEffect(() => {
         setSearchTerm(value || "");
+        setIsEditing(!value);
     }, [value]);
 
-    const suggestions = useMemo(() => {
-        if (!searchTerm.trim()) return [];
-        const lower = searchTerm.toLowerCase();
-        return students.filter(s =>
-            (s.fullName || "").toLowerCase().includes(lower) ||
-            (s.cardNo || "").toLowerCase().includes(lower)
-        ).slice(0, 5);
-    }, [students, searchTerm]);
+    useEffect(() => {
+        const trimmed = searchTerm.trim();
+        if (trimmed.length < MIN_SEARCH_LENGTH) {
+            setSuggestions([]);
+            setIsSearching(false);
+            return;
+        }
+        const cacheKey = `${trimmed.toLowerCase()}|${departmentId || ""}|${sectionId || ""}|${lineId || ""}`;
+        const cached = userSearchCache.get(cacheKey);
+        if (cached) {
+            setSuggestions(cached);
+            setIsSearching(false);
+            return;
+        }
+        let cancelled = false;
+        setIsSearching(true);
+        const timer = setTimeout(() => {
+            axiosInstance.get('/api/users/students', {
+                params: {
+                    search: trimmed,
+                    departmentId: departmentId || undefined,
+                    sectionId: sectionId || undefined,
+                    lineId: lineId || undefined,
+                    includeTemporary: "false",
+                    sixteenDayApprovedOnly: "true",
+                    limit: 10,
+                },
+            }).then((response) => {
+                if (cancelled) return;
+                const users = response?.data?.data?.users || [];
+                userSearchCache.set(cacheKey, users);
+                setSuggestions(users);
+            }).catch(() => {
+                if (!cancelled) setSuggestions([]);
+            }).finally(() => {
+                if (!cancelled) setIsSearching(false);
+            });
+        }, SEARCH_DEBOUNCE_MS);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [searchTerm, departmentId, sectionId, lineId]);
 
     // Table cells that host this selector sit inside a scrollable/overflow-clipped
     // container with sticky columns, so an absolutely-positioned dropdown gets cut
     // off or covered depending on row position. Portal it to <body> and track the
     // input's live position instead, so it always renders on top, fully visible.
-    const shouldShowMenu = showSuggestions && !disabled && suggestions.length > 0;
+    const shouldShowMenu = showSuggestions && !disabled && searchTerm.trim().length >= MIN_SEARCH_LENGTH;
 
     useEffect(() => {
         if (!shouldShowMenu) return;
@@ -135,6 +183,37 @@ const UserCellSelector = React.memo(({ value, onChange, students, rowId, handleR
         };
     }, [shouldShowMenu]);
 
+    if (!isEditing && value) {
+        const words = value.trim().split(/\s+/).filter(Boolean);
+        return (
+            <div className="flex items-start justify-between gap-1 w-full">
+                <div
+                    className={`min-w-0 flex-1 leading-tight ${disabled ? "" : "cursor-pointer"}`}
+                    onClick={() => !disabled && setIsEditing(true)}
+                    title={disabled ? undefined : "Click to change"}
+                >
+                    {words.map((word, i) => (
+                        <div key={i} className="break-words">{word}</div>
+                    ))}
+                </div>
+                {!disabled && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onChange("", "");
+                            handleRowFieldChange(rowId, "cardNo", "");
+                        }}
+                        className="shrink-0 text-slate-400 hover:text-red-500 leading-none text-sm font-normal normal-case px-0.5"
+                        title="Clear selection"
+                    >
+                        ×
+                    </button>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div ref={wrapperRef} className="relative w-full">
             <Input
@@ -148,30 +227,41 @@ const UserCellSelector = React.memo(({ value, onChange, students, rowId, handleR
                     }
                 }}
                 onFocus={() => !disabled && setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                onBlur={() => setTimeout(() => {
+                    setShowSuggestions(false);
+                    if (value) setIsEditing(false);
+                }, 200)}
                 placeholder="Search user..."
                 disabled={disabled}
-                className="h-8 w-full min-w-[180px] text-xs shadow-none border-slate-200 bg-white"
+                className="h-8 w-full min-w-0 text-xs shadow-none border-slate-200 bg-white"
             />
             {shouldShowMenu && menuStyle && createPortal(
                 <ul
                     style={{ position: "fixed", top: menuStyle.top, left: menuStyle.left, width: menuStyle.width }}
                     className="bg-white border border-slate-200 rounded shadow-lg max-h-40 overflow-y-auto z-[9999] py-1 normal-case font-normal text-left"
                 >
-                    {suggestions.map((s) => (
-                        <li
-                            key={s._id || s.id}
-                            onMouseDown={() => {
-                                onChange(s._id || s.id, s.fullName || s.name, s.lineName, s.subSectionName);
-                                handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
-                                setShowSuggestions(false);
-                            }}
-                            className="px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer flex flex-col"
-                        >
-                            <span className="font-semibold text-slate-700">{s.fullName || s.name}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">Card: {s.cardNo || s.username || s.empId || "—"}</span>
+                    {isSearching ? (
+                        <li className="px-2 py-1.5 text-xs text-slate-400 flex items-center gap-1.5">
+                            <IconLoader className="h-3 w-3 animate-spin" /> Searching...
                         </li>
-                    ))}
+                    ) : suggestions.length > 0 ? (
+                        suggestions.map((s) => (
+                            <li
+                                key={s._id || s.id}
+                                onMouseDown={() => {
+                                    onChange(s._id || s.id, s.fullName || s.name, s.lineName, s.subSectionName);
+                                    handleRowFieldChange(rowId, "cardNo", s.cardNo || s.username || s.empId || "-");
+                                    setShowSuggestions(false);
+                                }}
+                                className="px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer flex flex-col"
+                            >
+                                <span className="font-semibold text-slate-700">{s.fullName || s.name}</span>
+                                <span className="text-[10px] text-slate-500 font-mono">Card: {s.cardNo || s.username || s.empId || "—"}</span>
+                            </li>
+                        ))
+                    ) : (
+                        <li className="px-2 py-1.5 text-xs text-slate-400">No matches found</li>
+                    )}
                 </ul>,
                 document.body
             )}
@@ -297,7 +387,9 @@ HorizontalScrollbar.displayName = "HorizontalScrollbar";
 const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
     row,
     index,
-    students,
+    departmentId,
+    sectionId,
+    lineId,
     lines,
     subSections,
     canManage,
@@ -316,19 +408,21 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
     return (
         <tr className="group hover:bg-slate-50/50 transition-colors [&>td]:border-b [&>td]:border-slate-200">
             <td className={`${stickyFrozenCell} w-[70px] min-w-[70px] border-r border-slate-200 p-2 text-center text-slate-500 font-medium whitespace-nowrap`} style={{ left: 0 }}>{index + 1}</td>
-            <td className={`${stickyFrozenCell} w-[220px] min-w-[220px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-nowrap`} style={{ left: '70px' }}>
+            <td className={`${stickyFrozenCell} w-[110px] min-w-[110px] border-r border-slate-200 p-2 font-bold text-slate-800 uppercase whitespace-normal break-words`} style={{ left: '70px' }}>
                 <UserCellSelector
                     value={row.userName}
                     onChange={(userId, userName, lineName, subSectionName) => {
                         onUserSelect(rowId, userId, userName, lineName, subSectionName);
                     }}
-                    students={students}
+                    departmentId={departmentId}
+                    sectionId={sectionId}
+                    lineId={lineId}
                     rowId={rowId}
                     handleRowFieldChange={onFieldChange}
                     disabled={!canManage}
                 />
             </td>
-            <td className={`${stickyFrozenCell} w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-bold text-slate-800 whitespace-nowrap`} style={{ left: '290px' }}>
+            <td className={`${stickyFrozenCell} w-[120px] min-w-[120px] border-r border-slate-200 p-2 text-center font-bold text-slate-800 whitespace-nowrap`} style={{ left: '180px' }}>
                 <Input
                     value={row.cardNo || ""}
                     disabled={true}
@@ -338,7 +432,7 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                 />
             </td>
             {/* Model & Line */}
-            <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap`} style={{ left: '410px' }}>
+            <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap`} style={{ left: '300px' }}>
                 <Select
                     value={row.modelLine || ""}
                     onValueChange={(val) => {
@@ -360,7 +454,7 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                 </Select>
             </td>
             {/* Station */}
-            <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`} style={{ left: '580px' }}>
+            <td className={`${stickyFrozenCell} w-[170px] min-w-[170px] border-r border-slate-200 p-1 whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.35)]`} style={{ left: '470px' }}>
                 <Select
                     value={row.station || ""}
                     onValueChange={(val) => onFieldChange(rowId, "station", val)}
@@ -932,10 +1026,15 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                             {/* Group headers row */}
                             <tr className="h-12 [&>th]:border-b [&>th]:border-slate-300">
                                 <th rowSpan="2" className={`${stickyFrozenHeader} w-[70px] min-w-[70px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: 0 }}>Sr. No</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[220px] min-w-[220px] border-r border-slate-300 bg-slate-100 p-2 text-center align-middle whitespace-nowrap`} style={{ left: '70px' }}>Associates Name</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '290px' }}>Card No</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '410px' }}>Model & Line</th>
-                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`} style={{ left: '580px' }}>Station</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[110px] min-w-[110px] border-r border-slate-300 bg-slate-100 p-2 text-center align-middle whitespace-normal break-words`} style={{ left: '70px' }}>
+                                    <div className="leading-tight">
+                                        <div>Associates</div>
+                                        <div>Name</div>
+                                    </div>
+                                </th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[120px] min-w-[120px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '180px' }}>Card No</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 text-center font-bold align-middle whitespace-nowrap`} style={{ left: '300px' }}>Model & Line</th>
+                                <th rowSpan="2" className={`${stickyFrozenHeader} w-[170px] min-w-[170px] border-r border-slate-300 bg-slate-100 p-2 text-center font-bold align-middle whitespace-nowrap shadow-[4px_0_8px_-6px_rgba(15,23,42,0.45)]`} style={{ left: '470px' }}>Station</th>
                                 {QUARTERS.map(({ key, label, headerBg }) => (
                                     <th key={key} colSpan="5" className={`${stickyHeader} border-r border-slate-300 p-2 text-center font-bold ${headerBg} whitespace-nowrap`}>{label}</th>
                                 ))}
@@ -960,7 +1059,9 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                     key={row.rowId}
                                     row={row}
                                     index={index}
-                                    students={students}
+                                    departmentId={departmentId}
+                                    sectionId={sectionId}
+                                    lineId={lineId}
                                     lines={lines}
                                     subSections={subSections}
                                     canManage={canManage}

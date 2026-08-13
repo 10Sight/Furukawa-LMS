@@ -2,7 +2,6 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import Holiday from "../models/holiday.model.js";
-import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
 
 /**
  * Get stats for the Admin Home page
@@ -553,68 +552,93 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
 });
 
 
-// 16-Day Monitoring starts the next IST calendar day after handover approval and must be
-// completed within 16 *working* days (Sat/Sun + dashboard_holidays excluded) — this mirrors
-// the eligibility rule already enforced in sixteenDayEligibilityScheduler.js. A due-date can
-// land up to ~3-4 calendar weeks after approval once weekends/holidays are excluded, so we
-// pad both the handover-approval lookback and the holiday-calendar fetch by this many days.
-const DUE_DATE_LOOKBACK_DAYS = 45;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MONTH_ABBR = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
-const shiftIsoDate = (isoDate, days) => {
-    const d = new Date(`${isoDate}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-};
-
-const toISTDateString = (date) => {
-    const ist = new Date(date.getTime() + IST_OFFSET_MS);
-    const y = ist.getUTCFullYear();
-    const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(ist.getUTCDate()).padStart(2, '0');
+const formatDateObj = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
 };
 
-// Walks forward from the next IST calendar day after approval, counting only working days
-// (Mon-Fri, non-holiday), and returns the ISO date of the 16th such day.
-const computeMonitoringDueDate = (handoverApprovedAt, holidaySet, workingDays = 16) => {
-    let cursor = getNextCalendarDayMidnightIST(handoverApprovedAt);
-    let counted = 0;
-    // Bounded to 4x the working-day target so a bad/holiday-flooded input can't loop forever.
-    for (let guard = 0; guard < workingDays * 4; guard++) {
-        const iso = toISTDateString(cursor);
-        const istDow = new Date(cursor.getTime() + IST_OFFSET_MS).getUTCDay(); // 0=Sun..6=Sat, IST wall-clock
-        const isWeekend = istDow === 0 || istDow === 6;
-        if (!isWeekend && !holidaySet.has(iso)) {
-            counted++;
-            if (counted === workingDays) return iso;
-        }
-        cursor = new Date(cursor.getTime() + MS_PER_DAY);
+const shiftIsoDate = (isoDate, days) => {
+    const d = new Date(`${isoDate}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return formatDateObj(d);
+};
+
+const todayIST = () => {
+    const ist = new Date(Date.now() + IST_OFFSET_MS);
+    return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+};
+
+// The monitoring grid stores its own date columns (attendance_date_1..16) as "dd-MMM-yy"
+// (e.g. "14-Aug-26") via date-fns `format(date, "dd-MMM-yy")" — NOT ISO — and the sheet's
+// top-level `startDate` column is captured directly from that field, so it inherits the same
+// format. Handles both that format and a plain ISO fallback.
+const parseFlexibleDate = (str) => {
+    if (!str) return null;
+    const s = String(str).trim();
+    const ddMmmYy = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+    if (ddMmmYy) {
+        const day = Number(ddMmmYy[1]);
+        const mon = MONTH_ABBR[ddMmmYy[2].toLowerCase()];
+        let year = Number(ddMmmYy[3]);
+        if (year < 100) year += 2000;
+        if (mon === undefined || !day) return null;
+        const d = new Date(year, mon, day);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+        const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+        return isNaN(d.getTime()) ? null : d;
     }
     return null;
 };
 
-const periodFromDueDate = (isoDate, groupBy) => {
+// 16-Day Monitoring must complete within 16 *working* days of Day 1 (Sat/Sun + dashboard
+// holidays excluded). Counts forward from Day 1 itself (inclusive) and returns the ISO date
+// of the 16th working day — the deadline for "still pending" vs "overdue".
+const computeDueDateFromStart = (startDateObj, holidaySet, workingDays = 16) => {
+    let cursor = new Date(startDateObj);
+    let counted = 0;
+    // Bounded to 4x the working-day target so a bad/holiday-flooded input can't loop forever.
+    for (let guard = 0; guard < workingDays * 4; guard++) {
+        const iso = formatDateObj(cursor);
+        const dow = cursor.getDay();
+        const isWeekend = dow === 0 || dow === 6;
+        if (!isWeekend && !holidaySet.has(iso)) {
+            counted++;
+            if (counted === workingDays) return iso;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return null;
+};
+
+const periodFromIso = (isoDate, groupBy) => {
     if (groupBy === 'yearly') return isoDate.slice(0, 4);
     if (groupBy === 'monthly') return isoDate.slice(0, 7);
     return isoDate;
 };
 
 /**
- * Get Sixteen-Day Monitoring Comparison for Admin Home page
- * Expected: operators whose 16-Day Monitoring is DUE to complete in this period — i.e. their
- *           Dojo Handover was approved, and (approval date + 16 working days, holidays
- *           excluded) falls inside the period. This keeps Expected and Actual aligned to the
- *           same point in the process instead of comparing "just became eligible" against
- *           "completed ~16 working days later" in the same bucket.
- * Actual:   operators with a Submitted 16-Day Monitoring sheet that has also been signed off
- *           by the approver (approvedBy set, and not a "Rejected By: ..." signature) — i.e.
- *           genuinely complete, not merely submitted-and-pending or rejected. Grouped by
- *           updatedAt (the save that recorded the approval), plus their average
- *           summary_total_score parsed directly from gridData JSON.
+ * Get Sixteen-Day Monitoring status breakdown for Admin Home page — replaces the earlier
+ * Expected-vs-Actual comparison with the metrics the shop floor actually tracks day to day:
+ * Started:  Day 1 is filled (sheet's `startDate` column is set) — the cohort for the period,
+ *           grouped by that Day-1 date.
+ * Completed: status = 'Submitted', signed off by the approver (approvedBy set, not a
+ *           "Rejected By: ..." signature), AND Day 16 is filled.
+ * Pending:  Started but not yet Completed, split by today's date (IST) against the deadline
+ *           (Day 1 + 16 working days, Sat/Sun + dashboard_holidays excluded):
+ *             - pendingOnTrack: deadline hasn't passed yet
+ *             - pendingOverdue: deadline has passed and it's still not Completed
+ * All four are sub-counts of the same Day-1 cohort, so Started === Completed + pendingOnTrack
+ * + pendingOverdue by construction — there's only one query, no cross-source merge needed.
  */
-export const getSixteenDayMonitoringComparison = asyncHandler(async (req, res) => {
+export const getSixteenDayMonitoringStatus = asyncHandler(async (req, res) => {
     const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
 
     const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
@@ -638,207 +662,110 @@ export const getSixteenDayMonitoringComparison = asyncHandler(async (req, res) =
         end   = now.toISOString().split('T')[0];
     }
 
-    const actualFormatMap = {
-        daily:   "FORMAT(m.updatedAt, 'yyyy-MM-dd')",
-        monthly: "FORMAT(m.updatedAt, 'yyyy-MM')",
-        yearly:  "FORMAT(m.updatedAt, 'yyyy')",
-    };
-
     // Accepts comma-separated department IDs for multi-select
-    let expectedDeptClausePrefixed = '';
-    let actualDeptClausePrefixed = '';
+    let deptClause = '';
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const actualParams = [start, end];
+    const params = [];
     if (deptIds.length > 0) {
         const ph = deptIds.map(() => '?').join(',');
-        expectedDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
-        actualDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
-        actualParams.push(...deptIds);
+        deptClause = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        params.push(...deptIds);
     }
 
-    // A due date can only fall in [start, end] if the underlying approval happened up to
-    // DUE_DATE_LOOKBACK_DAYS earlier (worst case: weekends + a holiday cluster), so the
-    // candidate fetch is padded on the front; approvals right at `end` are still in range.
-    const bufferedStart = shiftIsoDate(start, -DUE_DATE_LOOKBACK_DAYS);
-    const holidayRangeEnd = shiftIsoDate(end, DUE_DATE_LOOKBACK_DAYS);
-
-    const expectedParams = [bufferedStart, end];
-    if (deptIds.length > 0) expectedParams.push(...deptIds);
-
-    // One approval per student (the latest handover_sheets row that approved them), mirroring
-    // the ApprovedHandovers CTE already trusted in sixteenDayEligibilityScheduler.js.
-    const [candidateRows] = await executeQuery(`
-        WITH ApprovedHandovers AS (
+    // `startDate` isn't a sortable/rangeable format in SQL (see parseFlexibleDate above), so
+    // period filtering happens in JS after parsing. Table is one row per operator (attempt),
+    // not a high-frequency event log, so fetching every latest-attempt row is cheap — only the
+    // one small JSON field we actually need (Day 16) is pulled out of gridData, not the blob.
+    const [rows] = await executeQuery(`
+        WITH LatestAttempt AS (
             SELECT
-                TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS studentId,
-                JSON_VALUE(entry.value, '$.statusActionAt') AS handoverApprovedAt,
-                ROW_NUMBER() OVER (
-                    PARTITION BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
-                    ORDER BY hs.createdAt DESC
-                ) as rn
-            FROM handover_sheets hs
-            CROSS APPLY OPENJSON(hs.entries) as entry
-            WHERE hs.date >= ? AND hs.date <= ?
-              AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+                m.studentId, m.startDate, m.status, m.approvedBy,
+                JSON_VALUE(m.gridData, '$.attendance_date_16') AS day16Date,
+                ROW_NUMBER() OVER (PARTITION BY m.studentId ORDER BY m.attemptNumber DESC, m.createdAt DESC) AS rn
+            FROM sixteen_day_monitorings m
         )
         SELECT
-            u.id AS studentId,
-            ah.handoverApprovedAt,
+            la.studentId, la.startDate, la.status, la.approvedBy, la.day16Date,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned') AS sectionName
-        FROM users u
-        INNER JOIN ApprovedHandovers ah ON ah.studentId = u.id AND ah.rn = 1
+        FROM LatestAttempt la
+        INNER JOIN users u ON u.id = la.studentId
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
-        WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND ah.handoverApprovedAt IS NOT NULL
-          ${expectedDeptClausePrefixed}
-    `, expectedParams);
+        WHERE la.rn = 1
+          AND la.startDate IS NOT NULL AND LTRIM(RTRIM(la.startDate)) <> ''
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+    `, params);
 
-    const holidayRows = await Holiday.getForRange(bufferedStart, holidayRangeEnd);
+    // Parse each row's Day-1 date and drop anything outside the requested window before we
+    // bother fetching holidays or classifying status.
+    const parsed = [];
+    for (const row of rows) {
+        const startDateObj = parseFlexibleDate(row.startDate);
+        if (!startDateObj) continue;
+        const startIso = formatDateObj(startDateObj);
+        if (startIso < start || startIso > end) continue;
+        parsed.push({ ...row, startDateObj, startIso });
+    }
+
+    const today = todayIST();
+
+    if (parsed.length === 0) {
+        return res.status(200).json(
+            new ApiResponse(200, { trend: [], deptBreakdown: [], groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring status fetched successfully")
+        );
+    }
+
+    // Fetch holidays once for the full span this batch could possibly need: from the earliest
+    // Day-1 in range through 45 days past "today" (comfortably covers a 16-working-day window
+    // plus a holiday cluster for the most recent starts).
+    const minStartIso = parsed.reduce((min, r) => (r.startIso < min ? r.startIso : min), parsed[0].startIso);
+    const holidayRangeEnd = shiftIsoDate(today > end ? today : end, 45);
+    const holidayRows = await Holiday.getForRange(minStartIso, holidayRangeEnd);
     const holidaySet = new Set(holidayRows.map(h => h.holidayDate));
 
-    // Compute each candidate's due date in JS (working-day math isn't a clean single SQL
-    // aggregate), then bucket into the same {period, expected} / {period, deptId, sectionId,
-    // sectionName, expected} shapes the SQL-grouped queries used to produce, so the merge
-    // logic below doesn't need to know whether Expected came from SQL or JS.
-    const periodCounts = {};
-    const deptPeriodCounts = {};
-    for (const row of candidateRows) {
-        const dueDateIso = computeMonitoringDueDate(row.handoverApprovedAt, holidaySet);
-        if (!dueDateIso || dueDateIso < start || dueDateIso > end) continue;
+    const periodTotals = {};
+    const deptPeriodTotals = {};
+    const bump = (bucket, field) => { bucket[field] = (bucket[field] || 0) + 1; };
 
-        const period = periodFromDueDate(dueDateIso, safeGroupBy);
-        periodCounts[period] = (periodCounts[period] || 0) + 1;
+    for (const row of parsed) {
+        const day16Filled = !!(row.day16Date && String(row.day16Date).trim());
+        const isApproved = !!(row.approvedBy && String(row.approvedBy).trim() && !String(row.approvedBy).startsWith('Rejected By:'));
+        const isCompleted = row.status === 'Submitted' && isApproved && day16Filled;
+
+        let field;
+        if (isCompleted) {
+            field = 'completed';
+        } else {
+            const dueDateIso = computeDueDateFromStart(row.startDateObj, holidaySet);
+            field = (dueDateIso && dueDateIso < today) ? 'pendingOverdue' : 'pendingOnTrack';
+        }
+
+        const period = periodFromIso(row.startIso, safeGroupBy);
+        if (!periodTotals[period]) periodTotals[period] = { period, started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
+        periodTotals[period].started++;
+        bump(periodTotals[period], field);
 
         if (row.deptId) {
             const key = `${row.deptId}__${row.sectionId}__${period}`;
-            if (!deptPeriodCounts[key]) {
-                deptPeriodCounts[key] = { deptId: row.deptId, sectionId: row.sectionId, sectionName: row.sectionName, period, expected: 0 };
+            if (!deptPeriodTotals[key]) {
+                deptPeriodTotals[key] = { period, deptId: row.deptId, sectionId: row.sectionId, sectionName: row.sectionName, started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
             }
-            deptPeriodCounts[key].expected++;
+            deptPeriodTotals[key].started++;
+            bump(deptPeriodTotals[key], field);
         }
     }
-    const expectedRows = Object.entries(periodCounts).map(([period, expected]) => ({ period, expected }));
-    const deptExpectedRows = Object.values(deptPeriodCounts);
 
-    // Average score computed server-side straight from the JSON grid — no per-record fetch.
-    // "Complete" = Submitted AND signed off by the approver (not merely pending, not rejected).
-    const [actualRows] = await executeQuery(`
-        SELECT
-            ${actualFormatMap[safeGroupBy]}                                          AS period,
-            COUNT(DISTINCT m.studentId)                                              AS actual,
-            AVG(TRY_CAST(JSON_VALUE(m.gridData, '$.summary_total_score') AS FLOAT))  AS avgScore
-        FROM sixteen_day_monitorings m
-        INNER JOIN users u ON u.id = m.studentId
-        WHERE m.updatedAt >= ?
-          AND m.updatedAt <= ?
-          AND m.status = 'Submitted'
-          AND m.approvedBy IS NOT NULL
-          AND LTRIM(RTRIM(m.approvedBy)) <> ''
-          AND m.approvedBy NOT LIKE 'Rejected By:%'
-          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          ${actualDeptClausePrefixed}
-        GROUP BY ${actualFormatMap[safeGroupBy]}
-        ORDER BY period ASC
-    `, actualParams);
-
-    const [deptActualRows] = await executeQuery(`
-        SELECT
-            ${actualFormatMap[safeGroupBy]}                                          AS period,
-            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20))            AS deptId,
-            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
-            COALESCE(s.name, 'Unassigned')                                           AS sectionName,
-            COUNT(DISTINCT m.studentId)                                              AS actual,
-            AVG(TRY_CAST(JSON_VALUE(m.gridData, '$.summary_total_score') AS FLOAT))  AS avgScore
-        FROM sixteen_day_monitorings m
-        INNER JOIN users u ON u.id = m.studentId
-        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
-        WHERE m.updatedAt >= ?
-          AND m.updatedAt <= ?
-          AND m.status = 'Submitted'
-          AND m.approvedBy IS NOT NULL
-          AND LTRIM(RTRIM(m.approvedBy)) <> ''
-          AND m.approvedBy NOT LIKE 'Rejected By:%'
-          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
-          ${actualDeptClausePrefixed}
-        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
-        ORDER BY period ASC
-    `, actualParams);
-
-    // Merge total expected + actual + avgScore by period
-    const mergedMap = {};
-    expectedRows.forEach(r => {
-        if (r.period) mergedMap[r.period] = { period: r.period, expected: Number(r.expected), actual: 0, avgScore: null };
-    });
-    actualRows.forEach(r => {
-        if (r.period) {
-            const avgScore = r.avgScore !== null && r.avgScore !== undefined ? Number(r.avgScore) : null;
-            if (mergedMap[r.period]) {
-                mergedMap[r.period].actual = Number(r.actual);
-                mergedMap[r.period].avgScore = avgScore;
-            } else {
-                mergedMap[r.period] = { period: r.period, expected: 0, actual: Number(r.actual), avgScore };
-            }
-        }
-    });
-
-    const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
-
-    // Build per-dept + per-section breakdown merging expected + actual per (deptId, sectionId, period)
-    const deptExpMap = {};
-    deptExpectedRows.forEach(r => {
-        const key = `${r.deptId}__${r.sectionId}`;
-        if (!deptExpMap[key]) deptExpMap[key] = {};
-        deptExpMap[key][r.period] = Number(r.expected);
-    });
-
-    const deptActMap = {};
-    deptActualRows.forEach(r => {
-        const key = `${r.deptId}__${r.sectionId}`;
-        if (!deptActMap[key]) deptActMap[key] = {};
-        deptActMap[key][r.period] = {
-            actual: Number(r.actual),
-            avgScore: r.avgScore !== null && r.avgScore !== undefined ? Number(r.avgScore) : null,
-        };
-    });
-
-    const deptPeriodPairs = new Map();
-    const addPair = (r) => {
-        const key = `${r.deptId}__${r.sectionId}__${r.period}`;
-        if (!deptPeriodPairs.has(key)) {
-            deptPeriodPairs.set(key, {
-                deptId: String(r.deptId),
-                sectionId: String(r.sectionId),
-                sectionName: r.sectionName,
-                period: r.period,
-            });
-        }
-    };
-    deptExpectedRows.forEach(addPair);
-    deptActualRows.forEach(addPair);
-
-    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, sectionId, sectionName, period }) => {
-        const key = `${deptId}__${sectionId}`;
-        const actualEntry = deptActMap[key]?.[period];
-        return {
-            period,
-            deptId,
-            sectionId,
-            sectionName,
-            expected: deptExpMap[key]?.[period] || 0,
-            actual: actualEntry?.actual || 0,
-            avgScore: actualEntry?.avgScore ?? null,
-        };
-    }).sort((a, b) =>
+    const trend = Object.values(periodTotals).sort((a, b) => a.period.localeCompare(b.period));
+    const deptBreakdown = Object.values(deptPeriodTotals).sort((a, b) =>
         Number(a.deptId) - Number(b.deptId) ||
         a.sectionName.localeCompare(b.sectionName) ||
         a.period.localeCompare(b.period)
     );
 
     res.status(200).json(
-        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring comparison fetched successfully")
+        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring status fetched successfully")
     );
 });
 

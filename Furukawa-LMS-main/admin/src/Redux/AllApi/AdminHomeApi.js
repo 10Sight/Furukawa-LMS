@@ -53,9 +53,9 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
-        getSixteenDayMonitoringComparison: builder.query({
+        getSixteenDayMonitoringStatus: builder.query({
             query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
-                url: "/api/admin-home/sixteen-day-monitoring-comparison",
+                url: "/api/admin-home/sixteen-day-monitoring-status",
                 method: "GET",
                 params: { startDate, endDate, groupBy, departmentId }
             }),
@@ -81,6 +81,6 @@ export const {
     useGetAdminHomeUserStatusStatsQuery,
     useGetDojoHiringTrendQuery,
     useGetDojoHandoverComparisonQuery,
-    useGetSixteenDayMonitoringComparisonQuery,
+    useGetSixteenDayMonitoringStatusQuery,
     useGetContractorWiseOperatorStatsQuery,
 } = adminHomeApi;

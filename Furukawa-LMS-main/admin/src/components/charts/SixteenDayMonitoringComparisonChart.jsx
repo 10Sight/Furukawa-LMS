@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetSixteenDayMonitoringComparisonQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetSixteenDayMonitoringStatusQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { IconClipboardCheck, IconCalendar, IconRefresh, IconChevronDown, IconTrendingUp } from "@tabler/icons-react";
+import { IconClipboardCheck, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
@@ -26,9 +26,6 @@ const formatDate = (date) => {
 const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
 const MONTH_END = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1, 0));
-
-// Passing / baseline threshold shown as a reference line on the Average Score view.
-const TARGET_BASELINE = 90;
 
 // Daily view uses one category slot per day (times departments/sections), so an unbounded
 // range can blow up the column count into the thousands. Cap it client-side.
@@ -96,7 +93,18 @@ const formatPeriodLabel = (period, groupBy, language = 'en') => {
     return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 };
 
-const EMPTY_ROW = { expected: 0, actual: 0, avgScore: null };
+// Four mutually-exclusive-except-"started" series: started === completed + pendingOnTrack +
+// pendingOverdue by construction (see the backend controller), each drawn as its own column so
+// exact per-bucket values stay readable — a stacked view was considered but rejected in favor
+// of this simpler, directly-comparable layout.
+const METRICS = [
+    { key: 'started', labelKey: 'charts.started', color: '#94a3b8' },
+    { key: 'completed', labelKey: 'charts.completed', color: '#10b981' },
+    { key: 'pendingOnTrack', labelKey: 'charts.pendingOnTrack', color: '#f59e0b' },
+    { key: 'pendingOverdue', labelKey: 'charts.pendingOverdue', color: '#ef4444' },
+];
+
+const EMPTY_ROW = { started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
 
 const buildFullPeriods = (groupBy, start, end) => {
     if (!start || !end) return [];
@@ -145,7 +153,6 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
     const [rawStart, setRawStart] = useState('');
     const [rawEnd, setRawEnd] = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
-    const [viewMode, setViewMode] = useState('count'); // 'count' | 'score'
 
     // Debounce manual date-input edits so each keystroke doesn't fire its own request + chart
     // remount — the <Input> stays bound to the raw state so typing itself never feels laggy.
@@ -162,7 +169,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         [timeframe, debouncedRawStart, debouncedRawEnd]
     );
 
-    const { data, isLoading, error } = useGetSixteenDayMonitoringComparisonQuery({
+    const { data, isLoading, error } = useGetSixteenDayMonitoringStatusQuery({
         groupBy: timeframe,
         startDate,
         endDate,
@@ -188,13 +195,10 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
     );
-    const totalActual = trend.reduce((a, r) => a + (Number(r.actual) || 0), 0);
-    const totalExpected = trend.reduce((a, r) => a + (Number(r.expected) || 0), 0);
-    const achievementRate = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
-    const scoredPeriods = trend.filter(r => r.avgScore !== null && r.avgScore !== undefined);
-    const overallAvgScore = scoredPeriods.length > 0
-        ? scoredPeriods.reduce((a, r) => a + Number(r.avgScore), 0) / scoredPeriods.length
-        : null;
+    const totals = useMemo(() => METRICS.reduce((acc, { key }) => {
+        acc[key] = trend.reduce((sum, r) => sum + (Number(r[key]) || 0), 0);
+        return acc;
+    }, {}), [trend]);
 
     const fullPeriods = useMemo(
         () => buildFullPeriods(groupBy, apiStart, apiEnd),
@@ -207,13 +211,13 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
     // periods × departments × sections when nothing is filtered.
     const isSectionDrill = selectedDepts.length === 1;
 
-    // Two-series approach (Expected vs Actual):
     // For each date, we display each department (or, in drill mode, each section) as a single
-    // category slot, and within that category slot, Highcharts renders 2 bars (Expected and
-    // Actual) side-by-side. The date label is shown once per group under the middle slot.
-    const { expectedPoints, actualPoints, categories, groupSeparators, todaySlotIdx } = useMemo(() => {
-        if (!deptBreakdown.length || !fullPeriods.length)
-            return { expectedPoints: [], actualPoints: [], categories: [], groupSeparators: [], todaySlotIdx: -1 };
+    // category slot, and within that category slot, Highcharts renders one bar per metric
+    // (Started / Completed / Pending On-Track / Pending Overdue) side-by-side. The date label
+    // is shown once per group under the middle slot.
+    const { pointsByMetric, categories, groupSeparators, todaySlotIdx } = useMemo(() => {
+        const emptyResult = { pointsByMetric: Object.fromEntries(METRICS.map(m => [m.key, []])), categories: [], groupSeparators: [], todaySlotIdx: -1 };
+        if (!deptBreakdown.length || !fullPeriods.length) return emptyResult;
 
         const dataMap = {};
         const orderedKeys = [];
@@ -227,14 +231,12 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                     ? (r.sectionName || t('charts.unassignedSection'))
                     : (departments.find(d => String(d.id ?? d._id) === r.deptId)?.name ?? `Dept ${r.deptId}`);
             }
-            const bucket = dataMap[key][r.period] ?? { expected: 0, actual: 0 };
-            bucket.expected += Number(r.expected) || 0;
-            bucket.actual += Number(r.actual) || 0;
+            const bucket = dataMap[key][r.period] ?? { ...EMPTY_ROW };
+            METRICS.forEach(({ key: mk }) => { bucket[mk] += Number(r[mk]) || 0; });
             dataMap[key][r.period] = bucket;
         });
 
-        const expectedPoints = [];
-        const actualPoints = [];
+        const pointsByMetric = Object.fromEntries(METRICS.map(m => [m.key, []]));
         const categories = [];
         const groupSeparators = [];
         let todaySlotIdx = -1;
@@ -244,7 +246,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
             const isToday = period === currentPeriodKey;
             const keysPresent = orderedKeys.filter(k => {
                 const v = dataMap[k]?.[period];
-                return v && (v.expected > 0 || v.actual > 0);
+                return v && v.started > 0;
             });
 
             if (!keysPresent.length) {
@@ -252,8 +254,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 const emptyColor = isToday ? '#2563eb' : '#94a3b8';
                 const emptyWeight = isToday ? '900' : '600';
                 categories.push(`<span style="color:${emptyColor};font-size:11px;font-weight:${emptyWeight}">${periodLabel}</span>`);
-                expectedPoints.push({ y: null, label: '', periodLabel, isExpected: true, isEmpty: true });
-                actualPoints.push({ y: null, label: '', periodLabel, isExpected: false, isEmpty: true });
+                METRICS.forEach(({ key }) => pointsByMetric[key].push({ y: null, label: '', periodLabel, metricKey: key, isEmpty: true }));
                 return;
             }
 
@@ -280,30 +281,25 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
 
                 categories.push(topHtml + dateLine);
 
-                expectedPoints.push({
-                    y: vals.expected > 0 ? vals.expected : null,
-                    label,
-                    periodLabel,
-                    isExpected: true,
-                    isEmpty: false,
-                });
-
-                actualPoints.push({
-                    y: vals.actual > 0 ? vals.actual : null,
-                    label,
-                    periodLabel,
-                    isExpected: false,
-                    isEmpty: false,
+                METRICS.forEach(({ key: mk }) => {
+                    pointsByMetric[mk].push({
+                        y: vals[mk] > 0 ? vals[mk] : null,
+                        label,
+                        periodLabel,
+                        metricKey: mk,
+                        isEmpty: false,
+                    });
                 });
             });
         });
 
         let i = 0;
-        while (i < expectedPoints.length) {
-            const label = expectedPoints[i].periodLabel;
+        const anyMetricPoints = pointsByMetric[METRICS[0].key];
+        while (i < anyMetricPoints.length) {
+            const label = anyMetricPoints[i].periodLabel;
             let j = i;
-            while (j < expectedPoints.length && expectedPoints[j].periodLabel === label) j++;
-            if (j < expectedPoints.length) {
+            while (j < anyMetricPoints.length && anyMetricPoints[j].periodLabel === label) j++;
+            if (j < anyMetricPoints.length) {
                 groupSeparators.push({
                     value: j - 0.5,
                     width: 1,
@@ -315,10 +311,10 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
             i = j;
         }
 
-        return { expectedPoints, actualPoints, categories, groupSeparators, todaySlotIdx };
+        return { pointsByMetric, categories, groupSeparators, todaySlotIdx };
     }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t, currentPeriodKey]);
 
-    const SLOT_WIDTH = 120; // 120px slot width to fit two bars nicely
+    const SLOT_WIDTH = 150; // wider slot to fit four bars per category
     const needsScroll = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
@@ -332,26 +328,18 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
     }, [needsScroll, todaySlotIdx, categories.length]);
 
-    // Score view: one point per period (aggregate across the selected department filter,
-    // not drilled by section) so the trend line stays legible.
-    const scorePoints = useMemo(
-        () => trend.map(r => (r.avgScore !== null && r.avgScore !== undefined ? Number(r.avgScore.toFixed?.(2) ?? r.avgScore) : null)),
-        [trend]
-    );
-    const scoreCategories = useMemo(
-        () => fullPeriods.map(p => formatPeriodLabel(p, groupBy, language)),
-        [fullPeriods, groupBy, language]
-    );
-
-    const hasCountData = totalExpected > 0 || totalActual > 0;
-    const hasScoreData = scoredPeriods.length > 0;
-    const hasAnyData = viewMode === 'count' ? hasCountData : hasScoreData;
+    const hasAnyData = totals.started > 0;
 
     const selectedDeptName = isSectionDrill
         ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '')
         : '';
 
-    const countChartOptions = useMemo(() => ({
+    const metricLabels = useMemo(
+        () => Object.fromEntries(METRICS.map(m => [m.key, t(m.labelKey)])),
+        [t]
+    );
+
+    const chartOptions = useMemo(() => ({
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
@@ -406,7 +394,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 const title = selectedDeptName ? `${selectedDeptName} (${this.point.label})` : this.point.label;
                 return (
                     `<span style="color:${this.series.color}">●</span> ` +
-                    `<b>${title}</b> — ${this.point.isExpected ? t('charts.expectedMonitoring') : t('charts.actualMonitoring')}<br/>` +
+                    `<b>${title}</b> — ${metricLabels[this.point.metricKey]}<br/>` +
                     `Date: <b>${this.point.periodLabel}</b><br/>` +
                     `Count: <b>${this.y}</b>`
                 );
@@ -418,16 +406,16 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 colorByPoint: false,
                 borderRadius: 5,
                 borderWidth: 0,
-                pointPadding: 0.1,
-                groupPadding: 0.2,
-                maxPointWidth: 40,
+                pointPadding: 0.08,
+                groupPadding: 0.15,
+                maxPointWidth: 32,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? String(this.y) : ''; },
-                    style: { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style: { fontSize: '12px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align: 'center',
-                    y: -20,
+                    y: -18,
                     allowOverlap: true,
                 },
             },
@@ -444,77 +432,13 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 },
             ],
         },
-        series: [
-            { type: 'column', name: t('charts.expectedMonitoring'), data: expectedPoints, color: '#8b5cf6' },
-            { type: 'column', name: t('charts.actualMonitoring'), data: actualPoints, color: '#3b82f6' },
-        ],
-    }), [categories, expectedPoints, actualPoints, groupSeparators, needsScroll, scrollMinWidth, scrollPositionX, selectedDeptName, t]);
-
-    const scoreChartOptions = useMemo(() => ({
-        chart: {
-            type: 'line',
-            backgroundColor: 'transparent',
-            height: 420,
-            marginTop: 40,
-            style: { fontFamily: 'inherit' },
-            // Filtering/timeframe changes remount the whole chart anyway (see the `key` prop
-            // below), so animating each redraw only adds latency without a visual payoff.
-            animation: false,
-        },
-        title: { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories: scoreCategories,
-            crosshair: true,
-            lineWidth: 1,
-            lineColor: '#e9ecef',
-            labels: { style: { fontSize: '12px' } },
-            gridLineWidth: 0,
-        },
-        yAxis: {
-            min: 0,
-            max: 100,
-            title: { text: t('charts.averageScore'), style: { color: '#94a3b8', fontSize: '13px' } },
-            labels: { style: { fontSize: '13px' }, formatter() { return `${this.value}%`; } },
-            gridLineColor: '#f1f5f9',
-            plotLines: [{
-                value: TARGET_BASELINE,
-                width: 2,
-                dashStyle: 'Dash',
-                color: '#f59e0b',
-                zIndex: 4,
-                label: {
-                    text: `${t('charts.targetBaseline')} (${TARGET_BASELINE}%)`,
-                    align: 'right',
-                    style: { color: '#b45309', fontSize: '11px', fontWeight: '700' },
-                },
-            }],
-        },
-        legend: { enabled: false },
-        tooltip: {
-            useHTML: true,
-            style: { fontSize: '13px' },
-            formatter() {
-                if (this.y === null || this.y === undefined) return `<b>${this.x}</b>: ${t('charts.noData')}`;
-                return `<b>${this.x}</b><br/>${t('charts.averageScore')}: <b>${this.y}%</b>`;
-            },
-        },
-        plotOptions: {
-            line: {
-                animation: false,
-                connectNulls: false,
-                marker: { enabled: true, radius: 4 },
-                dataLabels: {
-                    enabled: true,
-                    formatter() { return this.y !== null && this.y !== undefined ? `${this.y}%` : ''; },
-                    style: { fontSize: '12px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
-                },
-            },
-        },
-        series: [
-            { type: 'line', name: t('charts.averageScore'), data: scorePoints, color: '#10b981' },
-        ],
-    }), [scoreCategories, scorePoints, t]);
+        series: METRICS.map(({ key, color }) => ({
+            type: 'column',
+            name: metricLabels[key],
+            data: pointsByMetric[key] || [],
+            color,
+        })),
+    }), [categories, pointsByMetric, groupSeparators, needsScroll, scrollMinWidth, scrollPositionX, selectedDeptName, metricLabels, t]);
 
     const cfg = INPUT_CONFIG[timeframe];
 
@@ -546,46 +470,24 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         setRawStart('');
         setRawEnd('');
         setSelectedDepts([]);
-        setViewMode('count');
     };
 
     const toggleDept = (id, checked) =>
         setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
 
-    const emptyStateHeight = isTablet ? 500 : isMobile ? 480 : (viewMode === 'count' ? 560 : 420);
+    const emptyStateHeight = isTablet ? 500 : isMobile ? 480 : 560;
 
     return (
         <Card className="col-span-2">
             <CardHeader className="pb-4">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    <div className="space-y-1">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                            <IconClipboardCheck className="h-5 w-5 text-blue-600" />
-                            {t('charts.sixteenDayMonitoringComparison')}
-                        </CardTitle>
-                        <CardDescription>
-                            {t('charts.sixteenDayMonitoringComparisonDesc')}
-                        </CardDescription>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                        <Button
-                            variant={viewMode === 'count' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setViewMode('count')}
-                        >
-                            {t('charts.countView')}
-                        </Button>
-                        <Button
-                            variant={viewMode === 'score' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setViewMode('score')}
-                        >
-                            <IconTrendingUp className="h-3.5 w-3.5 mr-1" />
-                            {t('charts.scoreView')}
-                        </Button>
-                    </div>
+                <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                        <IconClipboardCheck className="h-5 w-5 text-blue-600" />
+                        {t('charts.sixteenDayMonitoringComparison')}
+                    </CardTitle>
+                    <CardDescription>
+                        {t('charts.sixteenDayMonitoringComparisonDesc')}
+                    </CardDescription>
                 </div>
 
                 {/* Filter bar */}
@@ -725,30 +627,28 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                             }
                         `}</style>
                         <HighchartsReact
-                            key={`${viewMode}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
+                            key={`${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
                             highcharts={Highcharts}
-                            options={viewMode === 'count' ? countChartOptions : scoreChartOptions}
+                            options={chartOptions}
                         />
 
                         {/* Summary strip */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">{t('charts.totalExpected')}</span>
-                                <span className="text-sm font-black text-slate-800">{totalExpected}</span>
+                                <span className="text-xs font-bold text-slate-600">{t('charts.started')}</span>
+                                <span className="text-sm font-black text-slate-800">{totals.started}</span>
                             </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">{t('charts.totalCompleted')}</span>
-                                <span className="text-sm font-black text-blue-900">{totalActual}</span>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
+                                <span className="text-xs font-bold text-green-700">{t('charts.completed')}</span>
+                                <span className="text-sm font-black text-green-900">{totals.completed}</span>
                             </div>
-                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${achievementRate >= 100 ? 'bg-green-50' : 'bg-amber-50'}`}>
-                                <span className={`text-xs font-bold ${achievementRate >= 100 ? 'text-green-600' : 'text-amber-600'}`}>{t('charts.achievement')}</span>
-                                <span className={`text-sm font-black ${achievementRate >= 100 ? 'text-green-900' : 'text-amber-900'}`}>{achievementRate}%</span>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50">
+                                <span className="text-xs font-bold text-amber-700">{t('charts.pendingOnTrack')}</span>
+                                <span className="text-sm font-black text-amber-900">{totals.pendingOnTrack}</span>
                             </div>
-                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${overallAvgScore !== null && overallAvgScore >= TARGET_BASELINE ? 'bg-green-50' : 'bg-slate-50'}`}>
-                                <span className={`text-xs font-bold ${overallAvgScore !== null && overallAvgScore >= TARGET_BASELINE ? 'text-green-600' : 'text-slate-500'}`}>{t('charts.averageScore')}</span>
-                                <span className={`text-sm font-black ${overallAvgScore !== null && overallAvgScore >= TARGET_BASELINE ? 'text-green-900' : 'text-slate-800'}`}>
-                                    {overallAvgScore !== null ? `${overallAvgScore.toFixed(1)}%` : '—'}
-                                </span>
+                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${totals.pendingOverdue > 0 ? 'bg-red-50' : 'bg-slate-50'}`}>
+                                <span className={`text-xs font-bold ${totals.pendingOverdue > 0 ? 'text-red-700' : 'text-slate-500'}`}>{t('charts.pendingOverdue')}</span>
+                                <span className={`text-sm font-black ${totals.pendingOverdue > 0 ? 'text-red-900' : 'text-slate-800'}`}>{totals.pendingOverdue}</span>
                             </div>
                         </div>
                     </>

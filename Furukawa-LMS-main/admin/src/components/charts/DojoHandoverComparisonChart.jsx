@@ -160,6 +160,15 @@ const DojoHandoverComparisonChart = () => {
     const apiStart = data?.data?.start || '';
     const apiEnd = data?.data?.end || '';
 
+    // Current period key (in the same format as `period` values) so today's slot/label
+    // can be located and highlighted regardless of the active timeframe.
+    const currentPeriodKey = useMemo(() => {
+        const now = new Date();
+        if (groupBy === 'daily') return formatDate(now);
+        if (groupBy === 'monthly') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        return String(now.getFullYear());
+    }, [groupBy]);
+
     const trend = useMemo(
         () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
         [groupBy, apiStart, apiEnd, rawTrend]
@@ -183,9 +192,9 @@ const DojoHandoverComparisonChart = () => {
     // For each date, we display each department (or, in drill mode, each section) as a single
     // category slot, and within that category slot, Highcharts renders 2 bars (Expected and
     // Actual) side-by-side. The date label is shown once per group under the middle slot.
-    const { expectedPoints, actualPoints, categories, groupSeparators } = useMemo(() => {
+    const { expectedPoints, actualPoints, categories, groupSeparators, todaySlotIdx } = useMemo(() => {
         if (!deptBreakdown.length || !fullPeriods.length)
-            return { expectedPoints: [], actualPoints: [], categories: [], groupSeparators: [] };
+            return { expectedPoints: [], actualPoints: [], categories: [], groupSeparators: [], todaySlotIdx: -1 };
 
         // Build lookup maps. In drill mode, keys are sectionId; otherwise keys are deptId
         // and section-level rows for the same (period, dept) are summed together.
@@ -211,9 +220,11 @@ const DojoHandoverComparisonChart = () => {
         const actualPoints = [];
         const categories = [];
         const groupSeparators = [];
+        let todaySlotIdx = -1;
 
         fullPeriods.forEach(period => {
             const periodLabel = formatPeriodLabel(period, groupBy, language);
+            const isToday = period === currentPeriodKey;
             const keysPresent = orderedKeys.filter(k => {
                 const v = dataMap[k]?.[period];
                 return v && (v.expected > 0 || v.actual > 0);
@@ -221,7 +232,10 @@ const DojoHandoverComparisonChart = () => {
 
             if (!keysPresent.length) {
                 // Empty slot to represent the date without any data
-                categories.push(`<span style="color:#94a3b8;font-size:11px;font-weight:600">${periodLabel}</span>`);
+                if (isToday && todaySlotIdx === -1) todaySlotIdx = categories.length;
+                const emptyColor = isToday ? '#2563eb' : '#94a3b8';
+                const emptyWeight = isToday ? '900' : '600';
+                categories.push(`<span style="color:${emptyColor};font-size:11px;font-weight:${emptyWeight}">${periodLabel}</span>`);
                 expectedPoints.push({
                     y: null,
                     label: '',
@@ -247,6 +261,8 @@ const DojoHandoverComparisonChart = () => {
                 const vals = dataMap[key][period];
                 const isDateSlot = idx === midIdx;
 
+                if (isDateSlot && isToday && todaySlotIdx === -1) todaySlotIdx = categories.length;
+
                 // Slot label (department name, or section name in drill mode)
                 const topHtml = label
                     .split(' ')
@@ -254,7 +270,9 @@ const DojoHandoverComparisonChart = () => {
                     .join('<br/>');
 
                 const dateLine = isDateSlot
-                    ? `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${periodLabel}</span>`
+                    ? (isToday
+                        ? `<br/><span style="color:#2563eb;font-size:13px;font-weight:900;display:inline-block;margin-top:8px;text-decoration:underline">${periodLabel}</span>`
+                        : `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${periodLabel}</span>`)
                     : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${periodLabel}</span>`;
 
                 categories.push(topHtml + dateLine);
@@ -295,12 +313,24 @@ const DojoHandoverComparisonChart = () => {
             i = j;
         }
 
-        return { expectedPoints, actualPoints, categories, groupSeparators };
-    }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t]);
+        return { expectedPoints, actualPoints, categories, groupSeparators, todaySlotIdx };
+    }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t, currentPeriodKey]);
 
     const SLOT_WIDTH = 120; // 120px slot width to fit two bars nicely
     const needsScroll = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+
+    // Center the scrollable viewport on today's slot when possible; otherwise default to
+    // the right edge (most recent data), matching prior behavior.
+    const scrollPositionX = useMemo(() => {
+        if (!needsScroll || todaySlotIdx === -1) return 1;
+        const viewportWidth = 800;
+        const targetPx = todaySlotIdx * SLOT_WIDTH;
+        const maxScrollPx = (categories.length * SLOT_WIDTH) - viewportWidth;
+        if (maxScrollPx <= 0) return 1;
+        const centeredPx = targetPx - (viewportWidth / 2);
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [needsScroll, todaySlotIdx, categories.length]);
 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
 
@@ -318,7 +348,7 @@ const DojoHandoverComparisonChart = () => {
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
             ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX: 1, opacity: 1 },
+                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX, opacity: 1 },
             }),
         },
         title: { text: '' },

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useGetLinesByDepartmentQuery, useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import { useGetSubSectionsQuery } from "@/Redux/AllApi/SubSectionApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetActiveConfigQuery } from "@/Redux/AllApi/CourseLevelConfigApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
@@ -107,6 +108,25 @@ const QUARTERS = [
     { key: "q3", label: "July-Sep", headerBg: "bg-green-50 text-green-800", cellBg: "bg-green-50/20", badgeColor: "text-green-700" },
     { key: "q4", label: "Oct-Dec", headerBg: "bg-purple-50 text-purple-800", cellBg: "bg-purple-50/20", badgeColor: "text-purple-700" },
 ];
+
+// Builds a row for an eligible student, overlaying any previously-saved quarter data for
+// them. Shared by the initial row-population effect and the later "newly eligible student
+// showed up" effect, so both produce identical row shapes.
+const buildRowForStudent = (student, data = {}) => {
+    const userId = String(student._id || student.id);
+    return {
+        rowId: userId,
+        userId,
+        userName: student.fullName || student.name || data.userName || "",
+        cardNo: student.cardNo || student.username || student.empId || data.cardNo || "",
+        modelLine: data.modelLine || student.lineName || "",
+        station: data.station || student.subSectionName || "",
+        q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "", q1Shift: data.q1Shift || data.shift || student.shift || "",
+        q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "", q2Shift: data.q2Shift || data.shift || student.shift || "",
+        q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || student.shift || "",
+        q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || student.shift || "",
+    };
+};
 
 const MIN_SEARCH_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -407,6 +427,7 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
     year,
     lines,
     subSections,
+    levels,
     canManage,
     canOverrideDates,
     onFieldChange,
@@ -530,10 +551,11 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                                     <SelectValue placeholder="-" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="L1">L1</SelectItem>
-                                    <SelectItem value="L2">L2</SelectItem>
-                                    <SelectItem value="L3">L3</SelectItem>
-                                    <SelectItem value="L4">L4</SelectItem>
+                                    {(levels || []).map((l, idx) => (
+                                        <SelectItem key={`${l.name}-${idx}`} value={l.name}>
+                                            {l.name}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                             {row[skillField] && (
@@ -662,6 +684,26 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     const skillUpgradationDayCount = currentSection?.skillUpgradationDayCount ?? null;
     const skillUpgradationDayCounts = currentSection?.skillUpgradationDayCounts;
 
+    const { data: activeConfigData } = useGetActiveConfigQuery();
+    const activeConfig = activeConfigData?.data;
+    const levels = useMemo(
+        () => [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+        [activeConfig]
+    );
+    const maxLevelOrder = useMemo(() => {
+        if (!levels.length) return null;
+        return levels.reduce((max, l) => (typeof l.order === "number" && l.order > max ? l.order : max), -Infinity);
+    }, [levels]);
+    // Mirrors syncToSkillUpgradationPlan's case-insensitive level lookup in
+    // server/utils/skillMatrix.util.js. Returns false whenever config hasn't loaded yet or the
+    // name doesn't match a configured level — callers must treat false as "not confirmed last,
+    // keep existing behavior", never as "definitely not last".
+    const isMaxLevelName = useCallback((levelName) => {
+        if (!levelName || maxLevelOrder === null || !Number.isFinite(maxLevelOrder)) return false;
+        const match = levels.find(l => l.name?.toUpperCase() === String(levelName).toUpperCase());
+        return !!match && typeof match.order === "number" && match.order === maxLevelOrder;
+    }, [levels, maxLevelOrder]);
+
     // Resolves the day count to apply once an associate reaches `level`:
     // per-level override -> section default -> null (caller falls back to 3 months).
     const resolveDayCountForLevel = useCallback((level) => {
@@ -696,19 +738,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         students.forEach((student) => {
             const userId = String(student._id || student.id);
             if (savedRemovedIds.has(userId)) return;
-            const data = tableData[userId] || {};
-            finalRows.push({
-                rowId: userId,
-                userId,
-                userName: student.fullName || student.name || data.userName || "",
-                cardNo: student.cardNo || student.username || student.empId || data.cardNo || "",
-                modelLine: data.modelLine || student.lineName || "",
-                station: data.station || student.subSectionName || "",
-                q1Skill: data.q1Skill || "", q1Date: data.q1Date || "", q1DateActual: data.q1DateActual || "", q1Status: data.q1Status || "", q1Shift: data.q1Shift || data.shift || student.shift || "",
-                q2Skill: data.q2Skill || "", q2Date: data.q2Date || "", q2DateActual: data.q2DateActual || "", q2Status: data.q2Status || "", q2Shift: data.q2Shift || data.shift || student.shift || "",
-                q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || student.shift || "",
-                q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || student.shift || "",
-            });
+            finalRows.push(buildRowForStudent(student, tableData[userId] || {}));
         });
 
         // Users already saved in tableData but no longer in the current eligible
@@ -737,10 +767,19 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setHasLoaded(true);
     }, [tableData, students, isLoadingPlan, hasLoaded]);
 
-    // Safeguard: update row metadata (names, card numbers, line, etc.) if students list finishes loading after rows are initialized
+    // Safeguard: (1) refreshes row metadata (names, card numbers, line, etc.) if the students
+    // list finishes loading after rows are initialized, and (2) inserts a row — at the very
+    // top — for anyone who becomes newly eligible after the sheet's initial load (e.g. their
+    // 16-Day sheet gets approved while this page is already open). The one-time init effect
+    // above only runs once per department/section/year selection, so without this, a newly
+    // eligible associate would silently never appear until the admin reselects the section.
     useEffect(() => {
-        if (students.length > 0 && hasLoaded) {
-            setRows(prev => prev.map(row => {
+        if (students.length === 0 || !hasLoaded) return;
+
+        setRows(prev => {
+            const existingUserIds = new Set(prev.map(r => r.userId).filter(Boolean));
+
+            const refreshedPrev = prev.map(row => {
                 if (!row.userId) return row;
                 const student = students.find(s => String(s._id || s.id) === String(row.userId));
                 if (student) {
@@ -753,9 +792,18 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     };
                 }
                 return row;
-            }));
-        }
-    }, [students, hasLoaded]);
+            });
+
+            const newRows = [];
+            students.forEach((student) => {
+                const userId = String(student._id || student.id);
+                if (existingUserIds.has(userId) || removedUserIds.has(userId)) return;
+                newRows.push(buildRowForStudent(student, tableData[userId] || {}));
+            });
+
+            return newRows.length > 0 ? [...newRows, ...refreshedPrev] : refreshedPrev;
+        });
+    }, [students, hasLoaded, tableData, removedUserIds]);
 
     useEffect(() => {
         if (!departmentId) return;
@@ -872,12 +920,22 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                             updated[oldTargetField] = "";
                         }
                         updated[targetPlanField] = futureDate;
+
+                        // The last (max-order) configured level has no "next level" for the
+                        // target quarter's Skill dropdown to advance to, so carry the same
+                        // level forward instead of leaving it blank — the plan keeps recurring
+                        // at the max level (with a fresh plan date each quarter) rather than
+                        // appearing to stop once it's reached.
+                        if (isMaxLevelName(currentLevel)) {
+                            updated[`${targetQuarterKey}Skill`] = currentLevel;
+                            updated[`${targetQuarterKey}Status`] = "Planned";
+                        }
                     }
                 }
             }
             return updated;
         }));
-    }, [resolveDayCountForLevel, year]);
+    }, [resolveDayCountForLevel, year, isMaxLevelName]);
 
     const handleUserSelect = useCallback((rowId, userId, userName, lineName, subSectionName) => {
         setRows(prev => prev.map(row => {
@@ -1102,6 +1160,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                     lineId={lineId}
                                     year={year}
                                     lines={lines}
+                                    levels={levels}
                                     subSections={subSections}
                                     canManage={canManage}
                                     canOverrideDates={canOverrideDates}

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import TenCycleSheet from "../models/tenCycleSheet.model.js";
+import MonitoringConfig from "../models/monitoringConfig.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -297,4 +298,55 @@ export const deleteTenCycleSheet = asyncHandler(async (req, res) => {
     ).catch(err => console.error("logAudit(DELETE_TEN_CYCLE_SHEET) failed:", err.message));
 
     return res.status(200).json(new ApiResponse(200, {}, "10 cycle sheet deleted successfully"));
+});
+
+// The literal path segment "global" stands in for a NULL departmentId (the
+// global template that applies when no more specific config exists).
+const resolveDeptParam = (departmentId) => (departmentId === 'global' ? null : departmentId);
+
+export const getTenCycleSheetConfig = asyncHandler(async (req, res) => {
+    const departmentId = resolveDeptParam(req.params.departmentId);
+    const { sectionId = 0, lineId = 0, subSectionId = 0 } = req.query;
+    const resolved = await MonitoringConfig.findByFilters('10CYCLE', departmentId, sectionId, lineId, subSectionId);
+    // Tells the client which scope actually matched (hierarchical fallback can resolve to a
+    // broader scope than requested), so the UI can make clear when a config is inherited.
+    const resolvedScope = resolved ? {
+        departmentId: resolved.departmentId,
+        sectionId: resolved.sectionId,
+        lineId: resolved.lineId,
+        subSectionId: resolved.subSectionId,
+    } : null;
+    return res.status(200).json(
+        new ApiResponse(200, { config: resolved?.config || null, resolvedScope }, "10 Cycle Sheet layout config fetched")
+    );
+});
+
+export const saveTenCycleSheetConfig = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId = 0, lineId = 0, subSectionId = 0, config, remark } = req.body || {};
+
+    if (!config) throw new ApiError("Config is required", 400);
+
+    await MonitoringConfig.upsert({
+        type: '10CYCLE',
+        departmentId: departmentId || null,
+        sectionId,
+        lineId,
+        subSectionId,
+        config,
+        remark,
+        updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+    });
+
+    logAudit(req.user?.id, "SAVE_TEN_CYCLE_SHEET_CONFIG", { departmentId: departmentId || null, sectionId, lineId, subSectionId, remark }, {
+        resourceType: "MonitoringConfig", resourceId: departmentId || 'global', req
+    }).catch(err => console.error("logAudit(SAVE_TEN_CYCLE_SHEET_CONFIG) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, null, "10 Cycle Sheet layout config saved"));
+});
+
+export const getTenCycleSheetHistory = asyncHandler(async (req, res) => {
+    const departmentId = resolveDeptParam(req.params.departmentId);
+    const { sectionId = 0, lineId = 0, subSectionId = 0 } = req.query;
+    const history = await MonitoringConfig.getHistory('10CYCLE', departmentId, sectionId, lineId, subSectionId);
+    return res.status(200).json(new ApiResponse(200, history, "10 Cycle Sheet layout history fetched"));
 });

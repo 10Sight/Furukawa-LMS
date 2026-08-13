@@ -166,6 +166,8 @@ const SYSTEM_PERMISSIONS = {
   TEN_CYCLE_READ: "ten_cycle:read",
   TEN_CYCLE_UPDATE: "ten_cycle:update",
   TEN_CYCLE_DELETE: "ten_cycle:delete",
+  TEN_CYCLE_EDIT_LAYOUT: "ten_cycle:edit_layout",
+  TEN_CYCLE_EDIT_APPROVED: "ten_cycle:edit_approved",
 
   // DOJO Hiring Management
   DOJO_HIRING_CREATE: "dojo_hiring:create",
@@ -596,7 +598,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_UPDATE, name: "Edit 10-Cycle Sheet", description: "Edit and save changes to existing 10-cycle sheets" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_DELETE, name: "Delete 10-Cycle Sheet", description: "Permanently delete 10-cycle sheet records" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
-        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" }
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_LAYOUT, name: "Edit 10-Cycle Sheet Layout", description: "Customize 10-cycle sheet headers, questions, and checking items, and view layout change history" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_APPROVED, name: "Edit Approved 10-Cycle Sheet", description: "Edit a 10-cycle sheet after it has been verified or approved" }
       ],
       "DOJO Hiring": [
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },

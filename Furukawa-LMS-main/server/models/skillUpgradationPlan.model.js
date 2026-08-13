@@ -1,5 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { getFirstConfiguredLevelName } from "../utils/skillMatrix.util.js";
+import { formatDateYMD, addDaysToDateString, getQuarterKeyAndYearFromDate } from "../utils/quarterDate.util.js";
 
 class SkillUpgradationPlan {
     // Constructor to initialize SkillUpgradationPlan object
@@ -206,10 +208,14 @@ class SkillUpgradationPlan {
         return this.findByHierarchy(departmentId, sectionId, year);
     }
 
-    // Syncs a student's 16-day approval date into the Skill Upgradation Plan
-    // for their department/section/year, stamping the Updation Date (Plan) of
-    // whichever quarter the approval fell in.
-    static async syncSixteenDayApproval(studentId, approveDateStr) {
+    // Syncs a student's 16-day approval into the Skill Upgradation Plan: stamps the Updation
+    // Date (Plan) of whichever quarter the approval date + 1 day falls in, seeds that
+    // quarter's Skill Level with the lowest-order configured level (e.g. "L1") if it isn't
+    // already set, and marks it "Planned". The +1 and the quarter/year resolution both use
+    // the shifted date (not the raw approval date) so a same-day approval right at a
+    // quarter/year boundary (e.g. approved Dec 31) still files under the correct quarter —
+    // computing the quarter from the raw date would silently mismatch it in that case.
+    static async syncSixteenDayApproval(studentId, approveDateStr, activeConfig = null) {
         const userQuery = `
             SELECT
                 u.id, u.fullName, u.empId, u.departmentId, u.sectionId, u.lineId, u.subSectionId, u.shift,
@@ -229,25 +235,15 @@ class SkillUpgradationPlan {
             return;
         }
 
-        const dateObj = new Date(approveDateStr);
-        if (isNaN(dateObj.getTime())) {
+        const approveDateObj = new Date(approveDateStr);
+        if (isNaN(approveDateObj.getTime())) {
             console.error(`[syncSixteenDayApproval] Invalid approve date: ${approveDateStr}`);
             return;
         }
-        const year = dateObj.getFullYear();
-        const month = dateObj.getMonth() + 1; // 1-indexed
 
-        let quarterKey = "";
-        if (month >= 1 && month <= 3) quarterKey = "q1";
-        else if (month >= 4 && month <= 6) quarterKey = "q2";
-        else if (month >= 7 && month <= 9) quarterKey = "q3";
-        else if (month >= 10 && month <= 12) quarterKey = "q4";
-        if (!quarterKey) return;
-
-        const yyyy = dateObj.getFullYear();
-        const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-        const dd = String(dateObj.getDate()).padStart(2, "0");
-        const formattedApproveDate = `${yyyy}-${mm}-${dd}`;
+        const planDate = addDaysToDateString(formatDateYMD(approveDateObj), 1);
+        const { quarterKey, year } = getQuarterKeyAndYearFromDate(planDate);
+        if (!quarterKey || !year) return;
 
         const plan = await this.findByHierarchy(student.departmentId, student.sectionId, year);
 
@@ -270,7 +266,14 @@ class SkillUpgradationPlan {
             };
         }
 
-        tableData[studentKey][`${quarterKey}Date`] = formattedApproveDate;
+        tableData[studentKey][`${quarterKey}Date`] = planDate;
+
+        if (!tableData[studentKey][`${quarterKey}Skill`]) {
+            const firstLevelName = getFirstConfiguredLevelName(activeConfig);
+            if (firstLevelName) {
+                tableData[studentKey][`${quarterKey}Skill`] = firstLevelName;
+            }
+        }
 
         if (!tableData[studentKey][`${quarterKey}Shift`] && student.shift) {
             tableData[studentKey][`${quarterKey}Shift`] = student.shift;

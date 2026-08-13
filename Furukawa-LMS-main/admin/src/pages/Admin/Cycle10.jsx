@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, History } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const ALL_FORM_TYPES = [
     { id: 'form1', label: 'Form 1 (Standard)' },
@@ -41,6 +42,100 @@ const ALL_FORM_TYPES = [
 
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[field] || "").trim());
+
+// Layout configuration: labels/descriptions for Section A questions & general
+// points, Section B measuring instruments, and Section C inspection columns.
+// Field keys on each row (secA_q1, secB_linearScale, etc.) stay derived from
+// each item's `id`, so relabeling never breaks previously saved sheet data.
+//
+// Each form type (form1/form2/form3) keeps its own independent set of
+// questions/instruments/columns — a sheet is permanently one form type, so
+// editing Form 1's layout must never change what Form 2 or Form 3 show.
+// buildDefaultFormConfig() is called fresh every time so the three forms
+// (and any fallback/default reads) never share the same array/object
+// references — editing one can never leak into another via object mutation.
+const buildDefaultFormConfig = () => ({
+    secA: {
+        questions: [
+            { id: 'q1', label: 'Q1', desc: 'Is Operator aware of SOP Availability?' },
+            { id: 'q2', label: 'Q2', desc: 'Does Operator understand SOP?' },
+            { id: 'q3', label: 'Q3', desc: 'Is Operator adhering SOP?' },
+            { id: 'q4', label: 'Q4', desc: 'Does Operator know operation cycle time?' },
+        ],
+        generalPoints: [
+            { id: 'gp1', label: 'Q1', desc: "Is process started after 5'S?" },
+            { id: 'gp2', label: 'Q2', desc: 'Is station check sheet filled?' },
+            { id: 'gp3', label: 'Q3', desc: 'Is defective part identified?' },
+            { id: 'gp4', label: 'Q4', desc: 'Is NC part handling system followed?' },
+            { id: 'gp5', label: 'Q5', desc: 'Is Operator aware about 5 safety principle?' },
+            { id: 'gp6', label: 'Q6', desc: 'Is operator aware about abnormal condition?' },
+        ],
+    },
+    secB: {
+        instruments: [
+            { id: 'linearScale', label: 'Linear Scale' },
+            { id: 'micrometer', label: 'Point Micrometer' },
+            { id: 'bladeMicrometer', label: 'Blade Micrometer' },
+            { id: 'strippingGauge', label: 'Stripping Gauge' },
+            { id: 'others', label: 'Others' },
+        ],
+    },
+    secC: {
+        columns: [
+            { id: '1', label: '1' },
+            { id: '2', label: '2' },
+            { id: '3', label: '3' },
+            { id: '4', label: '4' },
+            { id: '5', label: '5' },
+        ],
+    },
+});
+
+// Normalizes ONE form's {secA,secB,secC} shape. Always returns fresh
+// objects/arrays (never a shared reference to a fallback or default),
+// so callers can safely hand the result to state without risking one
+// scope's edits mutating another scope's in-memory config.
+const normalizeFormConfig = (raw) => {
+    const fallback = buildDefaultFormConfig();
+    if (!raw || typeof raw !== 'object') return fallback;
+    const pick = (arr, fb) => (Array.isArray(arr) && arr.length > 0 ? arr.map(x => ({ ...x })) : fb);
+    return {
+        secA: {
+            questions: pick(raw.secA?.questions, fallback.secA.questions),
+            generalPoints: pick(raw.secA?.generalPoints, fallback.secA.generalPoints),
+        },
+        secB: {
+            instruments: pick(raw.secB?.instruments, fallback.secB.instruments),
+        },
+        secC: {
+            columns: pick(raw.secC?.columns, fallback.secC.columns),
+        },
+    };
+};
+
+const DEFAULT_10CYCLE_CONFIG = {
+    form1: buildDefaultFormConfig(),
+    form2: buildDefaultFormConfig(),
+    form3: buildDefaultFormConfig(),
+};
+
+// Normalizes the full { form1, form2, form3 } config blob for a scope.
+// Also upgrades older saved rows (from before per-form configs existed)
+// that stored a single flat {secA,secB,secC} shape shared by all forms.
+const normalizeConfig = (raw) => {
+    if (raw && typeof raw === 'object' && (raw.secA || raw.secB || raw.secC) && !raw.form1 && !raw.form2 && !raw.form3) {
+        return {
+            form1: normalizeFormConfig(raw),
+            form2: normalizeFormConfig(raw),
+            form3: normalizeFormConfig(raw),
+        };
+    }
+    return {
+        form1: normalizeFormConfig(raw?.form1),
+        form2: normalizeFormConfig(raw?.form2),
+        form3: normalizeFormConfig(raw?.form3),
+    };
+};
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
@@ -53,6 +148,7 @@ const Cycle10 = () => {
     const canUpdate = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:update') || user?.customRole?.permissions?.includes('ten_cycle:manage');
     const canDelete = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:delete') || user?.customRole?.permissions?.includes('ten_cycle:manage');
     const canEditApproved = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:manage') || user?.customRole?.permissions?.includes('ten_cycle:edit_approved');
+    const canEditConfig = isAdmin || user?.isTrainer || user?.customRole?.permissions?.includes('ten_cycle:manage') || user?.customRole?.permissions?.includes('ten_cycle:edit_layout');
     const isSheetLocked = (sheet) => sheet?.verifiedStatus === 'APPROVE' || sheet?.reviewedStatus === 'APPROVE';
 
     const [logAction] = useLogActionMutation();
@@ -84,6 +180,44 @@ const Cycle10 = () => {
     const [createdDate, setCreatedDate] = useState("");
     const [currentDepartmentName, setCurrentDepartmentName] = useState("");
 
+    // Form Type State (moved up: the layout config below is selected per form type)
+    const [formType, setFormType] = useState('form1');
+
+    // Layout configuration driving the currently open sheet's dynamic headers/questions/checking
+    // items. Holds the full { form1, form2, form3 } blob for the open sheet's scope; `config`
+    // below is a derived read of just the branch matching this sheet's own form type.
+    const [sheetLayoutConfig, setSheetLayoutConfig] = useState(DEFAULT_10CYCLE_CONFIG);
+    const config = sheetLayoutConfig[formType] || sheetLayoutConfig.form1;
+
+    const secAQuestionFields = config.secA.questions.map(q => `secA_${q.id}`);
+    const secAGeneralPointFields = config.secA.generalPoints.map(g => `secA_${g.id}`);
+    const secBInstrumentFields = config.secB.instruments.map(i => `secB_${i.id}`);
+    const secCColumnFields = config.secC.columns.map(c => `secC_${c.id}`);
+
+    // ── "Edit Layout" tab: independent department/section/line/global scope picker
+    // for editing the layout config, separate from whichever sheet happens to be open.
+    const [layoutIsGlobal, setLayoutIsGlobal] = useState(false);
+    const [layoutDeptId, setLayoutDeptId] = useState("");
+    const [layoutSectionId, setLayoutSectionId] = useState("");
+    const [layoutLineId, setLayoutLineId] = useState("");
+    // Which form's branch of the scope's config is currently being edited — each
+    // form type owns an independent set of questions/instruments/columns.
+    const [layoutFormType, setLayoutFormType] = useState("form1");
+    // Full { form1, form2, form3 } blob for the selected scope; layoutDraft below
+    // is a derived read of just the layoutFormType branch, so edits only ever
+    // touch that one form's data even though the whole blob lives in one DB row.
+    const [layoutFullConfig, setLayoutFullConfig] = useState(null);
+    const layoutDraft = layoutFullConfig ? layoutFullConfig[layoutFormType] : null;
+    // Which scope the loaded config actually came from (hierarchical fallback can resolve
+    // broader than what's selected above) — null once a row truly matches nothing at all
+    // (i.e. showing the hardcoded default, not even a saved Global template).
+    const [layoutResolvedScope, setLayoutResolvedScope] = useState(null);
+    const [layoutRemark, setLayoutRemark] = useState("");
+    const [loadingLayout, setLoadingLayout] = useState(false);
+    const [savingLayout, setSavingLayout] = useState(false);
+    const [layoutHistory, setLayoutHistory] = useState([]);
+    const [showLayoutHistory, setShowLayoutHistory] = useState(false);
+
     // Live preview for a not-yet-created sheet reflects whatever department/section
     // is currently selected (the page filter, or the "Add Sheet" dialog's own pick).
     const revisionInfo = useRevisionInfo("ten-cycle-sheet", {}, {
@@ -105,6 +239,11 @@ const Cycle10 = () => {
 
     const { data: machineData } = useGetMachinesByLineQuery(selectedLineFilter, { skip: !selectedLineFilter });
     const stations = machineData?.data || [];
+
+    const { data: layoutSectionData } = useGetSectionsByDepartmentQuery(layoutDeptId, { skip: !layoutDeptId });
+    const layoutSections = layoutSectionData?.data || [];
+    const { data: layoutLineData } = useGetLinesBySectionQuery(layoutSectionId, { skip: !layoutSectionId });
+    const layoutLines = layoutLineData?.data || [];
 
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
@@ -168,50 +307,47 @@ const Cycle10 = () => {
     });
 
     // Default Row Structure
-    const createNewRow = (id = Date.now()) => ({
-        id,
-        date: new Date().toISOString().split('T')[0],
-        lineMachine: '',
-        modelName: '',
-        partName: '',
-        operationName: '',
-        sopNo: '',
+    const createNewRow = (id = Date.now(), cfg = config) => {
+        const row = {
+            id,
+            date: new Date().toISOString().split('T')[0],
+            lineMachine: '',
+            modelName: '',
+            partName: '',
+            operationName: '',
+            sopNo: '',
 
-        // Section A: Ask Four Questions (Marking: ✓ or X)
-        secA_q1: '', secA_q2: '', secA_q3: '', secA_q4: '',
-        // Section A: General Points Check Marking (Marking: ✓ or X)
-        secA_gp1: '', secA_gp2: '', secA_gp3: '', secA_gp4: '', secA_gp5: '', secA_gp6: '',
+            // Results
+            inspectorName: '',
+            empCode: '',
+            skillLevel: '',
+            obsSecA: '',
+            obsSecB: '',
+            obsSecC: '',
+            passScore: '0%',
+            overallResult: 'X',
+            inspectorSign: '',
+            tlSign: '',
+            remark: '',
 
+            // Form 3 specific fields
+            secB_v1: '', secB_v2: '', secB_v3: '', secB_v4: '', secB_v5: '',
+            secB_v6: '', secB_v7: '', secB_v8: '', secB_v9: '', secB_v10: '',
+            secB_spec: '', secB_min: '', secB_max: '',
+        };
+
+        // Section A: Ask Four Questions + General Points (Marking: ✓ or X)
+        cfg.secA.questions.forEach(q => { row[`secA_${q.id}`] = ''; });
+        cfg.secA.generalPoints.forEach(g => { row[`secA_${g.id}`] = ''; });
         // Section B: Measuring Instrument Using Method (Marking: ✓ or X)
-        secB_linearScale: '', secB_micrometer: '', secB_bladeMicrometer: '',
-        secB_strippingGauge: '', secB_others: '',
-
+        cfg.secB.instruments.forEach(i => { row[`secB_${i.id}`] = ''; });
         // Section C: Cross Inspection Marking (Marking: ✓ or X)
-        secC_1: '', secC_2: '', secC_3: '', secC_4: '', secC_5: '',
+        cfg.secC.columns.forEach(c => { row[`secC_${c.id}`] = ''; });
 
-        // Results
-        inspectorName: '',
-        empCode: '',
-        skillLevel: '',
-        obsSecA: '',
-        obsSecB: '',
-        obsSecC: '',
-        passScore: '0%',
-        overallResult: 'X',
-        inspectorSign: '',
-        tlSign: '',
-        remark: '',
-
-        // Form 3 specific fields
-        secB_v1: '', secB_v2: '', secB_v3: '', secB_v4: '', secB_v5: '',
-        secB_v6: '', secB_v7: '', secB_v8: '', secB_v9: '', secB_v10: '',
-        secB_spec: '', secB_min: '', secB_max: '',
-    });
+        return row;
+    };
 
     const [rows, setRows] = useState([]);
-
-    // Form Type State
-    const [formType, setFormType] = useState('form1');
 
     const getAvailableFormTypes = () => {
         let configuredTypes = [];
@@ -272,6 +408,197 @@ const Cycle10 = () => {
         }
     };
 
+    const fetchConfig = async (deptId, sectId = 0, lnId = 0, subSectId = 0) => {
+        if (!deptId) return DEFAULT_10CYCLE_CONFIG;
+        try {
+            const params = new URLSearchParams();
+            if (sectId) params.set("sectionId", sectId);
+            if (lnId) params.set("lineId", lnId);
+            if (subSectId) params.set("subSectionId", subSectId);
+            const qs = params.toString();
+            const response = await axiosInstance.get(`/api/ten-cycle-sheets/config/${deptId}${qs ? `?${qs}` : ""}`);
+            const normalized = normalizeConfig(response.data?.data?.config);
+            setSheetLayoutConfig(normalized);
+            return normalized;
+        } catch (error) {
+            console.error("Error fetching 10-Cycle layout config:", error);
+            return DEFAULT_10CYCLE_CONFIG;
+        }
+    };
+
+    // Explains whether the loaded config is a saved override for exactly this scope, or
+    // inherited from somewhere broader (Department-wide / Global) — makes the hierarchical
+    // fallback visible instead of silently looking like "the same config everywhere".
+    const layoutInheritanceNote = () => {
+        if (!layoutFullConfig) return null;
+        if (layoutIsGlobal) {
+            return layoutResolvedScope
+                ? { tone: 'ok', text: "Editing the saved Global template — this applies to every department/section/line with no override of its own." }
+                : { tone: 'warn', text: "No Global template saved yet — showing the built-in defaults. Saving here creates the Global template." };
+        }
+        if (!layoutResolvedScope) {
+            return { tone: 'warn', text: "Nothing saved anywhere in this chain — showing the built-in defaults. Saving here creates a config just for this exact selection." };
+        }
+        if (!layoutResolvedScope.departmentId) {
+            return { tone: 'warn', text: "No override saved for this Department/Section/Line — currently showing the Global template. Saving here creates a new override just for this exact selection; it will NOT change the Global template or any other department." };
+        }
+        const exactSection = String(layoutResolvedScope.sectionId || 0) === String(layoutSectionId || 0);
+        const exactLine = String(layoutResolvedScope.lineId || 0) === String(layoutLineId || 0);
+        if (exactSection && exactLine) {
+            return { tone: 'ok', text: "Showing a config saved specifically for this exact Department/Section/Line selection." };
+        }
+        return { tone: 'warn', text: "Showing an inherited config from a broader level (e.g. Department-wide). Saving here creates a new, more specific override just for this exact selection." };
+    };
+
+    // ── Edit Layout tab: scope is chosen independently (department/section/line/global) ──
+    const layoutScopeParams = () => {
+        const params = new URLSearchParams();
+        if (!layoutIsGlobal) {
+            if (layoutSectionId) params.set("sectionId", layoutSectionId);
+            if (layoutLineId) params.set("lineId", layoutLineId);
+        }
+        return params.toString();
+    };
+    const layoutDeptParam = () => (layoutIsGlobal ? "global" : layoutDeptId);
+
+    const fetchLayoutConfig = async () => {
+        if (!layoutIsGlobal && !layoutDeptId) {
+            setLayoutFullConfig({ form1: buildDefaultFormConfig(), form2: buildDefaultFormConfig(), form3: buildDefaultFormConfig() });
+            setLayoutResolvedScope(null);
+            return;
+        }
+        try {
+            setLoadingLayout(true);
+            const qs = layoutScopeParams();
+            const response = await axiosInstance.get(`/api/ten-cycle-sheets/config/${layoutDeptParam()}${qs ? `?${qs}` : ""}`);
+            const normalized = normalizeConfig(response.data?.data?.config);
+            setLayoutFullConfig(normalized);
+            setLayoutResolvedScope(response.data?.data?.resolvedScope || null);
+        } catch (error) {
+            console.error("Error fetching 10-Cycle layout config:", error);
+            toast.error("Failed to load layout configuration");
+        } finally {
+            setLoadingLayout(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab !== 'editLayout') return;
+        fetchLayoutConfig();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, layoutIsGlobal, layoutDeptId, layoutSectionId, layoutLineId]);
+
+    // Maps a group name to where its array lives inside one form's {secA,secB,secC} config
+    const LAYOUT_GROUP_PATHS = {
+        questions: ['secA', 'questions'],
+        generalPoints: ['secA', 'generalPoints'],
+        instruments: ['secB', 'instruments'],
+        columns: ['secC', 'columns'],
+    };
+    const getLayoutGroupArray = (formCfg, group) => {
+        const [sec, key] = LAYOUT_GROUP_PATHS[group];
+        return formCfg[sec][key];
+    };
+
+    // All three of these only ever touch the layoutFormType branch of the full
+    // blob, so editing Form 1 never mutates Form 2's or Form 3's saved data.
+    const updateLayoutItem = (group, idx, field, value) => {
+        setLayoutFullConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            getLayoutGroupArray(next[layoutFormType], group)[idx][field] = value;
+            return next;
+        });
+    };
+
+    const addLayoutItem = (group) => {
+        setLayoutFullConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            const arr = getLayoutGroupArray(next[layoutFormType], group);
+            const newId = `custom_${Date.now()}`;
+            const n = arr.length + 1;
+            if (group === 'columns') arr.push({ id: newId, label: String(n) });
+            else if (group === 'instruments') arr.push({ id: newId, label: `New Instrument ${n}` });
+            else arr.push({ id: newId, label: `Q${n}`, desc: '' });
+            return next;
+        });
+    };
+
+    const removeLayoutItem = (group, idx) => {
+        setLayoutFullConfig(prev => {
+            if (!prev) return prev;
+            const arr = getLayoutGroupArray(prev[layoutFormType], group);
+            if (arr.length <= 1) {
+                toast.error("At least one item is required in this section");
+                return prev;
+            }
+            const next = JSON.parse(JSON.stringify(prev));
+            getLayoutGroupArray(next[layoutFormType], group).splice(idx, 1);
+            return next;
+        });
+    };
+
+    const handleSaveLayoutConfig = async () => {
+        if (!layoutIsGlobal && !layoutDeptId) {
+            toast.error("Select a department, or switch to Global");
+            return;
+        }
+        if (!layoutRemark.trim()) {
+            toast.error("Please enter a remark describing your changes");
+            return;
+        }
+        if (!layoutFullConfig) return;
+        try {
+            setSavingLayout(true);
+            const newConfig = normalizeConfig(layoutFullConfig);
+            await axiosInstance.post(`/api/ten-cycle-sheets/config/save`, {
+                departmentId: layoutIsGlobal ? null : layoutDeptId,
+                sectionId: layoutIsGlobal ? 0 : (layoutSectionId || 0),
+                lineId: layoutIsGlobal ? 0 : (layoutLineId || 0),
+                subSectionId: 0,
+                config: newConfig,
+                remark: layoutRemark,
+            });
+            setLayoutFullConfig(newConfig);
+            setLayoutRemark("");
+            toast.success("Layout configuration saved successfully");
+
+            logAction({
+                action: "SAVE_TEN_CYCLE_SHEET_LAYOUT_CONFIG",
+                details: {
+                    departmentId: layoutIsGlobal ? null : layoutDeptId,
+                    sectionId: layoutIsGlobal ? null : (layoutSectionId || null),
+                    lineId: layoutIsGlobal ? null : (layoutLineId || null),
+                    remark: layoutRemark,
+                }
+            }).catch(() => {});
+        } catch (error) {
+            console.error("Error saving 10-Cycle layout config:", error);
+            toast.error(error?.response?.data?.message || "Failed to save layout configuration");
+        } finally {
+            setSavingLayout(false);
+        }
+    };
+
+    const fetchLayoutHistory = async () => {
+        if (!layoutIsGlobal && !layoutDeptId) return;
+        try {
+            const qs = layoutScopeParams();
+            const response = await axiosInstance.get(`/api/ten-cycle-sheets/history/${layoutDeptParam()}${qs ? `?${qs}` : ""}`);
+            if (response.data.success) {
+                setLayoutHistory(response.data.data || []);
+                setShowLayoutHistory(true);
+                logAction({
+                    action: "VIEW_TEN_CYCLE_SHEET_LAYOUT_HISTORY",
+                    details: { departmentId: layoutIsGlobal ? null : layoutDeptId, sectionId: layoutIsGlobal ? null : (layoutSectionId || null), lineId: layoutIsGlobal ? null : (layoutLineId || null) }
+                }).catch(() => {});
+            }
+        } catch (error) {
+            toast.error("Failed to fetch layout history");
+        }
+    };
+
     const fetchSheetById = async (sheetId, editMode = false) => {
         try {
             setLoading(true);
@@ -287,14 +614,18 @@ const Cycle10 = () => {
                 if (data.lineId) setSelectedLineFilter(String(data.lineId));
                 if (data.subSectionId) setSelectedSubSectionFilter(String(data.subSectionId));
 
+                const fullCfg = await fetchConfig(data.departmentId, data.sectionId, data.lineId, data.subSectionId);
+                const sheetFormType = data.formType || "form1";
+                const cfg = fullCfg[sheetFormType] || fullCfg.form1;
+
                 setHeaderData({
                     qualityEngineer: data.qualityEngineer || "",
                     qualityEngineerSign: data.qualityEngineerSign || "",
                     dojoEngineer: data.dojoEngineer || "",
                     dojoEngineerSign: data.dojoEngineerSign || ""
                 });
-                setFormType(data.formType || "form1");
-                setRows(data.entries && data.entries.length > 0 ? data.entries : [createNewRow()]);
+                setFormType(sheetFormType);
+                setRows(data.entries && data.entries.length > 0 ? data.entries : [createNewRow(Date.now(), cfg)]);
                 setCreatedDate(data.createdDate ? String(data.createdDate).split("T")[0] : "");
                 setCurrentDepartmentName(data.departmentName || "");
                 setIsEditMode(editMode);
@@ -503,12 +834,10 @@ const Cycle10 = () => {
 
                 // Fields to check for result (Marking fields)
                 const markingFields = [
-                    'secA_q1', 'secA_q2', 'secA_q3', 'secA_q4',
-                    'secA_gp1', 'secA_gp2', 'secA_gp3', 'secA_gp4', 'secA_gp5', 'secA_gp6',
-                    ...(formType !== 'form3' ? [
-                        'secB_linearScale', 'secB_micrometer', 'secB_bladeMicrometer', 'secB_strippingGauge', 'secB_others'
-                    ] : []),
-                    'secC_1', 'secC_2', 'secC_3', 'secC_4', 'secC_5'
+                    ...secAQuestionFields,
+                    ...secAGeneralPointFields,
+                    ...(formType !== 'form3' ? secBInstrumentFields : []),
+                    ...secCColumnFields
                 ];
 
                 if (markingFields.includes(field)) {
@@ -755,6 +1084,14 @@ const Cycle10 = () => {
                             </span>
                         )}
                     </button>
+                    {canEditConfig && (
+                        <button
+                            onClick={() => setActiveTab('editLayout')}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === 'editLayout' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <Edit2 size={14} /> Edit Layout
+                        </button>
+                    )}
                 </div>
 
                 {/* ── MONITORING TAB ───────────────────────────────────────── */}
@@ -1104,9 +1441,9 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan="10" className="border border-black p-1 bg-white">Section - A</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Section-C</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
+                                                        <th colSpan={config.secB.instruments.length} className="border border-black p-1 bg-white">Section - B</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[120px]">Operator Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
@@ -1120,32 +1457,24 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan="4" className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan="6" className="border border-black p-1 bg-white">General Points Check Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
                                                         <th colSpan="5" className="border border-black p-1 bg-white">Measuring Instrument Using Method</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th className="border border-black w-[40px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q5</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q6</th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">Linear Scale</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">Point Micrometer</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">Blade Micrometer</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">Stripping Gauge</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">Others</div></th>
-                                                        <th className="border border-black w-[40px] bg-white">1</th>
-                                                        <th className="border border-black w-[40px] bg-white">2</th>
-                                                        <th className="border border-black w-[40px] bg-white">3</th>
-                                                        <th className="border border-black w-[40px] bg-white">4</th>
-                                                        <th className="border border-black w-[40px] bg-white">5</th>
+                                                        {config.secA.questions.map(q => (
+                                                            <th key={`f1qh_${q.id}`} className="border border-black w-[40px] bg-white">{q.label}</th>
+                                                        ))}
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <th key={`f1gph_${g.id}`} className="border border-black w-[40px] bg-white">{g.label}</th>
+                                                        ))}
+                                                        {config.secB.instruments.map(i => (
+                                                            <th key={`f1ih_${i.id}`} className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">{i.label}</div></th>
+                                                        ))}
+                                                        {config.secC.columns.map(c => (
+                                                            <th key={`f1ch_${c.id}`} className="border border-black w-[40px] bg-white">{c.label}</th>
+                                                        ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1187,7 +1516,7 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0 bg-yellow-50">
                                                                 <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            {['secA_q1', 'secA_q2', 'secA_q3', 'secA_q4', 'secA_gp1', 'secA_gp2', 'secA_gp3', 'secA_gp4', 'secA_gp5', 'secA_gp6'].map(field => (
+                                                            {[...secAQuestionFields, ...secAGeneralPointFields].map(field => (
                                                                 <td key={field} className="border border-black p-0 align-middle">
                                                                     <select
                                                                         className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
@@ -1201,7 +1530,7 @@ const Cycle10 = () => {
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            {['secB_linearScale', 'secB_micrometer', 'secB_bladeMicrometer', 'secB_strippingGauge', 'secB_others'].map(field => (
+                                                            {secBInstrumentFields.map(field => (
                                                                 <td key={field} className="border border-black p-0 align-middle">
                                                                     <select
                                                                         className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
@@ -1215,7 +1544,7 @@ const Cycle10 = () => {
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            {['secC_1', 'secC_2', 'secC_3', 'secC_4', 'secC_5'].map(field => (
+                                                            {secCColumnFields.map(field => (
                                                                 <td key={field} className="border border-black p-0 align-middle">
                                                                     <select
                                                                         className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
@@ -1293,21 +1622,17 @@ const Cycle10 = () => {
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A Four Question Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is Operator aware of SOP Availability?</li>
-                                                        <li>Q2 :- Does Operator understand SOP?</li>
-                                                        <li>Q3 :- Is Operator adhering SOP?</li>
-                                                        <li>Q4 :- Does Operator know operation cycle time?</li>
+                                                        {config.secA.questions.map(q => (
+                                                            <li key={q.id}>{q.label} :- {q.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A General Point Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is process started after 5&apos;S?</li>
-                                                        <li>Q2 :- Is station check sheet filled?</li>
-                                                        <li>Q3 :- Is defective part identified?</li>
-                                                        <li>Q4 :- Is NC part handling system followed?</li>
-                                                        <li>Q5 :- Is Operator aware about 5 safety principle?</li>
-                                                        <li>Q6 :- Is operator aware about abnormal condition?</li>
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <li key={g.id}>{g.label} :- {g.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1342,9 +1667,9 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan="10" className="border border-black p-1 bg-white">Section - A</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Section-C</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
+                                                        <th colSpan={config.secB.instruments.length} className="border border-black p-1 bg-white">Section - B</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[120px]">Inspector Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
@@ -1358,32 +1683,24 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan="4" className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan="6" className="border border-black p-1 bg-white">General Points Check Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
                                                         <th colSpan="5" className="border border-black p-1 bg-white">Measuring Instrument Using Method</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th className="border border-black w-[40px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q5</th>
-                                                        <th className="border border-black w-[40px] bg-white">Q6</th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">Linear Scale</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">Point Micrometer</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">Blade Micrometer</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">Stripping Gauge</div></th>
-                                                        <th className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">Others</div></th>
-                                                        <th className="border border-black w-[40px] bg-white">1</th>
-                                                        <th className="border border-black w-[40px] bg-white">2</th>
-                                                        <th className="border border-black w-[40px] bg-white">3</th>
-                                                        <th className="border border-black w-[40px] bg-white">4</th>
-                                                        <th className="border border-black w-[40px] bg-white">5</th>
+                                                        {config.secA.questions.map(q => (
+                                                            <th key={`f2qh_${q.id}`} className="border border-black w-[40px] bg-white">{q.label}</th>
+                                                        ))}
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <th key={`f2gph_${g.id}`} className="border border-black w-[40px] bg-white">{g.label}</th>
+                                                        ))}
+                                                        {config.secB.instruments.map(i => (
+                                                            <th key={`f2ih_${i.id}`} className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">{i.label}</div></th>
+                                                        ))}
+                                                        {config.secC.columns.map(c => (
+                                                            <th key={`f2ch_${c.id}`} className="border border-black w-[40px] bg-white">{c.label}</th>
+                                                        ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1415,7 +1732,7 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} /></td>
-                                                            {['secA_q1', 'secA_q2', 'secA_q3', 'secA_q4', 'secA_gp1', 'secA_gp2', 'secA_gp3', 'secA_gp4', 'secA_gp5', 'secA_gp6'].map(f => (
+                                                            {[...secAQuestionFields, ...secAGeneralPointFields].map(f => (
                                                                 <td key={f} className="border border-black p-0 h-full">
                                                                     <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
@@ -1424,7 +1741,7 @@ const Cycle10 = () => {
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            {['secB_linearScale', 'secB_micrometer', 'secB_bladeMicrometer', 'secB_strippingGauge', 'secB_others'].map(f => (
+                                                            {secBInstrumentFields.map(f => (
                                                                 <td key={f} className="border border-black p-0 h-full">
                                                                     <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
@@ -1433,7 +1750,7 @@ const Cycle10 = () => {
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            {['secC_1', 'secC_2', 'secC_3', 'secC_4', 'secC_5'].map(f => (
+                                                            {secCColumnFields.map(f => (
                                                                 <td key={f} className="border border-black p-0 h-full">
                                                                     <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
@@ -1490,21 +1807,17 @@ const Cycle10 = () => {
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A Four Question Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is Operator aware of SOP Availability?</li>
-                                                        <li>Q2 :- Does Operator understand SOP?</li>
-                                                        <li>Q3 :- Is Operator adhering SOP?</li>
-                                                        <li>Q4 :- Does Operator know operation cycle time?</li>
+                                                        {config.secA.questions.map(q => (
+                                                            <li key={q.id}>{q.label} :- {q.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A General Point Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is process started after 5&apos;S?</li>
-                                                        <li>Q2 :- Is station check sheet filled?</li>
-                                                        <li>Q3 :- Is defective part identified?</li>
-                                                        <li>Q4 :- Is NC part handling system followed?</li>
-                                                        <li>Q5 :- Is Operator aware about 5 safety principle?</li>
-                                                        <li>Q6 :- Is operator aware about abnormal condition?</li>
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <li key={g.id}>{g.label} :- {g.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1539,9 +1852,9 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan="10" className="border border-black p-1 bg-white">Section - A</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
                                                         <th colSpan="13" className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Section-C</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[120px]">Inspector Name</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
                                                         <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
@@ -1555,34 +1868,28 @@ const Cycle10 = () => {
                                                         <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan="4" className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan="6" className="border border-black p-1 bg-white">General Points Check Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
                                                         <th colSpan="10" className="border border-black p-1 bg-white text-red-600">10 Cycle Check</th>
                                                         <th rowSpan="2" className="border border-black p-1 bg-white">Cycle Time Spec.</th>
                                                         <th colSpan="2" className="border border-black p-1 bg-yellow-50 text-blue-600">Cycle Time Obs.</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th className="border border-black w-[35px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q1</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q2</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q3</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q4</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q5</th>
-                                                        <th className="border border-black w-[35px] bg-white">Q6</th>
+                                                        {config.secA.questions.map(q => (
+                                                            <th key={`f3qh_${q.id}`} className="border border-black w-[35px] bg-white">{q.label}</th>
+                                                        ))}
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <th key={`f3gph_${g.id}`} className="border border-black w-[35px] bg-white">{g.label}</th>
+                                                        ))}
                                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                                                             <th key={n} className="border border-black w-[40px] bg-white">{n}</th>
                                                         ))}
                                                         <th className="border border-black w-[45px] bg-yellow-50 text-blue-600">Min.</th>
                                                         <th className="border border-black w-[45px] bg-yellow-50 text-blue-600">Max.</th>
-                                                        <th className="border border-black w-[35px] bg-white">1</th>
-                                                        <th className="border border-black w-[35px] bg-white">2</th>
-                                                        <th className="border border-black w-[35px] bg-white">3</th>
-                                                        <th className="border border-black w-[40px] bg-white">4</th>
-                                                        <th className="border border-black w-[40px] bg-white">5</th>
+                                                        {config.secC.columns.map(c => (
+                                                            <th key={`f3ch_${c.id}`} className="border border-black w-[35px] bg-white">{c.label}</th>
+                                                        ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1614,7 +1921,7 @@ const Cycle10 = () => {
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} /></td>
                                                             <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} /></td>
-                                                            {['secA_q1', 'secA_q2', 'secA_q3', 'secA_q4', 'secA_gp1', 'secA_gp2', 'secA_gp3', 'secA_gp4', 'secA_gp5', 'secA_gp6'].map(f => (
+                                                            {[...secAQuestionFields, ...secAGeneralPointFields].map(f => (
                                                                 <td key={f} className="border border-black p-0 h-full">
                                                                     <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
@@ -1633,7 +1940,7 @@ const Cycle10 = () => {
                                                             </td>
                                                             <td className="border border-black p-0 bg-yellow-50 font-bold text-blue-600">{row.secB_min}</td>
                                                             <td className="border border-black p-0 bg-yellow-50 font-bold text-blue-600">{row.secB_max}</td>
-                                                            {['secC_1', 'secC_2', 'secC_3', 'secC_4', 'secC_5'].map(f => (
+                                                            {secCColumnFields.map(f => (
                                                                 <td key={f} className="border border-black p-0 h-full">
                                                                     <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
@@ -1692,21 +1999,17 @@ const Cycle10 = () => {
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A Four Question Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is Operator aware of SOP Availability?</li>
-                                                        <li>Q2 :- Does Operator understand SOP?</li>
-                                                        <li>Q3 :- Is Operator adhering SOP?</li>
-                                                        <li>Q4 :- Does Operator know operation cycle time?</li>
+                                                        {config.secA.questions.map(q => (
+                                                            <li key={q.id}>{q.label} :- {q.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                                 <div className="border border-gray-300 p-2 rounded col-span-1">
                                                     <h3 className="font-bold border-b border-black mb-1">Section - A General Point Details:-</h3>
                                                     <ul className="list-none space-y-0.5">
-                                                        <li>Q1 :- Is process started after 5&apos;S?</li>
-                                                        <li>Q2 :- Is station check sheet filled?</li>
-                                                        <li>Q3 :- Is defective part identified?</li>
-                                                        <li>Q4 :- Is NC part handling system followed?</li>
-                                                        <li>Q5 :- Is Operator aware about 5 safety principle?</li>
-                                                        <li>Q6 :- Is operator aware about abnormal condition?</li>
+                                                        {config.secA.generalPoints.map(g => (
+                                                            <li key={g.id}>{g.label} :- {g.desc}</li>
+                                                        ))}
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1768,6 +2071,266 @@ const Cycle10 = () => {
                     </div>
                 )}
 
+                {/* ── EDIT LAYOUT TAB ──────────────────────────────────────── */}
+                {activeTab === 'editLayout' && canEditConfig && (
+                    <div className="space-y-4">
+                        <div>
+                            <h1 className="text-xl font-bold">10-Cycle Sheet Layout Editor</h1>
+                            <p className="text-sm text-slate-500">
+                                Customize Section A questions &amp; general points, Section B measuring instruments, and Section C inspection columns. Changes apply to whichever scope you select below.
+                            </p>
+                        </div>
+
+                        {/* Scope + Form selectors */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="border rounded p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs font-bold uppercase tracking-wide">Scope</Label>
+                                    <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={layoutIsGlobal}
+                                            onChange={(e) => {
+                                                setLayoutIsGlobal(e.target.checked);
+                                                setLayoutDeptId("");
+                                                setLayoutSectionId("");
+                                                setLayoutLineId("");
+                                            }}
+                                        />
+                                        Global (applies to all departments)
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div>
+                                        <Label className="text-xs mb-1 block">Department</Label>
+                                        <Select
+                                            value={layoutDeptId}
+                                            onValueChange={(v) => { setLayoutDeptId(v); setLayoutSectionId(""); setLayoutLineId(""); }}
+                                            disabled={layoutIsGlobal}
+                                        >
+                                            <SelectTrigger className="h-9 text-xs">
+                                                <SelectValue placeholder="Select department" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {assignableDepartments.map((dept) => (
+                                                    <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
+                                                        {dept.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs mb-1 block">Section (optional)</Label>
+                                        <Select
+                                            value={layoutSectionId}
+                                            onValueChange={(v) => { setLayoutSectionId(v); setLayoutLineId(""); }}
+                                            disabled={layoutIsGlobal || !layoutDeptId}
+                                        >
+                                            <SelectTrigger className="h-9 text-xs">
+                                                <SelectValue placeholder="All sections" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {layoutSections.map((sec) => (
+                                                    <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
+                                                        {sec.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs mb-1 block">Line (optional)</Label>
+                                        <Select
+                                            value={layoutLineId}
+                                            onValueChange={setLayoutLineId}
+                                            disabled={layoutIsGlobal || !layoutSectionId}
+                                        >
+                                            <SelectTrigger className="h-9 text-xs">
+                                                <SelectValue placeholder="All lines" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {layoutLines.map((line) => (
+                                                    <SelectItem key={line._id || line.id} value={String(line._id || line.id)}>
+                                                        {line.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                    The most specific saved config wins: Line &gt; Section &gt; Department &gt; Global. Leave Section/Line blank to edit at a broader level.
+                                </p>
+                            </div>
+
+                            <div className="border rounded p-4 space-y-3">
+                                <Label className="text-xs font-bold uppercase tracking-wide">Form Type</Label>
+                                <div className="flex gap-2">
+                                    {ALL_FORM_TYPES.map((t) => (
+                                        <Button
+                                            key={t.id}
+                                            size="sm"
+                                            variant={layoutFormType === t.id ? "default" : "outline"}
+                                            onClick={() => setLayoutFormType(t.id)}
+                                        >
+                                            {t.label}
+                                        </Button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                    Each form type has its own independent questions, general points, instruments, and columns — editing Form 1 here never changes Form 2 or Form 3 (Form 3 also doesn&apos;t use Section B instruments at all).
+                                </p>
+                            </div>
+                        </div>
+
+                        {loadingLayout ? (
+                            <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
+                        ) : !layoutDraft ? (
+                            <div className="text-center py-12 text-slate-500 border-2 border-dashed rounded-lg">
+                                Select a Department (or switch to Global) to load its layout configuration.
+                            </div>
+                        ) : (
+                            <>
+                                {(() => {
+                                    const note = layoutInheritanceNote();
+                                    if (!note) return null;
+                                    return (
+                                        <div className={`text-xs rounded p-2 border ${note.tone === 'ok' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                            {note.text}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Live preview */}
+                                <div className="border rounded overflow-x-auto">
+                                    <table className="text-[10px] border-collapse w-full">
+                                        <thead>
+                                            <tr className="bg-gray-100 text-center font-bold">
+                                                <th colSpan={layoutDraft.secA.questions.length + layoutDraft.secA.generalPoints.length} className="border border-black p-1">Section - A</th>
+                                                {layoutFormType !== 'form3' && (
+                                                    <th colSpan={layoutDraft.secB.instruments.length} className="border border-black p-1">Section - B</th>
+                                                )}
+                                                <th colSpan={layoutDraft.secC.columns.length} className="border border-black p-1">Section-C</th>
+                                            </tr>
+                                            <tr className="bg-gray-50 text-center">
+                                                {layoutDraft.secA.questions.map(q => (
+                                                    <th key={`pq_${q.id}`} className="border border-black w-12 p-1">{q.label || '(empty)'}</th>
+                                                ))}
+                                                {layoutDraft.secA.generalPoints.map(g => (
+                                                    <th key={`pg_${g.id}`} className="border border-black w-12 p-1">{g.label || '(empty)'}</th>
+                                                ))}
+                                                {layoutFormType !== 'form3' && layoutDraft.secB.instruments.map(i => (
+                                                    <th key={`pi_${i.id}`} className="border border-black w-16 p-1">{i.label || '(empty)'}</th>
+                                                ))}
+                                                {layoutDraft.secC.columns.map(c => (
+                                                    <th key={`pc_${c.id}`} className="border border-black w-10 p-1">{c.label || '(empty)'}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                    </table>
+                                </div>
+
+                                {/* Editors */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div className="border rounded p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-bold text-sm">Section A — Ask Four Questions</h3>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('questions')}>
+                                                <Plus size={12} /> Add
+                                            </Button>
+                                        </div>
+                                        {layoutDraft.secA.questions.map((q, idx) => (
+                                            <div key={q.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
+                                                <Input className="h-8 text-xs" value={q.label} onChange={(e) => updateLayoutItem('questions', idx, 'label', e.target.value)} placeholder="Label" />
+                                                <Input className="h-8 text-xs" value={q.desc} onChange={(e) => updateLayoutItem('questions', idx, 'desc', e.target.value)} placeholder="Description" />
+                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('questions', idx)}>
+                                                    <Trash2 size={12} />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="border rounded p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-bold text-sm">Section A — General Points</h3>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('generalPoints')}>
+                                                <Plus size={12} /> Add
+                                            </Button>
+                                        </div>
+                                        {layoutDraft.secA.generalPoints.map((g, idx) => (
+                                            <div key={g.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
+                                                <Input className="h-8 text-xs" value={g.label} onChange={(e) => updateLayoutItem('generalPoints', idx, 'label', e.target.value)} placeholder="Label" />
+                                                <Input className="h-8 text-xs" value={g.desc} onChange={(e) => updateLayoutItem('generalPoints', idx, 'desc', e.target.value)} placeholder="Description" />
+                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('generalPoints', idx)}>
+                                                    <Trash2 size={12} />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="border rounded p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-bold text-sm">
+                                                Section B — Measuring Instruments
+                                                {layoutFormType === 'form3' && <span className="text-[10px] text-slate-400 font-normal ml-2">(not shown on Form 3)</span>}
+                                            </h3>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('instruments')}>
+                                                <Plus size={12} /> Add
+                                            </Button>
+                                        </div>
+                                        {layoutDraft.secB.instruments.map((i, idx) => (
+                                            <div key={i.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
+                                                <Input className="h-8 text-xs" value={i.label} onChange={(e) => updateLayoutItem('instruments', idx, 'label', e.target.value)} placeholder="Label" />
+                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('instruments', idx)}>
+                                                    <Trash2 size={12} />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="border rounded p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-bold text-sm">Section C — Cross Inspection Columns</h3>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('columns')}>
+                                                <Plus size={12} /> Add
+                                            </Button>
+                                        </div>
+                                        {layoutDraft.secC.columns.map((c, idx) => (
+                                            <div key={c.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
+                                                <Input className="h-8 text-xs" value={c.label} onChange={(e) => updateLayoutItem('columns', idx, 'label', e.target.value)} placeholder="Label" />
+                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('columns', idx)}>
+                                                    <Trash2 size={12} />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Remark + Save + History */}
+                                <div className="border rounded p-4 space-y-3">
+                                    <Label className="text-xs mb-1 block">Remark (required to save)</Label>
+                                    <Textarea
+                                        className="text-sm"
+                                        value={layoutRemark}
+                                        onChange={(e) => setLayoutRemark(e.target.value)}
+                                        placeholder="e.g. Renamed 'Linear Scale' to 'Caliper' for this line"
+                                    />
+                                    <div className="flex justify-between items-center">
+                                        <Button variant="outline" className="gap-2" onClick={fetchLayoutHistory}>
+                                            <History size={14} /> History
+                                        </Button>
+                                        <Button
+                                            onClick={handleSaveLayoutConfig}
+                                            disabled={savingLayout || !layoutRemark.trim()}
+                                            className="gap-2 bg-blue-600 hover:bg-blue-700"
+                                        >
+                                            {savingLayout ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Layout
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+
                 {/* ── Mandatory Edit Remark Dialog ─────────────────────────── */}
                 <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
                     <DialogContent>
@@ -1792,6 +2355,47 @@ const Cycle10 = () => {
                                 {(saving || submitting) ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
                                 Confirm & {pendingIsSubmit ? "Submit" : "Save"}
                             </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* ── Layout History Dialog ────────────────────────────────── */}
+                <Dialog open={showLayoutHistory} onOpenChange={setShowLayoutHistory}>
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle>10-Cycle Sheet Layout History</DialogTitle>
+                        </DialogHeader>
+                        <div className="max-h-96 overflow-y-auto space-y-3">
+                            {layoutHistory.length === 0 ? (
+                                <div className="text-sm text-muted-foreground">No layout changes recorded yet for this scope.</div>
+                            ) : (
+                                layoutHistory.map((entry) => (
+                                    <div key={entry.id} className="border rounded p-2 text-xs space-y-1">
+                                        <div className="flex justify-between">
+                                            <span className="font-semibold">{entry.updatedBy || "Unknown"}</span>
+                                            <span className="text-muted-foreground">{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : ""}</span>
+                                        </div>
+                                        {entry.remark && <div className="italic text-slate-600">&quot;{entry.remark}&quot;</div>}
+                                        <div className="flex justify-end">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-6 text-[10px]"
+                                                onClick={() => {
+                                                    setLayoutFullConfig(normalizeConfig(entry.config));
+                                                    setLayoutRemark('');
+                                                    setShowLayoutHistory(false);
+                                                }}
+                                            >
+                                                Restore this version (all 3 forms)
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowLayoutHistory(false)}>Close</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

@@ -5,6 +5,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import NotificationService from "../services/notification.service.js";
 import SixteenDayMonitoring from "../models/sixteenDayMonitoring.model.js";
 import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
+import CourseLevelConfig from "../models/courseLevelConfig.model.js";
 import MenteeFeedback from "../models/menteeFeedback.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
@@ -429,7 +430,8 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const isApprovedNow = (approvedBy || "").toLowerCase().includes("approved by");
     if (isApprovedNow && !wasApproved) {
         try {
-            await SkillUpgradationPlan.syncSixteenDayApproval(sid, new Date());
+            const activeConfig = await CourseLevelConfig.getActiveConfig();
+            await SkillUpgradationPlan.syncSixteenDayApproval(sid, new Date(), activeConfig);
         } catch (err) {
             console.error("[SixteenDayMonitoring] Failed to sync to SkillUpgradationPlan:", err);
         }

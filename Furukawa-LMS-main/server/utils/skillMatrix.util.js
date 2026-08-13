@@ -112,6 +112,17 @@ export const isLevelFullyOK = (evalData, skillCertConfig, levelIdx) => {
     return items.every((_, iIdx) => evalData[`${levelIdx}-${iIdx}`]?.standard === 'OK');
 };
 
+// Returns the name of the lowest-order (first) level in the active config, e.g. "L1".
+// Mirrors admin/src/components/departments/SkillUpgradationPlan.jsx's isMaxLevelName —
+// same idea, opposite end of the list. Dynamic, never hardcoded to a specific level name.
+export const getFirstConfiguredLevelName = (activeConfig) => {
+    const levels = activeConfig?.levels;
+    if (!Array.isArray(levels) || levels.length === 0) return null;
+    return levels.reduce((first, l) =>
+        (typeof l.order === 'number' && (!first || l.order < first.order)) ? l : first
+    , null)?.name || null;
+};
+
 // Mirrors admin/src/components/departments/SkillUpgradationPlan.jsx's addThreeMonths/calculateFutureDate
 // so auto-synced plan dates land on the same day a manual admin edit would produce.
 const addThreeMonths = (dateStr) => {

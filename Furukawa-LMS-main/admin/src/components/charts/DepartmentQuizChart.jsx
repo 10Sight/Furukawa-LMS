@@ -63,7 +63,7 @@ const getDefaultDateRange = () => {
     return { startDate: formatDateLocal(firstOfMonth), endDate: formatDateLocal(lastOfMonth) };
 };
 
-const DepartmentQuizChart = ({ dateRange }) => {
+const DepartmentQuizChart = ({ dateRange, departments: departmentsProp }) => {
     const { t } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
@@ -156,12 +156,14 @@ const DepartmentQuizChart = ({ dateRange }) => {
     });
 
     /* ── API: filter options ── */
-    const { data: deptData }    = useGetAllDepartmentsQuery({ limit: 200 });
+    // Home.jsx already fetches the department list once and passes it down; only fall back
+    // to a local (RTK-Query-cached) fetch when this chart is used standalone.
+    const { data: deptData }    = useGetAllDepartmentsQuery({ limit: 200 }, { skip: !!departmentsProp });
     const { data: sectionData } = useGetSectionsByDepartmentQuery(
         filters.departmentId || skipToken
     );
 
-    const departments = deptData?.data?.departments || [];
+    const departments = departmentsProp ?? (deptData?.data?.departments || []);
     const formattedSections = useMemo(() => {
         const rawSections = sectionData?.data || sectionData || [];
         return rawSections.map(s => ({

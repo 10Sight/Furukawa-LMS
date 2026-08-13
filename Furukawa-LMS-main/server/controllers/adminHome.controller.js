@@ -179,10 +179,12 @@ export const getAdminHomeTestPaperStats = asyncHandler(async (req, res) => {
     }
 
     // Only Dojo theoretical quizzes feed these stats now — the practical chart was removed.
+    // attempted_quizzes.quiz/student are stored as NVARCHAR; casting to INT lets the join
+    // seek on quizzes.id/users.id instead of scanning past an implicit conversion.
     const baseFrom = `
         FROM attempted_quizzes aq
-        JOIN quizzes q ON aq.quiz = q.id
-        JOIN users u ON aq.student = u.id
+        JOIN quizzes q ON q.id = TRY_CAST(aq.quiz AS INT)
+        JOIN users u ON u.id = TRY_CAST(aq.student AS INT)
         WHERE aq.completedAt >= ? AND aq.completedAt <= ?
         AND q.isTheoretical = 1
         AND q.isDojo = 1
@@ -307,15 +309,18 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
 
     // Build optional department filter — accepts comma-separated IDs for multi-select
     // Temp users store dept in targetDeptId; after handover it moves to departmentId
-    const params = [start, end];
+    // Date range appears twice in the WHERE clause (joiningDate branch + createdAt fallback branch)
+    const dateRangeParams = [start, end, start, end];
     let deptClause = '';
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
     if (deptIds.length > 0) {
         const ph = deptIds.map(() => '?').join(',');
         deptClause = `AND (targetDeptId IN (${ph}) OR departmentId IN (${ph}))`;
-        params.push(...deptIds, ...deptIds);
+        dateRangeParams.push(...deptIds, ...deptIds);
     }
 
+    // Sargable date range: OR'd instead of COALESCE(...) >= ? so SQL Server can seek on
+    // joiningDate directly rather than scanning every row to evaluate the function result.
     const [rows] = await executeQuery(`
         SELECT
             ${periodExpr}                                                               AS period,
@@ -326,12 +331,14 @@ export const getDojoHiringTrend = asyncHandler(async (req, res) => {
         FROM users
         WHERE (expectedHandover IS NOT NULL OR isTemporary = 1)
           AND (isDeleted = 0 OR isDeleted IS NULL)
-          AND COALESCE(joiningDate, CAST(createdAt AS DATE)) >= ?
-          AND COALESCE(joiningDate, CAST(createdAt AS DATE)) <= ?
+          AND (
+              (joiningDate >= ? AND joiningDate <= ?)
+              OR (joiningDate IS NULL AND CAST(createdAt AS DATE) >= ? AND CAST(createdAt AS DATE) <= ?)
+          )
           ${deptClause}
         GROUP BY ${periodExpr}
         ORDER BY period ASC
-    `, params);
+    `, dateRangeParams);
 
     res.status(200).json(
         new ApiResponse(200, { trend: rows, groupBy: safeGroupBy, start, end }, "Dojo hiring trend fetched successfully")
@@ -433,18 +440,20 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         ORDER BY period ASC
     `, expectedParams);
 
+    // Scan handover_sheets first (filtered by date) before exploding into JSON rows, then join
+    // users on the PK. Avoids the prior INNER JOIN ... ON 1=1 Cartesian product between every
+    // user row and every handover_sheets row ahead of the JSON filter.
     const [actualRows] = await executeQuery(`
         SELECT
             ${actualFormatMap[safeGroupBy]} AS period,
             COUNT(DISTINCT u.id)            AS actual
-        FROM users u
-        INNER JOIN handover_sheets hs ON 1=1
+        FROM handover_sheets hs
         CROSS APPLY OPENJSON(hs.entries) as entry
-        WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+        INNER JOIN users u ON u.id = TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+        WHERE hs.date >= ?
+          AND hs.date <= ?
           AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND hs.date >= ?
-          AND hs.date <= ?
           ${actualDeptClausePrefixed}
         GROUP BY ${actualFormatMap[safeGroupBy]}
         ORDER BY period ASC
@@ -458,16 +467,15 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned')             AS sectionName,
             COUNT(DISTINCT u.id)                       AS actual
-        FROM users u
-        INNER JOIN handover_sheets hs ON 1=1
+        FROM handover_sheets hs
         CROSS APPLY OPENJSON(hs.entries) as entry
+        INNER JOIN users u ON u.id = TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
-        WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+        WHERE hs.date >= ?
+          AND hs.date <= ?
           AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
-          AND hs.date >= ?
-          AND hs.date <= ?
           ${actualDeptClausePrefixed}
         GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
@@ -628,7 +636,9 @@ export const getContractorWiseOperatorStats = asyncHandler(async (req, res) => {
         end   = end || lastOfMonth.toISOString().split('T')[0];
     }
 
-    const params = [start, end];
+    // Date range appears twice (joiningDate branch + createdAt fallback branch) so the
+    // WHERE clause stays sargable instead of wrapping the column in COALESCE(...).
+    const params = [start, end, start, end];
 
     const [rows] = await executeQuery(`
         SELECT
@@ -639,8 +649,10 @@ export const getContractorWiseOperatorStats = asyncHandler(async (req, res) => {
         LEFT JOIN contractors c ON u.contractorId = c.id
         WHERE (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)) >= ?
-          AND COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)) <= ?
+          AND (
+              (u.joiningDate >= ? AND u.joiningDate <= ?)
+              OR (u.joiningDate IS NULL AND CAST(u.createdAt AS DATE) >= ? AND CAST(u.createdAt AS DATE) <= ?)
+          )
         ORDER BY joiningDate ASC
     `, params);
 

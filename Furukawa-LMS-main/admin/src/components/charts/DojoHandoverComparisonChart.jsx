@@ -130,7 +130,7 @@ const INPUT_CONFIG = {
     yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
 };
 
-const DojoHandoverComparisonChart = () => {
+const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
@@ -139,8 +139,10 @@ const DojoHandoverComparisonChart = () => {
     const [rawEnd, setRawEnd] = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
 
-    const { data: deptsData } = useGetAllDepartmentsQuery();
-    const departments = deptsData?.data?.departments || [];
+    // Home.jsx already fetches the department list once and passes it down; only fall back
+    // to a local (RTK-Query-cached) fetch when this chart is used standalone.
+    const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
+    const departments = departmentsProp ?? (deptsData?.data?.departments || []);
 
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
@@ -338,7 +340,7 @@ const DojoHandoverComparisonChart = () => {
         ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '')
         : '';
 
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
@@ -452,7 +454,7 @@ const DojoHandoverComparisonChart = () => {
                 color: '#3b82f6', // Blue for Actual
             }
         ],
-    };
+    }), [categories, expectedPoints, actualPoints, groupSeparators, needsScroll, scrollMinWidth, scrollPositionX, selectedDeptName, t]);
 
     const cfg = INPUT_CONFIG[timeframe];
     const deptLabel = selectedDepts.length === 0

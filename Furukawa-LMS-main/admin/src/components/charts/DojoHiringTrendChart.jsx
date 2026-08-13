@@ -143,7 +143,7 @@ const INPUT_CONFIG = {
     yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1,        placeholder: 'YYYY' },
 };
 
-const DojoHiringTrendChart = () => {
+const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
@@ -153,8 +153,10 @@ const DojoHiringTrendChart = () => {
     const [rawEnd,       setRawEnd]       = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
 
-    const { data: deptsData } = useGetAllDepartmentsQuery();
-    const departments = deptsData?.data?.departments || [];
+    // Home.jsx already fetches the department list once and passes it down; only fall back
+    // to a local (RTK-Query-cached) fetch when this chart is used standalone.
+    const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
+    const departments = departmentsProp ?? (deptsData?.data?.departments || []);
 
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
@@ -310,7 +312,7 @@ const DojoHiringTrendChart = () => {
         inside: true,
     };
 
-    const getTotalOptions = () => ({
+    const totalOptions = useMemo(() => ({
         ...baseChart,
         plotOptions: {
             column: {
@@ -329,9 +331,10 @@ const DojoHiringTrendChart = () => {
             data: totalSeries,
             color: '#3b82f6',
         }],
-    });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [categories, totalSeries, needsScroll, scrollMinWidth, viewMode, t]);
 
-    const getGenderOptions = () => ({
+    const genderOptions = useMemo(() => ({
         ...baseChart,
         plotOptions: {
             column: {
@@ -352,7 +355,8 @@ const DojoHiringTrendChart = () => {
                 ? [{ type: 'column', name: t('charts.other'), data: otherSeries, color: '#94a3b8' }]
                 : []),
         ],
-    });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [categories, maleSeries, femaleSeries, otherSeries, needsScroll, scrollMinWidth, viewMode, t]);
 
     // ── Render ────────────────────────────────────────────────────────────────
     const cfg = INPUT_CONFIG[timeframe];
@@ -535,7 +539,7 @@ const DojoHiringTrendChart = () => {
                         <HighchartsReact
                             key={`${viewMode}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}`}
                             highcharts={Highcharts}
-                            options={viewMode === 'total' ? getTotalOptions() : getGenderOptions()}
+                            options={viewMode === 'total' ? totalOptions : genderOptions}
                         />
 
                         {/* Summary strip */}

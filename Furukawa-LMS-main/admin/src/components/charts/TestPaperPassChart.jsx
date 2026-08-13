@@ -147,7 +147,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
     const totalAttempts = totalPassed + totalFailed;
     const passRate      = totalAttempts > 0 ? Math.round((totalPassed / totalAttempts) * 100) : 0;
 
-    const options = {
+    const options = useMemo(() => ({
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
@@ -237,7 +237,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             { type: 'column', name: t('charts.passed'), data: passedSeries, color: '#16a34a' },
             { type: 'column', name: t('charts.failed'), data: failedSeries, color: '#dc2626' },
         ],
-    };
+    }), [categories, passedSeries, failedSeries, needsScroll, scrollMinWidth, t]);
 
     return (
         <div className="space-y-3">
@@ -268,7 +268,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
 
 /* ══════════════════════════════════════════════════════════════ */
 
-const TestPaperPassChart = () => {
+const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
@@ -279,8 +279,10 @@ const TestPaperPassChart = () => {
     const [isDojo,       setIsDojo]       = useState('all');
     const [quizId,       setQuizId]       = useState('');
 
-    const { data: deptsData } = useGetAllDepartmentsQuery();
-    const departments = deptsData?.data?.departments || [];
+    // Home.jsx already fetches the department list once and passes it down; only fall back
+    // to a local (RTK-Query-cached) fetch when this chart is used standalone.
+    const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
+    const departments = departmentsProp ?? (deptsData?.data?.departments || []);
 
     // limit: 500 — this list is independent of the chart's date range/filters, so every
     // Dojo theoretical test paper always appears here, even ones with no attempts yet.

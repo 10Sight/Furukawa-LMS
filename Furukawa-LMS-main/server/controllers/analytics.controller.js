@@ -835,11 +835,13 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
         params.push(new Date(startDate), new Date(endDate));
     }
 
+    // attempted_quizzes.quiz/student are NVARCHAR; casting the subquery side to INT (instead of
+    // casting quizzes.id/users.id to NVARCHAR) lets these joins seek on the INT PK indexes.
     let query = "";
     if (departmentId) {
         // Fetch stats grouped by sections under this department
         query = `
-            SELECT 
+            SELECT
                 s.name as departmentName,
                 COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
                 COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
@@ -849,30 +851,34 @@ export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
             LEFT JOIN (
                 SELECT aq_sub.*
                 FROM attempted_quizzes aq_sub
-                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq_sub.quiz
+                JOIN quizzes q ON q.id = TRY_CAST(aq_sub.quiz AS INT)
                 WHERE COALESCE(q.isDojo, 0) = 0
-            ) aq ON aq.student = u.id ${dateFilter}
+            ) aq ON TRY_CAST(aq.student AS INT) = u.id ${dateFilter}
             WHERE s.departmentId = ?
             GROUP BY s.id, s.name, s.category
             ORDER BY passedCount DESC
         `;
         params.push(parseInt(departmentId));
     } else {
-        // Global departments view
+        // Global departments view. Prefer the indexed u.departmentId FK; fall back to the
+        // legacy string-based u.department match only when departmentId hasn't been set.
         query = `
-            SELECT 
+            SELECT
                 d.name as departmentName,
                 COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
                 COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
                 COUNT(aq.id) as totalAttempts
             FROM departments d
-            LEFT JOIN users u ON (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name) AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+            LEFT JOIN users u ON (
+                u.departmentId = d.id
+                OR (u.departmentId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
+            ) AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
             LEFT JOIN (
                 SELECT aq_sub.*
                 FROM attempted_quizzes aq_sub
-                JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq_sub.quiz
+                JOIN quizzes q ON q.id = TRY_CAST(aq_sub.quiz AS INT)
                 WHERE COALESCE(q.isDojo, 0) = 0
-            ) aq ON aq.student = u.id ${dateFilter}
+            ) aq ON TRY_CAST(aq.student AS INT) = u.id ${dateFilter}
             WHERE d.isDeleted = 0
             GROUP BY d.id, d.name
             ORDER BY passedCount DESC

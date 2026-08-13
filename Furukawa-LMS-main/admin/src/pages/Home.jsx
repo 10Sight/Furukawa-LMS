@@ -145,6 +145,7 @@ const Home = () => {
     assignmentType: "",
   });
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery();
+  const departments = departmentsData?.data?.departments || [];
   const { data: coursesData, isLoading: coursesLoading } = useGetCoursesQuery({
     page: 1,
     limit: 1000, // Get all courses for count
@@ -241,19 +242,19 @@ const Home = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 gap-6">
         <LazyContainer minHeight={isTablet ? 600 : isMobile ? 420 : 460}>
-          <DojoHiringTrendChart />
+          <DojoHiringTrendChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
-          <DojoHandoverComparisonChart />
+          <DojoHandoverComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <ContractorWiseOperatorChart />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 500}>
-          <TestPaperPassChart />
+          <TestPaperPassChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 620 : isMobile ? 500 : 560}>
-          <DepartmentQuizChart dateRange={dateRange} />
+          <DepartmentQuizChart dateRange={dateRange} departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={600}>
           <EfficiencyChart />

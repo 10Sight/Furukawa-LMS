@@ -291,7 +291,7 @@ const ContractorWiseOperatorChart = () => {
     const needsScroll    = flatPoints.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? flatPoints.length * SLOT_WIDTH : undefined;
 
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
@@ -375,7 +375,7 @@ const ContractorWiseOperatorChart = () => {
             data:  flatPoints,
             showInLegend: false,
         }],
-    };
+    }), [categories, flatPoints, groupSeparators, needsScroll, scrollMinWidth]);
 
     const cfg        = INPUT_CONFIG[timeframe];
     const hasAnyData = flatPoints.length > 0;

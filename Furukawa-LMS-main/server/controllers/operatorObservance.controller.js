@@ -14,7 +14,43 @@ const getDerivedLevel1CompletionDate = async (studentId) => {
     const activeConfig = await CourseLevelConfig.getActiveConfig();
     const levels = [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-    // "Level-1 complete" date is interpreted as entry date into 2nd active level (typically L2).
+    // Fetch the 1st active level (index 0)
+    const firstLevelName = levels[0]?.name;
+    if (!firstLevelName) return null;
+
+    const [progressRows] = await executeQuery(
+        "SELECT currentLevel, levelStartDate, updatedAt, createdAt FROM progress WHERE student = ?",
+        [studentId]
+    );
+
+    const targetNorm = normalizeLevel(firstLevelName);
+    const matchedProgress = (progressRows || [])
+        .filter((row) => normalizeLevel(row.currentLevel) === targetNorm)
+        .map((row) => row.levelStartDate || row.updatedAt || row.createdAt)
+        .filter(Boolean)
+        .sort((a, b) => new Date(b) - new Date(a))[0];
+
+    if (matchedProgress) return matchedProgress;
+
+    // Fallback: use skill-upgradation certificate date for that level.
+    const [certRows] = await executeQuery(
+        `SELECT TOP 1 issueDate, createdAt
+         FROM certificates
+         WHERE student = ? AND type = 'SKILL_UPGRADATION' AND level = ?
+         ORDER BY issueDate DESC, createdAt DESC`,
+        [String(studentId), firstLevelName]
+    );
+
+    if (certRows.length > 0) return certRows[0].issueDate || certRows[0].createdAt || null;
+
+    return null;
+};
+
+const getDerivedLevel2CompletionDate = async (studentId) => {
+    const activeConfig = await CourseLevelConfig.getActiveConfig();
+    const levels = [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    // Fetch the 2nd active level (index 1)
     const secondLevelName = levels[1]?.name;
     if (!secondLevelName) return null;
 
@@ -32,49 +68,13 @@ const getDerivedLevel1CompletionDate = async (studentId) => {
 
     if (matchedProgress) return matchedProgress;
 
-    // Fallback: If level transition date isn't in progress history, use skill-upgradation certificate date for that level.
+    // Fallback: use skill-upgradation certificate date for that level.
     const [certRows] = await executeQuery(
         `SELECT TOP 1 issueDate, createdAt
          FROM certificates
          WHERE student = ? AND type = 'SKILL_UPGRADATION' AND level = ?
          ORDER BY issueDate DESC, createdAt DESC`,
         [String(studentId), secondLevelName]
-    );
-
-    if (certRows.length > 0) return certRows[0].issueDate || certRows[0].createdAt || null;
-
-    return null;
-};
-
-const getDerivedLevel2CompletionDate = async (studentId) => {
-    const activeConfig = await CourseLevelConfig.getActiveConfig();
-    const levels = [...(activeConfig?.levels || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-    // "Level-2 complete" date is interpreted as entry date into 3rd active level (typically L3).
-    const thirdLevelName = levels[2]?.name;
-    if (!thirdLevelName) return null;
-
-    const [progressRows] = await executeQuery(
-        "SELECT currentLevel, levelStartDate, updatedAt, createdAt FROM progress WHERE student = ?",
-        [studentId]
-    );
-
-    const targetNorm = normalizeLevel(thirdLevelName);
-    const matchedProgress = (progressRows || [])
-        .filter((row) => normalizeLevel(row.currentLevel) === targetNorm)
-        .map((row) => row.levelStartDate || row.updatedAt || row.createdAt)
-        .filter(Boolean)
-        .sort((a, b) => new Date(b) - new Date(a))[0];
-
-    if (matchedProgress) return matchedProgress;
-
-    // Fallback: If level transition date isn't in progress history, use skill-upgradation certificate date for that level.
-    const [certRows] = await executeQuery(
-        `SELECT TOP 1 issueDate, createdAt
-         FROM certificates
-         WHERE student = ? AND type = 'SKILL_UPGRADATION' AND level = ?
-         ORDER BY issueDate DESC, createdAt DESC`,
-        [String(studentId), thirdLevelName]
     );
 
     if (certRows.length > 0) return certRows[0].issueDate || certRows[0].createdAt || null;

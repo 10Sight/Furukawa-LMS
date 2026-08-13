@@ -268,7 +268,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             // Extra breathing room below the date labels so the horizontal scrollbar
             // (rendered right under the plot area when scrollablePlotArea is active)
             // doesn't sit flush against them.
-            marginBottom: needsScroll ? 55 : 40,
+            marginBottom: needsScroll ? 75 : 40,
             // scrollablePlotArea expands the inner canvas; scrollPositionX centers on today
             ...(needsScroll && {
                 scrollablePlotArea: {

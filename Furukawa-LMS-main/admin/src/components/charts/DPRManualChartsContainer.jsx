@@ -293,13 +293,13 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
         series: [
             { name: 'Planned Qty', type: 'column', data: trend.map(t => t.srcEffPlan), color: '#94a3b8', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Actual Qty', type: 'column', data: trend.map(t => t.srcEffActual), color: '#3b82f6', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Actual Defect', type: 'spline', yAxis: 1, data: trend.map(t => t.srcEffPlan > 0 ? Math.round((t.srcEffActual / t.srcEffPlan) * 1000) / 10 : 0), color: '#10b981', tooltip: { valueSuffix: '%' } },
-            { name: 'Target %', type: 'spline', yAxis: 1, data: trend.map(t => t.srcEffTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: '%' } },
+            { name: 'Actual Defect', type: 'column', yAxis: 1, data: trend.map(t => t.srcEffPlan > 0 ? Math.round((t.srcEffActual / t.srcEffPlan) * 1000) / 10 : 0), color: '#10b981', tooltip: { valueSuffix: '%' } },
+            { name: 'Target %', type: 'column', yAxis: 1, data: trend.map(t => t.srcEffTarget), color: '#f97316', tooltip: { valueSuffix: '%' } },
         ],
     };
 
     const srcDefOptions = {
-        ...baseChart(),
+        ...baseChart({ type: 'column' }),
         yAxis: [
             { title: { text: 'Defect Qty', style: { color: chartTheme.text, fontSize: '12px' } }, labels: { style: { color: chartTheme.text, fontSize: '12px' } }, gridLineColor: chartTheme.grid, min: 0 },
             { title: { text: 'PPM', style: { color: '#f59e0b', fontSize: '12px' } }, labels: { style: { color: chartTheme.text, fontSize: '12px' } }, opposite: true, min: 0, gridLineWidth: 0 },
@@ -308,13 +308,13 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
             { name: 'Defect Auto', type: 'column', data: trend.map(t => t.srcDefAuto), color: '#f59e0b', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Defect Manual', type: 'column', data: trend.map(t => t.srcDefManual), color: '#3b82f6', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Defect Joint', type: 'column', data: trend.map(t => t.srcDefJoint), color: '#10b981', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Defect PPM', type: 'spline', yAxis: 1, data: trend.map(t => { const td = Number(t.srcDefAuto || 0) + Number(t.srcDefManual || 0) + Number(t.srcDefJoint || 0); return t.srcDefProduction > 0 ? Math.round((td / t.srcDefProduction) * 1000000) : 0; }), color: '#8b5cf6', tooltip: { valueSuffix: ' PPM' } },
-            { name: 'Target PPM', type: 'spline', yAxis: 1, data: trend.map(t => t.srcDefTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: ' PPM' } },
+            { name: 'Defect PPM', type: 'column', yAxis: 1, data: trend.map(t => { const td = Number(t.srcDefAuto || 0) + Number(t.srcDefManual || 0) + Number(t.srcDefJoint || 0); return t.srcDefProduction > 0 ? Math.round((td / t.srcDefProduction) * 1000000) : 0; }), color: '#8b5cf6', tooltip: { valueSuffix: ' PPM' } },
+            { name: 'Target PPM', type: 'column', yAxis: 1, data: trend.map(t => t.srcDefTarget), color: '#f97316', tooltip: { valueSuffix: ' PPM' } },
         ],
     };
 
     const qaDefOptions = {
-        ...baseChart(),
+        ...baseChart({ type: 'column' }),
         yAxis: [
             { title: { text: 'Defect Qty', style: { color: chartTheme.text, fontSize: '12px' } }, labels: { style: { color: chartTheme.text, fontSize: '12px' } }, gridLineColor: chartTheme.grid, min: 0 },
             { title: { text: 'PPM', style: { color: '#f59e0b', fontSize: '12px' } }, labels: { style: { color: chartTheme.text, fontSize: '12px' } }, opposite: true, min: 0, gridLineWidth: 0 },
@@ -323,8 +323,8 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
             { name: 'Defect Auto', type: 'column', data: trend.map(t => t.qaDefAuto), color: '#f59e0b', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Defect Manual', type: 'column', data: trend.map(t => t.qaDefManual), color: '#3b82f6', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Defect Joint', type: 'column', data: trend.map(t => t.qaDefJoint), color: '#10b981', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Defect PPM', type: 'spline', yAxis: 1, data: trend.map(t => { const td = Number(t.qaDefAuto || 0) + Number(t.qaDefManual || 0) + Number(t.qaDefJoint || 0); return t.qaDefProduction > 0 ? Math.round((td / t.qaDefProduction) * 1000000) : 0; }), color: '#8b5cf6', tooltip: { valueSuffix: ' PPM' } },
-            { name: 'Target PPM', type: 'spline', yAxis: 1, data: trend.map(t => t.qaDefTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: ' PPM' } },
+            { name: 'Defect PPM', type: 'column', yAxis: 1, data: trend.map(t => { const td = Number(t.qaDefAuto || 0) + Number(t.qaDefManual || 0) + Number(t.qaDefJoint || 0); return t.qaDefProduction > 0 ? Math.round((td / t.qaDefProduction) * 1000000) : 0; }), color: '#8b5cf6', tooltip: { valueSuffix: ' PPM' } },
+            { name: 'Target PPM', type: 'column', yAxis: 1, data: trend.map(t => t.qaDefTarget), color: '#f97316', tooltip: { valueSuffix: ' PPM' } },
         ],
     };
 
@@ -337,8 +337,8 @@ const DPRManualChartsContainer = ({ dashboardDate, theme }) => {
         series: [
             { name: 'Planned Qty', type: 'column', data: trend.map(t => t.qaEffPlan), color: '#94a3b8', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
             { name: 'Actual Qty', type: 'column', data: trend.map(t => t.qaEffActual), color: '#ec4899', dataLabels: { enabled: true, format: '{y}', style: { fontSize: '11px' } } },
-            { name: 'Actual Defect', type: 'spline', yAxis: 1, data: trend.map(t => t.qaEffPlan > 0 ? Math.round((t.qaEffActual / t.qaEffPlan) * 1000) / 10 : 0), color: '#8b5cf6', tooltip: { valueSuffix: '%' } },
-            { name: 'Target %', type: 'spline', yAxis: 1, data: trend.map(t => t.qaEffTarget), color: '#ef4444', dashStyle: 'ShortDash', tooltip: { valueSuffix: '%' } },
+            { name: 'Actual Defect', type: 'column', yAxis: 1, data: trend.map(t => t.qaEffPlan > 0 ? Math.round((t.qaEffActual / t.qaEffPlan) * 1000) / 10 : 0), color: '#8b5cf6', tooltip: { valueSuffix: '%' } },
+            { name: 'Target %', type: 'column', yAxis: 1, data: trend.map(t => t.qaEffTarget), color: '#f97316', tooltip: { valueSuffix: '%' } },
         ],
     };
 

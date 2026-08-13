@@ -55,10 +55,38 @@ export const migrationHelper = {
     },
 
     /**
+     * Ensures an index exists on a table, creating it if missing. Idempotent and safe to call
+     * on every boot. Pass `{ longRunning: true }` for indexes built over tables that may already
+     * hold significant data, since a first-time build can exceed the standard query timeout.
+     * @param {string} tableName
+     * @param {string} indexName
+     * @param {string} ddl full CREATE INDEX statement
+     * @param {{ longRunning?: boolean }} [options]
+     */
+    ensureIndexExists: async (tableName, indexName, ddl, options = {}) => {
+        try {
+            const [rows] = await executeQuery(
+                `SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)`,
+                [indexName, tableName]
+            );
+            if (rows.length === 0) {
+                logger.info(`Migration: Creating index '${indexName}' on table '${tableName}'...`);
+                await executeQuery(ddl, [], options.longRunning ? { longRunning: true } : undefined);
+                logger.info(`Migration: Successfully created index '${indexName}' on '${tableName}'.`);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            logger.error(`Migration Error creating index '${indexName}' on '${tableName}':`, error.message);
+            throw error;
+        }
+    },
+
+    /**
      * Ensures a column has the correct data type
-     * @param {string} tableName 
-     * @param {string} columnName 
-     * @param {string} expectedType 
+     * @param {string} tableName
+     * @param {string} columnName
+     * @param {string} expectedType
      */
     ensureColumnType: async (tableName, columnName, expectedType) => {
         try {

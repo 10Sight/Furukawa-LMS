@@ -120,6 +120,23 @@ class EvaluationTestAttempt {
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentLineId', 'INT NULL');
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentSubSectionId', 'INT NULL');
 
+            // Prior to these indexes the only fast lookup was the PK, so every eligibility check
+            // in getHandoverSheet/buildDojoHandoverPassedClause (`userId = ? AND isHandoverEligible = 1
+            // AND testId IN (...)`, or the reverse `testId IN (...)` scan for interview prefill) had
+            // to scan the full table.
+            await migrationHelper.ensureIndexExists(
+                'evaluation_test_attempts',
+                'idx_eval_test_attempts_user',
+                'CREATE INDEX idx_eval_test_attempts_user ON evaluation_test_attempts(userId, isHandoverEligible) INCLUDE (testId, passedDate)',
+                { longRunning: true }
+            );
+            await migrationHelper.ensureIndexExists(
+                'evaluation_test_attempts',
+                'idx_eval_test_attempts_test',
+                'CREATE INDEX idx_eval_test_attempts_test ON evaluation_test_attempts(testId, isHandoverEligible) INCLUDE (userId, passedDate)',
+                { longRunning: true }
+            );
+
             // 1. Backfill for attempts with non-null userId (uses Primary Key index seek)
             await executeQuery(`
                 UPDATE a SET

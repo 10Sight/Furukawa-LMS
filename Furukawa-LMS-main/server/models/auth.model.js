@@ -399,6 +399,13 @@ class User {
                 { name: 'idx_users_line_active', ddl: 'CREATE INDEX idx_users_line_active ON users(lineId, status, isDeleted, isTemporary)' },
                 { name: 'idx_users_subSection_active', ddl: 'CREATE INDEX idx_users_subSection_active ON users(subSectionId, status, isDeleted, isTemporary)' },
                 { name: 'idx_users_station_active', ddl: 'CREATE INDEX idx_users_station_active ON users(stationId, status, isDeleted, isTemporary)' },
+                // Drives getHandoverSheet's `u.isTemporary = 1 AND u.targetDeptId = ?` eligibility
+                // scan (department.controller.js) — targetDeptId otherwise has no index at all.
+                {
+                    name: 'idx_users_targetDept_temp',
+                    ddl: `CREATE INDEX idx_users_targetDept_temp ON users(targetDeptId, isTemporary)
+                        INCLUDE (id, fullName, userName, targetSectionId, targetLineId, targetSubSectionId, targetStationId)`
+                },
             ];
             for (const idx of additionalIndexes) {
                 try {

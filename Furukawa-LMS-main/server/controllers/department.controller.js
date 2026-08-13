@@ -1164,31 +1164,47 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 : "q.isHandover = 1 AND q.isDojo = 1";
             const quizFilterParams = handoverQuizIds.length > 0 ? [JSON.stringify(handoverQuizIds)] : [];
 
+            // The join is split into a UNION of two SARGable equi-joins (student-as-id, then
+            // student-as-username) instead of a single `OR`-joined predicate, and the date filter
+            // uses a range instead of CAST(...AS DATE), so this can seek on idx_attempted_quizzes_student
+            // and idx_users_targetDept_temp instead of scanning both tables.
             const [passedUsers] = await executeQuery(`
+                    WITH eligible_users AS (
+                        SELECT u.id, u.fullName, u.userName, u.targetDeptId, u.targetSectionId,
+                               u.targetLineId, u.targetSubSectionId, u.targetStationId
+                        FROM users u
+                        WHERE u.isTemporary = 1 AND u.targetDeptId = ?
+                    ),
+                    matched_attempts AS (
+                        SELECT aq.student, aq.score, q.questions as quizQuestions
+                        FROM attempted_quizzes aq
+                        JOIN quizzes q ON q.id = TRY_CAST(aq.quiz AS INT)
+                        WHERE (aq.status = 'PASSED' OR aq.status = 'PASS')
+                          AND aq.completedAt >= CAST(? AS DATETIME) AND aq.completedAt < DATEADD(day, 1, CAST(? AS DATETIME))
+                          AND ${quizFilterSql}
+                    )
                     SELECT DISTINCT
-                        u.id as studentId,
-                        u.fullName as employeeName,
-                        u.userName as employeeCode,
-                        u.targetDeptId,
-                        u.targetSectionId as sectionId,
-                        u.targetLineId as lineId,
-                        u.targetSubSectionId as subSectionId,
-                        u.targetStationId as stationId,
-                        l.name as lineName,
-                        st.name as stationName,
-                        aq.score,
-                        q.questions as quizQuestions
-                    FROM users u
-                    JOIN attempted_quizzes aq ON CAST(u.id AS NVARCHAR(255)) = aq.student OR u.userName = aq.student
-                    JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+                        u.id as studentId, u.fullName as employeeName, u.userName as employeeCode,
+                        u.targetDeptId, u.targetSectionId as sectionId, u.targetLineId as lineId,
+                        u.targetSubSectionId as subSectionId, u.targetStationId as stationId,
+                        l.name as lineName, st.name as stationName,
+                        aq.score, aq.quizQuestions
+                    FROM eligible_users u
+                    JOIN matched_attempts aq ON aq.student = CAST(u.id AS NVARCHAR(50))
                     LEFT JOIN [lines] l ON u.targetLineId = l.id
                     LEFT JOIN machines st ON u.targetStationId = st.id
-                    WHERE u.isTemporary = 1
-                      AND u.targetDeptId = ?
-                      AND ${quizFilterSql}
-                      AND (aq.status = 'PASSED' OR aq.status = 'PASS')
-                      AND CAST(aq.completedAt AS DATE) = CAST(? AS DATE)
-                `, [departmentId, ...quizFilterParams, date]);
+                    UNION
+                    SELECT DISTINCT
+                        u.id as studentId, u.fullName as employeeName, u.userName as employeeCode,
+                        u.targetDeptId, u.targetSectionId as sectionId, u.targetLineId as lineId,
+                        u.targetSubSectionId as subSectionId, u.targetStationId as stationId,
+                        l.name as lineName, st.name as stationName,
+                        aq.score, aq.quizQuestions
+                    FROM eligible_users u
+                    JOIN matched_attempts aq ON aq.student = u.userName
+                    LEFT JOIN [lines] l ON u.targetLineId = l.id
+                    LEFT JOIN machines st ON u.targetStationId = st.id
+                `, [departmentId, date, date, ...quizFilterParams]);
 
             const quizSuggested = passedUsers.map(user => {
                 let marksPercent = "0%";
@@ -1248,14 +1264,14 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     OUTER APPLY (
                         SELECT TOP 1 aq2.score, q2.questions as quizQuestions
                         FROM attempted_quizzes aq2
-                        JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
-                        WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
+                        JOIN quizzes q2 ON q2.id = TRY_CAST(aq2.quiz AS INT)
+                        WHERE aq2.student IN (CAST(u.id AS NVARCHAR(50)), u.userName)
                           ${legacyEvalOuterApplyFilter}
                           AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
                         ORDER BY aq2.completedAt DESC
                     ) tp
                     WHERE eta.isHandoverEligible = 1
-                      AND CAST(eta.passedDate AS DATE) <= CAST(? AS DATE)
+                      AND eta.passedDate <= CAST(? AS DATE)
                       AND u.targetDeptId = ?
                 `, [...legacyEvalOuterApplyParams, date, departmentId]);
 
@@ -1287,7 +1303,7 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
             let interviewJoinSql = "";
             if (requiresInterview) {
                 // Eligibility test passed on or before the sheet date; 2nd interview passed exactly on it
-                dateCondition = "AND CAST(eta1.passedDate AS DATE) <= CAST(? AS DATE)";
+                dateCondition = "AND eta1.passedDate <= CAST(? AS DATE)";
                 queryParams.push(date);
                 interviewJoinSql = `
                     AND EXISTS (
@@ -1295,12 +1311,12 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                         WHERE eta2.userId = u.id
                           AND eta2.isHandoverEligible = 1
                           AND eta2.testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
-                          AND CAST(eta2.passedDate AS DATE) = CAST(? AS DATE)
+                          AND eta2.passedDate = CAST(? AS DATE)
                     )
                 `;
                 queryParams.push(JSON.stringify(interviewEvalIds), date);
             } else {
-                dateCondition = "AND CAST(eta1.passedDate AS DATE) <= CAST(? AS DATE)";
+                dateCondition = "AND eta1.passedDate <= CAST(? AS DATE)";
                 queryParams.push(date);
             }
 
@@ -1349,8 +1365,8 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                     OUTER APPLY (
                         SELECT TOP 1 aq2.score, q2.questions as quizQuestions
                         FROM attempted_quizzes aq2
-                        JOIN quizzes q2 ON CAST(q2.id AS NVARCHAR(255)) = aq2.quiz
-                        WHERE (CAST(u.id AS NVARCHAR(255)) = aq2.student OR u.userName = aq2.student)
+                        JOIN quizzes q2 ON q2.id = TRY_CAST(aq2.quiz AS INT)
+                        WHERE aq2.student IN (CAST(u.id AS NVARCHAR(50)), u.userName)
                           ${strictOuterApplyFilter}
                           AND (aq2.status = 'PASSED' OR aq2.status = 'PASS')
                         ORDER BY aq2.completedAt DESC
@@ -1408,14 +1424,21 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
             const interview1Map = new Map();
             const interview2Map = new Map();
 
-            if (interviewQuizIds.length > 0) {
+            // Only rows belonging to users already surfaced in eligibleUsers are ever consulted
+            // below (interview1Map.get(u.studentId) for u in eligibleUsers), so restrict both
+            // lookups to that (typically small) ID set instead of scanning every attempt/eval
+            // record in the system for the configured quiz/test IDs.
+            const eligibleStudentIds = [...new Set(eligibleUsers.map(u => u.studentId).filter(id => id !== undefined && id !== null))];
+
+            if (interviewQuizIds.length > 0 && eligibleStudentIds.length > 0) {
                 const [interviewQuizRows] = await executeQuery(`
                     SELECT u2.id as studentId, aq.status
-                    FROM attempted_quizzes aq
-                    JOIN users u2 ON (CAST(u2.id AS NVARCHAR(255)) = aq.student OR u2.userName = aq.student)
+                    FROM users u2
+                    JOIN attempted_quizzes aq ON aq.student IN (CAST(u2.id AS NVARCHAR(50)), u2.userName)
                     WHERE aq.quiz IN (SELECT CAST(value AS NVARCHAR(50)) FROM OPENJSON(?))
+                      AND u2.id IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
                     ORDER BY aq.completedAt ASC
-                `, [JSON.stringify(interviewQuizIds)]);
+                `, [JSON.stringify(interviewQuizIds), JSON.stringify(eligibleStudentIds)]);
                 interviewQuizRows.forEach(r => {
                     const passed = r.status === 'PASSED' || r.status === 'PASS';
                     // A later PASSED attempt should not be downgraded by an earlier CROSS on a different paper
@@ -1425,12 +1448,13 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
                 });
             }
 
-            if (interviewEvalIds.length > 0) {
+            if (interviewEvalIds.length > 0 && eligibleStudentIds.length > 0) {
                 const [interviewEvalRows] = await executeQuery(`
                     SELECT userId as studentId, isHandoverEligible
                     FROM evaluation_test_attempts
                     WHERE testId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
-                `, [JSON.stringify(interviewEvalIds)]);
+                      AND userId IN (SELECT CAST(value AS INT) FROM OPENJSON(?))
+                `, [JSON.stringify(interviewEvalIds), JSON.stringify(eligibleStudentIds)]);
                 interviewEvalRows.forEach(r => {
                     if (r.isHandoverEligible || interview2Map.get(String(r.studentId)) !== 'OK') {
                         interview2Map.set(String(r.studentId), r.isHandoverEligible ? 'OK' : 'CROSS');

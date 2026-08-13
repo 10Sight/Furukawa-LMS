@@ -27,6 +27,7 @@ import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import EfficiencyChart from "@/components/charts/EfficiencyChart";
 import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverComparisonChart";
+import SixteenDayMonitoringComparisonChart from "@/components/charts/SixteenDayMonitoringComparisonChart";
 import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOperatorChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import RecentActivityCard from "@/components/dashboard/RecentActivityCard";
@@ -246,6 +247,9 @@ const Home = () => {
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <DojoHandoverComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
+        </LazyContainer>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
+          <SixteenDayMonitoringComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <ContractorWiseOperatorChart />

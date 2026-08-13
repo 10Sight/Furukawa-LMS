@@ -139,6 +139,22 @@ class HandoverSheet {
         } catch (e) {
             console.log("Failed to create idx_handover_sheets_departmentId:", e.message);
         }
+
+        // Migration: Add index on date if missing. The Dojo Handover and 16-Day Monitoring
+        // comparison charts both filter on hs.date before CROSS APPLY OPENJSON explodes entries,
+        // so an index here bounds the pre-filter scan instead of scanning every sheet row.
+        try {
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes WHERE name = 'idx_handover_sheets_date' AND object_id = OBJECT_ID('handover_sheets')
+                )
+                BEGIN
+                    CREATE INDEX idx_handover_sheets_date ON handover_sheets(date)
+                END
+            `);
+        } catch (e) {
+            console.log("Failed to create idx_handover_sheets_date:", e.message);
+        }
     }
 
     static async findById(id) {

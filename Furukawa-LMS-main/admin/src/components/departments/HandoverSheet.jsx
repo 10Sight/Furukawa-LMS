@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -156,6 +156,269 @@ const MentorSelect = ({ departmentId, sectionId, value, onValueChange, className
         </Select>
     );
 };
+
+// Renders a single handover-sheet row. Memoized so typing/selecting in one row's inputs
+// doesn't force React to re-evaluate every other row's UserAutocomplete/Select components —
+// each row only re-renders when its own `entry` object (or shared config props) changes,
+// since the parent's handlers keep a stable identity and only replace the edited row's object.
+const HandoverRow = React.memo(function HandoverRow({
+    entry,
+    index,
+    tableConfig,
+    canManage,
+    isEditable,
+    canApprove,
+    canDeleteRow,
+    departmentId,
+    sectionId,
+    localSectionId,
+    departmentName,
+    dojoHandoverPassedOnly,
+    eligibleUsers,
+    onEntryChange,
+    onUserSelect,
+    onStatusAction,
+    onRemoveRow,
+}) {
+    return (
+        <tr className="hover:bg-gray-50">
+            {tableConfig && tableConfig.columns ? (
+                tableConfig.columns.map((col, colIdx) => (
+                    <td key={colIdx} className="border p-1">
+                        {col.field === 'sn' ? (
+                            <div className="text-center">{index + 1}</div>
+                        ) : col.field === 'employeeName' && !col.readOnly && canManage && isEditable ? (
+                            <UserAutocomplete
+                                mode="all"
+                                departmentId={departmentId}
+                                excludeAdmins={true}
+                                excludeTrainers={true}
+                                value={entry.employeeName}
+                                onChange={(user) => onUserSelect(index, user)}
+                                onTextChange={(val) => onEntryChange(index, 'employeeName', val)}
+                                placeholder="Search..."
+                                compact={true}
+                                includeTemporary="only"
+                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                includeHandoverMarks={true}
+                                includeLeft={true}
+                                includeDeleted={true}
+                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
+                                className="w-full"
+                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                            />
+                        ) : col.field === 'mentor' && !col.readOnly && canManage && isEditable ? (
+                            <MentorSelect
+                                departmentId={departmentId}
+                                sectionId={sectionId}
+                                value={entry.mentor}
+                                onValueChange={(val) => onEntryChange(index, 'mentor', val)}
+                                className="text-center"
+                            />
+                        ) : (col.field === 'department' || col.field === 'departmentId') ? (
+                            <div className="text-center text-xs font-medium text-blue-600 px-1">
+                                {departmentName}
+                            </div>
+                        ) : col.field === 'process' && canManage && isEditable ? (
+                            <ProcessSelect
+                                key={`process-select-${index}`}
+                                departmentId={departmentId}
+                                sectionId={localSectionId}
+                                value={entry.process || ""}
+                                onValueChange={(val) => onEntryChange(index, 'process', val)}
+                            />
+                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage && isEditable ? (
+                            <InterviewSelect
+                                value={entry[col.field] || ""}
+                                onChange={(val) => onEntryChange(index, col.field, val)}
+                            />
+                        ) : (col.readOnly || !canManage || !isEditable) ? (
+                            <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
+                                {(col.field === 'interview1' || col.field === 'interview2')
+                                    ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
+                                    : entry[col.field]}
+                            </div>
+                        ) : (
+                            <AutoResizeInput
+                                value={(entry[col.field] || "").toString()}
+                                onChange={(e) => onEntryChange(index, col.field, e.target.value)}
+                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                minWidth={40}
+                            />
+                        )}
+                    </td>
+                ))
+            ) : (
+                <>
+                    <td className="border p-1 text-center font-medium">
+                        {index + 1}
+                    </td>
+                    <td className="border p-1">
+                        {canManage && isEditable ? (
+                            <UserAutocomplete
+                                mode="all"
+                                departmentId={departmentId}
+                                excludeAdmins={true}
+                                excludeTrainers={true}
+                                value={entry.employeeName}
+                                onChange={(user) => onUserSelect(index, user)}
+                                onTextChange={(val) => onEntryChange(index, 'employeeName', val)}
+                                placeholder="Search Employee..."
+                                compact={true}
+                                includeTemporary="only"
+                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                includeHandoverMarks={true}
+                                includeLeft={true}
+                                includeDeleted={true}
+                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
+                                className="min-w-[150px]"
+                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                            />
+                        ) : (
+                            <div className="p-1 font-medium text-blue-600">
+                                {entry.employeeName}
+                            </div>
+                        )}
+                    </td>
+                    <td className="border p-1 text-center">
+                        {canManage && isEditable ? (
+                            <AutoResizeInput
+                                value={entry.empCode || ""}
+                                onChange={(e) => onEntryChange(index, 'empCode', e.target.value)}
+                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                minWidth={60}
+                            />
+                        ) : (
+                            <div className="p-1 text-center">{entry.empCode}</div>
+                        )}
+                    </td>
+                    <td className="border p-1 text-center">
+                        {canManage && isEditable ? (
+                            <AutoResizeInput
+                                value={entry.marks || ""}
+                                onChange={(e) => onEntryChange(index, 'marks', e.target.value)}
+                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                minWidth={40}
+                            />
+                        ) : (
+                            <div className="p-1 text-center">{entry.marks}</div>
+                        )}
+                    </td>
+                    <td className="border p-1 text-center">
+                        <div className="text-xs font-medium text-blue-600 px-1">
+                            {departmentName}
+                        </div>
+                    </td>
+                    <td className="border p-1 text-center">
+                        {canManage && isEditable ? (
+                            <ProcessSelect
+                                key={`process-select-def-${index}`}
+                                departmentId={departmentId}
+                                sectionId={localSectionId}
+                                value={entry.process || ""}
+                                onValueChange={(val) => onEntryChange(index, 'process', val)}
+                            />
+                        ) : (
+                            <div className="p-1 text-center">{entry.process}</div>
+                        )}
+                    </td>
+                    <td className="border p-1">
+                        {canManage && isEditable ? (
+                            <MentorSelect
+                                departmentId={departmentId}
+                                sectionId={sectionId}
+                                value={entry.mentor}
+                                onValueChange={(val) => onEntryChange(index, 'mentor', val)}
+                                className="min-w-[120px] text-center"
+                            />
+                        ) : (
+                            <div className="p-1 text-center">{entry.mentor}</div>
+                        )}
+                    </td>
+                    <td className="border p-1 text-center">
+                        {canManage && isEditable ? (
+                            <InterviewSelect
+                                value={entry.interview1}
+                                onChange={(val) => onEntryChange(index, 'interview1', val)}
+                            />
+                        ) : (
+                            <div className="p-1 text-center">
+                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview1)?.label || entry.interview1 || "—"}
+                            </div>
+                        )}
+                    </td>
+                    <td className="border p-1 text-center">
+                        {canManage && isEditable ? (
+                            <InterviewSelect
+                                value={entry.interview2}
+                                onChange={(val) => onEntryChange(index, 'interview2', val)}
+                            />
+                        ) : (
+                            <div className="p-1 text-center">
+                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview2)?.label || entry.interview2 || "—"}
+                            </div>
+                        )}
+                    </td>
+                    <td className="border p-1">
+                        {!entry.interviewStatus ? (
+                            canApprove ? (
+                                <div className="flex items-center justify-center gap-2">
+                                    <Button
+                                        variant="ghost"
+                                        className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
+                                        onClick={() => onStatusAction(index, 'APPROVE')}
+                                    >
+                                        APPROVE
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
+                                        onClick={() => onStatusAction(index, 'REJECT')}
+                                    >
+                                        REJECT
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="text-center text-slate-400 italic text-[10px]">
+                                    Pending Approval
+                                </div>
+                            )
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-1">
+                                <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
+                                    {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
+                                </div>
+                                <div className="text-[9px] text-gray-500 leading-tight text-center">
+                                    by: {entry.statusActionBy}
+                                </div>
+                                {canApprove && (
+                                    <button
+                                        onClick={() => onStatusAction(index, "")}
+                                        className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
+                                    >
+                                        Reset
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </td>
+                </>
+            )}
+            {canManage && isEditable && canDeleteRow && (
+                <td className="border p-1 text-center no-print">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => onRemoveRow(index)}
+                    >
+                        <IconTrash className="h-4 w-4" />
+                    </Button>
+                </td>
+            )}
+        </tr>
+    );
+});
 
 const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId = null, shift: propShift = null, viewOnly = false, students = [], departmentName, sectionName = "", instructorName, departments = [], machines = [], dojoHandoverPassedOnly = false, date: propDate, setDate: propSetDate }) => {
     const authUser = useSelector(state => state.auth.user);
@@ -402,36 +665,48 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [departmentId, sectionId, date, departmentName, sectionName, sheetId, propShift]);
 
-    const handleEntryChange = (index, field, value) => {
-        const newEntries = [...entries];
-        const updated = { ...newEntries[index], [field]: value };
-        if (field === 'departmentId') updated.process = "";
-        newEntries[index] = updated;
-        setEntries(newEntries);
-    };
+    // Handlers below use the functional setEntries(prev => ...) form and are wrapped in
+    // useCallback with empty/stable dependencies so their identity never changes across
+    // renders. That stability is what lets HandoverRow's React.memo actually skip re-rendering
+    // rows other than the one being edited — a handler that closed over `entries` directly
+    // would get a new identity on every keystroke and defeat the memoization entirely.
+    const entriesRef = useRef(entries);
+    useEffect(() => { entriesRef.current = entries; }, [entries]);
 
-    const handleUserSelect = (index, user) => {
-        const newEntries = [...entries];
-        const userProcessName = user.machineName || user.stationName || "";
-        const processWithLine = (userProcessName && user.lineName) ? `${userProcessName} (${user.lineName})` : userProcessName;
-        newEntries[index] = {
-            ...newEntries[index],
-            studentId: user.id || user.studentId,
-            employeeName: user.fullName || user.employeeName || "",
-            empCode: user.userName || user.empId || user.employeeCode || "",
-            marks: user.marks || "0%",
-            department: user.deptName || sectionName || departmentName || "",
-            departmentId: user.actualDeptId || user.departmentId || user.targetDeptId || null,
-            sectionId: user.sectionId || user.targetSectionId || null,
-            lineId: user.lineId || user.targetLineId || null,
-            subSectionId: user.subSectionId || user.targetSubSectionId || null,
-            stationId: user.stationId || user.targetStationId || null,
-            process: processWithLine,
-            interview1: user.interview1 ?? newEntries[index].interview1 ?? "",
-            interview2: user.interview2 ?? newEntries[index].interview2 ?? "",
-        };
-        setEntries(newEntries);
-    };
+    const handleEntryChange = useCallback((index, field, value) => {
+        setEntries(prev => {
+            const newEntries = [...prev];
+            const updated = { ...newEntries[index], [field]: value };
+            if (field === 'departmentId') updated.process = "";
+            newEntries[index] = updated;
+            return newEntries;
+        });
+    }, []);
+
+    const handleUserSelect = useCallback((index, user) => {
+        setEntries(prev => {
+            const newEntries = [...prev];
+            const userProcessName = user.machineName || user.stationName || "";
+            const processWithLine = (userProcessName && user.lineName) ? `${userProcessName} (${user.lineName})` : userProcessName;
+            newEntries[index] = {
+                ...newEntries[index],
+                studentId: user.id || user.studentId,
+                employeeName: user.fullName || user.employeeName || "",
+                empCode: user.userName || user.empId || user.employeeCode || "",
+                marks: user.marks || "0%",
+                department: user.deptName || sectionName || departmentName || "",
+                departmentId: user.actualDeptId || user.departmentId || user.targetDeptId || null,
+                sectionId: user.sectionId || user.targetSectionId || null,
+                lineId: user.lineId || user.targetLineId || null,
+                subSectionId: user.subSectionId || user.targetSubSectionId || null,
+                stationId: user.stationId || user.targetStationId || null,
+                process: processWithLine,
+                interview1: user.interview1 ?? newEntries[index].interview1 ?? "",
+                interview2: user.interview2 ?? newEntries[index].interview2 ?? "",
+            };
+            return newEntries;
+        });
+    }, [sectionName, departmentName]);
 
     const addRow = () => {
         setEntries([...entries, {
@@ -451,32 +726,36 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
         }]);
     };
 
-    const removeRow = (index) => {
-        const entry = entries[index];
+    const removeRow = useCallback((index) => {
+        // Read the latest entry from the ref (not the `entries` closure) so this callback can
+        // stay referentially stable — see the comment above handleEntryChange.
+        const entry = entriesRef.current[index];
         if (entry?.employeeName && !window.confirm(`Are you sure you want to remove ${entry.employeeName} from this sheet?`)) {
             return;
         }
-        let newEntries = entries.filter((_, i) => i !== index);
-        if (newEntries.length === 0) {
-            newEntries = [{
-                sn: 1,
-                studentId: "",
-                employeeName: "",
-                empCode: "",
-                marks: "0%",
-                department: sectionName || departmentName || "",
-                process: "",
-                mentor: "",
-                interview1: "",
-                interview2: "",
-                interviewStatus: "",
-                statusActionBy: ""
-            }];
-        } else {
-            newEntries = newEntries.map((e, i) => ({ ...e, sn: i + 1 }));
-        }
-        setEntries(newEntries);
-    };
+        setEntries(prev => {
+            let newEntries = prev.filter((_, i) => i !== index);
+            if (newEntries.length === 0) {
+                newEntries = [{
+                    sn: 1,
+                    studentId: "",
+                    employeeName: "",
+                    empCode: "",
+                    marks: "0%",
+                    department: sectionName || departmentName || "",
+                    process: "",
+                    mentor: "",
+                    interview1: "",
+                    interview2: "",
+                    interviewStatus: "",
+                    statusActionBy: ""
+                }];
+            } else {
+                newEntries = newEntries.map((e, i) => ({ ...e, sn: i + 1 }));
+            }
+            return newEntries;
+        });
+    }, [sectionName, departmentName]);
 
     const handleSignatureChange = (field, value) => {
         setSignatures(prev => ({ ...prev, [field]: value }));
@@ -486,22 +765,24 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
         setMetadata(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleStatusAction = (index, status) => {
-        const newEntries = [...entries];
+    const handleStatusAction = useCallback((index, status) => {
         const userName = authUser?.fullName || authUser?.name || "Unknown User";
-        newEntries[index] = {
-            ...newEntries[index],
-            interviewStatus: status,
-            statusActionBy: userName,
-            statusActionAt: status ? new Date().toISOString() : null
-        };
-        setEntries(newEntries);
+        setEntries(prev => {
+            const newEntries = [...prev];
+            newEntries[index] = {
+                ...newEntries[index],
+                interviewStatus: status,
+                statusActionBy: userName,
+                statusActionAt: status ? new Date().toISOString() : null
+            };
+            return newEntries;
+        });
 
         // Auto-fill HOD signature when someone approves/rejects a row
-        if (status && !signatures.hod) {
-            setSignatures(prev => ({ ...prev, hod: userName }));
+        if (status) {
+            setSignatures(prev => prev.hod ? prev : { ...prev, hod: userName });
         }
-    };
+    }, [authUser]);
 
     const hasContentChanged = (excludeMentor = false) => {
         if (isNewSheet) return false;
@@ -961,245 +1242,27 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                 </thead>
                                 <tbody>
                                     {entries.map((entry, index) => (
-                                        <tr key={entry.studentId || index} className="hover:bg-gray-50">
-                                            {tableConfig && tableConfig.columns ? (
-                                                tableConfig.columns.map((col, colIdx) => (
-                                                    <td key={colIdx} className="border p-1">
-                                                        {col.field === 'sn' ? (
-                                                            <div className="text-center">{index + 1}</div>
-                                                        ) : col.field === 'employeeName' && !col.readOnly && canManage && isEditable ? (
-                                                            <UserAutocomplete
-                                                                mode="all"
-                                                                departmentId={departmentId}
-                                                                excludeAdmins={true}
-                                                                excludeTrainers={true}
-                                                                value={entry.employeeName}
-                                                                onChange={(user) => handleUserSelect(index, user)}
-                                                                onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
-                                                                placeholder="Search..."
-                                                                compact={true}
-                                                                includeTemporary="only"
-                                                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
-                                                                includeHandoverMarks={true}
-                                                                includeLeft={true}
-                                                                includeDeleted={true}
-                                                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
-                                                                className="w-full"
-                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                                                            />
-                                                        ) : col.field === 'mentor' && !col.readOnly && canManage && isEditable ? (
-                                                            <MentorSelect
-                                                                departmentId={departmentId}
-                                                                sectionId={sectionId}
-                                                                value={entry.mentor}
-                                                                onValueChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                                className="text-center"
-                                                            />
-                                                        ) : (col.field === 'department' || col.field === 'departmentId') ? (
-                                                            <div className="text-center text-xs font-medium text-blue-600 px-1">
-                                                                {departmentName}
-                                                            </div>
-                                                        ) : col.field === 'process' && canManage && isEditable ? (
-                                                            <ProcessSelect
-                                                                key={`process-select-${index}`}
-                                                                departmentId={departmentId}
-                                                                sectionId={localSectionId}
-                                                                value={entry.process || ""}
-                                                                onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                            />
-                                                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage && isEditable ? (
-                                                            <InterviewSelect
-                                                                value={entry[col.field] || ""}
-                                                                onChange={(val) => handleEntryChange(index, col.field, val)}
-                                                            />
-                                                        ) : (col.readOnly || !canManage || !isEditable) ? (
-                                                            <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
-                                                                {(col.field === 'interview1' || col.field === 'interview2')
-                                                                    ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
-                                                                    : entry[col.field]}
-                                                            </div>
-                                                        ) : (
-                                                            <AutoResizeInput
-                                                                value={(entry[col.field] || "").toString()}
-                                                                onChange={(e) => handleEntryChange(index, col.field, e.target.value)}
-                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                                                minWidth={40}
-                                                            />
-                                                        )}
-                                                    </td>
-                                                ))
-                                            ) : (
-                                                <>
-                                                    <td className="border p-1 text-center font-medium">
-                                                        {index + 1}
-                                                    </td>
-                                                    <td className="border p-1">
-                                                        {canManage && isEditable ? (
-                                                            <UserAutocomplete
-                                                                mode="all"
-                                                                departmentId={departmentId}
-                                                                excludeAdmins={true}
-                                                                excludeTrainers={true}
-                                                                value={entry.employeeName}
-                                                                onChange={(user) => handleUserSelect(index, user)}
-                                                                onTextChange={(val) => handleEntryChange(index, 'employeeName', val)}
-                                                                placeholder="Search Employee..."
-                                                                compact={true}
-                                                                includeTemporary="only"
-                                                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
-                                                                includeHandoverMarks={true}
-                                                                includeLeft={true}
-                                                                includeDeleted={true}
-                                                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
-                                                                className="min-w-[150px]"
-                                                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 font-medium text-blue-600">
-                                                                {entry.employeeName}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        {canManage && isEditable ? (
-                                                            <AutoResizeInput
-                                                                value={entry.empCode || ""}
-                                                                onChange={(e) => handleEntryChange(index, 'empCode', e.target.value)}
-                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                                                minWidth={60}
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">{entry.empCode}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        {canManage && isEditable ? (
-                                                            <AutoResizeInput
-                                                                value={entry.marks || ""}
-                                                                onChange={(e) => handleEntryChange(index, 'marks', e.target.value)}
-                                                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                                                minWidth={40}
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">{entry.marks}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        <div className="text-xs font-medium text-blue-600 px-1">
-                                                            {departmentName}
-                                                        </div>
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        {canManage && isEditable ? (
-                                                            <ProcessSelect
-                                                                key={`process-select-def-${index}`}
-                                                                departmentId={departmentId}
-                                                                sectionId={localSectionId}
-                                                                value={entry.process || ""}
-                                                                onValueChange={(val) => handleEntryChange(index, 'process', val)}
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">{entry.process}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1">
-                                                        {canManage && isEditable ? (
-                                                            <MentorSelect
-                                                                departmentId={departmentId}
-                                                                sectionId={sectionId}
-                                                                value={entry.mentor}
-                                                                onValueChange={(val) => handleEntryChange(index, 'mentor', val)}
-                                                                className="min-w-[120px] text-center"
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">{entry.mentor}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        {canManage && isEditable ? (
-                                                            <InterviewSelect
-                                                                value={entry.interview1}
-                                                                onChange={(val) => handleEntryChange(index, 'interview1', val)}
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">
-                                                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview1)?.label || entry.interview1 || "—"}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1 text-center">
-                                                        {canManage && isEditable ? (
-                                                            <InterviewSelect
-                                                                value={entry.interview2}
-                                                                onChange={(val) => handleEntryChange(index, 'interview2', val)}
-                                                            />
-                                                        ) : (
-                                                            <div className="p-1 text-center">
-                                                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview2)?.label || entry.interview2 || "—"}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="border p-1">
-                                                        {!entry.interviewStatus ? (
-                                                            canApprove ? (
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
-                                                                        onClick={() => handleStatusAction(index, 'APPROVE')}
-                                                                    >
-                                                                        APPROVE
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
-                                                                        onClick={() => handleStatusAction(index, 'REJECT')}
-                                                                    >
-                                                                        REJECT
-                                                                    </Button>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-center text-slate-400 italic text-[10px]">
-                                                                    Pending Approval
-                                                                </div>
-                                                            )
-                                                        ) : (
-                                                            <div className="flex flex-col items-center justify-center py-1">
-                                                                <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                    {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
-                                                                </div>
-                                                                <div className="text-[9px] text-gray-500 leading-tight text-center">
-                                                                    by: {entry.statusActionBy}
-                                                                </div>
-                                                                {canApprove && (
-                                                                    <button
-                                                                        onClick={() => handleStatusAction(index, "")}
-                                                                        className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
-                                                                    >
-                                                                        Reset
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                </>
-                                            )}
-                                            {canManage && isEditable && canDeleteRow && (
-                                                <td className="border p-1 text-center no-print">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                                        onClick={() => removeRow(index)}
-                                                    >
-                                                        <IconTrash className="h-4 w-4" />
-                                                    </Button>
-                                                </td>
-                                            )}
-                                        </tr>
+                                        <HandoverRow
+                                            key={entry.studentId || index}
+                                            entry={entry}
+                                            index={index}
+                                            tableConfig={tableConfig}
+                                            canManage={canManage}
+                                            isEditable={isEditable}
+                                            canApprove={canApprove}
+                                            canDeleteRow={canDeleteRow}
+                                            departmentId={departmentId}
+                                            sectionId={sectionId}
+                                            localSectionId={localSectionId}
+                                            departmentName={departmentName}
+                                            dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                            eligibleUsers={eligibleUsers}
+                                            onEntryChange={handleEntryChange}
+                                            onUserSelect={handleUserSelect}
+                                            onStatusAction={handleStatusAction}
+                                            onRemoveRow={removeRow}
+                                        />
                                     ))}
-                                    {/* Empty rows to maintain look if needed */}
-
                                 </tbody>
                             </table>
                             {canManage && isEditable && (

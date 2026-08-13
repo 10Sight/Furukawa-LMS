@@ -123,6 +123,21 @@ class SixteenDayMonitoring {
             END
         `;
         await executeQuery(query);
+
+        // Index for the Admin Home "16-Day Monitoring Comparison" chart, which filters and
+        // groups by status + updatedAt before joining users — without it the query full-scans.
+        try {
+            await executeQuery(`
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes WHERE name = 'idx_sixteen_day_monitorings_status_updatedAt' AND object_id = OBJECT_ID('sixteen_day_monitorings')
+                )
+                BEGIN
+                    CREATE INDEX idx_sixteen_day_monitorings_status_updatedAt ON sixteen_day_monitorings(status, updatedAt)
+                END
+            `);
+        } catch (e) {
+            console.error("Failed to create idx_sixteen_day_monitorings_status_updatedAt:", e.message);
+        }
     }
 
     static async findByStudentId(studentId) {

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import { migrationHelper } from "../db/migrationHelper.js";
 
 class QuizAttempt {
     constructor(data) {
@@ -108,6 +109,19 @@ class QuizAttempt {
                     ALTER TABLE [attempted_quizzes] ADD [studentSubSectionId] INT NULL;
                 END
             `);
+
+            // The only index on this table is the (quiz, student, attemptNumber) unique constraint,
+            // so any query filtering by student alone (handover-sheet eligibility lookups, dojo
+            // pass checks) or by completedAt alone falls back to a full table scan no matter how
+            // the WHERE clause is written. This index is what actually turns those into seeks;
+            // the accompanying query rewrites (removing CAST()-wrapped predicates) only matter
+            // once a matching index exists to seek on.
+            await migrationHelper.ensureIndexExists(
+                'attempted_quizzes',
+                'idx_attempted_quizzes_student',
+                'CREATE INDEX idx_attempted_quizzes_student ON attempted_quizzes(student) INCLUDE (quiz, status, completedAt, score)',
+                { longRunning: true }
+            );
 
             // One-time backfill for rows created before the hierarchy snapshot columns existed.
             // Only touches rows still missing a snapshot, so it's a cheap no-op on subsequent boots.

@@ -53,6 +53,16 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+        getSixteenDayMonitoringComparison: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/sixteen-day-monitoring-comparison",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
         getContractorWiseOperatorStats: builder.query({
             query: ({ startDate = "", endDate = "" } = {}) => ({
                 url: "/api/admin-home/contractor-wise-operator-stats",
@@ -71,5 +81,6 @@ export const {
     useGetAdminHomeUserStatusStatsQuery,
     useGetDojoHiringTrendQuery,
     useGetDojoHandoverComparisonQuery,
+    useGetSixteenDayMonitoringComparisonQuery,
     useGetContractorWiseOperatorStatsQuery,
 } = adminHomeApi;

@@ -552,6 +552,215 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
 
 
 /**
+ * Get Sixteen-Day Monitoring Comparison for Admin Home page
+ * Expected: operators whose Dojo Handover interview was approved (same population that
+ *           feeds into getDojoHandoverComparison's "actual" series), grouped by handover date.
+ * Actual:   operators with a Submitted 16-Day Monitoring sheet, grouped by updatedAt, plus
+ *           their average summary_total_score parsed directly from gridData JSON.
+ */
+export const getSixteenDayMonitoringComparison = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    const expectedFormatMap = {
+        daily:   "FORMAT(hs.date, 'yyyy-MM-dd')",
+        monthly: "FORMAT(hs.date, 'yyyy-MM')",
+        yearly:  "FORMAT(hs.date, 'yyyy')",
+    };
+    const actualFormatMap = {
+        daily:   "FORMAT(m.updatedAt, 'yyyy-MM-dd')",
+        monthly: "FORMAT(m.updatedAt, 'yyyy-MM')",
+        yearly:  "FORMAT(m.updatedAt, 'yyyy')",
+    };
+
+    // Accepts comma-separated department IDs for multi-select
+    let expectedDeptClausePrefixed = '';
+    let actualDeptClausePrefixed = '';
+    const expectedParams = [start, end];
+    const actualParams   = [start, end];
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        expectedDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        actualDeptClausePrefixed = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        expectedParams.push(...deptIds);
+        actualParams.push(...deptIds);
+    }
+
+    // Scan handover_sheets first (filtered by date) before exploding into JSON rows, then join
+    // users on the PK, mirroring the proven pattern from getDojoHandoverComparison above.
+    const [expectedRows] = await executeQuery(`
+        SELECT
+            ${expectedFormatMap[safeGroupBy]} AS period,
+            COUNT(DISTINCT u.id)              AS expected
+        FROM handover_sheets hs
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        INNER JOIN users u ON u.id = TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+        WHERE hs.date >= ?
+          AND hs.date <= ?
+          AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${expectedDeptClausePrefixed}
+        GROUP BY ${expectedFormatMap[safeGroupBy]}
+        ORDER BY period ASC
+    `, expectedParams);
+
+    const [deptExpectedRows] = await executeQuery(`
+        SELECT
+            ${expectedFormatMap[safeGroupBy]} AS period,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned')    AS sectionName,
+            COUNT(DISTINCT u.id)              AS expected
+        FROM handover_sheets hs
+        CROSS APPLY OPENJSON(hs.entries) as entry
+        INNER JOIN users u ON u.id = TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE hs.date >= ?
+          AND hs.date <= ?
+          AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
+          ${expectedDeptClausePrefixed}
+        GROUP BY ${expectedFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
+        ORDER BY period ASC
+    `, expectedParams);
+
+    // Average score computed server-side straight from the JSON grid — no per-record fetch.
+    const [actualRows] = await executeQuery(`
+        SELECT
+            ${actualFormatMap[safeGroupBy]}                                          AS period,
+            COUNT(DISTINCT m.studentId)                                              AS actual,
+            AVG(TRY_CAST(JSON_VALUE(m.gridData, '$.summary_total_score') AS FLOAT))  AS avgScore
+        FROM sixteen_day_monitorings m
+        INNER JOIN users u ON u.id = m.studentId
+        WHERE m.updatedAt >= ?
+          AND m.updatedAt <= ?
+          AND m.status = 'Submitted'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${actualDeptClausePrefixed}
+        GROUP BY ${actualFormatMap[safeGroupBy]}
+        ORDER BY period ASC
+    `, actualParams);
+
+    const [deptActualRows] = await executeQuery(`
+        SELECT
+            ${actualFormatMap[safeGroupBy]}                                          AS period,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20))            AS deptId,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned')                                           AS sectionName,
+            COUNT(DISTINCT m.studentId)                                              AS actual,
+            AVG(TRY_CAST(JSON_VALUE(m.gridData, '$.summary_total_score') AS FLOAT))  AS avgScore
+        FROM sixteen_day_monitorings m
+        INNER JOIN users u ON u.id = m.studentId
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE m.updatedAt >= ?
+          AND m.updatedAt <= ?
+          AND m.status = 'Submitted'
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
+          ${actualDeptClausePrefixed}
+        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
+        ORDER BY period ASC
+    `, actualParams);
+
+    // Merge total expected + actual + avgScore by period
+    const mergedMap = {};
+    expectedRows.forEach(r => {
+        if (r.period) mergedMap[r.period] = { period: r.period, expected: Number(r.expected), actual: 0, avgScore: null };
+    });
+    actualRows.forEach(r => {
+        if (r.period) {
+            const avgScore = r.avgScore !== null && r.avgScore !== undefined ? Number(r.avgScore) : null;
+            if (mergedMap[r.period]) {
+                mergedMap[r.period].actual = Number(r.actual);
+                mergedMap[r.period].avgScore = avgScore;
+            } else {
+                mergedMap[r.period] = { period: r.period, expected: 0, actual: Number(r.actual), avgScore };
+            }
+        }
+    });
+
+    const trend = Object.values(mergedMap).sort((a, b) => a.period.localeCompare(b.period));
+
+    // Build per-dept + per-section breakdown merging expected + actual per (deptId, sectionId, period)
+    const deptExpMap = {};
+    deptExpectedRows.forEach(r => {
+        const key = `${r.deptId}__${r.sectionId}`;
+        if (!deptExpMap[key]) deptExpMap[key] = {};
+        deptExpMap[key][r.period] = Number(r.expected);
+    });
+
+    const deptActMap = {};
+    deptActualRows.forEach(r => {
+        const key = `${r.deptId}__${r.sectionId}`;
+        if (!deptActMap[key]) deptActMap[key] = {};
+        deptActMap[key][r.period] = {
+            actual: Number(r.actual),
+            avgScore: r.avgScore !== null && r.avgScore !== undefined ? Number(r.avgScore) : null,
+        };
+    });
+
+    const deptPeriodPairs = new Map();
+    const addPair = (r) => {
+        const key = `${r.deptId}__${r.sectionId}__${r.period}`;
+        if (!deptPeriodPairs.has(key)) {
+            deptPeriodPairs.set(key, {
+                deptId: String(r.deptId),
+                sectionId: String(r.sectionId),
+                sectionName: r.sectionName,
+                period: r.period,
+            });
+        }
+    };
+    deptExpectedRows.forEach(addPair);
+    deptActualRows.forEach(addPair);
+
+    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, sectionId, sectionName, period }) => {
+        const key = `${deptId}__${sectionId}`;
+        const actualEntry = deptActMap[key]?.[period];
+        return {
+            period,
+            deptId,
+            sectionId,
+            sectionName,
+            expected: deptExpMap[key]?.[period] || 0,
+            actual: actualEntry?.actual || 0,
+            avgScore: actualEntry?.avgScore ?? null,
+        };
+    }).sort((a, b) =>
+        Number(a.deptId) - Number(b.deptId) ||
+        a.sectionName.localeCompare(b.sectionName) ||
+        a.period.localeCompare(b.period)
+    );
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring comparison fetched successfully")
+    );
+});
+
+
+/**
  * Get User Status stats for the Admin Home page
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */

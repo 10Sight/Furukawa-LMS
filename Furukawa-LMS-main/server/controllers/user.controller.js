@@ -419,8 +419,8 @@ const buildDojoHandoverPassedClause = async (departmentId) => {
       sql: `(
         EXISTS (
           SELECT 1 FROM attempted_quizzes aq
-          JOIN quizzes q ON aq.quiz = q.id
-          WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+          JOIN quizzes q ON q.id = TRY_CAST(aq.quiz AS INT)
+          WHERE aq.student IN (CAST(u.id AS NVARCHAR(50)), u.userName)
             AND q.isDojo = 1
             AND q.isHandover = 1
             AND aq.status = 'PASSED'
@@ -469,15 +469,20 @@ const buildPassedTestPaperClause = (req) => {
   const params = [];
   let dateClause = "";
   if (req.query.passedDate) {
-    dateClause = " AND CAST(COALESCE(aq.completedAt, aq.createdAt) AS DATE) = CAST(? AS DATE)";
-    params.push(req.query.passedDate);
+    // Range instead of CAST(...AS DATE) so this can seek on completedAt/createdAt when an index
+    // covers them, instead of forcing a per-row date computation across the whole table.
+    dateClause = ` AND (
+      (aq.completedAt >= CAST(? AS DATETIME) AND aq.completedAt < DATEADD(day, 1, CAST(? AS DATETIME)))
+      OR (aq.completedAt IS NULL AND aq.createdAt >= CAST(? AS DATETIME) AND aq.createdAt < DATEADD(day, 1, CAST(? AS DATETIME)))
+    )`;
+    params.push(req.query.passedDate, req.query.passedDate, req.query.passedDate, req.query.passedDate);
   }
 
   return {
     sql: `EXISTS (
       SELECT 1 FROM attempted_quizzes aq
-      JOIN quizzes q ON aq.quiz = q.id
-      WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
+      JOIN quizzes q ON q.id = TRY_CAST(aq.quiz AS INT)
+      WHERE aq.student IN (CAST(u.id AS NVARCHAR(50)), u.userName)
         AND aq.status = 'PASSED'
         AND (${flagConds.join(" OR ")})
         ${dateClause}
@@ -667,7 +672,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   if (req.query.isEmployee === "true") { whereClauses.push("u.isEmployee = 1"); }
   if (req.query.isTrainer === "true") { whereClauses.push("u.isTrainer = 1"); }
   if (req.query.passedQuizOnly === "true") {
-    whereClauses.push("EXISTS (SELECT 1 FROM attempted_quizzes aq WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName) AND aq.status = 'PASSED')");
+    whereClauses.push("EXISTS (SELECT 1 FROM attempted_quizzes aq WHERE aq.student IN (CAST(u.id AS NVARCHAR(50)), u.userName) AND aq.status = 'PASSED')");
   }
   const passedTestPaperClauseUsers = buildPassedTestPaperClause(req);
   if (passedTestPaperClauseUsers) {

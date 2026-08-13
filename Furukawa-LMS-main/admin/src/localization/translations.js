@@ -219,6 +219,19 @@ export const translations = {
     "charts.actualHandover": "Actual Handover",
     "charts.unassignedSection": "Unassigned",
 
+    // Sixteen-Day Monitoring Comparison Chart
+    "charts.sixteenDayMonitoringComparison": "16-Day Monitoring Comparison",
+    "charts.sixteenDayMonitoringComparisonDesc": "Expected vs Actual 16-Day Monitoring completions by date — grouped by target department",
+    "charts.failedToLoadSixteenDay": "Failed to load 16-day monitoring comparison.",
+    "charts.noSixteenDayData": "No 16-day monitoring data found for this period.",
+    "charts.expectedMonitoring": "Expected Monitoring",
+    "charts.actualMonitoring": "Actual Monitoring",
+    "charts.totalCompleted": "Total Completed",
+    "charts.averageScore": "Average Score",
+    "charts.countView": "Completion Count",
+    "charts.scoreView": "Average Score",
+    "charts.targetBaseline": "Target Baseline",
+
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Contractor Wise DOJO Candidates",
     "charts.contractorWiseDojoDesc": "Operators joined per contractor — grouped by joining date",
@@ -950,6 +963,19 @@ export const translations = {
     "charts.actualHandover": "वास्तविक हैंडओवर",
     "charts.unassignedSection": "अनिर्धारित",
 
+    // Sixteen-Day Monitoring Comparison Chart
+    "charts.sixteenDayMonitoringComparison": "16-दिवसीय निगरानी तुलना",
+    "charts.sixteenDayMonitoringComparisonDesc": "तारीख के अनुसार अपेक्षित बनाम वास्तविक 16-दिवसीय निगरानी पूर्णता - लक्ष्य विभाग द्वारा समूहीकृत",
+    "charts.failedToLoadSixteenDay": "16-दिवसीय निगरानी तुलना लोड करने में विफल।",
+    "charts.noSixteenDayData": "इस अवधि के लिए कोई 16-दिवसीय निगरानी डेटा नहीं मिला।",
+    "charts.expectedMonitoring": "अपेक्षित निगरानी",
+    "charts.actualMonitoring": "वास्तविक निगरानी",
+    "charts.totalCompleted": "कुल पूर्ण",
+    "charts.averageScore": "औसत स्कोर",
+    "charts.countView": "पूर्णता संख्या",
+    "charts.scoreView": "औसत स्कोर",
+    "charts.targetBaseline": "लक्ष्य आधाररेखा",
+
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "ठेकेदार वार DOJO उम्मीदवार",
     "charts.contractorWiseDojoDesc": "प्रति ठेकेदार शामिल हुए ऑपरेटर - शामिल होने की तारीख के अनुसार समूहीकृत",
@@ -1679,6 +1705,19 @@ export const translations = {
     "charts.expectedHandover": "予定引き継ぎ数",
     "charts.actualHandover": "実績引き継ぎ数",
     "charts.unassignedSection": "未割当",
+
+    // Sixteen-Day Monitoring Comparison Chart
+    "charts.sixteenDayMonitoringComparison": "16日間モニタリング比較",
+    "charts.sixteenDayMonitoringComparisonDesc": "日付ごとの予定 vs 実績 16日間モニタリング完了数 — 対象部門別グループ化",
+    "charts.failedToLoadSixteenDay": "16日間モニタリング比較の読み込みに失敗しました。",
+    "charts.noSixteenDayData": "この期間の16日間モニタリングデータが見つかりません。",
+    "charts.expectedMonitoring": "予定モニタリング数",
+    "charts.actualMonitoring": "実績モニタリング数",
+    "charts.totalCompleted": "完了総数",
+    "charts.averageScore": "平均スコア",
+    "charts.countView": "完了数",
+    "charts.scoreView": "平均スコア",
+    "charts.targetBaseline": "目標基準線",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "請負業者別 DOJO 候補者",
@@ -2410,6 +2449,19 @@ export const translations = {
     "charts.actualHandover": "实际交接",
     "charts.unassignedSection": "未分配",
 
+    // Sixteen-Day Monitoring Comparison Chart
+    "charts.sixteenDayMonitoringComparison": "16天监控对比",
+    "charts.sixteenDayMonitoringComparisonDesc": "按日期的计划 vs 实际16天监控完成数 — 按目标部门分组",
+    "charts.failedToLoadSixteenDay": "16天监控对比数据加载失败。",
+    "charts.noSixteenDayData": "未找到该时段的16天监控数据。",
+    "charts.expectedMonitoring": "计划监控数",
+    "charts.actualMonitoring": "实际监控数",
+    "charts.totalCompleted": "总完成数",
+    "charts.averageScore": "平均分数",
+    "charts.countView": "完成数量",
+    "charts.scoreView": "平均分数",
+    "charts.targetBaseline": "目标基准线",
+
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "按承包商 DOJO 候选人",
     "charts.contractorWiseDojoDesc": "按承包商加入的操作工人数 — 按加入日期分组",
@@ -3139,6 +3191,19 @@ export const translations = {
     "charts.expectedHandover": "Ожидаемая передача",
     "charts.actualHandover": "Фактическая передача",
     "charts.unassignedSection": "Не назначено",
+
+    // Sixteen-Day Monitoring Comparison Chart
+    "charts.sixteenDayMonitoringComparison": "Сравнение 16-дневного мониторинга",
+    "charts.sixteenDayMonitoringComparisonDesc": "Ожидаемое vs Фактическое количество завершений 16-дневного мониторинга по датам — сгруппировано по целевому отделу",
+    "charts.failedToLoadSixteenDay": "Не удалось загрузить сравнение 16-дневного мониторинга.",
+    "charts.noSixteenDayData": "Данные 16-дневного мониторинга за этот период не найдены.",
+    "charts.expectedMonitoring": "Ожидаемый мониторинг",
+    "charts.actualMonitoring": "Фактический мониторинг",
+    "charts.totalCompleted": "Всего завершено",
+    "charts.averageScore": "Средний балл",
+    "charts.countView": "Количество завершений",
+    "charts.scoreView": "Средний балл",
+    "charts.targetBaseline": "Целевой базовый уровень",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Кандидаты DOJO по подрядчикам",

@@ -137,6 +137,10 @@ const calculateFutureDate = (dateStr, dayCount) => {
     return `${yyyy}-${mm}-${dd}`;
 };
 
+// Mirrors admin/src/components/departments/SkillUpgradationPlan.jsx's quarter-column bounds.
+const QUARTER_START_MONTH_DAY = { 1: "01-01", 2: "04-01", 3: "07-01", 4: "10-01" };
+const monthToQuarter = (month) => (month ? Math.floor((month - 1) / 3) + 1 : null);
+
 // Mirrors admin/src/components/admin/SkillMatrixCertificate.jsx's convertToYYYYMMDD.
 // Old sheets saved before the date-picker fix still hold "DD - MM - YYYY" in headerData
 // until someone re-touches the field, so any caller passing a raw dateOfEvaluation through
@@ -246,8 +250,20 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
 
             if (!nextAlreadyCompleted && !wouldRegressPlan) {
                 const dayCount = perLevelDayCounts[earnedLevelName] ?? sectionRow.skillUpgradationDayCount ?? null;
+                let plannedDate = calculateFutureDate(evalDate, dayCount);
+
+                // A short day-count can land the computed date back in the same quarter as
+                // the completion (or earlier), which would write it into a q{nextQ}Date cell
+                // that visually sits under the wrong quarter. Clamp it to the first day of
+                // q{nextQ} instead so the plan date always matches the column it's stored in.
+                const plannedMonth = plannedDate ? parseInt(plannedDate.split("-")[1], 10) : null;
+                const plannedQuarter = monthToQuarter(plannedMonth);
+                if (!plannedQuarter || plannedQuarter <= quarter) {
+                    plannedDate = `${year}-${QUARTER_START_MONTH_DAY[nextQ]}`;
+                }
+
                 row[`q${nextQ}Skill`] = nextObj.name;
-                row[`q${nextQ}Date`] = calculateFutureDate(evalDate, dayCount);
+                row[`q${nextQ}Date`] = plannedDate;
                 row[`q${nextQ}Status`] = 'Planned';
             }
         }
@@ -263,6 +279,52 @@ export const syncToSkillUpgradationPlan = async ({ studentId, earnedLevelName, d
         tableData,
         userName: "auto-sync",
     });
+};
+
+const QUARTER_KEYS = ["q1", "q2", "q3", "q4"];
+
+/**
+ * Last-resort guard against a q{n}Date/q{n}DateActual value landing under the wrong quarter
+ * column — the UI's own <input min/max> and validateDateForQuarter already block this at
+ * entry time, and syncToSkillUpgradationPlan's own clamp keeps auto-sync writes in bounds, but
+ * a save can still arrive from an older cached frontend build or a direct API call. Rather than
+ * guess which quarter a stray date "really" belongs to (risking splitting it from the
+ * skill/status that were entered alongside it in the same quarter), this simply blanks any
+ * date that doesn't match its own column's year/quarter, leaving the rest of that quarter's row
+ * intact for the admin to re-enter.
+ */
+export const sanitizeSkillUpgradationTableData = (tableData, year) => {
+    if (!tableData || typeof tableData !== "object" || !year) return tableData;
+    const targetYear = parseInt(year, 10);
+    if (!Number.isFinite(targetYear)) return tableData;
+
+    const sanitized = {};
+    for (const [userId, row] of Object.entries(tableData)) {
+        if (userId === "__removedUserIds" || !row || typeof row !== "object") {
+            sanitized[userId] = row;
+            continue;
+        }
+        const updatedRow = { ...row };
+        for (const q of QUARTER_KEYS) {
+            for (const suffix of ["Date", "DateActual"]) {
+                const field = `${q}${suffix}`;
+                const val = updatedRow[field];
+                if (!val) continue;
+
+                const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+                const monthNum = match ? parseInt(match[2], 10) : null;
+                const yearNum = match ? parseInt(match[1], 10) : null;
+                const isValid = match && yearNum === targetYear && monthToQuarter(monthNum) === parseInt(q[1], 10);
+
+                if (!isValid) {
+                    console.warn(`[sanitizeSkillUpgradationTableData] Clearing out-of-quarter date for user ${userId}, field ${field}: ${val}`);
+                    updatedRow[field] = "";
+                }
+            }
+        }
+        sanitized[userId] = updatedRow;
+    }
+    return sanitized;
 };
 
 /**

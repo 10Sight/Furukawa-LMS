@@ -7,7 +7,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
-import { syncAllPassedEvaluationsForPlan } from "../utils/skillMatrix.util.js";
+import { syncAllPassedEvaluationsForPlan, sanitizeSkillUpgradationTableData } from "../utils/skillMatrix.util.js";
 
 // Get skill upgradation plan by department
 export const getSkillUpgradationPlanByDepartment = asyncHandler(async (req, res) => {
@@ -60,12 +60,17 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         }
     }
 
+    const sanitizedTableData = sanitizeSkillUpgradationTableData(
+        tableData && typeof tableData === "object" ? tableData : {},
+        year
+    );
+
     let saved = await SkillUpgradationPlan.upsert({
         departmentId: parseInt(departmentId),
         sectionId: sectionId ? parseInt(sectionId) : null,
         year: year ? parseInt(year) : null,
         selectedLines: Array.isArray(selectedLines) ? selectedLines : [],
-        tableData: tableData && typeof tableData === "object" ? tableData : {},
+        tableData: sanitizedTableData,
         userName: req.user?.fullName || req.user?.name || req.user?.userName || "",
         ...revisionSnapshot,
     });

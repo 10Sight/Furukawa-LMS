@@ -52,6 +52,20 @@ const ACTUAL_TO_PLAN = {
     q3DateActual: "q4Date",
 };
 
+const QUARTER_INDEX = { q1: 1, q2: 2, q3: 3, q4: 4 };
+const QUARTER_START_MONTH_DAY = { q1: "01-01", q2: "04-01", q3: "07-01", q4: "10-01" };
+const QUARTER_END_MONTH_DAY = { q1: "03-31", q2: "06-30", q3: "09-30", q4: "12-31" };
+
+// Bounds for the native <input type="date"> min/max attrs, so the picker itself can't
+// offer a date outside the column's own quarter.
+const getQuarterDateBounds = (quarterKey, year) => {
+    if (!year || !QUARTER_START_MONTH_DAY[quarterKey]) return { min: undefined, max: undefined };
+    return {
+        min: `${year}-${QUARTER_START_MONTH_DAY[quarterKey]}`,
+        max: `${year}-${QUARTER_END_MONTH_DAY[quarterKey]}`,
+    };
+};
+
 // The Skill Level the associate just reached in this quarter — determines how
 // many days until the next quarter's plan date (see resolveDayCountForLevel).
 const SKILL_FIELD_FOR_ACTUAL = {
@@ -390,6 +404,7 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
     departmentId,
     sectionId,
     lineId,
+    year,
     lines,
     subSections,
     canManage,
@@ -478,6 +493,11 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                 const dateField = `${key}Date`;
                 const dateActualField = `${key}DateActual`;
                 const statusField = `${key}Status`;
+                const quarterBounds = getQuarterDateBounds(key, year);
+                const todayISO = new Date().toLocaleDateString('en-CA');
+                const dateMin = canOverrideDates
+                    ? quarterBounds.min
+                    : (quarterBounds.min && quarterBounds.min > todayISO ? quarterBounds.min : todayISO);
 
                 return (
                     <React.Fragment key={key}>
@@ -527,7 +547,8 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                             <input
                                 type="date"
                                 value={row[dateField] || ""}
-                                min={canOverrideDates ? undefined : new Date().toLocaleDateString('en-CA')}
+                                min={dateMin}
+                                max={quarterBounds.max}
                                 onChange={(e) => onFieldChange(rowId, dateField, e.target.value)}
                                 disabled={!canManage}
                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -538,7 +559,8 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
                             <input
                                 type="date"
                                 value={row[dateActualField] || ""}
-                                min={canOverrideDates ? undefined : new Date().toLocaleDateString('en-CA')}
+                                min={dateMin}
+                                max={quarterBounds.max}
                                 onChange={(e) => onFieldChange(rowId, dateActualField, e.target.value)}
                                 disabled={!canManage}
                                 className="h-8 border border-slate-200 rounded-md px-1 text-xs w-full min-w-[130px] text-center bg-white focus-visible:outline-none"
@@ -815,9 +837,10 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
             // lands the next plan date in Q3, not Q2).
             const actualDateMatch = field.match(/^(q1|q2|q3|q4)DateActual$/);
             if (actualDateMatch && value) {
+                const currentQuarterKey = actualDateMatch[1];
                 const levelField = SKILL_FIELD_FOR_ACTUAL[field];
                 const currentLevel = levelField ? row[levelField] : null;
-                const futureDate = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
+                let futureDate = calculateFutureDate(value, resolveDayCountForLevel(currentLevel));
 
                 if (futureDate) {
                     const [, fMonth] = futureDate.split("-").map(Number);
@@ -826,6 +849,21 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                     else if (fMonth >= 4 && fMonth <= 6) targetQuarterKey = "q2";
                     else if (fMonth >= 7 && fMonth <= 9) targetQuarterKey = "q3";
                     else if (fMonth >= 10 && fMonth <= 12) targetQuarterKey = "q4";
+
+                    // A short day-count (or one that rolls into the following year, which
+                    // resolves to an earlier-looking month) can land the calculated date back
+                    // in the same quarter as the completion, or an earlier one. That would
+                    // overwrite the wrong column, so push it out to the start of the next
+                    // quarter instead — unless the completion was already in Q4, which has no
+                    // "next quarter" within this year to push into.
+                    if (
+                        targetQuarterKey &&
+                        QUARTER_INDEX[targetQuarterKey] <= QUARTER_INDEX[currentQuarterKey] &&
+                        QUARTER_INDEX[currentQuarterKey] < 4
+                    ) {
+                        targetQuarterKey = `q${QUARTER_INDEX[currentQuarterKey] + 1}`;
+                        futureDate = `${year}-${QUARTER_START_MONTH_DAY[targetQuarterKey]}`;
+                    }
 
                     if (targetQuarterKey) {
                         const targetPlanField = `${targetQuarterKey}Date`;
@@ -1062,6 +1100,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                                     departmentId={departmentId}
                                     sectionId={sectionId}
                                     lineId={lineId}
+                                    year={year}
                                     lines={lines}
                                     subSections={subSections}
                                     canManage={canManage}

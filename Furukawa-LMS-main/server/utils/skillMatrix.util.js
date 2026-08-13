@@ -414,35 +414,6 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
             const { checkAndProcessHandover, checkAndProcessMaxLevelNotification } = await import("./handover.util.js");
             await checkAndProcessHandover(studentId, newGlobalLevelName);
             await checkAndProcessMaxLevelNotification(studentId, newGlobalLevelName);
-
-            // Record a SKILL_UPGRADATION certificate so the Operator Observance Sheet can
-            // derive "Date of Level-N Complete" from it (see operatorObservance.controller.js
-            // getDerivedLevel1CompletionDate/getDerivedLevel2CompletionDate fallback).
-            try {
-                const Certificate = (await import("../models/certificate.model.js")).default;
-                const existingCert = await Certificate.findOne({
-                    student: String(studentId),
-                    type: 'SKILL_UPGRADATION',
-                    level: newGlobalLevelName,
-                });
-
-                if (!existingCert) {
-                    const certIssueDate = normalizeEvaluationDate(dateOfEvaluation) || new Date().toISOString().slice(0, 10);
-                    await Certificate.create({
-                        student: String(studentId),
-                        course: '',
-                        issuedBy: String(issuedBy || 'SYSTEM'),
-                        grade: 'PASS',
-                        issueDate: certIssueDate,
-                        type: 'SKILL_UPGRADATION',
-                        level: newGlobalLevelName,
-                        status: 'ACTIVE',
-                        metadata: {},
-                    });
-                }
-            } catch (certErr) {
-                console.error(`[syncStudentSkillProgress] Failed to create skill upgradation certificate for ${studentId}:`, certErr);
-            }
         }
     }
 
@@ -515,4 +486,56 @@ export const syncStudentSkillProgress = async ({ studentId, subSectionId, calcul
     }
 
     return { levelUpgraded, newLevel, skillMap };
+};
+
+/**
+ * Records a SKILL_UPGRADATION certificate for every level whose section is fully OK in
+ * this evaluation, one per level name, regardless of whether that level counts as a
+ * "global upgrade" for the student's overall currentLevel. This is what lets the plant
+ * treat "Level-1 table filled with all OK" as a real, dated event even for a student whose
+ * currentLevel already defaults to L1 (so syncStudentSkillProgress's order-based upgrade
+ * check never fires for L1). Certificates are created once per student+level — the first
+ * time a level's section is completed sets its date permanently; re-saving the sheet later
+ * (even with a different Date of evaluation) does not move it. The Operator Observance
+ * Sheet's getDerivedLevel1CompletionDate/getDerivedLevel2CompletionDate read these certs
+ * as their fallback (or primary, when no matching `progress` row exists) source.
+ */
+export const syncLevelCompletionCertificates = async ({ studentId, mergedEvalData, skillCertConfig, activeConfig, issuedBy, dateOfEvaluation }) => {
+    if (!mergedEvalData || !skillCertConfig?.levels || !activeConfig?.levels?.length) return;
+
+    const levelIndices = Object.keys(skillCertConfig.levels).map(Number);
+    if (levelIndices.length === 0) return;
+
+    const Certificate = (await import("../models/certificate.model.js")).default;
+    const certIssueDate = normalizeEvaluationDate(dateOfEvaluation) || new Date().toISOString().slice(0, 10);
+
+    for (const sIdx of levelIndices) {
+        if (!isLevelFullyOK(mergedEvalData, skillCertConfig, sIdx)) continue;
+
+        const lvlObj = activeConfig.levels.find(l => l.order === sIdx);
+        if (!lvlObj) continue;
+
+        try {
+            const existingCert = await Certificate.findOne({
+                student: String(studentId),
+                type: 'SKILL_UPGRADATION',
+                level: lvlObj.name,
+            });
+            if (existingCert) continue;
+
+            await Certificate.create({
+                student: String(studentId),
+                course: '',
+                issuedBy: String(issuedBy || 'SYSTEM'),
+                grade: 'PASS',
+                issueDate: certIssueDate,
+                type: 'SKILL_UPGRADATION',
+                level: lvlObj.name,
+                status: 'ACTIVE',
+                metadata: {},
+            });
+        } catch (certErr) {
+            console.error(`[syncLevelCompletionCertificates] Failed to create skill upgradation certificate for ${studentId} level ${lvlObj.name}:`, certErr);
+        }
+    }
 };

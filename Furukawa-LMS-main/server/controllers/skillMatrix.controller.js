@@ -17,7 +17,8 @@ import {
     getPeriodFromDate,
     DEFAULT_SKILL_CONFIG,
     syncStudentSkillProgress,
-    syncToSkillUpgradationPlan
+    syncToSkillUpgradationPlan,
+    syncLevelCompletionCertificates
 } from "../utils/skillMatrix.util.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 
@@ -794,6 +795,24 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
             newLevel = syncResult.newLevel;
         } catch (err) {
             console.error("[SkillMatrixEvaluation] Failed to sync operator skill progress:", err);
+        }
+
+        // Record a per-level completion certificate for every section that is fully OK,
+        // independent of whether it counts as a "global" level upgrade (a student's
+        // currentLevel already defaults to L1, so completing the Level-1 section alone
+        // never trips syncStudentSkillProgress's upgrade check). This is what the
+        // Operator Observance Sheet's Date of Level-1/Level-2 Complete read from.
+        try {
+            await syncLevelCompletionCertificates({
+                studentId,
+                mergedEvalData,
+                skillCertConfig,
+                activeConfig,
+                issuedBy: updatedBy,
+                dateOfEvaluation: headerData?.dateOfEvaluation
+            });
+        } catch (err) {
+            console.error("[SkillMatrixEvaluation] Failed to sync level completion certificates:", err);
         }
 
         if (earnedLevelName !== 'L0') {

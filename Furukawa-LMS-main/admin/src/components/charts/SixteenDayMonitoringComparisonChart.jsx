@@ -99,6 +99,10 @@ const INPUT_CONFIG = {
     yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
 };
 
+// Minimum pixel width per bar — the slot width for each category (period) scales with the
+// number of department/section series so bars don't get squeezed thinner as more are added.
+const BAR_WIDTH = 26;
+
 // One color per department/section series, cycled if there are more series than colors.
 const PALETTE = [
     '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
@@ -187,7 +191,10 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
 
     const todaySlotIdx = trend.findIndex(r => r.period === currentPeriodKey);
 
-    const SLOT_WIDTH = 72;
+    // Slot width must grow with the number of department/section series sharing each category —
+    // otherwise a fixed slot width squeezes every bar thinner as more series are added. Each
+    // bar gets a minimum of BAR_WIDTH px, plus some padding for the category group.
+    const SLOT_WIDTH = Math.max(90, (seriesKeys.length || 1) * BAR_WIDTH + 30);
     const needsScroll = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
@@ -201,7 +208,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         if (maxScrollPx <= 0) return 1;
         const centeredPx = targetPx - (viewportWidth / 2);
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
-    }, [needsScroll, todaySlotIdx, categories.length]);
+    }, [needsScroll, todaySlotIdx, categories.length, SLOT_WIDTH]);
 
     const chartOptions = useMemo(() => ({
         chart: {
@@ -268,9 +275,9 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 animation: false,
                 borderRadius: 4,
                 borderWidth: 0,
-                pointPadding: 0.08,
+                pointPadding: 0.05,
                 groupPadding: 0.15,
-                maxPointWidth: 32,
+                maxPointWidth: BAR_WIDTH,
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? String(this.y) : ''; },

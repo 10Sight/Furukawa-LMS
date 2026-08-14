@@ -364,7 +364,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             // convention exactly (it always passes a formatted date string, never a Date
             // instance) and sidestepping any local-vs-UTC skew from `new Date(dKey)`.
             const { active: stillActive, joiningDate: stintJoinDate } = getUserActiveStintOnDate(u, dateKey);
-            const join = stintJoinDate || (u.joiningDate ? new Date(u.joiningDate) : null);
+            const join = stintJoinDate;
 
             if (stillActive) countTotal++;
             if (stillActive && join && join <= threeMonthsBefore) countAbove3Months++;

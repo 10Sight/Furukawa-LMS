@@ -352,18 +352,34 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const todayYMD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
-    // Both: users-table roster, date-aware via statusHistory stints (getUserActiveStintOnDate)
-    // — active on the stint open as of dateObj. No attendance_logs fallback for either figure:
-    // "Headcount available" is fed by countTotal and must match the MPS dashboard's Daily
-    // Manpower Trend "Total Headcount" bar (totalManpower) exactly, which is purely
-    // statusHistory-driven with no attendance-punch fallback of its own. Above 3 Months adds a
-    // tenure check (DATEDIFF(DAY, that stint's joiningDate, dateObj) >= 91), matching the MPS
-    // Portal's tenure-graph "3m-6m"+ bucketing exactly. Both are 0 for future dates.
+    // countTotal: users-table roster, date-aware via statusHistory stints
+    // (getUserActiveStintOnDate) — active on the stint open as of dateObj. No attendance_logs
+    // fallback: "Headcount available" is fed by countTotal and must match the MPS dashboard's
+    // Daily Manpower Trend "Total Headcount" bar (totalManpower) exactly, which is purely
+    // statusHistory-driven with no attendance-punch fallback of its own. 0 for future dates.
+    // countAbove3Months: matches the dashboard's "Attendance by Joining Date / Tenure" graph —
+    // unlike countTotal, this is attendance-based, not roster-based: an employee only counts if
+    // they're both statusHistory-active AND actually marked Present that day (payCode-matched,
+    // same rule as getMappedPresentCount below), with a tenure check (DATEDIFF(DAY, that stint's
+    // joiningDate, dateObj) >= 91, matching the "3m-6m"+ bucketing exactly). 0 for future dates,
+    // declared holidays, or days with no attendance logs uploaded at all.
     const getNetAvailableHeadcount = (dateKey, dateObj, targetSectionIds = null) => {
         if (dateKey > todayYMD) return { countTotal: 0, countAbove3Months: 0 };
 
         let countTotal = 0;
         let countAbove3Months = 0;
+
+        const isHoliday = holidaySet.has(dateKey);
+
+        const punchesForDay = punchesByDate[dateKey] || [];
+        const presentPayCodes = new Set();
+        punchesForDay.forEach(p => {
+            const status = String(p.status || '').trim().toUpperCase();
+            if (status === 'P' || status === 'PRESENT') {
+                const payCodeClean = String(p.payCode || '').trim().toUpperCase();
+                if (payCodeClean) presentPayCodes.add(payCodeClean);
+            }
+        });
 
         allEligibleUsers.forEach(u => {
             if (targetSectionIds && !targetSectionIds.includes(String(u.sectionId))) return;
@@ -376,7 +392,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             const join = stintJoinDate;
 
             if (stillActive) countTotal++;
-            if (stillActive && join) {
+
+            const empIdClean = String(u.empId || '').trim().toUpperCase();
+            const isPresent = !!empIdClean && presentPayCodes.has(empIdClean);
+
+            if (stillActive && join && !isHoliday && isPresent) {
                 // DATEDIFF(DAY, joinDate, asOfDate) >= 91, matching dashboard.controller.js's
                 // tenure-graph bucketing exactly (3m-6m starts at 91 days) instead of a
                 // calendar-month subtraction, which drifts by 1-3 days depending on month

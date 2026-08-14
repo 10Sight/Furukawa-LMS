@@ -404,6 +404,12 @@ const buildAssignmentClause = (assignmentStatus, assignmentType) => {
   }
 };
 
+// A user has "rejoined" if their statusHistory (appended-only, see getUpdatedStatusHistory
+// in utils/statusHistory.js) has a second entry — the genesis entry is index 0, and a new
+// entry is only ever pushed when a user transitions out of LEFT back to active.
+const buildRejoinHistoryClause = (col) =>
+  `(${col} IS NOT NULL AND ${col} != '[]' AND ISJSON(${col}) = 1 AND JSON_VALUE(${col}, '$[1].joiningDate') IS NOT NULL)`;
+
 // Builds the SQL fragment + params for the `dojoHandoverPassedOnly` filter.
 // Departments with a configured Dojo Eligibility Evaluation Test use the strict
 // evaluation-only check; departments not yet migrated to Dojo Hiring Config fall
@@ -2061,7 +2067,12 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
   const { dateFrom, dateTo, status, shift, date, joiningDateFrom, joiningDateTo, leavingDateFrom, leavingDateTo } = req.query;
 
-  const upperStatus = (status || "").toUpperCase();
+  // "Present"/"Absent" (title-case) come from the Filters panel's attendance-based status
+  // dropdown and mean "logged present/absent on this date/range" — distinct from "PRESENT"
+  // (all-caps, from the tab bar and the employee-status dropdown), which means the user's
+  // own `status` column reads PRESENT (or is unset), independent of attendance logs.
+  const isAttendancePresent = status === "Present";
+  const isAttendanceAbsent = status === "Absent";
 
   let attendanceJoinSQL = "";
   let attendanceParams = [];
@@ -2071,7 +2082,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: Push status filter into subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
+    const subqueryStatusFilter = isAttendancePresent ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
 
     attendanceJoinSQL = `
       LEFT JOIN (
@@ -2108,18 +2119,22 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let statusParamAdded = false;
   let statusParamIndex = -1;
 
-  if (upperStatus === "PRESENT") {
+  if (isAttendancePresent) {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
     else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
-  } else if (upperStatus === "ABSENT") {
+  } else if (isAttendanceAbsent) {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
     else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
+  } else if (status === "PRESENT") {
+    // Employee-status "present": same definition as the Present Operators stat card
+    // (counts/presentCount below) — anyone not LEFT/ON_LEAVE, treating unset status as present.
+    whereClauses.push("(u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
     statusParamAdded = true;
     statusParamIndex = params.length - 1;
-  } else if (req.query.includeLeft !== "true") {
+  } else if (req.query.includeLeft !== "true" && req.query.isRejoin !== "true") {
     whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
 
@@ -2178,10 +2193,16 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const assignmentClause = buildAssignmentClause(req.query.assignmentStatus, req.query.assignmentType);
   if (assignmentClause) whereClauses.push(assignmentClause);
 
+  const isRejoinVal = req.query.isRejoin === "true";
+  const rejoinClause = buildRejoinHistoryClause("u.statusHistory");
+  if (isRejoinVal) whereClauses.push(rejoinClause);
+
   // Build counts query: same scope (search, hierarchy, role) but without status/shift/attendance filters
   const countsWhereClauses = whereClauses.filter(c =>
     c !== "u.status = ?" &&
     c !== "(u.status IS NULL OR u.status != 'LEFT')" &&
+    c !== "(u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE'))" &&
+    c !== rejoinClause &&
     !c.includes("al.")
   );
   const countsParams = statusParamAdded
@@ -2229,7 +2250,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       COUNT(*) as totalHeadcount,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
       SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
-      SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount
+      SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount,
+      SUM(CASE WHEN ${buildRejoinHistoryClause("u.statusHistory")} THEN 1 ELSE 0 END) as rejoinCount
     FROM users u ${getHierarchyFilterJoinSQL}
     ${countsWhereSQL}
   `, countsParams, { label: "getAllStudents.statusCounts" });
@@ -2253,6 +2275,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       presentCount: statusCountsData[0]?.presentCount || 0,
       onLeaveCount: statusCountsData[0]?.onLeaveCount || 0,
       leftCount: statusCountsData[0]?.leftCount || 0,
+      rejoinCount: statusCountsData[0]?.rejoinCount || 0,
     }
   }, "Students fetched successfully"));
 });
@@ -2865,6 +2888,10 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
         hierParams.push(...hierDeptIds, ...hierDeptIds);
       }
 
+      if (filters?.isRejoin === "true") {
+        hierWhere.push(buildRejoinHistoryClause("u.statusHistory"));
+      }
+
       const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
       if (ac) hierWhere.push(ac);
 
@@ -2913,6 +2940,9 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       const ph = flatDeptIds.map(() => "?").join(",");
       whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
       params.push(...flatDeptIds, ...flatDeptIds);
+    }
+    if (filters?.isRejoin === "true") {
+      whereClauses.push(buildRejoinHistoryClause("statusHistory"));
     }
 
     const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : "";
@@ -3233,6 +3263,9 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
         hierWhere.push(`(u.departmentId IN (${ph}) OR u.department IN (${ph}))`);
         hierParams.push(...hierDeptIds, ...hierDeptIds);
       }
+      if (filters?.isRejoin === "true") {
+        hierWhere.push(buildRejoinHistoryClause("u.statusHistory"));
+      }
 
       const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
       if (ac) hierWhere.push(ac);
@@ -3268,6 +3301,9 @@ export const bulkUpdateShiftSchedule = asyncHandler(async (req, res) => {
         const ph = flatDeptIds.map(() => "?").join(",");
         whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
         params.push(...flatDeptIds, ...flatDeptIds);
+      }
+      if (filters?.isRejoin === "true") {
+        whereClauses.push(buildRejoinHistoryClause("statusHistory"));
       }
 
       const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
@@ -3372,6 +3408,9 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
         hierWhere.push(`(u.departmentId IN (${ph}) OR u.department IN (${ph}))`);
         hierParams.push(...hierDeptIds, ...hierDeptIds);
       }
+      if (filters?.isRejoin === "true") {
+        hierWhere.push(buildRejoinHistoryClause("u.statusHistory"));
+      }
 
       const ac = buildAssignmentClause(assignmentStatus, filters.assignmentType);
       if (ac) hierWhere.push(ac);
@@ -3407,6 +3446,9 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
         const ph = flatDeptIds.map(() => "?").join(",");
         whereClauses.push(`(departmentId IN (${ph}) OR department IN (${ph}))`);
         params.push(...flatDeptIds, ...flatDeptIds);
+      }
+      if (filters?.isRejoin === "true") {
+        whereClauses.push(buildRejoinHistoryClause("statusHistory"));
       }
 
       const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;

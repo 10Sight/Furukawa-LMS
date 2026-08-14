@@ -245,21 +245,21 @@ const ContractorWiseOperatorChart = () => {
 
             if (p.isEmpty) {
                 const color  = isToday ? '#2563eb' : '#94a3b8';
-                const weight = isToday ? '900' : '600';
-                return `<span style="color:${color};font-size:11px;font-weight:${weight}">${p.periodLabel}</span>`;
+                const weight = isToday ? '900' : '800';
+                return `<span style="color:${color};font-size:14px;font-weight:${weight}">${p.periodLabel}</span>`;
             }
 
             const nameHtml = p.contractor
                 .split(' ')
-                .map(w => `<span style="color:${p.color};font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
+                .map(w => `<span style="color:${p.color};font-weight:800;font-size:14px;line-height:1.6">${w}</span>`)
                 .join('<br/>');
 
             const dateColor      = isToday ? '#2563eb' : '#64748b';
-            const dateWeight     = isToday ? '900' : '800';
+            const dateWeight     = isToday ? 'black' : '900';
             const dateDecoration = isToday ? ';text-decoration:underline' : '';
             const dateLine = p.isDateSlot
-                ? `<br/><span style="color:${dateColor};font-size:13px;font-weight:${dateWeight};display:inline-block;margin-top:8px${p.shiftDate ? ';margin-right:96px' : ''}${dateDecoration}">${p.periodLabel}</span>`
-                : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
+                ? `<br/><span style="color:${dateColor};font-size:16px;font-weight:${dateWeight};display:inline-block;margin-top:8px${p.shiftDate ? ';margin-right:96px' : ''}${dateDecoration}">${p.periodLabel}</span>`
+                : `<br/><span style="visibility:hidden;font-size:16px;display:inline-block;margin-top:8px">${p.periodLabel}</span>`;
 
             return nameHtml + dateLine;
         });
@@ -354,8 +354,8 @@ const ContractorWiseOperatorChart = () => {
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title:  { text: 'Operators', style: { color: '#94a3b8', fontSize: '14px' } },
-            labels: { style: { fontSize: '13px' } },
+            title:  { text: 'Operators', style: { color: '#94a3b8', fontSize: '16px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '15px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
         legend:  { enabled: false },
@@ -382,7 +382,7 @@ const ContractorWiseOperatorChart = () => {
                 dataLabels: {
                     enabled:      true,
                     formatter()   { return this.y > 0 ? String(this.y) : ''; },
-                    style:        { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style:        { fontSize: '15px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align:         'center',
                     y:             -20,

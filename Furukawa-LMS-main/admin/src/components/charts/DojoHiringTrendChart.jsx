@@ -196,8 +196,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         const label = formatPeriodLabel(r.period, groupBy, language);
         const isToday = r.period === currentPeriodKey;
         return isToday
-            ? `<span style="color:#2563eb;font-weight:900;text-decoration:underline">${label}</span>`
-            : `<span style="color:#64748b;font-weight:600">${label}</span>`;
+            ? `<span style="color:#2563eb;font-size:14px;font-weight:900;text-decoration:underline">${label}</span>`
+            : `<span style="color:#64748b;font-size:14px;font-weight:800">${label}</span>`;
     }), [trend, groupBy, language, currentPeriodKey]);
     const totalSeries  = trend.map(r => Number(r.total)       || 0);
     const maleSeries   = trend.map(r => Number(r.maleCount)   || 0);
@@ -284,7 +284,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             crosshair: true,
             labels: {
                 useHTML: true,
-                style: { fontSize: '11px', textAlign: 'center' },
+                style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
                 rotation: 0,
                 align: 'center',
             },
@@ -292,7 +292,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '11px' } },
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
         legend: { enabled: viewMode === 'gender' },
@@ -319,8 +320,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         rotation: 0,
         allowOverlap: true,
         style: {
-            fontSize: '11px',
-            fontWeight: 'bold',
+            fontSize: '14px',
+            fontWeight: '900',
             color: '#1e293b',
             textOutline: '2px white',
         },
@@ -336,8 +337,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         rotation: 0,
         allowOverlap: true,
         style: {
-            fontSize: '10px',
-            fontWeight: 'bold',
+            fontSize: '13px',
+            fontWeight: '900',
             color: '#ffffff',
             textOutline: 'none',
         },

@@ -27,8 +27,8 @@ const _now = new Date();
 const CURRENT_YEAR = _now.getFullYear();
 const MONTH_END = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1, 0));
 
-// Daily view uses one category slot per day (times departments/sections), so an unbounded
-// range can blow up the column count into the thousands. Cap it client-side.
+// Daily view uses one category slot per day, so an unbounded range can blow up the column
+// count. Cap it client-side.
 const MAX_DAILY_RANGE_DAYS = 90;
 
 const addDays = (isoDate, days) => {
@@ -93,57 +93,18 @@ const formatPeriodLabel = (period, groupBy, language = 'en') => {
     return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 };
 
-// Four mutually-exclusive-except-"started" series: started === completed + pendingOnTrack +
-// pendingOverdue by construction (see the backend controller), each drawn as its own column so
-// exact per-bucket values stay readable — a stacked view was considered but rejected in favor
-// of this simpler, directly-comparable layout.
-const METRICS = [
-    { key: 'started', labelKey: 'charts.started', color: '#94a3b8' },
-    { key: 'completed', labelKey: 'charts.completed', color: '#10b981' },
-    { key: 'pendingOnTrack', labelKey: 'charts.pendingOnTrack', color: '#f59e0b' },
-    { key: 'pendingOverdue', labelKey: 'charts.pendingOverdue', color: '#ef4444' },
-];
-
-const EMPTY_ROW = { started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
-
-const buildFullPeriods = (groupBy, start, end) => {
-    if (!start || !end) return [];
-    const full = [];
-    if (groupBy === 'daily') {
-        const cur = new Date(`${start}T00:00:00`);
-        const last = new Date(`${end}T00:00:00`);
-        while (cur <= last) {
-            full.push(formatDate(cur));
-            cur.setDate(cur.getDate() + 1);
-        }
-    } else if (groupBy === 'monthly') {
-        let [sy, sm] = start.split('-').map(Number);
-        const [ey, em] = end.split('-').map(Number);
-        while (sy < ey || (sy === ey && sm <= em)) {
-            full.push(`${sy}-${String(sm).padStart(2, '0')}`);
-            sm++;
-            if (sm > 12) { sm = 1; sy++; }
-        }
-    } else {
-        const sy = Number(start.split('-')[0]);
-        const ey = Number(end.split('-')[0]);
-        for (let y = sy; y <= ey; y++) full.push(String(y));
-    }
-    return full;
-};
-
-const buildFullSeries = (groupBy, start, end, trend) => {
-    if (!start || !end) return trend;
-    const dataMap = {};
-    trend.forEach(r => { dataMap[r.period] = r; });
-    return buildFullPeriods(groupBy, start, end).map(key => dataMap[key] ?? { ...EMPTY_ROW, period: key });
-};
-
 const INPUT_CONFIG = {
     daily: { type: 'date', min: '2020-01-01', max: MONTH_END, placeholder: 'YYYY-MM-DD' },
     monthly: { type: 'month', min: '2020-01', max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
     yearly: { type: 'number', min: 2020, max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
 };
+
+// One color per department/section series, cycled if there are more series than colors.
+const PALETTE = [
+    '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
+    '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#ef4444',
+    '#14b8a6', '#a855f7', '#eab308', '#0ea5e9', '#f43f5e',
+];
 
 const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
@@ -176,14 +137,13 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
     });
 
-    const rawTrend = data?.data?.trend || [];
-    const deptBreakdown = data?.data?.deptBreakdown || [];
+    // Already period-sorted and zero-filled for every period in [start, end] by the backend.
+    const trend = data?.data?.trend || [];
+    const seriesKeys = data?.data?.seriesKeys || [];
     const groupBy = data?.data?.groupBy || timeframe;
-    const apiStart = data?.data?.start || '';
-    const apiEnd = data?.data?.end || '';
 
-    // Current period key (in the same format as `period` values) so today's slot/label
-    // can be located and highlighted regardless of the active timeframe.
+    // Current period key (in the same format as `period` values) so today's slot can be
+    // located and highlighted/scrolled-to regardless of the active timeframe.
     const currentPeriodKey = useMemo(() => {
         const now = new Date();
         if (groupBy === 'daily') return formatDate(now);
@@ -191,133 +151,48 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         return String(now.getFullYear());
     }, [groupBy]);
 
-    const trend = useMemo(
-        () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
-        [groupBy, apiStart, apiEnd, rawTrend]
-    );
-    const totals = useMemo(() => METRICS.reduce((acc, { key }) => {
-        acc[key] = trend.reduce((sum, r) => sum + (Number(r[key]) || 0), 0);
-        return acc;
-    }, {}), [trend]);
-
-    const fullPeriods = useMemo(
-        () => buildFullPeriods(groupBy, apiStart, apiEnd),
-        [groupBy, apiStart, apiEnd]
+    const plainLabels = useMemo(
+        () => trend.map(r => formatPeriodLabel(r.period, groupBy, language)),
+        [trend, groupBy, language]
     );
 
-    // Drill mode: once the user narrows to a single department, break its bars down by section
-    // instead of showing one slot per department. This keeps the normal (multi/all-department)
-    // view at one slot per department per period, so the category count doesn't explode into
-    // periods × departments × sections when nothing is filtered.
-    const isSectionDrill = selectedDepts.length === 1;
+    const categories = useMemo(() => trend.map(r => {
+        const label = formatPeriodLabel(r.period, groupBy, language);
+        const isToday = r.period === currentPeriodKey;
+        return isToday
+            ? `<span style="color:#2563eb;font-size:14px;font-weight:900;text-decoration:underline">${label}</span>`
+            : `<span style="color:#64748b;font-size:14px;font-weight:800">${label}</span>`;
+    }), [trend, groupBy, language, currentPeriodKey]);
 
-    // For each date, we display each department (or, in drill mode, each section) as a single
-    // category slot, and within that category slot, Highcharts renders one bar per metric
-    // (Started / Completed / Pending On-Track / Pending Overdue) side-by-side. The date label
-    // is shown once per group under the middle slot.
-    const { pointsByMetric, categories, groupSeparators, todaySlotIdx } = useMemo(() => {
-        const emptyResult = { pointsByMetric: Object.fromEntries(METRICS.map(m => [m.key, []])), categories: [], groupSeparators: [], todaySlotIdx: -1 };
-        if (!deptBreakdown.length || !fullPeriods.length) return emptyResult;
+    const series = useMemo(() => seriesKeys.map((sk, idx) => ({
+        type: 'column',
+        name: sk.name,
+        data: trend.map(r => Number(r[sk.key]) || 0),
+        color: PALETTE[idx % PALETTE.length],
+    })), [seriesKeys, trend]);
 
-        const dataMap = {};
-        const orderedKeys = [];
-        const nameMap = {};
-        deptBreakdown.forEach(r => {
-            const key = isSectionDrill ? r.sectionId : r.deptId;
-            if (!dataMap[key]) {
-                dataMap[key] = {};
-                orderedKeys.push(key);
-                nameMap[key] = isSectionDrill
-                    ? (r.sectionName || t('charts.unassignedSection'))
-                    : (departments.find(d => String(d.id ?? d._id) === r.deptId)?.name ?? `Dept ${r.deptId}`);
-            }
-            const bucket = dataMap[key][r.period] ?? { ...EMPTY_ROW };
-            METRICS.forEach(({ key: mk }) => { bucket[mk] += Number(r[mk]) || 0; });
-            dataMap[key][r.period] = bucket;
+    const seriesTotals = useMemo(() => {
+        const totals = {};
+        seriesKeys.forEach(sk => {
+            totals[sk.key] = trend.reduce((sum, r) => sum + (Number(r[sk.key]) || 0), 0);
         });
+        return totals;
+    }, [seriesKeys, trend]);
 
-        const pointsByMetric = Object.fromEntries(METRICS.map(m => [m.key, []]));
-        const categories = [];
-        const groupSeparators = [];
-        let todaySlotIdx = -1;
+    const totalFilledDays = useMemo(
+        () => Object.values(seriesTotals).reduce((a, b) => a + b, 0),
+        [seriesTotals]
+    );
+    const hasAnyData = totalFilledDays > 0;
 
-        fullPeriods.forEach(period => {
-            const periodLabel = formatPeriodLabel(period, groupBy, language);
-            const isToday = period === currentPeriodKey;
-            const keysPresent = orderedKeys.filter(k => {
-                const v = dataMap[k]?.[period];
-                return v && v.started > 0;
-            });
+    const todaySlotIdx = trend.findIndex(r => r.period === currentPeriodKey);
 
-            if (!keysPresent.length) {
-                if (isToday && todaySlotIdx === -1) todaySlotIdx = categories.length;
-                const emptyColor = isToday ? '#2563eb' : '#94a3b8';
-                const emptyWeight = isToday ? '900' : '600';
-                categories.push(`<span style="color:${emptyColor};font-size:11px;font-weight:${emptyWeight}">${periodLabel}</span>`);
-                METRICS.forEach(({ key }) => pointsByMetric[key].push({ y: null, label: '', periodLabel, metricKey: key, isEmpty: true }));
-                return;
-            }
-
-            const N = keysPresent.length;
-            const midIdx = Math.floor((N - 1) / 2);
-
-            keysPresent.forEach((key, idx) => {
-                const label = nameMap[key];
-                const vals = dataMap[key][period];
-                const isDateSlot = idx === midIdx;
-
-                if (isDateSlot && isToday && todaySlotIdx === -1) todaySlotIdx = categories.length;
-
-                const topHtml = label
-                    .split(' ')
-                    .map(w => `<span style="color:#475569;font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
-                    .join('<br/>');
-
-                const dateLine = isDateSlot
-                    ? (isToday
-                        ? `<br/><span style="color:#2563eb;font-size:13px;font-weight:900;display:inline-block;margin-top:8px;text-decoration:underline">${periodLabel}</span>`
-                        : `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${periodLabel}</span>`)
-                    : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${periodLabel}</span>`;
-
-                categories.push(topHtml + dateLine);
-
-                METRICS.forEach(({ key: mk }) => {
-                    pointsByMetric[mk].push({
-                        y: vals[mk] > 0 ? vals[mk] : null,
-                        label,
-                        periodLabel,
-                        metricKey: mk,
-                        isEmpty: false,
-                    });
-                });
-            });
-        });
-
-        let i = 0;
-        const anyMetricPoints = pointsByMetric[METRICS[0].key];
-        while (i < anyMetricPoints.length) {
-            const label = anyMetricPoints[i].periodLabel;
-            let j = i;
-            while (j < anyMetricPoints.length && anyMetricPoints[j].periodLabel === label) j++;
-            if (j < anyMetricPoints.length) {
-                groupSeparators.push({
-                    value: j - 0.5,
-                    width: 1,
-                    dashStyle: 'Dash',
-                    color: '#cbd5e1',
-                    zIndex: 3,
-                });
-            }
-            i = j;
-        }
-
-        return { pointsByMetric, categories, groupSeparators, todaySlotIdx };
-    }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t, currentPeriodKey]);
-
-    const SLOT_WIDTH = 150; // wider slot to fit four bars per category
+    const SLOT_WIDTH = 72;
     const needsScroll = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
+    // Center the scrollable viewport on today's slot when possible; otherwise default to
+    // the right edge (most recent data), matching prior behavior.
     const scrollPositionX = useMemo(() => {
         if (!needsScroll || todaySlotIdx === -1) return 1;
         const viewportWidth = 800;
@@ -328,23 +203,12 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
     }, [needsScroll, todaySlotIdx, categories.length]);
 
-    const hasAnyData = totals.started > 0;
-
-    const selectedDeptName = isSectionDrill
-        ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '')
-        : '';
-
-    const metricLabels = useMemo(
-        () => Object.fromEntries(METRICS.map(m => [m.key, t(m.labelKey)])),
-        [t]
-    );
-
     const chartOptions = useMemo(() => ({
         chart: {
             type: 'column',
             backgroundColor: 'transparent',
-            height: 560,
-            marginBottom: 170,
+            height: 420,
+            marginBottom: needsScroll ? 75 : 40,
             marginTop: 60,
             style: { fontFamily: 'inherit' },
             // Filtering/timeframe changes remount the whole chart anyway (see the `key` prop
@@ -365,46 +229,44 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 useHTML: true,
                 rotation: 0,
                 align: 'center',
-                style: { textAlign: 'center', lineHeight: '1.6' },
+                style: { textAlign: 'center' },
             },
             gridLineWidth: 0,
-            plotLines: groupSeparators,
         },
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Operators', style: { color: '#94a3b8', fontSize: '13px' } },
-            labels: { style: { fontSize: '13px' } },
+            title: { text: t('charts.filledDays'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
         legend: {
             enabled: true,
-            align: 'right',
-            verticalAlign: 'top',
+            align: 'center',
+            verticalAlign: 'bottom',
             layout: 'horizontal',
-            floating: true,
-            y: -15,
-            itemStyle: { fontSize: '12px', fontWeight: '600', color: '#475569' }
+            itemStyle: { fontSize: '13px', fontWeight: 'bold', color: '#475569' },
+            itemMarginTop: 4,
+            itemMarginBottom: 4,
         },
         tooltip: {
+            shared: true,
             useHTML: true,
-            style: { fontSize: '13px' },
             formatter() {
-                if (!this.point.label) return `<b>${this.point.periodLabel}</b>: ${t('charts.noData')}`;
-                const title = selectedDeptName ? `${selectedDeptName} (${this.point.label})` : this.point.label;
-                return (
-                    `<span style="color:${this.series.color}">●</span> ` +
-                    `<b>${title}</b> — ${metricLabels[this.point.metricKey]}<br/>` +
-                    `Date: <b>${this.point.periodLabel}</b><br/>` +
-                    `Count: <b>${this.y}</b>`
-                );
+                const idx = this.points?.[0]?.point?.index ?? this.point?.index;
+                const label = plainLabels[idx] ?? '';
+                const rows = (this.points || [])
+                    .filter(p => p.y > 0)
+                    .map(p => `<span style="color:${p.color}">●</span> ${p.series.name}: <b>${p.y}</b>`)
+                    .join('<br/>');
+                if (!rows) return `<b style="font-size:14px;color:#0f172a">${label}</b>: ${t('charts.noData')}`;
+                return `<b style="font-size:14px;color:#0f172a">${label}</b><br/>${rows}`;
             },
         },
         plotOptions: {
             column: {
                 animation: false,
-                colorByPoint: false,
-                borderRadius: 5,
+                borderRadius: 4,
                 borderWidth: 0,
                 pointPadding: 0.08,
                 groupPadding: 0.15,
@@ -412,38 +274,26 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? String(this.y) : ''; },
-                    style: { fontSize: '12px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style: { fontSize: '12px', fontWeight: '900', color: '#1e293b', textOutline: '1px white' },
                     verticalAlign: 'top',
                     align: 'center',
-                    y: -18,
+                    y: -16,
                     allowOverlap: true,
                 },
             },
         },
         responsive: {
             rules: [
-                { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 500 } } },
-                {
-                    condition: { maxWidth: 767 },
-                    chartOptions: {
-                        chart: { height: 480 },
-                        legend: { floating: false, align: 'center', verticalAlign: 'top', y: 0 },
-                    },
-                },
+                { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 480 } } },
+                { condition: { maxWidth: 767 }, chartOptions: { chart: { height: 340 } } },
             ],
         },
-        series: METRICS.map(({ key, color }) => ({
-            type: 'column',
-            name: metricLabels[key],
-            data: pointsByMetric[key] || [],
-            color,
-        })),
-    }), [categories, pointsByMetric, groupSeparators, needsScroll, scrollMinWidth, scrollPositionX, selectedDeptName, metricLabels, t]);
+        series,
+    }), [categories, series, needsScroll, scrollMinWidth, scrollPositionX, plainLabels, t]);
 
     const cfg = INPUT_CONFIG[timeframe];
 
-    // Bound the daily-view range on both ends so a manual pick can't explode the category count
-    // (one slot per day × departments/sections) into the thousands.
+    // Bound the daily-view range on both ends so a manual pick can't explode the category count.
     const fromMax = rawEnd || String(cfg.max);
     const fromMin = timeframe === 'daily' && rawEnd
         ? (addDays(rawEnd, -(MAX_DAILY_RANGE_DAYS - 1)) > String(cfg.min) ? addDays(rawEnd, -(MAX_DAILY_RANGE_DAYS - 1)) : String(cfg.min))
@@ -475,7 +325,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
     const toggleDept = (id, checked) =>
         setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
 
-    const emptyStateHeight = isTablet ? 500 : isMobile ? 480 : 560;
+    const emptyStateHeight = isTablet ? 500 : isMobile ? 400 : 420;
 
     return (
         <Card className="col-span-2">
@@ -633,22 +483,21 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                         />
 
                         {/* Summary strip */}
-                        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                                <span className="text-xs font-bold text-slate-600">{t('charts.started')}</span>
-                                <span className="text-sm font-black text-slate-800">{totals.started}</span>
+                        <div className="mt-5">
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50 mb-3">
+                                <span className="text-xs font-bold text-blue-700">{t('charts.totalFilledDays')}</span>
+                                <span className="text-sm font-black text-blue-900">{totalFilledDays}</span>
                             </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
-                                <span className="text-xs font-bold text-green-700">{t('charts.completed')}</span>
-                                <span className="text-sm font-black text-green-900">{totals.completed}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50">
-                                <span className="text-xs font-bold text-amber-700">{t('charts.pendingOnTrack')}</span>
-                                <span className="text-sm font-black text-amber-900">{totals.pendingOnTrack}</span>
-                            </div>
-                            <div className={`flex items-center justify-between p-2.5 rounded-lg ${totals.pendingOverdue > 0 ? 'bg-red-50' : 'bg-slate-50'}`}>
-                                <span className={`text-xs font-bold ${totals.pendingOverdue > 0 ? 'text-red-700' : 'text-slate-500'}`}>{t('charts.pendingOverdue')}</span>
-                                <span className={`text-sm font-black ${totals.pendingOverdue > 0 ? 'text-red-900' : 'text-slate-800'}`}>{totals.pendingOverdue}</span>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {seriesKeys.map((sk, idx) => (
+                                    <div key={sk.key} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-slate-50">
+                                        <span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 truncate" title={sk.name}>
+                                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PALETTE[idx % PALETTE.length] }} />
+                                            {sk.name}
+                                        </span>
+                                        <span className="text-sm font-black text-slate-800 shrink-0">{seriesTotals[sk.key] || 0}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </>

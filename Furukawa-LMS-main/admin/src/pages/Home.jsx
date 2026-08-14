@@ -257,8 +257,8 @@ const Home = () => {
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 500}>
           <TestPaperPassChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
-        <LazyContainer minHeight={isTablet ? 620 : isMobile ? 500 : 560}>
-          <DepartmentQuizChart dateRange={dateRange} departments={departments} departmentsLoading={departmentsLoading} />
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
+          <DepartmentQuizChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={600}>
           <EfficiencyChart />

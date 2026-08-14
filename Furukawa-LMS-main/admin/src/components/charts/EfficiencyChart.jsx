@@ -28,17 +28,17 @@ const FrozenLegend = ({ minEffVisible, allUsersColor = "#f59e0b", allUsersLabel,
     return (
         <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
             {minEffVisible && (
-                <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+                <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
                     <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> {t('charts.minEff')}
                 </span>
             )}
-            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+            <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
                 <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: allUsersColor }} /> {allUsersLabel || t('charts.totalEff')}
             </span>
-            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+            <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
                 <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {presentLabel || t('charts.presentEff')}
             </span>
-            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
+            <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
                 <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {absentLabel || t('charts.absentEff')}
             </span>
         </div>
@@ -84,7 +84,7 @@ const getDateText = (f, t) => {
 // Bar label renderer: always outside and above the bar with the respective outsideColor.
 const barLabel = (staggerPx, outsideColor) => ({ x, y, width, height, value }) => {
     if (value == null) return null;
-    return <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={outsideColor} fontSize={13} fontWeight={900}>{Math.round(value)}%</text>;
+    return <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={outsideColor} fontSize={15} fontWeight={900}>{Math.round(value)}%</text>;
 };
 
 const isTemporaryUser = (op) => op.isTemporary === 1 || op.isTemporary === true || op.isTemporary === '1';
@@ -467,7 +467,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     const lineH = 15;
     return (
         <g transform={`translate(${x},${y})`}>
-            <text textAnchor="middle" fill="#334155" fontSize={14} fontWeight={700}>
+            <text textAnchor="middle" fill="#334155" fontSize={16} fontWeight={900}>
                 {words.map((word, i) => (
                     <tspan key={i} x={0} dy={i === 0 ? 14 : lineH}>
                         {word}
@@ -943,7 +943,7 @@ const EfficiencyChart = () => {
     );
 
     const commonMargin = { top: 42, right: 24, left: -10, bottom: 56 };
-    const axisTick = { fill: '#334155', fontSize: 14, fontWeight: 700 };
+    const axisTick = { fill: '#334155', fontSize: 16, fontWeight: 900 };
 
     const ChartWrapper = ({ data, minW = 110, children }) => (
         <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 pb-2 mt-4">
@@ -1037,7 +1037,17 @@ const EfficiencyChart = () => {
                                                     cx="50%"
                                                     cy="50%"
                                                     outerRadius={130}
-                                                    label={({ name, value }) => `${name}: ${value}%`}
+                                                    label={({ cx, cy, midAngle, outerRadius, name, value }) => {
+                                                        const RAD = Math.PI / 180;
+                                                        const radius = outerRadius + 20;
+                                                        const x = cx + radius * Math.cos(-midAngle * RAD);
+                                                        const y = cy + radius * Math.sin(-midAngle * RAD);
+                                                        return (
+                                                            <text x={x} y={y} fill="#334155" fontSize={15} fontWeight={900} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+                                                                {`${name}: ${value}%`}
+                                                            </text>
+                                                        );
+                                                    }}
                                                     labelLine
                                                 >
                                                     {d5Mapped.filter(item => !item.isTarget).map((entry, idx) => (
@@ -1045,7 +1055,7 @@ const EfficiencyChart = () => {
                                                     ))}
                                                 </Pie>
                                                 <Tooltip formatter={(v) => `${v}%`} />
-                                                <Legend verticalAlign="bottom" align="center" iconType="rect" iconSize={14} wrapperStyle={{ paddingTop: '20px' }} />
+                                                <Legend verticalAlign="bottom" align="center" iconType="rect" iconSize={14} wrapperStyle={{ paddingTop: '20px', fontSize: '15px', fontWeight: 'bold' }} />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>

@@ -187,7 +187,7 @@ const UserStatusDistributionChart = () => {
                 allowPointSelect: true,
                 cursor: 'pointer',
                 depth: 35,
-                dataLabels: { enabled: true, format: '{point.name}: {point.y}' },
+                dataLabels: { enabled: true, format: '{point.name}: {point.y}', style: { fontSize: '14px', fontWeight: 'bold' } },
                 colors: COLORS,
                 point: {
                     events: {
@@ -208,13 +208,13 @@ const UserStatusDistributionChart = () => {
     const getBarOptions = () => ({
         chart: { type: 'column', backgroundColor: 'transparent', height: 450 },
         title: { text: '' },
-        xAxis: { categories: chartData.map(item => translateStatus(item.name)) },
-        yAxis: { title: { text: t("nav.trainees") } },
+        xAxis: { categories: chartData.map(item => translateStatus(item.name)), labels: { style: { fontSize: '14px', fontWeight: 'bold' } } },
+        yAxis: { title: { text: t("nav.trainees") }, labels: { style: { fontSize: '13px', fontWeight: 'bold' } } },
         plotOptions: {
             column: {
                 dataLabels: {
                     enabled: true,
-                    style: { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style: { fontSize: '15px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align: 'center',
                     y: -20,

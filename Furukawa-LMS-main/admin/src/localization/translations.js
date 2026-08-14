@@ -220,14 +220,12 @@ export const translations = {
     "charts.unassignedSection": "Unassigned",
 
     // Sixteen-Day Monitoring Status Chart
-    "charts.sixteenDayMonitoringComparison": "16-Day Monitoring Status",
-    "charts.sixteenDayMonitoringComparisonDesc": "Started (Day 1 filled), Completed (approved + Day 16 filled), and Pending by Day-1 date — grouped by target department",
+    "charts.sixteenDayMonitoringComparison": "16-Day Monitoring — Daily Filled Counts",
+    "charts.sixteenDayMonitoringComparisonDesc": "Daily count of filled monitoring-sheet days (Day 1–16), grouped by department — or by section when a single department is selected",
     "charts.failedToLoadSixteenDay": "Failed to load 16-day monitoring status.",
     "charts.noSixteenDayData": "No 16-day monitoring data found for this period.",
-    "charts.started": "Started",
-    "charts.completed": "Completed",
-    "charts.pendingOnTrack": "Pending (On-Track)",
-    "charts.pendingOverdue": "Pending (Overdue)",
+    "charts.totalFilledDays": "Total Filled Days",
+    "charts.filledDays": "Filled Days",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Contractor Wise DOJO Candidates",
@@ -961,14 +959,12 @@ export const translations = {
     "charts.unassignedSection": "अनिर्धारित",
 
     // Sixteen-Day Monitoring Status Chart
-    "charts.sixteenDayMonitoringComparison": "16-दिवसीय निगरानी स्थिति",
-    "charts.sixteenDayMonitoringComparisonDesc": "प्रारंभ (डे 1 भरा गया), पूर्ण (स्वीकृत + डे 16 भरा गया), और लंबित - डे-1 तिथि के अनुसार, लक्ष्य विभाग द्वारा समूहीकृत",
+    "charts.sixteenDayMonitoringComparison": "16-दिवसीय निगरानी — दैनिक भरे गए दिनों की संख्या",
+    "charts.sixteenDayMonitoringComparisonDesc": "निगरानी शीट के भरे गए दिनों (डे 1–16) की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
     "charts.failedToLoadSixteenDay": "16-दिवसीय निगरानी स्थिति लोड करने में विफल।",
     "charts.noSixteenDayData": "इस अवधि के लिए कोई 16-दिवसीय निगरानी डेटा नहीं मिला।",
-    "charts.started": "प्रारंभ",
-    "charts.completed": "पूर्ण",
-    "charts.pendingOnTrack": "लंबित (समय पर)",
-    "charts.pendingOverdue": "लंबित (विलंबित)",
+    "charts.totalFilledDays": "कुल भरे गए दिन",
+    "charts.filledDays": "भरे गए दिन",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "ठेकेदार वार DOJO उम्मीदवार",
@@ -1701,14 +1697,12 @@ export const translations = {
     "charts.unassignedSection": "未割当",
 
     // Sixteen-Day Monitoring Status Chart
-    "charts.sixteenDayMonitoringComparison": "16日間モニタリング状況",
-    "charts.sixteenDayMonitoringComparisonDesc": "開始（Day1入力済み）、完了（承認済み + Day16入力済み）、保留 — Day1日付別、対象部門別グループ化",
+    "charts.sixteenDayMonitoringComparison": "16日間モニタリング — 日別入力日数",
+    "charts.sixteenDayMonitoringComparisonDesc": "モニタリングシートの入力済み日数（Day1〜16）の日別集計、部門別グループ化 — 単一部門選択時はセクション別",
     "charts.failedToLoadSixteenDay": "16日間モニタリング状況の読み込みに失敗しました。",
     "charts.noSixteenDayData": "この期間の16日間モニタリングデータが見つかりません。",
-    "charts.started": "開始",
-    "charts.completed": "完了",
-    "charts.pendingOnTrack": "保留（期限内）",
-    "charts.pendingOverdue": "保留（期限超過）",
+    "charts.totalFilledDays": "合計入力日数",
+    "charts.filledDays": "入力日数",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "請負業者別 DOJO 候補者",
@@ -2441,14 +2435,12 @@ export const translations = {
     "charts.unassignedSection": "未分配",
 
     // Sixteen-Day Monitoring Status Chart
-    "charts.sixteenDayMonitoringComparison": "16天监控状态",
-    "charts.sixteenDayMonitoringComparisonDesc": "已开始（第1天已填写）、已完成（已批准 + 第16天已填写）、待处理 — 按第1天日期，按目标部门分组",
+    "charts.sixteenDayMonitoringComparison": "16天监控 — 每日填写天数",
+    "charts.sixteenDayMonitoringComparisonDesc": "监控表已填写天数（第1天至第16天）的每日统计，按部门分组 — 选择单个部门时按科室分组",
     "charts.failedToLoadSixteenDay": "16天监控状态加载失败。",
     "charts.noSixteenDayData": "未找到该时段的16天监控数据。",
-    "charts.started": "已开始",
-    "charts.completed": "已完成",
-    "charts.pendingOnTrack": "待处理（按期）",
-    "charts.pendingOverdue": "待处理（逾期）",
+    "charts.totalFilledDays": "填写总天数",
+    "charts.filledDays": "填写天数",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "按承包商 DOJO 候选人",
@@ -3181,14 +3173,12 @@ export const translations = {
     "charts.unassignedSection": "Не назначено",
 
     // Sixteen-Day Monitoring Status Chart
-    "charts.sixteenDayMonitoringComparison": "Статус 16-дневного мониторинга",
-    "charts.sixteenDayMonitoringComparisonDesc": "Начато (День 1 заполнен), Завершено (одобрено + День 16 заполнен), В ожидании — по дате Дня 1, сгруппировано по целевому отделу",
+    "charts.sixteenDayMonitoringComparison": "16-дневный мониторинг — количество заполненных дней",
+    "charts.sixteenDayMonitoringComparisonDesc": "Ежедневное количество заполненных дней листа мониторинга (День 1–16), сгруппировано по отделам — или по секциям при выборе одного отдела",
     "charts.failedToLoadSixteenDay": "Не удалось загрузить статус 16-дневного мониторинга.",
     "charts.noSixteenDayData": "Данные 16-дневного мониторинга за этот период не найдены.",
-    "charts.started": "Начато",
-    "charts.completed": "Завершено",
-    "charts.pendingOnTrack": "В ожидании (в срок)",
-    "charts.pendingOverdue": "В ожидании (просрочено)",
+    "charts.totalFilledDays": "Всего заполнено дней",
+    "charts.filledDays": "Заполнено дней",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Кандидаты DOJO по подрядчикам",

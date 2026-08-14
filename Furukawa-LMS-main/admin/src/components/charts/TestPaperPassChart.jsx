@@ -169,7 +169,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
             gridLineWidth: 0,
             labels: {
                 useHTML:  true,
-                style:    { fontSize: '11px', textAlign: 'center' },
+                style:    { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
                 rotation: 0,
                 align:    'center',
             },
@@ -177,13 +177,13 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
         yAxis: {
             min:           0,
             allowDecimals: false,
-            title:         { text: t('charts.attempts'), style: { color: '#94a3b8', fontSize: '11px' } },
+            title:         { text: t('charts.attempts'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
-            labels:        { style: { fontSize: '11px' } },
+            labels:        { style: { fontSize: '14px', fontWeight: 'bold' } },
         },
         legend: {
             enabled:      true,
-            itemStyle:    { fontSize: '13px', fontWeight: '600', color: '#374151' },
+            itemStyle:    { fontSize: '15px', fontWeight: 'bold', color: '#374151' },
             symbolRadius: 3,
             symbolHeight: 12,
             symbolWidth:  12,
@@ -213,7 +213,7 @@ const PassFailChart = ({ title, icon: Icon, iconColor, passedSeries, failedSerie
                     enabled:      true,
                     formatter()   { return this.y > 0 ? String(this.y) : ''; },
                     allowOverlap: true,
-                    style:        { fontSize: '11px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style:        { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align:         'center',
                     y:             -18,
@@ -329,8 +329,8 @@ const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
         const label = formatPeriodLabel(p, groupBy, language);
         const isToday = p === currentPeriodKey;
         return isToday
-            ? `<span style="color:#2563eb;font-weight:900;text-decoration:underline">${label}</span>`
-            : `<span style="color:#64748b;font-weight:600">${label}</span>`;
+            ? `<span style="color:#2563eb;font-size:14px;font-weight:900;text-decoration:underline">${label}</span>`
+            : `<span style="color:#64748b;font-size:14px;font-weight:800">${label}</span>`;
     }), [periods, groupBy, language, currentPeriodKey]);
 
     const theoreticalPassedSeries = resultRows.map(r => Number(r.passedTheoretical) || 0);

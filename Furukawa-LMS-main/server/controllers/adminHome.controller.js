@@ -1,7 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import Holiday from "../models/holiday.model.js";
 
 /**
  * Get stats for the Admin Home page
@@ -552,7 +551,6 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
 });
 
 
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const MONTH_ABBR = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
 const formatDateObj = (date) => {
@@ -560,17 +558,6 @@ const formatDateObj = (date) => {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
-};
-
-const shiftIsoDate = (isoDate, days) => {
-    const d = new Date(`${isoDate}T00:00:00`);
-    d.setDate(d.getDate() + days);
-    return formatDateObj(d);
-};
-
-const todayIST = () => {
-    const ist = new Date(Date.now() + IST_OFFSET_MS);
-    return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
 };
 
 // The monitoring grid stores its own date columns (attendance_date_1..16) as "dd-MMM-yy"
@@ -598,45 +585,46 @@ const parseFlexibleDate = (str) => {
     return null;
 };
 
-// 16-Day Monitoring must complete within 16 *working* days of Day 1 (Sat/Sun + dashboard
-// holidays excluded). Counts forward from Day 1 itself (inclusive) and returns the ISO date
-// of the 16th working day — the deadline for "still pending" vs "overdue".
-const computeDueDateFromStart = (startDateObj, holidaySet, workingDays = 16) => {
-    let cursor = new Date(startDateObj);
-    let counted = 0;
-    // Bounded to 4x the working-day target so a bad/holiday-flooded input can't loop forever.
-    for (let guard = 0; guard < workingDays * 4; guard++) {
-        const iso = formatDateObj(cursor);
-        const dow = cursor.getDay();
-        const isWeekend = dow === 0 || dow === 6;
-        if (!isWeekend && !holidaySet.has(iso)) {
-            counted++;
-            if (counted === workingDays) return iso;
-        }
-        cursor.setDate(cursor.getDate() + 1);
-    }
-    return null;
-};
-
 const periodFromIso = (isoDate, groupBy) => {
     if (groupBy === 'yearly') return isoDate.slice(0, 4);
     if (groupBy === 'monthly') return isoDate.slice(0, 7);
     return isoDate;
 };
 
+// Every period in [start, end] for the given grouping, so the response can zero-fill gaps
+// instead of leaving the frontend to reconstruct the range itself.
+const buildFullPeriods = (groupBy, start, end) => {
+    if (!start || !end) return [];
+    const full = [];
+    if (groupBy === 'daily') {
+        const cur = new Date(`${start}T00:00:00`);
+        const last = new Date(`${end}T00:00:00`);
+        while (cur <= last) {
+            full.push(formatDateObj(cur));
+            cur.setDate(cur.getDate() + 1);
+        }
+    } else if (groupBy === 'monthly') {
+        let [sy, sm] = start.split('-').map(Number);
+        const [ey, em] = end.split('-').map(Number);
+        while (sy < ey || (sy === ey && sm <= em)) {
+            full.push(`${sy}-${String(sm).padStart(2, '0')}`);
+            sm++;
+            if (sm > 12) { sm = 1; sy++; }
+        }
+    } else {
+        const sy = Number(start.split('-')[0]);
+        const ey = Number(end.split('-')[0]);
+        for (let y = sy; y <= ey; y++) full.push(String(y));
+    }
+    return full;
+};
+
 /**
- * Get Sixteen-Day Monitoring status breakdown for Admin Home page — replaces the earlier
- * Expected-vs-Actual comparison with the metrics the shop floor actually tracks day to day:
- * Started:  Day 1 is filled (sheet's `startDate` column is set) — the cohort for the period,
- *           grouped by that Day-1 date.
- * Completed: status = 'Submitted', signed off by the approver (approvedBy set, not a
- *           "Rejected By: ..." signature), AND Day 16 is filled.
- * Pending:  Started but not yet Completed, split by today's date (IST) against the deadline
- *           (Day 1 + 16 working days, Sat/Sun + dashboard_holidays excluded):
- *             - pendingOnTrack: deadline hasn't passed yet
- *             - pendingOverdue: deadline has passed and it's still not Completed
- * All four are sub-counts of the same Day-1 cohort, so Started === Completed + pendingOnTrack
- * + pendingOverdue by construction — there's only one query, no cross-source merge needed.
+ * Get Sixteen-Day Monitoring daily filled-count breakdown for Admin Home page.
+ * For every attendance_date_1..16 field filled in on a student's latest monitoring attempt,
+ * count one "filled day" against the period that date falls into (daily/monthly/yearly),
+ * grouped by department — or by section once the caller has narrowed to a single department
+ * ("drill mode", matching the same convention as the Dojo Handover chart).
  */
 export const getSixteenDayMonitoringStatus = asyncHandler(async (req, res) => {
     const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
@@ -662,7 +650,8 @@ export const getSixteenDayMonitoringStatus = asyncHandler(async (req, res) => {
         end   = now.toISOString().split('T')[0];
     }
 
-    // Accepts comma-separated department IDs for multi-select
+    // Accepts comma-separated department IDs for multi-select. Narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
     let deptClause = '';
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
     const params = [];
@@ -671,101 +660,80 @@ export const getSixteenDayMonitoringStatus = asyncHandler(async (req, res) => {
         deptClause = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
         params.push(...deptIds);
     }
+    const isSectionDrill = deptIds.length === 1;
 
-    // `startDate` isn't a sortable/rangeable format in SQL (see parseFlexibleDate above), so
-    // period filtering happens in JS after parsing. Table is one row per operator (attempt),
-    // not a high-frequency event log, so fetching every latest-attempt row is cheap — only the
-    // one small JSON field we actually need (Day 16) is pulled out of gridData, not the blob.
+    // Table is one row per operator (attempt), not a high-frequency event log, so fetching every
+    // latest-attempt row's full gridData JSON (all 16 day columns) is cheap.
     const [rows] = await executeQuery(`
         WITH LatestAttempt AS (
             SELECT
-                m.studentId, m.startDate, m.status, m.approvedBy,
-                JSON_VALUE(m.gridData, '$.attendance_date_16') AS day16Date,
+                m.studentId, m.gridData,
                 ROW_NUMBER() OVER (PARTITION BY m.studentId ORDER BY m.attemptNumber DESC, m.createdAt DESC) AS rn
             FROM sixteen_day_monitorings m
         )
         SELECT
-            la.studentId, la.startDate, la.status, la.approvedBy, la.day16Date,
+            la.studentId, la.gridData,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned') AS sectionName
         FROM LatestAttempt la
         INNER JOIN users u ON u.id = la.studentId
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
         WHERE la.rn = 1
-          AND la.startDate IS NOT NULL AND LTRIM(RTRIM(la.startDate)) <> ''
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           ${deptClause}
     `, params);
 
-    // Parse each row's Day-1 date and drop anything outside the requested window before we
-    // bother fetching holidays or classifying status.
-    const parsed = [];
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodTotals = {};  // period -> { [seriesKey]: count }
+    const seriesNames  = {};  // seriesKey -> display name
+
     for (const row of rows) {
-        const startDateObj = parseFlexibleDate(row.startDate);
-        if (!startDateObj) continue;
-        const startIso = formatDateObj(startDateObj);
-        if (startIso < start || startIso > end) continue;
-        parsed.push({ ...row, startDateObj, startIso });
-    }
+        if (!row.deptId) continue;
 
-    const today = todayIST();
-
-    if (parsed.length === 0) {
-        return res.status(200).json(
-            new ApiResponse(200, { trend: [], deptBreakdown: [], groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring status fetched successfully")
-        );
-    }
-
-    // Fetch holidays once for the full span this batch could possibly need: from the earliest
-    // Day-1 in range through 45 days past "today" (comfortably covers a 16-working-day window
-    // plus a holiday cluster for the most recent starts).
-    const minStartIso = parsed.reduce((min, r) => (r.startIso < min ? r.startIso : min), parsed[0].startIso);
-    const holidayRangeEnd = shiftIsoDate(today > end ? today : end, 45);
-    const holidayRows = await Holiday.getForRange(minStartIso, holidayRangeEnd);
-    const holidaySet = new Set(holidayRows.map(h => h.holidayDate));
-
-    const periodTotals = {};
-    const deptPeriodTotals = {};
-    const bump = (bucket, field) => { bucket[field] = (bucket[field] || 0) + 1; };
-
-    for (const row of parsed) {
-        const day16Filled = !!(row.day16Date && String(row.day16Date).trim());
-        const isApproved = !!(row.approvedBy && String(row.approvedBy).trim() && !String(row.approvedBy).startsWith('Rejected By:'));
-        const isCompleted = row.status === 'Submitted' && isApproved && day16Filled;
-
-        let field;
-        if (isCompleted) {
-            field = 'completed';
-        } else {
-            const dueDateIso = computeDueDateFromStart(row.startDateObj, holidaySet);
-            field = (dueDateIso && dueDateIso < today) ? 'pendingOverdue' : 'pendingOnTrack';
+        let gridData;
+        try {
+            gridData = typeof row.gridData === 'string' ? JSON.parse(row.gridData) : (row.gridData || {});
+        } catch {
+            continue;
         }
 
-        const period = periodFromIso(row.startIso, safeGroupBy);
-        if (!periodTotals[period]) periodTotals[period] = { period, started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
-        periodTotals[period].started++;
-        bump(periodTotals[period], field);
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
 
-        if (row.deptId) {
-            const key = `${row.deptId}__${row.sectionId}__${period}`;
-            if (!deptPeriodTotals[key]) {
-                deptPeriodTotals[key] = { period, deptId: row.deptId, sectionId: row.sectionId, sectionName: row.sectionName, started: 0, completed: 0, pendingOnTrack: 0, pendingOverdue: 0 };
-            }
-            deptPeriodTotals[key].started++;
-            bump(deptPeriodTotals[key], field);
+        for (let day = 1; day <= 16; day++) {
+            const dateObj = parseFlexibleDate(gridData[`attendance_date_${day}`]);
+            if (!dateObj) continue;
+            const iso = formatDateObj(dateObj);
+            if (iso < start || iso > end) continue;
+
+            const period = periodFromIso(iso, safeGroupBy);
+            if (!periodTotals[period]) periodTotals[period] = { period };
+            periodTotals[period][seriesKey] = (periodTotals[period][seriesKey] || 0) + 1;
         }
     }
 
-    const trend = Object.values(periodTotals).sort((a, b) => a.period.localeCompare(b.period));
-    const deptBreakdown = Object.values(deptPeriodTotals).sort((a, b) =>
-        Number(a.deptId) - Number(b.deptId) ||
-        a.sectionName.localeCompare(b.sectionName) ||
-        a.period.localeCompare(b.period)
-    );
+    // seriesKeys: stable, name-sorted list the frontend uses to build one Highcharts series
+    // per department/section without needing to know the set of keys ahead of time.
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Zero-fill every period in the requested range so the frontend doesn't need to backfill gaps.
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodTotals[period]?.[key] || 0; });
+        return row;
+    });
 
     res.status(200).json(
-        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring status fetched successfully")
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "Sixteen-day monitoring status fetched successfully")
     );
 });
 

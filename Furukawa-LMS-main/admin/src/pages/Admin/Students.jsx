@@ -439,6 +439,7 @@ const Students = () => {
       designation: filters.designation,
       assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
       assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
+      isRejoin: activeTab === "rejoin" ? "true" : "false",
     },
     {
       // Prevent unnecessary refetches
@@ -1070,6 +1071,7 @@ const Students = () => {
               joiningDateTo: filters.joiningDateTo,
               leavingDateFrom: filters.leavingDateFrom,
               leavingDateTo: filters.leavingDateTo,
+              isRejoin: activeTab === "rejoin" ? "true" : "false",
             }
           }
         : { ids: selectedIds };
@@ -1110,6 +1112,7 @@ const Students = () => {
               departmentId: filters.departmentId,
               assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
               assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
+              isRejoin: activeTab === "rejoin" ? "true" : "false",
             },
             shiftSchedulePatch: patch,
           }
@@ -1153,6 +1156,7 @@ const Students = () => {
               departmentId: filters.departmentId,
               assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
               assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
+              isRejoin: activeTab === "rejoin" ? "true" : "false",
             },
             leavingDate: bulkLeftConfirmDate || null,
             reasonOfLeaving:
@@ -1451,6 +1455,7 @@ const Students = () => {
           designation: filters.designation,
           assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
           assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
+          isRejoin: activeTab === "rejoin" ? "true" : "false",
         }).unwrap();
 
         const batch = result?.data?.users || [];
@@ -2046,7 +2051,7 @@ const Students = () => {
       <TabsContent value="operators">
     <div className="space-y-6">
       {/* Header with Stats using reusable StatCard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           title="Total Operators"
           value={studentsData?.data?.counts?.totalHeadcount ?? studentsData?.data?.totalUsers ?? 0}
@@ -2116,23 +2121,38 @@ const Students = () => {
           textColor="text-purple-800"
           valueColor="text-purple-900"
         />
+
+        <StatCard
+          title="Rejoin Operators"
+          value={studentsData?.data?.counts?.rejoinCount || 0}
+          description="Operators who left & rejoined"
+          icon={IconRefresh}
+          iconBgColor="bg-teal-100"
+          iconColor="text-teal-600"
+          gradientFrom="from-teal-50"
+          gradientTo="to-teal-100"
+          borderColor="border-teal-200"
+          textColor="text-teal-800"
+          valueColor="text-teal-900"
+        />
       </div>
 
       {/* Tabs for filtering */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <TabsList className="grid grid-cols-5 w-full sm:w-auto">
+            <TabsList className="flex w-full sm:w-auto max-w-full overflow-x-auto justify-start">
               {/* All */}
-              <TabsTrigger value="all" onClick={() => clearFilters()}>
+              <TabsTrigger className="flex-none" value="all" onClick={() => clearFilters()}>
                 All
               </TabsTrigger>
               {/* Present */}
               <TabsTrigger
+                className="flex-none"
                 value="active"
                 onClick={() => {
                   clearFilters();
-                  setFilters(prev => ({ ...prev, status: "Present" }));
+                  setFilters(prev => ({ ...prev, status: "PRESENT" }));
                   setActiveTab("active");
                 }}
               >
@@ -2140,6 +2160,7 @@ const Students = () => {
               </TabsTrigger>
               {/* Left Operators  */}
               <TabsTrigger
+                className="flex-none"
                 value="left"
                 onClick={() => {
                   clearFilters();
@@ -2150,8 +2171,21 @@ const Students = () => {
               >
                 Left Operators
               </TabsTrigger>
+              {/* Rejoin Operators */}
+              <TabsTrigger
+                className="flex-none"
+                value="rejoin"
+                onClick={() => {
+                  clearFilters();
+                  setActiveTab("rejoin");
+                  setCurrentPage(1);
+                }}
+              >
+                Rejoin Operators
+              </TabsTrigger>
               {/* Assigned */}
               <TabsTrigger
+                className="flex-none"
                 value="assigned"
                 onClick={() => {
                   clearFilters();
@@ -2163,6 +2197,7 @@ const Students = () => {
               </TabsTrigger>
               {/* Unassigned */}
               <TabsTrigger
+                className="flex-none"
                 value="unassigned"
                 onClick={() => {
                   clearFilters();

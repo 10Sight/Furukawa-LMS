@@ -825,69 +825,93 @@ export const generateCustomReport = asyncHandler(async (req, res) => {
 
 // Get Department Quiz Stats
 export const getDepartmentQuizStats = asyncHandler(async (req, res) => {
-    // Get Pass/Fail counts for quizzes grouped by department or section (if departmentId is provided)
-    const { startDate, endDate, departmentId } = req.query;
-    let dateFilter = "";
-    let params = [];
+    // Get date-wise Pass/Fail counts for quizzes grouped by department or section
+    // (if departmentId is provided), broken down by day/month/year per `groupBy`.
+    const { departmentId } = req.query;
+    let { startDate, endDate, groupBy = 'daily' } = req.query;
 
-    if (startDate && endDate) {
-        dateFilter = "AND aq.createdAt >= ? AND aq.createdAt <= ?";
-        params.push(new Date(startDate), new Date(endDate));
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'daily';
+
+    // Default to the current month when the caller supplies no explicit range, to avoid
+    // an unbounded scan across the entire attempted_quizzes history.
+    if (!startDate || !endDate) {
+        const now = new Date();
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        startDate = firstOfMonth.toISOString().split('T')[0];
+        endDate   = lastOfMonth.toISOString().split('T')[0];
     }
+
+    // Zero-padded so ORDER BY period ASC is chronological
+    const formatMap = {
+        daily:   "FORMAT(CAST(aq.createdAt AS DATE), 'yyyy-MM-dd')",
+        monthly: "FORMAT(CAST(aq.createdAt AS DATE), 'yyyy-MM')",
+        yearly:  "FORMAT(CAST(aq.createdAt AS DATE), 'yyyy')",
+    };
+    const periodExpr = formatMap[safeGroupBy];
+
+    const dateFilter = "AND aq.createdAt >= ? AND aq.createdAt <= ?";
+    const dateParams = [new Date(startDate), new Date(endDate)];
 
     // attempted_quizzes.quiz/student are NVARCHAR; casting the subquery side to INT (instead of
     // casting quizzes.id/users.id to NVARCHAR) lets these joins seek on the INT PK indexes.
     let query = "";
+    let params = [];
     if (departmentId) {
-        // Fetch stats grouped by sections under this department
+        // Fetch stats grouped by period + section under this department
         query = `
             SELECT
+                ${periodExpr} as period,
+                s.id as sectionId,
                 s.name as departmentName,
                 COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
                 COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
                 COUNT(aq.id) as totalAttempts
             FROM [sections] s
-            LEFT JOIN users u ON u.sectionId = s.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-            LEFT JOIN (
+            JOIN users u ON u.sectionId = s.id AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+            INNER JOIN (
                 SELECT aq_sub.*
                 FROM attempted_quizzes aq_sub
                 JOIN quizzes q ON q.id = TRY_CAST(aq_sub.quiz AS INT)
                 WHERE COALESCE(q.isDojo, 0) = 0
             ) aq ON TRY_CAST(aq.student AS INT) = u.id ${dateFilter}
             WHERE s.departmentId = ?
-            GROUP BY s.id, s.name, s.category
-            ORDER BY passedCount DESC
+            GROUP BY ${periodExpr}, s.id, s.name
+            ORDER BY period ASC, passedCount DESC
         `;
-        params.push(parseInt(departmentId));
+        params = [...dateParams, parseInt(departmentId)];
     } else {
         // Global departments view. Prefer the indexed u.departmentId FK; fall back to the
         // legacy string-based u.department match only when departmentId hasn't been set.
         query = `
             SELECT
+                ${periodExpr} as period,
+                d.id as departmentId,
                 d.name as departmentName,
                 COALESCE(SUM(CASE WHEN aq.status = 'PASSED' THEN 1 ELSE 0 END), 0) as passedCount,
                 COALESCE(SUM(CASE WHEN aq.status = 'FAILED' THEN 1 ELSE 0 END), 0) as failedCount,
                 COUNT(aq.id) as totalAttempts
             FROM departments d
-            LEFT JOIN users u ON (
+            JOIN users u ON (
                 u.departmentId = d.id
                 OR (u.departmentId IS NULL AND (u.department = CAST(d.id AS NVARCHAR(50)) OR u.department = d.name))
             ) AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-            LEFT JOIN (
+            INNER JOIN (
                 SELECT aq_sub.*
                 FROM attempted_quizzes aq_sub
                 JOIN quizzes q ON q.id = TRY_CAST(aq_sub.quiz AS INT)
                 WHERE COALESCE(q.isDojo, 0) = 0
             ) aq ON TRY_CAST(aq.student AS INT) = u.id ${dateFilter}
             WHERE d.isDeleted = 0
-            GROUP BY d.id, d.name
-            ORDER BY passedCount DESC
+            GROUP BY ${periodExpr}, d.id, d.name
+            ORDER BY period ASC, passedCount DESC
         `;
+        params = [...dateParams];
     }
 
     const [rows] = await executeQuery(query, params);
 
-    res.json(new ApiResponse(200, rows, "Quiz statistics fetched successfully"));
+    res.json(new ApiResponse(200, { stats: rows, groupBy: safeGroupBy, start: startDate, end: endDate }, "Quiz statistics fetched successfully"));
 });
 
 // Export Analytics Data

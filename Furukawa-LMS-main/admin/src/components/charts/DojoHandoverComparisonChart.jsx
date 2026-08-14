@@ -236,8 +236,8 @@ const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
                 // Empty slot to represent the date without any data
                 if (isToday && todaySlotIdx === -1) todaySlotIdx = categories.length;
                 const emptyColor = isToday ? '#2563eb' : '#94a3b8';
-                const emptyWeight = isToday ? '900' : '600';
-                categories.push(`<span style="color:${emptyColor};font-size:11px;font-weight:${emptyWeight}">${periodLabel}</span>`);
+                const emptyWeight = isToday ? '900' : '800';
+                categories.push(`<span style="color:${emptyColor};font-size:14px;font-weight:${emptyWeight}">${periodLabel}</span>`);
                 expectedPoints.push({
                     y: null,
                     label: '',
@@ -268,14 +268,14 @@ const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
                 // Slot label (department name, or section name in drill mode)
                 const topHtml = label
                     .split(' ')
-                    .map(w => `<span style="color:#475569;font-weight:700;font-size:11px;line-height:1.6">${w}</span>`)
+                    .map(w => `<span style="color:#475569;font-weight:800;font-size:14px;line-height:1.6">${w}</span>`)
                     .join('<br/>');
 
                 const dateLine = isDateSlot
                     ? (isToday
-                        ? `<br/><span style="color:#2563eb;font-size:13px;font-weight:900;display:inline-block;margin-top:8px;text-decoration:underline">${periodLabel}</span>`
-                        : `<br/><span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${periodLabel}</span>`)
-                    : `<br/><span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${periodLabel}</span>`;
+                        ? `<br/><span style="color:#2563eb;font-size:16px;font-weight:900;display:inline-block;margin-top:8px;text-decoration:underline">${periodLabel}</span>`
+                        : `<br/><span style="color:#64748b;font-size:16px;font-weight:900;display:inline-block;margin-top:8px">${periodLabel}</span>`)
+                    : `<br/><span style="visibility:hidden;font-size:16px;display:inline-block;margin-top:8px">${periodLabel}</span>`;
 
                 categories.push(topHtml + dateLine);
 
@@ -372,8 +372,8 @@ const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '13px' } },
-            labels: { style: { fontSize: '13px' } },
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '15px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '15px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
         legend: {
@@ -384,8 +384,8 @@ const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
             floating: true,
             y: -15,
             itemStyle: {
-                fontSize: '12px',
-                fontWeight: '600',
+                fontSize: '14px',
+                fontWeight: 'bold',
                 color: '#475569'
             }
         },
@@ -414,7 +414,7 @@ const DojoHandoverComparisonChart = ({ departments: departmentsProp } = {}) => {
                 dataLabels: {
                     enabled: true,
                     formatter() { return this.y > 0 ? String(this.y) : ''; },
-                    style: { fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textOutline: '2px white' },
+                    style: { fontSize: '15px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
                     verticalAlign: 'top',
                     align: 'center',
                     y: -20,

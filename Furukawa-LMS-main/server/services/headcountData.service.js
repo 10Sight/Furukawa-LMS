@@ -34,7 +34,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Fetch all eligible users to calculate daily active counts
     // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, empId, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory
+        SELECT id, empId, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory, stationId, stations
         FROM users u
         WHERE u.isEmployee = 1
         ${getEligibleUserSql('u')}
@@ -47,7 +47,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // stint on that date (dashboard.controller.js's getAttendancePayCodeMatchSql +
     // getStatusHistoryActiveConditionSql), not merely any Present-status row joined by userId.
     const [attendanceLogs] = await executeQuery(`
-        SELECT userId, CONVERT(VARCHAR, [date], 23) AS dateKey, status, payCode
+        SELECT userId, CONVERT(VARCHAR, [date], 23) AS dateKey, status, payCode, shift
         FROM attendance_logs
         WHERE [date] >= ? AND [date] <= ?
     `, [prevMonthLastDateKey, end]);
@@ -504,62 +504,64 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     }
 
     // Shift-wise breakdown: driven by ACTUAL attendance_logs presence, not the scheduled roster.
-    // Available_* counts distinct eligible employees (same eligibility as allEligibleUsers:
-    // isEmployee = 1, non-temporary, non-deleted, non-shuttered-designation, valid empId) marked
-    // Present that day under their worked/assigned shift (al.shift — the same column the DPR
-    // shift selector resolves via SHIFT_KEYS). Assigned_* is the subset of those present employees
-    // who also have a station assigned in the database. Attendance_* is Assigned / Available * 100.
-    // Single query across [prevMonthLastDateKey, end] so both the leading reference column and
-    // every date in the current month are covered.
+    // Available_* must match "Net Available Headcount Total" (getMappedPresentCount) exactly, so
+    // it's computed with the same in-memory roster (allEligibleUsers) and the same two rules —
+    // payCode-matched-to-empId AND statusHistory-active-on-dKey (getUserActiveStintOnDate) —
+    // instead of a separate SQL query that only checked isEmployee/eligibility via a plain JOIN
+    // (no active-stint or payCode/empId verification), which let inactive/mismatched users
+    // inflate the shift totals above the headcount total. Assigned_* is the subset of those
+    // present employees who also have a station assigned in the database. Attendance_* is
+    // Assigned / Available * 100.
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
     const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
-    const hasStationCondition = `(u.stationId IS NOT NULL OR (u.stations IS NOT NULL AND LTRIM(RTRIM(u.stations)) NOT IN ('[]', '')))`;
-    const shiftAttendanceSql = `
-        SELECT
-            CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            UPPER(LTRIM(RTRIM(ISNULL(al.shift, '')))) AS shiftRaw,
-            COUNT(DISTINCT al.userId) AS availableCount,
-            COUNT(DISTINCT CASE WHEN ${hasStationCondition} THEN al.userId END) AS assignedCount
-        FROM attendance_logs al
-        INNER JOIN users u ON u.id = al.userId
-        WHERE al.[date] >= ? AND al.[date] <= ?
-          AND UPPER(ISNULL(al.status, '')) IN ('P', 'PRESENT')
-          AND u.isEmployee = 1
-          ${getEligibleUserSql('u')}
-        GROUP BY CONVERT(VARCHAR, al.[date], 23), UPPER(LTRIM(RTRIM(ISNULL(al.shift, ''))))
-    `;
-    const [shiftAttendanceRows] = await executeQuery(shiftAttendanceSql, [prevMonthLastDateKey, end]);
 
-    const shiftBreakdownByDate = {};
-    shiftAttendanceRows.forEach(row => {
-        if (!row.dateKey) return;
-        const shiftKey = Object.keys(shiftMap).find(k => (row.shiftRaw || '').includes(k));
-        if (!shiftKey) return;
-        const shiftName = shiftMap[shiftKey];
+    const getShiftBreakdownForDate = (dKey) => {
+        const punchesForDay = punchesByDate[dKey] || [];
+        const presentEmpShiftMap = new Map();
+        punchesForDay.forEach(p => {
+            const status = String(p.status || '').trim().toUpperCase();
+            if (status === 'P' || status === 'PRESENT') {
+                const payCodeClean = String(p.payCode || '').trim().toUpperCase();
+                if (payCodeClean) {
+                    const shiftRaw = String(p.shift || '').trim().toUpperCase();
+                    const shiftKey = Object.keys(shiftMap).find(k => shiftRaw.includes(k));
+                    if (shiftKey) {
+                        presentEmpShiftMap.set(payCodeClean, shiftMap[shiftKey]);
+                    }
+                }
+            }
+        });
 
-        if (!shiftBreakdownByDate[row.dateKey]) {
-            const availableByShift = {};
-            const assignedByShift = {};
-            shiftsList.forEach(s => { availableByShift[s] = 0; assignedByShift[s] = 0; });
-            shiftBreakdownByDate[row.dateKey] = { availableByShift, assignedByShift, availableTotal: 0, assignedTotal: 0 };
-        }
+        const availableByShift = {};
+        const assignedByShift = {};
+        shiftsList.forEach(s => { availableByShift[s] = 0; assignedByShift[s] = 0; });
+        let availableTotal = 0;
+        let assignedTotal = 0;
 
-        const entry = shiftBreakdownByDate[row.dateKey];
-        const available = Number(row.availableCount) || 0;
-        const assigned = Number(row.assignedCount) || 0;
-        entry.availableByShift[shiftName] += available;
-        entry.assignedByShift[shiftName] += assigned;
-        entry.availableTotal += available;
-        entry.assignedTotal += assigned;
-    });
+        allEligibleUsers.forEach(u => {
+            const empIdClean = String(u.empId || '').trim().toUpperCase();
+            if (!empIdClean || !presentEmpShiftMap.has(empIdClean)) return;
+            if (!getUserActiveStintOnDate(u, dKey).active) return;
+
+            const shiftName = presentEmpShiftMap.get(empIdClean);
+            availableByShift[shiftName]++;
+            availableTotal++;
+
+            const stationsClean = (u.stations !== null && u.stations !== undefined) ? String(u.stations).trim() : '';
+            const hasStation = (u.stationId !== null && u.stationId !== undefined && u.stationId !== '')
+                || (stationsClean !== '' && stationsClean !== '[]' && stationsClean.toUpperCase() !== 'NULL');
+            if (hasStation) {
+                assignedByShift[shiftName]++;
+                assignedTotal++;
+            }
+        });
+
+        return { availableByShift, assignedByShift, availableTotal, assignedTotal };
+    };
 
     const populateShiftTableData = (dKey) => {
         const isFuture = dKey > todayYMD;
-        const entry = shiftBreakdownByDate[dKey];
-        const availableByShift = entry?.availableByShift || {};
-        const assignedByShift = entry?.assignedByShift || {};
-        const availableTotal = entry?.availableTotal || 0;
-        const assignedTotal = entry?.assignedTotal || 0;
+        const { availableByShift, assignedByShift, availableTotal, assignedTotal } = getShiftBreakdownForDate(dKey);
 
         shiftsList.forEach(s => {
             const available = availableByShift[s] || 0;

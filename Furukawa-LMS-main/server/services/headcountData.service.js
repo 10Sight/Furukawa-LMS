@@ -783,22 +783,57 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // since they're data-quality checks that apply to both populations; the isTemporary = 0
     // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
     // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount.
-    // Requires the user's CURRENT status = 'LEFT' — a user who was LEFT and has since been
-    // reverted back to PRESENT (which clears leavingDate on that path, see user.controller.js)
-    // no longer matches here. That's fine for "today"/future recomputation, but it means a past
-    // date's already-recorded Left in nos (Daily) must be frozen below rather than re-derived
-    // from this live snapshot, or the correction would silently erase that day's history.
-    const leftSql = `
-        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary,
-               CONVERT(VARCHAR, COALESCE(leavingDate, updatedAt), 23) as dateKey
+    // No status/date filter here — unlike the old CURRENT-status-only query, separation events
+    // are now derived from statusHistory in JS below, so a user who left mid-month and has since
+    // rejoined (status back to PRESENT) still has that historical separation correctly mapped to
+    // the day it happened, instead of disappearing because their *current* status no longer says
+    // LEFT.
+    const [separationCandidates] = await executeQuery(`
+        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, statusHistory
         FROM users u
-        WHERE TRIM(LOWER(status)) = 'left'
-          AND COALESCE(leavingDate, updatedAt) >= ? AND COALESCE(leavingDate, updatedAt) < ?
-          AND (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+        WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
           AND (u.[designation] IS NULL OR u.[designation] = '' OR ${getDesignationShutterExclusionCondition("u")})
-    `;
-    const [leftUsers] = await executeQuery(leftSql, [start, nextMonthStart, start, nextMonthStart]);
+          AND statusHistory IS NOT NULL AND LTRIM(RTRIM(statusHistory)) NOT IN ('', '[]')
+    `);
+
+    // Walk each candidate's statusHistory stints (see statusHistory.js's getUpdatedStatusHistory):
+    // a stint is only ever marked status = 'LEFT' at the moment the user actually separated, so
+    // every such stint in history is one separation event — including ones from earlier in the
+    // month for a user who has since rejoined and no longer carries LEFT as their current status.
+    // Uses current departmentId/sectionId/shift/isTemporary for filtering/clubbing (not
+    // historical per-stint values), matching the current implementation.
+    const leftUsers = [];
+    separationCandidates.forEach(u => {
+        let history;
+        try {
+            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
+        } catch (e) {
+            history = [];
+        }
+        if (!Array.isArray(history)) return;
+
+        history.forEach(stint => {
+            const stintStatus = String(stint?.status || '').trim().toUpperCase();
+            if (stintStatus !== 'LEFT') return;
+
+            const dateKey = toYMD(stint?.leavingDate || stint?.changedAt);
+            if (!dateKey) return;
+            if (dateKey < start || dateKey >= nextMonthStart) return;
+
+            leftUsers.push({
+                id: u.id,
+                payCode: u.payCode,
+                cardNo: u.cardNo,
+                employeeName: u.employeeName,
+                departmentId: u.departmentId,
+                sectionId: u.sectionId,
+                shift: u.shift,
+                isTemporary: u.isTemporary,
+                dateKey,
+            });
+        });
+    });
 
     console.log(`Sync Report [${month}/${year}] Range [${start} to ${nextMonthStart}]: Found ${leftUsers.length} separated users.`);
     if (leftUsers.length > 0) {

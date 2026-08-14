@@ -22,7 +22,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 //   node scripts/backfillLegacySixteenDaySheets.js --cutoff=2025-01-01           (dry run, logs only)
 //   node scripts/backfillLegacySixteenDaySheets.js --cutoff=2025-01-01 --apply   (writes changes)
 
-const CUTOFF_DATE = ""; // e.g. "2025-01-01" -- edit this, or pass --cutoff=YYYY-MM-DD on the command line
+const CUTOFF_DATE = "2026-07-20"; // e.g. "2025-01-01" -- edit this, or pass --cutoff=YYYY-MM-DD on the command line
 
 const SYSTEM_SIGNATURE = "Approved By: System (Legacy Backfill)";
 

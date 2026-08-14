@@ -78,7 +78,7 @@ const getNum = (obj, key) => parseFloat(Number(obj?.[key] || 0).toFixed(2));
 
 // Keep report dates in local calendar format instead of UTC conversion.
 
-// This is important because every automated report must show yesterday's data.
+// The effective report date follows Dashboard lower-graph attendance availability.
 
 const formatDateKey = (dateObj) => {
 
@@ -110,7 +110,7 @@ const formatDisplayDate = (dateObj) => {
 
 // Match the Dashboard's India-time calendar handling exactly.
 
-// The automated report generated on 19-Jul must therefore use 18-Jul data.
+// Today/yesterday selection is resolved separately from attendance availability.
 
 const getIndiaNow = () => {
 
@@ -139,6 +139,52 @@ const getIndiaYesterday = () => {
 };
 
 
+// Dashboard lower-graph/report date rule:
+// - If today's attendance is uploaded, use today.
+// - Otherwise use yesterday.
+// Reports use all shifts together, so the availability gate checks any attendance row,
+// matching Dashboard lower graphs when Shift = ALL.
+const getEffectiveReportDate = async (dbPool) => {
+
+    const today = getIndiaNow();
+
+    const todayStr = formatDateKey(today);
+
+    try {
+
+        const todayAttendance = await dbPool.request()
+
+            .input("todayDate", todayStr)
+
+            .query(`
+
+                SELECT TOP (1) 1 AS hasAttendance
+
+                FROM attendance_logs al
+
+                WHERE al.[date] >= CONVERT(DATE, @todayDate, 23)
+
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, @todayDate, 23))
+
+            `);
+
+        if (todayAttendance.recordset?.length) {
+
+            return today;
+
+        }
+
+    } catch (e) {
+
+        console.warn("[getEffectiveReportDate] today attendance check failed:", e.message);
+
+    }
+
+    return getIndiaYesterday();
+
+};
+
+
 
 // Dynamic designation shutter rule used by every dashboard/report employee population.
 // A shutter may be stored by designation name (for example Supervisor) or by its
@@ -157,24 +203,14 @@ const getDesignationShutterExclusionSql = (alias = "u") => `
     )
 `;
 
-// Base eligibility shared with Dashboard Total Manpower.
-// Keep this aligned with the SDP employee population before applying date lifecycle.
-// Historical reconstruction needs PRESENT and LEFT users; all other current statuses are excluded.
+// Base eligibility copied from Dashboard first graph Total Manpower.
+// Keep this exactly aligned before applying date-wise statusHistory lifecycle.
 const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
     AND ISNULL(${alias}.isDeleted, 0) = 0
     AND ISNULL(${alias}.isTemporary, 0) = 0
     AND ISNULL(${alias}.isEmployee, 0) = 1
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
-    AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, ''))))) IN ('PRESENT', 'LEFT')
-    AND ISNULL(${alias}.designation, '') NOT IN (
-        '1076',
-        '1077',
-        '1081',
-        'DRIVER',
-        'Supervisor',
-        'Staff'
-    )
     ${getDesignationShutterExclusionSql(alias)}
 `;
 
@@ -211,190 +247,114 @@ const userDateToDateSql = (columnSql) => `
 `;
 
 
-// Same statusHistory employment-interval rule as Dashboard Total Manpower.
-// Open/current periods count only when history status and users.status are PRESENT.
-// Closed LEFT periods count only their historical worked dates.
-// The report date is authoritative, so both Daily Manpower and Daily Management
-// Available/Total Manpower values match the Dashboard first graph for that date.
-// leavingDate is exclusive: the employee is removed on the leavingDate itself.
+// Exact same statusHistory employment-interval rule as Dashboard first graph
+// Total Manpower / Attendance lifecycle logic.
 const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
 
     const historyJsonSql = `CASE
-
         WHEN ISJSON(CAST(${alias}.statusHistory AS NVARCHAR(MAX))) = 1
-
         THEN CAST(${alias}.statusHistory AS NVARCHAR(MAX))
-
         ELSE N'[]'
-
     END`;
 
-    const historyJoiningDateSql = userDateToDateSql(
-
-        `JSON_VALUE(historyRow.[value], '$.joiningDate')`
-
-    );
-
-    const historyLeavingDateSql = userDateToDateSql(
-
-        `JSON_VALUE(historyRow.[value], '$.leavingDate')`
-
-    );
-
-    const historyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(
-
-        NVARCHAR(100),
-
-        ISNULL(JSON_VALUE(historyRow.[value], '$.status'), '')
-
-    ))))`;
-
     const legacyJoiningDateSql = userDateToDateSql(`${alias}.joiningDate`);
-
     const legacyLeavingDateSql = userDateToDateSql(`${alias}.leavingDate`);
-
     const legacyStatusSql = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(${alias}.status, '')))))`;
 
+    const historyJoiningDateFor = (rowAlias) => userDateToDateSql(
+        `JSON_VALUE(${rowAlias}.[value], '$.joiningDate')`
+    );
+
+    const historyLeavingDateFor = (rowAlias) => userDateToDateSql(
+        `JSON_VALUE(${rowAlias}.[value], '$.leavingDate')`
+    );
+
     return `(
-
         EXISTS (
-
             SELECT 1
-
-            FROM OPENJSON(${historyJsonSql}) historyRow
-
+            FROM OPENJSON(${historyJsonSql}) periodSeed
             CROSS APPLY (
-
-                SELECT
-
-                    ${historyStatusSql} AS employmentStatus,
-
-                    ${historyJoiningDateSql} AS joiningDate,
-
-                    ${historyLeavingDateSql} AS leavingDate
-
-            ) historyPeriod
-
-            WHERE historyPeriod.joiningDate IS NOT NULL
-
-              AND historyPeriod.joiningDate <= ${asOfDateSql}
-
+                SELECT ${historyJoiningDateFor("periodSeed")} AS joiningDate
+            ) seed
+            OUTER APPLY (
+                SELECT MAX(${historyLeavingDateFor("periodClose")}) AS leavingDate
+                FROM OPENJSON(${historyJsonSql}) periodClose
+                WHERE ${historyJoiningDateFor("periodClose")} = seed.joiningDate
+            ) closeInfo
+            OUTER APPLY (
+                SELECT TOP (1)
+                    UPPER(LTRIM(RTRIM(CONVERT(
+                        NVARCHAR(100),
+                        ISNULL(JSON_VALUE(latestRow.[value], '$.status'), '')
+                    )))) AS latestStatus
+                FROM OPENJSON(${historyJsonSql}) latestRow
+                WHERE ${historyJoiningDateFor("latestRow")} = seed.joiningDate
+                ORDER BY
+                    COALESCE(
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt'), 127),
+                        TRY_CONVERT(DATETIME2, JSON_VALUE(latestRow.[value], '$.changedAt')),
+                        CONVERT(DATETIME2, '1900-01-01')
+                    ) DESC,
+                    TRY_CONVERT(INT, latestRow.[key]) DESC
+            ) latestInfo
+            WHERE seed.joiningDate IS NOT NULL
+              AND seed.joiningDate <= ${asOfDateSql}
               AND (
-
                     (
-
-                        historyPeriod.employmentStatus = 'PRESENT'
-
-                        AND (
-
-                            historyPeriod.leavingDate IS NULL
-
-                            OR historyPeriod.leavingDate > ${asOfDateSql}
-
-                        )
-
-                        AND (
-
-                            historyPeriod.leavingDate IS NOT NULL
-
-                            OR ${legacyStatusSql} = 'PRESENT'
-
-                        )
-
+                        closeInfo.leavingDate IS NOT NULL
+                        AND closeInfo.leavingDate > ${asOfDateSql}
                     )
-
                     OR (
-
-                        historyPeriod.employmentStatus = 'LEFT'
-
-                        AND historyPeriod.leavingDate IS NOT NULL
-
-                        AND historyPeriod.leavingDate > ${asOfDateSql}
-
+                        closeInfo.leavingDate IS NULL
+                        AND latestInfo.latestStatus = 'PRESENT'
                     )
-
-                  )
-
+              )
         )
-
         OR (
-
             NOT EXISTS (
-
                 SELECT 1
-
-                FROM OPENJSON(${historyJsonSql}) historyRow
-
+                FROM OPENJSON(${historyJsonSql}) anyHistoryRow
                 CROSS APPLY (
-
-                    SELECT ${historyJoiningDateSql} AS joiningDate
-
-                ) validHistoryPeriod
-
-                WHERE validHistoryPeriod.joiningDate IS NOT NULL
-
+                    SELECT ${historyJoiningDateFor("anyHistoryRow")} AS joiningDate
+                ) validHistory
+                WHERE validHistory.joiningDate IS NOT NULL
             )
-
             AND (
-
                 (
-
                     ${legacyStatusSql} = 'PRESENT'
-
                     AND (
-
                         ${legacyJoiningDateSql} IS NULL
-
                         OR ${legacyJoiningDateSql} <= ${asOfDateSql}
-
                     )
-
                 )
-
                 OR (
-
                     ${legacyStatusSql} = 'LEFT'
-
                     AND ${legacyLeavingDateSql} IS NOT NULL
-
                     AND ${legacyLeavingDateSql} > ${asOfDateSql}
-
                     AND (
-
                         ${legacyJoiningDateSql} IS NULL
-
                         OR ${legacyJoiningDateSql} <= ${asOfDateSql}
-
                     )
-
                 )
-
             )
-
         )
-
     )`;
 
 };
 
 
 
+// Attendance uses the same employee/master exclusions as Dashboard first graph.
+const getEligibleAttendanceUserSql = (alias = "u") =>
+    getTotalManpowerBaseEligibilitySql(alias);
 
 
-// Same eligible-user rule used by Dashboard Daily Manpower Trend attendance.
-
-const getEligibleAttendanceUserSql = (alias = "u") => `
-
-    AND ISNULL(${alias}.isDeleted, 0) = 0
-
-    AND ISNULL(${alias}.isTemporary, 0) = 0
-
-    AND ${alias}.empId IS NOT NULL
-
-    AND ${alias}.empId != ''
-
-    ${getDesignationShutterExclusionSql(alias)}
-
+// Same attendance identity validation as Dashboard first graph:
+// attendance_logs.payCode must match users.empId.
+const getAttendancePayCodeMatchSql = (attendanceAlias = "al", userAlias = "u") => `
+    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${attendanceAlias}.payCode))))
+    =
+    UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${userAlias}.empId))))
 `;
 
 
@@ -1260,7 +1220,7 @@ async function fetchActiveManpowerMaps(dbPool, reportDateStr) {
 
 
 
-// STEP 4: Fetch Dashboard-exact attendance maps for yesterday
+// STEP 4: Fetch Dashboard-exact attendance maps for the effective report date
 
 // SAME LOGIC AS THE FIRST DAILY MANPOWER TREND GRAPH:
 
@@ -1351,6 +1311,11 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
         const presentCondition = `al.status IN ('P','PRESENT','Present')`;
 
+        const eligiblePresentCondition = `
+            ${presentCondition}
+            AND attendanceEligibility.isEligibleAttendance = 1
+        `;
+
         const shiftGeneralMatch = getDashboardShiftMatchSql("al", "G");
 
         const shiftAMatch = getDashboardShiftMatchSql("al", "A");
@@ -1363,15 +1328,15 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
         const selectMetrics = `
 
-            COUNT(DISTINCT CASE WHEN ${presentCondition} THEN u.id END) AS totalPresent,
+            COUNT(DISTINCT CASE WHEN ${eligiblePresentCondition} THEN u.id END) AS totalPresent,
 
-            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftGeneralMatch} THEN u.id END) AS shiftGeneral,
+            COUNT(DISTINCT CASE WHEN ${eligiblePresentCondition} AND ${shiftGeneralMatch} THEN u.id END) AS shiftGeneral,
 
-            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftAMatch} THEN u.id END) AS shiftA,
+            COUNT(DISTINCT CASE WHEN ${eligiblePresentCondition} AND ${shiftAMatch} THEN u.id END) AS shiftA,
 
-            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftBMatch} THEN u.id END) AS shiftB,
+            COUNT(DISTINCT CASE WHEN ${eligiblePresentCondition} AND ${shiftBMatch} THEN u.id END) AS shiftB,
 
-            COUNT(DISTINCT CASE WHEN ${presentCondition} AND ${shiftCMatch} THEN u.id END) AS shiftC,
+            COUNT(DISTINCT CASE WHEN ${eligiblePresentCondition} AND ${shiftCMatch} THEN u.id END) AS shiftC,
 
             CAST(
 
@@ -1409,6 +1374,16 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
                     ON al.userId = u.id
 
+                OUTER APPLY (
+
+                    SELECT 1 AS isEligibleAttendance
+
+                    WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+
+                      AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+
+                ) attendanceEligibility
+
                 WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
 
                   ${getEligibleAttendanceUserSql("u")}
@@ -1434,6 +1409,16 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
                 INNER JOIN users u
 
                     ON al.userId = u.id
+
+                OUTER APPLY (
+
+                    SELECT 1 AS isEligibleAttendance
+
+                    WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+
+                      AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+
+                ) attendanceEligibility
 
                 WHERE CONVERT(VARCHAR, al.[date], 23) = @reportDate
 
@@ -1476,6 +1461,16 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
                     ON al.userId = u.id
 
                    AND CONVERT(VARCHAR, al.[date], 23) = @reportDate
+
+                OUTER APPLY (
+
+                    SELECT 1 AS isEligibleAttendance
+
+                    WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+
+                      AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+
+                ) attendanceEligibility
 
                 WHERE ISNULL(s.isActive, 1) = 1
 
@@ -1522,6 +1517,16 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
                     ON al.userId = u.id
 
                    AND CONVERT(VARCHAR, al.[date], 23) = @reportDate
+
+                OUTER APPLY (
+
+                    SELECT 1 AS isEligibleAttendance
+
+                    WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+
+                      AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+
+                ) attendanceEligibility
 
                 WHERE ISNULL(l.isActive, 1) = 1
 
@@ -1659,11 +1664,13 @@ async function fetchDashboardAttendanceMaps(dbPool, reportDateStr) {
 
 // =================================================
 
-export const getReportData = async () => {
+export const getReportData = async (reportDateOverride = null) => {
 
     const dbPool = await poolPromise;
 
-    const reportDate = getIndiaYesterday(); // Dashboard/report both use yesterday in Asia/Kolkata
+    const reportDate = reportDateOverride
+        ? new Date(reportDateOverride.getTime())
+        : await getEffectiveReportDate(dbPool);
 
 
 
@@ -1725,7 +1732,7 @@ export const getReportData = async () => {
 
 
 
-            // Required = exact Dashboard Requirement bar logic for yesterday.
+            // Required = Dashboard Requirement bar logic for the effective report date.
 
             totalRequired: row.sectionId
 
@@ -1743,7 +1750,7 @@ export const getReportData = async () => {
 
 
 
-            // Actual M/P = exact Dashboard Present bar logic for yesterday.
+            // Actual M/P = exact Dashboard Present bar logic for the effective report date.
 
             totalPresent: getNum(sectionAttendance, "totalPresent"),
 
@@ -1753,7 +1760,7 @@ export const getReportData = async () => {
 
 
 
-            // Available M/P = exact Dashboard Total Manpower bar logic for yesterday.
+            // Available M/P = exact Dashboard Total Manpower bar logic for the effective report date.
 
             totalAssigned: row.sectionId
 
@@ -1809,7 +1816,7 @@ export const getReportData = async () => {
 
 // =================================================
 
-async function _buildManpowerBuffer() {
+async function _buildManpowerBuffer(reportDateOverride = null) {
 
     console.log("[_buildManpowerBuffer] Starting...");
 
@@ -1817,7 +1824,13 @@ async function _buildManpowerBuffer() {
 
     try {
 
-        const data = await getReportData();
+        const dbPool = await poolPromise;
+
+        const reportDate = reportDateOverride
+            ? new Date(reportDateOverride.getTime())
+            : await getEffectiveReportDate(dbPool);
+
+        const data = await getReportData(reportDate);
 
         console.log(`[_buildManpowerBuffer] rows: ${data.length}`);
 
@@ -1917,11 +1930,7 @@ async function _buildManpowerBuffer() {
 
 
 
-        const reportDate = getIndiaYesterday();
-
-
-
-        // The displayed date and all report data point to yesterday.
+        // The displayed date and all report data use the same effective attendance date.
 
         const reportDateLabel = formatDisplayDate(reportDate);
 
@@ -1929,7 +1938,7 @@ async function _buildManpowerBuffer() {
 
 
 
-        // Calculate milestone date based on yesterday (reportDate)
+        // Calculate milestone date from the effective report date
 
         const reportDay = reportDate.getDate();
 
@@ -2624,7 +2633,7 @@ async function _buildManpowerBuffer() {
 
 // =================================================
 
-async function _buildManagementBuffer() {
+async function _buildManagementBuffer(reportDateOverride = null) {
 
     console.log("[_buildManagementBuffer] Starting...");
 
@@ -2634,7 +2643,9 @@ async function _buildManagementBuffer() {
 
         const dbPool = await poolPromise;
 
-        const reportDate = getIndiaYesterday(); // All management report data is yesterday in Asia/Kolkata
+        const reportDate = reportDateOverride
+            ? new Date(reportDateOverride.getTime())
+            : await getEffectiveReportDate(dbPool);
 
 
 
@@ -2648,7 +2659,7 @@ async function _buildManagementBuffer() {
 
 
 
-        // Detailed line requirement also follows yesterday's FN period.
+        // Detailed line requirement follows the effective report date FN period.
 
         const requirementMonth = monthNumber;
 
@@ -2736,7 +2747,7 @@ async function _buildManagementBuffer() {
 
         // Detailed Attendance Report line requirement comes from line_requirements.
 
-        // Use yesterday's month/year/day for selecting fn01 or fn02.
+        // Use the effective report date month/year/day for selecting fn01 or fn02.
 
         const lineReqResult = await fetchLineRequirements(
 
@@ -3981,7 +3992,11 @@ export const generateAndSend = async (emails) => {
 
 
 
-        const buffer = await _buildManpowerBuffer();
+        const dbPool = await poolPromise;
+
+        const reportDate = await getEffectiveReportDate(dbPool);
+
+        const buffer = await _buildManpowerBuffer(reportDate);
 
 
 
@@ -3992,8 +4007,6 @@ export const generateAndSend = async (emails) => {
         }
 
 
-
-        const reportDate = getIndiaYesterday();
 
         const dt = formatDisplayDate(reportDate);
 
@@ -4077,7 +4090,11 @@ export const generateAndSendManagementDaily = async (emails) => {
 
 
 
-        const buffer = await _buildManagementBuffer();
+        const dbPool = await poolPromise;
+
+        const reportDate = await getEffectiveReportDate(dbPool);
+
+        const buffer = await _buildManagementBuffer(reportDate);
 
 
 
@@ -4088,8 +4105,6 @@ export const generateAndSendManagementDaily = async (emails) => {
         }
 
 
-
-        const reportDate = getIndiaYesterday();
 
         const dt = formatDisplayDate(reportDate);
 
@@ -4157,7 +4172,9 @@ export async function sendBothReports(emails) {
 
     try {
 
-        const reportDate = getIndiaYesterday();
+        const dbPool = await poolPromise;
+
+        const reportDate = await getEffectiveReportDate(dbPool);
 
         const dt = formatDisplayDate(reportDate);
 
@@ -4167,9 +4184,9 @@ export async function sendBothReports(emails) {
 
 
 
-        const manpowerBuf = await _buildManpowerBuffer();
+        const manpowerBuf = await _buildManpowerBuffer(reportDate);
 
-        const managementBuf = await _buildManagementBuffer();
+        const managementBuf = await _buildManagementBuffer(reportDate);
 
 
 

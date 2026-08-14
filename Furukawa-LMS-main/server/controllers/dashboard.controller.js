@@ -11,7 +11,18 @@ import logger from "../logger/winston.logger.js";
 |--------------------------------------------------------------------------
 */
 class Holiday {
+    static _initPromise = null;
+
     static async init() {
+        // PERFORMANCE:
+        // The DDL/index existence check is identical for every dashboard request.
+        // Run it once per Node.js process and share the same promise across concurrent calls.
+        // If initialization fails, reset the promise so a later request can retry.
+        if (this._initPromise) {
+            return this._initPromise;
+        }
+
+        this._initPromise = (async () => {
         const createTable = `
             IF OBJECT_ID('dbo.dashboard_holidays', 'U') IS NULL
             BEGIN
@@ -54,6 +65,14 @@ class Holiday {
                 "[Holiday Model] Failed to initialize dashboard_holidays table",
                 error
             );
+            throw error;
+        }
+        })();
+
+        try {
+            return await this._initPromise;
+        } catch (error) {
+            this._initPromise = null;
             throw error;
         }
     }
@@ -580,9 +599,84 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         districtFilter,
         masterAttendanceMode,
         shift,
+        scope,
     } = req.query;
 
     const selectedShiftValue = shift && String(shift).trim().toUpperCase() !== 'ALL' ? String(shift).trim() : null;
+
+    // PERFORMANCE-ONLY REQUEST SCOPING:
+    // The frontend can request one graph-specific calculation after its filters diverge
+    // from the initial shared dashboard request. Scope never changes employee eligibility,
+    // hierarchy, attendance, lifecycle, holiday or percentage rules; it only prevents
+    // unrelated graph calculations from running for that request.
+    let requestedScope = String(scope || "all").trim().toLowerCase();
+    const lowerGraphScopes = new Set([
+        "contractor",
+        "education",
+        "skill",
+        "gender",
+        "state",
+        "district",
+        "employeegender",
+        "lower",
+    ]);
+    const topGraphScopes = new Set(["manpower", "attrition", "absenteeism", "top"]);
+    if (
+        requestedScope !== "all"
+        && !lowerGraphScopes.has(requestedScope)
+        && !topGraphScopes.has(requestedScope)
+    ) {
+        requestedScope = "all";
+    }
+    const isLowerOnlyScope = lowerGraphScopes.has(requestedScope);
+    const isTopOnlyScope = topGraphScopes.has(requestedScope);
+    const shouldComputeTopGraphs = !isLowerOnlyScope;
+    const shouldComputeLowerGraphs = !isTopOnlyScope;
+
+    // Finer top-graph scope. "all" and "top" preserve the complete existing response.
+    // Graph-specific scopes are used only by the frontend's follow-up requests.
+    const shouldComputeDailyHeadcount =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || ["manpower", "attrition", "absenteeism"].includes(requestedScope);
+    const shouldComputeRequirement =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || requestedScope === "manpower";
+    const shouldComputeRejoining =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || requestedScope === "manpower";
+    const shouldComputeHandover =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || requestedScope === "manpower";
+    const shouldComputeAttendance =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || ["manpower", "absenteeism"].includes(requestedScope);
+    const shouldComputeManpowerTrend =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || ["manpower", "absenteeism"].includes(requestedScope);
+    const shouldComputeAttrition =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || requestedScope === "attrition";
+    const shouldComputeAbsenteeism =
+        requestedScope === "all"
+        || requestedScope === "top"
+        || requestedScope === "absenteeism";
+
+    const requestedComparisonChartKey = ({
+        contractor: "contractorPrefix",
+        education: "education",
+        skill: "skillLevels",
+        gender: "gender",
+        employeegender: "gender",
+        state: "state",
+        district: "district",
+    })[requestedScope] || null;
 
 
     function addShiftFilter(sqlText, params, alias = "al") {
@@ -590,31 +684,26 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
         const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+        const selectedCompact = String(selectedShiftValue)
+            .trim()
+            .toUpperCase()
+            .replace(/[\s\-_]/g, "");
+
+        // Same accepted values as the previous OR-chain, but normalize the selected
+        // shift once in Node and evaluate the DB column expression once per row.
+        const acceptedShiftCompacts = selectedCompact === "G"
+            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
+            : Array.from(new Set([
+                selectedCompact,
+                `SHIFT${selectedCompact}`,
+                `${selectedCompact}SHIFT`,
+            ]));
 
         sqlText += `
-            AND (
-                ${shiftColumn} = UPPER(LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
-                OR (
-                    UPPER(LTRIM(RTRIM(?))) = 'G'
-                    AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
-                )
-            )
+            AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
         `;
 
-        params.push(
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue
-        );
+        params.push(...acceptedShiftCompacts);
 
         return sqlText;
     }
@@ -627,31 +716,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
         const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+        const selectedCompact = String(selectedShiftValue)
+            .trim()
+            .toUpperCase()
+            .replace(/[\s\-_]/g, "");
+
+        const acceptedShiftCompacts = selectedCompact === "G"
+            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
+            : Array.from(new Set([
+                selectedCompact,
+                `SHIFT${selectedCompact}`,
+                `${selectedCompact}SHIFT`,
+            ]));
 
         sqlText += `
-            AND (
-                ${shiftColumn} = UPPER(LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
-                OR (
-                    UPPER(LTRIM(RTRIM(?))) = 'G'
-                    AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
-                )
-            )
+            AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
         `;
 
-        params.push(
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue
-        );
+        params.push(...acceptedShiftCompacts);
 
         return sqlText;
     }
@@ -693,9 +775,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
 
 
-    const departmentNames = await getNamesByIds("departments", departmentIds);
-    const sectionNames = await getNamesByIds("sections", sectionIds);
-    const lineNames = await getNamesByIds("lines", lineIds);
+    // PERFORMANCE: these three lookups are independent, so resolve them together.
+    const [departmentNames, sectionNames, lineNames] = await Promise.all([
+        getNamesByIds("departments", departmentIds),
+        getNamesByIds("sections", sectionIds),
+        getNamesByIds("lines", lineIds),
+    ]);
 
     const departmentName = departmentNames[0] || null;
     const sectionName = sectionNames[0] || null;
@@ -916,9 +1001,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         let checkTodaySql = `
             SELECT TOP 1 1
             FROM attendance_logs al
-            WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, ?, 23)
+            WHERE al.[date] >= CONVERT(DATE, ?, 23)
+              AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
         `;
-        const todayCheckParams = [todayStr];
+        const todayCheckParams = [todayStr, todayStr];
         checkTodaySql = addShiftFilter(checkTodaySql, todayCheckParams, "al");
 
         const [todayCheckRows] = await executeQuery(checkTodaySql, todayCheckParams);
@@ -971,7 +1057,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     // Holiday calendar is checked before attendance values are used.
     // Other dashboard calculations remain unchanged.
-    const topHolidayRows = await getDashboardHolidaysForRange(sqlStartDate, sqlEndDate);
+    const topHolidayRows = shouldComputeManpowerTrend
+        ? await getDashboardHolidaysForRange(sqlStartDate, sqlEndDate)
+        : [];
     const holidayByDate = new Map(
         topHolidayRows
             .filter(item => item.holidayDate)
@@ -1246,12 +1334,65 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         if (!Array.isArray(history) || history.length < 2) return [];
 
-        const validJoiningDateKeys = history
-            .map((item) => parseManpowerDateKey(item?.joiningDate))
-            .filter((dateKey) => dateKey !== null);
+        const rejoiningDateKeys = [];
 
-        // First valid joiningDate = original joining. Remaining dates = rejoining events.
-        return validJoiningDateKeys.slice(1);
+        for (let index = 1; index < history.length; index += 1) {
+            const previous = history[index - 1];
+            const current = history[index];
+
+            const previousStatus = String(previous?.status || '').trim().toUpperCase();
+            const currentStatus = String(current?.status || '').trim().toUpperCase();
+
+            const previousJoiningDateKey = parseManpowerDateKey(previous?.joiningDate);
+            const previousLeavingDateKey = parseManpowerDateKey(previous?.leavingDate);
+            const currentJoiningDateKey = parseManpowerDateKey(current?.joiningDate);
+            const currentLeavingDateKey = parseManpowerDateKey(current?.leavingDate);
+
+            // Genuine rejoin only: a closed LEFT period followed by a new PRESENT period.
+            if (
+                previousStatus === 'LEFT'
+                && previousLeavingDateKey !== null
+                && currentStatus === 'PRESENT'
+                && currentJoiningDateKey !== null
+                && currentLeavingDateKey === null
+                && currentJoiningDateKey !== previousJoiningDateKey
+            ) {
+                rejoiningDateKeys.push(currentJoiningDateKey);
+            }
+        }
+
+        return Array.from(new Set(rejoiningDateKeys));
+    };
+
+    // HANDOVER GRAPH ONLY:
+    // Handover is an original-joining cohort view, not a rejoining view.
+    // Use the earliest unique valid joiningDate from statusHistory so repeated status changes
+    // (PRESENT / ON_LEAVE / PRESENT with the same joiningDate) do not inflate Joined count,
+    // and a later rejoin joiningDate is not treated as a fresh handover candidate.
+    const getInitialStatusHistoryJoiningDateKey = (userRow = {}) => {
+        let history = userRow.statusHistory;
+
+        if (typeof history === 'string') {
+            const trimmed = history.trim();
+            if (!trimmed) return null;
+            try {
+                history = JSON.parse(trimmed);
+            } catch (_) {
+                return null;
+            }
+        }
+
+        if (!Array.isArray(history) || history.length === 0) return null;
+
+        const validJoiningDateKeys = Array.from(new Set(
+            history
+                .map((item) => parseManpowerDateKey(item?.joiningDate))
+                .filter((dateKey) => dateKey !== null)
+        ));
+
+        if (!validJoiningDateKeys.length) return null;
+
+        return Math.min(...validJoiningDateKeys);
     };
 
     const prepareManpowerUser = (userRow = {}) => ({
@@ -1309,62 +1450,91 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     let dailyHeadcountByDate = {};
 
     const buildDailyAttritionDataFromUsers = async () => {
-        const leaveDateSql = userDateToDateSql("u.leavingDate");
+        // DAILY ATTRITION SOURCE:
+        // Attrition events are now read from users.statusHistory only.
+        // A history row contributes to attrition only when:
+        //   1) statusHistory[].status = LEFT
+        //   2) statusHistory[].leavingDate is valid
+        // Existing hierarchy / employee eligibility / shutter / date-range / denominator rules
+        // remain unchanged.
+        const statusHistoryJsonSql = `
+            CASE
+                WHEN ISJSON(CAST(u.statusHistory AS NVARCHAR(MAX))) = 1
+                THEN CAST(u.statusHistory AS NVARCHAR(MAX))
+                ELSE N'[]'
+            END
+        `;
+        const historyLeaveDateSql = userDateToDateSql(
+            "JSON_VALUE(historyRow.[value], '$.leavingDate')"
+        );
+        const historyStatusSql = `
+            UPPER(LTRIM(RTRIM(CONVERT(
+                NVARCHAR(100),
+                ISNULL(JSON_VALUE(historyRow.[value], '$.status'), '')
+            ))))
+        `;
 
         // NORMAL ATTRITION:
         // Use the same dashboard date range as the upper graphs.
         // Default = last 30 days; selected startDate/endDate = selected range.
         let attritionHeadcountTotal = 0;
 
-        try {
-            let totalSql = `
-                SELECT COUNT(DISTINCT u.id) AS total
-                FROM users u
-                WHERE UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
-                  AND u.leavingDate IS NOT NULL
-                  AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
-                  AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
-                  AND ${leaveDateSql} IS NOT NULL
-                  ${attritionHierCondition}
-                  ${getEligibleUserSql("u")}
-                  ${getDashboardDesignationShutterExclusionSql("u")}
-                  -- NOTE: Attrition me employee tabhi count hoga jab users.status = LEFT ho.
-                  -- leavingDate sirf employee ke exact left date ko determine karegi.
-                  -- PRESENT status employee leavingDate filled hone par bhi attrition me count nahi hoga.
-                  -- Hierarchy filters are applied directly from users table.
-                  -- Same common dashboard eligibility applies here:
-                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
-            `;
+        // The normal denominator already comes from the date-wise Total Manpower population.
+        // Run the fallback only when that population is unavailable.
+        // The fallback now uses the same statusHistory LEFT source as the Daily Attrition numerator.
+        const hasManpowerDenominator =
+            Number(snapshotTotal || 0) > 0
+            || Object.values(dailyHeadcountByDate || {}).some((value) => Number(value || 0) > 0);
 
-            const [totalRows] = await executeQuery(totalSql, []);
-            attritionHeadcountTotal = Number(totalRows?.[0]?.total || 0);
-        } catch (e) {
-            console.warn("[DASHBOARD] Attrition total headcount query failed:", e.message);
-            attritionHeadcountTotal = 0;
+        if (!hasManpowerDenominator) {
+            try {
+                let totalSql = `
+                    SELECT COUNT(DISTINCT u.id) AS total
+                    FROM users u
+                    CROSS APPLY OPENJSON(${statusHistoryJsonSql}) historyRow
+                    CROSS APPLY (
+                        SELECT ${historyLeaveDateSql} AS leaving_date
+                    ) parsedDate
+                    WHERE ${historyStatusSql} = 'LEFT'
+                      AND parsedDate.leaving_date IS NOT NULL
+                      ${attritionHierCondition}
+                      ${getEligibleUserSql("u")}
+                      ${getDashboardDesignationShutterExclusionSql("u")}
+                      -- NOTE: Daily Attrition LEFT source is statusHistory[].status.
+                      -- Exact leaving date source is statusHistory[].leavingDate.
+                      -- Hierarchy filters continue to come from users table.
+                      -- Same common dashboard eligibility remains unchanged:
+                      -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
+                `;
+
+                const [totalRows] = await executeQuery(totalSql, []);
+                attritionHeadcountTotal = Number(totalRows?.[0]?.total || 0);
+            } catch (e) {
+                console.warn("[DASHBOARD] Attrition total headcount query failed:", e.message);
+                attritionHeadcountTotal = 0;
+            }
         }
 
+        // Parse each statusHistory LEFT event's leavingDate and count each employee once
+        // on that leaving date. Duplicate history rows for the same employee/date cannot
+        // inflate the graph because COUNT(DISTINCT u.id) is preserved.
         let attrSql = `
             SELECT
-                CONVERT(VARCHAR, parsed.leaving_date, 23) AS fullDate,
-                COUNT(DISTINCT parsed.userId) AS leftCount
-            FROM (
-                SELECT
-                    u.id AS userId,
-                    ${leaveDateSql} AS leaving_date
-                FROM users u
-                WHERE UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), ISNULL(u.status, ''))))) = 'LEFT'
-                  AND u.leavingDate IS NOT NULL
-                  AND LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate))) != ''
-                  AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), u.leavingDate)))) != 'NULL'
-                  ${attritionHierCondition}
-                  ${getEligibleUserSql("u")}
-                  ${getDashboardDesignationShutterExclusionSql("u")}
-                  -- NOTE: Attrition me pehle users.status = LEFT check hoga.
-                  -- leavingDate employee ko uske exact left date par show karegi.
-                  -- PRESENT status employee attrition graph me count nahi hoga.
-                  -- Same common dashboard eligibility applies here:
-                  -- isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
-                  -- Shift behavior remains unchanged.
+                CONVERT(VARCHAR, parsedDate.leaving_date, 23) AS fullDate,
+                COUNT(DISTINCT u.id) AS leftCount
+            FROM users u
+            CROSS APPLY OPENJSON(${statusHistoryJsonSql}) historyRow
+            CROSS APPLY (
+                SELECT ${historyLeaveDateSql} AS leaving_date
+            ) parsedDate
+            WHERE ${historyStatusSql} = 'LEFT'
+              AND parsedDate.leaving_date IS NOT NULL
+              ${attritionHierCondition}
+              ${getEligibleUserSql("u")}
+              ${getDashboardDesignationShutterExclusionSql("u")}
+              -- NOTE: Daily Attrition source changed only from users.status/users.leavingDate
+              -- to statusHistory[].status/statusHistory[].leavingDate.
+              -- All hierarchy, eligibility, date range and denominator rules remain unchanged.
         `;
 
         const attrParams = [];
@@ -1372,17 +1542,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // NORMAL ATTRITION:
         // Follow the dashboard date range filter.
         attrSql += `
-                  AND ${leaveDateSql} >= ?
-                  AND ${leaveDateSql} <= ?
+              AND parsedDate.leaving_date >= ?
+              AND parsedDate.leaving_date <= ?
+            GROUP BY parsedDate.leaving_date
+            ORDER BY parsedDate.leaving_date
         `;
         attrParams.push(sqlStartDate, sqlEndDate);
-
-        attrSql += `
-            ) parsed
-            WHERE parsed.leaving_date IS NOT NULL
-            GROUP BY parsed.leaving_date
-            ORDER BY parsed.leaving_date
-        `;
 
         const [attrRows] = await executeQuery(attrSql, attrParams);
 
@@ -1420,19 +1585,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             .filter(Boolean);
     };
 
+
     // Attendance availability check must never hide Total Manpower or Attrition.
     // When selected/current date attendance is not uploaded, attendance bars remain zero,
     // but users-table manpower and users.leavingDate attrition still return normally.
     let attendanceDateAvailable = !hasSelectedDateForDashboard;
 
-    if (hasSelectedDateForDashboard) {
+    if (hasSelectedDateForDashboard && shouldComputeAttendance) {
         try {
             let attendanceGateSql = `
                 SELECT COUNT(DISTINCT u.id) AS cnt
                 FROM attendance_logs al
                 INNER JOIN users u ON al.userId = u.id
-                WHERE CONVERT(DATE, al.[date]) >= CONVERT(DATE, '${sqlStartDate}', 23)
-                  AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, '${sqlEndDate}', 23)
+                WHERE al.[date] >= CONVERT(DATE, '${sqlStartDate}', 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${sqlEndDate}', 23))
                   ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
                   AND ISNULL(u.isTemporary, 0) = 0
                   ${hierCondition}
@@ -1494,6 +1660,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         )
     `;
 
+    if (shouldComputeRequirement) {
     try {
         if (!numericYearsInRange.length) {
             reqResults = [];
@@ -1589,6 +1756,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] requirement query failed:", e.message);
         reqResults = [];
     }
+    }
 
     // ============================================================
     // SHIFT-WISE REQUIREMENT FIX (Manpower graph required bar only)
@@ -1602,6 +1770,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // {"2026-06-24":"C","2026-06-25":"C","2026-06-26":"C"}
     const shiftRequirementByDate = {};
 
+    if (shouldComputeRequirement) {
     try {
         if (selectedShiftValue && loopDates.length) {
             const scheduleHierConditions = [];
@@ -1710,6 +1879,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     } catch (e) {
         console.warn("[DASHBOARD] Shift-wise requirement calculation from users.shiftSchedule failed:", e.message);
     }
+    }
 
     const getRequirementForDate = (dateObj) => {
         // If shift is selected, requirement must come ONLY from users.shiftSchedule.
@@ -1745,6 +1915,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     let snapshotTotal = 0;
     let rejoiningData = [];
+    let handoverData = [];
+
+    // REJOINING GRAPH RESTORE / SAFE PERFORMANCE REUSE:
+    // Total Manpower and Rejoining Trend use the same base employee eligibility + hierarchy.
+    // Keep the raw eligible rows so Rejoining can reuse them instead of launching another
+    // identical users-table scan. If this shared fetch fails, the original Rejoining SQL
+    // below remains as an exact fallback. No Rejoining condition or calculation is removed.
+    let eligibleManpowerRowsForRejoining = null;
 
     // TOTAL MANPOWER — statusHistory DATE-WISE EMPLOYMENT INTERVAL LOGIC.
     // Open/current periods count only when status is PRESENT.
@@ -1779,12 +1957,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         ? ` AND ${userHierConditions.join(" AND ")}`
         : "";
 
+    if (shouldComputeDailyHeadcount) {
     try {
         // Fetch the eligible employee population once. Date-wise active counts are then
         // calculated in memory, so there is no OPENJSON x date cross-product in SQL Server.
         const eligibleManpowerSql = `
             SELECT
                 u.id,
+                u.empId,
                 u.status,
                 u.joiningDate,
                 u.leavingDate,
@@ -1799,6 +1979,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             eligibleManpowerSql,
             [...userHierParams]
         );
+
+        // Rejoining Trend has the same base eligibility/hierarchy population, so preserve
+        // these raw rows for the Rejoining graph instead of scanning users again.
+        eligibleManpowerRowsForRejoining = eligibleManpowerRows || [];
 
         const manpowerUsers = (eligibleManpowerRows || []).map(prepareManpowerUser);
         const headcountEntries = loopDates.map((dateObj) => {
@@ -1828,27 +2012,195 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             loopDates.map((dateObj) => [formatDateLocal(dateObj), 0])
         );
     }
+    }
+
+    // DAILY JOINING / HANDOVER COHORT GRAPH.
+    // X-axis is the employee's ORIGINAL statusHistory joiningDate.
+    // Joined includes both pending temporary employees and employees already handed over.
+    // Handover Completed requires:
+    //   1) users.id = handover_sheets.entries[].studentId
+    //   2) the employee's current users.isTemporary = 0
+    //
+    // IMPORTANT: this is intentionally separate from Total Manpower eligibility because
+    // Total Manpower excludes isTemporary = 1, while this graph must show pending joiners too.
+    if (shouldComputeHandover) {
+        try {
+            let handoverCandidateSql = `
+                SELECT
+                    u.id,
+                    u.empId,
+                    u.isTemporary,
+                    u.statusHistory
+                FROM users u
+                WHERE 1=1
+                  AND ISNULL(u.isDeleted, 0) = 0
+                  AND ISNULL(u.isEmployee, 0) = 1
+                  AND u.empId IS NOT NULL
+                  AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), u.empId))) <> ''
+                  ${getDashboardDesignationShutterExclusionSql("u")}
+                  ${userHierCondition}
+            `;
+
+            const [handoverCandidateRows] = await executeQuery(
+                handoverCandidateSql,
+                [...userHierParams]
+            );
+
+            const rangeStartKey = parseManpowerDateKey(sqlStartDate);
+            const rangeEndKey = parseManpowerDateKey(sqlEndDate);
+
+            // userId -> original joining-date cohort.
+            const handoverCandidateById = new Map();
+            const cohortByJoiningDateKey = new Map();
+
+            for (const userRow of handoverCandidateRows || []) {
+                const userId = Number(userRow?.id);
+                if (!Number.isInteger(userId) || userId <= 0) continue;
+
+                const joiningDateKey = getInitialStatusHistoryJoiningDateKey(userRow);
+                if (joiningDateKey === null) continue;
+
+                if (
+                    rangeStartKey !== null
+                    && rangeEndKey !== null
+                    && (joiningDateKey < rangeStartKey || joiningDateKey > rangeEndKey)
+                ) {
+                    continue;
+                }
+
+                if (!cohortByJoiningDateKey.has(joiningDateKey)) {
+                    cohortByJoiningDateKey.set(joiningDateKey, {
+                        joinedUserIds: new Set(),
+                        handoverUserIds: new Set(),
+                        handoverDates: new Set(),
+                    });
+                }
+
+                cohortByJoiningDateKey.get(joiningDateKey).joinedUserIds.add(userId);
+
+                handoverCandidateById.set(userId, {
+                    joiningDateKey,
+                    isTemporary: Number(userRow?.isTemporary ?? 0) === 1 ? 1 : 0,
+                });
+            }
+
+            if (handoverCandidateById.size > 0) {
+                // Keep the handover source exactly where the workflow stores it:
+                // handover_sheets.entries JSON -> studentId.
+                // statusActionAt is retained as the most specific handover date when present;
+                // otherwise the handover_sheets.date is used.
+                const handoverSheetSql = `
+                    SELECT DISTINCT
+                        TRY_CONVERT(INT, JSON_VALUE(entryJson.[value], '$.studentId')) AS studentId,
+                        CONVERT(
+                            VARCHAR(10),
+                            COALESCE(
+                                TRY_CONVERT(DATE, JSON_VALUE(entryJson.[value], '$.statusActionAt')),
+                                hs.[date]
+                            ),
+                            23
+                        ) AS handoverDate
+                    FROM handover_sheets hs
+                    CROSS APPLY OPENJSON(
+                        CASE
+                            WHEN ISJSON(hs.entries) = 1 THEN hs.entries
+                            ELSE '[]'
+                        END
+                    ) entryJson
+                    WHERE TRY_CONVERT(INT, JSON_VALUE(entryJson.[value], '$.studentId')) IS NOT NULL
+                `;
+
+                const [handoverSheetRows] = await executeQuery(handoverSheetSql, []);
+
+                for (const handoverRow of handoverSheetRows || []) {
+                    const studentId = Number(handoverRow?.studentId);
+                    if (!Number.isInteger(studentId) || studentId <= 0) continue;
+
+                    const candidate = handoverCandidateById.get(studentId);
+                    if (!candidate) continue;
+
+                    // User requirement: handover completion changes isTemporary from 1 -> 0.
+                    if (candidate.isTemporary !== 0) continue;
+
+                    const cohort = cohortByJoiningDateKey.get(candidate.joiningDateKey);
+                    if (!cohort) continue;
+
+                    cohort.handoverUserIds.add(studentId);
+
+                    const handoverDate = String(handoverRow?.handoverDate || '').trim();
+                    if (handoverDate) {
+                        cohort.handoverDates.add(handoverDate);
+                    }
+                }
+            }
+
+            handoverData = loopDates.map((dateObj) => {
+                const fullDate = formatDateLocal(dateObj);
+                const dateKey = parseManpowerDateKey(fullDate);
+                const day = dateObj.getDate();
+                const monthShort = dateObj.toLocaleString("en-US", { month: "short" });
+                const cohort = cohortByJoiningDateKey.get(dateKey);
+
+                const joinedCount = cohort?.joinedUserIds?.size || 0;
+                const handoverCount = cohort?.handoverUserIds?.size || 0;
+
+                return {
+                    fullDate,
+                    day: `${day} ${monthShort}`,
+                    joinedCount,
+                    handoverCount,
+                    pendingCount: Math.max(joinedCount - handoverCount, 0),
+                    handoverDates: cohort
+                        ? Array.from(cohort.handoverDates).sort()
+                        : [],
+                };
+            });
+        } catch (handoverGraphError) {
+            console.warn(
+                "[DASHBOARD] Handover cohort graph failed:",
+                handoverGraphError.message
+            );
+
+            handoverData = loopDates.map((dateObj) => ({
+                fullDate: formatDateLocal(dateObj),
+                day: `${dateObj.getDate()} ${dateObj.toLocaleString("en-US", { month: "short" })}`,
+                joinedCount: 0,
+                handoverCount: 0,
+                pendingCount: 0,
+                handoverDates: [],
+            }));
+        }
+    }
 
     // DAILY REJOINING TREND — second and every later statusHistory joiningDate.
     // Each unique employee is counted at most once on one date, so duplicate users rows
     // with the same empId cannot inflate the graph. Third/fourth rejoin dates still appear
     // independently on their respective dates.
+    if (shouldComputeRejoining) {
     try {
-        const rejoiningTrendSql = `
-            SELECT
-                u.id,
-                u.empId,
-                u.statusHistory
-            FROM users u
-            WHERE 1=1
-              ${getRejoiningTrendBaseEligibilitySql("u")}
-              ${userHierCondition}
-        `;
+        let rejoiningCandidateRows = eligibleManpowerRowsForRejoining;
 
-        const [rejoiningCandidateRows] = await executeQuery(
-            rejoiningTrendSql,
-            [...userHierParams]
-        );
+        // Exact original fallback: if the shared Total Manpower fetch was unavailable,
+        // run the original Rejoining query with all original eligibility/hierarchy conditions.
+        if (!Array.isArray(rejoiningCandidateRows)) {
+            const rejoiningTrendSql = `
+                SELECT
+                    u.id,
+                    u.empId,
+                    u.statusHistory
+                FROM users u
+                WHERE 1=1
+                  ${getRejoiningTrendBaseEligibilitySql("u")}
+                  ${userHierCondition}
+            `;
+
+            const [fallbackRejoiningRows] = await executeQuery(
+                rejoiningTrendSql,
+                [...userHierParams]
+            );
+
+            rejoiningCandidateRows = fallbackRejoiningRows || [];
+        }
 
         const rejoiningCountByDateKey = new Map();
         const seenEmployeeDateEvents = new Set();
@@ -1897,60 +2249,176 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             rejoinedCount: 0,
         }));
     }
+    }
 
     let dailyAttendance = [];
 
+    if (shouldComputeAttendance) {
     try {
-        let attSql = `
-            SELECT
-                CONVERT(VARCHAR(10), CONVERT(DATE, al.[date]), 23) AS fullDate,
-                DAY(CONVERT(DATE, al.[date])) AS dayNum,
-                -- Manpower present count rule:
-                -- Match final dashboard eligibility logic:
-                -- attendance_logs.payCode = users.empId, employee is matched directly with users,
-                -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
-                COUNT(DISTINCT CASE
-                    WHEN al.status IN ('P','PRESENT','Present')
-                     AND attendanceEligibility.isEligibleAttendance = 1
-                    THEN u.id
-                END) AS mappedPresentCount,
-                CAST(0 AS INT) AS unmappedPresentCount,
-                COUNT(DISTINCT CASE
-                    WHEN al.status IN ('P','PRESENT','Present')
-                     AND attendanceEligibility.isEligibleAttendance = 1
-                    THEN u.id
-                END) AS totalPresentCount,
-                COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY','Absent','Leave','Half Day') THEN u.id END) AS absentCount,
-                COUNT(DISTINCT u.id) AS totalCount
-            FROM attendance_logs al
-            INNER JOIN users u ON al.userId = u.id
-            OUTER APPLY (
-                SELECT 1 AS isEligibleAttendance
-                WHERE ${getAttendancePayCodeMatchSql("al", "u")}
-                  AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
-            ) attendanceEligibility
-            WHERE 1=1
-              AND CONVERT(DATE, al.[date]) >= CONVERT(DATE, '${sqlStartDate}', 23)
-              AND CONVERT(DATE, al.[date]) <= CONVERT(DATE, '${sqlEndDate}', 23)
-              ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
-              ${hierCondition}
-              ${getEligibleUserSql("u")}
-                  ${getDashboardDesignationShutterExclusionSql("u")}
-        `;
-        const attParams = [];
-        attSql = addShiftFilter(attSql, attParams, "al");
-        attSql += `
-            GROUP BY CONVERT(DATE, al.[date])
-            ORDER BY CONVERT(DATE, al.[date])
-        `;
+        // FIRST MANPOWER GRAPH ATTENDANCE PERFORMANCE FIX:
+        // Preserve all original date / hierarchy / eligibility / shift / holiday rules,
+        // but avoid running the correlated statusHistory OPENJSON/OUTER APPLY once for
+        // every attendance row. Total Manpower already fetched the same eligible users
+        // with statusHistory, so lifecycle + payCode validation is evaluated once in Node.js.
+        // If that shared population is unavailable, the exact original SQL remains below
+        // as a safe fallback.
+        if (Array.isArray(eligibleManpowerRowsForRejoining)) {
+            const attendanceUserById = new Map(
+                eligibleManpowerRowsForRejoining
+                    .map((userRow) => {
+                        const userId = Number(userRow?.id);
+                        if (!Number.isInteger(userId) || userId <= 0) return null;
 
-        const [attRows] = await executeQuery(attSql, attParams);
-        dailyAttendance = attRows;
+                        return [
+                            userId,
+                            {
+                                empIdKey: String(userRow?.empId || '').trim().toUpperCase(),
+                                prepared: prepareManpowerUser(userRow),
+                            },
+                        ];
+                    })
+                    .filter(Boolean)
+            );
+
+            let attendanceRowsSql = `
+                SELECT
+                    CONVERT(VARCHAR(10), CONVERT(DATE, al.[date]), 23) AS fullDate,
+                    al.userId,
+                    al.payCode,
+                    al.status
+                FROM attendance_logs al
+                INNER JOIN users u ON al.userId = u.id
+                WHERE 1=1
+                  AND al.[date] >= CONVERT(DATE, '${sqlStartDate}', 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${sqlEndDate}', 23))
+                  ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
+                  ${hierCondition}
+                  ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
+            `;
+
+            const attendanceRowsParams = [];
+            attendanceRowsSql = addShiftFilter(
+                attendanceRowsSql,
+                attendanceRowsParams,
+                "al"
+            );
+
+            const [attendanceRawRows] = await executeQuery(
+                attendanceRowsSql,
+                attendanceRowsParams
+            );
+
+            const attendanceByDate = new Map();
+
+            const getAttendanceDateBucket = (fullDate) => {
+                if (!attendanceByDate.has(fullDate)) {
+                    attendanceByDate.set(fullDate, {
+                        mappedPresentUsers: new Set(),
+                        absentUsers: new Set(),
+                        allUsers: new Set(),
+                    });
+                }
+                return attendanceByDate.get(fullDate);
+            };
+
+            for (const row of attendanceRawRows || []) {
+                const fullDate = String(row?.fullDate || '').slice(0, 10);
+                const userId = Number(row?.userId);
+
+                if (!fullDate || !Number.isInteger(userId) || userId <= 0) continue;
+
+                const bucket = getAttendanceDateBucket(fullDate);
+                bucket.allUsers.add(userId);
+
+                const attendanceStatus = String(row?.status || '').trim().toUpperCase();
+
+                // Preserve original absent count rule exactly: status only.
+                if (['ABSENT', 'LEAVE', 'HALF DAY'].includes(attendanceStatus)) {
+                    bucket.absentUsers.add(userId);
+                }
+
+                // Preserve original PRESENT rule exactly:
+                // P/PRESENT + payCode=empId + employee lifecycle active on attendance date.
+                if (!['P', 'PRESENT'].includes(attendanceStatus)) continue;
+
+                const userInfo = attendanceUserById.get(userId);
+                if (!userInfo) continue;
+
+                const payCodeKey = String(row?.payCode || '').trim().toUpperCase();
+                if (!payCodeKey || payCodeKey !== userInfo.empIdKey) continue;
+
+                if (!isUserActiveForManpowerDate(userInfo.prepared, fullDate)) continue;
+
+                bucket.mappedPresentUsers.add(userId);
+            }
+
+            dailyAttendance = Array.from(attendanceByDate.entries())
+                .map(([fullDate, bucket]) => ({
+                    fullDate,
+                    dayNum: Number(String(fullDate).slice(8, 10)) || 0,
+                    mappedPresentCount: bucket.mappedPresentUsers.size,
+                    unmappedPresentCount: 0,
+                    totalPresentCount: bucket.mappedPresentUsers.size,
+                    absentCount: bucket.absentUsers.size,
+                    totalCount: bucket.allUsers.size,
+                }))
+                .sort((a, b) => String(a.fullDate).localeCompare(String(b.fullDate)));
+        } else {
+            // SAFE FALLBACK — exact original first-graph attendance SQL.
+            let attSql = `
+                SELECT
+                    CONVERT(VARCHAR(10), CONVERT(DATE, al.[date]), 23) AS fullDate,
+                    DAY(CONVERT(DATE, al.[date])) AS dayNum,
+                    -- Manpower present count rule:
+                    -- Match final dashboard eligibility logic:
+                    -- attendance_logs.payCode = users.empId, employee is matched directly with users,
+                    -- users.isTemporary = 0, not deleted, and designation is not shuttered/off.
+                    COUNT(DISTINCT CASE
+                        WHEN al.status IN ('P','PRESENT','Present')
+                         AND attendanceEligibility.isEligibleAttendance = 1
+                        THEN u.id
+                    END) AS mappedPresentCount,
+                    CAST(0 AS INT) AS unmappedPresentCount,
+                    COUNT(DISTINCT CASE
+                        WHEN al.status IN ('P','PRESENT','Present')
+                         AND attendanceEligibility.isEligibleAttendance = 1
+                        THEN u.id
+                    END) AS totalPresentCount,
+                    COUNT(DISTINCT CASE WHEN al.status IN ('ABSENT','LEAVE','HALF DAY','Absent','Leave','Half Day') THEN u.id END) AS absentCount,
+                    COUNT(DISTINCT u.id) AS totalCount
+                FROM attendance_logs al
+                INNER JOIN users u ON al.userId = u.id
+                OUTER APPLY (
+                    SELECT 1 AS isEligibleAttendance
+                    WHERE ${getAttendancePayCodeMatchSql("al", "u")}
+                      AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+                ) attendanceEligibility
+                WHERE 1=1
+                  AND al.[date] >= CONVERT(DATE, '${sqlStartDate}', 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${sqlEndDate}', 23))
+                  ${topHolidayDateSqlList ? `AND CONVERT(DATE, al.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
+                  ${hierCondition}
+                  ${getEligibleUserSql("u")}
+                  ${getDashboardDesignationShutterExclusionSql("u")}
+            `;
+            const attParams = [];
+            attSql = addShiftFilter(attSql, attParams, "al");
+            attSql += `
+                GROUP BY CONVERT(DATE, al.[date])
+                ORDER BY CONVERT(DATE, al.[date])
+            `;
+
+            const [attRows] = await executeQuery(attSql, attParams);
+            dailyAttendance = attRows;
+        }
     } catch (e) {
         console.warn("[DASHBOARD] Daily attendance query failed:", e.message);
     }
+    }
 
     let dailyUnmapped = [];
+    if (shouldComputeAttendance) {
     try {
         let unmappedSql = `
             SELECT
@@ -1958,8 +2426,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT unm.payCode) AS unmappedCount
             FROM attendance_unmapped_logs unm
             WHERE UPPER(LTRIM(RTRIM(unm.status))) IN ('P','PRESENT')
-              AND CONVERT(DATE, unm.[date]) >= '${sqlStartDate}'
-              AND CONVERT(DATE, unm.[date]) <= '${sqlEndDate}'
+              AND unm.[date] >= CONVERT(DATE, '${sqlStartDate}', 23)
+              AND unm.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${sqlEndDate}', 23))
               ${topHolidayDateSqlList ? `AND CONVERT(DATE, unm.[date]) NOT IN (${topHolidayDateSqlList})` : ""}
         `;
         const unmappedParams = [];
@@ -1972,8 +2440,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     } catch (e) {
         console.warn("[DASHBOARD] Daily unmapped query failed:", e.message);
     }
+    }
 
-    const manpowerData = loopDates.map((iterDateRaw) => {
+    const manpowerData = shouldComputeManpowerTrend ? loopDates.map((iterDateRaw) => {
         const iterDate = new Date(iterDateRaw);
         const day = iterDate.getDate();
         const monthShort = iterDate.toLocaleString("en-US", { month: "short" });
@@ -2029,15 +2498,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             holidayShortCode: holiday?.shortCode || null,
             holidayType: holiday?.holidayType || null,
         };
-    });
+    }) : [];
 
     let attritionData = [];
 
+    if (shouldComputeAttrition) {
     try {
-        // Attrition graph me pehle users.status = LEFT check hoga.
-        // leavingDate employee ke exact left date ko determine karegi.
-        // PRESENT status employee attrition graph me count nahi hoga.
-        // Same common dashboard employee eligibility attrition graph par bhi apply hogi:
+        // Daily Attrition statusHistory[].status = LEFT se count hoga.
+        // Exact left date statusHistory[].leavingDate se aayegi.
+        // Same common dashboard employee eligibility attrition graph par apply rahegi:
         // isTemporary = 0, isDeleted = 0, valid empId, and shutter designation exclusion.
         // Department/Section/Line filters users table se apply honge; shift behavior unchanged rahega.
         attritionData = await buildDailyAttritionDataFromUsers();
@@ -2045,9 +2514,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         console.warn("[DASHBOARD] Attrition daily query failed:", e.message);
         attritionData = [];
     }
+    }
 
     let absenteeismData = [];
 
+    if (shouldComputeAbsenteeism) {
     try {
         // Use the same corrected absent count as the Manpower graph so both graphs
         // always follow one rule: eligible Total Manpower = Present + Absent.
@@ -2079,6 +2550,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     } catch (e) {
         console.warn("[DASHBOARD] Daily absenteeism calculation failed:", e.message);
         absenteeismData = [];
+    }
     }
 
     const indiaNow = new Date(
@@ -2114,10 +2586,26 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const masterSqlEndDate = formatDateLocal(masterRangeEnd);
 
 
-    const masterHolidayRows = await getDashboardHolidaysForRange(
-        masterSqlStartDate,
-        masterSqlEndDate
-    );
+    const canReuseTopHolidayRows =
+        shouldComputeTopGraphs
+        && masterSqlStartDate >= sqlStartDate
+        && masterSqlEndDate <= sqlEndDate;
+
+    const masterHolidayRows = shouldComputeLowerGraphs
+        ? (
+            canReuseTopHolidayRows
+                ? topHolidayRows.filter(
+                    (item) => (
+                        item.holidayDate >= masterSqlStartDate
+                        && item.holidayDate <= masterSqlEndDate
+                    )
+                )
+                : await getDashboardHolidaysForRange(
+                    masterSqlStartDate,
+                    masterSqlEndDate
+                )
+        )
+        : [];
     const masterHoliday = masterSqlStartDate === masterSqlEndDate
         ? (masterHolidayRows.find(item => item.holidayDate === masterSqlStartDate) || null)
         : null;
@@ -2247,6 +2735,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     let activeUserSetReady = false;
     let activeUserIds = [];
 
+    if (shouldComputeLowerGraphs) {
     try {
         const activeUserParams = [];
 
@@ -2299,6 +2788,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         activeUserIds = [];
         activeUserSetReady = false;
     }
+    }
 
     // Never fall back to the old correlated statusHistory SQL for every lower graph.
     // If the one-time employee fetch fails, return an empty Total Manpower population
@@ -2320,18 +2810,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         INNER JOIN users u
             ON al.userId = u.id
             AND ISNULL(u.isTemporary, 0) = 0
-        WHERE al.[date] >= '${masterSqlStartDate}'
-          AND al.[date] <= '${masterSqlEndDate}'
+        WHERE al.[date] >= CONVERT(DATE, '${masterSqlStartDate}', 23)
+          AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${masterSqlEndDate}', 23))
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND ISNULL(u.isTemporary, 0) = 0
           AND al.status IN ('P', 'PRESENT', 'Present')
           AND ${getAttendancePayCodeMatchSql("al", "u")}
-          AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+          ${activeUserIdFilterSql}
           ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
     `;
 
     // IMPORTANT SHIFT/ALL FIX:
-    // All comparison/pie charts (Skill Level, Gender, State, District, Designation, Leader/Expert)
+    // All comparison/pie charts (Skill Level, Gender, State, District, Designation)
     // now count only PRESENT attendance rows. Without this, ALL shift included rows whose shift/status
     // came as Absent/other values, so ALL count became different from A+B+C+G selected one by one.
 
@@ -2357,8 +2847,13 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     };
 
     let attendanceMasterTotal = 0;
-    if (shouldUseAttendanceMaster) {
-        attendanceMasterTotal = await getAttendanceMasterTotal();
+    // PERFORMANCE:
+    // attendanceMasterTotal is not consumed anywhere in this controller response.
+    // Keep the original helper/conditions intact for compatibility, but avoid the
+    // extra heavy attendance/statusHistory scan on every dashboard request.
+    // If this value is used again in future, call getAttendanceMasterTotal() here.
+    if (!shouldUseAttendanceMaster) {
+        attendanceMasterTotal = 0;
     }
 
     const makeEmptyPieData = () => ({
@@ -2366,9 +2861,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         gender: [],
         state: [],
         district: [],
+        // Role Distribution intentionally removed to reduce dashboard aggregation load.
         designation: [],
-        leaderExpert: [],
-        leaderExpertTotalEmployees: 0,
         contractorPrefix: [],
         stateOptions: [],
         districtOptions: [],
@@ -2842,6 +3336,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             .sort((a, b) => Number(b.masterValue || 0) - Number(a.masterValue || 0));
     };
 
+    let optimizedComparisonBundle = null;
+
+    if (shouldComputeLowerGraphs) {
     try {
         const skillColumnSql = `
             CASE
@@ -2850,17 +3347,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 ELSE 'Not Provided'
             END
         `;
-
-        const leaderExpertColumnSql = `
-            CASE
-                WHEN UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%LINE LEADER%'
-                    THEN 'Line Leader'
-                WHEN UPPER(LTRIM(RTRIM(CAST(u.designation AS NVARCHAR(510))))) LIKE '%EXPERT%'
-                    THEN 'Expert'
-                ELSE 'Other'
-            END
-        `;
-
 
         const educationColumnSql = `
             CASE
@@ -2878,61 +3364,432 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             END
         `;
 
-        const [
-            skillLevels,
-            genderData,
-            stateData,
-            districtData,
-            designationData,
-            leaderExpert,
-            stateOptions,
-            districtOptions,
-            educationData,
-        ] = await Promise.all([
-            getGroupedComparisonChart({
-                columnSql: skillColumnSql,
-            }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({
-                columnSql: getCleanTextColumnSql("u.state"),
-                includeState: true,
-                includeDistrict: true,
-                caseInsensitiveNameMerge: true,
-            }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({
-                columnSql: getCleanTextColumnSql("u.district"),
-                includeState: true,
-                includeDistrict: true,
-                caseInsensitiveNameMerge: true,
-                preserveMergedDisplayName: true,
-            }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({ columnSql: getCleanTextColumnSql("u.designation") }).catch(err => { console.warn("[DASHBOARD] designationData query failed:", err.message); return []; }),
-            getGroupedComparisonChart({
-                columnSql: leaderExpertColumnSql,
-            }).catch(err => { console.warn("[DASHBOARD] leaderExpert query failed:", err.message); return []; }),
-            getStateOptions().catch(err => { console.warn("[DASHBOARD] stateOptions query failed:", err.message); return []; }),
-            getDistrictOptions().catch(err => { console.warn("[DASHBOARD] districtOptions query failed:", err.message); return []; }),
-            getEducationComparisonChart({ columnSql: educationColumnSql }).catch(err => { console.warn("[DASHBOARD] educationData query failed:", err.message); return []; }),
+        const contractorOptimizedColumnSql = `
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510)))), '') IS NULL
+                    THEN 'NOT PROVIDED'
+                WHEN UPPER(LTRIM(RTRIM(CAST(u.[contractor] AS NVARCHAR(510))))) IN (
+                    'NULL',
+                    'UNDEFINED',
+                    'UNKNOWN',
+                    'NOT PROVIDED',
+                    'N/A',
+                    'NA',
+                    '-'
+                )
+                    THEN 'NOT PROVIDED'
+                ELSE UPPER(
+                    LTRIM(
+                        RTRIM(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    CAST(u.[contractor] AS NVARCHAR(510)),
+                                                    '.',
+                                                    ''
+                                                ),
+                                                ',',
+                                                ''
+                                            ),
+                                            CHAR(9),
+                                            ' '
+                                        ),
+                                        '  ',
+                                        ' '
+                                    ),
+                                    '  ',
+                                    ' '
+                                ),
+                                '  ',
+                                ' '
+                            )
+                        )
+                    )
+                )
+            END
+        `;
+
+        const buildOptimizedComparisonBundle = async () => {
+            // IMPORTANT:
+            // This is only a query-count optimization. The same attendance/master
+            // conditions used by the original graph queries are applied below.
+            // Existing per-graph query helpers remain in this file as a fallback.
+            if (!activeUserSetReady) {
+                return null;
+            }
+
+            const attendancePopulationParams = [];
+            let attendancePopulationSql = `
+                SELECT DISTINCT
+                    u.id,
+                    CAST(u.currentLevel AS NVARCHAR(100)) AS currentLevel,
+                    CAST(u.gender AS NVARCHAR(100)) AS gender,
+                    CAST(u.state AS NVARCHAR(510)) AS state,
+                    CAST(u.district AS NVARCHAR(510)) AS district,
+                    CAST(u.designation AS NVARCHAR(510)) AS designation,
+                    CAST(u.education AS NVARCHAR(510)) AS education,
+                    CAST(u.contractor AS NVARCHAR(510)) AS contractor
+                INTO #DashboardAttendancePopulation
+                ${attendanceMasterBaseFrom}
+            `;
+
+            attendancePopulationSql = addUserMasterFilters(
+                attendancePopulationSql,
+                attendancePopulationParams,
+                "u"
+            );
+            attendancePopulationSql = addStateDistrictFilters(
+                attendancePopulationSql,
+                attendancePopulationParams,
+                {
+                    includeState: true,
+                    includeDistrict: true,
+                    alias: "u",
+                }
+            );
+            attendancePopulationSql = addShiftFilter(
+                attendancePopulationSql,
+                attendancePopulationParams,
+                "al"
+            );
+
+            const masterPopulationParams = [];
+            let masterPopulationSql = `
+                SELECT DISTINCT
+                    u.id,
+                    CAST(u.currentLevel AS NVARCHAR(100)) AS currentLevel,
+                    CAST(u.gender AS NVARCHAR(100)) AS gender,
+                    CAST(u.state AS NVARCHAR(510)) AS state,
+                    CAST(u.district AS NVARCHAR(510)) AS district,
+                    CAST(u.designation AS NVARCHAR(510)) AS designation,
+                    CAST(u.education AS NVARCHAR(510)) AS education,
+                    CAST(u.contractor AS NVARCHAR(510)) AS contractor
+                INTO #DashboardMasterPopulation
+                FROM users u
+                WHERE 1=1
+                  ${activeUserIdFilterSql}
+            `;
+
+            masterPopulationSql = addUserMasterHierarchyFilters(
+                masterPopulationSql,
+                masterPopulationParams,
+                "u"
+            );
+            masterPopulationSql = addStateDistrictFilters(
+                masterPopulationSql,
+                masterPopulationParams,
+                {
+                    includeState: true,
+                    includeDistrict: true,
+                    alias: "u",
+                }
+            );
+
+            const genderColumnSql =
+                "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')";
+            const stateColumnSql = getCleanTextColumnSql("u.state");
+            const districtColumnSql = getCleanTextColumnSql("u.district");
+
+            const chartParts = [];
+            const pushChartPart = ({
+                chartOrder,
+                chartKey,
+                sourceOrder,
+                sourceKey,
+                tableName,
+                columnSql,
+            }) => {
+                chartParts.push(`
+                    SELECT
+                        ${chartOrder} AS chartOrder,
+                        '${chartKey}' AS chartKey,
+                        ${sourceOrder} AS sourceOrder,
+                        '${sourceKey}' AS sourceKey,
+                        CAST(${columnSql} AS NVARCHAR(510)) AS rawName,
+                        COUNT(DISTINCT u.id) AS total
+                    FROM ${tableName} u
+                    GROUP BY ${columnSql}
+                `);
+            };
+
+            const allChartDefinitions = [
+                { chartOrder: 1, chartKey: "skillLevels", columnSql: skillColumnSql },
+                { chartOrder: 2, chartKey: "gender", columnSql: genderColumnSql },
+                { chartOrder: 3, chartKey: "state", columnSql: stateColumnSql },
+                { chartOrder: 4, chartKey: "district", columnSql: districtColumnSql },
+                { chartOrder: 7, chartKey: "education", columnSql: educationColumnSql },
+                { chartOrder: 8, chartKey: "contractorPrefix", columnSql: contractorOptimizedColumnSql },
+            ];
+
+            // Scope reduces only unrelated GROUP BY work. The selected graph still uses
+            // the exact same attendance/master populations and conditions as the full request.
+            const chartDefinitions = requestedComparisonChartKey
+                ? allChartDefinitions.filter(
+                    (definition) => definition.chartKey === requestedComparisonChartKey
+                )
+                : allChartDefinitions;
+
+            chartDefinitions.forEach((definition) => {
+                pushChartPart({
+                    ...definition,
+                    sourceOrder: 1,
+                    sourceKey: "attendance",
+                    tableName: "#DashboardAttendancePopulation",
+                });
+                pushChartPart({
+                    ...definition,
+                    sourceOrder: 2,
+                    sourceKey: "master",
+                    tableName: "#DashboardMasterPopulation",
+                });
+            });
+
+            const combinedSql = `
+                ${attendancePopulationSql};
+
+                ${masterPopulationSql};
+
+                ${chartParts.join("\nUNION ALL\n")}
+                ORDER BY chartOrder, sourceOrder, total DESC, rawName;
+            `;
+
+            const combinedParams = [
+                ...attendancePopulationParams,
+                ...masterPopulationParams,
+            ];
+
+            const [combinedRows] = await executeQuery(
+                combinedSql,
+                combinedParams
+            );
+
+            const rows = combinedRows || [];
+            const denominator = Number(activeUsersTotal || 0);
+
+            const buildComparisonChart = ({
+                chartKey,
+                caseInsensitiveNameMerge = false,
+                preserveMergedDisplayName = false,
+                sortBy = "attendance",
+            }) => {
+                const mapByName = {};
+
+                const addToMap = (name, key, value) => {
+                    const cleanName = normalizeChartName(name);
+                    const mapKey = caseInsensitiveNameMerge
+                        ? cleanName.replace(/\s+/g, " ").trim().toUpperCase()
+                        : cleanName;
+                    const displayName = caseInsensitiveNameMerge && !preserveMergedDisplayName
+                        ? mapKey
+                        : cleanName;
+
+                    if (!mapByName[mapKey]) {
+                        mapByName[mapKey] = {
+                            name: displayName,
+                            value: 0,
+                            attendanceValue: 0,
+                            masterValue: 0,
+                            rawValue: 0,
+                            percentage: 0,
+                        };
+                    }
+
+                    mapByName[mapKey][key] += Number(value || 0);
+                };
+
+                rows
+                    .filter((row) => row.chartKey === chartKey)
+                    .forEach((row) => {
+                        if (row.sourceKey === "attendance") {
+                            addToMap(row.rawName, "attendanceValue", row.total);
+                        } else if (row.sourceKey === "master") {
+                            addToMap(row.rawName, "masterValue", row.total);
+                        }
+                    });
+
+                return Object.values(mapByName)
+                    .map((item) => {
+                        const attendanceCount = Number(item.attendanceValue || 0);
+                        const masterCount = Number(item.masterValue || 0);
+
+                        return {
+                            ...item,
+                            masterValue: masterCount,
+                            totalValue: masterCount,
+                            masterCount,
+                            value: attendanceCount,
+                            rawValue: attendanceCount,
+                            percentage:
+                                denominator > 0
+                                    ? Number(((attendanceCount / denominator) * 100).toFixed(1))
+                                    : 0,
+                            attendancePercentage:
+                                denominator > 0
+                                    ? Number(((attendanceCount / denominator) * 100).toFixed(1))
+                                    : 0,
+                            masterPercentage:
+                                denominator > 0
+                                    ? Number(((masterCount / denominator) * 100).toFixed(1))
+                                    : 0,
+                            totalEmployees: denominator,
+                            denominatorTotal: denominator,
+                        };
+                    })
+                    .filter((item) => (
+                        Number(item.attendanceValue || 0) > 0
+                        || Number(item.masterValue || 0) > 0
+                    ))
+                    .sort((a, b) => (
+                        sortBy === "master"
+                            ? Number(b.masterValue || 0) - Number(a.masterValue || 0)
+                            : Number(b.attendanceValue || 0) - Number(a.attendanceValue || 0)
+                    ));
+            };
+
+            const contractorRows = buildComparisonChart({
+                chartKey: "contractorPrefix",
+                sortBy: "master",
+            }).map((row) => {
+                const { totalValue, ...contractorRow } = row;
+                return {
+                    ...contractorRow,
+                    employeeCount: Number(row.masterValue || 0),
+                    actualPresent: Number(row.attendanceValue || 0),
+                    totalHeadcount: Number(row.masterValue || 0),
+                    attendanceCount: Number(row.attendanceValue || 0),
+                    masterCount: Number(row.masterValue || 0),
+                };
+            });
+
+            const educationRows = buildComparisonChart({
+                chartKey: "education",
+                sortBy: "master",
+            }).map((row) => {
+                // Preserve the original Education graph response shape.
+                const { totalValue, masterCount, ...educationRow } = row;
+                return educationRow;
+            });
+
+            return {
+                skillLevels: buildComparisonChart({ chartKey: "skillLevels" }),
+                gender: buildComparisonChart({ chartKey: "gender" }),
+                state: buildComparisonChart({
+                    chartKey: "state",
+                    caseInsensitiveNameMerge: true,
+                }),
+                district: buildComparisonChart({
+                    chartKey: "district",
+                    caseInsensitiveNameMerge: true,
+                    preserveMergedDisplayName: true,
+                }),
+                designation: [],
+                education: educationRows,
+                contractorPrefix: contractorRows,
+            };
+        };
+
+        const shouldLoadStateOptions =
+            requestedScope === "all"
+            || requestedScope === "lower"
+            || ["state", "district", "employeegender"].includes(requestedScope);
+        const shouldLoadDistrictOptions =
+            requestedScope === "all"
+            || requestedScope === "lower"
+            || ["district", "employeegender"].includes(requestedScope);
+
+        const [optimizedBundle, stateOptions, districtOptions] = await Promise.all([
+            buildOptimizedComparisonBundle().catch((err) => {
+                console.warn(
+                    "[DASHBOARD] Optimized comparison bundle failed; original graph queries will be used:",
+                    err.message
+                );
+                return null;
+            }),
+            shouldLoadStateOptions
+                ? getStateOptions().catch(err => {
+                    console.warn("[DASHBOARD] stateOptions query failed:", err.message);
+                    return [];
+                })
+                : Promise.resolve([]),
+            shouldLoadDistrictOptions
+                ? getDistrictOptions().catch(err => {
+                    console.warn("[DASHBOARD] districtOptions query failed:", err.message);
+                    return [];
+                })
+                : Promise.resolve([]),
         ]);
 
-        pieCharts = {
-            ...pieCharts,
-            skillLevels,
-            gender: genderData,
-            state: stateData,
-            district: districtData,
-            designation: designationData,
-            leaderExpert,
-            leaderExpertTotalEmployees: await getUsersTotalDenominator(),
-            stateOptions,
-            districtOptions,
-            education: educationData,
-        };
+        optimizedComparisonBundle = optimizedBundle;
+
+        if (optimizedComparisonBundle) {
+            pieCharts = {
+                ...pieCharts,
+                skillLevels: optimizedComparisonBundle.skillLevels,
+                gender: optimizedComparisonBundle.gender,
+                state: optimizedComparisonBundle.state,
+                district: optimizedComparisonBundle.district,
+                designation: [],
+                stateOptions,
+                districtOptions,
+                education: optimizedComparisonBundle.education,
+            };
+        } else {
+            // SAFE FALLBACK:
+            // Original graph queries are intentionally preserved unchanged.
+            const [
+                skillLevels,
+                genderData,
+                stateData,
+                districtData,
+                educationData,
+            ] = await Promise.all([
+                getGroupedComparisonChart({
+                    columnSql: skillColumnSql,
+                }).catch(err => { console.warn("[DASHBOARD] skillLevels query failed:", err.message); return []; }),
+                getGroupedComparisonChart({ columnSql: "ISNULL(NULLIF(LTRIM(RTRIM(CAST(u.gender AS NVARCHAR(100)))), ''), 'Not Provided')" }).catch(err => { console.warn("[DASHBOARD] genderData query failed:", err.message); return []; }),
+                getGroupedComparisonChart({
+                    columnSql: getCleanTextColumnSql("u.state"),
+                    includeState: true,
+                    includeDistrict: true,
+                    caseInsensitiveNameMerge: true,
+                }).catch(err => { console.warn("[DASHBOARD] stateData query failed:", err.message); return []; }),
+                getGroupedComparisonChart({
+                    columnSql: getCleanTextColumnSql("u.district"),
+                    includeState: true,
+                    includeDistrict: true,
+                    caseInsensitiveNameMerge: true,
+                    preserveMergedDisplayName: true,
+                }).catch(err => { console.warn("[DASHBOARD] districtData query failed:", err.message); return []; }),
+                getEducationComparisonChart({ columnSql: educationColumnSql }).catch(err => { console.warn("[DASHBOARD] educationData query failed:", err.message); return []; }),
+            ]);
+
+            pieCharts = {
+                ...pieCharts,
+                skillLevels,
+                gender: genderData,
+                state: stateData,
+                district: districtData,
+                designation: [],
+                stateOptions,
+                districtOptions,
+                education: educationData,
+            };
+        }
     } catch (e) {
         console.warn("[DASHBOARD] Pie/comparison charts failed:", e.message);
     }
+    }
 
+    if (shouldComputeLowerGraphs && (!requestedComparisonChartKey || requestedComparisonChartKey === "contractorPrefix")) {
     try {
+        if (optimizedComparisonBundle) {
+            // PERFORMANCE: contractor values were produced by the same shared
+            // attendance/master populations as the other comparison graphs.
+            pieCharts.contractorPrefix = optimizedComparisonBundle.contractorPrefix;
+        } else {
         // ============================================================
         // CONTRACTOR GRAPH COMPARISON FIX
         // Requirement:
@@ -3025,11 +3882,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 COUNT(DISTINCT u.id) AS actualPresent
             FROM attendance_logs al
             INNER JOIN users u ON al.userId = u.id
-            WHERE al.[date] >= '${masterSqlStartDate}'
-              AND al.[date] <= '${masterSqlEndDate}'
+            WHERE al.[date] >= CONVERT(DATE, '${masterSqlStartDate}', 23)
+              AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, '${masterSqlEndDate}', 23))
               AND al.status IN ('P','PRESENT','Present')
               AND ${getAttendancePayCodeMatchSql("al", "u")}
-              AND ${getStatusHistoryActiveConditionSql("u", "CONVERT(DATE, al.[date])")}
+              ${activeUserIdFilterSql}
               ${masterHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
               ${getEligibleUserSql("u")}
                   ${getDashboardDesignationShutterExclusionSql("u")}
@@ -3110,9 +3967,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             })
             .filter(item => item.name && (Number(item.masterValue || 0) > 0 || Number(item.attendanceValue || 0) > 0))
             .sort((a, b) => Number(b.masterValue || 0) - Number(a.masterValue || 0));
+        }
     } catch (e) {
         console.warn("[DASHBOARD] Contractor comparison chart failed:", e.message);
         pieCharts.contractorPrefix = [];
+    }
     }
 
     if (masterHoliday) {
@@ -3121,8 +3980,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             "gender",
             "state",
             "district",
-            "designation",
-            "leaderExpert",
             "contractorPrefix",
             "education",
         ];
@@ -3153,6 +4010,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             {
                 manpowerData,
                 rejoiningData,
+                handoverData,
                 holidays: topHolidayRows,
                 absenteeismData,
                 attritionData,
@@ -3340,9 +4198,12 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
         }
     };
 
-    const departmentNames = await getNamesByIds("departments", departmentIds);
-    const sectionNames = await getNamesByIds("sections", sectionIds);
-    const lineNames = await getNamesByIds("lines", lineIds);
+    // PERFORMANCE: these three lookups are independent, so resolve them together.
+    const [departmentNames, sectionNames, lineNames] = await Promise.all([
+        getNamesByIds("departments", departmentIds),
+        getNamesByIds("sections", sectionIds),
+        getNamesByIds("lines", lineIds),
+    ]);
 
     const buildNameInCondition = (columnSql, names) => {
         if (!names || names.length === 0) return "";
@@ -3657,9 +4518,12 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
 
 
-    const departmentNames = await getNamesByIds("departments", departmentIds);
-    const sectionNames = await getNamesByIds("sections", sectionIds);
-    const lineNames = await getNamesByIds("lines", lineIds);
+    // PERFORMANCE: these three lookups are independent, so resolve them together.
+    const [departmentNames, sectionNames, lineNames] = await Promise.all([
+        getNamesByIds("departments", departmentIds),
+        getNamesByIds("sections", sectionIds),
+        getNamesByIds("lines", lineIds),
+    ]);
 
     const buildNameInCondition = (columnSql, names) => {
         if (!names || names.length === 0) return "";
@@ -3788,18 +4652,29 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
     let todayHasAttendance = false;
     try {
-        const checkTodaySql = `
-            SELECT TOP 1 1 
-            FROM attendance_logs al
-            WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, ?, 23)
-              AND (
-                  UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'SHIFT A'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A SHIFT'
-                  OR UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))) = 'A-SHIFT'
-              )
+        const tenureTodayShiftCompact = `
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))),
+                        ' ',
+                        ''
+                    ),
+                    '-',
+                    ''
+                ),
+                '_',
+                ''
+            )
         `;
-        const [todayCheckRows] = await executeQuery(checkTodaySql, [todayStr]);
+        const checkTodaySql = `
+            SELECT TOP 1 1
+            FROM attendance_logs al
+            WHERE al.[date] >= CONVERT(DATE, ?, 23)
+              AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
+              AND ${tenureTodayShiftCompact} IN ('A', 'SHIFTA', 'ASHIFT')
+        `;
+        const [todayCheckRows] = await executeQuery(checkTodaySql, [todayStr, todayStr]);
         todayHasAttendance = todayCheckRows && todayCheckRows.length > 0;
     } catch (checkErr) {
         console.warn("[TENURE] Today Shift A check failed:", checkErr.message);
@@ -3932,36 +4807,26 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     const addShiftFilterOnAttendance = (sqlText, params) => {
         if (!selectedShiftValue) return sqlText;
 
-        // Tenure Attendance uses the same flexible shift matching as the
-        // other attendance graphs: A, Shift A, A Shift, A-Shift, A_Shift,
-        // and General/G shift formats are treated as the same shift.
+        // Same accepted shift aliases as before; normalize the selected value once
+        // and evaluate the attendance shift column only once per row.
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100)))))`;
         const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+        const selectedCompact = String(selectedShiftValue)
+            .trim()
+            .toUpperCase()
+            .replace(/[\s\-_]/g, "");
+        const acceptedShiftCompacts = selectedCompact === "G"
+            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
+            : Array.from(new Set([
+                selectedCompact,
+                `SHIFT${selectedCompact}`,
+                `${selectedCompact}SHIFT`,
+            ]));
 
         sqlText += `
-            AND (
-                ${shiftColumn} = UPPER(LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
-                OR ${shiftColumn} = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = 'SHIFT' + REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '')
-                OR ${shiftColumnCompact} = REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(?))), ' ', ''), '-', ''), '_', '') + 'SHIFT'
-                OR (
-                    UPPER(LTRIM(RTRIM(?))) = 'G'
-                    AND ${shiftColumnCompact} IN ('G', 'GEN', 'GENERAL', 'GENERALSHIFT', 'SHIFTG', 'GSHIFT')
-                )
-            )
+            AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
         `;
-
-        params.push(
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue
-        );
+        params.push(...acceptedShiftCompacts);
 
         return sqlText;
     };
@@ -3986,33 +4851,36 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
     const addFlexibleShiftFilterOnUser = (sqlText, params) => {
         if (!selectedShiftValue) return sqlText;
 
-        // Optimized: avoid slow row-by-row EXISTS. Use IN with selected shift employees
-        // from attendance_logs for selected date/range. This fixes users.shift blank/mismatch.
+        // Same attendance-derived shift membership rule, but use an index-friendly
+        // date range and one normalized shift expression.
+        const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(alShift.shift AS NVARCHAR(100)))))`;
+        const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
+        const selectedCompact = String(selectedShiftValue)
+            .trim()
+            .toUpperCase()
+            .replace(/[\s\-_]/g, "");
+        const acceptedShiftCompacts = selectedCompact === "G"
+            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
+            : Array.from(new Set([
+                selectedCompact,
+                `SHIFT${selectedCompact}`,
+                `${selectedCompact}SHIFT`,
+            ]));
+
         sqlText += `
             AND UPPER(LTRIM(RTRIM(CAST(u.empId AS NVARCHAR(100))))) IN (
                 SELECT DISTINCT UPPER(LTRIM(RTRIM(CAST(alShift.payCode AS NVARCHAR(100)))))
                 FROM attendance_logs alShift
-                WHERE CONVERT(DATE, alShift.[date]) >= ?
-                  AND CONVERT(DATE, alShift.[date]) <= ?
-                  AND (
-                      UPPER(LTRIM(RTRIM(CAST(alShift.shift AS NVARCHAR(100))))) = UPPER(LTRIM(RTRIM(?)))
-                      OR UPPER(LTRIM(RTRIM(CAST(alShift.shift AS NVARCHAR(100))))) = UPPER('SHIFT ' + LTRIM(RTRIM(?)))
-                      OR UPPER(LTRIM(RTRIM(CAST(alShift.shift AS NVARCHAR(100))))) = UPPER(LTRIM(RTRIM(?)) + ' SHIFT')
-                      OR (
-                          UPPER(LTRIM(RTRIM(?))) = 'G'
-                          AND UPPER(LTRIM(RTRIM(CAST(alShift.shift AS NVARCHAR(100))))) IN ('G', 'GEN', 'GENERAL', 'GENERAL SHIFT')
-                      )
-                  )
+                WHERE alShift.[date] >= CONVERT(DATE, ?, 23)
+                  AND alShift.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
+                  AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
             )
         `;
 
         params.push(
             sqlStartDate,
             sqlEndDate,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue,
-            selectedShiftValue
+            ...acceptedShiftCompacts
         );
 
         return sqlText;
@@ -4046,8 +4914,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
-                WHERE al.[date] >= ?
-                  AND al.[date] <= ?
+                WHERE al.[date] >= CONVERT(DATE, ?, 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
                   ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
@@ -4067,13 +4935,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             GROUP BY ${bucketCaseSQL}
         `;
 
-        const [attendanceRows] = await executeQuery(attendanceSql, attendanceParams);
-        attendanceRows.forEach((row) => {
-            if (row.bucket && attendance[row.bucket] !== undefined) {
-                attendance[row.bucket] = Number(row.presentCount || 0);
-            }
-        });
-
         let absenteeismSql = `
             SELECT
                 ${bucketCaseSQL} AS bucket,
@@ -4088,8 +4949,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
-                WHERE al.[date] >= ?
-                  AND al.[date] <= ?
+                WHERE al.[date] >= CONVERT(DATE, ?, 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
                   ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
@@ -4104,7 +4965,20 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
         `;
 
         const absenteeismParams = [sqlStartDate, sqlEndDate];
-        const [absenteeismRows] = await executeQuery(absenteeismSql, absenteeismParams);
+
+        // Independent tenure attendance/absenteeism scans run together. Query conditions
+        // remain unchanged; only wait time is reduced.
+        const [[attendanceRows], [absenteeismRows]] = await Promise.all([
+            executeQuery(attendanceSql, attendanceParams),
+            executeQuery(absenteeismSql, absenteeismParams),
+        ]);
+
+        attendanceRows.forEach((row) => {
+            if (row.bucket && attendance[row.bucket] !== undefined) {
+                attendance[row.bucket] = Number(row.presentCount || 0);
+            }
+        });
+
         absenteeismRows.forEach((row) => {
             if (row.bucket && absenteeism[row.bucket] !== undefined) {
                 absenteeism[row.bucket] = Number(row.absentCount || 0);
@@ -4119,8 +4993,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
-                WHERE al.[date] >= ?
-                  AND al.[date] <= ?
+                WHERE al.[date] >= CONVERT(DATE, ?, 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
                   ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
@@ -4135,8 +5009,6 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
 
             const customAttendanceParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
             customAttendanceSql = addShiftFilterOnAttendance(customAttendanceSql, customAttendanceParams);
-            const [attendanceCustomRows] = await executeQuery(customAttendanceSql, customAttendanceParams);
-            attendance.CUSTOM = Number(attendanceCustomRows?.[0]?.presentCount || 0);
 
             const customAbsenteeismSql = `
                 SELECT
@@ -4145,8 +5017,8 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 INNER JOIN users u
                     ON al.userId = u.id
                     AND ISNULL(u.isTemporary, 0) = 0
-                WHERE al.[date] >= ?
-                  AND al.[date] <= ?
+                WHERE al.[date] >= CONVERT(DATE, ?, 23)
+                  AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
                   ${tenureHoliday ? "AND 1 = 0 /* declared dashboard holiday */" : ""}
                   AND ISNULL(u.isDeleted, 0) = 0
                   AND u.empId IS NOT NULL
@@ -4158,7 +5030,11 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
             `;
 
             const customAbsenteeismParams = [sqlStartDate, sqlEndDate, customFromDays, customToDays];
-            const [absenteeismCustomRows] = await executeQuery(customAbsenteeismSql, customAbsenteeismParams);
+            const [[attendanceCustomRows], [absenteeismCustomRows]] = await Promise.all([
+                executeQuery(customAttendanceSql, customAttendanceParams),
+                executeQuery(customAbsenteeismSql, customAbsenteeismParams),
+            ]);
+            attendance.CUSTOM = Number(attendanceCustomRows?.[0]?.presentCount || 0);
             absenteeism.CUSTOM = Number(absenteeismCustomRows?.[0]?.absentCount || 0);
         }
     } catch (e) {

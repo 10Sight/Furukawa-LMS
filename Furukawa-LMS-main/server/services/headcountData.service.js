@@ -34,32 +34,44 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Fetch all eligible users to calculate daily active counts
     // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory
+        SELECT id, empId, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory
         FROM users u
         WHERE u.isEmployee = 1
         ${getEligibleUserSql('u')}
     `);
 
-    // "Headcount available" (global and per-club) must match the MPS dashboard's Daily
-    // Manpower Trend "Actual Present" count exactly: eligible users (getEligibleUserSql —
-    // isDeleted=0, isTemporary=0, valid empId, non-shuttered designation) with an
-    // attendance_logs row marked Present that day. No isEmployee/leaving-date filtering,
-    // mirroring that graph's mappedPresentCount rule in dashboard.controller.js.
-    const dashboardPresentSql = `
-        SELECT
-            CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-            COUNT(DISTINCT CASE WHEN al.status IN ('P', 'PRESENT', 'Present') THEN u.id END) AS presentCount
-        FROM attendance_logs al
-        INNER JOIN users u ON al.userId = u.id
-        WHERE al.[date] >= ? AND al.[date] <= ?
-          ${getEligibleUserSql('u')}
-        GROUP BY al.[date]
-    `;
-    const [dashboardPresentRows] = await executeQuery(dashboardPresentSql, [prevMonthLastDateKey, end]);
-    const dashboardPresentMap = {};
-    dashboardPresentRows.forEach(row => {
-        if (row.dateKey) dashboardPresentMap[row.dateKey] = Number(row.presentCount) || 0;
+    // Raw attendance punches for the whole report range, used below to compute "Net Available
+    // Headcount Total" (Present) and "Absent" in memory so they match the MPS dashboard's Daily
+    // Manpower Trend / Daily Absenteeism Rate graphs exactly: a punch only counts as Present when
+    // its payCode matches the employee's empId AND that employee has an active statusHistory
+    // stint on that date (dashboard.controller.js's getAttendancePayCodeMatchSql +
+    // getStatusHistoryActiveConditionSql), not merely any Present-status row joined by userId.
+    const [attendanceLogs] = await executeQuery(`
+        SELECT userId, CONVERT(VARCHAR, [date], 23) AS dateKey, status, payCode
+        FROM attendance_logs
+        WHERE [date] >= ? AND [date] <= ?
+    `, [prevMonthLastDateKey, end]);
+
+    const punchesByDate = {};
+    attendanceLogs.forEach(p => {
+        if (!punchesByDate[p.dateKey]) punchesByDate[p.dateKey] = [];
+        punchesByDate[p.dateKey].push(p);
     });
+
+    // Declared holidays suppress the subtraction-method Absent count to 0 below, matching the
+    // dashboard's Daily Absenteeism Rate graph. Best-effort: if the table is missing/unreachable,
+    // fall back to treating no date as a holiday rather than failing the whole sync.
+    let holidaySet = new Set();
+    try {
+        const [holidayRows] = await executeQuery(`
+            SELECT CONVERT(VARCHAR, holidayDate, 23) AS holidayDate
+            FROM dbo.dashboard_holidays
+            WHERE holidayDate >= ? AND holidayDate <= ? AND isActive = 1
+        `, [prevMonthLastDateKey, end]);
+        holidaySet = new Set(holidayRows.map(r => r.holidayDate).filter(Boolean));
+    } catch (e) {
+        console.warn("[HEADCOUNT] Failed to fetch holidays:", e.message);
+    }
 
     // 2. Global Attendance Stats
     // NOTE: this query intentionally keeps a broad WHERE (isEmployee OR isTemporary) even though
@@ -345,13 +357,10 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // "Headcount available" is fed by countTotal and must match the MPS dashboard's Daily
     // Manpower Trend "Total Headcount" bar (totalManpower) exactly, which is purely
     // statusHistory-driven with no attendance-punch fallback of its own. Above 3 Months adds a
-    // tenure >= 3 months check (that stint's joiningDate <= dateObj minus 3 months). Both are 0
-    // for future dates.
+    // tenure check (DATEDIFF(DAY, that stint's joiningDate, dateObj) >= 91), matching the MPS
+    // Portal's tenure-graph "3m-6m"+ bucketing exactly. Both are 0 for future dates.
     const getNetAvailableHeadcount = (dateKey, dateObj, targetSectionIds = null) => {
         if (dateKey > todayYMD) return { countTotal: 0, countAbove3Months: 0 };
-
-        const threeMonthsBefore = new Date(dateObj);
-        threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
 
         let countTotal = 0;
         let countAbove3Months = 0;
@@ -367,25 +376,68 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             const join = stintJoinDate;
 
             if (stillActive) countTotal++;
-            if (stillActive && join && join <= threeMonthsBefore) countAbove3Months++;
+            if (stillActive && join) {
+                // DATEDIFF(DAY, joinDate, asOfDate) >= 91, matching dashboard.controller.js's
+                // tenure-graph bucketing exactly (3m-6m starts at 91 days) instead of a
+                // calendar-month subtraction, which drifts by 1-3 days depending on month
+                // lengths. UTC millis avoid local-timezone skew in the day-count subtraction.
+                const joinKey = parseManpowerDateKey(join);
+                const asOfKey = parseManpowerDateKey(dateKey);
+                if (joinKey !== null && asOfKey !== null) {
+                    const y1 = Math.floor(joinKey / 10000);
+                    const m1 = Math.floor((joinKey % 10000) / 100) - 1;
+                    const d1 = joinKey % 100;
+
+                    const y2 = Math.floor(asOfKey / 10000);
+                    const m2 = Math.floor((asOfKey % 10000) / 100) - 1;
+                    const d2 = asOfKey % 100;
+
+                    const utc1 = Date.UTC(y1, m1, d1);
+                    const utc2 = Date.UTC(y2, m2, d2);
+
+                    const diffDays = Math.round((utc2 - utc1) / (1000 * 60 * 60 * 24));
+                    if (diffDays >= 91) {
+                        countAbove3Months++;
+                    }
+                }
+            }
         });
 
         return { countTotal, countAbove3Months };
     };
 
+    // "Net Available Headcount Total" (Present), matching the MPS dashboard's Daily Manpower
+    // Trend "mappedPresentCount" exactly: the roster (allEligibleUsers, per-stint active on
+    // dateKey) count whose empId matches a Present punch's payCode that day — not merely any
+    // Present-status attendance_logs row joined by userId.
+    const getMappedPresentCount = (dateKey) => {
+        const punchesForDay = punchesByDate[dateKey] || [];
+        const presentPayCodes = new Set();
+        punchesForDay.forEach(p => {
+            const status = String(p.status || '').trim().toUpperCase();
+            if (status === 'P' || status === 'PRESENT') {
+                const payCodeClean = String(p.payCode || '').trim().toUpperCase();
+                if (payCodeClean) presentPayCodes.add(payCodeClean);
+            }
+        });
+
+        let present = 0;
+        allEligibleUsers.forEach(u => {
+            const empIdClean = String(u.empId || '').trim().toUpperCase();
+            if (!empIdClean || !presentPayCodes.has(empIdClean)) return;
+            if (getUserActiveStintOnDate(u, dateKey).active) present++;
+        });
+
+        return present;
+    };
+
     const dailyTotalsMap = {};
-    const presentDataMap = {};
-    netHeadcountData.forEach(row => {
-        if (row.dateKey) presentDataMap[row.dateKey] = row;
-    });
 
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dDate = new Date(dKey);
-        const row = presentDataMap[dKey] || {};
 
         const activeCount = allEligibleUsers.filter(u => isRosterActiveOnDate(u, dDate)).length;
-        const headcountAvailable = dashboardPresentMap[dKey] || 0;
 
         // Temporary/Dojo users don't have attendance_logs punches uploaded for them, so
         // "present" here just means "still an active Dojo member as of this date" — the
@@ -414,19 +466,22 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             dojoPresentOnDate = dojoMembersOnDate.length;
         }
 
-        // Absent is pulled directly from attendance_logs (totalAbsent, computed in netHeadcountSql
-        // above), rather than derived via roster subtraction. Future dates have no attendance data yet.
-        const absent = (dKey <= todayYMD) ? (row.totalAbsent || 0) : 0;
-        // totalPA (roster/activeCount-based) is kept as-is for Absenteeism % and the Attrition %
-        // fallback average below — only the "Total Headcount (Present + Absent)" row itself
-        // switches to attendance_logs (totalPresentForHeadcount + totalAbsent), 0 on future dates.
-        const totalPA = activeCount;
-        const totalHeadcountPresentAbsent = (dKey <= todayYMD)
-            ? (row.totalPresentForHeadcount || 0) + (row.totalAbsent || 0)
-            : 0;
-
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);
+
+        // Present/Absent now match the dashboard's Daily Manpower Trend / Daily Absenteeism Rate
+        // graphs exactly: Present is the payCode-matched, statusHistory-active mappedPresentCount
+        // (getMappedPresentCount above); Absent is the subtraction method (Roster - Present),
+        // suppressed to 0 on declared holidays. Future dates have no attendance data yet.
+        const isHoliday = holidaySet.has(dKey);
+        const present = (dKey <= todayYMD) ? getMappedPresentCount(dKey) : 0;
+        const absent = (dKey <= todayYMD)
+            ? (isHoliday ? 0 : Math.max(netAvailableHeadcountTotal - present, 0))
+            : 0;
+        // totalPA (roster/activeCount-based) is kept as-is for Absenteeism % and the Attrition %
+        // fallback average below.
+        const totalPA = activeCount;
+        const totalHeadcountPresentAbsent = (dKey <= todayYMD) ? (present + absent) : 0;
 
         dailyTotalsMap[dKey] = totalPA;
         // Swapped: "Headcount available" now shows the on-roll roster count (formerly Net
@@ -435,7 +490,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         tableData[`Headcount available_${dKey}`] = String(netAvailableHeadcountTotal);
         tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
         tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
-        tableData[`Net Available Headcount Total_${dKey}`] = headcountAvailable;
+        tableData[`Net Available Headcount Total_${dKey}`] = present;
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(netAvailableAbove3Months);
         tableData[`Absent_${dKey}`] = String(absent);
@@ -855,31 +910,32 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     });
 
     // Headcount available (and per-club Headcount available) for this leading reference
-    // column — dashboardPresentSql above already includes prevMonthLastDateKey in its query
-    // range, and getNetAvailableHeadcount is date-driven so no separate range concern applies.
+    // column — attendanceLogs/punchesByDate above already include prevMonthLastDateKey in
+    // their query range, and getNetAvailableHeadcount/getMappedPresentCount are date-driven so
+    // no separate range concern applies.
     const { countTotal: prevMonthNetTotal, countAbove3Months: prevMonthNetAbove3 } =
         getNetAvailableHeadcount(prevMonthLastDateKey, prevMonthLastDateObj);
 
     // Swapped, matching the daily-loop swap above: "Headcount available" shows the roster
     // count, "Net Available Headcount Total" shows the attendance-present count.
     tableData[`Headcount available_${prevMonthLastDateKey}`] = String(prevMonthNetTotal);
-    tableData[`Net Available Headcount Total_${prevMonthLastDateKey}`] = dashboardPresentMap[prevMonthLastDateKey] || 0;
+    const prevMonthPresent = (prevMonthLastDateKey <= todayYMD) ? getMappedPresentCount(prevMonthLastDateKey) : 0;
+    tableData[`Net Available Headcount Total_${prevMonthLastDateKey}`] = prevMonthPresent;
     tableData[`Net Available Headcount Above 3 Months_${prevMonthLastDateKey}`] = String(prevMonthNetAbove3);
 
-    // Absent / Total Headcount / Absenteeism % for the leading reference column —
-    // netHeadcountSql above already includes prevMonthLastDateKey in its range, so
-    // presentDataMap has totalAbsent for this date too.
+    // Absent / Total Headcount / Absenteeism % for the leading reference column, matching the
+    // daily-loop subtraction method (Roster - Present, suppressed to 0 on declared holidays).
     if (prevMonthLastDateKey > todayYMD) {
         tableData[`Absent_${prevMonthLastDateKey}`] = "0";
         tableData[`Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = 0;
         tableData[`Absenteeism %_${prevMonthLastDateKey}`] = "0.00";
     } else {
-        const prevMonthRow = presentDataMap[prevMonthLastDateKey] || {};
-        const prevMonthAbsent = prevMonthRow.totalAbsent || 0;
+        const prevMonthIsHoliday = holidaySet.has(prevMonthLastDateKey);
+        const prevMonthAbsent = prevMonthIsHoliday ? 0 : Math.max(prevMonthNetTotal - prevMonthPresent, 0);
         // Roster-based, kept only for the Absenteeism % denominator below (unchanged rule).
         const prevMonthActiveCount = allEligibleUsers.filter(u => isRosterActiveOnDate(u, prevMonthLastDateObj)).length;
         const prevMonthAbsPercent = (prevMonthActiveCount > 0) ? (prevMonthAbsent / prevMonthActiveCount) * 100 : 0;
-        const prevMonthTotalHeadcountPresentAbsent = (prevMonthRow.totalPresentForHeadcount || 0) + prevMonthAbsent;
+        const prevMonthTotalHeadcountPresentAbsent = prevMonthPresent + prevMonthAbsent;
 
         tableData[`Absent_${prevMonthLastDateKey}`] = String(prevMonthAbsent);
         tableData[`Total Headcount (Present + Absent)_${prevMonthLastDateKey}`] = prevMonthTotalHeadcountPresentAbsent;

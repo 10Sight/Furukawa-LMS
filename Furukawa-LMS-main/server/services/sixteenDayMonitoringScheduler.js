@@ -10,6 +10,7 @@ class SixteenDayMonitoringScheduler {
     constructor() {
         this.job = null;
         this.isInitialized = false;
+        this.isBusy = false;
     }
 
     init() {
@@ -48,6 +49,9 @@ class SixteenDayMonitoringScheduler {
     }
 
     async _checkAndSend() {
+        if (this.isBusy) return;
+        this.isBusy = true;
+
         try {
             const { currentTime } = this._getISTTime();
             logger.info(`[SixteenDayMonitoringScheduler] Tick — IST time: ${currentTime}`);
@@ -76,6 +80,8 @@ class SixteenDayMonitoringScheduler {
             }
         } catch (error) {
             logger.error(`[SixteenDayMonitoringScheduler] Error in _checkAndSend: ${error.message}`, error);
+        } finally {
+            this.isBusy = false;
         }
     }
 

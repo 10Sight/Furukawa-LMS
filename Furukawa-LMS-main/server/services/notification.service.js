@@ -2470,7 +2470,7 @@ class NotificationService {
             for (let day = 1; day <= daysInMonth; day++) {
                 const colNumber = day + 2;
                 const L = colLetter(colNumber);
-                setFormula(attendanceRow, colNumber, `IF(${L}${availRow}>0,(${L}${assignedRow}/${L}${availRow})*100,0)`);
+                setFormula(attendanceRow, colNumber, `IF(${L}${assignedRow}>0,(${L}${availRow}/${L}${assignedRow})*100,0)`);
             }
         });
     }

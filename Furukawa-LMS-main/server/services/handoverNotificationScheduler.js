@@ -9,6 +9,7 @@ class HandoverNotificationScheduler {
     constructor() {
         this.job = null;
         this.isInitialized = false;
+        this.isBusy = false;
     }
 
     init() {
@@ -47,6 +48,9 @@ class HandoverNotificationScheduler {
     }
 
     async _checkAndSend() {
+        if (this.isBusy) return;
+        this.isBusy = true;
+
         try {
             const { currentTime, today } = this._getISTTime();
             logger.info(`[HandoverNotificationScheduler] Tick — IST time: ${currentTime}, date: ${today}`);
@@ -76,6 +80,8 @@ class HandoverNotificationScheduler {
             }
         } catch (error) {
             logger.error(`[HandoverNotificationScheduler] Error in _checkAndSend: ${error.message}`, error);
+        } finally {
+            this.isBusy = false;
         }
     }
 

@@ -18,6 +18,7 @@ class PlanNotificationScheduler {
     constructor() {
         this.job = null;
         this.isInitialized = false;
+        this.isBusy = false;
     }
 
     init() {
@@ -56,6 +57,9 @@ class PlanNotificationScheduler {
     }
 
     async _tick() {
+        if (this.isBusy) return;
+        this.isBusy = true;
+
         try {
             const { currentTime, today, currentYear } = this._getISTTime();
             logger.info(`[PlanNotificationScheduler] Tick — IST: ${currentTime}, date: ${today}`);
@@ -84,6 +88,8 @@ class PlanNotificationScheduler {
             }
         } catch (err) {
             logger.error(`[PlanNotificationScheduler] Error in _tick: ${err.message}`, err);
+        } finally {
+            this.isBusy = false;
         }
     }
 

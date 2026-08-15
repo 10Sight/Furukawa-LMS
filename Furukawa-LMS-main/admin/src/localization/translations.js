@@ -224,8 +224,22 @@ export const translations = {
     "charts.sixteenDayMonitoringComparisonDesc": "Daily count of filled monitoring-sheet days (Day 1–16), grouped by department — or by section when a single department is selected",
     "charts.failedToLoadSixteenDay": "Failed to load 16-day monitoring status.",
     "charts.noSixteenDayData": "No 16-day monitoring data found for this period.",
+
+    // Three-Day Monitoring Status Chart
+    "charts.threeDayMonitoringComparison": "3-Day Monitoring — Daily Filled Counts",
+    "charts.threeDayMonitoringComparisonDesc": "Daily count of filled monitoring-sheet days (Day 1–3), grouped by department — or by section when a single department is selected",
+    "charts.failedToLoadThreeDay": "Failed to load 3-day monitoring status.",
+    "charts.noThreeDayData": "No 3-day monitoring data found for this period.",
+
+    // 10-Cycle Check Comparison Chart
+    "charts.cycle10Comparison": "10-Cycle Check — Daily Filled Counts",
+    "charts.cycle10ComparisonDesc": "Daily count of filled 10-cycle check entries, grouped by department — or by section when a single department is selected",
+    "charts.failedToLoadCycle10": "Failed to load 10-cycle check status.",
+    "charts.noCycle10Data": "No 10-cycle check data found for this period.",
     "charts.totalFilledDays": "Total Filled Days",
     "charts.filledDays": "Filled Days",
+    "charts.showDetails": "Show Details",
+    "charts.hideDetails": "Hide Details",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Contractor Wise DOJO Candidates",
@@ -963,8 +977,22 @@ export const translations = {
     "charts.sixteenDayMonitoringComparisonDesc": "निगरानी शीट के भरे गए दिनों (डे 1–16) की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
     "charts.failedToLoadSixteenDay": "16-दिवसीय निगरानी स्थिति लोड करने में विफल।",
     "charts.noSixteenDayData": "इस अवधि के लिए कोई 16-दिवसीय निगरानी डेटा नहीं मिला।",
+
+    // Three-Day Monitoring Status Chart
+    "charts.threeDayMonitoringComparison": "3-दिवसीय निगरानी — दैनिक भरे गए दिनों की संख्या",
+    "charts.threeDayMonitoringComparisonDesc": "निगरानी शीट के भरे गए दिनों (डे 1–3) की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
+    "charts.failedToLoadThreeDay": "3-दिवसीय निगरानी स्थिति लोड करने में विफल।",
+    "charts.noThreeDayData": "इस अवधि के लिए कोई 3-दिवसीय निगरानी डेटा नहीं मिला।",
+
+    // 10-Cycle Check Comparison Chart
+    "charts.cycle10Comparison": "10-चक्र जांच — दैनिक भरी गई प्रविष्टियाँ",
+    "charts.cycle10ComparisonDesc": "भरी गई 10-चक्र जांच प्रविष्टियों की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
+    "charts.failedToLoadCycle10": "10-चक्र जांच स्थिति लोड करने में विफल।",
+    "charts.noCycle10Data": "इस अवधि के लिए कोई 10-चक्र जांच डेटा नहीं मिला।",
     "charts.totalFilledDays": "कुल भरे गए दिन",
     "charts.filledDays": "भरे गए दिन",
+    "charts.showDetails": "विवरण दिखाएं",
+    "charts.hideDetails": "विवरण छिपाएं",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "ठेकेदार वार DOJO उम्मीदवार",
@@ -1701,8 +1729,16 @@ export const translations = {
     "charts.sixteenDayMonitoringComparisonDesc": "モニタリングシートの入力済み日数（Day1〜16）の日別集計、部門別グループ化 — 単一部門選択時はセクション別",
     "charts.failedToLoadSixteenDay": "16日間モニタリング状況の読み込みに失敗しました。",
     "charts.noSixteenDayData": "この期間の16日間モニタリングデータが見つかりません。",
+
+    // Three-Day Monitoring Status Chart
+    "charts.threeDayMonitoringComparison": "3日間モニタリング — 日別入力日数",
+    "charts.threeDayMonitoringComparisonDesc": "モニタリングシートの入力済み日数（Day1〜3）の日別集計、部門別グループ化 — 単一部門選択時はセクション別",
+    "charts.failedToLoadThreeDay": "3日間モニタリング状況の読み込みに失敗しました。",
+    "charts.noThreeDayData": "この期間の3日間モニタリングデータが見つかりません。",
     "charts.totalFilledDays": "合計入力日数",
     "charts.filledDays": "入力日数",
+    "charts.showDetails": "詳細を表示",
+    "charts.hideDetails": "詳細を非表示",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "請負業者別 DOJO 候補者",
@@ -2439,8 +2475,16 @@ export const translations = {
     "charts.sixteenDayMonitoringComparisonDesc": "监控表已填写天数（第1天至第16天）的每日统计，按部门分组 — 选择单个部门时按科室分组",
     "charts.failedToLoadSixteenDay": "16天监控状态加载失败。",
     "charts.noSixteenDayData": "未找到该时段的16天监控数据。",
+
+    // Three-Day Monitoring Status Chart
+    "charts.threeDayMonitoringComparison": "3天监控 — 每日填写天数",
+    "charts.threeDayMonitoringComparisonDesc": "监控表已填写天数（第1天至第3天）的每日统计，按部门分组 — 选择单个部门时按科室分组",
+    "charts.failedToLoadThreeDay": "3天监控状态加载失败。",
+    "charts.noThreeDayData": "未找到该时段的3天监控数据。",
     "charts.totalFilledDays": "填写总天数",
     "charts.filledDays": "填写天数",
+    "charts.showDetails": "显示详情",
+    "charts.hideDetails": "隐藏详情",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "按承包商 DOJO 候选人",
@@ -3177,8 +3221,16 @@ export const translations = {
     "charts.sixteenDayMonitoringComparisonDesc": "Ежедневное количество заполненных дней листа мониторинга (День 1–16), сгруппировано по отделам — или по секциям при выборе одного отдела",
     "charts.failedToLoadSixteenDay": "Не удалось загрузить статус 16-дневного мониторинга.",
     "charts.noSixteenDayData": "Данные 16-дневного мониторинга за этот период не найдены.",
+
+    // Three-Day Monitoring Status Chart
+    "charts.threeDayMonitoringComparison": "3-дневный мониторинг — количество заполненных дней",
+    "charts.threeDayMonitoringComparisonDesc": "Ежедневное количество заполненных дней листа мониторинга (День 1–3), сгруппировано по отделам — или по секциям при выборе одного отдела",
+    "charts.failedToLoadThreeDay": "Не удалось загрузить статус 3-дневного мониторинга.",
+    "charts.noThreeDayData": "Данные 3-дневного мониторинга за этот период не найдены.",
     "charts.totalFilledDays": "Всего заполнено дней",
     "charts.filledDays": "Заполнено дней",
+    "charts.showDetails": "Показать детали",
+    "charts.hideDetails": "Скрыть детали",
 
     // Contractor Wise Chart
     "charts.contractorWiseDojo": "Кандидаты DOJO по подрядчикам",

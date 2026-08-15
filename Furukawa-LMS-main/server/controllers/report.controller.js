@@ -314,7 +314,11 @@ export const getUserHierarchySnapshot = asyncHandler(async (req, res) => {
 // The settings are stored separately from recipient rows so the
 // existing Mail model / recipient CRUD behavior remains unchanged.
 // ============================================================
+let isTableEnsured = false;
+
 const ensureEmailReportScheduleTable = async () => {
+    if (isTableEnsured) return;
+
     await executeQuery(`
         IF OBJECT_ID('dbo.email_report_schedule_settings', 'U') IS NULL
         BEGIN

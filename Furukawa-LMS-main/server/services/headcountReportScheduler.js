@@ -9,6 +9,7 @@ class HeadcountReportScheduler {
     constructor() {
         this.job = null;
         this.isInitialized = false;
+        this.isBusy = false;
     }
 
     init() {
@@ -49,6 +50,9 @@ class HeadcountReportScheduler {
     }
 
     async _checkAndSend() {
+        if (this.isBusy) return;
+        this.isBusy = true;
+
         try {
             const { currentTime, month, year } = this._getISTTime();
 
@@ -67,6 +71,8 @@ class HeadcountReportScheduler {
             logger.info(`[HeadcountReportScheduler] ${result.message}`);
         } catch (error) {
             logger.error(`[HeadcountReportScheduler] Error in _checkAndSend: ${error.message}`, error);
+        } finally {
+            this.isBusy = false;
         }
     }
 

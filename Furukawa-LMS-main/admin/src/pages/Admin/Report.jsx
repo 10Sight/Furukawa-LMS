@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
-const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining"];
+const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining", "Present in Training Cell"];
 
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());

@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetSixteenDayMonitoringStatusQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetCycle10MonitoringStatusQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { IconClipboardCheck, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
+import { IconRepeat, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
@@ -109,7 +109,7 @@ const PALETTE = [
     '#14b8a6', '#a855f7', '#eab308', '#0ea5e9', '#f43f5e',
 ];
 
-const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = {}) => {
+const Cycle10ComparisonChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
@@ -134,7 +134,7 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
         [timeframe, debouncedRawStart, debouncedRawEnd]
     );
 
-    const { data, isLoading, error } = useGetSixteenDayMonitoringStatusQuery({
+    const { data, isLoading, error } = useGetCycle10MonitoringStatusQuery({
         groupBy: timeframe,
         startDate,
         endDate,
@@ -372,11 +372,11 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
             <CardHeader className="pb-4">
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                        <IconClipboardCheck className="h-5 w-5 text-blue-600" />
-                        {t('charts.sixteenDayMonitoringComparison')}
+                        <IconRepeat className="h-5 w-5 text-blue-600" />
+                        {t('charts.cycle10Comparison')}
                     </CardTitle>
                     <CardDescription>
-                        {t('charts.sixteenDayMonitoringComparisonDesc')}
+                        {t('charts.cycle10ComparisonDesc')}
                     </CardDescription>
                 </div>
 
@@ -499,12 +499,12 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
                     </div>
                 ) : error ? (
                     <div style={{ height: emptyStateHeight }} className="flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">{t('charts.failedToLoadSixteenDay')}</p>
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadCycle10')}</p>
                     </div>
                 ) : !hasAnyData ? (
                     <div style={{ height: emptyStateHeight }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">{t('charts.noSixteenDayData')}</p>
+                        <p className="text-sm font-medium">{t('charts.noCycle10Data')}</p>
                         <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
                     </div>
                 ) : (
@@ -560,4 +560,4 @@ const SixteenDayMonitoringComparisonChart = ({ departments: departmentsProp } = 
     );
 };
 
-export default SixteenDayMonitoringComparisonChart;
+export default Cycle10ComparisonChart;

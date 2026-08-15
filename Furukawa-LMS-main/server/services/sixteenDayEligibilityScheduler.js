@@ -11,6 +11,7 @@ class SixteenDayEligibilityScheduler {
     constructor() {
         this.job = null;
         this.isInitialized = false;
+        this.isBusy = false;
     }
 
     init() {
@@ -41,6 +42,9 @@ class SixteenDayEligibilityScheduler {
     }
 
     async _checkAndSend() {
+        if (this.isBusy) return;
+        this.isBusy = true;
+
         try {
             const [configs] = await executeQuery(`
                 SELECT ec.*, d.name AS departmentName
@@ -61,6 +65,8 @@ class SixteenDayEligibilityScheduler {
             }
         } catch (error) {
             logger.error(`[SixteenDayEligibilityScheduler] Error in _checkAndSend: ${error.message}`, error);
+        } finally {
+            this.isBusy = false;
         }
     }
 
@@ -104,9 +110,8 @@ class SixteenDayEligibilityScheduler {
         try {
             // Approved-but-not-yet-started candidates in this department (and section, if configured)
             // who haven't already been notified for this specific approval.
-            // ApprovedHandovers scans handover_sheets/OPENJSON once (O(M)) instead of the previous
-            // per-user CROSS APPLY, which re-scanned and re-parsed handover_sheets for every user in
-            // the department (O(N*M)) and was timing out on large datasets.
+            // ApprovedHandovers is filtered to this department before OPENJSON runs, so each tick
+            // only scans/parses this department's handover_sheets rows instead of every department's.
             let query = `
                 WITH ApprovedHandovers AS (
                     SELECT
@@ -118,7 +123,8 @@ class SixteenDayEligibilityScheduler {
                         ) as rn
                     FROM handover_sheets hs
                     CROSS APPLY OPENJSON(hs.entries) as entry
-                    WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+                    WHERE hs.departmentId = ?
+                      AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
                 )
                 SELECT u.id AS studentId, u.fullName, u.empId, u.departmentId, u.sectionId, ho.handoverApprovedAt
                 FROM users u
@@ -134,7 +140,7 @@ class SixteenDayEligibilityScheduler {
                       WHERE n.studentId = u.id AND n.handoverApprovedAt = ho.handoverApprovedAt
                   )
             `;
-            const params = [config.departmentId];
+            const params = [config.departmentId, config.departmentId];
 
             if (config.sectionId) {
                 query += " AND u.sectionId = ?";

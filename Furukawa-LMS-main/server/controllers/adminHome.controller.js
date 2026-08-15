@@ -739,6 +739,237 @@ export const getSixteenDayMonitoringStatus = asyncHandler(async (req, res) => {
 
 
 /**
+ * Get Three-Day Monitoring daily filled-count breakdown for Admin Home page.
+ * For every day_date_1..3 field filled in on a student's latest monitoring attempt,
+ * count one "filled day" against the period that date falls into (daily/monthly/yearly),
+ * grouped by department — or by section once the caller has narrowed to a single department
+ * ("drill mode"), matching the same convention as the Sixteen-Day Monitoring chart.
+ */
+export const getThreeDayMonitoringStatus = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Accepts comma-separated department IDs for multi-select. Narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        params.push(...deptIds);
+    }
+    const isSectionDrill = deptIds.length === 1;
+
+    const [rows] = await executeQuery(`
+        WITH LatestAttempt AS (
+            SELECT
+                m.studentId, m.entries,
+                ROW_NUMBER() OVER (PARTITION BY m.studentId ORDER BY m.attemptNumber DESC, m.createdAt DESC) AS rn
+            FROM three_day_monitorings m
+        )
+        SELECT
+            la.studentId, la.entries,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned') AS sectionName
+        FROM LatestAttempt la
+        INNER JOIN users u ON u.id = la.studentId
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE la.rn = 1
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+    `, params);
+
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodTotals = {};  // period -> { [seriesKey]: count }
+    const seriesNames  = {};  // seriesKey -> display name
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        let entries;
+        try {
+            entries = typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || {});
+        } catch {
+            continue;
+        }
+
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
+
+        for (let day = 1; day <= 3; day++) {
+            const dateObj = parseFlexibleDate(entries[`day_date_${day}`]);
+            if (!dateObj) continue;
+            const iso = formatDateObj(dateObj);
+            if (iso < start || iso > end) continue;
+
+            const period = periodFromIso(iso, safeGroupBy);
+            if (!periodTotals[period]) periodTotals[period] = { period };
+            periodTotals[period][seriesKey] = (periodTotals[period][seriesKey] || 0) + 1;
+        }
+    }
+
+    // seriesKeys: stable, name-sorted list the frontend uses to build one Highcharts series
+    // per department/section without needing to know the set of keys ahead of time.
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Zero-fill every period in the requested range so the frontend doesn't need to backfill gaps.
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodTotals[period]?.[key] || 0; });
+        return row;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "Three-day monitoring status fetched successfully")
+    );
+});
+
+
+/**
+ * Get 10-Cycle Check daily filled-count breakdown for Admin Home page.
+ * Unlike Sixteen-Day/Three-Day Monitoring, ten_cycle_sheets is scoped directly to
+ * department/section/line (not per-student), and its `entries` column is a JSON array of
+ * inspection rows that each carry their own ISO `date` field rather than fixed day-slot keys.
+ * Count one "filled entry" against the period its date falls into (daily/monthly/yearly),
+ * grouped by department — or by section once the caller has narrowed to a single department
+ * ("drill mode"), matching the same convention as the other monitoring charts.
+ */
+export const getCycle10MonitoringStatus = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Accepts comma-separated department IDs for multi-select. Narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND s.departmentId IN (${ph})`;
+        params.push(...deptIds);
+    }
+    const isSectionDrill = deptIds.length === 1;
+
+    // One row per sheet (not per-student, no "latest attempt" concept), so fetching every
+    // sheet's entries array within the requested department scope is cheap.
+    const [rows] = await executeQuery(`
+        SELECT
+            s.id, s.entries,
+            CAST(s.departmentId AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
+            COALESCE(CAST(s.sectionId AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(sec.name, 'Unassigned') AS sectionName
+        FROM ten_cycle_sheets s
+        LEFT JOIN departments d ON d.id = s.departmentId
+        LEFT JOIN sections sec ON sec.id = s.sectionId
+        WHERE 1=1
+          ${deptClause}
+    `, params);
+
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodTotals = {};  // period -> { [seriesKey]: count }
+    const seriesNames  = {};  // seriesKey -> display name
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        let entries;
+        try {
+            entries = typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || []);
+        } catch {
+            continue;
+        }
+        if (!Array.isArray(entries)) continue;
+
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
+
+        for (const entry of entries) {
+            const dateObj = parseFlexibleDate(entry?.date);
+            if (!dateObj) continue;
+            const iso = formatDateObj(dateObj);
+            if (iso < start || iso > end) continue;
+
+            const period = periodFromIso(iso, safeGroupBy);
+            if (!periodTotals[period]) periodTotals[period] = { period };
+            periodTotals[period][seriesKey] = (periodTotals[period][seriesKey] || 0) + 1;
+        }
+    }
+
+    // seriesKeys: stable, name-sorted list the frontend uses to build one Highcharts series
+    // per department/section without needing to know the set of keys ahead of time.
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Zero-fill every period in the requested range so the frontend doesn't need to backfill gaps.
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodTotals[period]?.[key] || 0; });
+        return row;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "10-Cycle Check status fetched successfully")
+    );
+});
+
+
+/**
  * Get User Status stats for the Admin Home page
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */

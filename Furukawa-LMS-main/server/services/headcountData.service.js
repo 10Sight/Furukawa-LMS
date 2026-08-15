@@ -34,7 +34,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Fetch all eligible users to calculate daily active counts
     // (isEmployee, non-temporary, non-deleted, non-shuttered-designation)
     const [allEligibleUsers] = await executeQuery(`
-        SELECT id, empId, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory, stationId, stations
+        SELECT id, empId, sectionId, joiningDate, leavingDate, updatedAt, status, isTemporary, statusHistory, shift, shiftSchedule, isAdmin
         FROM users u
         WHERE u.isEmployee = 1
         ${getEligibleUserSql('u')}
@@ -56,6 +56,22 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     attendanceLogs.forEach(p => {
         if (!punchesByDate[p.dateKey]) punchesByDate[p.dateKey] = [];
         punchesByDate[p.dateKey].push(p);
+    });
+
+    // Collapsed to one status per userId per date (MAX(status) string comparison, matching the
+    // "GROUP BY userId, [date] / MAX(status)" pattern the club/global attendance SQL used to use),
+    // so a user with more than one attendance_logs row for the same day isn't double-counted.
+    // Keyed by userId (not empId/payCode) to match the club present/absent join's u.id = al.userId
+    // semantics below.
+    const dedupedStatusByUserDate = {};
+    attendanceLogs.forEach(p => {
+        if (!dedupedStatusByUserDate[p.dateKey]) dedupedStatusByUserDate[p.dateKey] = new Map();
+        const dayMap = dedupedStatusByUserDate[p.dateKey];
+        const statusVal = p.status || '';
+        const existing = dayMap.get(p.userId);
+        if (existing === undefined || statusVal > existing) {
+            dayMap.set(p.userId, statusVal);
+        }
     });
 
     // Declared holidays suppress the subtraction-method Absent count to 0 below, matching the
@@ -117,7 +133,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // getDojoHandoverComparison/getDojoHiringTrend in dashboard.controller.js — we fetch anyone
     // who is currently temporary OR was ever a Dojo hire (expectedHandover IS NOT NULL).
     const [allDojoUsers] = await executeQuery(`
-        SELECT u.id, u.joiningDate, u.leavingDate, u.updatedAt, u.status, u.isTemporary
+        SELECT u.id, u.joiningDate, u.leavingDate, u.updatedAt, u.status, u.isTemporary, u.statusHistory
         FROM users u
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[expectedHandover] IS NOT NULL OR u.[isTemporary] = 1)
@@ -127,11 +143,15 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
     // Approved handover date per user, used below as the promotion cutoff instead of updatedAt:
     // updatedAt is bumped by any later, unrelated profile edit, which would silently shift
-    // already-synced historical "Present in Training Cell" counts. Mirrors the CROSS APPLY
-    // OPENJSON(entries) pattern already used for this lookup in sixteenDayMonitoring.controller.js.
+    // already-synced historical "Present in Training Cell" counts. Uses the handover sheet's own
+    // [date] column (already a plain YYYY-MM-DD date, no time-of-day component) rather than the
+    // entry's statusActionAt timestamp, so the promotion cutoff compares apples-to-apples against
+    // the YYYY-MM-DD dKey values used throughout this file instead of skewing by time zone/time
+    // of day. Mirrors the CROSS APPLY OPENJSON(entries) pattern already used for this lookup in
+    // sixteenDayMonitoring.controller.js.
     const [approvedHandovers] = await executeQuery(`
         SELECT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS studentId,
-               MIN(JSON_VALUE(entry.value, '$.statusActionAt')) AS handoverDate
+               MIN(CONVERT(VARCHAR, hs.[date], 23)) AS handoverDate
         FROM handover_sheets hs
         CROSS APPLY OPENJSON(hs.entries) AS entry
         WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
@@ -351,6 +371,37 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const todayObj = new Date();
     const todayYMD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
+    // "Present in Training Cell" on dateKey: date-aware via getUserActiveStintOnDate (statusHistory
+    // stints) instead of the plain joiningDate/leavingDate/status columns, so a Dojo member who
+    // left and later rejoined is evaluated against the stint actually open on dateKey — not just
+    // their current status. Combined with the handover-date promotion cutoff (handoverDateMap,
+    // sourced from the handover sheet's own [date] column above) to drop anyone already promoted
+    // out of the Dojo by dateKey. Shared by both the daily loop and the previous-month reference
+    // column below so "back month" totals line up exactly with how the current month is computed.
+    const getDojoPresentOnDate = (dateKey) => {
+        if (dateKey > todayYMD) return 0;
+
+        const dojoMembersOnDate = allDojoUsers.filter(u => {
+            const stint = getUserActiveStintOnDate(u, dateKey);
+            if (!stint.active) return false;
+
+            // Already promoted out of the Dojo before this date. Prefer the approved handover
+            // date whenever one exists, regardless of the user's *current* isTemporary flag —
+            // that flag may not have been flipped to 0 yet even though the handover was already
+            // approved. Only fall back to updatedAt when there is no approved handover_sheets
+            // entry for this user AND they are no longer temporary.
+            const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
+            if (handoverYMD) {
+                if (handoverYMD <= dateKey) return false;
+            } else if (!u.isTemporary) {
+                const promotedYMD = toYMD(u.updatedAt);
+                if (promotedYMD && promotedYMD <= dateKey) return false;
+            }
+            return true;
+        });
+        return dojoMembersOnDate.length;
+    };
+
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
     // countTotal: users-table roster, date-aware via statusHistory stints
     // (getUserActiveStintOnDate) — active on the stint open as of dateObj. No attendance_logs
@@ -460,31 +511,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         const activeCount = allEligibleUsers.filter(u => isRosterActiveOnDate(u, dDate)).length;
 
         // Temporary/Dojo users don't have attendance_logs punches uploaded for them, so
-        // "present" here just means "still an active Dojo member as of this date" — the
-        // join/leave/promotion filter below is already date-aware, so anyone it keeps is by
-        // definition present on dKey. Future dates (no data can exist yet) show 0.
-        let dojoPresentOnDate = 0;
-        let dojoAbsentOnDate = 0;
-
-        if (dKey <= todayYMD) {
-            const dojoMembersOnDate = allDojoUsers.filter(u => {
-                const joinYMD = toYMD(u.joiningDate);
-                if (joinYMD && joinYMD > dKey) return false;
-                if (u.status?.toLowerCase() === 'left') {
-                    const leftYMD = toYMD(u.leavingDate || u.updatedAt);
-                    if (leftYMD && leftYMD <= dKey) return false;
-                }
-                // Already promoted out of the Dojo before this date (isTemporary is now 0).
-                // Prefer the approved handover date; fall back to updatedAt only when no
-                // approved handover_sheets entry exists for this user.
-                if (!u.isTemporary) {
-                    const promotedYMD = toYMD(handoverDateMap[u.id]) || toYMD(u.updatedAt);
-                    if (promotedYMD && promotedYMD <= dKey) return false;
-                }
-                return true;
-            });
-            dojoPresentOnDate = dojoMembersOnDate.length;
-        }
+        // "present" here just means "still an active Dojo member as of this date" — getDojoPresentOnDate
+        // is already date-aware (statusHistory-driven), so anyone it counts is by definition present
+        // on dKey. Future dates (no data can exist yet) show 0.
+        const dojoPresentOnDate = getDojoPresentOnDate(dKey);
+        const dojoAbsentOnDate = 0;
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);
@@ -523,17 +554,63 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         }
     }
 
-    // Shift-wise breakdown: driven by ACTUAL attendance_logs presence, not the scheduled roster.
-    // Available_* must match "Net Available Headcount Total" (getMappedPresentCount) exactly, so
-    // it's computed with the same in-memory roster (allEligibleUsers) and the same two rules —
-    // payCode-matched-to-empId AND statusHistory-active-on-dKey (getUserActiveStintOnDate) —
-    // instead of a separate SQL query that only checked isEmployee/eligibility via a plain JOIN
-    // (no active-stint or payCode/empId verification), which let inactive/mismatched users
-    // inflate the shift totals above the headcount total. Assigned_* is the subset of those
-    // present employees who also have a station assigned in the database. Attendance_* is
-    // Assigned / Available * 100.
+    // Shift-wise breakdown:
+    // Available_* = actually-present headcount, driven by ACTUAL attendance_logs presence, not
+    // the scheduled roster. Must match "Net Available Headcount Total" (getMappedPresentCount)
+    // exactly, so it's computed with the same in-memory roster (allEligibleUsers) and the same
+    // two rules — payCode-matched-to-empId AND statusHistory-active-on-dKey
+    // (getUserActiveStintOnDate) — instead of a separate SQL query that only checked
+    // isEmployee/eligibility via a plain JOIN (no active-stint or payCode/empId verification),
+    // which let inactive/mismatched users inflate the shift totals above the headcount total.
+    // Assigned_* = the "plan" headcount: every active-on-dKey employee's scheduled shift
+    // (u.shiftSchedule[dKey], falling back to their default u.shift), regardless of whether they
+    // were actually present that day. Attendance_* is Available (present) / Assigned (plan) * 100.
     const shiftsList = ['A-Shift', 'G-Shift', 'B-Shift', 'C-Shift'];
-    const shiftMap = { 'A': 'A-Shift', 'G': 'G-Shift', 'B': 'B-Shift', 'C': 'C-Shift' };
+
+    // Strict compacted-pattern matcher, ported verbatim from dashboard.controller.js's
+    // addShiftFilter/addUserShiftFilter acceptedShiftCompacts lists, so a raw shift string only
+    // resolves to a shift here if the Daily Manpower Trend graph's SQL would also accept it —
+    // a loose String.includes() substring match (the old behavior) let unrelated shift codes
+    // that merely contained "A"/"B"/"C"/"G" bleed into the wrong bucket.
+    const getShiftNameFromRaw = (shiftRaw) => {
+        if (!shiftRaw) return null;
+        const compact = String(shiftRaw).trim().toUpperCase().replace(/[\s\-_]/g, "");
+
+        if (["A", "SHIFTA", "ASHIFT"].includes(compact)) return "A-Shift";
+        if (["B", "SHIFTB", "BSHIFT"].includes(compact)) return "B-Shift";
+        if (["C", "SHIFTC", "CSHIFT"].includes(compact)) return "C-Shift";
+        if (["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"].includes(compact)) return "G-Shift";
+
+        return null;
+    };
+
+    // Indexed once per sync (not per date) since allEligibleUsers doesn't change across the
+    // getShiftBreakdownForDate calls below.
+    const userByEmpId = new Map();
+    allEligibleUsers.forEach(u => {
+        const empIdClean = String(u.empId || '').trim().toUpperCase();
+        if (empIdClean) userByEmpId.set(empIdClean, u);
+    });
+
+    // A user's scheduled/rostered shift for dKey: shiftSchedule[dKey] first, falling back to
+    // their default shift column. Shared by the present-punch fallback (below) and the
+    // Assigned/plan computation, so both resolve "what shift is this person on" the same way.
+    const getScheduledShiftForUser = (userObj, dKey) => {
+        let userScheduleShift = null;
+        if (userObj.shiftSchedule) {
+            try {
+                const schedule = typeof userObj.shiftSchedule === 'string'
+                    ? JSON.parse(userObj.shiftSchedule)
+                    : userObj.shiftSchedule;
+                if (schedule && schedule[dKey]) {
+                    userScheduleShift = schedule[dKey];
+                }
+            } catch (err) {
+                // Malformed shiftSchedule JSON — fall through to the default shift.
+            }
+        }
+        return getShiftNameFromRaw(userScheduleShift || userObj.shift);
+    };
 
     const getShiftBreakdownForDate = (dKey) => {
         const punchesForDay = punchesByDate[dKey] || [];
@@ -543,11 +620,21 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             if (status === 'P' || status === 'PRESENT') {
                 const payCodeClean = String(p.payCode || '').trim().toUpperCase();
                 if (payCodeClean) {
-                    const shiftRaw = String(p.shift || '').trim().toUpperCase();
-                    const shiftKey = Object.keys(shiftMap).find(k => shiftRaw.includes(k));
-                    if (shiftKey) {
-                        presentEmpShiftMap.set(payCodeClean, shiftMap[shiftKey]);
+                    let shiftName = getShiftNameFromRaw(p.shift);
+
+                    // Fallback for punches with a missing/unidentified shift: use the employee's
+                    // scheduled shift for this date, or their default shift, from the users table.
+                    if (!shiftName) {
+                        const userObj = userByEmpId.get(payCodeClean);
+                        if (userObj && getUserActiveStintOnDate(userObj, dKey).active) {
+                            shiftName = getScheduledShiftForUser(userObj, dKey);
+                        }
                     }
+
+                    // Still counted in Available_Total below even when no shift could be
+                    // resolved, so the shift breakdown's overall total stays in sync with the
+                    // "Net Available Headcount Total" attendance count.
+                    presentEmpShiftMap.set(payCodeClean, shiftName || null);
                 }
             }
         });
@@ -559,20 +646,23 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         let assignedTotal = 0;
 
         allEligibleUsers.forEach(u => {
-            const empIdClean = String(u.empId || '').trim().toUpperCase();
-            if (!empIdClean || !presentEmpShiftMap.has(empIdClean)) return;
             if (!getUserActiveStintOnDate(u, dKey).active) return;
 
-            const shiftName = presentEmpShiftMap.get(empIdClean);
-            availableByShift[shiftName]++;
-            availableTotal++;
-
-            const stationsClean = (u.stations !== null && u.stations !== undefined) ? String(u.stations).trim() : '';
-            const hasStation = (u.stationId !== null && u.stationId !== undefined && u.stationId !== '')
-                || (stationsClean !== '' && stationsClean !== '[]' && stationsClean.toUpperCase() !== 'NULL');
-            if (hasStation) {
-                assignedByShift[shiftName]++;
+            // Assigned/plan: every active employee's scheduled shift for dKey, independent of
+            // whether they were actually present.
+            const scheduledShiftName = getScheduledShiftForUser(u, dKey);
+            if (scheduledShiftName) {
                 assignedTotal++;
+                assignedByShift[scheduledShiftName]++;
+            }
+
+            // Available/present: their actual punched shift (with the fallback above already
+            // baked into presentEmpShiftMap).
+            const empIdClean = String(u.empId || '').trim().toUpperCase();
+            if (empIdClean && presentEmpShiftMap.has(empIdClean)) {
+                const shiftName = presentEmpShiftMap.get(empIdClean);
+                availableTotal++;
+                if (shiftName) availableByShift[shiftName]++;
             }
         });
 
@@ -590,14 +680,14 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             tableData[`Assigned_${s}_${dKey}`] = isFuture ? "0" : String(assigned);
             tableData[`Attendance_${s}_${dKey}`] = isFuture
                 ? "0.00"
-                : (available > 0 ? ((assigned / available) * 100).toFixed(2) : "0.00");
+                : (assigned > 0 ? ((available / assigned) * 100).toFixed(2) : "0.00");
         });
 
         tableData[`Available_Total_${dKey}`] = String(availableTotal);
         tableData[`Assigned_Total_${dKey}`] = isFuture ? "0" : String(assignedTotal);
         tableData[`Attendance_Total_${dKey}`] = isFuture
             ? "0.00"
-            : (availableTotal > 0 ? ((assignedTotal / availableTotal) * 100).toFixed(2) : "0.00");
+            : (assignedTotal > 0 ? ((availableTotal / assignedTotal) * 100).toFixed(2) : "0.00");
     };
 
     populateShiftTableData(prevMonthLastDateKey);
@@ -621,35 +711,40 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         if (sectionIds.length === 0) continue;
 
-        const placeholders = sectionIds.map(() => "?").join(",");
-        const clubDailySql = `
-            SELECT
-                CONVERT(VARCHAR, al.[date], 23) AS dateKey,
-                SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) = 'PRESENT' AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) AS presentCount,
-                SUM(CASE WHEN UPPER(ISNULL(al.[status], '')) IN ('ABSENT', 'A') AND ISNULL(u.isAdmin, 0) = 0 THEN 1 ELSE 0 END) AS absentCount
-            FROM (
-                -- Collapse to one row per user per date first, same reasoning as netHeadcountSql above.
-                SELECT userId, [date], MAX(status) AS status
-                FROM attendance_logs
-                WHERE [date] >= ? AND [date] <= ?
-                GROUP BY userId, [date]
-            ) al
-            INNER JOIN users u ON u.id = al.userId
-            WHERE u.sectionId IN (${placeholders})
-              AND u.[isEmployee] = 1
-              ${getEligibleUserSql('u')}
-              AND ${notYetLeftCondition}
-            GROUP BY al.[date]
-        `;
-        const [clubDailyData] = await executeQuery(clubDailySql, [prevMonthLastDateKey, end, ...sectionIds]);
+        const normalizedSectionIds = sectionIds.map(String);
 
+        // Club present/absent counts, computed in memory from the same statusHistory-aware
+        // getUserActiveStintOnDate used everywhere else in this file, instead of the old
+        // notYetLeftCondition SQL fragment (plain u.status/u.leavingDate/u.updatedAt check).
+        // That condition didn't account for a user who left and later rejoined — statusHistory
+        // is the source of truth for who was actually on an active stint on a given date, matching
+        // the MPS dashboard's Daily Manpower Trend graph. Matches by userId (not empId/payCode),
+        // same join semantics as the SQL query this replaces (u.id = al.userId).
         const clubPresentMap = {};
-        clubDailyData.forEach(row => {
-            if (row.dateKey) clubPresentMap[row.dateKey] = row;
+        const clubDateKeys = [prevMonthLastDateKey];
+        for (let d = 1; d <= totalDays; d++) {
+            clubDateKeys.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+        }
+        clubDateKeys.forEach(dKey => {
+            const dayMap = dedupedStatusByUserDate[dKey];
+            let presentCount = 0;
+            let absentCount = 0;
+            if (dayMap) {
+                allEligibleUsers.forEach(u => {
+                    if (!normalizedSectionIds.includes(String(u.sectionId))) return;
+                    if (u.isAdmin) return;
+                    if (!getUserActiveStintOnDate(u, dKey).active) return;
+
+                    const status = dayMap.get(u.id);
+                    if (status === undefined) return;
+                    const statusUpper = String(status).trim().toUpperCase();
+                    if (statusUpper === 'PRESENT') presentCount++;
+                    else if (statusUpper === 'ABSENT' || statusUpper === 'A') absentCount++;
+                });
+            }
+            clubPresentMap[dKey] = { presentCount, absentCount };
         });
         clubAbsentMapByClubId[club.id] = clubPresentMap;
-
-        const normalizedSectionIds = sectionIds.map(String);
 
         for (let d = 1; d <= totalDays; d++) {
             const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -809,7 +904,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // the day it happened, instead of disappearing because their *current* status no longer says
     // LEFT.
     const [separationCandidates] = await executeQuery(`
-        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, statusHistory
+        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, expectedHandover, statusHistory
         FROM users u
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
@@ -850,6 +945,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 sectionId: u.sectionId,
                 shift: u.shift,
                 isTemporary: u.isTemporary,
+                expectedHandover: u.expectedHandover,
                 dateKey,
             });
         });
@@ -876,11 +972,25 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // not silently rewrite a day that's already been reported.
         const priorLeftCount = tableData[`Left in nos (Daily)_${dKey}`];
         const hasPriorLeftCount = priorLeftCount !== undefined && priorLeftCount !== null;
+        // A separated user counts as Dojo attrition only while they were still an actual Dojo
+        // member at the time they left — a Dojo hire who was already promoted (approved handover
+        // on or before the separation date) before separating counts as a regular separation
+        // instead, matching getDojoPresentOnDate's promotion cutoff above.
         const dayLeftCount = (dKey < todayYMD && hasPriorLeftCount)
             ? Number(priorLeftCount) || 0
-            : leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary).length;
+            : leftUsers.filter(l => {
+                if (l.dateKey !== dKey) return false;
+                const isDojoUser = l.isTemporary || l.expectedHandover !== null;
+                const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
+                return !isDojoUser || (handoverYMD && handoverYMD <= dKey);
+            }).length;
 
-        const dojoDayLeftCount = leftUsers.filter(l => l.dateKey === dKey && l.isTemporary).length;
+        const dojoDayLeftCount = leftUsers.filter(l => {
+            if (l.dateKey !== dKey) return false;
+            const isDojoUser = l.isTemporary || l.expectedHandover !== null;
+            const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
+            return isDojoUser && (!handoverYMD || handoverYMD > dKey);
+        }).length;
         cumulativeLeft += dayLeftCount;
 
         const dayStats = netHeadcountData.find(r => r.dateKey === dKey);
@@ -903,7 +1013,12 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             const prevD = d - i;
             if (prevD >= 1) {
                 const prevDKey = `${year}-${String(month).padStart(2, '0')}-${String(prevD).padStart(2, '0')}`;
-                weeklyLeft += leftUsers.filter(l => l.dateKey === prevDKey && !l.isTemporary).length;
+                weeklyLeft += leftUsers.filter(l => {
+                    if (l.dateKey !== prevDKey) return false;
+                    const isDojoUser = l.isTemporary || l.expectedHandover !== null;
+                    const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
+                    return !isDojoUser || (handoverYMD && handoverYMD <= prevDKey);
+                }).length;
             }
         }
 
@@ -927,7 +1042,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 clubSectionIds = [];
             }
 
-            const clubDayCount = leftUsers.filter(l => l.dateKey === dKey && !l.isTemporary && clubSectionIds.includes(String(l.sectionId))).length;
+            const clubDayCount = leftUsers.filter(l => {
+                if (l.dateKey !== dKey) return false;
+                if (!clubSectionIds.includes(String(l.sectionId))) return false;
+                const isDojoUser = l.isTemporary || l.expectedHandover !== null;
+                const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
+                return !isDojoUser || (handoverYMD && handoverYMD <= dKey);
+            }).length;
             clubCumulativeLeft[club.id] = (clubCumulativeLeft[club.id] || 0) + clubDayCount;
             tableData[`${club.name} Separated (Cumulative)_${dKey}`] = clubCumulativeLeft[club.id];
         });
@@ -979,6 +1100,9 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const prevMonthPresent = (prevMonthLastDateKey <= todayYMD) ? getMappedPresentCount(prevMonthLastDateKey) : 0;
     tableData[`Net Available Headcount Total_${prevMonthLastDateKey}`] = prevMonthPresent;
     tableData[`Net Available Headcount Above 3 Months_${prevMonthLastDateKey}`] = String(prevMonthNetAbove3);
+    // Computed the same way as the daily loop above, so this leading reference column matches the
+    // previous month's own final column exactly ("back month" continuity).
+    tableData[`Present in Training Cell_${prevMonthLastDateKey}`] = getDojoPresentOnDate(prevMonthLastDateKey);
 
     // Absent / Total Headcount / Absenteeism % for the leading reference column, matching the
     // daily-loop subtraction method (Roster - Present, suppressed to 0 on declared holidays).

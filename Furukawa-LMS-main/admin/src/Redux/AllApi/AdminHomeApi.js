@@ -63,6 +63,26 @@ export const adminHomeApi = createApi({
             // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
             keepUnusedDataFor: 60,
         }),
+        getThreeDayMonitoringStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/three-day-monitoring-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
+        getCycle10MonitoringStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/cycle10-monitoring-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
         getContractorWiseOperatorStats: builder.query({
             query: ({ startDate = "", endDate = "" } = {}) => ({
                 url: "/api/admin-home/contractor-wise-operator-stats",
@@ -82,5 +102,7 @@ export const {
     useGetDojoHiringTrendQuery,
     useGetDojoHandoverComparisonQuery,
     useGetSixteenDayMonitoringStatusQuery,
+    useGetThreeDayMonitoringStatusQuery,
+    useGetCycle10MonitoringStatusQuery,
     useGetContractorWiseOperatorStatsQuery,
 } = adminHomeApi;

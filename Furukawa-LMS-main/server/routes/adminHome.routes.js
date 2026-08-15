@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -25,6 +25,12 @@ router.get("/dojo-handover-comparison", verifyJWT, authorizeRoles("isAdmin", "SU
 
 // Get Sixteen-Day Monitoring status breakdown (Started / Pending / Completed) for Admin Home
 router.get("/sixteen-day-monitoring-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getSixteenDayMonitoringStatus);
+
+// Get Three-Day Monitoring status breakdown for Admin Home
+router.get("/three-day-monitoring-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getThreeDayMonitoringStatus);
+
+// Get 10-Cycle Check status breakdown for Admin Home
+router.get("/cycle10-monitoring-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getCycle10MonitoringStatus);
 
 // Get Contractor-wise Operator stats for Admin Home
 router.get("/contractor-wise-operator-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getContractorWiseOperatorStats);

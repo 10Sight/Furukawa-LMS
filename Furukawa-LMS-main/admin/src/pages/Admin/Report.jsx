@@ -54,9 +54,11 @@ const recalculateReportData = (data, headerDates) => {
 
 // Builds the plain-language justification shown when a user clicks a "Present in Training Cell"
 // cell, purely from data already on screen (no extra fetch): yesterday's and today's headcount,
-// plus today's Hiring Actual / Handover Actual / Attrition & Absenteeism, walked through the way
-// a floor supervisor would explain a headcount change — not the statusHistory/handover-cutoff
-// mechanics behind how the number was actually computed server-side.
+// plus today's Dojo-specific Hires / Rejoining / Handover / Attrition, walked through the way a
+// floor supervisor would explain a headcount change. Uses the Dojo-scoped rows (Hiring Actual
+// Dojo, Rejoining in Training Cell, Dojo Handover, Dojo Attrition) rather than the general report
+// rows (Hiring Actual, Handover Actual, Attrition & Absenteeism) — those mix in non-Dojo hires
+// and daily absenteeism, so they don't reconcile to this row exactly; the Dojo-scoped ones do.
 const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     const dateObj = headerDates[colIndex];
     const dateKey = dateObj.fullDate;
@@ -68,17 +70,19 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     }
 
     const currentCount = parseFloat(tableData[`Present in Training Cell_${dateKey}`]) || 0;
-    const hiringActual = parseFloat(tableData[`Hiring Actual_${dateKey}`]) || 0;
-    const handoverActual = parseFloat(tableData[`Handover Actual_${dateKey}`]) || 0;
-    const attritionAbsenteeism = parseFloat(tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dateKey}`]) || 0;
+    const dojoHires = parseFloat(tableData[`Hiring Actual Dojo_${dateKey}`]) || 0;
+    const dojoRejoining = parseFloat(tableData[`Rejoining in Training Cell_${dateKey}`]) || 0;
+    const dojoHandover = parseFloat(tableData[`Dojo Handover_${dateKey}`]) || 0;
+    const dojoAttrition = parseFloat(tableData[`Dojo Attrition_${dateKey}`]) || 0;
 
     if (colIndex === 0) {
         return [
             `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
             ``,
-            `Hiring Actual: ${hiringActual}`,
-            `Handover Actual: ${handoverActual}`,
-            `Attrition & Absenteeism of Training Cell: ${attritionAbsenteeism}`,
+            `Dojo Hires: ${dojoHires}`,
+            `Rejoining in Training Cell: ${dojoRejoining}`,
+            `Dojo Handover: ${dojoHandover}`,
+            `Dojo Attrition: ${dojoAttrition}`,
             ``,
             `This is the first date in view, so there's no earlier day here to compare it against.`,
         ].join('\n');
@@ -86,25 +90,25 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
 
     const prevDateObj = headerDates[colIndex - 1];
     const prevCount = parseFloat(tableData[`Present in Training Cell_${prevDateObj.fullDate}`]) || 0;
-    const expected = prevCount + hiringActual - handoverActual - attritionAbsenteeism;
+    const expected = prevCount + dojoHires + dojoRejoining - dojoHandover - dojoAttrition;
 
     const lines = [
         `Yesterday (${prevDateObj.displayDate}): ${prevCount} trainee(s)`,
         `Today (${dateObj.displayDate}): ${currentCount} trainee(s)`,
         ``,
-        `Hiring Actual (today): ${hiringActual}`,
-        `Handover Actual (today): ${handoverActual}`,
-        `Attrition & Absenteeism of Training Cell (today): ${attritionAbsenteeism}`,
+        `Dojo Hires (today): ${dojoHires}`,
+        `Rejoining in Training Cell (today): ${dojoRejoining}`,
+        `Dojo Handover (today): ${dojoHandover}`,
+        `Dojo Attrition (today): ${dojoAttrition}`,
         ``,
-        `${prevCount} + ${hiringActual} − ${handoverActual} − ${attritionAbsenteeism} = ${expected}`,
+        `${prevCount} + ${dojoHires} + ${dojoRejoining} − ${dojoHandover} − ${dojoAttrition} = ${expected}`,
     ];
 
     if (expected !== currentCount) {
         lines.push(
             ``,
-            `That comes out close to today's actual count (${currentCount}) but not exact — which is normal, not a mistake:`,
-            `• Hiring Actual counts every new employee joining that day, not only trainees, so it can include hires outside the Training Cell.`,
-            `• Attrition & Absenteeism also includes trainees who were simply absent today — they're still enrolled, so a day off doesn't remove them from this count. Only someone who actually leaves the company does.`,
+            `That comes out close to today's actual count (${currentCount}) but not exact:`,
+            `• If today is the most recent date, a trainee may have been promoted today without a formal handover record yet — the report picks that up live for today only, before it shows up here.`,
         );
     }
 

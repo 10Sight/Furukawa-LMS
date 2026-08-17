@@ -984,15 +984,17 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // 4. Hiring Actual — intentionally includes both regular and temp/Dojo hires (unlike
     // eligibleEmployeeCondition, which requires isTemporary = 0), so isEmployee/isTemporary
     // stay as-is; only the isDeleted/shuttered-designation data-quality checks are added.
-    // Dojo/Operator are broken out alongside the combined count so the report UI can explain a
-    // "Hiring Actual" cell's number without a second query: Dojo mirrors the WHERE clause's own
-    // isTemporary = 1 bypass of the shutter check; Operator applies the same shutter/eligibility
-    // condition the WHERE clause already applies to non-temporary rows.
+    // Operator is broken out alongside the combined count so the report UI can explain a "Hiring
+    // Actual" cell's number without a second query: it applies the same shutter/eligibility
+    // condition the WHERE clause already applies to non-temporary rows. "Hiring Actual Dojo" is
+    // NOT sourced from this query — see the allDojoUsers-based computation further below, which
+    // must stay consistent with getDojoPresentOnDate's own population/date logic (and must
+    // exclude rejoins, already tracked separately by "Rejoining in Training Cell") for the
+    // Present in Training Cell popover's formula to balance exactly.
     const joinSql = `
         SELECT
             CONVERT(VARCHAR, joiningDate, 23) as dateKey,
             COUNT(*) as count,
-            SUM(CASE WHEN u.[isTemporary] = 1 THEN 1 ELSE 0 END) as Dojo,
             SUM(CASE WHEN u.[isEmployee] = 1 AND ISNULL(u.[isTemporary], 0) <> 1 AND ds.[designation] IS NULL THEN 1 ELSE 0 END) as Operator
         FROM users u
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
@@ -1007,9 +1009,62 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     joinData.forEach(row => {
         if (row.dateKey) {
             tableData[`Hiring Actual_${row.dateKey}`] = row.count;
-            tableData[`Hiring Actual Dojo_${row.dateKey}`] = row.Dojo;
             tableData[`Hiring Actual Operator_${row.dateKey}`] = row.Operator;
         }
+    });
+
+    // 4b. Dojo-specific hiring/handover/attrition — precise, allDojoUsers-scoped counterparts to
+    // Hiring Actual / Handover Actual / Attrition & Absenteeism, computed specifically so the
+    // Present in Training Cell popover's formula (Yesterday + Hires + Rejoining - Handover -
+    // Attrition = Today) balances exactly, which those general/report-facing rows can't guarantee
+    // (they mix in non-Dojo hires, daily absenteeism, etc.).
+    //
+    // Hiring Actual Dojo: a *genesis* join only (this user's very first-ever stint's joiningDate
+    // landing on dateKey) — a rejoin's joiningDate is deliberately excluded here since it's
+    // already counted by "Rejoining in Training Cell" below; counting it in both would double it
+    // in the formula.
+    const getDojoGenesisJoinYMD = (u) => {
+        let history;
+        try {
+            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
+        } catch (e) {
+            history = [];
+        }
+        if (Array.isArray(history) && history.length > 0) {
+            return toYMD(history[0]?.joiningDate);
+        }
+        return toYMD(u.joiningDate);
+    };
+
+    // Dojo Handover: mirrors isDojoMemberActiveOnDate's own promotion cutoff exactly — a user
+    // drops out of Present in Training Cell starting the day handoverDateMap resolves to, so that
+    // same date is the "-1" this formula needs.
+    const getDojoHandoversOnDate = (dateKey) => allDojoUsers.filter(u => {
+        const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
+        return handoverYMD === dateKey;
+    }).length;
+
+    // Dojo Attrition: mirrors isDojoMemberActiveOnDate's own separation check — only counts a
+    // same-day separation for a user who wasn't already excluded via an earlier handover (someone
+    // promoted out on day 5 and formally separated on day 20 shouldn't subtract again on day 20;
+    // they stopped contributing to the count back on day 5).
+    const getDojoAttritionOnDate = (dateKey) => leftUsers.filter(l => {
+        if (l.dateKey !== dateKey) return false;
+        const isDojoUser = l.isTemporary || l.expectedHandover !== null;
+        if (!isDojoUser) return false;
+        const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
+        return !handoverYMD || handoverYMD > dateKey;
+    }).length;
+
+    const dojoFormulaDateKeys = [prevMonthLastDateKey];
+    for (let d = 1; d <= totalDays; d++) {
+        dojoFormulaDateKeys.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    }
+    dojoFormulaDateKeys.forEach(dKey => {
+        const dojoHiresOnDate = allDojoUsers.filter(u => getDojoGenesisJoinYMD(u) === dKey).length;
+        tableData[`Hiring Actual Dojo_${dKey}`] = String(dojoHiresOnDate);
+        tableData[`Dojo Handover_${dKey}`] = String(getDojoHandoversOnDate(dKey));
+        tableData[`Dojo Attrition_${dKey}`] = String(getDojoAttritionOnDate(dKey));
     });
 
     // 5. Handover Actual

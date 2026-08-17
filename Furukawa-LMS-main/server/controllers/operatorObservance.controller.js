@@ -7,6 +7,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import NotificationService from "../services/notification.service.js";
 import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import { addMonthsToDateValue } from "../utils/dateMath.js";
 
 const normalizeLevel = (level) => String(level || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 
@@ -117,16 +118,36 @@ const isCellComplete = (cell) => {
     return String(cell.status || "").trim() !== "" && String(cell.val || "").trim() !== "";
 };
 
-const isSubColumnStarted = (data, colId) => {
-    const date = data?.columnDates?.[colId];
-    if (date && String(date).trim() !== "") return true;
-    return CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
-};
+// "Started" must reflect actual inspection work, not just a date being present — obs1-4's
+// 1st-Time date can now be auto-populated (Level-1/2 completion date + 1/2 months) before the
+// operator has been inspected even once, so date-alone can no longer count as "started".
+const isSubColumnStarted = (data, colId) =>
+    CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
 
 const isSubColumnComplete = (data, colId) => {
     const date = data?.columnDates?.[colId];
     if (!date || String(date).trim() === "") return false;
     return CHECK_ROW_IDS.every((rowId) => isCellComplete(data?.[rowId]?.[colId]));
+};
+
+// obs1/obs2 auto-schedule off Level-1 completion (+1/+2 months); obs3/obs4 off Level-2
+// (+1/+2 months). Mirrored by OperatorObservanceSheet.jsx for live client-side pre-fill.
+const deriveObservanceColumnDates = (level1Date, level2Date) => ({
+    obs1: addMonthsToDateValue(level1Date, 1),
+    obs2: addMonthsToDateValue(level1Date, 2),
+    obs3: addMonthsToDateValue(level2Date, 1),
+    obs4: addMonthsToDateValue(level2Date, 2),
+});
+
+// Fills obs1-4's 1st-Time date only where missing — never overwrites a value already present
+// (a manually chosen or client-supplied date always wins over the derived suggestion).
+const withDerivedColumnDates = (observanceData, level1Date, level2Date) => {
+    const derived = deriveObservanceColumnDates(level1Date, level2Date);
+    const columnDates = { ...(observanceData?.columnDates || {}) };
+    for (const key of Object.keys(derived)) {
+        if (!columnDates[key] && derived[key]) columnDates[key] = derived[key];
+    }
+    return { ...(observanceData || {}), columnDates };
 };
 
 // Mirrors client-side validation in OperatorObservanceSheet.jsx
@@ -264,14 +285,20 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
     const resolvedId = await resolveStudentId(studentId);
     if (!resolvedId) throw new ApiError("Student not found", 404);
 
-    const validationError = validateObservanceData(data.observanceData);
-    if (validationError) throw new ApiError(validationError, 400);
-
     const derivedLevel1Date = await getDerivedLevel1CompletionDate(resolvedId);
     const finalLevel1Date = data.level1Date || derivedLevel1Date || null;
     const derivedLevel2Date = await getDerivedLevel2CompletionDate(resolvedId);
     const finalLevel2Date = data.level2Date || derivedLevel2Date || null;
     const userSavingName = req.user?.fullName || req.user?.name || "System";
+
+    // Fill obs1-4's 1st-Time date from Level-1/2 dates wherever the caller left it blank,
+    // then validate the data that will actually be persisted (not the raw payload) — the
+    // client normally pre-fills these itself, but this keeps direct API callers and any
+    // race against the same guarantee, and is what Excel export ultimately reads back.
+    const observanceDataToSave = withDerivedColumnDates(data.observanceData, finalLevel1Date, finalLevel2Date);
+
+    const validationError = validateObservanceData(observanceDataToSave);
+    if (validationError) throw new ApiError(validationError, 400);
 
     let observance = await OperatorObservance.findByStudentId(resolvedId);
 
@@ -286,7 +313,7 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         observance.level1Date = finalLevel1Date;
         observance.level2Date = finalLevel2Date;
         observance.operatorNameCode = data.operatorNameCode;
-        observance.observanceData = data.observanceData;
+        observance.observanceData = observanceDataToSave;
         observance.checkedBy = data.checkedBy || "";
         observance.verifiedBy = data.verifiedBy || "";
         observance.preparedBy = data.preparedBy || observance.preparedBy || userSavingName;
@@ -345,6 +372,7 @@ export const createOrUpdateObservance = asyncHandler(async (req, res) => {
         const newRecord = await OperatorObservance.create({
             studentId: resolvedId,
             ...data,
+            observanceData: observanceDataToSave,
             level1Date: finalLevel1Date,
             level2Date: finalLevel2Date,
             preparedBy: data.preparedBy || userSavingName,

@@ -30,6 +30,8 @@ import DojoHandoverComparisonChart from "@/components/charts/DojoHandoverCompari
 import SixteenDayMonitoringComparisonChart from "@/components/charts/SixteenDayMonitoringComparisonChart";
 import ThreeDayMonitoringComparisonChart from "@/components/charts/ThreeDayMonitoringComparisonChart";
 import Cycle10ComparisonChart from "@/components/charts/Cycle10ComparisonChart";
+import SkillMatrixCertificateComparisonChart from "@/components/charts/SkillMatrixCertificateComparisonChart";
+import OperatorObservanceComparisonChart from "@/components/charts/OperatorObservanceComparisonChart";
 import ContractorWiseOperatorChart from "@/components/charts/ContractorWiseOperatorChart";
 import DashboardDateFilter from "@/components/dashboard/DashboardDateFilter";
 import RecentActivityCard from "@/components/dashboard/RecentActivityCard";
@@ -258,6 +260,12 @@ const Home = () => {
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <Cycle10ComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
+        </LazyContainer>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
+          <SkillMatrixCertificateComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
+        </LazyContainer>
+        <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
+          <OperatorObservanceComparisonChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <ContractorWiseOperatorChart />

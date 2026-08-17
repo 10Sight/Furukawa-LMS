@@ -236,8 +236,22 @@ export const translations = {
     "charts.cycle10ComparisonDesc": "Daily count of filled 10-cycle check entries, grouped by department — or by section when a single department is selected",
     "charts.failedToLoadCycle10": "Failed to load 10-cycle check status.",
     "charts.noCycle10Data": "No 10-cycle check data found for this period.",
+
+    // Skill Matrix Certificate Comparison Chart
+    "charts.skillMatrixComparison": "Skill Matrix Certificate — Filled Item Counts",
+    "charts.skillMatrixComparisonDesc": "Count of filled checklist items on skill matrix certificates, attributed to the last-saved date, grouped by department — or by section when a single department is selected",
+    "charts.failedToLoadSkillMatrix": "Failed to load skill matrix certificate status.",
+    "charts.noSkillMatrixData": "No skill matrix certificate data found for this period.",
+
+    // Operator Observance Comparison Chart
+    "charts.operatorObservanceComparison": "Operator Observance — Daily Filled Counts",
+    "charts.operatorObservanceComparisonDesc": "Daily count of filled observance-sheet inspection columns, grouped by department — or by section when a single department is selected",
+    "charts.failedToLoadOperatorObservance": "Failed to load operator observance status.",
+    "charts.noOperatorObservanceData": "No operator observance data found for this period.",
+
     "charts.totalFilledDays": "Total Filled Days",
     "charts.filledDays": "Filled Days",
+    "charts.filledItems": "Filled Items",
     "charts.showDetails": "Show Details",
     "charts.hideDetails": "Hide Details",
 
@@ -989,8 +1003,22 @@ export const translations = {
     "charts.cycle10ComparisonDesc": "भरी गई 10-चक्र जांच प्रविष्टियों की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
     "charts.failedToLoadCycle10": "10-चक्र जांच स्थिति लोड करने में विफल।",
     "charts.noCycle10Data": "इस अवधि के लिए कोई 10-चक्र जांच डेटा नहीं मिला।",
+
+    // Skill Matrix Certificate Comparison Chart
+    "charts.skillMatrixComparison": "स्किल मैट्रिक्स सर्टिफिकेट — भरी गई प्रविष्टियों की संख्या",
+    "charts.skillMatrixComparisonDesc": "स्किल मैट्रिक्स सर्टिफिकेट पर भरी गई चेकलिस्ट प्रविष्टियों की संख्या, अंतिम सेव तिथि के अनुसार, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
+    "charts.failedToLoadSkillMatrix": "स्किल मैट्रिक्स सर्टिफिकेट स्थिति लोड करने में विफल।",
+    "charts.noSkillMatrixData": "इस अवधि के लिए कोई स्किल मैट्रिक्स सर्टिफिकेट डेटा नहीं मिला।",
+
+    // Operator Observance Comparison Chart
+    "charts.operatorObservanceComparison": "ऑपरेटर ऑब्ज़र्वेंस — दैनिक भरे गए कॉलम",
+    "charts.operatorObservanceComparisonDesc": "भरे गए ऑब्ज़र्वेंस-शीट निरीक्षण कॉलमों की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
+    "charts.failedToLoadOperatorObservance": "ऑपरेटर ऑब्ज़र्वेंस स्थिति लोड करने में विफल।",
+    "charts.noOperatorObservanceData": "इस अवधि के लिए कोई ऑपरेटर ऑब्ज़र्वेंस डेटा नहीं मिला।",
+
     "charts.totalFilledDays": "कुल भरे गए दिन",
     "charts.filledDays": "भरे गए दिन",
+    "charts.filledItems": "भरी गई प्रविष्टियाँ",
     "charts.showDetails": "विवरण दिखाएं",
     "charts.hideDetails": "विवरण छिपाएं",
 

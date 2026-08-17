@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -31,6 +31,12 @@ router.get("/three-day-monitoring-status", verifyJWT, authorizeRoles("isAdmin", 
 
 // Get 10-Cycle Check status breakdown for Admin Home
 router.get("/cycle10-monitoring-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getCycle10MonitoringStatus);
+
+// Get Skill Matrix Certificate filled-item breakdown for Admin Home
+router.get("/skill-matrix-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getSkillMatrixCertificateStatus);
+
+// Get Operator Observance Sheet filled-column breakdown for Admin Home
+router.get("/operator-observance-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getOperatorObservanceStatus);
 
 // Get Contractor-wise Operator stats for Admin Home
 router.get("/contractor-wise-operator-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getContractorWiseOperatorStats);

@@ -40,46 +40,78 @@ const resolveStudentId = async (studentId) => {
 };
 
 export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, lineId } = req.query;
+    const { departmentId, sectionId, lineId, search } = req.query;
 
     if (!departmentId) {
         throw new ApiError("Department ID is required", 400);
     }
 
-    let query = `
-        SELECT 
-            u.id, u.fullName, u.empId, u.avatar,
-            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
-            stats.totalAttempts, stats.rejectedCount
-        FROM users u
-        LEFT JOIN (
-            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
-                   ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
-            FROM three_day_monitorings
-        ) m ON u.id = m.studentId AND m.rn = 1
-        LEFT JOIN (
-            SELECT studentId, COUNT(*) as totalAttempts,
-                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
-            FROM three_day_monitorings
-            GROUP BY studentId
-        ) stats ON u.id = stats.studentId
+    // Restrict CUSTOM-role users to their assigned department/section, mirroring the
+    // scoping guard in attemptedQuiz.controller.js — admins/trainers keep full access.
+    const isSuperAdminOrAdmin = req.user?.role === 'SUPERADMIN' || req.user?.role === 'ADMIN' || req.user?.isAdmin;
+    if (req.user && req.user.role === 'CUSTOM' && !isSuperAdminOrAdmin) {
+        let allowedDepts = [];
+        if (req.user.departmentId) allowedDepts.push(String(req.user.departmentId));
+        try {
+            const parsedDepts = typeof req.user.departments === 'string' ? JSON.parse(req.user.departments) : (req.user.departments || []);
+            if (Array.isArray(parsedDepts)) parsedDepts.forEach(d => {
+                const id = (d && typeof d === 'object') ? String(d.id || d._id || '') : String(d);
+                if (id) allowedDepts.push(id);
+            });
+        } catch (e) { /* ignore parse errors */ }
+        allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
+
+        if (allowedDepts.length > 0 && !allowedDepts.includes(String(departmentId))) {
+            throw new ApiError("You do not have permission to view monitoring data for this department", 403);
+        }
+
+        if (sectionId && sectionId !== "0") {
+            let allowedSections = [];
+            if (req.user.sectionId) allowedSections.push(String(req.user.sectionId));
+            try {
+                const parsedSections = typeof req.user.sections === 'string' ? JSON.parse(req.user.sections) : (req.user.sections || []);
+                if (Array.isArray(parsedSections)) parsedSections.forEach(s => {
+                    const id = (s && typeof s === 'object') ? String(s.id || s._id || '') : String(s);
+                    if (id) allowedSections.push(id);
+                });
+            } catch (e) { /* ignore parse errors */ }
+            allowedSections = [...new Set(allowedSections)].filter(Boolean);
+
+            if (allowedSections.length > 0 && !allowedSections.includes(String(sectionId))) {
+                throw new ApiError("You do not have permission to view monitoring data for this section", 403);
+            }
+        }
+    }
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 30, 500);
+    const offset = (page - 1) * limit;
+
+    let whereSql = `
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
         AND (u.status IS NULL OR u.status != 'LEFT')
         AND (
-            (m.studentId IS NOT NULL 
-             AND COALESCE(m.verifiedBy, '') NOT LIKE '%Rejected%' 
-             AND COALESCE(m.approvedBy, '') NOT LIKE '%Rejected%')
+            m.studentId IS NOT NULL
             OR (
-                EXISTS (
-                    SELECT 1 FROM on_job_trainings ojt
-                    WHERE (
-                        ojt.student = CAST(u.id AS NVARCHAR(50))
-                        OR (ojt.attendanceRecords LIKE '%' + u.empId + '%' AND u.empId IS NOT NULL AND u.empId != '')
-                        OR (ojt.attendanceRecords LIKE '%' + u.userName + '%' AND u.userName IS NOT NULL AND u.userName != '')
+                (
+                    EXISTS (
+                        SELECT 1 FROM on_job_trainings ojt
+                        WHERE ojt.student = CAST(u.id AS NVARCHAR(50))
+                          AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+                          AND ojt.createdAt >= CAST(GETDATE() AS DATE) AND ojt.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
                     )
-                    AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-                    AND ojt.createdAt >= CAST(GETDATE() AS DATE) AND ojt.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
+                    OR EXISTS (
+                        SELECT 1 FROM on_job_trainings ojt
+                        CROSS APPLY OPENJSON(ojt.attendanceRecords) WITH (
+                            ecode NVARCHAR(100) '$.ecode',
+                            result NVARCHAR(50) '$.result',
+                            recDate DATE '$.date'
+                        ) AS rec
+                        WHERE (rec.ecode = u.empId OR rec.ecode = u.userName)
+                          AND (rec.result = 'Pass' OR rec.result = 'Approved')
+                          AND rec.recDate = CAST(GETDATE() AS DATE)
+                    )
                 )
                 AND EXISTS (
                     SELECT 1 FROM attempted_quizzes aq
@@ -95,20 +127,60 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
     const params = [departmentId];
 
     if (sectionId && sectionId !== "0") {
-        query += " AND u.sectionId = ?";
+        whereSql += " AND u.sectionId = ?";
         params.push(sectionId);
     }
     if (lineId && lineId !== "0" && lineId !== "all" && lineId !== "All" && lineId !== "undefined" && lineId !== "null") {
-        query += " AND u.lineId = ?";
+        whereSql += " AND u.lineId = ?";
         params.push(lineId);
     }
 
-    query += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
+    whereSql += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
 
-    const [rows] = await executeQuery(query, params);
+    if (search) {
+        whereSql += " AND (u.fullName LIKE ? OR u.empId LIKE ?)";
+        params.push(`%${search}%`, `%${search}%`);
+    }
+
+    const fromSql = `
+        FROM users u
+        LEFT JOIN (
+            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
+                   ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
+            FROM three_day_monitorings
+        ) m ON u.id = m.studentId AND m.rn = 1
+        LEFT JOIN (
+            SELECT studentId, COUNT(*) as totalAttempts,
+                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
+            FROM three_day_monitorings
+            GROUP BY studentId
+        ) stats ON u.id = stats.studentId
+    `;
+
+    const [[rows], [cnt]] = await Promise.all([
+        executeQuery(`
+            SELECT
+                u.id, u.fullName, u.empId, u.avatar,
+                m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
+                stats.totalAttempts, stats.rejectedCount
+            ${fromSql}
+            ${whereSql}
+            ORDER BY u.fullName ASC
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        `, [...params, offset, limit]),
+        executeQuery(`SELECT COUNT(*) as total ${fromSql} ${whereSql}`, params),
+    ]);
+
+    const totalCount = cnt[0]?.total || 0;
 
     return res.status(200).json(
-        new ApiResponse(200, rows, "3-Day monitoring status list fetched successfully")
+        new ApiResponse(200, {
+            list: rows,
+            totalCount,
+            totalPages: Math.ceil(totalCount / limit),
+            currentPage: page,
+            limit
+        }, "3-Day monitoring status list fetched successfully")
     );
 });
 

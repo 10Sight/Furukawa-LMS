@@ -76,11 +76,20 @@ const ThreeDayMonitoring = () => {
     const [line, setLine] = useState("");
     const [studentId, setStudentId] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
     const [forceNewAttempt, setForceNewAttempt] = useState(false);
-    
+
     // Monitoring Status List
     const [monitoringList, setMonitoringList] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
+    const [monitoringPage, setMonitoringPage] = useState(1);
+    const [monitoringTotalPages, setMonitoringTotalPages] = useState(1);
+    const monitoringPageSize = 30;
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     // Freeze hierarchy if the user is a staff member restricted to their own area
     const isSelectionLocked = useMemo(() => {
@@ -121,10 +130,18 @@ const ThreeDayMonitoring = () => {
         try {
             setLoadingList(true);
             const res = await axiosInstance.get(`/api/three-day-monitoring`, {
-                params: { departmentId: dept, sectionId: section, lineId: line }
+                params: {
+                    departmentId: dept,
+                    sectionId: section,
+                    lineId: line,
+                    page: monitoringPage,
+                    limit: monitoringPageSize,
+                    search: debouncedSearchTerm || undefined
+                }
             });
             if (res.data.success) {
-                setMonitoringList(res.data.data);
+                setMonitoringList(res.data.data.list || []);
+                setMonitoringTotalPages(res.data.data.totalPages || 1);
             }
         } catch (error) {
             console.error("Error fetching monitoring list:", error);
@@ -137,7 +154,11 @@ const ThreeDayMonitoring = () => {
         if (dept && !studentId && activeTab === 'stack') {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, activeTab]);
+    }, [dept, section, line, studentId, activeTab, monitoringPage, debouncedSearchTerm]);
+
+    useEffect(() => {
+        setMonitoringPage(1);
+    }, [dept, section, line, debouncedSearchTerm]);
 
     // Role-based Initialization & Auto-select
     useEffect(() => {
@@ -193,15 +214,6 @@ const ThreeDayMonitoring = () => {
         if (status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-600 border-blue-200' };
         return { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
     };
-
-    const filteredMonitoringList = useMemo(() => {
-        if (!searchTerm) return monitoringList;
-        const lowSearch = searchTerm.toLowerCase();
-        return monitoringList.filter(s =>
-            s.fullName?.toLowerCase().includes(lowSearch) ||
-            s.empId?.toLowerCase().includes(lowSearch)
-        );
-    }, [monitoringList, searchTerm]);
 
     return (
         <div className="space-y-6 w-max min-w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
@@ -392,8 +404,8 @@ const ThreeDayMonitoring = () => {
                                                 </div>
                                             </TableCell>
                                         </TableRow>
-                                    ) : filteredMonitoringList.length > 0 ? (
-                                        filteredMonitoringList.map((item) => {
+                                    ) : monitoringList.length > 0 ? (
+                                        monitoringList.map((item) => {
                                             const badge = getStatusBadge(item.status, item.verifiedBy, item.approvedBy);
                                             const lastActionBy = item.approvedBy || item.verifiedBy || item.checkedBy || "-";
                                             
@@ -487,6 +499,33 @@ const ThreeDayMonitoring = () => {
                                     )}
                                 </TableBody>
                             </Table>
+                            {!loadingList && monitoringList.length > 0 && (
+                                <div className="flex justify-between items-center px-3 py-2 border-t bg-slate-50 text-xs">
+                                    <span className="text-slate-500 font-medium">
+                                        Page {monitoringPage} of {monitoringTotalPages}
+                                    </span>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3 border-slate-200"
+                                            disabled={monitoringPage <= 1}
+                                            onClick={() => setMonitoringPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            className="h-7 px-3 border-slate-200"
+                                            disabled={monitoringPage >= monitoringTotalPages}
+                                            onClick={() => setMonitoringPage(p => Math.min(monitoringTotalPages, p + 1))}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </Card>
                     )}
                 </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import { Loader2, Eye, Pencil, Lock } from "lucide-react";
 import { exportToExcel } from "@/utils/exportHelper";
+import { addCalendarMonths } from "@/utils/dateMath";
 
 // Check Contents defined in the image
 const CHECK_CONTENTS = [
@@ -55,11 +56,12 @@ const isCellComplete = (cell) => {
     return String(cell.status || "").trim() !== "" && String(cell.val || "").trim() !== "";
 };
 
-const isSubColumnStarted = (data, colId) => {
-    const date = data?.columnDates?.[colId];
-    if (date && String(date).trim() !== "") return true;
-    return CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
-};
+// "Started" must reflect actual inspection work, not just a date being present — obs1-4's
+// 1st-Time date can now be auto-populated (Level-1/2 completion date + 1/2 months) before the
+// operator has been inspected even once, so date-alone can no longer count as "started".
+// Mirrored in operatorObservance.controller.js — keep both in sync.
+const isSubColumnStarted = (data, colId) =>
+    CHECK_ROW_IDS.some((rowId) => isCellFilled(data?.[rowId]?.[colId]));
 
 const isSubColumnComplete = (data, colId) => {
     const date = data?.columnDates?.[colId];
@@ -172,6 +174,45 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     const [operatorSuggestions, setOperatorSuggestions] = useState([]);
     const [showOperatorSuggestions, setShowOperatorSuggestions] = useState(false);
     const [isSearchingOperator, setIsSearchingOperator] = useState(false);
+
+    // obs1-4's "1st Time" date auto-fills from Level-1/2 Complete date (+1/+2 months) as an
+    // editable suggestion. Once a user directly edits one of these fields it stops following
+    // further Level-1/2 date changes for the rest of this session — a manual choice always wins.
+    const manuallyEditedDateKeysRef = useRef(new Set());
+
+    useEffect(() => {
+        manuallyEditedDateKeysRef.current = new Set();
+    }, [studentId]);
+
+    const applyDerivedColumnDate = (colId, sourceDate, months) => {
+        // Deliberately NOT isCellLocked() here — that governs manual-edit permission and
+        // bypasses for admins, whereas a value that was genuinely persisted (or that the
+        // operator has already started recording real results against) must never be
+        // silently overwritten by the auto-suggestion, for anyone, admin included.
+        const wasAlreadySaved = Boolean(String(originalTableData.columnDates?.[colId] || "").trim());
+        if (wasAlreadySaved) return;
+        if (manuallyEditedDateKeysRef.current.has(colId)) return;
+        if (CHECK_ROW_IDS.some((rowId) => isCellFilled(tableData[rowId]?.[colId]))) return;
+
+        const derived = sourceDate ? addCalendarMonths(sourceDate, months) : "";
+        setTableData(prev => {
+            const current = prev.columnDates?.[colId] || "";
+            if (current === derived) return prev;
+            return { ...prev, columnDates: { ...prev.columnDates, [colId]: derived } };
+        });
+    };
+
+    useEffect(() => {
+        applyDerivedColumnDate('obs1', headerData.level1Date, 1);
+        applyDerivedColumnDate('obs2', headerData.level1Date, 2);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [headerData.level1Date, originalTableData]);
+
+    useEffect(() => {
+        applyDerivedColumnDate('obs3', headerData.level2Date, 1);
+        applyDerivedColumnDate('obs4', headerData.level2Date, 2);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [headerData.level2Date, originalTableData]);
 
     useEffect(() => {
         fetchData();
@@ -366,6 +407,9 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
         if (rowId === 'columnDates' && value && value > todayStr) {
             toast.error("Inspection date cannot be in the future");
             return;
+        }
+        if (rowId === 'columnDates' && ['obs1', 'obs2', 'obs3', 'obs4'].includes(colId)) {
+            manuallyEditedDateKeysRef.current.add(colId);
         }
         setTableData(prev => {
             const row = prev[rowId] || {};
@@ -685,7 +729,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs1 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs1', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs1')}
-                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -708,7 +751,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs2 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs2', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs2')}
-                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -731,7 +773,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs3 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs3', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs3')}
-                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
@@ -754,7 +795,6 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                                 value={tableData.columnDates?.obs4 || ""}
                                 onChange={(e) => handleTableChange('columnDates', 'obs4', null, e.target.value)}
                                 disabled={!isEditMode || isCellLocked('date', 'obs4')}
-                                max={todayStr}
                             />
                         </div>
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">

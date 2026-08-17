@@ -970,6 +970,233 @@ export const getCycle10MonitoringStatus = asyncHandler(async (req, res) => {
 
 
 /**
+ * Get Skill Matrix Certificate filled-item breakdown for Admin Home page.
+ * skill_matrix_evaluations has no per-item date (evalData is just a level-item -> {status,val,...}
+ * map), only a sheet-level updatedAt/createdAt — unlike the day-column sheets above. So each
+ * sheet's count of filled checklist items is attributed to its updatedAt (falling back to
+ * createdAt), grouped by department — or by section once the caller has narrowed to a single
+ * department ("drill mode"), matching the same convention as the other monitoring charts.
+ */
+export const getSkillMatrixCertificateStatus = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // departmentId on skill_matrix_evaluations is a loose string (real dept id, dept name, or the
+    // 'GLOBAL' sentinel) — resolved against departments the same way SkillMatrixEvaluation.listAll
+    // does. Accepts comma-separated department IDs for multi-select; narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND d.id IN (${ph})`;
+        params.push(...deptIds);
+    }
+    const isSectionDrill = deptIds.length === 1;
+
+    const [rows] = await executeQuery(`
+        SELECT
+            sme.id, sme.evalData, sme.updatedAt, sme.createdAt,
+            CAST(d.id AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned') AS sectionName
+        FROM skill_matrix_evaluations sme
+        INNER JOIN users u ON u.id = sme.studentId
+        LEFT JOIN departments d ON (sme.departmentId = CAST(d.id AS VARCHAR(255)) OR sme.departmentId = d.name)
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+    `, params);
+
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodTotals = {};  // period -> { [seriesKey]: count }
+    const seriesNames  = {};  // seriesKey -> display name
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        let evalData;
+        try {
+            evalData = typeof row.evalData === 'string' ? JSON.parse(row.evalData) : (row.evalData || {});
+        } catch {
+            continue;
+        }
+
+        const dateObj = row.updatedAt ? new Date(row.updatedAt) : (row.createdAt ? new Date(row.createdAt) : null);
+        if (!dateObj || isNaN(dateObj.getTime())) continue;
+        const iso = formatDateObj(dateObj);
+        if (iso < start || iso > end) continue;
+
+        const filledCount = Object.values(evalData).reduce((count, entry) => {
+            if (!entry) return count;
+            const hasStandard = String(entry.standard || '').trim() !== '';
+            const hasSpeed = String(entry.actualSec || '').trim() !== '' && String(entry.targetSec || '').trim() !== '';
+            return count + (hasStandard || hasSpeed ? 1 : 0);
+        }, 0);
+        if (filledCount === 0) continue;
+
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
+
+        const period = periodFromIso(iso, safeGroupBy);
+        if (!periodTotals[period]) periodTotals[period] = { period };
+        periodTotals[period][seriesKey] = (periodTotals[period][seriesKey] || 0) + filledCount;
+    }
+
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodTotals[period]?.[key] || 0; });
+        return row;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "Skill matrix certificate status fetched successfully")
+    );
+});
+
+
+/**
+ * Get Operator Observance Sheet filled-column breakdown for Admin Home page.
+ * For every obs1/obs1Re/obs2/obs2Re/obs3/obs3Re/obs4/obs4Re column date filled in on a student's
+ * observance sheet, count one "filled observance" against the period that date falls into
+ * (daily/monthly/yearly), grouped by department — or by section once the caller has narrowed to
+ * a single department ("drill mode"), matching the same convention as the other monitoring charts.
+ */
+export const getOperatorObservanceStatus = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Accepts comma-separated department IDs for multi-select. Narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        params.push(...deptIds);
+    }
+    const isSectionDrill = deptIds.length === 1;
+
+    // One row per student (no "latest attempt" concept — the table has a single record per
+    // studentId), so fetching every sheet's observanceData within the requested scope is cheap.
+    const [rows] = await executeQuery(`
+        SELECT
+            oo.id, oo.observanceData,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned') AS sectionName
+        FROM operator_observances oo
+        INNER JOIN users u ON u.id = oo.studentId
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+    `, params);
+
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodTotals = {};  // period -> { [seriesKey]: count }
+    const seriesNames  = {};  // seriesKey -> display name
+
+    const OBS_COLUMN_IDS = ['obs1', 'obs1Re', 'obs2', 'obs2Re', 'obs3', 'obs3Re', 'obs4', 'obs4Re'];
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        let observanceData;
+        try {
+            observanceData = typeof row.observanceData === 'string' ? JSON.parse(row.observanceData) : (row.observanceData || {});
+        } catch {
+            continue;
+        }
+
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
+
+        for (const colId of OBS_COLUMN_IDS) {
+            const dateObj = parseFlexibleDate(observanceData.columnDates?.[colId]);
+            if (!dateObj) continue;
+            const iso = formatDateObj(dateObj);
+            if (iso < start || iso > end) continue;
+
+            const period = periodFromIso(iso, safeGroupBy);
+            if (!periodTotals[period]) periodTotals[period] = { period };
+            periodTotals[period][seriesKey] = (periodTotals[period][seriesKey] || 0) + 1;
+        }
+    }
+
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodTotals[period]?.[key] || 0; });
+        return row;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "Operator observance status fetched successfully")
+    );
+});
+
+
+/**
  * Get User Status stats for the Admin Home page
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */

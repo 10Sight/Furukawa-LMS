@@ -83,6 +83,26 @@ export const adminHomeApi = createApi({
             // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
             keepUnusedDataFor: 60,
         }),
+        getSkillMatrixCertificateStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/skill-matrix-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
+        getOperatorObservanceStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/operator-observance-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
         getContractorWiseOperatorStats: builder.query({
             query: ({ startDate = "", endDate = "" } = {}) => ({
                 url: "/api/admin-home/contractor-wise-operator-stats",
@@ -104,5 +124,7 @@ export const {
     useGetSixteenDayMonitoringStatusQuery,
     useGetThreeDayMonitoringStatusQuery,
     useGetCycle10MonitoringStatusQuery,
+    useGetSkillMatrixCertificateStatusQuery,
+    useGetOperatorObservanceStatusQuery,
     useGetContractorWiseOperatorStatsQuery,
 } = adminHomeApi;

@@ -1419,5 +1419,23 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         });
     });
 
+    // "Present in Training Cell" is now a sequential running-balance formula rather than the
+    // directly-computed Dojo membership snapshot assigned earlier (dojoPresentOnDate, both in the
+    // daily loop and the prevMonthLastDateKey reference column above): starting from the previous
+    // month's last-day value as the baseline, each day adds Hiring Actual and subtracts Handover
+    // Actual and Attrition & Absenteeism of Training Cell (Nos), mirroring the frontend's live
+    // recalculation exactly. Recomputed here — after those three inputs are all finalized above —
+    // so scheduled/background paths (cron report emails, the manual sync endpoint) return the same
+    // values the UI would show without anyone having opened the report.
+    let runningPresentInTrainingCell = Number(tableData[`Present in Training Cell_${prevMonthLastDateKey}`]) || 0;
+    for (let d = 1; d <= totalDays; d++) {
+        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const hiringActual = Number(tableData[`Hiring Actual_${dKey}`]) || 0;
+        const handoverActual = Number(tableData[`Handover Actual_${dKey}`]) || 0;
+        const attritionAbsenteeism = Number(tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`]) || 0;
+        runningPresentInTrainingCell = runningPresentInTrainingCell + hiringActual - handoverActual - attritionAbsenteeism;
+        tableData[`Present in Training Cell_${dKey}`] = runningPresentInTrainingCell;
+    }
+
     return { tableData };
 };

@@ -19,6 +19,37 @@ import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
 const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining", "Present in Training Cell"];
 
+// Reactively derives every formula-driven cell from the raw/manual ones already in `data`,
+// so the UI, "Save", and "Sync Data" all show the exact same numbers without re-fetching.
+const recalculateReportData = (data, headerDates) => {
+    const newData = { ...data };
+
+    // Gap = Actual Separations (Cumulative) - Expected Separations (Cumulative), for every date.
+    headerDates.forEach(dateObj => {
+        const dateKey = dateObj.fullDate;
+        const actual = parseFloat(newData[`Actual Separations (Cumulative)_${dateKey}`]) || 0;
+        const expected = parseFloat(newData[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
+        newData[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
+    });
+
+    // Present in Training Cell (Date D) = Present in Training Cell (Date D-1)
+    //   + Hiring Actual (Date D) - Handover Actual (Date D) - Attrition & Absenteeism of Training Cell (Nos) (Date D)
+    // headerDates[0] is the previous month's last date, used only as the starting baseline.
+    if (headerDates.length > 0) {
+        let runningPresent = parseFloat(newData[`Present in Training Cell_${headerDates[0].fullDate}`]) || 0;
+        for (let i = 1; i < headerDates.length; i++) {
+            const dateKey = headerDates[i].fullDate;
+            const hiringActual = parseFloat(newData[`Hiring Actual_${dateKey}`]) || 0;
+            const handoverActual = parseFloat(newData[`Handover Actual_${dateKey}`]) || 0;
+            const attrition = parseFloat(newData[`Attrition & Absenteeism of Training Cell (Nos)_${dateKey}`]) || 0;
+            runningPresent = runningPresent + hiringActual - handoverActual - attrition;
+            newData[`Present in Training Cell_${dateKey}`] = String(runningPresent);
+        }
+    }
+
+    return newData;
+};
+
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [tableData, setTableData] = useState({});
@@ -93,7 +124,8 @@ const Report = () => {
                 });
 
                 if (response.data?.success) {
-                    setTableData(response.data.data.tableData || {});
+                    const loadedData = response.data.data.tableData || {};
+                    setTableData(recalculateReportData(loadedData, headerDates));
                 }
             } catch (error) {
                 console.error("Fetch error:", error);
@@ -104,7 +136,7 @@ const Report = () => {
         };
 
         fetchReport();
-    }, [currentDate]);
+    }, [currentDate, headerDates]);
 
     const handleInputChange = (rowLabel, dateKey, value) => {
         setTableData(prev => {
@@ -113,14 +145,7 @@ const Report = () => {
                 [`${rowLabel}_${dateKey}`]: value
             };
 
-            // Calculate Gap if Actual or Expected Separations change
-            if (rowLabel === "Actual Separations (Cumulative)" || rowLabel === "Expected Separations (Cumulative)") {
-                const actual = parseFloat(newData[`Actual Separations (Cumulative)_${dateKey}`]) || 0;
-                const expected = parseFloat(newData[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
-                newData[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
-            }
-
-            return newData;
+            return recalculateReportData(newData, headerDates);
         });
     };
 
@@ -164,16 +189,7 @@ const Report = () => {
 
                 setTableData(prev => {
                     const merged = { ...prev, ...syncedData };
-
-                    // Recalculate all gaps after sync
-                    headerDates.forEach(dateObj => {
-                        const dateKey = dateObj.fullDate;
-                        const actual = parseFloat(merged[`Actual Separations (Cumulative)_${dateKey}`]) || 0;
-                        const expected = parseFloat(merged[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
-                        merged[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
-                    });
-
-                    return merged;
+                    return recalculateReportData(merged, headerDates);
                 });
 
                 toast.success("Data synced from Attendance, User logs & Requirements!", { id: toastId });

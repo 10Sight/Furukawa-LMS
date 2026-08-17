@@ -627,6 +627,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return present;
     };
 
+    // Purge any "Present in Training Cell" value already sitting in the saved report for a date
+    // that's still genuinely in the future — whether it was written by an earlier version of this
+    // function's own future-date shortcut, or by the report UI's client-side save (which also
+    // zeroes future dates for display). Left in place, the freeze below would treat it as a real
+    // historical value and lock that date in at 0 forever the moment it passes, even though this
+    // row has nothing to do with attendance data being uploaded — which is what made recently-
+    // passed dates keep showing 0 after syncing.
+    for (let d = 1; d <= totalDays; d++) {
+        const futureCheckDKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (futureCheckDKey > todayYMD) {
+            delete tableData[`Present in Training Cell_${futureCheckDKey}`];
+        }
+    }
+
     const dailyTotalsMap = {};
 
     for (let d = 1; d <= totalDays; d++) {
@@ -638,7 +652,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // "Present in Training Cell" is a still-active Dojo member as of dKey (statusHistory-driven,
         // net of same-day handover/attrition) — a pure membership count, independent of today's
         // attendance. "Dojo absent" (attendance-based) feeds "Attrition & Absenteeism of Training
-        // Cell (Nos)" below instead. Future dates (no data can exist yet) show 0 for both.
+        // Cell (Nos)" below instead. Future dates (no data can exist yet) show 0 for both, and any
+        // stale future-dated value was already purged above.
         //
         // Frozen once a past date already has a recorded value, matching the "Left in nos (Daily)"
         // freeze further below: some Dojo/trainee users have no handover_sheets record backing
@@ -675,7 +690,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // Available Headcount Total), and "Net Available Headcount Total" now shows the
         // attendance-present count (formerly Headcount available).
         tableData[`Headcount available_${dKey}`] = String(netAvailableHeadcountTotal);
-        tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
+        if (dKey > todayYMD) {
+            delete tableData[`Present in Training Cell_${dKey}`];
+        } else {
+            tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
+        }
         tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
         tableData[`Net Available Headcount Total_${dKey}`] = present;
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;

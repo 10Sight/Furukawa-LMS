@@ -467,12 +467,16 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // Already promoted out of the Dojo before this date. Prefer the approved handover
         // date whenever one exists, regardless of the user's *current* isTemporary flag —
         // that flag may not have been flipped to 0 yet even though the handover was already
-        // approved. Only fall back to updatedAt when there is no approved handover_sheets
-        // entry for this user AND they are no longer temporary.
+        // approved. Only fall back to the current isTemporary/updatedAt snapshot for TODAY's
+        // date, and only when there is no approved handover_sheets entry for this user —
+        // never for a past date. updatedAt is bumped by any unrelated edit to the user's row
+        // (isTemporary itself carries no history), so trusting it for a past date would let a
+        // random later profile edit silently re-exclude a trainee from an already-reported
+        // historical day the next time this report is synced.
         const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
         if (handoverYMD) {
             if (handoverYMD <= dateKey) return false;
-        } else if (!u.isTemporary) {
+        } else if (!u.isTemporary && dateKey === todayYMD) {
             const promotedYMD = toYMD(u.updatedAt);
             if (promotedYMD && promotedYMD <= dateKey) return false;
         }
@@ -635,7 +639,18 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // net of same-day handover/attrition) — a pure membership count, independent of today's
         // attendance. "Dojo absent" (attendance-based) feeds "Attrition & Absenteeism of Training
         // Cell (Nos)" below instead. Future dates (no data can exist yet) show 0 for both.
-        const dojoPresentOnDate = getDojoPresentOnDate(dKey);
+        //
+        // Frozen once a past date already has a recorded value, matching the "Left in nos (Daily)"
+        // freeze further below: some Dojo/trainee users have no handover_sheets record backing
+        // their promotion, so isDojoMemberActiveOnDate falls back to their live isTemporary/
+        // updatedAt snapshot for today's date. Without freezing, an unrelated edit to that user's
+        // row weeks later would retroactively change what this row showed for an already-reported
+        // past day the next time the report is synced.
+        const priorPresentInTrainingCell = tableData[`Present in Training Cell_${dKey}`];
+        const hasPriorPresentInTrainingCell = priorPresentInTrainingCell !== undefined && priorPresentInTrainingCell !== null && priorPresentInTrainingCell !== '';
+        const dojoPresentOnDate = (dKey < todayYMD && hasPriorPresentInTrainingCell)
+            ? Number(priorPresentInTrainingCell) || 0
+            : getDojoPresentOnDate(dKey);
         const dojoAbsentOnDate = getDojoAbsentOnDate(dKey);
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =

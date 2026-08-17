@@ -111,6 +111,26 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     return lines.join('\n');
 };
 
+// Builds the plain-language breakdown shown when a user clicks a "Hiring Actual" cell: how many
+// of that day's new hires were Dojo/trainee joins (which feed the Training Cell) versus direct
+// Operator hires (which don't), so a mismatch against "Present in Training Cell" is self-evident
+// instead of surprising.
+const buildHiringActualNote = (tableData, dateObj) => {
+    const dateKey = dateObj.fullDate;
+    const total = parseFloat(tableData[`Hiring Actual_${dateKey}`]) || 0;
+    const dojo = parseFloat(tableData[`Hiring Actual Dojo_${dateKey}`]) || 0;
+    const operator = parseFloat(tableData[`Hiring Actual Operator_${dateKey}`]) || 0;
+
+    return [
+        `Hiring Actual (${dateObj.displayDate}): ${total} new hire(s)`,
+        ``,
+        `Dojo (Trainee) hires: ${dojo}`,
+        `Operator (Regular) hires: ${operator}`,
+        ``,
+        `Only Dojo hires count towards "Present in Training Cell" — Operator hires join directly into production and never pass through the Training Cell.`,
+    ].join('\n');
+};
+
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [tableData, setTableData] = useState({});
@@ -558,9 +578,13 @@ const Report = () => {
                                                     : rawValue;
                                                 const isPrevMonthCol = colIndex === 0;
                                                 const isPresentInTrainingCell = row.label === "Present in Training Cell";
+                                                const isHiringActual = row.label === "Hiring Actual";
                                                 const note = isPresentInTrainingCell
                                                     ? buildPresentInTrainingCellNote(tableData, headerDates, colIndex)
-                                                    : null;
+                                                    : isHiringActual
+                                                        ? buildHiringActualNote(tableData, dateObj)
+                                                        : null;
+                                                const hasClickableNote = isPresentInTrainingCell || isHiringActual;
 
                                                 const cellInput = (
                                                     <input
@@ -572,11 +596,11 @@ const Report = () => {
                                                         }
                                                         className={`
                                                             w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
-                                                            ${isPresentInTrainingCell ? 'cursor-pointer hover:bg-indigo-100' : (isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100')}
+                                                            ${hasClickableNote ? 'cursor-pointer hover:bg-indigo-100' : (isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100')}
                                                             ${row.bold ? 'font-bold' : ''}
                                                         `}
                                                         style={{ minHeight: '28px' }}
-                                                        title={isPresentInTrainingCell ? 'Click for calculation details' : (isSyncedReadOnly ? 'Auto-calculated on sync' : undefined)}
+                                                        title={isPresentInTrainingCell ? 'Click for calculation details' : isHiringActual ? 'Click for hiring details' : (isSyncedReadOnly ? 'Auto-calculated on sync' : undefined)}
                                                     />
                                                 );
 
@@ -589,14 +613,14 @@ const Report = () => {
                                                         `}
                                                     >
                                                         {row.type !== 'header' && (
-                                                            isPresentInTrainingCell ? (
+                                                            hasClickableNote ? (
                                                                 <Popover>
                                                                     <PopoverTrigger asChild>
                                                                         {cellInput}
                                                                     </PopoverTrigger>
                                                                     <PopoverContent className="w-96" align="center">
                                                                         <div className="text-sm font-bold text-slate-800 mb-2 pb-2 border-b">
-                                                                            Present in Training Cell — {dateObj.displayDate}
+                                                                            {isPresentInTrainingCell ? 'Present in Training Cell' : 'Hiring Details'} — {dateObj.displayDate}
                                                                         </div>
                                                                         <div className="text-xs leading-relaxed whitespace-pre-line text-slate-600">
                                                                             {note || 'No details available for this date yet — try Sync Data.'}

@@ -984,10 +984,16 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // 4. Hiring Actual — intentionally includes both regular and temp/Dojo hires (unlike
     // eligibleEmployeeCondition, which requires isTemporary = 0), so isEmployee/isTemporary
     // stay as-is; only the isDeleted/shuttered-designation data-quality checks are added.
+    // Dojo/Operator are broken out alongside the combined count so the report UI can explain a
+    // "Hiring Actual" cell's number without a second query: Dojo mirrors the WHERE clause's own
+    // isTemporary = 1 bypass of the shutter check; Operator applies the same shutter/eligibility
+    // condition the WHERE clause already applies to non-temporary rows.
     const joinSql = `
         SELECT
             CONVERT(VARCHAR, joiningDate, 23) as dateKey,
-            COUNT(*) as count
+            COUNT(*) as count,
+            SUM(CASE WHEN u.[isTemporary] = 1 THEN 1 ELSE 0 END) as Dojo,
+            SUM(CASE WHEN u.[isEmployee] = 1 AND ISNULL(u.[isTemporary], 0) <> 1 AND ds.[designation] IS NULL THEN 1 ELSE 0 END) as Operator
         FROM users u
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
@@ -999,7 +1005,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     `;
     const [joinData] = await executeQuery(joinSql, [start, end]);
     joinData.forEach(row => {
-        if (row.dateKey) tableData[`Hiring Actual_${row.dateKey}`] = row.count;
+        if (row.dateKey) {
+            tableData[`Hiring Actual_${row.dateKey}`] = row.count;
+            tableData[`Hiring Actual Dojo_${row.dateKey}`] = row.Dojo;
+            tableData[`Hiring Actual Operator_${row.dateKey}`] = row.Operator;
+        }
     });
 
     // 5. Handover Actual

@@ -1057,6 +1057,19 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         );
     });
 
+    // Direct/snapshot calculation behind "Present in Training Cell", complementing the
+    // day-over-day bridge above: how the displayed count is actually derived from the raw Dojo/
+    // trainee population on this date, not from yesterday's count. "Dojo Total Pool" is constant
+    // for the whole report (every user allDojoUsers ever tracked as a Dojo/trainee); "Dojo Not
+    // Active" is date-specific — everyone in that pool NOT counted active as of dKey (already
+    // promoted, separated, not yet joined, or on leave/inactive status) — so
+    // activeCount + notActiveCount always equals the total pool, by construction.
+    tableData['Dojo Total Pool'] = String(allDojoUsers.length);
+    dojoFormulaDateKeys.forEach(dKey => {
+        const notActiveCount = allDojoUsers.length - dojoActiveIdsByDate[dKey].size;
+        tableData[`Dojo Not Active_${dKey}`] = String(notActiveCount);
+    });
+
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const prevDKey = d === 1

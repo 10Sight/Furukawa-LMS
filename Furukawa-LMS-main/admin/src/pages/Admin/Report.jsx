@@ -53,12 +53,16 @@ const recalculateReportData = (data, headerDates) => {
 };
 
 // Builds the plain-language justification shown when a user clicks a "Present in Training Cell"
-// cell, purely from data already on screen (no extra fetch): yesterday's and today's headcount,
-// plus today's Dojo-specific Hires / Rejoining & Returns / Handover / Attrition / On Leave,
-// walked through the way a floor supervisor would explain a headcount change. These 5 rows are a
-// day-over-day set difference of the active Dojo membership (computed server-side), not
-// independent estimates — every trainee who entered or exited the active set that day is counted
-// in exactly one of them, so the formula below always balances exactly against today's count.
+// cell, purely from data already on screen (no extra fetch). Two complementary calculations:
+//   1. Bridge (day-over-day): Yesterday + today's Dojo Hires / Rejoining & Returns / Handover /
+//      Attrition / On Leave = Today. These 5 rows are a set difference of the active Dojo
+//      membership computed server-side, not independent estimates — every trainee who entered or
+//      exited the active set that day lands in exactly one of them, so this always balances
+//      exactly against today's count. Skipped for the first two columns (no meaningful
+//      "yesterday" to diff against).
+//   2. Direct (snapshot): Dojo Total Pool - Dojo Not Active = today's count, derived straight from
+//      the raw Dojo/trainee population on this date rather than from yesterday's number — shown
+//      for every date, including the ones where the bridge calculation doesn't apply.
 const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     const dateObj = headerDates[colIndex];
     const dateKey = dateObj.fullDate;
@@ -70,12 +74,23 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     }
 
     const currentCount = parseFloat(tableData[`Present in Training Cell_${dateKey}`]) || 0;
+    const totalPool = parseFloat(tableData['Dojo Total Pool']) || 0;
+    const notActive = parseFloat(tableData[`Dojo Not Active_${dateKey}`]) || 0;
+
+    const directCalcLines = [
+        `Direct calculation (from today's raw Dojo/trainee records, not yesterday's count):`,
+        `${totalPool} total Dojo/trainee record(s) ever tracked`,
+        `− ${notActive} not currently active (already promoted, separated, not yet joined, or on leave)`,
+        `= ${totalPool - notActive} Present in Training Cell`,
+    ];
 
     if (colIndex === 0) {
         return [
             `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
             ``,
-            `This is the previous month's last date, shown only as a reference column — it isn't part of the current month being reported, so no day-over-day breakdown applies to it.`,
+            ...directCalcLines,
+            ``,
+            `This is the previous month's last date, shown only as a reference column — it isn't part of the current month being reported, so no day-over-day bridge applies to it.`,
         ].join('\n');
     }
 
@@ -95,7 +110,9 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
             `Dojo Attrition (today): ${dojoAttrition}`,
             `Dojo On Leave (today): ${dojoOnLeave}`,
             ``,
-            `This is the first day of the month — its count is this report's starting baseline, not a calculation against the previous month's reference date.`,
+            `This is the first day of the month — its count is this report's starting baseline, not a bridge calculation against the previous month's reference date.`,
+            ``,
+            ...directCalcLines,
         ].join('\n');
     }
 
@@ -114,6 +131,8 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
         `Dojo On Leave (today): ${dojoOnLeave}`,
         ``,
         `${prevCount} + ${dojoHires} + ${dojoRejoiningReturns} − ${dojoHandover} − ${dojoAttrition} − ${dojoOnLeave} = ${expected}`,
+        ``,
+        ...directCalcLines,
     ];
 
     return lines.join('\n');

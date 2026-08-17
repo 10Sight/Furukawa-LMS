@@ -144,6 +144,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
     `);
 
+    // "Attrition & Absenteeism of Training Cell (Nos)" is scoped strictly to the current
+    // isTemporary = 1 flag (not the broader allDojoUsers pool above, which also includes users
+    // who've since been promoted out), per its own requirement — a subset of allDojoUsers.
+    const currentlyTemporaryDojoUsers = allDojoUsers.filter(u => u.isTemporary === 1 || u.isTemporary === true || String(u.isTemporary) === '1');
+
     // Approved handover date per user, used below as the promotion cutoff instead of updatedAt:
     // updatedAt is bumped by any later, unrelated profile edit, which would silently shift
     // already-synced historical "Present in Training Cell" counts. Uses the handover sheet's own
@@ -183,19 +188,18 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     };
 
     // Separation candidates & leftUsers — hoisted up here (rather than down in the "6. Separations"
-    // section below) so this array is available for the date-level handover/absence/attrition
-    // exclusion checks inside getDojoPresentOnDate/getDojoAbsentOnDate further down, both of which
-    // are invoked by the daily loop before section 6 used to run.
+    // section below) so this array is available for the date-level handover/attrition exclusion
+    // checks inside getDojoPresentOnDate further down, which is invoked by the daily loop before
+    // section 6 used to run.
     const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
     const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
     const nextMonthStart = `${nYear}-${String(nMonth).padStart(2, '0')}-01`;
 
-    // WHERE stays broad (isEmployee OR isTemporary) because this raw result set feeds both the
-    // employee "Separated (Cumulative)" metrics below AND dojoDayLeftCount (which specifically
-    // needs isTemporary = 1 rows) further down. isDeleted/shuttered-designation are excluded here
-    // since they're data-quality checks that apply to both populations; the isTemporary = 0
-    // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
-    // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount. Temporary
+    // WHERE stays broad (isEmployee OR isTemporary) because this raw result set feeds the
+    // employee "Separated (Cumulative)" metrics below (dayLeftCount / weeklyLeft / club counts).
+    // isDeleted/shuttered-designation are excluded here since they're data-quality checks that
+    // apply to both populations; the isTemporary = 0 restriction for "Separated (Cumulative)" is
+    // instead applied in JS where dayLeftCount / weeklyLeft / club counts are computed. Temporary
     // (Dojo) users bypass the designation-shutter exclusion entirely — that check exists to filter
     // out employees whose designation has since been shuttered, not trainees, who shouldn't be
     // excluded from separation tracking based on a designation field that doesn't really apply to
@@ -314,10 +318,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // its latest statusHistory status is explicitly PRESENT (ON_LEAVE/SUSPENDED/BANNED do not
     // count as active here, matching the graph even though that differs from the broader
     // "anything but LEFT" rule used for other roster purposes elsewhere in this file).
-    const getUserActiveStintOnDate = (u, dDate) => {
-        const asOfDateKey = parseManpowerDateKey(dDate);
-        if (asOfDateKey === null) return { active: false, joiningDate: null };
-
+    // Builds per-joiningDate "stint" periods from a user's raw statusHistory JSON/array: for each
+    // distinct joiningDate, the latest leavingDate ever recorded, plus whichever status was most
+    // recently written (later index wins on a changedAt tie) and the date that write happened on.
+    // Shared by getUserActiveStintOnDate (active/inactive, dashboard-matching semantics — must stay
+    // untouched) and the Attrition & Absenteeism computation further down (which additionally
+    // needs to know when a non-LEFT status was actually recorded, not just what it currently is).
+    const buildStatusHistoryPeriods = (u) => {
         let history = u.statusHistory;
         if (typeof history === 'string') {
             const trimmed = history.trim();
@@ -340,6 +347,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
             const leavingDateKey = parseManpowerDateKey(item?.leavingDate);
             const status = String(item?.status || '').trim().toUpperCase();
+            const changedAtKey = item?.changedAt ? parseManpowerDateKey(item.changedAt) : null;
             const changedAtMs = item?.changedAt ? new Date(item.changedAt).getTime() : Number.NaN;
 
             const existing = periodsByJoiningDate.get(joiningDateKey) || {
@@ -347,6 +355,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 leavingDateKey: null,
                 latestStatus: '',
                 latestChangedAtMs: Number.NEGATIVE_INFINITY,
+                latestChangedAtKey: null,
                 latestIndex: -1,
             };
 
@@ -358,13 +367,21 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             if (comparableChangedAt > existing.latestChangedAtMs || (comparableChangedAt === existing.latestChangedAtMs && index > existing.latestIndex)) {
                 existing.latestStatus = status;
                 existing.latestChangedAtMs = comparableChangedAt;
+                existing.latestChangedAtKey = changedAtKey;
                 existing.latestIndex = index;
             }
 
             periodsByJoiningDate.set(joiningDateKey, existing);
         });
 
-        const periods = Array.from(periodsByJoiningDate.values());
+        return Array.from(periodsByJoiningDate.values());
+    };
+
+    const getUserActiveStintOnDate = (u, dDate) => {
+        const asOfDateKey = parseManpowerDateKey(dDate);
+        if (asOfDateKey === null) return { active: false, joiningDate: null };
+
+        const periods = buildStatusHistoryPeriods(u);
 
         if (periods.length > 0) {
             let isActive = false;
@@ -488,43 +505,58 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return true;
     };
 
-    const getDojoStatusOnDate = (u, dateKey) => {
-        const dayMap = dedupedStatusByUserDate[dateKey];
-        if (!dayMap) return null;
-        const status = dayMap.get(u.id);
-        if (status === undefined) return null;
-        return String(status).trim().toUpperCase();
-    };
-
     // "Present in Training Cell" is a pure membership count, not an attendance-filtered one:
     // anyone whose statusHistory stint is active on dateKey and who hasn't yet been promoted out
     // (approved handover / isTemporary flip) or separated counts here, regardless of whether they
     // were marked absent that specific day — matching DojoHiring.jsx's "Total Candidates" stat
     // (isTemporary = 1 AND not LEFT), just made date-aware via statusHistory instead of only
-    // reflecting today's live flags. Daily attendance is tracked separately by
-    // getDojoAbsentOnDate below, which feeds "Attrition & Absenteeism of Training Cell (Nos)"
-    // instead — it must NOT also subtract from this membership count, since an absent member is
-    // still a member. The report UI builds its own cell-click justification client-side from this
-    // row plus Hiring Actual/Handover Actual/Attrition & Absenteeism, so no breakdown is persisted
-    // here.
+    // reflecting today's live flags. The report UI builds its own cell-click justification
+    // client-side from this row plus Hiring Actual/Handover Actual/Attrition & Absenteeism, so no
+    // breakdown is persisted here.
     const getDojoPresentOnDate = (dateKey) => {
         if (dateKey > todayYMD) return 0;
         return allDojoUsers.filter(u => isDojoMemberActiveOnDate(u, dateKey)).length;
     };
 
-    // Actual Dojo/trainee absenteeism on dateKey, replacing the previous hardcoded 0 — mirrors
-    // getDojoPresentOnDate's membership rules but requires an explicit ABSENT/A attendance_logs
-    // status for dateKey.
-    const getDojoAbsentOnDate = (dateKey) => {
+    // "Attrition & Absenteeism of Training Cell (Nos)" — read directly from statusHistory for
+    // currently isTemporary = 1 users only (currentlyTemporaryDojoUsers above), per requirement:
+    // no attendance_logs, no handoverDateMap/leftUsers. A user counts on dateKey if either —
+    //   - Attrition: their statusHistory shows them leaving exactly on dateKey (a stint whose
+    //     leavingDate resolves to this date), matching how "left on that date" is treated
+    //     elsewhere in this file, or
+    //   - Absenteeism: their current (still-open) stint's most recently recorded status is
+    //     ON_LEAVE, and that status was already recorded on or before dateKey — so a user who is
+    //     ON_LEAVE today doesn't retroactively count as on-leave on days before that status was
+    //     actually set.
+    // Both checks use buildStatusHistoryPeriods directly (not isDojoMemberActiveOnDate), since
+    // this row is intentionally independent of the handover-promotion/separation-population logic
+    // that row uses.
+    const getDojoLeftOrOnLeaveCountOnDate = (dateKey) => {
         if (dateKey > todayYMD) return 0;
+        const asOfDateKey = parseManpowerDateKey(dateKey);
+        if (asOfDateKey === null) return 0;
 
-        const dojoAbsentUsers = allDojoUsers.filter(u => {
-            if (!isDojoMemberActiveOnDate(u, dateKey)) return false;
+        let count = 0;
+        currentlyTemporaryDojoUsers.forEach(u => {
+            const periods = buildStatusHistoryPeriods(u);
+            const matched = periods.some((period) => {
+                if (period.joiningDateKey > asOfDateKey) return false;
 
-            const statusUpper = getDojoStatusOnDate(u, dateKey);
-            return statusUpper === 'ABSENT' || statusUpper === 'A';
+                // Left exactly on this date.
+                if (period.leavingDateKey !== null && period.leavingDateKey === asOfDateKey) return true;
+
+                // Otherwise still an open (or not-yet-left-as-of-this-date) stint, currently
+                // recorded as ON_LEAVE, with that status already known as of this date.
+                const stillOpenAsOfDate = period.leavingDateKey === null || asOfDateKey < period.leavingDateKey;
+                return stillOpenAsOfDate
+                    && period.latestStatus === 'ON_LEAVE'
+                    && period.latestChangedAtKey !== null
+                    && period.latestChangedAtKey <= asOfDateKey;
+            });
+            if (matched) count++;
         });
-        return dojoAbsentUsers.length;
+
+        return count;
     };
 
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
@@ -651,9 +683,8 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         // "Present in Training Cell" is a still-active Dojo member as of dKey (statusHistory-driven,
         // net of same-day handover/attrition) — a pure membership count, independent of today's
-        // attendance. "Dojo absent" (attendance-based) feeds "Attrition & Absenteeism of Training
-        // Cell (Nos)" below instead. Future dates (no data can exist yet) show 0 for both, and any
-        // stale future-dated value was already purged above.
+        // attendance. Future dates (no data can exist yet) show 0, and any stale future-dated
+        // value was already purged above.
         //
         // Frozen once a past date already has a recorded value, matching the "Left in nos (Daily)"
         // freeze further below: some Dojo/trainee users have no handover_sheets record backing
@@ -666,7 +697,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         const dojoPresentOnDate = (dKey < todayYMD && hasPriorPresentInTrainingCell)
             ? Number(priorPresentInTrainingCell) || 0
             : getDojoPresentOnDate(dKey);
-        const dojoAbsentOnDate = getDojoAbsentOnDate(dKey);
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);
@@ -695,7 +725,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         } else {
             tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
         }
-        tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
         tableData[`Net Available Headcount Total_${dKey}`] = present;
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;
         tableData[`Net Available Headcount Above 3 Months_${dKey}`] = String(netAvailableAbove3Months);
@@ -1051,6 +1080,17 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const avgHeadcount = counts.length > 0 ? counts.reduce((a, b) => a + b, 0) / counts.length : 0;
     let lastKnownTotal = avgHeadcount;
 
+    // Purge any "Attrition & Absenteeism of Training Cell (Nos)" value already sitting in the
+    // saved report for a date still genuinely in the future, same reasoning as the equivalent
+    // purge above for "Present in Training Cell": left in place, the freeze below would lock a
+    // stale future-placeholder 0 in forever the moment that date passes.
+    for (let d = 1; d <= totalDays; d++) {
+        const futureCheckDKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (futureCheckDKey > todayYMD) {
+            delete tableData[`Attrition & Absenteeism of Training Cell (Nos)_${futureCheckDKey}`];
+        }
+    }
+
     for (let d = 1; d <= totalDays; d++) {
         const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
@@ -1072,12 +1112,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 return !isDojoUser || (handoverYMD && handoverYMD <= dKey);
             }).length;
 
-        const dojoDayLeftCount = leftUsers.filter(l => {
-            if (l.dateKey !== dKey) return false;
-            const isDojoUser = l.isTemporary || l.expectedHandover !== null;
-            const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
-            return isDojoUser && (!handoverYMD || handoverYMD > dKey);
-        }).length;
         cumulativeLeft += dayLeftCount;
 
         const dayStats = netHeadcountData.find(r => r.dateKey === dKey);
@@ -1114,9 +1148,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         tableData[`Gap_${dKey}`] = (cumulativeLeft - (parseFloat(tableData[`Expected Separations (Cumulative)_${dKey}`]) || 0)).toFixed(0);
 
-        const dojoAbsent = Number(tableData[`DojoAbsent_${dKey}`] || 0);
-        tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`] = dojoAbsent + dojoDayLeftCount;
-        delete tableData[`DojoAbsent_${dKey}`];
+        // Frozen once a past date already has a recorded value, same reasoning as the "Present in
+        // Training Cell" freeze above: the ON_LEAVE portion of getDojoLeftOrOnLeaveCountOnDate
+        // reads each user's *currently* recorded status, which would otherwise let a later status
+        // change (e.g. moving from ON_LEAVE back to PRESENT) silently rewrite an already-reported
+        // past day the next time this report is synced.
+        const priorAttritionAbsenteeism = tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`];
+        const hasPriorAttritionAbsenteeism = priorAttritionAbsenteeism !== undefined && priorAttritionAbsenteeism !== null && priorAttritionAbsenteeism !== '';
+        if (dKey > todayYMD) {
+            delete tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`];
+        } else {
+            tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`] = (dKey < todayYMD && hasPriorAttritionAbsenteeism)
+                ? Number(priorAttritionAbsenteeism) || 0
+                : getDojoLeftOrOnLeaveCountOnDate(dKey);
+        }
 
         reportingClubs.forEach(club => {
             let clubSectionIds = [];

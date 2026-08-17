@@ -49,6 +49,11 @@ const SkillUpgradationWrapper = () => {
     const [section, setSection] = useState("");
     const [line, setLine] = useState("");
 
+    // Students table pagination/search
+    const [studentsPage, setStudentsPage] = useState(1);
+    const [studentsLimit, setStudentsLimit] = useState(50);
+    const [studentsSearch, setStudentsSearch] = useState("");
+
     // Plans list and selection states
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [isReadOnly, setIsReadOnly] = useState(false);
@@ -79,12 +84,20 @@ const SkillUpgradationWrapper = () => {
     const { data: linesData } = useGetLinesBySectionQuery(section, { skip: !section });
     const { data: createLinesData } = useGetLinesBySectionQuery(createSection, { skip: !createSection });
 
+    // Reset pagination/search whenever the hierarchy selection changes
+    useEffect(() => {
+        setStudentsPage(1);
+        setStudentsSearch("");
+    }, [dept, section, line]);
+
     // Fetch students/operators for the selected section and line
     const { data: studentsData, isFetching: isFetchingStudents } = useGetAllStudentsQueryInstructor({
         departmentId: dept,
         sectionId: section,
         lineId: (line && line !== "all") ? line : undefined,
-        limit: 1000,
+        page: studentsPage,
+        limit: studentsLimit,
+        search: studentsSearch,
         includeTemporary: "false",
         sixteenDayApprovedOnly: "true"
     }, {
@@ -107,6 +120,8 @@ const SkillUpgradationWrapper = () => {
             (user.status || "").toUpperCase() !== "LEFT"
         );
     }, [studentsData]);
+    const totalStudents = studentsData?.data?.totalUsers || 0;
+    const totalStudentPages = studentsData?.data?.totalPages || 1;
 
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
@@ -371,6 +386,14 @@ const SkillUpgradationWrapper = () => {
                                  lineName={(line && line !== "all") ? selectedLineName : ""}
                                  year={selectedPlan.year}
                                  isReadOnly={isReadOnly}
+                                 page={studentsPage}
+                                 setPage={setStudentsPage}
+                                 limit={studentsLimit}
+                                 setLimit={setStudentsLimit}
+                                 search={studentsSearch}
+                                 setSearch={setStudentsSearch}
+                                 totalUsers={totalStudents}
+                                 totalPages={totalStudentPages}
                             />
                         </div>
                     ) : (

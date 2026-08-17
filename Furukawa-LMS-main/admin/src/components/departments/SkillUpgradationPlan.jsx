@@ -11,7 +11,7 @@ import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend, IconLoader } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend, IconLoader, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -126,6 +126,19 @@ const buildRowForStudent = (student, data = {}) => {
         q3Skill: data.q3Skill || "", q3Date: data.q3Date || "", q3DateActual: data.q3DateActual || "", q3Status: data.q3Status || "", q3Shift: data.q3Shift || data.shift || student.shift || "",
         q4Skill: data.q4Skill || "", q4Date: data.q4Date || "", q4DateActual: data.q4DateActual || "", q4Status: data.q4Status || "", q4Shift: data.q4Shift || data.shift || student.shift || "",
     };
+};
+
+// Builds a compact page-number list around the current page, e.g. [1, "...", 4, 5, 6, "...", 20].
+const getPageNumbers = (current, total) => {
+    const WINDOW = 1;
+    const pages = [];
+    const add = (p) => pages.push(p);
+    add(1);
+    if (current - WINDOW > 2) add("...");
+    for (let p = Math.max(2, current - WINDOW); p <= Math.min(total - 1, current + WINDOW); p++) add(p);
+    if (current + WINDOW < total - 1) add("...");
+    if (total > 1) add(total);
+    return pages;
 };
 
 const MIN_SEARCH_LENGTH = 2;
@@ -629,7 +642,23 @@ const SkillUpgradationRow = React.memo(function SkillUpgradationRow({
 });
 SkillUpgradationRow.displayName = "SkillUpgradationRow";
 
-const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, departmentId, sectionId, lineId, year, isReadOnly = false }) => {
+const SkillUpgradationPlan = ({
+    students = [],
+    isLoadingStudents = false,
+    departmentId,
+    sectionId,
+    lineId,
+    year,
+    isReadOnly = false,
+    page = 1,
+    setPage = () => {},
+    limit = 50,
+    setLimit = () => {},
+    search = "",
+    setSearch = () => {},
+    totalUsers = 0,
+    totalPages = 1,
+}) => {
     const liveRevisionInfo = useRevisionInfo("skill-upgradation-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
@@ -652,7 +681,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     }, [authUser, isAdmin, isReadOnly]);
 
     const [logAction] = useLogActionMutation();
-    const [searchText, setSearchText] = useState("");
+    const [searchInput, setSearchInput] = useState(search || "");
     const [rows, setRows] = useState([]);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [removedUserIds, setRemovedUserIds] = useState(new Set());
@@ -719,6 +748,28 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
+    // Merges the current page's in-memory row edits into tableData (keyed by userId) so
+    // they survive a page/search/limit change — rows gets rebuilt from tableData + the new
+    // page's students, and without this any unsaved edits on the page being left would
+    // silently vanish.
+    const syncRowsToTableData = useCallback(() => {
+        const currentPageData = {};
+        rows.forEach(row => {
+            if (!row.userId) return;
+            currentPageData[row.userId] = {
+                userName: row.userName || "",
+                cardNo: row.cardNo || "",
+                modelLine: row.modelLine || "",
+                station: row.station || "",
+                q1Skill: row.q1Skill, q1Date: row.q1Date, q1DateActual: row.q1DateActual, q1Status: row.q1Status, q1Shift: row.q1Shift,
+                q2Skill: row.q2Skill, q2Date: row.q2Date, q2DateActual: row.q2DateActual, q2Status: row.q2Status, q2Shift: row.q2Shift,
+                q3Skill: row.q3Skill, q3Date: row.q3Date, q3DateActual: row.q3DateActual, q3Status: row.q3Status, q3Shift: row.q3Shift,
+                q4Skill: row.q4Skill, q4Date: row.q4Date, q4DateActual: row.q4DateActual, q4Status: row.q4Status, q4Shift: row.q4Shift,
+            };
+        });
+        setTableData(prev => ({ ...prev, ...currentPageData }));
+    }, [rows]);
+
     // Reset state when department/section/line/year changes
     useEffect(() => {
         setHasLoaded(false);
@@ -727,9 +778,11 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setIsLoadingPlan(true);
     }, [departmentId, sectionId, lineId, year]);
 
-    // Initialize rows when both students and plan data are ready
+    // Initialize rows when both students and plan data are ready. isLoadingStudents is part of
+    // the guard so a page/search/limit change (which flips it true while the new page fetches)
+    // doesn't rebuild rows from the still-stale `students` value in between.
     useEffect(() => {
-        if (isLoadingPlan || hasLoaded || (students.length === 0 && Object.keys(tableData || {}).length === 0)) return;
+        if (isLoadingPlan || isLoadingStudents || hasLoaded) return;
 
         const savedRemovedIds = new Set(tableData.__removedUserIds || []);
         const finalRows = [];
@@ -765,7 +818,7 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         setRemovedUserIds(savedRemovedIds);
         setRows(finalRows);
         setHasLoaded(true);
-    }, [tableData, students, isLoadingPlan, hasLoaded]);
+    }, [tableData, students, isLoadingPlan, isLoadingStudents, hasLoaded]);
 
     // Safeguard: (1) refreshes row metadata (names, card numbers, line, etc.) if the students
     // list finishes loading after rows are initialized, and (2) inserts a row — at the very
@@ -950,14 +1003,47 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
         }));
     }, []);
 
+    // The backend already filters `students` by `search`, so rows built from it are already
+    // matched — this just hides the always-appended blank manual-entry rows while a search is
+    // active, matching the old client-side-filter UX.
     const filteredRows = useMemo(() => {
-        if (!searchText.trim()) return rows;
-        const lower = searchText.toLowerCase();
-        return rows.filter(row =>
-            (row.userName || "").toLowerCase().includes(lower) ||
-            (row.cardNo || "").toLowerCase().includes(lower)
-        );
-    }, [rows, searchText]);
+        if (!search.trim()) return rows;
+        return rows.filter(row => row.userId);
+    }, [rows, search]);
+
+    // Debounces the search input into the parent's `search` query state (which drives the
+    // backend-paginated student fetch), syncing any unsaved edits on the current page first
+    // and resetting to page 1 so the new results start from the top.
+    useEffect(() => {
+        if (searchInput === search) return;
+        const timer = setTimeout(() => {
+            syncRowsToTableData();
+            setHasLoaded(false);
+            setPage(1);
+            setSearch(searchInput);
+        }, SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchInput]);
+
+    // Keeps the input in sync when the parent resets `search` itself (e.g. switching dept/section/line).
+    useEffect(() => {
+        setSearchInput(search || "");
+    }, [search]);
+
+    const handlePageChange = useCallback((newPage) => {
+        if (newPage < 1 || newPage > (totalPages || 1) || newPage === page) return;
+        syncRowsToTableData();
+        setHasLoaded(false);
+        setPage(newPage);
+    }, [syncRowsToTableData, setPage, page, totalPages]);
+
+    const handleLimitChange = useCallback((newLimit) => {
+        syncRowsToTableData();
+        setHasLoaded(false);
+        setPage(1);
+        setLimit(Number(newLimit));
+    }, [syncRowsToTableData, setPage, setLimit]);
 
     const handleSave = useCallback(async (sendEmail = false) => {
         if (!departmentId) return;
@@ -1093,16 +1179,16 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                 </div>
                 <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <div className="w-full sm:w-72">
-                        <Label className="text-xs font-bold text-slate-700 mb-1 block">Filter Table Rows</Label>
+                        <Label className="text-xs font-bold text-slate-700 mb-1 block">Search Associates</Label>
                         <div className="flex items-center gap-2">
                             <Input
-                                placeholder="Filter active associates..."
-                                value={searchText}
-                                onChange={(e) => setSearchText(e.target.value)}
+                                placeholder="Search by name or card no..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
                                 className="h-9 bg-white text-sm"
                             />
-                            {searchText && (
-                                <Button variant="ghost" size="sm" onClick={() => setSearchText("")} className="h-9 px-2 text-xs">
+                            {searchInput && (
+                                <Button variant="ghost" size="sm" onClick={() => setSearchInput("")} className="h-9 px-2 text-xs">
                                     Clear
                                 </Button>
                             )}
@@ -1180,6 +1266,68 @@ const SkillUpgradationPlan = ({ students = [], isLoadingStudents = false, depart
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                <div className="no-print flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-slate-200">
+                    <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                        <span>
+                            {totalUsers === 0
+                                ? "No associates found"
+                                : `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, totalUsers)} of ${totalUsers} associates`}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <span>Rows per page</span>
+                            <Select value={String(limit)} onValueChange={handleLimitChange}>
+                                <SelectTrigger className="h-8 w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="20">20</SelectItem>
+                                    <SelectItem value="50">50</SelectItem>
+                                    <SelectItem value="100">100</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-1.5">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePageChange(page - 1)}
+                                disabled={page === 1 || isLoadingStudents}
+                                className="h-8 px-2.5 text-xs"
+                            >
+                                <IconChevronLeft className="h-3.5 w-3.5" />
+                            </Button>
+                            {getPageNumbers(page, totalPages).map((p, idx) =>
+                                p === "..." ? (
+                                    <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400">…</span>
+                                ) : (
+                                    <Button
+                                        key={p}
+                                        variant={p === page ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => handlePageChange(p)}
+                                        disabled={isLoadingStudents}
+                                        className={`h-8 w-8 p-0 text-xs ${p === page ? "bg-blue-600 hover:bg-blue-700" : ""}`}
+                                    >
+                                        {p}
+                                    </Button>
+                                )
+                            )}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePageChange(page + 1)}
+                                disabled={page === totalPages || isLoadingStudents}
+                                className="h-8 px-2.5 text-xs"
+                            >
+                                <IconChevronRight className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </CardContent>
         </Card>

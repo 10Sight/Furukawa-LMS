@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
-const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining", "Present in Training Cell"];
+const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining", "Present in Training Cell", "Rejoining in Training Cell"];
 
 // Reactively derives every formula-driven cell from the raw/manual ones already in `data`,
 // so the UI, "Save", and "Sync Data" all show the exact same numbers without re-fetching.
@@ -321,6 +321,7 @@ const Report = () => {
         baseRows.push(
             { type: "spacer" },
             { label: "Present in Training Cell", bold: true, align: "center", borderY: true },
+            { label: "Rejoining in Training Cell", align: "right" },
             { label: "Attrition & Absenteeism of Training Cell (Nos)", align: "right" },
             { label: "Handed-over after training (Cumulative)", align: "right" },
             ...activeClubs.map(club => ({

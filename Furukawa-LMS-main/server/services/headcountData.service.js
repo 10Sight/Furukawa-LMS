@@ -464,6 +464,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         });
     });
 
+    // "Rejoining in Training Cell" — same rejoin-event detection, scoped to currently
+    // isTemporary = 1 users only, matching "Attrition & Absenteeism of Training Cell (Nos)"'s
+    // population above.
+    const rejoiningTrainingCellUsersByDate = {};
+    currentlyTemporaryDojoUsers.forEach(u => {
+        const seenDatesForUser = new Set();
+        getRejoiningYMDs(u.statusHistory).forEach(dYMD => {
+            if (seenDatesForUser.has(dYMD)) return;
+            seenDatesForUser.add(dYMD);
+            if (!rejoiningTrainingCellUsersByDate[dYMD]) rejoiningTrainingCellUsersByDate[dYMD] = new Set();
+            rejoiningTrainingCellUsersByDate[dYMD].add(u.id);
+        });
+    });
+
     const todayObj = new Date();
     const todayYMD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
@@ -1486,6 +1500,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             : 0;
 
         tableData[`Rejoining_${item.dateKey}`] = rejoiningUsersByDate[item.dateKey]?.size || 0;
+        tableData[`Rejoining in Training Cell_${item.dateKey}`] = rejoiningTrainingCellUsersByDate[item.dateKey]?.size || 0;
 
         // `${club.name} Headcount required` — same FN01 (days 1-15) / FN02 (day 16+) split as
         // the aggregate production-plan row, scoped to each club's own sectionIds.

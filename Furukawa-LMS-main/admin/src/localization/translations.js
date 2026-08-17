@@ -35,6 +35,7 @@ export const translations = {
     "nav.handoverSheet": "Hand Over Sheet",
     "nav.dailyProductionReport": "DPR Report",
     "nav.abnormalCondition": "Abnormal Condition",
+    "nav.monthlyMeeting": "Monthly Meeting",
     "nav.dprManage": "DPR Setup",
     "nav.mentors": "Mentors",
     "nav.supervisors": "Supervisors",
@@ -800,6 +801,7 @@ export const translations = {
     "label.language": "भाषा",
 
     "nav.dashboard": "डैशबोर्ड",
+    "nav.monthlyMeeting": "मासिक बैठक",
     "nav.landingPage": "लैंडिंग पेज",
     "nav.instructors": "प्रशिक्षक",
     "nav.courses": "कोर्स",
@@ -1567,6 +1569,7 @@ export const translations = {
     "label.language": "言語",
 
     "nav.dashboard": "ダッシュボード",
+    "nav.monthlyMeeting": "月例会議",
     "nav.landingPage": "ランディングページ",
     "nav.instructors": "講師",
     "nav.courses": "コース",
@@ -2313,6 +2316,7 @@ export const translations = {
     "label.language": "语言",
 
     "nav.dashboard": "仪表盘",
+    "nav.monthlyMeeting": "月度会议",
     "nav.landingPage": "登陆页面",
     "nav.instructors": "讲师",
     "nav.courses": "课程",
@@ -3059,6 +3063,7 @@ export const translations = {
     "label.language": "Язык",
 
     "nav.dashboard": "Панель",
+    "nav.monthlyMeeting": "Ежемесячная встреча",
     "nav.landingPage": "Целевая страница",
     "nav.instructors": "Преподаватели",
     "nav.courses": "Курсы",

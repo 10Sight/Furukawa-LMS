@@ -20,6 +20,7 @@ const CustomRoleLayout = lazy(() => import("./Layout/CustomRoleLayout").then(m =
 const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
 const Daily5MDashboard = lazy(() => import("./pages/CMS/Daily5MDashboard.jsx"));
+const MonthlyMeeting = lazy(() => import("./pages/CMS/MonthlyMeeting.jsx"));
 const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome.jsx"));
 const Attendance = lazy(() => import("./pages/Dashboard/Attendance.jsx"));
 const UserManagement = lazy(() => import("./pages/Dashboard/UserManagement.jsx"));
@@ -370,6 +371,7 @@ const App = () => {
               </RequireAccess>
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="monthly-meeting" element={<MonthlyMeeting />} />
           </Route>
 
           {/* Instructor routes */}
@@ -540,6 +542,7 @@ const App = () => {
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="monthly-meeting" element={<MonthlyMeeting />} />
             <Route path="learning" element={<Learning />} />
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />

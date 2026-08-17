@@ -38,6 +38,7 @@ import {
     IconBuilding,
     IconDatabase,
     IconTrash,
+    IconCalendar,
 } from "@tabler/icons-react";
 
 export const ICON_REGISTRY = {
@@ -80,6 +81,7 @@ export const ICON_REGISTRY = {
     IconBuilding,
     IconDatabase,
     IconTrash,
+    IconCalendar,
 };
 
 export const getIcon = (name) => {

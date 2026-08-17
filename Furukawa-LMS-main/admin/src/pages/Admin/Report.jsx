@@ -54,11 +54,11 @@ const recalculateReportData = (data, headerDates) => {
 
 // Builds the plain-language justification shown when a user clicks a "Present in Training Cell"
 // cell, purely from data already on screen (no extra fetch): yesterday's and today's headcount,
-// plus today's Dojo-specific Hires / Rejoining / Handover / Attrition, walked through the way a
-// floor supervisor would explain a headcount change. Uses the Dojo-scoped rows (Hiring Actual
-// Dojo, Rejoining in Training Cell, Dojo Handover, Dojo Attrition) rather than the general report
-// rows (Hiring Actual, Handover Actual, Attrition & Absenteeism) — those mix in non-Dojo hires
-// and daily absenteeism, so they don't reconcile to this row exactly; the Dojo-scoped ones do.
+// plus today's Dojo-specific Hires / Rejoining & Returns / Handover / Attrition / On Leave,
+// walked through the way a floor supervisor would explain a headcount change. These 5 rows are a
+// day-over-day set difference of the active Dojo membership (computed server-side), not
+// independent estimates — every trainee who entered or exited the active set that day is counted
+// in exactly one of them, so the formula below always balances exactly against today's count.
 const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     const dateObj = headerDates[colIndex];
     const dateKey = dateObj.fullDate;
@@ -70,32 +70,30 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     }
 
     const currentCount = parseFloat(tableData[`Present in Training Cell_${dateKey}`]) || 0;
-    const dojoHires = parseFloat(tableData[`Hiring Actual Dojo_${dateKey}`]) || 0;
-    const dojoRejoining = parseFloat(tableData[`Rejoining in Training Cell_${dateKey}`]) || 0;
-    const dojoHandover = parseFloat(tableData[`Dojo Handover_${dateKey}`]) || 0;
-    const dojoAttrition = parseFloat(tableData[`Dojo Attrition_${dateKey}`]) || 0;
 
     if (colIndex === 0) {
         return [
             `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
             ``,
-            `Dojo Hires: ${dojoHires}`,
-            `Rejoining in Training Cell: ${dojoRejoining}`,
-            `Dojo Handover: ${dojoHandover}`,
-            `Dojo Attrition: ${dojoAttrition}`,
-            ``,
-            `This is the previous month's last date, shown only as a reference column — it isn't part of the current month being reported.`,
+            `This is the previous month's last date, shown only as a reference column — it isn't part of the current month being reported, so no day-over-day breakdown applies to it.`,
         ].join('\n');
     }
+
+    const dojoHires = parseFloat(tableData[`Hiring Actual Dojo_${dateKey}`]) || 0;
+    const dojoRejoiningReturns = parseFloat(tableData[`Dojo Rejoining & Returns_${dateKey}`]) || 0;
+    const dojoHandover = parseFloat(tableData[`Dojo Handover_${dateKey}`]) || 0;
+    const dojoAttrition = parseFloat(tableData[`Dojo Attrition_${dateKey}`]) || 0;
+    const dojoOnLeave = parseFloat(tableData[`Dojo On Leave_${dateKey}`]) || 0;
 
     if (colIndex === 1) {
         return [
             `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
             ``,
             `Dojo Hires (today): ${dojoHires}`,
-            `Rejoining in Training Cell (today): ${dojoRejoining}`,
+            `Dojo Rejoining & Returns (today): ${dojoRejoiningReturns}`,
             `Dojo Handover (today): ${dojoHandover}`,
             `Dojo Attrition (today): ${dojoAttrition}`,
+            `Dojo On Leave (today): ${dojoOnLeave}`,
             ``,
             `This is the first day of the month — its count is this report's starting baseline, not a calculation against the previous month's reference date.`,
         ].join('\n');
@@ -103,27 +101,20 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
 
     const prevDateObj = headerDates[colIndex - 1];
     const prevCount = parseFloat(tableData[`Present in Training Cell_${prevDateObj.fullDate}`]) || 0;
-    const expected = prevCount + dojoHires + dojoRejoining - dojoHandover - dojoAttrition;
+    const expected = prevCount + dojoHires + dojoRejoiningReturns - dojoHandover - dojoAttrition - dojoOnLeave;
 
     const lines = [
         `Yesterday (${prevDateObj.displayDate}): ${prevCount} trainee(s)`,
         `Today (${dateObj.displayDate}): ${currentCount} trainee(s)`,
         ``,
         `Dojo Hires (today): ${dojoHires}`,
-        `Rejoining in Training Cell (today): ${dojoRejoining}`,
+        `Dojo Rejoining & Returns (today): ${dojoRejoiningReturns}`,
         `Dojo Handover (today): ${dojoHandover}`,
         `Dojo Attrition (today): ${dojoAttrition}`,
+        `Dojo On Leave (today): ${dojoOnLeave}`,
         ``,
-        `${prevCount} + ${dojoHires} + ${dojoRejoining} − ${dojoHandover} − ${dojoAttrition} = ${expected}`,
+        `${prevCount} + ${dojoHires} + ${dojoRejoiningReturns} − ${dojoHandover} − ${dojoAttrition} − ${dojoOnLeave} = ${expected}`,
     ];
-
-    if (expected !== currentCount) {
-        lines.push(
-            ``,
-            `That comes out close to today's actual count (${currentCount}) but not exact:`,
-            `• If today is the most recent date, a trainee may have been promoted today without a formal handover record yet — the report picks that up live for today only, before it shows up here.`,
-        );
-    }
 
     return lines.join('\n');
 };

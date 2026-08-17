@@ -1013,16 +1013,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         }
     });
 
-    // 4b. Dojo-specific hiring/handover/attrition — precise, allDojoUsers-scoped counterparts to
-    // Hiring Actual / Handover Actual / Attrition & Absenteeism, computed specifically so the
-    // Present in Training Cell popover's formula (Yesterday + Hires + Rejoining - Handover -
-    // Attrition = Today) balances exactly, which those general/report-facing rows can't guarantee
-    // (they mix in non-Dojo hires, daily absenteeism, etc.).
+    // 4b. Dojo-specific set-difference tracking — precise, allDojoUsers-scoped counterparts to
+    // Hiring Actual / Handover Actual / Attrition & Absenteeism, computed so the Present in
+    // Training Cell popover's formula (Yesterday + Hires + Rejoining & Returns - Handover -
+    // Attrition - On Leave = Today) balances exactly. Rather than deriving each term
+    // independently (which can miss transitions like a status correction back to PRESENT, or
+    // going ON_LEAVE without a matching handover/separation event), each day's active Dojo
+    // membership set (isDojoMemberActiveOnDate) is diffed directly against the previous day's —
+    // every user who newly entered or exited the set is categorized into exactly one bucket, so
+    // "entered - exited" is guaranteed by construction to equal today's count minus yesterday's.
     //
-    // Hiring Actual Dojo: a *genesis* join only (this user's very first-ever stint's joiningDate
-    // landing on dateKey) — a rejoin's joiningDate is deliberately excluded here since it's
-    // already counted by "Rejoining in Training Cell" below; counting it in both would double it
-    // in the formula.
+    // Hiring Actual Dojo vs Dojo Rejoining & Returns: within "entered" (active today, not
+    // yesterday), a *genesis* join (this user's very first-ever stint's joiningDate landing on
+    // dateKey) is a hire; anything else re-entering the active set — a rejoin, a return from
+    // ON_LEAVE, a status correction — is a rejoin/return instead.
     const getDojoGenesisJoinYMD = (u) => {
         let history;
         try {
@@ -1036,36 +1040,68 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return toYMD(u.joiningDate);
     };
 
-    // Dojo Handover: mirrors isDojoMemberActiveOnDate's own promotion cutoff exactly — a user
-    // drops out of Present in Training Cell starting the day handoverDateMap resolves to, so that
-    // same date is the "-1" this formula needs.
-    const getDojoHandoversOnDate = (dateKey) => allDojoUsers.filter(u => {
-        const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
-        return handoverYMD === dateKey;
-    }).length;
-
-    // Dojo Attrition: mirrors isDojoMemberActiveOnDate's own separation check — only counts a
-    // same-day separation for a user who wasn't already excluded via an earlier handover (someone
-    // promoted out on day 5 and formally separated on day 20 shouldn't subtract again on day 20;
-    // they stopped contributing to the count back on day 5).
-    const getDojoAttritionOnDate = (dateKey) => leftUsers.filter(l => {
-        if (l.dateKey !== dateKey) return false;
-        const isDojoUser = l.isTemporary || l.expectedHandover !== null;
-        if (!isDojoUser) return false;
-        const handoverYMD = handoverDateMap[l.id] ? toYMD(handoverDateMap[l.id]) : null;
-        return !handoverYMD || handoverYMD > dateKey;
-    }).length;
-
+    // Dojo Handover vs Dojo Attrition vs Dojo On Leave: within "exited" (active yesterday, not
+    // today), mirrors isDojoMemberActiveOnDate's own exclusion order — promoted out via
+    // handoverDateMap first, then a same-day separation, and anything else still uncategorized
+    // (most commonly, went ON_LEAVE) falls to Dojo On Leave.
     const dojoFormulaDateKeys = [prevMonthLastDateKey];
     for (let d = 1; d <= totalDays; d++) {
         dojoFormulaDateKeys.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
     }
+
+    const dojoUserById = new Map(allDojoUsers.map(u => [u.id, u]));
+    const dojoActiveIdsByDate = {};
     dojoFormulaDateKeys.forEach(dKey => {
-        const dojoHiresOnDate = allDojoUsers.filter(u => getDojoGenesisJoinYMD(u) === dKey).length;
-        tableData[`Hiring Actual Dojo_${dKey}`] = String(dojoHiresOnDate);
-        tableData[`Dojo Handover_${dKey}`] = String(getDojoHandoversOnDate(dKey));
-        tableData[`Dojo Attrition_${dKey}`] = String(getDojoAttritionOnDate(dKey));
+        dojoActiveIdsByDate[dKey] = new Set(
+            allDojoUsers.filter(u => isDojoMemberActiveOnDate(u, dKey)).map(u => u.id)
+        );
     });
+
+    for (let d = 1; d <= totalDays; d++) {
+        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const prevDKey = d === 1
+            ? prevMonthLastDateKey
+            : `${year}-${String(month).padStart(2, '0')}-${String(d - 1).padStart(2, '0')}`;
+
+        const activeYesterday = dojoActiveIdsByDate[prevDKey] || new Set();
+        const activeToday = dojoActiveIdsByDate[dKey] || new Set();
+
+        let hiresCount = 0;
+        let rejoiningReturnsCount = 0;
+        activeToday.forEach(id => {
+            if (activeYesterday.has(id)) return;
+            const u = dojoUserById.get(id);
+            if (u && getDojoGenesisJoinYMD(u) === dKey) {
+                hiresCount++;
+            } else {
+                rejoiningReturnsCount++;
+            }
+        });
+
+        let handoverCount = 0;
+        let attritionCount = 0;
+        let onLeaveCount = 0;
+        activeYesterday.forEach(id => {
+            if (activeToday.has(id)) return;
+            const handoverYMD = handoverDateMap[id] ? toYMD(handoverDateMap[id]) : null;
+            if (handoverYMD === dKey) {
+                handoverCount++;
+                return;
+            }
+            const separatedOnDate = leftUsers.some(l => l.id === id && l.dateKey === dKey);
+            if (separatedOnDate) {
+                attritionCount++;
+                return;
+            }
+            onLeaveCount++;
+        });
+
+        tableData[`Hiring Actual Dojo_${dKey}`] = String(hiresCount);
+        tableData[`Dojo Rejoining & Returns_${dKey}`] = String(rejoiningReturnsCount);
+        tableData[`Dojo Handover_${dKey}`] = String(handoverCount);
+        tableData[`Dojo Attrition_${dKey}`] = String(attritionCount);
+        tableData[`Dojo On Leave_${dKey}`] = String(onLeaveCount);
+    }
 
     // 5. Handover Actual
     const handoverSql = `

@@ -84,7 +84,20 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
             `Dojo Handover: ${dojoHandover}`,
             `Dojo Attrition: ${dojoAttrition}`,
             ``,
-            `This is the first date in view, so there's no earlier day here to compare it against.`,
+            `This is the previous month's last date, shown only as a reference column — it isn't part of the current month being reported.`,
+        ].join('\n');
+    }
+
+    if (colIndex === 1) {
+        return [
+            `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
+            ``,
+            `Dojo Hires (today): ${dojoHires}`,
+            `Rejoining in Training Cell (today): ${dojoRejoining}`,
+            `Dojo Handover (today): ${dojoHandover}`,
+            `Dojo Attrition (today): ${dojoAttrition}`,
+            ``,
+            `This is the first day of the month — its count is this report's starting baseline, not a calculation against the previous month's reference date.`,
         ].join('\n');
     }
 

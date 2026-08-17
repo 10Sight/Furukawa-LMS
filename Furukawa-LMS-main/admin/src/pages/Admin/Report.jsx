@@ -57,6 +57,26 @@ const recalculateReportData = (data, headerDates) => {
 // plus today's Hiring Actual / Handover Actual / Attrition & Absenteeism, walked through the way
 // a floor supervisor would explain a headcount change — not the statusHistory/handover-cutoff
 // mechanics behind how the number was actually computed server-side.
+// Classifies a date the same way the backend (headcountData.service.js) treats it for this row,
+// so the technical debug block below can tell a developer whether a value is live, frozen, or not
+// computed at all yet.
+const getPresentInTrainingCellStatus = (dateKey, todayYMD) => {
+    if (dateKey > todayYMD) return 'FUTURE — not computed, forced to 0 until this date arrives (server purges any stale value each sync)';
+    if (dateKey === todayYMD) return 'TODAY — recomputed live every sync';
+    return 'PAST — frozen the first time this date was saved; later syncs reuse the saved value instead of recomputing it';
+};
+
+// Technical block appended to every note variant below: names the exact server-side function/
+// file and the raw tableData keys involved, for debugging rather than for a floor supervisor.
+const buildTechnicalDebugLines = (dateKey, todayYMD) => [
+    ``,
+    `── Technical (for debugging) ──`,
+    `dateKey: ${dateKey}`,
+    `status: ${getPresentInTrainingCellStatus(dateKey, todayYMD)}`,
+    `Computed by isDojoMemberActiveOnDate() in server/services/headcountData.service.js: active statusHistory stint covering this date AND not excluded by an approved handover cutoff (handoverDateMap, from handover_sheets) AND not separated on this exact date (leftUsers). For TODAY only, also falls back to the live isTemporary flag + updatedAt when no handover_sheets record exists for that user.`,
+    `Row keys read here: Present in Training Cell_${dateKey}, Hiring Actual_${dateKey}, Handover Actual_${dateKey}, Attrition & Absenteeism of Training Cell (Nos)_${dateKey}`,
+];
+
 const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     const dateObj = headerDates[colIndex];
     const dateKey = dateObj.fullDate;
@@ -64,7 +84,10 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
     const now = new Date();
     const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     if (dateKey > todayYMD) {
-        return `${dateObj.displayDate} is a future date — Present in Training Cell isn't tracked yet, so it shows 0 until this date arrives.`;
+        return [
+            `${dateObj.displayDate} is a future date — Present in Training Cell isn't tracked yet, so it shows 0 until this date arrives.`,
+            ...buildTechnicalDebugLines(dateKey, todayYMD),
+        ].join('\n');
     }
 
     const currentCount = parseFloat(tableData[`Present in Training Cell_${dateKey}`]) || 0;
@@ -81,6 +104,7 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
             `Attrition & Absenteeism of Training Cell: ${attritionAbsenteeism}`,
             ``,
             `This is the first date in view, so there's no earlier day here to compare it against.`,
+            ...buildTechnicalDebugLines(dateKey, todayYMD),
         ].join('\n');
     }
 
@@ -107,6 +131,8 @@ const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
             `• Attrition & Absenteeism also includes trainees who were simply absent today — they're still enrolled, so a day off doesn't remove them from this count. Only someone who actually leaves the company does.`,
         );
     }
+
+    lines.push(...buildTechnicalDebugLines(dateKey, todayYMD));
 
     return lines.join('\n');
 };

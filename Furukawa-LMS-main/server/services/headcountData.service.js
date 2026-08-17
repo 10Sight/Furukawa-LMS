@@ -135,10 +135,13 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     const [allDojoUsers] = await executeQuery(`
         SELECT u.id, u.joiningDate, u.leavingDate, u.updatedAt, u.status, u.isTemporary, u.statusHistory
         FROM users u
-        ${getDesignationShutterLeftJoinSql('u', 'ds')}
-        WHERE (u.[expectedHandover] IS NOT NULL OR u.[isTemporary] = 1)
+        WHERE (u.[expectedHandover] IS NOT NULL OR u.[isTemporary] = 1 OR u.id IN (
+            SELECT DISTINCT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) AS entry
+            WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+        ))
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-          AND ds.[designation] IS NULL
     `);
 
     // Approved handover date per user, used below as the promotion cutoff instead of updatedAt:
@@ -178,6 +181,82 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         if (isNaN(d.getTime())) return null;
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     };
+
+    // Separation candidates & leftUsers — hoisted up here (rather than down in the "6. Separations"
+    // section below) so this array is available for the date-level handover/absence/attrition
+    // exclusion checks inside getDojoPresentOnDate/getDojoAbsentOnDate further down, both of which
+    // are invoked by the daily loop before section 6 used to run.
+    const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
+    const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
+    const nextMonthStart = `${nYear}-${String(nMonth).padStart(2, '0')}-01`;
+
+    // WHERE stays broad (isEmployee OR isTemporary) because this raw result set feeds both the
+    // employee "Separated (Cumulative)" metrics below AND dojoDayLeftCount (which specifically
+    // needs isTemporary = 1 rows) further down. isDeleted/shuttered-designation are excluded here
+    // since they're data-quality checks that apply to both populations; the isTemporary = 0
+    // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
+    // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount. Temporary
+    // (Dojo) users bypass the designation-shutter exclusion entirely — that check exists to filter
+    // out employees whose designation has since been shuttered, not trainees, who shouldn't be
+    // excluded from separation tracking based on a designation field that doesn't really apply to
+    // them.
+    // No status/date filter here — unlike the old CURRENT-status-only query, separation events
+    // are now derived from statusHistory in JS below, so a user who left mid-month and has since
+    // rejoined (status back to PRESENT) still has that historical separation correctly mapped to
+    // the day it happened, instead of disappearing because their *current* status no longer says
+    // LEFT.
+    const [separationCandidates] = await executeQuery(`
+        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, expectedHandover, statusHistory
+        FROM users u
+        WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
+          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
+          AND (u.[isTemporary] = 1 OR u.[designation] IS NULL OR u.[designation] = '' OR ${getDesignationShutterExclusionCondition("u")})
+          AND statusHistory IS NOT NULL AND LTRIM(RTRIM(statusHistory)) NOT IN ('', '[]')
+    `);
+
+    // Walk each candidate's statusHistory stints (see statusHistory.js's getUpdatedStatusHistory):
+    // a stint is only ever marked status = 'LEFT' at the moment the user actually separated, so
+    // every such stint in history is one separation event — including ones from earlier in the
+    // month for a user who has since rejoined and no longer carries LEFT as their current status.
+    // Uses current departmentId/sectionId/shift/isTemporary for filtering/clubbing (not
+    // historical per-stint values), matching the current implementation.
+    const leftUsers = [];
+    separationCandidates.forEach(u => {
+        let history;
+        try {
+            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
+        } catch (e) {
+            history = [];
+        }
+        if (!Array.isArray(history)) return;
+
+        history.forEach(stint => {
+            const stintStatus = String(stint?.status || '').trim().toUpperCase();
+            if (stintStatus !== 'LEFT') return;
+
+            const dateKey = toYMD(stint?.leavingDate || stint?.changedAt);
+            if (!dateKey) return;
+            if (dateKey < start || dateKey >= nextMonthStart) return;
+
+            leftUsers.push({
+                id: u.id,
+                payCode: u.payCode,
+                cardNo: u.cardNo,
+                employeeName: u.employeeName,
+                departmentId: u.departmentId,
+                sectionId: u.sectionId,
+                shift: u.shift,
+                isTemporary: u.isTemporary,
+                expectedHandover: u.expectedHandover,
+                dateKey,
+            });
+        });
+    });
+
+    console.log(`Sync Report [${month}/${year}] Range [${start} to ${nextMonthStart}]: Found ${leftUsers.length} separated users.`);
+    if (leftUsers.length > 0) {
+        console.log("Separated Users:", leftUsers.map(u => `${u.employeeName} (${u.dateKey})`).join(", "));
+    }
 
     // Timezone-safe day-only key (YYYYMMDD as a number). Ported verbatim (local-time getters,
     // not UTC) from dashboard.controller.js's parseManpowerDateKey so statusHistory-based
@@ -376,30 +455,71 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // left and later rejoined is evaluated against the stint actually open on dateKey — not just
     // their current status. Combined with the handover-date promotion cutoff (handoverDateMap,
     // sourced from the handover sheet's own [date] column above) to drop anyone already promoted
-    // out of the Dojo by dateKey. Shared by both the daily loop and the previous-month reference
-    // column below so "back month" totals line up exactly with how the current month is computed.
+    // out of the Dojo by dateKey, plus same-day exclusions for attrition (leftUsers) and
+    // absenteeism (dedupedStatusByUserDate) so a handover/separation/absence event on dateKey is
+    // reflected the same day rather than only from the next sync. Shared by both the daily loop
+    // and the previous-month reference column below so "back month" totals line up exactly with
+    // how the current month is computed.
+    const isDojoMemberActiveOnDate = (u, dateKey) => {
+        const stint = getUserActiveStintOnDate(u, dateKey);
+        if (!stint.active) return false;
+
+        // Already promoted out of the Dojo before this date. Prefer the approved handover
+        // date whenever one exists, regardless of the user's *current* isTemporary flag —
+        // that flag may not have been flipped to 0 yet even though the handover was already
+        // approved. Only fall back to updatedAt when there is no approved handover_sheets
+        // entry for this user AND they are no longer temporary.
+        const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
+        if (handoverYMD) {
+            if (handoverYMD <= dateKey) return false;
+        } else if (!u.isTemporary) {
+            const promotedYMD = toYMD(u.updatedAt);
+            if (promotedYMD && promotedYMD <= dateKey) return false;
+        }
+
+        // Separated (attrition) on this date.
+        const separatedOnDate = leftUsers.some(l => l.id === u.id && l.dateKey === dateKey);
+        if (separatedOnDate) return false;
+
+        return true;
+    };
+
+    const getDojoStatusOnDate = (u, dateKey) => {
+        const dayMap = dedupedStatusByUserDate[dateKey];
+        if (!dayMap) return null;
+        const status = dayMap.get(u.id);
+        if (status === undefined) return null;
+        return String(status).trim().toUpperCase();
+    };
+
     const getDojoPresentOnDate = (dateKey) => {
         if (dateKey > todayYMD) return 0;
 
         const dojoMembersOnDate = allDojoUsers.filter(u => {
-            const stint = getUserActiveStintOnDate(u, dateKey);
-            if (!stint.active) return false;
+            if (!isDojoMemberActiveOnDate(u, dateKey)) return false;
 
-            // Already promoted out of the Dojo before this date. Prefer the approved handover
-            // date whenever one exists, regardless of the user's *current* isTemporary flag —
-            // that flag may not have been flipped to 0 yet even though the handover was already
-            // approved. Only fall back to updatedAt when there is no approved handover_sheets
-            // entry for this user AND they are no longer temporary.
-            const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
-            if (handoverYMD) {
-                if (handoverYMD <= dateKey) return false;
-            } else if (!u.isTemporary) {
-                const promotedYMD = toYMD(u.updatedAt);
-                if (promotedYMD && promotedYMD <= dateKey) return false;
-            }
+            // Absent on this date.
+            const statusUpper = getDojoStatusOnDate(u, dateKey);
+            if (statusUpper === 'ABSENT' || statusUpper === 'A') return false;
+
             return true;
         });
         return dojoMembersOnDate.length;
+    };
+
+    // Actual Dojo/trainee absenteeism on dateKey, replacing the previous hardcoded 0 — mirrors
+    // getDojoPresentOnDate's membership rules but requires an explicit ABSENT/A attendance_logs
+    // status for dateKey.
+    const getDojoAbsentOnDate = (dateKey) => {
+        if (dateKey > todayYMD) return 0;
+
+        const dojoAbsentUsers = allDojoUsers.filter(u => {
+            if (!isDojoMemberActiveOnDate(u, dateKey)) return false;
+
+            const statusUpper = getDojoStatusOnDate(u, dateKey);
+            return statusUpper === 'ABSENT' || statusUpper === 'A';
+        });
+        return dojoAbsentUsers.length;
     };
 
     // Net Available Headcount Total / Above 3 Months, global or scoped to a club's sectionIds.
@@ -510,12 +630,12 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         const activeCount = allEligibleUsers.filter(u => isRosterActiveOnDate(u, dDate)).length;
 
-        // Temporary/Dojo users don't have attendance_logs punches uploaded for them, so
-        // "present" here just means "still an active Dojo member as of this date" — getDojoPresentOnDate
-        // is already date-aware (statusHistory-driven), so anyone it counts is by definition present
-        // on dKey. Future dates (no data can exist yet) show 0.
+        // "Present in Training Cell" is a still-active Dojo member as of dKey (statusHistory-driven,
+        // net of same-day handover/attrition) who isn't marked ABSENT/A in attendance_logs for dKey;
+        // "Dojo absent" is the complementary count of active Dojo members who are. Future dates (no
+        // data can exist yet) show 0 for both.
         const dojoPresentOnDate = getDojoPresentOnDate(dKey);
-        const dojoAbsentOnDate = 0;
+        const dojoAbsentOnDate = getDojoAbsentOnDate(dKey);
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);
@@ -794,7 +914,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-          AND ds.[designation] IS NULL
+          AND (u.[isTemporary] = 1 OR ds.[designation] IS NULL)
           AND joiningDate >= ?
           AND joiningDate <= ?
         GROUP BY CONVERT(VARCHAR, joiningDate, 23)
@@ -872,7 +992,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         ${getDesignationShutterLeftJoinSql('u', 'ds')}
         WHERE (u.[isTemporary] = 1 OR u.[expectedHandover] IS NOT NULL)
           AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-          AND ds.[designation] IS NULL
+          AND (u.[isTemporary] = 1 OR ds.[designation] IS NULL)
           AND u.[expectedHandover] >= ?
           AND u.[expectedHandover] <= ?
         GROUP BY CONVERT(VARCHAR, u.expectedHandover, 23)
@@ -888,74 +1008,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     });
 
     // 6. Separations
-    const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
-    const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
-    const nextMonthStart = `${nYear}-${String(nMonth).padStart(2, '0')}-01`;
-
-    // WHERE stays broad (isEmployee OR isTemporary) because this raw result set feeds both the
-    // employee "Separated (Cumulative)" metrics below AND dojoDayLeftCount (which specifically
-    // needs isTemporary = 1 rows) further down. isDeleted/shuttered-designation are excluded here
-    // since they're data-quality checks that apply to both populations; the isTemporary = 0
-    // restriction for "Separated (Cumulative)" is instead applied in JS where dayLeftCount /
-    // weeklyLeft / club counts are computed, so it doesn't zero out dojoDayLeftCount.
-    // No status/date filter here — unlike the old CURRENT-status-only query, separation events
-    // are now derived from statusHistory in JS below, so a user who left mid-month and has since
-    // rejoined (status back to PRESENT) still has that historical separation correctly mapped to
-    // the day it happened, instead of disappearing because their *current* status no longer says
-    // LEFT.
-    const [separationCandidates] = await executeQuery(`
-        SELECT id, empId as payCode, idCard as cardNo, fullName as employeeName, departmentId, sectionId, shift, isTemporary, expectedHandover, statusHistory
-        FROM users u
-        WHERE (u.[isEmployee] = 1 OR u.[isTemporary] = 1)
-          AND (u.[isDeleted] = 0 OR u.[isDeleted] IS NULL)
-          AND (u.[designation] IS NULL OR u.[designation] = '' OR ${getDesignationShutterExclusionCondition("u")})
-          AND statusHistory IS NOT NULL AND LTRIM(RTRIM(statusHistory)) NOT IN ('', '[]')
-    `);
-
-    // Walk each candidate's statusHistory stints (see statusHistory.js's getUpdatedStatusHistory):
-    // a stint is only ever marked status = 'LEFT' at the moment the user actually separated, so
-    // every such stint in history is one separation event — including ones from earlier in the
-    // month for a user who has since rejoined and no longer carries LEFT as their current status.
-    // Uses current departmentId/sectionId/shift/isTemporary for filtering/clubbing (not
-    // historical per-stint values), matching the current implementation.
-    const leftUsers = [];
-    separationCandidates.forEach(u => {
-        let history;
-        try {
-            history = typeof u.statusHistory === 'string' ? JSON.parse(u.statusHistory || '[]') : (u.statusHistory || []);
-        } catch (e) {
-            history = [];
-        }
-        if (!Array.isArray(history)) return;
-
-        history.forEach(stint => {
-            const stintStatus = String(stint?.status || '').trim().toUpperCase();
-            if (stintStatus !== 'LEFT') return;
-
-            const dateKey = toYMD(stint?.leavingDate || stint?.changedAt);
-            if (!dateKey) return;
-            if (dateKey < start || dateKey >= nextMonthStart) return;
-
-            leftUsers.push({
-                id: u.id,
-                payCode: u.payCode,
-                cardNo: u.cardNo,
-                employeeName: u.employeeName,
-                departmentId: u.departmentId,
-                sectionId: u.sectionId,
-                shift: u.shift,
-                isTemporary: u.isTemporary,
-                expectedHandover: u.expectedHandover,
-                dateKey,
-            });
-        });
-    });
-
-    console.log(`Sync Report [${month}/${year}] Range [${start} to ${nextMonthStart}]: Found ${leftUsers.length} separated users.`);
-    if (leftUsers.length > 0) {
-        console.log("Separated Users:", leftUsers.map(u => `${u.employeeName} (${u.dateKey})`).join(", "));
-    }
-
     let cumulativeLeft = 0;
     const clubCumulativeLeft = {};
     reportingClubs.forEach(c => clubCumulativeLeft[c.id] = 0);

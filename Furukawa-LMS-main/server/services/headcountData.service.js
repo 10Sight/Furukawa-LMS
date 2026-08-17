@@ -184,7 +184,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
     // Separation candidates & leftUsers — hoisted up here (rather than down in the "6. Separations"
     // section below) so this array is available for the date-level handover/absence/attrition
-    // exclusion checks inside getDojoPresentBreakdownOnDate/getDojoAbsentOnDate further down, both of which
+    // exclusion checks inside getDojoPresentOnDate/getDojoAbsentOnDate further down, both of which
     // are invoked by the daily loop before section 6 used to run.
     const nYear = Number(month) === 12 ? Number(year) + 1 : Number(year);
     const nMonth = Number(month) === 12 ? 1 : Number(month) + 1;
@@ -460,13 +460,9 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // reflected the same day rather than only from the next sync. Shared by both the daily loop
     // and the previous-month reference column below so "back month" totals line up exactly with
     // how the current month is computed.
-    // Single source of truth for both the yes/no membership check (isDojoMemberActiveOnDate) and
-    // the per-date audit breakdown (getDojoPresentBreakdownOnDate) below — returns *why* a user
-    // is or isn't counted, not just whether, so the breakdown can explain a cell's number instead
-    // of only reproducing it.
-    const getDojoMembershipStatusOnDate = (u, dateKey) => {
+    const isDojoMemberActiveOnDate = (u, dateKey) => {
         const stint = getUserActiveStintOnDate(u, dateKey);
-        if (!stint.active) return { active: false, reason: 'not-on-roster' };
+        if (!stint.active) return false;
 
         // Already promoted out of the Dojo before this date. Prefer the approved handover
         // date whenever one exists, regardless of the user's *current* isTemporary flag —
@@ -475,20 +471,18 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // entry for this user AND they are no longer temporary.
         const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
         if (handoverYMD) {
-            if (handoverYMD <= dateKey) return { active: false, reason: 'promoted' };
+            if (handoverYMD <= dateKey) return false;
         } else if (!u.isTemporary) {
             const promotedYMD = toYMD(u.updatedAt);
-            if (promotedYMD && promotedYMD <= dateKey) return { active: false, reason: 'promoted' };
+            if (promotedYMD && promotedYMD <= dateKey) return false;
         }
 
         // Separated (attrition) on this date.
         const separatedOnDate = leftUsers.some(l => l.id === u.id && l.dateKey === dateKey);
-        if (separatedOnDate) return { active: false, reason: 'separated' };
+        if (separatedOnDate) return false;
 
-        return { active: true, reason: 'active' };
+        return true;
     };
-
-    const isDojoMemberActiveOnDate = (u, dateKey) => getDojoMembershipStatusOnDate(u, dateKey).active;
 
     const getDojoStatusOnDate = (u, dateKey) => {
         const dayMap = dedupedStatusByUserDate[dateKey];
@@ -506,61 +500,16 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // reflecting today's live flags. Daily attendance is tracked separately by
     // getDojoAbsentOnDate below, which feeds "Attrition & Absenteeism of Training Cell (Nos)"
     // instead — it must NOT also subtract from this membership count, since an absent member is
-    // still a member.
-    //
-    // Also doubles as the per-date audit trail behind that number, so the report UI can explain a
-    // cell instead of just showing it: how many Dojo/trainee users were on an open statusHistory
-    // stint as of dateKey, and of those, how many were excluded because they'd already been
-    // promoted to production or separated that same day. activeCount + promotedOutCount +
-    // separatedTodayCount = everyone who had an open stint on dateKey; activeCount/count alone is
-    // the "Present in Training Cell" value itself.
-    const getDojoPresentBreakdownOnDate = (dateKey) => {
-        if (dateKey > todayYMD) {
-            return { count: 0, activeCount: 0, promotedOutCount: 0, separatedTodayCount: 0, isFuture: true };
-        }
-
-        let activeCount = 0;
-        let promotedOutCount = 0;
-        let separatedTodayCount = 0;
-
-        allDojoUsers.forEach(u => {
-            const { active, reason } = getDojoMembershipStatusOnDate(u, dateKey);
-            if (active) activeCount++;
-            else if (reason === 'promoted') promotedOutCount++;
-            else if (reason === 'separated') separatedTodayCount++;
-        });
-
-        return { count: activeCount, activeCount, promotedOutCount, separatedTodayCount, isFuture: false };
-    };
-
-    // Renders getDojoPresentBreakdownOnDate's numbers into the plain-text justification shown
-    // when a user clicks a "Present in Training Cell" cell in the report UI.
-    const formatPresentInTrainingCellNote = (dateKey, breakdown) => {
-        if (breakdown.isFuture) {
-            return `Future date — Present in Training Cell isn't computed yet and shows 0 until ${dateKey} arrives.`;
-        }
-
-        const { activeCount, promotedOutCount, separatedTodayCount, count } = breakdown;
-        const totalOnStint = activeCount + promotedOutCount + separatedTodayCount;
-
-        const lines = [
-            `Present in Training Cell on ${dateKey} = ${count}`,
-            ``,
-            `${totalOnStint} Dojo/trainee user(s) had an open enrollment (statusHistory) as of this date.`,
-        ];
-        if (promotedOutCount > 0) {
-            lines.push(`− ${promotedOutCount} already promoted to production (handover approved, or isTemporary flipped to 0) on or before this date.`);
-        }
-        if (separatedTodayCount > 0) {
-            lines.push(`− ${separatedTodayCount} separated (left) on this exact date.`);
-        }
-        lines.push(``, `${totalOnStint} − ${promotedOutCount} − ${separatedTodayCount} = ${count}`);
-
-        return lines.join('\n');
+    // still a member. The report UI builds its own cell-click justification client-side from this
+    // row plus Hiring Actual/Handover Actual/Attrition & Absenteeism, so no breakdown is persisted
+    // here.
+    const getDojoPresentOnDate = (dateKey) => {
+        if (dateKey > todayYMD) return 0;
+        return allDojoUsers.filter(u => isDojoMemberActiveOnDate(u, dateKey)).length;
     };
 
     // Actual Dojo/trainee absenteeism on dateKey, replacing the previous hardcoded 0 — mirrors
-    // getDojoPresentBreakdownOnDate's membership rules but requires an explicit ABSENT/A attendance_logs
+    // getDojoPresentOnDate's membership rules but requires an explicit ABSENT/A attendance_logs
     // status for dateKey.
     const getDojoAbsentOnDate = (dateKey) => {
         if (dateKey > todayYMD) return 0;
@@ -686,8 +635,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // net of same-day handover/attrition) — a pure membership count, independent of today's
         // attendance. "Dojo absent" (attendance-based) feeds "Attrition & Absenteeism of Training
         // Cell (Nos)" below instead. Future dates (no data can exist yet) show 0 for both.
-        const dojoPresentBreakdown = getDojoPresentBreakdownOnDate(dKey);
-        const dojoPresentOnDate = dojoPresentBreakdown.count;
+        const dojoPresentOnDate = getDojoPresentOnDate(dKey);
         const dojoAbsentOnDate = getDojoAbsentOnDate(dKey);
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
@@ -713,7 +661,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // attendance-present count (formerly Headcount available).
         tableData[`Headcount available_${dKey}`] = String(netAvailableHeadcountTotal);
         tableData[`Present in Training Cell_${dKey}`] = dojoPresentOnDate;
-        tableData[`Present in Training Cell_Note_${dKey}`] = formatPresentInTrainingCellNote(dKey, dojoPresentBreakdown);
         tableData[`DojoAbsent_${dKey}`] = dojoAbsentOnDate;
         tableData[`Net Available Headcount Total_${dKey}`] = present;
         tableData[`Total Headcount (Present + Absent)_${dKey}`] = totalHeadcountPresentAbsent;
@@ -1081,7 +1028,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // A separated user counts as Dojo attrition only while they were still an actual Dojo
         // member at the time they left — a Dojo hire who was already promoted (approved handover
         // on or before the separation date) before separating counts as a regular separation
-        // instead, matching getDojoPresentBreakdownOnDate's promotion cutoff above.
+        // instead, matching getDojoPresentOnDate's promotion cutoff above.
         const dayLeftCount = (dKey < todayYMD && hasPriorLeftCount)
             ? Number(priorLeftCount) || 0
             : leftUsers.filter(l => {
@@ -1208,10 +1155,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     tableData[`Net Available Headcount Above 3 Months_${prevMonthLastDateKey}`] = String(prevMonthNetAbove3);
     // Computed the same way as the daily loop above, so this leading reference column matches the
     // previous month's own final column exactly ("back month" continuity).
-    const prevMonthDojoPresentBreakdown = getDojoPresentBreakdownOnDate(prevMonthLastDateKey);
-    tableData[`Present in Training Cell_${prevMonthLastDateKey}`] = prevMonthDojoPresentBreakdown.count;
-    tableData[`Present in Training Cell_Note_${prevMonthLastDateKey}`] =
-        formatPresentInTrainingCellNote(prevMonthLastDateKey, prevMonthDojoPresentBreakdown);
+    tableData[`Present in Training Cell_${prevMonthLastDateKey}`] = getDojoPresentOnDate(prevMonthLastDateKey);
 
     // Absent / Total Headcount / Absenteeism % for the leading reference column, matching the
     // daily-loop subtraction method (Roster - Present, suppressed to 0 on declared holidays).

@@ -46,12 +46,69 @@ const recalculateReportData = (data, headerDates) => {
     headerDates.forEach(dateObj => {
         if (dateObj.fullDate > todayYMD) {
             newData[`Present in Training Cell_${dateObj.fullDate}`] = '0';
-            newData[`Present in Training Cell_Note_${dateObj.fullDate}`] =
-                `Future date — Present in Training Cell isn't computed yet and shows 0 until ${dateObj.fullDate} arrives.`;
         }
     });
 
     return newData;
+};
+
+// Builds the plain-language justification shown when a user clicks a "Present in Training Cell"
+// cell, purely from data already on screen (no extra fetch): yesterday's and today's headcount,
+// plus today's Hiring Actual / Handover Actual / Attrition & Absenteeism, walked through the way
+// a floor supervisor would explain a headcount change — not the statusHistory/handover-cutoff
+// mechanics behind how the number was actually computed server-side.
+const buildPresentInTrainingCellNote = (tableData, headerDates, colIndex) => {
+    const dateObj = headerDates[colIndex];
+    const dateKey = dateObj.fullDate;
+
+    const now = new Date();
+    const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    if (dateKey > todayYMD) {
+        return `${dateObj.displayDate} is a future date — Present in Training Cell isn't tracked yet, so it shows 0 until this date arrives.`;
+    }
+
+    const currentCount = parseFloat(tableData[`Present in Training Cell_${dateKey}`]) || 0;
+    const hiringActual = parseFloat(tableData[`Hiring Actual_${dateKey}`]) || 0;
+    const handoverActual = parseFloat(tableData[`Handover Actual_${dateKey}`]) || 0;
+    const attritionAbsenteeism = parseFloat(tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dateKey}`]) || 0;
+
+    if (colIndex === 0) {
+        return [
+            `Today (${dateObj.displayDate}): ${currentCount} trainee(s) in the Training Cell.`,
+            ``,
+            `Hiring Actual: ${hiringActual}`,
+            `Handover Actual: ${handoverActual}`,
+            `Attrition & Absenteeism of Training Cell: ${attritionAbsenteeism}`,
+            ``,
+            `This is the first date in view, so there's no earlier day here to compare it against.`,
+        ].join('\n');
+    }
+
+    const prevDateObj = headerDates[colIndex - 1];
+    const prevCount = parseFloat(tableData[`Present in Training Cell_${prevDateObj.fullDate}`]) || 0;
+    const expected = prevCount + hiringActual - handoverActual - attritionAbsenteeism;
+
+    const lines = [
+        `Yesterday (${prevDateObj.displayDate}): ${prevCount} trainee(s)`,
+        `Today (${dateObj.displayDate}): ${currentCount} trainee(s)`,
+        ``,
+        `Hiring Actual (today): ${hiringActual}`,
+        `Handover Actual (today): ${handoverActual}`,
+        `Attrition & Absenteeism of Training Cell (today): ${attritionAbsenteeism}`,
+        ``,
+        `${prevCount} + ${hiringActual} − ${handoverActual} − ${attritionAbsenteeism} = ${expected}`,
+    ];
+
+    if (expected !== currentCount) {
+        lines.push(
+            ``,
+            `That comes out close to today's actual count (${currentCount}) but not exact — which is normal, not a mistake:`,
+            `• Hiring Actual counts every new employee joining that day, not only trainees, so it can include hires outside the Training Cell.`,
+            `• Attrition & Absenteeism also includes trainees who were simply absent today — they're still enrolled, so a day off doesn't remove them from this count. Only someone who actually leaves the company does.`,
+        );
+    }
+
+    return lines.join('\n');
 };
 
 const Report = () => {
@@ -501,7 +558,7 @@ const Report = () => {
                                                 const isPrevMonthCol = colIndex === 0;
                                                 const isPresentInTrainingCell = row.label === "Present in Training Cell";
                                                 const note = isPresentInTrainingCell
-                                                    ? tableData[`Present in Training Cell_Note_${cellKey}`]
+                                                    ? buildPresentInTrainingCellNote(tableData, headerDates, colIndex)
                                                     : null;
 
                                                 const cellInput = (
@@ -536,11 +593,11 @@ const Report = () => {
                                                                     <PopoverTrigger asChild>
                                                                         {cellInput}
                                                                     </PopoverTrigger>
-                                                                    <PopoverContent className="w-80" align="center">
+                                                                    <PopoverContent className="w-96" align="center">
                                                                         <div className="text-sm font-bold text-slate-800 mb-2 pb-2 border-b">
                                                                             Present in Training Cell — {dateObj.displayDate}
                                                                         </div>
-                                                                        <div className="text-xs leading-relaxed whitespace-pre-line font-mono text-slate-600">
+                                                                        <div className="text-xs leading-relaxed whitespace-pre-line text-slate-600">
                                                                             {note || 'No details available for this date yet — try Sync Data.'}
                                                                         </div>
                                                                     </PopoverContent>

@@ -492,19 +492,18 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         return String(status).trim().toUpperCase();
     };
 
+    // "Present in Training Cell" is a pure membership count, not an attendance-filtered one:
+    // anyone whose statusHistory stint is active on dateKey and who hasn't yet been promoted out
+    // (approved handover / isTemporary flip) or separated counts here, regardless of whether they
+    // were marked absent that specific day — matching DojoHiring.jsx's "Total Candidates" stat
+    // (isTemporary = 1 AND not LEFT), just made date-aware via statusHistory instead of only
+    // reflecting today's live flags. Daily attendance is tracked separately by
+    // getDojoAbsentOnDate below, which feeds "Attrition & Absenteeism of Training Cell (Nos)"
+    // instead — it must NOT also subtract from this membership count, since an absent member is
+    // still a member.
     const getDojoPresentOnDate = (dateKey) => {
         if (dateKey > todayYMD) return 0;
-
-        const dojoMembersOnDate = allDojoUsers.filter(u => {
-            if (!isDojoMemberActiveOnDate(u, dateKey)) return false;
-
-            // Absent on this date.
-            const statusUpper = getDojoStatusOnDate(u, dateKey);
-            if (statusUpper === 'ABSENT' || statusUpper === 'A') return false;
-
-            return true;
-        });
-        return dojoMembersOnDate.length;
+        return allDojoUsers.filter(u => isDojoMemberActiveOnDate(u, dateKey)).length;
     };
 
     // Actual Dojo/trainee absenteeism on dateKey, replacing the previous hardcoded 0 — mirrors
@@ -1418,24 +1417,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
             tableData[`${club.name} Headcount required_${item.dateKey}`] = clubRequirement;
         });
     });
-
-    // "Present in Training Cell" is now a sequential running-balance formula rather than the
-    // directly-computed Dojo membership snapshot assigned earlier (dojoPresentOnDate, both in the
-    // daily loop and the prevMonthLastDateKey reference column above): starting from the previous
-    // month's last-day value as the baseline, each day adds Hiring Actual and subtracts Handover
-    // Actual and Attrition & Absenteeism of Training Cell (Nos), mirroring the frontend's live
-    // recalculation exactly. Recomputed here — after those three inputs are all finalized above —
-    // so scheduled/background paths (cron report emails, the manual sync endpoint) return the same
-    // values the UI would show without anyone having opened the report.
-    let runningPresentInTrainingCell = Number(tableData[`Present in Training Cell_${prevMonthLastDateKey}`]) || 0;
-    for (let d = 1; d <= totalDays; d++) {
-        const dKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const hiringActual = Number(tableData[`Hiring Actual_${dKey}`]) || 0;
-        const handoverActual = Number(tableData[`Handover Actual_${dKey}`]) || 0;
-        const attritionAbsenteeism = Number(tableData[`Attrition & Absenteeism of Training Cell (Nos)_${dKey}`]) || 0;
-        runningPresentInTrainingCell = runningPresentInTrainingCell + hiringActual - handoverActual - attritionAbsenteeism;
-        tableData[`Present in Training Cell_${dKey}`] = runningPresentInTrainingCell;
-    }
 
     return { tableData };
 };

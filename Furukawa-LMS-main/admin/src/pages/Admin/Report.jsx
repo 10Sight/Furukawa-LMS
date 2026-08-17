@@ -21,6 +21,11 @@ const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual
 
 // Reactively derives every formula-driven cell from the raw/manual ones already in `data`,
 // so the UI, "Save", and "Sync Data" all show the exact same numbers without re-fetching.
+// "Present in Training Cell" is NOT recalculated here: it's a date-aware Dojo membership count
+// (statusHistory + handover-approval cutoff) computed server-side in headcountData.service.js,
+// not something derivable client-side from Hiring/Handover/Attrition alone — a running balance
+// built from those rows drifts from reality because "Attrition & Absenteeism" bundles permanent
+// departures with same-day absenteeism, which isn't a membership change.
 const recalculateReportData = (data, headerDates) => {
     const newData = { ...data };
 
@@ -31,21 +36,6 @@ const recalculateReportData = (data, headerDates) => {
         const expected = parseFloat(newData[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
         newData[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
     });
-
-    // Present in Training Cell (Date D) = Present in Training Cell (Date D-1)
-    //   + Hiring Actual (Date D) - Handover Actual (Date D) - Attrition & Absenteeism of Training Cell (Nos) (Date D)
-    // headerDates[0] is the previous month's last date, used only as the starting baseline.
-    if (headerDates.length > 0) {
-        let runningPresent = parseFloat(newData[`Present in Training Cell_${headerDates[0].fullDate}`]) || 0;
-        for (let i = 1; i < headerDates.length; i++) {
-            const dateKey = headerDates[i].fullDate;
-            const hiringActual = parseFloat(newData[`Hiring Actual_${dateKey}`]) || 0;
-            const handoverActual = parseFloat(newData[`Handover Actual_${dateKey}`]) || 0;
-            const attrition = parseFloat(newData[`Attrition & Absenteeism of Training Cell (Nos)_${dateKey}`]) || 0;
-            runningPresent = runningPresent + hiringActual - handoverActual - attrition;
-            newData[`Present in Training Cell_${dateKey}`] = String(runningPresent);
-        }
-    }
 
     return newData;
 };

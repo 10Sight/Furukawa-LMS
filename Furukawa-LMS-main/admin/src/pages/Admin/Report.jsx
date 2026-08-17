@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ReportClubbing from "../Dashboard/ReportClubbing";
 import {
     ChevronLeft,
@@ -35,6 +36,19 @@ const recalculateReportData = (data, headerDates) => {
         const actual = parseFloat(newData[`Actual Separations (Cumulative)_${dateKey}`]) || 0;
         const expected = parseFloat(newData[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
         newData[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
+    });
+
+    // Present in Training Cell must read 0 for any date after today, even if a stale value from
+    // an earlier save/sync is still sitting in `data` — the server already enforces this on
+    // sync, but this guards the read path too so a future date never displays leftover data.
+    const now = new Date();
+    const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    headerDates.forEach(dateObj => {
+        if (dateObj.fullDate > todayYMD) {
+            newData[`Present in Training Cell_${dateObj.fullDate}`] = '0';
+            newData[`Present in Training Cell_Note_${dateObj.fullDate}`] =
+                `Future date — Present in Training Cell isn't computed yet and shows 0 until ${dateObj.fullDate} arrives.`;
+        }
     });
 
     return newData;
@@ -485,6 +499,28 @@ const Report = () => {
                                                     ? '0'
                                                     : rawValue;
                                                 const isPrevMonthCol = colIndex === 0;
+                                                const isPresentInTrainingCell = row.label === "Present in Training Cell";
+                                                const note = isPresentInTrainingCell
+                                                    ? tableData[`Present in Training Cell_Note_${cellKey}`]
+                                                    : null;
+
+                                                const cellInput = (
+                                                    <input
+                                                        type="text"
+                                                        value={value}
+                                                        readOnly={isSyncedReadOnly}
+                                                        onChange={(e) =>
+                                                            handleInputChange(row.dataKey || row.label, cellKey, e.target.value)
+                                                        }
+                                                        className={`
+                                                            w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
+                                                            ${isPresentInTrainingCell ? 'cursor-pointer hover:bg-indigo-100' : (isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100')}
+                                                            ${row.bold ? 'font-bold' : ''}
+                                                        `}
+                                                        style={{ minHeight: '28px' }}
+                                                        title={isPresentInTrainingCell ? 'Click for calculation details' : (isSyncedReadOnly ? 'Auto-calculated on sync' : undefined)}
+                                                    />
+                                                );
 
                                                 return (
                                                     <td
@@ -495,21 +531,21 @@ const Report = () => {
                                                         `}
                                                     >
                                                         {row.type !== 'header' && (
-                                                            <input
-                                                                type="text"
-                                                                value={value}
-                                                                readOnly={isSyncedReadOnly}
-                                                                onChange={(e) =>
-                                                                    handleInputChange(row.dataKey || row.label, cellKey, e.target.value)
-                                                                }
-                                                                className={`
-                                                                    w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
-                                                                    ${isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100'}
-                                                                    ${row.bold ? 'font-bold' : ''}
-                                                                `}
-                                                                style={{ minHeight: '28px' }}
-                                                                title={isSyncedReadOnly ? 'Auto-calculated on sync' : undefined}
-                                                            />
+                                                            isPresentInTrainingCell ? (
+                                                                <Popover>
+                                                                    <PopoverTrigger asChild>
+                                                                        {cellInput}
+                                                                    </PopoverTrigger>
+                                                                    <PopoverContent className="w-80" align="center">
+                                                                        <div className="text-sm font-bold text-slate-800 mb-2 pb-2 border-b">
+                                                                            Present in Training Cell — {dateObj.displayDate}
+                                                                        </div>
+                                                                        <div className="text-xs leading-relaxed whitespace-pre-line font-mono text-slate-600">
+                                                                            {note || 'No details available for this date yet — try Sync Data.'}
+                                                                        </div>
+                                                                    </PopoverContent>
+                                                                </Popover>
+                                                            ) : cellInput
                                                         )}
                                                     </td>
                                                 );

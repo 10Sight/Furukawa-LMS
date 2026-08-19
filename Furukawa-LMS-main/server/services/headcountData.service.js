@@ -1628,5 +1628,47 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         });
     });
 
+    // Reverse recalculation pass for "Present in Training Cell": past freezes and late status
+    // corrections can leave a historical date out of step with the day-over-day bridge rows
+    // (Hiring Actual Dojo, Dojo Rejoining & Returns, Dojo Handover, Dojo Attrition, Dojo On
+    // Leave) even though those bridge rows themselves are correct. Since today's snapshot is
+    // trusted, walk backward from the latest date in this report that is <= today, deriving
+    // every earlier date from it via the reverse of the forward bridge formula:
+    //   Yesterday = Today - Hires - Rejoining&Returns + Handover + Attrition + On Leave
+    // Dates after that anchor (strictly future) are cleared to 0.
+    const presentDateSequence = dojoFormulaDateKeys; // [prevMonthLastDateKey, day1, ..., totalDays], oldest to newest
+    let presentAnchorIndex = -1;
+    for (let i = presentDateSequence.length - 1; i >= 0; i--) {
+        if (presentDateSequence[i] <= todayYMD) {
+            presentAnchorIndex = i;
+            break;
+        }
+    }
+
+    if (presentAnchorIndex === -1) {
+        presentDateSequence.forEach(dKey => {
+            tableData[`Present in Training Cell_${dKey}`] = 0;
+        });
+    } else {
+        for (let i = presentAnchorIndex + 1; i < presentDateSequence.length; i++) {
+            tableData[`Present in Training Cell_${presentDateSequence[i]}`] = 0;
+        }
+
+        let runningPresentValue = Number(tableData[`Present in Training Cell_${presentDateSequence[presentAnchorIndex]}`]) || 0;
+        for (let i = presentAnchorIndex; i > 0; i--) {
+            const todayKey = presentDateSequence[i];
+            const yesterdayKey = presentDateSequence[i - 1];
+
+            const hires = Number(tableData[`Hiring Actual Dojo_${todayKey}`]) || 0;
+            const rejoiningReturns = Number(tableData[`Dojo Rejoining & Returns_${todayKey}`]) || 0;
+            const handover = Number(tableData[`Dojo Handover_${todayKey}`]) || 0;
+            const attrition = Number(tableData[`Dojo Attrition_${todayKey}`]) || 0;
+            const onLeave = Number(tableData[`Dojo On Leave_${todayKey}`]) || 0;
+
+            runningPresentValue = runningPresentValue - hires - rejoiningReturns + handover + attrition + onLeave;
+            tableData[`Present in Training Cell_${yesterdayKey}`] = runningPresentValue;
+        }
+    }
+
     return { tableData };
 };

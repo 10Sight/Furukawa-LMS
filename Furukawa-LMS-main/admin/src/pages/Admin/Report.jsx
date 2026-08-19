@@ -22,11 +22,12 @@ const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual
 
 // Reactively derives every formula-driven cell from the raw/manual ones already in `data`,
 // so the UI, "Save", and "Sync Data" all show the exact same numbers without re-fetching.
-// "Present in Training Cell" is NOT recalculated here: it's a date-aware Dojo membership count
-// (statusHistory + handover-approval cutoff) computed server-side in headcountData.service.js,
-// not something derivable client-side from Hiring/Handover/Attrition alone — a running balance
-// built from those rows drifts from reality because "Attrition & Absenteeism" bundles permanent
-// departures with same-day absenteeism, which isn't a membership change.
+// "Present in Training Cell" itself is still sourced from the server (statusHistory +
+// handover-approval cutoff, computed in headcountData.service.js) rather than built up from
+// scratch here — only today's/anchor value is trusted as-is. Every earlier date is then
+// derived from it via the same backward pass headcountData.service.js runs, using the Dojo
+// bridge rows (Hiring Actual Dojo / Dojo Rejoining & Returns / Dojo Handover / Dojo Attrition /
+// Dojo On Leave) already present in `data` from the last sync.
 const recalculateReportData = (data, headerDates) => {
     const newData = { ...data };
 
@@ -48,6 +49,44 @@ const recalculateReportData = (data, headerDates) => {
             newData[`Present in Training Cell_${dateObj.fullDate}`] = '0';
         }
     });
+
+    // Reverse recalculation pass, mirroring headcountData.service.js's own backward pass: past
+    // freezes/late status corrections can leave a historical date out of step with the
+    // day-over-day Dojo bridge rows (Hiring Actual Dojo, Dojo Rejoining & Returns, Dojo
+    // Handover, Dojo Attrition, Dojo On Leave) even though those bridge rows are correct.
+    // Since today's snapshot is trusted, walk backward from the latest date <= today, deriving
+    // every earlier date via the reverse of the forward bridge formula. This keeps the grid
+    // (and the "Save" payload) in balance immediately on load/edit, without waiting for the
+    // next Sync round-trip to pull the server's own recalculated values.
+    //   Yesterday = Today - Hires - Rejoining&Returns + Handover + Attrition + On Leave
+    let presentAnchorIndex = -1;
+    for (let i = headerDates.length - 1; i >= 0; i--) {
+        if (headerDates[i].fullDate <= todayYMD) {
+            presentAnchorIndex = i;
+            break;
+        }
+    }
+
+    if (presentAnchorIndex === -1) {
+        headerDates.forEach(dateObj => {
+            newData[`Present in Training Cell_${dateObj.fullDate}`] = '0';
+        });
+    } else {
+        let runningPresentValue = parseFloat(newData[`Present in Training Cell_${headerDates[presentAnchorIndex].fullDate}`]) || 0;
+        for (let i = presentAnchorIndex; i > 0; i--) {
+            const todayKey = headerDates[i].fullDate;
+            const yesterdayKey = headerDates[i - 1].fullDate;
+
+            const hires = parseFloat(newData[`Hiring Actual Dojo_${todayKey}`]) || 0;
+            const rejoiningReturns = parseFloat(newData[`Dojo Rejoining & Returns_${todayKey}`]) || 0;
+            const handover = parseFloat(newData[`Dojo Handover_${todayKey}`]) || 0;
+            const attrition = parseFloat(newData[`Dojo Attrition_${todayKey}`]) || 0;
+            const onLeave = parseFloat(newData[`Dojo On Leave_${todayKey}`]) || 0;
+
+            runningPresentValue = runningPresentValue - hires - rejoiningReturns + handover + attrition + onLeave;
+            newData[`Present in Training Cell_${yesterdayKey}`] = String(runningPresentValue);
+        }
+    }
 
     return newData;
 };

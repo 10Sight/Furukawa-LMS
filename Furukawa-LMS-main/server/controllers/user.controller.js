@@ -19,6 +19,20 @@ import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statu
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 
+// Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
+// A "reasonOfLeaving" filter value of "Other" means "any custom reason not in this list".
+const PREDEFINED_LEAVING_REASONS = [
+  "Employee not response",
+  "Exam",
+  "Family Function",
+  "Marriage",
+  "Family Problem",
+  "Festival",
+  "Health Problem",
+  "Join other company",
+  "Indiscipline case",
+];
+
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
   if (typeof data === 'string') {
@@ -2138,6 +2152,15 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
   }
 
+  if (req.query.reasonOfLeaving === "Other") {
+    const ph = PREDEFINED_LEAVING_REASONS.map(() => "?").join(",");
+    whereClauses.push(`(u.reasonOfLeaving IS NOT NULL AND u.reasonOfLeaving != '' AND u.reasonOfLeaving NOT IN (${ph}))`);
+    params.push(...PREDEFINED_LEAVING_REASONS);
+  } else if (req.query.reasonOfLeaving) {
+    whereClauses.push("u.reasonOfLeaving = ?");
+    params.push(req.query.reasonOfLeaving);
+  }
+
   if (shift) {
     const filterDate = normalizeParam(date) || normalizeParam(dateFrom);
     if (filterDate) {
@@ -3051,6 +3074,15 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
   if (req.query.gender && req.query.gender !== 'ALL') {
     whereClauses.push("u.gender = ?");
     params.push(req.query.gender);
+  }
+
+  if (req.query.reasonOfLeaving === "Other") {
+    const ph = PREDEFINED_LEAVING_REASONS.map(() => "?").join(",");
+    whereClauses.push(`(u.reasonOfLeaving IS NOT NULL AND u.reasonOfLeaving != '' AND u.reasonOfLeaving NOT IN (${ph}))`);
+    params.push(...PREDEFINED_LEAVING_REASONS);
+  } else if (req.query.reasonOfLeaving) {
+    whereClauses.push("u.reasonOfLeaving = ?");
+    params.push(req.query.reasonOfLeaving);
   }
 
   const departmentId = normalizeParam(req.query.departmentId);

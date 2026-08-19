@@ -312,6 +312,7 @@ const Students = () => {
     joiningDateTo: "",
     leavingDateFrom: "",
     leavingDateTo: "",
+    reasonOfLeaving: "",
   });
   const [activeTab, setActiveTab] = useState("all");
   const [assignmentType, setAssignmentType] = useState("department");
@@ -440,6 +441,7 @@ const Students = () => {
       assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
       assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
       isRejoin: activeTab === "rejoin" ? "true" : "false",
+      reasonOfLeaving: filters.reasonOfLeaving,
     },
     {
       // Prevent unnecessary refetches
@@ -655,6 +657,9 @@ const Students = () => {
     if (filters.status) {
       const displayVal = filters.status === "Present" ? "Present (Attendance)" : filters.status === "Absent" ? "Absent (Attendance)" : filters.status;
       list.push({ label: "Status", value: displayVal });
+    }
+    if (filters.reasonOfLeaving) {
+      list.push({ label: "Reason of Leaving", value: filters.reasonOfLeaving === "Other" ? "Other / Custom" : filters.reasonOfLeaving });
     }
     if (searchTerm) {
       list.push({ label: "Search", value: searchTerm });
@@ -1456,6 +1461,7 @@ const Students = () => {
           assignmentStatus: activeTab === "assigned" ? "assigned" : activeTab === "unassigned" ? "unassigned" : "",
           assignmentType: (activeTab === "assigned" || activeTab === "unassigned") ? assignmentType : "",
           isRejoin: activeTab === "rejoin" ? "true" : "false",
+          reasonOfLeaving: filters.reasonOfLeaving,
         }).unwrap();
 
         const batch = result?.data?.users || [];
@@ -1864,6 +1870,7 @@ const Students = () => {
       joiningDateTo: "",
       leavingDateFrom: "",
       leavingDateTo: "",
+      reasonOfLeaving: "",
     });
     setSearchTerm("");
     setActiveTab("all");
@@ -2487,6 +2494,27 @@ const Students = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            {(activeTab === "left" || filters.status === "LEFT") && (
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Reason of Leaving</label>
+                <Select
+                  value={filters.reasonOfLeaving || "all"}
+                  onValueChange={(val) => setFilters({ ...filters, reasonOfLeaving: val === "all" ? "" : val })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="All Reasons" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Reasons</SelectItem>
+                    {LEAVING_REASONS.map((reason) => (
+                      <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                    ))}
+                    <SelectItem value="Other">Other / Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Shift Date</label>

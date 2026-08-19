@@ -264,6 +264,21 @@ const DojoCandidateDetail = () => {
                 )}
                 <InfoItem label="Designation" value={candidate.designation || "Candidate"} highlight />
                 <InfoItem label="Contractor" icon={IconBuilding} value={candidate.contractor} />
+                {(candidate.leavingDate || candidate.status === "LEFT") && (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Leaving Date</label>
+                      <div className="flex items-center gap-2 text-sm">
+                        <IconCalendar className="h-4 w-4 text-red-500" />
+                        <span className="font-medium text-red-600">{candidate.leavingDate ? displayDate(candidate.leavingDate) : "—"}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving</label>
+                      <p className="text-sm text-red-600 font-medium">{candidate.reasonOfLeaving || "—"}</p>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -298,6 +313,9 @@ const DojoCandidateDetail = () => {
                       <ProfileField label="Section" value={candidate.sectionName} />
                       <ProfileField label="Line" value={candidate.lineName} />
                       <ProfileField label="Unit" value={candidate.unit?.replace('_', ' ')} />
+                      {(candidate.leavingDate || candidate.status === "LEFT") && (
+                        <ProfileField label="Reason of Leaving" value={candidate.reasonOfLeaving} />
+                      )}
                     </div>
                   </div>
 

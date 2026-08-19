@@ -209,6 +209,7 @@ const DojoHiring = () => {
     const [activeTab, setActiveTab] = useState("all");
     const [genderFilter, setGenderFilter] = useState("ALL");
     const [deptFilter, setDeptFilter] = useState("ALL");
+    const [reasonOfLeavingFilter, setReasonOfLeavingFilter] = useState("ALL");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
 
@@ -230,7 +231,11 @@ const DojoHiring = () => {
     const location = useLocation();
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, searchTerm, genderFilter, deptFilter, startDate, endDate]);
+    }, [activeTab, searchTerm, genderFilter, deptFilter, reasonOfLeavingFilter, startDate, endDate]);
+
+    useEffect(() => {
+        setReasonOfLeavingFilter("ALL");
+    }, [activeTab]);
 
     // Tick the elapsed time while an import is running
     useEffect(() => {
@@ -259,6 +264,7 @@ const DojoHiring = () => {
         gender: genderFilter !== "ALL" ? genderFilter : "",
         activeTab,
         departmentId: deptFilter !== "ALL" ? deptFilter : "",
+        reasonOfLeaving: activeTab === "left" && reasonOfLeavingFilter !== "ALL" ? reasonOfLeavingFilter : "",
         startDate,
         endDate,
     });
@@ -285,7 +291,7 @@ const DojoHiring = () => {
 
     useEffect(() => {
         setSelectedRows(new Set());
-    }, [currentPage, searchTerm, genderFilter, activeTab, deptFilter, startDate, endDate]);
+    }, [currentPage, searchTerm, genderFilter, activeTab, deptFilter, reasonOfLeavingFilter, startDate, endDate]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -742,6 +748,7 @@ const DojoHiring = () => {
                     gender: genderFilter !== "ALL" ? genderFilter : "",
                     activeTab,
                     departmentId: deptFilter !== "ALL" ? deptFilter : "",
+                    reasonOfLeaving: activeTab === "left" && reasonOfLeavingFilter !== "ALL" ? reasonOfLeavingFilter : "",
                     startDate,
                     endDate,
                 }).unwrap();
@@ -1028,6 +1035,12 @@ const DojoHiring = () => {
         ...departments.map((d) => ({ value: String(d.id || d._id), label: d.name })),
     ];
 
+    const reasonOfLeavingOptions = [
+        { value: "ALL", label: "All Reasons" },
+        ...LEAVING_REASONS.map((r) => ({ value: r, label: r })),
+        { value: "Other", label: "Other / Custom" },
+    ];
+
     const hasDateRangeFilter = startDate || endDate;
     const clearDateRange = () => {
         setStartDate("");
@@ -1296,6 +1309,14 @@ const DojoHiring = () => {
                                             options={genderOptions}
                                             placeholder={t("dojoHiring.filter.selectGender")}
                                         />
+                                        {activeTab === "left" && (
+                                            <FilterSelect
+                                                value={reasonOfLeavingFilter}
+                                                onValueChange={setReasonOfLeavingFilter}
+                                                options={reasonOfLeavingOptions}
+                                                placeholder="Reason of Leaving"
+                                            />
+                                        )}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="outline" className="flex items-center gap-2 border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl px-4 h-10 font-medium">

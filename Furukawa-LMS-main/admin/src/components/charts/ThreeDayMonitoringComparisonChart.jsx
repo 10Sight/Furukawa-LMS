@@ -170,13 +170,19 @@ const ThreeDayMonitoringComparisonChart = ({ departments: departmentsProp } = {}
             const dateLabel = formatPeriodLabel(r.period, groupBy, language);
             const isToday = r.period === currentPeriodKey;
             const start = idx;
-            seriesKeys.forEach(sk => {
-                const y = Number(r[sk.key]) || 0;
-                cats.push(`<span style="color:#1e293b;font-weight:800;font-size:14px">${sk.name}</span>`);
-                data.push({ y, custom: { deptName: sk.name, dateLabel, period: r.period } });
+            const keysPresent = seriesKeys.filter(sk => (Number(r[sk.key]) || 0) > 0);
+            if (keysPresent.length === 0) {
+                cats.push('');
+                data.push({ y: null, custom: { deptName: '', dateLabel, period: r.period } });
+                groups.push({ period: r.period, dateLabel, isToday, start: idx, end: idx });
                 idx += 1;
-            });
-            if (idx > start) {
+            } else {
+                keysPresent.forEach(sk => {
+                    const y = Number(r[sk.key]) || 0;
+                    cats.push(`<span style="color:#1e293b;font-weight:800;font-size:14px">${sk.name}</span>`);
+                    data.push({ y, custom: { deptName: sk.name, dateLabel, period: r.period } });
+                    idx += 1;
+                });
                 groups.push({ period: r.period, dateLabel, isToday, start, end: idx - 1 });
             }
         });
@@ -300,6 +306,9 @@ const ThreeDayMonitoringComparisonChart = ({ departments: departmentsProp } = {}
             useHTML: true,
             formatter() {
                 const { deptName, dateLabel } = this.point?.custom || {};
+                if (this.y === null || this.y === undefined) {
+                    return `${dateLabel || ''}: ${t('charts.noData')}`;
+                }
                 return `<b style="font-size:14px;color:#0f172a">${deptName || ''}</b><br/>${dateLabel || ''}<br/><span style="color:${this.point.color}">●</span> ${t('charts.filledDays')}: <b>${this.y}</b>`;
             },
         },
@@ -313,7 +322,7 @@ const ThreeDayMonitoringComparisonChart = ({ departments: departmentsProp } = {}
                 maxPointWidth: BAR_WIDTH,
                 dataLabels: {
                     enabled: true,
-                    formatter() { return String(this.y); },
+                    formatter() { return (this.y === null || this.y === undefined || this.y === 0) ? '' : String(this.y); },
                     style: { fontSize: '12px', fontWeight: '900', color: '#1e293b', textOutline: '1px white' },
                     verticalAlign: 'top',
                     align: 'center',

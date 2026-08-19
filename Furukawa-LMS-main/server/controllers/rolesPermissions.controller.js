@@ -110,6 +110,12 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_EDIT_SUBMITTED: "daily5m:edit_submitted",
   DAILY_5M_DELETE: "daily5m:delete",
 
+  // Daily Meeting Management
+  DAILY_MEETING_READ: "daily_meeting:read",
+  DAILY_MEETING_CREATE: "daily_meeting:create",
+  DAILY_MEETING_UPDATE: "daily_meeting:update",
+  DAILY_MEETING_DELETE: "daily_meeting:delete",
+
   // 16-Day Monitoring Management
   SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
   SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
@@ -288,7 +294,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DAILY_5M_READ,
       SYSTEM_PERMISSIONS.LEARNING_READ,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
-      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ
+      SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ,
+      SYSTEM_PERMISSIONS.DAILY_MEETING_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -400,6 +407,11 @@ const DEFAULT_ROLES = {
       // Revision Management
       SYSTEM_PERMISSIONS.REVISION_READ,
       SYSTEM_PERMISSIONS.DEPT_REVISION_LOGS_READ,
+      // Daily Meeting Management
+      SYSTEM_PERMISSIONS.DAILY_MEETING_READ,
+      SYSTEM_PERMISSIONS.DAILY_MEETING_CREATE,
+      SYSTEM_PERMISSIONS.DAILY_MEETING_UPDATE,
+      SYSTEM_PERMISSIONS.DAILY_MEETING_DELETE,
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -541,6 +553,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" }
+      ],
+      "Daily Meeting": [
+        { id: SYSTEM_PERMISSIONS.DAILY_MEETING_READ, name: "View Daily Meetings", description: "View daily standup meetings and spreadsheet contents across all departments and sections" },
+        { id: SYSTEM_PERMISSIONS.DAILY_MEETING_CREATE, name: "Create Daily Meetings", description: "Create new daily standup meetings for assigned departments and sections" },
+        { id: SYSTEM_PERMISSIONS.DAILY_MEETING_UPDATE, name: "Edit Daily Meetings", description: "Edit daily standup meetings and spreadsheet contents for assigned departments and sections" },
+        { id: SYSTEM_PERMISSIONS.DAILY_MEETING_DELETE, name: "Delete Daily Meetings", description: "Delete daily standup meetings for assigned departments and sections" }
       ],
       "16-Day Monitoring": [
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },

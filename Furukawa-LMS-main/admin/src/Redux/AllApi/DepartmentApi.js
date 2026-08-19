@@ -229,6 +229,94 @@ export const departmentApi = createApi({
             }),
             invalidatesTags: ['Department'],
         }),
+
+        getDailyMeetingConfig: builder.query({
+            query: (departmentId) => ({
+                url: `/api/daily-meeting-configs/${departmentId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, departmentId) => [{ type: 'Department', id: `daily-meeting-config-${departmentId}` }],
+        }),
+
+        saveDailyMeetingConfig: builder.mutation({
+            query: ({ departmentId, shutter, sections }) => ({
+                url: `/api/daily-meeting-configs/save`,
+                method: "POST",
+                data: { departmentId, shutter, sections }
+            }),
+            invalidatesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `daily-meeting-config-${departmentId}` }],
+        }),
+
+        getDailyMeetingSheet: builder.query({
+            query: (sectionId) => ({
+                url: `/api/daily-meeting-sheets/${sectionId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, sectionId) => [{ type: 'Department', id: `daily-meeting-sheet-${sectionId}` }],
+        }),
+
+        saveDailyMeetingSheet: builder.mutation({
+            query: ({ sectionId, sheets, activeSheet }) => ({
+                url: `/api/daily-meeting-sheets/save`,
+                method: "POST",
+                data: { sectionId, sheets, activeSheet }
+            }),
+            invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-meeting-sheet-${sectionId}` }],
+        }),
+
+        getDailyMorningMeetings: builder.query({
+            query: ({ sectionId, scope }) => ({
+                url: `/api/daily-morning-meetings/section/${sectionId}${scope ? `?scope=${scope}` : ""}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
+        }),
+
+        getDailyMorningMeetingDetail: builder.query({
+            query: (meetingId) => ({
+                url: `/api/daily-morning-meetings/${meetingId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, meetingId) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+        }),
+
+        createDailyMorningMeeting: builder.mutation({
+            query: ({ sectionId, agenda, description }) => ({
+                url: `/api/daily-morning-meetings`,
+                method: "POST",
+                data: { sectionId, agenda, description }
+            }),
+            invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
+        }),
+
+        updateDailyMorningMeeting: builder.mutation({
+            query: ({ meetingId, agenda, description }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}`,
+                method: "PUT",
+                data: { agenda, description }
+            }),
+            invalidatesTags: (result, error, { meetingId, sectionId }) => [
+                { type: 'Department', id: `daily-morning-meeting-${meetingId}` },
+                { type: 'Department', id: `daily-morning-meetings-${sectionId}` }
+            ],
+        }),
+
+        saveDailyMorningMeetingSheet: builder.mutation({
+            query: ({ meetingId, sheets, activeSheet }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/sheet`,
+                method: "POST",
+                data: { sheets, activeSheet }
+            }),
+            invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+        }),
+
+        deleteDailyMorningMeeting: builder.mutation({
+            query: ({ meetingId }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}`,
+                method: "DELETE",
+            }),
+            invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
+        }),
     }),
 });
 
@@ -257,4 +345,14 @@ export const {
     useBulkDeleteHandoverSheetsMutation,
     useGetDojoHiringConfigsQuery,
     useSaveDojoHiringConfigMutation,
+    useGetDailyMeetingConfigQuery,
+    useSaveDailyMeetingConfigMutation,
+    useGetDailyMeetingSheetQuery,
+    useSaveDailyMeetingSheetMutation,
+    useGetDailyMorningMeetingsQuery,
+    useGetDailyMorningMeetingDetailQuery,
+    useCreateDailyMorningMeetingMutation,
+    useUpdateDailyMorningMeetingMutation,
+    useSaveDailyMorningMeetingSheetMutation,
+    useDeleteDailyMorningMeetingMutation,
 } = departmentApi;

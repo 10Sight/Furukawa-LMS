@@ -51,6 +51,9 @@ import sectionHeadRoutes from "./routes/sectionHead.routes.js";
 
 import sectionRoutes from "./routes/section.routes.js";
 import subSectionRoutes from "./routes/subSection.routes.js";
+import dailyMeetingConfigRoutes from "./routes/dailyMeetingConfig.routes.js";
+import dailyMeetingSheetRoutes from "./routes/dailyMeetingSheet.routes.js";
+import dailyMorningMeetingRoutes from "./routes/dailyMorningMeeting.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import User from "./models/auth.model.js";
 import timelineScheduler from "./services/timelineScheduler.js";
@@ -301,6 +304,9 @@ app.use("/api/section-heads", sectionHeadRoutes);
 
 app.use("/api/sections", sectionRoutes);
 app.use("/api/sub-sections", subSectionRoutes);
+app.use("/api/daily-meeting-configs", dailyMeetingConfigRoutes);
+app.use("/api/daily-meeting-sheets", dailyMeetingSheetRoutes);
+app.use("/api/daily-morning-meetings", dailyMorningMeetingRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 app.use("/api/learning-comparisons", learningComparisonRoutes);

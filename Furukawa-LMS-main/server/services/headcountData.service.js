@@ -495,19 +495,20 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         const stint = getUserActiveStintOnDate(u, dateKey);
         if (!stint.active) return false;
 
-        // Already promoted out of the Dojo before this date. Prefer the approved handover
-        // date whenever one exists, regardless of the user's *current* isTemporary flag —
-        // that flag may not have been flipped to 0 yet even though the handover was already
-        // approved. Only fall back to the current isTemporary/updatedAt snapshot for TODAY's
-        // date, and only when there is no approved handover_sheets entry for this user —
-        // never for a past date. updatedAt is bumped by any unrelated edit to the user's row
-        // (isTemporary itself carries no history), so trusting it for a past date would let a
-        // random later profile edit silently re-exclude a trainee from an already-reported
-        // historical day the next time this report is synced.
+        // Already promoted out of the Dojo on or before this date. Prefer the approved
+        // handover date whenever one exists, regardless of the user's *current* isTemporary
+        // flag — that flag may not have been flipped to 0 yet even though the handover was
+        // already approved. When there's no approved handover_sheets entry but the user's
+        // current isTemporary flag is already 0, fall back to updatedAt as the best available
+        // promotion-date proxy — applied to every date, not just today (restricting this to
+        // today only left every earlier date overcounting such users indefinitely). updatedAt
+        // is bumped by any unrelated edit to the user's row (isTemporary itself carries no
+        // history), so this proxy can drift if the row is touched again later; that's the
+        // accepted trade-off for fixing the overcounting on past dates.
         const handoverYMD = handoverDateMap[u.id] ? toYMD(handoverDateMap[u.id]) : null;
         if (handoverYMD) {
             if (handoverYMD <= dateKey) return false;
-        } else if (!u.isTemporary && dateKey === todayYMD) {
+        } else if (!u.isTemporary) {
             const promotedYMD = toYMD(u.updatedAt);
             if (promotedYMD && promotedYMD <= dateKey) return false;
         }
@@ -698,19 +699,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         // "Present in Training Cell" is a still-active Dojo member as of dKey (statusHistory-driven,
         // net of same-day handover/attrition) — a pure membership count, independent of today's
         // attendance. Future dates (no data can exist yet) show 0, and any stale future-dated
-        // value was already purged above.
-        //
-        // Frozen once a past date already has a recorded value, matching the "Left in nos (Daily)"
-        // freeze further below: some Dojo/trainee users have no handover_sheets record backing
-        // their promotion, so isDojoMemberActiveOnDate falls back to their live isTemporary/
-        // updatedAt snapshot for today's date. Without freezing, an unrelated edit to that user's
-        // row weeks later would retroactively change what this row showed for an already-reported
-        // past day the next time the report is synced.
-        const priorPresentInTrainingCell = tableData[`Present in Training Cell_${dKey}`];
-        const hasPriorPresentInTrainingCell = priorPresentInTrainingCell !== undefined && priorPresentInTrainingCell !== null && priorPresentInTrainingCell !== '';
-        const dojoPresentOnDate = (dKey < todayYMD && hasPriorPresentInTrainingCell)
-            ? Number(priorPresentInTrainingCell) || 0
-            : getDojoPresentOnDate(dKey);
+        // value was already purged above. Not frozen for past dates: the reverse recalculation
+        // pass near the end of this function rebuilds every past date from today's anchor on
+        // every sync anyway, so computing it fresh here (rather than reusing a stale prior
+        // value) doesn't change the final output and keeps this single-purpose.
+        const dojoPresentOnDate = getDojoPresentOnDate(dKey);
 
         const { countTotal: netAvailableHeadcountTotal, countAbove3Months: netAvailableAbove3Months } =
             getNetAvailableHeadcount(dKey, dDate);

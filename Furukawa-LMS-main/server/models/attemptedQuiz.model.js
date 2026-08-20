@@ -43,72 +43,53 @@ class QuizAttempt {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='attempted_quizzes' and xtype='U')
-            BEGIN
-            CREATE TABLE attempted_quizzes (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                quiz NVARCHAR(255) NOT NULL,
-                student NVARCHAR(255) NOT NULL,
-                answer NVARCHAR(MAX),
-                score INT DEFAULT 0,
-                status NVARCHAR(50) DEFAULT 'IN_PROGRESS',
-                startedAt DATETIME,
-                completedAt DATETIME,
-                attemptNumber INT DEFAULT 1,
-                timeTaken INT DEFAULT 0,
-                manuallyAdjusted BIT DEFAULT 0,
-                adjustedBy NVARCHAR(255),
-                adjustedAt DATETIME,
-                adjustmentNotes NVARCHAR(MAX),
-                conductedBy NVARCHAR(255) DEFAULT '',
-                createdAt DATETIME DEFAULT GETDATE(),
-                updatedAt DATETIME DEFAULT GETDATE()
-            );
-            CREATE UNIQUE INDEX idx_unique_attempt ON attempted_quizzes(quiz, student, attemptNumber);
-            END
-        `;
         try {
-            await executeQuery(query);
-            // Automated migration to add conductedBy column if the table already exists but lacks it
-            const checkColQuery = `
-                IF NOT EXISTS (
-                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'conductedBy'
-                )
-                BEGIN
-                    ALTER TABLE [attempted_quizzes] ADD [conductedBy] NVARCHAR(255) DEFAULT ''
-                END
-            `;
-            await executeQuery(checkColQuery);
+            if (!await migrationHelper.tableExists('attempted_quizzes')) {
+                await executeQuery(`
+                    CREATE TABLE attempted_quizzes (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        quiz NVARCHAR(255) NOT NULL,
+                        student NVARCHAR(255) NOT NULL,
+                        answer NVARCHAR(MAX),
+                        score INT DEFAULT 0,
+                        status NVARCHAR(50) DEFAULT 'IN_PROGRESS',
+                        startedAt DATETIME,
+                        completedAt DATETIME,
+                        attemptNumber INT DEFAULT 1,
+                        timeTaken INT DEFAULT 0,
+                        manuallyAdjusted BIT DEFAULT 0,
+                        adjustedBy NVARCHAR(255),
+                        adjustedAt DATETIME,
+                        adjustmentNotes NVARCHAR(MAX),
+                        conductedBy NVARCHAR(255) DEFAULT '',
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+                await migrationHelper.ensureIndexExists(
+                    'attempted_quizzes',
+                    'idx_unique_attempt',
+                    'CREATE UNIQUE INDEX idx_unique_attempt ON attempted_quizzes(quiz, student, attemptNumber)'
+                );
+            } else {
+                // Automated migration to add conductedBy column if the table already exists but lacks it
+                await migrationHelper.ensureColumnExists('attempted_quizzes', 'conductedBy', "NVARCHAR(255) DEFAULT ''");
+            }
 
-            // Migration: add studentName and studentEmpId snapshot columns
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'studentName'
-                )
-                BEGIN
-                    ALTER TABLE [attempted_quizzes] ADD [studentName] NVARCHAR(255) NULL;
-                    ALTER TABLE [attempted_quizzes] ADD [studentEmpId] NVARCHAR(255) NULL;
-                END
-            `);
+            // Migration: add studentName and studentEmpId snapshot columns. Not part of the
+            // CREATE TABLE above (added after that shape shipped), so these must run
+            // unconditionally rather than only in the "table already existed" branch.
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentName', 'NVARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentEmpId', 'NVARCHAR(255) NULL');
 
             // Migration: add studentIsTemporary/studentDeptId/studentSectionId/studentLineId/studentSubSectionId
-            // snapshot columns so monitoring views survive user promotion or permanent deletion
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = 'attempted_quizzes' AND COLUMN_NAME = 'studentIsTemporary'
-                )
-                BEGIN
-                    ALTER TABLE [attempted_quizzes] ADD [studentIsTemporary] BIT DEFAULT 0;
-                    ALTER TABLE [attempted_quizzes] ADD [studentDeptId] INT NULL;
-                    ALTER TABLE [attempted_quizzes] ADD [studentSectionId] INT NULL;
-                    ALTER TABLE [attempted_quizzes] ADD [studentLineId] INT NULL;
-                    ALTER TABLE [attempted_quizzes] ADD [studentSubSectionId] INT NULL;
-                END
-            `);
+            // snapshot columns so monitoring views survive user promotion or permanent deletion.
+            // Also not part of the CREATE TABLE above, so these run unconditionally too.
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentIsTemporary', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentDeptId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentSectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentLineId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentSubSectionId', 'INT NULL');
 
             // The only index on this table is the (quiz, student, attemptNumber) unique constraint,
             // so any query filtering by student alone (handover-sheet eligibility lookups, dojo

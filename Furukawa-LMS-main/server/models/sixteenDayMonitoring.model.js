@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class SixteenDayMonitoring {
     constructor(data) {
@@ -39,9 +40,8 @@ class SixteenDayMonitoring {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='sixteen_day_monitorings' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('sixteen_day_monitorings')) {
+            await executeQuery(`
                 CREATE TABLE sixteen_day_monitorings (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
@@ -64,77 +64,30 @@ class SixteenDayMonitoring {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_16day FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
-            END
-            ELSE
-            BEGIN
-                -- Add checkedBy column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'checkedBy')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD checkedBy VARCHAR(255);
-                END
-                -- Add verifiedBy column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'verifiedBy')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD verifiedBy VARCHAR(255);
-                END
-                -- Add approvedBy column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'approvedBy')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD approvedBy VARCHAR(255);
-                END
-                -- Add status column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'status')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD status VARCHAR(50) DEFAULT 'Draft';
-                END
-                -- Add attemptNumber column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'attemptNumber')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD attemptNumber INT DEFAULT 1;
-                END
-                -- Add startDate column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'startDate')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD startDate VARCHAR(255);
-                END
-                -- Add adminRemarksHistory column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'adminRemarksHistory')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD adminRemarksHistory NVARCHAR(MAX);
-                END
-                -- Add verifiedByEduCell column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'verifiedByEduCell')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD verifiedByEduCell VARCHAR(255);
-                END
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('sixteen_day_monitorings') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE sixteen_day_monitorings ADD revDate VARCHAR(255) NULL;
-                END
-            END
-        `;
-        await executeQuery(query);
+            `);
+        } else {
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'checkedBy', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'verifiedBy', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'approvedBy', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'status', "VARCHAR(50) DEFAULT 'Draft'");
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'attemptNumber', 'INT DEFAULT 1');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'startDate', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'adminRemarksHistory', 'NVARCHAR(MAX)');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'verifiedByEduCell', 'VARCHAR(255)');
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
+        }
 
         // Index for the Admin Home "16-Day Monitoring Comparison" chart, which filters and
         // groups by status + updatedAt before joining users — without it the query full-scans.
         try {
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.indexes WHERE name = 'idx_sixteen_day_monitorings_status_updatedAt' AND object_id = OBJECT_ID('sixteen_day_monitorings')
-                )
-                BEGIN
-                    CREATE INDEX idx_sixteen_day_monitorings_status_updatedAt ON sixteen_day_monitorings(status, updatedAt)
-                END
-            `);
+            await migrationHelper.ensureIndexExists(
+                'sixteen_day_monitorings',
+                'idx_sixteen_day_monitorings_status_updatedAt',
+                'CREATE INDEX idx_sixteen_day_monitorings_status_updatedAt ON sixteen_day_monitorings(status, updatedAt)'
+            );
         } catch (e) {
             console.error("Failed to create idx_sixteen_day_monitorings_status_updatedAt:", e.message);
         }

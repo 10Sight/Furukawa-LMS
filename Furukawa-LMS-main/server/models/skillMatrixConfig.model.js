@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class SkillMatrixConfig {
@@ -12,35 +13,34 @@ class SkillMatrixConfig {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='skill_matrix_certificate_configs' and xtype='U')
-            BEGIN
-                CREATE TABLE skill_matrix_certificate_configs (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    departmentId VARCHAR(255) DEFAULT 'GLOBAL',
-                    config NVARCHAR(MAX) NOT NULL,
-                    updatedBy INT,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_smc_config_dept UNIQUE (departmentId)
-                )
-            END
-
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='skill_matrix_certificate_config_history' and xtype='U')
-            BEGIN
-                CREATE TABLE skill_matrix_certificate_config_history (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    configId INT NOT NULL,
-                    departmentId VARCHAR(255),
-                    config NVARCHAR(MAX) NOT NULL,
-                    remark NVARCHAR(MAX),
-                    updatedBy INT,
-                    createdAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('skill_matrix_certificate_configs')) {
+                await executeQuery(`
+                    CREATE TABLE skill_matrix_certificate_configs (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        departmentId VARCHAR(255) DEFAULT 'GLOBAL',
+                        config NVARCHAR(MAX) NOT NULL,
+                        updatedBy INT,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_smc_config_dept UNIQUE (departmentId)
+                    )
+                `);
+            }
+
+            if (!await migrationHelper.tableExists('skill_matrix_certificate_config_history')) {
+                await executeQuery(`
+                    CREATE TABLE skill_matrix_certificate_config_history (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        configId INT NOT NULL,
+                        departmentId VARCHAR(255),
+                        config NVARCHAR(MAX) NOT NULL,
+                        remark NVARCHAR(MAX),
+                        updatedBy INT,
+                        createdAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            }
         } catch (error) {
             logger.error("Failed to initialize SkillMatrixConfig tables", error);
         }

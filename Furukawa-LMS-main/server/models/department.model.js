@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import { slugify } from "../utils/slugify.js";
 import logger from "../logger/winston.logger.js";
 // Imports for cleanup operations - assuming successful migration of these models
@@ -81,120 +82,64 @@ class Department {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='departments' and xtype='U')
-            BEGIN
-            CREATE TABLE departments (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                uniCode VARCHAR(255) UNIQUE,
-                slug VARCHAR(255) UNIQUE,
-                course VARCHAR(255),
-                courses NVARCHAR(MAX),
-                instructor NVARCHAR(MAX),
-                students NVARCHAR(MAX),
-                startDate DATETIME,
-                endDate DATETIME,
-                capacity INT DEFAULT 50,
-                status VARCHAR(50) DEFAULT 'UPCOMING',
-                schedule NVARCHAR(MAX),
-                notes NVARCHAR(MAX),
-                statusUpdatedAt DATETIME,
-                departmentQuiz VARCHAR(255),
-                departmentAssignment VARCHAR(255),
-                isDeleted BIT DEFAULT 0,
-                isReportingEnabled BIT DEFAULT 0,
-                createdAt DATETIME,
-                updatedAt DATETIME DEFAULT GETDATE()
-            );
-            CREATE INDEX idx_status ON departments(status);
-            CREATE INDEX idx_statusUpdatedAt ON departments(statusUpdatedAt);
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'isReportingEnabled')
-                BEGIN
-                    ALTER TABLE departments ADD isReportingEnabled BIT DEFAULT 0;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverDeptId')
-                BEGIN
-                    ALTER TABLE departments ADD daily5mApproverDeptId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverSectionId')
-                BEGIN
-                    ALTER TABLE departments ADD daily5mApproverSectionId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'daily5mApproverLineId')
-                BEGIN
-                    ALTER TABLE departments ADD daily5mApproverLineId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaDeptId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverQaDeptId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaSectionId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverQaSectionId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverQaLineId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverQaLineId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetyDeptId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverSafetyDeptId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetySectionId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverSafetySectionId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverSafetyLineId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverSafetyLineId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessDeptId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverProcessDeptId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessSectionId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverProcessSectionId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'skillMatrixApproverProcessLineId')
-                BEGIN
-                    ALTER TABLE departments ADD skillMatrixApproverProcessLineId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoMandatoryQuizId')
-                BEGIN
-                    ALTER TABLE departments ADD dojoMandatoryQuizId NVARCHAR(MAX) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoHandoverQuizId')
-                BEGIN
-                    ALTER TABLE departments ADD dojoHandoverQuizId NVARCHAR(MAX) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewQuizId')
-                BEGIN
-                    ALTER TABLE departments ADD dojoInterviewQuizId NVARCHAR(MAX) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoEligibilityEvaluationId')
-                BEGIN
-                    ALTER TABLE departments ADD dojoEligibilityEvaluationId NVARCHAR(MAX) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'dojoInterviewEvaluationId')
-                BEGIN
-                    ALTER TABLE departments ADD dojoInterviewEvaluationId NVARCHAR(MAX) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('departments') AND name = 'isDojoSpecificDept')
-                BEGIN
-                    ALTER TABLE departments ADD isDojoSpecificDept BIT DEFAULT 0;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('departments')) {
+                await executeQuery(`
+                    CREATE TABLE departments (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        uniCode VARCHAR(255) UNIQUE,
+                        slug VARCHAR(255) UNIQUE,
+                        course VARCHAR(255),
+                        courses NVARCHAR(MAX),
+                        instructor NVARCHAR(MAX),
+                        students NVARCHAR(MAX),
+                        startDate DATETIME,
+                        endDate DATETIME,
+                        capacity INT DEFAULT 50,
+                        status VARCHAR(50) DEFAULT 'UPCOMING',
+                        schedule NVARCHAR(MAX),
+                        notes NVARCHAR(MAX),
+                        statusUpdatedAt DATETIME,
+                        departmentQuiz VARCHAR(255),
+                        departmentAssignment VARCHAR(255),
+                        isDeleted BIT DEFAULT 0,
+                        isReportingEnabled BIT DEFAULT 0,
+                        createdAt DATETIME,
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('departments', 'idx_status',
+                    'CREATE INDEX idx_status ON departments(status)');
+                await migrationHelper.ensureIndexExists('departments', 'idx_statusUpdatedAt',
+                    'CREATE INDEX idx_statusUpdatedAt ON departments(statusUpdatedAt)');
+            } else {
+                const columnsToEnsure = [
+                    ["isReportingEnabled", "BIT DEFAULT 0"],
+                    ["daily5mApproverDeptId", "INT NULL"],
+                    ["daily5mApproverSectionId", "INT NULL"],
+                    ["daily5mApproverLineId", "INT NULL"],
+                    ["skillMatrixApproverQaDeptId", "INT NULL"],
+                    ["skillMatrixApproverQaSectionId", "INT NULL"],
+                    ["skillMatrixApproverQaLineId", "INT NULL"],
+                    ["skillMatrixApproverSafetyDeptId", "INT NULL"],
+                    ["skillMatrixApproverSafetySectionId", "INT NULL"],
+                    ["skillMatrixApproverSafetyLineId", "INT NULL"],
+                    ["skillMatrixApproverProcessDeptId", "INT NULL"],
+                    ["skillMatrixApproverProcessSectionId", "INT NULL"],
+                    ["skillMatrixApproverProcessLineId", "INT NULL"],
+                    ["dojoMandatoryQuizId", "NVARCHAR(MAX) NULL"],
+                    ["dojoHandoverQuizId", "NVARCHAR(MAX) NULL"],
+                    ["dojoInterviewQuizId", "NVARCHAR(MAX) NULL"],
+                    ["dojoEligibilityEvaluationId", "NVARCHAR(MAX) NULL"],
+                    ["dojoInterviewEvaluationId", "NVARCHAR(MAX) NULL"],
+                    ["isDojoSpecificDept", "BIT DEFAULT 0"],
+                ];
+                for (const [columnName, dataType] of columnsToEnsure) {
+                    await migrationHelper.ensureColumnExists('departments', columnName, dataType);
+                }
+            }
             logger.info("Checked/Created departments table in MSSQL");
-
-            const { migrationHelper } = await import("../db/migrationHelper.js");
 
             // idx_instructor on a VARCHAR column blocks ALTER to NVARCHAR(MAX) — drop it first
             await executeQuery(`

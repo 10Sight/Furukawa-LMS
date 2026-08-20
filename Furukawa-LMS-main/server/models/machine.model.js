@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 
@@ -82,9 +83,8 @@ class Machine {
                 await this.asyncExecute("ALTER TABLE machines DROP COLUMN [uniCode]");
             }
 
-            const createMachinesInfo = `
-                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'machines')
-                BEGIN
+            if (!await migrationHelper.tableExists('machines')) {
+                await executeQuery(`
                     CREATE TABLE machines (
                         id INT IDENTITY(1,1) PRIMARY KEY,
                         name NVARCHAR(255) NOT NULL,
@@ -97,27 +97,21 @@ class Machine {
                         createdAt DATETIME DEFAULT GETDATE(),
                         updatedAt DATETIME DEFAULT GETDATE(),
                         FOREIGN KEY (subSectionId) REFERENCES [sub_sections](id) ON DELETE CASCADE
-                    );
-                    CREATE INDEX idx_line ON machines(line);
-                    CREATE INDEX idx_subsection ON machines(subSectionId);
-                END
-                ELSE
-                BEGIN
-                    -- Migration: Add minimumRequiredLevel if it doesn't exist
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('machines') AND name = 'minimumRequiredLevel')
-                    BEGIN
-                        ALTER TABLE machines ADD minimumRequiredLevel NVARCHAR(50);
-                    END
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('machines', 'idx_line', 'CREATE INDEX idx_line ON machines(line)');
+                await migrationHelper.ensureIndexExists('machines', 'idx_subsection', 'CREATE INDEX idx_subsection ON machines(subSectionId)');
+            } else {
+                // Migration: Add minimumRequiredLevel if it doesn't exist
+                await migrationHelper.ensureColumnExists('machines', 'minimumRequiredLevel', 'NVARCHAR(50)');
 
-                    -- Migration: Add criticality if it doesn't exist
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('machines') AND name = 'criticality')
-                    BEGIN
-                        ALTER TABLE machines ADD criticality NVARCHAR(50) DEFAULT 'Non-Critical';
-                    END
+                // Migration: Add criticality if it doesn't exist
+                await migrationHelper.ensureColumnExists('machines', 'criticality', "NVARCHAR(50) DEFAULT 'Non-Critical'");
 
-                    -- Migration: Check if subSectionId points to lines instead of sub_sections
+                // Migration: Check if subSectionId points to lines instead of sub_sections
+                await executeQuery(`
                     IF EXISTS (
-                        SELECT * 
+                        SELECT *
                         FROM sys.foreign_key_columns fkc
                         JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
                         JOIN sys.tables t ON fkc.referenced_object_id = t.object_id
@@ -142,23 +136,24 @@ class Machine {
                             EXEC('ALTER TABLE machines DROP CONSTRAINT ' + @ConstraintName);
                         END
                     END
+                `);
 
-                    -- Add the correct constraint if it doesn't exist
+                // Add the correct constraint if it doesn't exist
+                await executeQuery(`
                     IF NOT EXISTS (
-                        SELECT * 
-                        FROM sys.foreign_keys 
+                        SELECT *
+                        FROM sys.foreign_keys
                         WHERE name = 'FK_Machines_SubSections' AND parent_object_id = OBJECT_ID('machines')
                     )
                     BEGIN
                         ALTER TABLE machines
                         ADD CONSTRAINT FK_Machines_SubSections FOREIGN KEY (subSectionId) REFERENCES sub_sections(id) ON DELETE CASCADE;
                     END
-                END
-            `;
+                `);
+            }
 
-            const createAssignmentsTable = `
-                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'machine_assignments')
-                BEGIN
+            if (!await migrationHelper.tableExists('machine_assignments')) {
+                await executeQuery(`
                     CREATE TABLE machine_assignments (
                         id INT IDENTITY(1,1) PRIMARY KEY,
                         machine_id INT NOT NULL,
@@ -166,46 +161,27 @@ class Machine {
                         assigned_by INT,
                         assigned_at DATETIME DEFAULT GETDATE(),
                         CONSTRAINT unique_machine_user UNIQUE (machine_id, user_id)
-                    );
-                    CREATE INDEX idx_machine ON machine_assignments(machine_id);
-                    CREATE INDEX idx_user ON machine_assignments(user_id);
-                END
-            `;
-
-            await executeQuery(createMachinesInfo);
-            await executeQuery(createAssignmentsTable);
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('machine_assignments', 'idx_machine', 'CREATE INDEX idx_machine ON machine_assignments(machine_id)');
+                await migrationHelper.ensureIndexExists('machine_assignments', 'idx_user', 'CREATE INDEX idx_user ON machine_assignments(user_id)');
+            }
 
             // Backfill for databases where [machines] was created before these indexes existed
             // (they were previously only added inside the CREATE TABLE branch above). Without
             // idx_line, the correlated EXISTS join in section.model.js's sectionCountSql falls
             // back to a full scan of machines per section per matching user, making section
             // list/detail fetches crawl.
-            await this.asyncExecute(`
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_line' AND object_id = OBJECT_ID('machines'))
-                BEGIN
-                    CREATE INDEX idx_line ON machines(line);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_subsection' AND object_id = OBJECT_ID('machines'))
-                BEGIN
-                    CREATE INDEX idx_subsection ON machines(subSectionId);
-                END
-            `);
+            await migrationHelper.ensureIndexExists('machines', 'idx_line', 'CREATE INDEX idx_line ON machines(line)');
+            await migrationHelper.ensureIndexExists('machines', 'idx_subsection', 'CREATE INDEX idx_subsection ON machines(subSectionId)');
 
             // Same backfill for machine_assignments: idx_machine/idx_user were previously only
             // added inside the CREATE TABLE branch above, so databases where the table already
             // existed never got them. Without idx_user, the EXISTS correlated subquery in
             // sectionCountSql/lineCountSql/etc. does a full scan of machine_assignments for
             // every user row it checks.
-            await this.asyncExecute(`
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_machine' AND object_id = OBJECT_ID('machine_assignments'))
-                BEGIN
-                    CREATE INDEX idx_machine ON machine_assignments(machine_id);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_user' AND object_id = OBJECT_ID('machine_assignments'))
-                BEGIN
-                    CREATE INDEX idx_user ON machine_assignments(user_id);
-                END
-            `);
+            await migrationHelper.ensureIndexExists('machine_assignments', 'idx_machine', 'CREATE INDEX idx_machine ON machine_assignments(machine_id)');
+            await migrationHelper.ensureIndexExists('machine_assignments', 'idx_user', 'CREATE INDEX idx_user ON machine_assignments(user_id)');
 
             logger.info("Machine tables initialized successfully");
         } catch (error) {

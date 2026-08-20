@@ -360,6 +360,8 @@ const ensureEmailReportScheduleTable = async () => {
             VALUES (1, NULL, NULL, NULL)
         END
     `, []);
+
+    isTableEnsured = true;
 };
 
 const normalizeReportTime = (value) => {

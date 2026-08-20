@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getContractorWiseOperatorStats } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -40,5 +40,11 @@ router.get("/operator-observance-status", verifyJWT, authorizeRoles("isAdmin", "
 
 // Get Contractor-wise Operator stats for Admin Home
 router.get("/contractor-wise-operator-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getContractorWiseOperatorStats);
+
+// Get Skill Upgradation Plan comparison (Planned vs Actual) for Admin Home
+router.get("/skill-upgradation-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getSkillUpgradationPlanStatus);
+
+// Get Multi-Skilling Plan comparison (Planned vs Actual) for Admin Home
+router.get("/multi-skilling-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getMultiSkillingPlanStatus);
 
 export default router;

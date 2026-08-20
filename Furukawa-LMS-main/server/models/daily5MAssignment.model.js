@@ -13,9 +13,8 @@ class Daily5MAssignment {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_5m_assignments')
-            BEGIN
+        if (!await migrationHelper.tableExists('daily_5m_assignments')) {
+            await executeQuery(`
                 CREATE TABLE daily_5m_assignments (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -26,10 +25,10 @@ class Daily5MAssignment {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     UNIQUE (departmentId, role, userId)
                 )
-                CREATE INDEX idx_dept_role ON daily_5m_assignments(departmentId, role)
-            END
-        `;
-        await executeQuery(query);
+            `);
+            await migrationHelper.ensureIndexExists('daily_5m_assignments', 'idx_dept_role',
+                'CREATE INDEX idx_dept_role ON daily_5m_assignments(departmentId, role)');
+        }
         console.log("Daily5MAssignment table verified/created in MSSQL.");
     }
 

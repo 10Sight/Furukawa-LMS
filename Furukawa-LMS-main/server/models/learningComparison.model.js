@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 // Parses a DB column that may be a JSON array string, a plain path string, or null.
@@ -56,103 +57,56 @@ class LearningComparison {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'learning_comparisons')
-            BEGIN
-                CREATE TABLE learning_comparisons (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    
-                    beforeVideo NVARCHAR(MAX),
-                    beforePdf NVARCHAR(MAX),
-                    beforeExcel NVARCHAR(MAX),
-                    beforeWord NVARCHAR(MAX),
-                    beforePpt NVARCHAR(MAX),
-                    beforeImage NVARCHAR(MAX),
-                    
-                    afterVideo NVARCHAR(MAX),
-                    afterPdf NVARCHAR(MAX),
-                    afterExcel NVARCHAR(MAX),
-                    afterWord NVARCHAR(MAX),
-                    afterPpt NVARCHAR(MAX),
-                    afterImage NVARCHAR(MAX),
-                    
-                    createdBy INT NOT NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                );
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeDescription')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeDescription NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterDescription')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterDescription NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeImage')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeImage NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterImage')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterImage NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeVideoDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeVideoDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforePdfDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforePdfDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeExcelDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeExcelDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeWordDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeWordDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforePptDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforePptDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'beforeImageDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD beforeImageDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterVideoDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterVideoDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterPdfDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterPdfDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterExcelDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterExcelDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterWordDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterWordDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterPptDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterPptDescriptions NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('learning_comparisons') AND name = 'afterImageDescriptions')
-                BEGIN
-                    ALTER TABLE learning_comparisons ADD afterImageDescriptions NVARCHAR(MAX);
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('learning_comparisons')) {
+                await executeQuery(`
+                    CREATE TABLE learning_comparisons (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        title NVARCHAR(255) NOT NULL,
+                        description NVARCHAR(MAX),
+
+                        beforeVideo NVARCHAR(MAX),
+                        beforePdf NVARCHAR(MAX),
+                        beforeExcel NVARCHAR(MAX),
+                        beforeWord NVARCHAR(MAX),
+                        beforePpt NVARCHAR(MAX),
+                        beforeImage NVARCHAR(MAX),
+
+                        afterVideo NVARCHAR(MAX),
+                        afterPdf NVARCHAR(MAX),
+                        afterExcel NVARCHAR(MAX),
+                        afterWord NVARCHAR(MAX),
+                        afterPpt NVARCHAR(MAX),
+                        afterImage NVARCHAR(MAX),
+
+                        createdBy INT NOT NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            } else {
+                const columnsToEnsure = [
+                    ["beforeDescription", "NVARCHAR(MAX)"],
+                    ["afterDescription", "NVARCHAR(MAX)"],
+                    ["beforeImage", "NVARCHAR(MAX)"],
+                    ["afterImage", "NVARCHAR(MAX)"],
+                    ["beforeVideoDescriptions", "NVARCHAR(MAX)"],
+                    ["beforePdfDescriptions", "NVARCHAR(MAX)"],
+                    ["beforeExcelDescriptions", "NVARCHAR(MAX)"],
+                    ["beforeWordDescriptions", "NVARCHAR(MAX)"],
+                    ["beforePptDescriptions", "NVARCHAR(MAX)"],
+                    ["beforeImageDescriptions", "NVARCHAR(MAX)"],
+                    ["afterVideoDescriptions", "NVARCHAR(MAX)"],
+                    ["afterPdfDescriptions", "NVARCHAR(MAX)"],
+                    ["afterExcelDescriptions", "NVARCHAR(MAX)"],
+                    ["afterWordDescriptions", "NVARCHAR(MAX)"],
+                    ["afterPptDescriptions", "NVARCHAR(MAX)"],
+                    ["afterImageDescriptions", "NVARCHAR(MAX)"],
+                ];
+                for (const [columnName, dataType] of columnsToEnsure) {
+                    await migrationHelper.ensureColumnExists('learning_comparisons', columnName, dataType);
+                }
+            }
         } catch (error) {
             logger.error("Failed to initialize LearningComparison table", error);
         }

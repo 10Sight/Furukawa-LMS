@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Submission {
@@ -24,33 +25,33 @@ class Submission {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'submissions')
-            BEGIN
-                CREATE TABLE submissions (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    assignment INT NOT NULL,
-                    student INT NOT NULL,
-                    fileUrl NVARCHAR(MAX),
-                    attachments NVARCHAR(MAX),
-                    grade DECIMAL(5, 2) DEFAULT NULL,
-                    feedback NVARCHAR(MAX),
-                    submittedAt DATETIME DEFAULT GETDATE(),
-                    isLate BIT DEFAULT 0,
-                    resubmissionCount INT DEFAULT 0,
-                    status NVARCHAR(50) DEFAULT 'SUBMITTED',
-                    gradedAt DATETIME,
-                    gradedBy INT,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_submission UNIQUE (assignment, student)
-                );
-                CREATE INDEX idx_assignment_submission ON submissions(assignment);
-                CREATE INDEX idx_student_submission ON submissions(student);
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('submissions')) {
+                await executeQuery(`
+                    CREATE TABLE submissions (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        assignment INT NOT NULL,
+                        student INT NOT NULL,
+                        fileUrl NVARCHAR(MAX),
+                        attachments NVARCHAR(MAX),
+                        grade DECIMAL(5, 2) DEFAULT NULL,
+                        feedback NVARCHAR(MAX),
+                        submittedAt DATETIME DEFAULT GETDATE(),
+                        isLate BIT DEFAULT 0,
+                        resubmissionCount INT DEFAULT 0,
+                        status NVARCHAR(50) DEFAULT 'SUBMITTED',
+                        gradedAt DATETIME,
+                        gradedBy INT,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT unique_submission UNIQUE (assignment, student)
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('submissions', 'idx_assignment_submission',
+                    'CREATE INDEX idx_assignment_submission ON submissions(assignment)');
+                await migrationHelper.ensureIndexExists('submissions', 'idx_student_submission',
+                    'CREATE INDEX idx_student_submission ON submissions(student)');
+            }
         } catch (error) {
             logger.error("Failed to initialize Submission table", error);
         }

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class MenteeFeedback {
     constructor(data) {
@@ -27,9 +28,8 @@ class MenteeFeedback {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='mentee_feedbacks' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('mentee_feedbacks')) {
+            await executeQuery(`
                 CREATE TABLE mentee_feedbacks (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
@@ -42,25 +42,13 @@ class MenteeFeedback {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_mentee_feedback FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
-            END
-            ELSE
-            BEGIN
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE mentee_feedbacks ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE mentee_feedbacks ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('mentee_feedbacks') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE mentee_feedbacks ADD revDate VARCHAR(255) NULL;
-                END
-            END
-        `;
-        await executeQuery(query);
+            `);
+        } else {
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('mentee_feedbacks', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('mentee_feedbacks', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('mentee_feedbacks', 'revDate', 'VARCHAR(255) NULL');
+        }
     }
 
     static async findByStudentId(studentId) {

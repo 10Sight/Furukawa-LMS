@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class LineRequirementHistory {
     constructor(data) {
@@ -23,51 +24,36 @@ class LineRequirementHistory {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'line_requirement_history')
-            BEGIN
-                CREATE TABLE line_requirement_history (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    lineId INT NOT NULL,
-                    oldFn01 INT NULL,
-                    newFn01 INT NOT NULL DEFAULT 0,
-                    oldFn02 INT NULL,
-                    newFn02 INT NOT NULL DEFAULT 0,
-                    oldQuantity INT,
-                    newQuantity INT NOT NULL,
-                    type NVARCHAR(10) NOT NULL,
-                    requirementDate DATE,
-                    requirementMonth INT,
-                    requirementYear INT,
-                    changedBy INT,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE,
-                    FOREIGN KEY (changedBy) REFERENCES users(id) ON DELETE SET NULL
-                );
-                CREATE INDEX idx_line_history ON line_requirement_history(lineId);
-            END
-            ELSE
-            BEGIN
-                IF COL_LENGTH('line_requirement_history', 'oldFn01') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirement_history ADD oldFn01 INT NULL;
-                END
-                IF COL_LENGTH('line_requirement_history', 'newFn01') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirement_history ADD newFn01 INT NULL;
-                END
-                IF COL_LENGTH('line_requirement_history', 'oldFn02') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirement_history ADD oldFn02 INT NULL;
-                END
-                IF COL_LENGTH('line_requirement_history', 'newFn02') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirement_history ADD newFn02 INT NULL;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('line_requirement_history')) {
+                await executeQuery(`
+                    CREATE TABLE line_requirement_history (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        lineId INT NOT NULL,
+                        oldFn01 INT NULL,
+                        newFn01 INT NOT NULL DEFAULT 0,
+                        oldFn02 INT NULL,
+                        newFn02 INT NOT NULL DEFAULT 0,
+                        oldQuantity INT,
+                        newQuantity INT NOT NULL,
+                        type NVARCHAR(10) NOT NULL,
+                        requirementDate DATE,
+                        requirementMonth INT,
+                        requirementYear INT,
+                        changedBy INT,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE,
+                        FOREIGN KEY (changedBy) REFERENCES users(id) ON DELETE SET NULL
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('line_requirement_history', 'idx_line_history',
+                    'CREATE INDEX idx_line_history ON line_requirement_history(lineId)');
+            } else {
+                await migrationHelper.ensureColumnExists('line_requirement_history', 'oldFn01', 'INT NULL');
+                await migrationHelper.ensureColumnExists('line_requirement_history', 'newFn01', 'INT NULL');
+                await migrationHelper.ensureColumnExists('line_requirement_history', 'oldFn02', 'INT NULL');
+                await migrationHelper.ensureColumnExists('line_requirement_history', 'newFn02', 'INT NULL');
+            }
             logger.info("LineRequirementHistory table initialized successfully");
         } catch (error) {
             logger.error(`Failed to initialize LineRequirementHistory table: ${error.message}`);

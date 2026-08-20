@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class SystemSettings {
@@ -63,56 +64,54 @@ class SystemSettings {
   }
 
   static async init() {
-    const query = `
-      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='system_settings' and xtype='U')
-      BEGIN
-        CREATE TABLE system_settings (
-          id INT IDENTITY(1,1) PRIMARY KEY,
-          siteName VARCHAR(100) DEFAULT 'Learning Management System',
-          siteDescription VARCHAR(500) DEFAULT 'Advanced Learning Management System',
-          siteUrl VARCHAR(200) DEFAULT 'https://lms.example.com',
-          adminEmail VARCHAR(255) DEFAULT 'admin@example.com',
-          timezone VARCHAR(50) DEFAULT 'UTC',
-          language VARCHAR(10) DEFAULT 'en',
-          dateFormat VARCHAR(20) DEFAULT 'YYYY-MM-DD',
-          timeFormat VARCHAR(5) DEFAULT '24h',
-          sessionTimeout INT DEFAULT 30,
-          maxLoginAttempts INT DEFAULT 5,
-          passwordMinLength INT DEFAULT 8,
-          passwordRequireSpecial BIT DEFAULT 1,
-          passwordRequireNumbers BIT DEFAULT 1,
-          passwordRequireUppercase BIT DEFAULT 1,
-          twoFactorAuth BIT DEFAULT 0,
-          ipWhitelist NVARCHAR(MAX),
-          smtpHost VARCHAR(100) DEFAULT '',
-          smtpPort INT DEFAULT 587,
-          smtpUsername VARCHAR(100) DEFAULT '',
-          smtpPassword VARCHAR(200) DEFAULT '',
-          smtpEncryption VARCHAR(10) DEFAULT 'tls',
-          fromEmail VARCHAR(255) DEFAULT '',
-          fromName VARCHAR(100) DEFAULT '',
-          maintenanceMode BIT DEFAULT 0,
-          maintenanceMessage VARCHAR(500) DEFAULT 'System is under maintenance. Please check back later.',
-          maxFileUploadSize INT DEFAULT 10,
-          allowedFileTypes VARCHAR(200) DEFAULT 'jpg,jpeg,png,pdf,doc,docx,txt',
-          autoBackup BIT DEFAULT 1,
-          backupRetention INT DEFAULT 30,
-          emailNotifications BIT DEFAULT 1,
-          systemNotifications BIT DEFAULT 1,
-          notificationRetention INT DEFAULT 90,
-          cacheEnabled BIT DEFAULT 1,
-          compressionEnabled BIT DEFAULT 1,
-          logLevel VARCHAR(10) DEFAULT 'info',
-          maxConcurrentUsers INT DEFAULT 1000,
-          lastModifiedBy VARCHAR(255),
-          version INT DEFAULT 1,
-          createdAt DATETIME DEFAULT GETDATE(),
-          updatedAt DATETIME DEFAULT GETDATE()
-        )
-      END
-    `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('system_settings')) {
+        await executeQuery(`
+          CREATE TABLE system_settings (
+            id INT IDENTITY(1,1) PRIMARY KEY,
+            siteName VARCHAR(100) DEFAULT 'Learning Management System',
+            siteDescription VARCHAR(500) DEFAULT 'Advanced Learning Management System',
+            siteUrl VARCHAR(200) DEFAULT 'https://lms.example.com',
+            adminEmail VARCHAR(255) DEFAULT 'admin@example.com',
+            timezone VARCHAR(50) DEFAULT 'UTC',
+            language VARCHAR(10) DEFAULT 'en',
+            dateFormat VARCHAR(20) DEFAULT 'YYYY-MM-DD',
+            timeFormat VARCHAR(5) DEFAULT '24h',
+            sessionTimeout INT DEFAULT 30,
+            maxLoginAttempts INT DEFAULT 5,
+            passwordMinLength INT DEFAULT 8,
+            passwordRequireSpecial BIT DEFAULT 1,
+            passwordRequireNumbers BIT DEFAULT 1,
+            passwordRequireUppercase BIT DEFAULT 1,
+            twoFactorAuth BIT DEFAULT 0,
+            ipWhitelist NVARCHAR(MAX),
+            smtpHost VARCHAR(100) DEFAULT '',
+            smtpPort INT DEFAULT 587,
+            smtpUsername VARCHAR(100) DEFAULT '',
+            smtpPassword VARCHAR(200) DEFAULT '',
+            smtpEncryption VARCHAR(10) DEFAULT 'tls',
+            fromEmail VARCHAR(255) DEFAULT '',
+            fromName VARCHAR(100) DEFAULT '',
+            maintenanceMode BIT DEFAULT 0,
+            maintenanceMessage VARCHAR(500) DEFAULT 'System is under maintenance. Please check back later.',
+            maxFileUploadSize INT DEFAULT 10,
+            allowedFileTypes VARCHAR(200) DEFAULT 'jpg,jpeg,png,pdf,doc,docx,txt',
+            autoBackup BIT DEFAULT 1,
+            backupRetention INT DEFAULT 30,
+            emailNotifications BIT DEFAULT 1,
+            systemNotifications BIT DEFAULT 1,
+            notificationRetention INT DEFAULT 90,
+            cacheEnabled BIT DEFAULT 1,
+            compressionEnabled BIT DEFAULT 1,
+            logLevel VARCHAR(10) DEFAULT 'info',
+            maxConcurrentUsers INT DEFAULT 1000,
+            lastModifiedBy VARCHAR(255),
+            version INT DEFAULT 1,
+            createdAt DATETIME DEFAULT GETDATE(),
+            updatedAt DATETIME DEFAULT GETDATE()
+          )
+        `);
+      }
       // Ensure at least one row exists
       const [rows] = await executeQuery("SELECT COUNT(*) as count FROM system_settings");
       if (rows[0].count === 0) {

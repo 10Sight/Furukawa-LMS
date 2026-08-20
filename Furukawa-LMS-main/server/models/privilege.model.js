@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Privilege {
@@ -8,17 +9,15 @@ class Privilege {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'privileges')
-            BEGIN
-                CREATE TABLE privileges (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(100) NOT NULL
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('privileges')) {
+                await executeQuery(`
+                    CREATE TABLE privileges (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name NVARCHAR(100) NOT NULL
+                    )
+                `);
+            }
             console.log("Privileges table verified/created in MSSQL.");
         } catch (error) {
             logger.error("Failed to initialize Privilege table", error);

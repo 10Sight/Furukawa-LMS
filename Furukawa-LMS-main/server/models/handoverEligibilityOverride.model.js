@@ -27,30 +27,32 @@ class HandoverEligibilityOverride {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='handover_eligibility_overrides' AND xtype='U')
-            BEGIN
-                CREATE TABLE handover_eligibility_overrides (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    studentId INT NOT NULL,
-                    departmentId INT NOT NULL,
-                    isActive BIT DEFAULT 1,
-                    forDate DATE NULL,
-                    reason NVARCHAR(500) NULL,
-                    overriddenBy INT NULL,
-                    overriddenByName NVARCHAR(255) NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    revokedBy INT NULL,
-                    revokedByName NVARCHAR(255) NULL,
-                    revokedAt DATETIME NULL
-                )
-                CREATE UNIQUE INDEX idx_active_handover_override
-                    ON handover_eligibility_overrides(studentId, departmentId, forDate)
-                    WHERE isActive = 1
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('handover_eligibility_overrides')) {
+                await executeQuery(`
+                    CREATE TABLE handover_eligibility_overrides (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        studentId INT NOT NULL,
+                        departmentId INT NOT NULL,
+                        isActive BIT DEFAULT 1,
+                        forDate DATE NULL,
+                        reason NVARCHAR(500) NULL,
+                        overriddenBy INT NULL,
+                        overriddenByName NVARCHAR(255) NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        revokedBy INT NULL,
+                        revokedByName NVARCHAR(255) NULL,
+                        revokedAt DATETIME NULL
+                    )
+                `);
+                await migrationHelper.ensureIndexExists(
+                    'handover_eligibility_overrides',
+                    'idx_active_handover_override',
+                    `CREATE UNIQUE INDEX idx_active_handover_override
+                        ON handover_eligibility_overrides(studentId, departmentId, forDate)
+                        WHERE isActive = 1`
+                );
+            }
             logger.info("MSSQL handover_eligibility_overrides table initialized successfully.");
 
             await migrationHelper.ensureColumnExists("handover_eligibility_overrides", "forDate", "DATE NULL");

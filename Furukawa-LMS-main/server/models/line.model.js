@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 
@@ -49,9 +50,8 @@ class Line {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-                const query = `
-                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'lines')
-                    BEGIN
+                if (!await migrationHelper.tableExists('lines')) {
+                    await executeQuery(`
                         CREATE TABLE [lines] (
                             id INT IDENTITY(1,1) PRIMARY KEY,
                             name NVARCHAR(255) NOT NULL,
@@ -66,12 +66,11 @@ class Line {
                             updatedAt DATETIME DEFAULT GETDATE(),
                             CONSTRAINT unique_section_line UNIQUE (name, sectionId),
                             FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE CASCADE
-                        );
-                        CREATE INDEX idx_section ON [lines](sectionId);
-                        CREATE INDEX idx_department ON [lines](department);
-                    END
-                `;
-                await executeQuery(query);
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('lines', 'idx_section', 'CREATE INDEX idx_section ON [lines](sectionId)');
+                    await migrationHelper.ensureIndexExists('lines', 'idx_department', 'CREATE INDEX idx_department ON [lines](department)');
+                }
 
                 // 1. Data Migration: Remap orphaned sectionId (department IDs) to actual section IDs
                 const remappings = [
@@ -93,23 +92,17 @@ class Line {
                     }
                 }
 
+                // lineLeader: add if missing, then ensure it's widened to NVARCHAR(MAX) either way.
+                await migrationHelper.ensureColumnExists('lines', 'lineLeader', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnType('lines', 'lineLeader', 'NVARCHAR(MAX)');
+
+                await migrationHelper.ensureColumnExists('lines', 'mentor', 'NVARCHAR(255)');
+                await migrationHelper.ensureColumnExists('lines', 'requirement', 'INT DEFAULT 0');
+
+                // tenCycleFormType: add-if-missing / widen-if-present are mutually exclusive real
+                // behaviors (not a dead branch), so this stays as one raw statement rather than
+                // migrationHelper.ensureColumnType (which only compares MAX-ness, not exact length).
                 await executeQuery(`
-                    IF COL_LENGTH('lines', 'lineLeader') IS NULL
-                    BEGIN
-                        ALTER TABLE [lines] ADD lineLeader NVARCHAR(MAX);
-                    END
-                    ELSE
-                    BEGIN
-                        ALTER TABLE [lines] ALTER COLUMN lineLeader NVARCHAR(MAX);
-                    END
-                    IF COL_LENGTH('lines', 'mentor') IS NULL
-                    BEGIN
-                        ALTER TABLE [lines] ADD mentor NVARCHAR(255);
-                    END
-                    IF COL_LENGTH('lines', 'requirement') IS NULL
-                    BEGIN
-                        ALTER TABLE [lines] ADD requirement INT DEFAULT 0;
-                    END
                     IF COL_LENGTH('lines', 'tenCycleFormType') IS NULL
                     BEGIN
                         ALTER TABLE [lines] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
@@ -118,7 +111,9 @@ class Line {
                     BEGIN
                         ALTER TABLE [lines] ALTER COLUMN tenCycleFormType NVARCHAR(255);
                     END
+                `);
 
+                await executeQuery(`
                     DECLARE @ConstraintName NVARCHAR(MAX);
                     DECLARE @DropQuery NVARCHAR(MAX);
                     DECLARE constraint_cursor CURSOR FOR
@@ -141,7 +136,9 @@ class Line {
                     END
                     CLOSE constraint_cursor;
                     DEALLOCATE constraint_cursor;
+                `);
 
+                await executeQuery(`
                     IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Lines_Sections' AND parent_object_id = OBJECT_ID('lines'))
                     BEGIN
                         BEGIN TRY
@@ -152,47 +149,45 @@ class Line {
                             -- Ignore if failed
                         END CATCH
                     END
+                `);
 
+                await executeQuery(`
                     IF EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
                     BEGIN
                         ALTER TABLE [lines] DROP CONSTRAINT unique_dept_line;
                     END
+                `);
+                await executeQuery(`
                     IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_dept_line' AND object_id = OBJECT_ID('lines'))
                     BEGIN
                         DROP INDEX unique_dept_line ON [lines];
                     END
+                `);
 
+                await executeQuery(`
                     IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_section_line' AND parent_object_id = OBJECT_ID('lines') AND type = 'UQ')
                        AND NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'unique_section_line' AND object_id = OBJECT_ID('lines'))
                     BEGIN
                         ;WITH CTE AS (
-                            SELECT name, sectionId, 
+                            SELECT name, sectionId,
                                    ROW_NUMBER() OVER (PARTITION BY name, sectionId ORDER BY id DESC) as rn
                             FROM [lines]
                         )
                         DELETE FROM CTE WHERE rn > 1;
                         ALTER TABLE [lines] ADD CONSTRAINT unique_section_line UNIQUE (name, sectionId);
                     END
-
-                    IF COL_LENGTH('lines', 'users') IS NULL
-                    BEGIN
-                        ALTER TABLE [lines] ADD [users] NVARCHAR(MAX) DEFAULT '[]';
-                    END
-
-                    -- Backfill for databases where [lines] was created before these indexes
-                    -- existed (they were previously only added inside the CREATE TABLE branch
-                    -- above). Without idx_section, the correlated EXISTS join in
-                    -- section.model.js's sectionCountSql falls back to a full scan of [lines]
-                    -- per section per matching user, making section list/detail fetches crawl.
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_section' AND object_id = OBJECT_ID('lines'))
-                    BEGIN
-                        CREATE INDEX idx_section ON [lines](sectionId);
-                    END
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_department' AND object_id = OBJECT_ID('lines'))
-                    BEGIN
-                        CREATE INDEX idx_department ON [lines](department);
-                    END
                 `);
+
+                await migrationHelper.ensureColumnExists('lines', 'users', "NVARCHAR(MAX) DEFAULT '[]'");
+
+                // Backfill for databases where [lines] was created before these indexes
+                // existed (they were previously only added inside the CREATE TABLE branch
+                // above). Without idx_section, the correlated EXISTS join in
+                // section.model.js's sectionCountSql falls back to a full scan of [lines]
+                // per section per matching user, making section list/detail fetches crawl.
+                await migrationHelper.ensureIndexExists('lines', 'idx_section', 'CREATE INDEX idx_section ON [lines](sectionId)');
+                await migrationHelper.ensureIndexExists('lines', 'idx_department', 'CREATE INDEX idx_department ON [lines](department)');
+
                 logger.info("Line table initialized successfully");
 
                 // Startup full-table resync removed: lines.users is kept current incrementally by

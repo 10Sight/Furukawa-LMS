@@ -33,30 +33,27 @@ class Daily5MRecord {
     }
 
     static async init() {
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_5m_records')
-            BEGIN
-                CREATE TABLE daily_5m_records (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    departmentId NVARCHAR(255) NOT NULL,
-                    date DATE NOT NULL,
-                    shift NVARCHAR(50),
-                    line NVARCHAR(50),
-                    formType NVARCHAR(50),
-                    recordData NVARCHAR(MAX),
-                    submittedBy NVARCHAR(255),
-                    sessionId INT,
-                    status NVARCHAR(20) DEFAULT 'PENDING',
-                    approvedBy INT,
-                    createdAt DATETIME2 DEFAULT GETDATE(),
-                    updatedAt DATETIME2 DEFAULT GETDATE(),
-                    FOREIGN KEY (approvedBy) REFERENCES users(id)
-                )
-            END
-        `;
-
         try {
-            await executeQuery(createTableQuery);
+            if (!await migrationHelper.tableExists('daily_5m_records')) {
+                await executeQuery(`
+                    CREATE TABLE daily_5m_records (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        departmentId NVARCHAR(255) NOT NULL,
+                        date DATE NOT NULL,
+                        shift NVARCHAR(50),
+                        line NVARCHAR(50),
+                        formType NVARCHAR(50),
+                        recordData NVARCHAR(MAX),
+                        submittedBy NVARCHAR(255),
+                        sessionId INT,
+                        status NVARCHAR(20) DEFAULT 'PENDING',
+                        approvedBy INT,
+                        createdAt DATETIME2 DEFAULT GETDATE(),
+                        updatedAt DATETIME2 DEFAULT GETDATE(),
+                        FOREIGN KEY (approvedBy) REFERENCES users(id)
+                    )
+                `);
+            }
 
             // Migration: Handle column type changes safely by dropping default constraints first
             const columnsToFix = [

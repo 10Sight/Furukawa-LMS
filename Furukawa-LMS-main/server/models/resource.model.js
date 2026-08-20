@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Resource {
@@ -43,35 +44,37 @@ class Resource {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'resources')
-            BEGIN
-                CREATE TABLE resources (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    courseId INT,
-                    moduleId INT,
-                    lessonId INT,
-                    scope NVARCHAR(50) NOT NULL,
-                    title NVARCHAR(255) NOT NULL,
-                    type NVARCHAR(50) NOT NULL,
-                    description NVARCHAR(MAX),
-                    url NVARCHAR(MAX) NOT NULL,
-                    publicId NVARCHAR(255),
-                    fileSize INT,
-                    format NVARCHAR(50),
-                    fileName NVARCHAR(255),
-                    createdBy INT NOT NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                );
-                CREATE INDEX idx_resource_scope ON resources(scope);
-                CREATE INDEX idx_resource_courseId ON resources(courseId);
-                CREATE INDEX idx_resource_moduleId ON resources(moduleId);
-                CREATE INDEX idx_resource_lessonId ON resources(lessonId);
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('resources')) {
+                await executeQuery(`
+                    CREATE TABLE resources (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        courseId INT,
+                        moduleId INT,
+                        lessonId INT,
+                        scope NVARCHAR(50) NOT NULL,
+                        title NVARCHAR(255) NOT NULL,
+                        type NVARCHAR(50) NOT NULL,
+                        description NVARCHAR(MAX),
+                        url NVARCHAR(MAX) NOT NULL,
+                        publicId NVARCHAR(255),
+                        fileSize INT,
+                        format NVARCHAR(50),
+                        fileName NVARCHAR(255),
+                        createdBy INT NOT NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('resources', 'idx_resource_scope',
+                    'CREATE INDEX idx_resource_scope ON resources(scope)');
+                await migrationHelper.ensureIndexExists('resources', 'idx_resource_courseId',
+                    'CREATE INDEX idx_resource_courseId ON resources(courseId)');
+                await migrationHelper.ensureIndexExists('resources', 'idx_resource_moduleId',
+                    'CREATE INDEX idx_resource_moduleId ON resources(moduleId)');
+                await migrationHelper.ensureIndexExists('resources', 'idx_resource_lessonId',
+                    'CREATE INDEX idx_resource_lessonId ON resources(lessonId)');
+            }
             // logger.info("Resource table initialized successfully");
         } catch (error) {
             logger.error("Failed to initialize Resource table", error);

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Enrollment {
@@ -20,29 +21,29 @@ class Enrollment {
   }
 
   static async init() {
-    const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'enrollments')
-            BEGIN
-                CREATE TABLE enrollments (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    student INT NOT NULL,
-                    course INT NOT NULL,
-                    enrolledBy INT NOT NULL,
-                    paymentStatus NVARCHAR(50) DEFAULT 'PENDING',
-                    paymentMethod NVARCHAR(50) DEFAULT 'FREE',
-                    enrolledAt DATETIME DEFAULT GETDATE(),
-                    expiresAt DATETIME,
-                    isActive BIT DEFAULT 1,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_enrollment UNIQUE (student, course)
-                );
-                CREATE INDEX idx_student ON enrollments(student);
-                CREATE INDEX idx_course ON enrollments(course);
-            END
-        `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('enrollments')) {
+        await executeQuery(`
+                    CREATE TABLE enrollments (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        student INT NOT NULL,
+                        course INT NOT NULL,
+                        enrolledBy INT NOT NULL,
+                        paymentStatus NVARCHAR(50) DEFAULT 'PENDING',
+                        paymentMethod NVARCHAR(50) DEFAULT 'FREE',
+                        enrolledAt DATETIME DEFAULT GETDATE(),
+                        expiresAt DATETIME,
+                        isActive BIT DEFAULT 1,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT unique_enrollment UNIQUE (student, course)
+                    )
+                `);
+        await migrationHelper.ensureIndexExists('enrollments', 'idx_student',
+          'CREATE INDEX idx_student ON enrollments(student)');
+        await migrationHelper.ensureIndexExists('enrollments', 'idx_course',
+          'CREATE INDEX idx_course ON enrollments(course)');
+      }
     } catch (error) {
       logger.error("Failed to initialize Enrollment table", error);
     }

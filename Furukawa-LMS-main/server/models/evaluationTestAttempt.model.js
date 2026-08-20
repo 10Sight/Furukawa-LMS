@@ -74,42 +74,29 @@ class EvaluationTestAttempt {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='evaluation_test_attempts' AND xtype='U')
-            BEGIN
-                CREATE TABLE evaluation_test_attempts (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    testId INT NOT NULL,
-                    traineeName NVARCHAR(255),
-                    employeeNo NVARCHAR(255),
-                    educatorName NVARCHAR(255),
-                    attemptData NVARCHAR(MAX),
-                    createdBy NVARCHAR(255),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    userId INT NULL,
-                    isHandoverEligible BIT DEFAULT 0,
-                    passedDate DATE NULL,
-                    CONSTRAINT fk_evaluation_test FOREIGN KEY (testId) REFERENCES evaluation_tests(id) ON DELETE CASCADE
-                )
-            END
-            ELSE
-            BEGIN
-                IF COL_LENGTH('evaluation_test_attempts', 'userId') IS NULL
-                BEGIN
-                    ALTER TABLE evaluation_test_attempts ADD userId INT NULL;
-                END
-                IF COL_LENGTH('evaluation_test_attempts', 'isHandoverEligible') IS NULL
-                BEGIN
-                    ALTER TABLE evaluation_test_attempts ADD isHandoverEligible BIT DEFAULT 0;
-                END
-                IF COL_LENGTH('evaluation_test_attempts', 'passedDate') IS NULL
-                BEGIN
-                    ALTER TABLE evaluation_test_attempts ADD passedDate DATE NULL;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('evaluation_test_attempts')) {
+                await executeQuery(`
+                    CREATE TABLE evaluation_test_attempts (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        testId INT NOT NULL,
+                        traineeName NVARCHAR(255),
+                        employeeNo NVARCHAR(255),
+                        educatorName NVARCHAR(255),
+                        attemptData NVARCHAR(MAX),
+                        createdBy NVARCHAR(255),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        userId INT NULL,
+                        isHandoverEligible BIT DEFAULT 0,
+                        passedDate DATE NULL,
+                        CONSTRAINT fk_evaluation_test FOREIGN KEY (testId) REFERENCES evaluation_tests(id) ON DELETE CASCADE
+                    )
+                `);
+            } else {
+                await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'userId', 'INT NULL');
+                await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'isHandoverEligible', 'BIT DEFAULT 0');
+                await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'passedDate', 'DATE NULL');
+            }
             logger.info("MSSQL evaluation_test_attempts table initialized successfully.");
 
             // Snapshot of trainee status/hierarchy at attempt time, so the record survives

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Certificate {
@@ -23,31 +24,31 @@ class Certificate {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'certificates')
-            BEGIN
-                CREATE TABLE certificates (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    student NVARCHAR(255) NOT NULL,
-                    course NVARCHAR(255) NOT NULL,
-                    issuedBy NVARCHAR(255) NOT NULL,
-                    grade NVARCHAR(10) DEFAULT 'PASS',
-                    issueDate DATETIME,
-                    expiryDate DATETIME,
-                    fileUrl NVARCHAR(MAX),
-                    status NVARCHAR(20) DEFAULT 'ACTIVE',
-                    type NVARCHAR(50) DEFAULT 'COURSE_COMPLETION',
-                    level NVARCHAR(50),
-                    metadata NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                )
-                CREATE INDEX idx_student ON certificates(student)
-                CREATE INDEX idx_course ON certificates(course)
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('certificates')) {
+                await executeQuery(`
+                    CREATE TABLE certificates (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        student NVARCHAR(255) NOT NULL,
+                        course NVARCHAR(255) NOT NULL,
+                        issuedBy NVARCHAR(255) NOT NULL,
+                        grade NVARCHAR(10) DEFAULT 'PASS',
+                        issueDate DATETIME,
+                        expiryDate DATETIME,
+                        fileUrl NVARCHAR(MAX),
+                        status NVARCHAR(20) DEFAULT 'ACTIVE',
+                        type NVARCHAR(50) DEFAULT 'COURSE_COMPLETION',
+                        level NVARCHAR(50),
+                        metadata NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('certificates', 'idx_student',
+                    'CREATE INDEX idx_student ON certificates(student)');
+                await migrationHelper.ensureIndexExists('certificates', 'idx_course',
+                    'CREATE INDEX idx_course ON certificates(course)');
+            }
             console.log("Certificates table verified/created in MSSQL.");
         } catch (error) {
             logger.error("Failed to initialize Certificate table", error);

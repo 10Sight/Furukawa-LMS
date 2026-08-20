@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import { slugify } from "../utils/slugify.js";
 import logger from "../logger/winston.logger.js";
 
@@ -21,29 +22,29 @@ class Lesson {
   }
 
   static async init() {
-    const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'lessons')
-            BEGIN
-                CREATE TABLE lessons (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    module INT NOT NULL,
-                    title NVARCHAR(255) NOT NULL,
-                    content NVARCHAR(MAX),
-                    slides NVARCHAR(MAX),
-                    duration INT DEFAULT 0,
-                    [order] INT DEFAULT 1,
-                    slug NVARCHAR(255),
-                    resources NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_module_slug UNIQUE (module, slug)
-                );
-                CREATE INDEX idx_module_lessons ON lessons(module);
-                CREATE INDEX idx_slug_lessons ON lessons(slug);
-            END
-        `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('lessons')) {
+        await executeQuery(`
+                    CREATE TABLE lessons (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        module INT NOT NULL,
+                        title NVARCHAR(255) NOT NULL,
+                        content NVARCHAR(MAX),
+                        slides NVARCHAR(MAX),
+                        duration INT DEFAULT 0,
+                        [order] INT DEFAULT 1,
+                        slug NVARCHAR(255),
+                        resources NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT unique_module_slug UNIQUE (module, slug)
+                    )
+                `);
+        await migrationHelper.ensureIndexExists('lessons', 'idx_module_lessons',
+          'CREATE INDEX idx_module_lessons ON lessons(module)');
+        await migrationHelper.ensureIndexExists('lessons', 'idx_slug_lessons',
+          'CREATE INDEX idx_slug_lessons ON lessons(slug)');
+      }
     } catch (error) {
       logger.error("Failed to initialize Lesson table", error);
     }

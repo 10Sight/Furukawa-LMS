@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { getFirstConfiguredLevelName } from "../utils/skillMatrix.util.js";
 import { formatDateYMD, addDaysToDateString, getQuarterKeyAndYearFromDate } from "../utils/quarterDate.util.js";
@@ -29,9 +30,8 @@ class SkillUpgradationPlan {
 
     // Initialize the skill_upgradation_plans table
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'skill_upgradation_plans')
-            BEGIN
+        if (!await migrationHelper.tableExists('skill_upgradation_plans')) {
+            await executeQuery(`
                 CREATE TABLE skill_upgradation_plans (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId INT NOT NULL,
@@ -44,64 +44,52 @@ class SkillUpgradationPlan {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_upgradation_year_plan UNIQUE (departmentId, sectionId, year)
-                );
-                CREATE INDEX idx_skill_upgrad_dept ON skill_upgradation_plans(departmentId);
-                CREATE INDEX idx_skill_upgrad_sect ON skill_upgradation_plans(sectionId);
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'sectionId')
-                BEGIN
-                    ALTER TABLE skill_upgradation_plans ADD sectionId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'year')
-                BEGIN
-                    ALTER TABLE skill_upgradation_plans ADD year INT NULL;
-                END
+                )
+            `);
+            await migrationHelper.ensureIndexExists('skill_upgradation_plans', 'idx_skill_upgrad_dept',
+                'CREATE INDEX idx_skill_upgrad_dept ON skill_upgradation_plans(departmentId)');
+            await migrationHelper.ensureIndexExists('skill_upgradation_plans', 'idx_skill_upgrad_sect',
+                'CREATE INDEX idx_skill_upgrad_sect ON skill_upgradation_plans(sectionId)');
+        } else {
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'sectionId', 'INT NULL');
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'year', 'INT NULL');
 
-                -- Drop all old unique constraints on this table dynamically (excluding our target year constraint)
+            // Drop all old unique constraints on this table dynamically (excluding our target year constraint)
+            await executeQuery(`
                 DECLARE @ConstraintName NVARCHAR(255);
                 SELECT TOP 1 @ConstraintName = name
                 FROM sys.key_constraints
-                WHERE parent_object_id = OBJECT_ID('skill_upgradation_plans') 
-                  AND type = 'UQ' 
+                WHERE parent_object_id = OBJECT_ID('skill_upgradation_plans')
+                  AND type = 'UQ'
                   AND name <> 'unique_dept_section_upgradation_year_plan';
 
                 WHILE @ConstraintName IS NOT NULL
                 BEGIN
                     DECLARE @DropQuery NVARCHAR(MAX) = 'ALTER TABLE skill_upgradation_plans DROP CONSTRAINT ' + QUOTENAME(@ConstraintName);
                     EXEC sp_executesql @DropQuery;
-                    
+
                     SET @ConstraintName = NULL;
                     SELECT TOP 1 @ConstraintName = name
                     FROM sys.key_constraints
-                    WHERE parent_object_id = OBJECT_ID('skill_upgradation_plans') 
-                      AND type = 'UQ' 
+                    WHERE parent_object_id = OBJECT_ID('skill_upgradation_plans')
+                      AND type = 'UQ'
                       AND name <> 'unique_dept_section_upgradation_year_plan';
                 END
+            `);
 
-                -- Add new unique constraint with year if it doesn't exist
+            // Add new unique constraint with year if it doesn't exist
+            await executeQuery(`
                 IF NOT EXISTS (SELECT * FROM sys.key_constraints WHERE name = 'unique_dept_section_upgradation_year_plan' AND type = 'UQ')
                 BEGIN
                     ALTER TABLE skill_upgradation_plans ADD CONSTRAINT unique_dept_section_upgradation_year_plan UNIQUE (departmentId, sectionId, year);
                 END
+            `);
 
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE skill_upgradation_plans ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE skill_upgradation_plans ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('skill_upgradation_plans') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE skill_upgradation_plans ADD revDate VARCHAR(255) NULL;
-                END
-            END
-        `;
-        await executeQuery(query);
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'revDate', 'VARCHAR(255) NULL');
+        }
     }
 
     // Find skill upgradation plan by department, section and year

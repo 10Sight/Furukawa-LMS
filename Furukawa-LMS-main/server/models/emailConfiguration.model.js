@@ -18,27 +18,25 @@ class EmailConfiguration {
     }
 
     static async init() {
-        const query = `
-      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='email_configurations' and xtype='U')
-      BEGIN
-        CREATE TABLE email_configurations (
-          id INT IDENTITY(1,1) PRIMARY KEY,
-          formName VARCHAR(150) NOT NULL,
-          departmentId INT NULL,
-          sectionId INT NULL,
-          toEmails NVARCHAR(MAX),
-          ccEmails NVARCHAR(MAX),
-          includeTrainer BIT DEFAULT 0,
-          isActive BIT DEFAULT 1,
-          createdAt DATETIME DEFAULT GETDATE(),
-          updatedAt DATETIME DEFAULT GETDATE(),
-          CONSTRAINT fk_email_config_dept FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
-          CONSTRAINT fk_email_config_sec FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE NO ACTION
-        )
-      END
-    `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('email_configurations')) {
+                await executeQuery(`
+                    CREATE TABLE email_configurations (
+                      id INT IDENTITY(1,1) PRIMARY KEY,
+                      formName VARCHAR(150) NOT NULL,
+                      departmentId INT NULL,
+                      sectionId INT NULL,
+                      toEmails NVARCHAR(MAX),
+                      ccEmails NVARCHAR(MAX),
+                      includeTrainer BIT DEFAULT 0,
+                      isActive BIT DEFAULT 1,
+                      createdAt DATETIME DEFAULT GETDATE(),
+                      updatedAt DATETIME DEFAULT GETDATE(),
+                      CONSTRAINT fk_email_config_dept FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
+                      CONSTRAINT fk_email_config_sec FOREIGN KEY (sectionId) REFERENCES sections(id) ON DELETE NO ACTION
+                    )
+                `);
+            }
             // Auto-migration for missing columns
             await migrationHelper.ensureColumnExists('email_configurations', 'includeTrainer', 'BIT DEFAULT 0');
             await migrationHelper.ensureColumnExists('email_configurations', 'sectionId', 'INT NULL');

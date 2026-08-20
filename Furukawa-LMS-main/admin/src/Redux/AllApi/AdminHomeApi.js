@@ -111,6 +111,22 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+        getSkillUpgradationPlanStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/skill-upgradation-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            keepUnusedDataFor: 60,
+        }),
+        getMultiSkillingPlanStatus: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/multi-skilling-status",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
@@ -127,4 +143,6 @@ export const {
     useGetSkillMatrixCertificateStatusQuery,
     useGetOperatorObservanceStatusQuery,
     useGetContractorWiseOperatorStatsQuery,
+    useGetSkillUpgradationPlanStatusQuery,
+    useGetMultiSkillingPlanStatusQuery,
 } = adminHomeApi;

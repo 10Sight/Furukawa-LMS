@@ -23,32 +23,34 @@ class UserHierarchySnapshot {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'user_hierarchy_snapshots')
-            BEGIN
-                CREATE TABLE user_hierarchy_snapshots (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    employeename NVARCHAR(255),
-                    employeeid NVARCHAR(255),
-                    shift NVARCHAR(50),
-                    status NVARCHAR(50),
-                    role NVARCHAR(255),
-                    department NVARCHAR(255),
-                    section NVARCHAR(255),
-                    lines NVARCHAR(255),
-                    [sub-section] NVARCHAR(255),
-                    station NVARCHAR(255),
-                    department_unicode NVARCHAR(255),
-                    section_unicode NVARCHAR(255),
-                    line_unicode NVARCHAR(255),
-                    schedule_shift NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE()
-                );
-                CREATE INDEX idx_snapshot_employeeid ON user_hierarchy_snapshots(employeeid);
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('user_hierarchy_snapshots')) {
+                await executeQuery(`
+                    CREATE TABLE user_hierarchy_snapshots (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        employeename NVARCHAR(255),
+                        employeeid NVARCHAR(255),
+                        shift NVARCHAR(50),
+                        status NVARCHAR(50),
+                        role NVARCHAR(255),
+                        department NVARCHAR(255),
+                        section NVARCHAR(255),
+                        lines NVARCHAR(255),
+                        [sub-section] NVARCHAR(255),
+                        station NVARCHAR(255),
+                        department_unicode NVARCHAR(255),
+                        section_unicode NVARCHAR(255),
+                        line_unicode NVARCHAR(255),
+                        schedule_shift NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+                await migrationHelper.ensureIndexExists(
+                    'user_hierarchy_snapshots',
+                    'idx_snapshot_employeeid',
+                    'CREATE INDEX idx_snapshot_employeeid ON user_hierarchy_snapshots(employeeid)'
+                );
+            }
             logger.info("Checked/Created user_hierarchy_snapshots table in MSSQL");
 
             await migrationHelper.ensureColumnExists('user_hierarchy_snapshots', 'schedule_shift', 'NVARCHAR(MAX)');

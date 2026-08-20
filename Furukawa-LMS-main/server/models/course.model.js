@@ -45,9 +45,8 @@ class Course {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-                const query = `
-                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'courses')
-                    BEGIN
+                if (!await migrationHelper.tableExists('courses')) {
+                    await executeQuery(`
                         CREATE TABLE courses (
                             id INT IDENTITY(1,1) PRIMARY KEY,
                             title NVARCHAR(255) NOT NULL,
@@ -73,11 +72,11 @@ class Course {
                             isDeleted BIT DEFAULT 0,
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
-                        );
-                        CREATE INDEX idx_category ON courses(category);
-                    END
-                `;
-                await executeQuery(query);
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('courses', 'idx_category',
+                        'CREATE INDEX idx_category ON courses(category)');
+                }
 
                 // Self-healing migration: instructor is no longer required directly on a course
                 // (instructors are now associated via department.instructor instead)
@@ -91,25 +90,10 @@ class Course {
                     END
                 `);
 
-                // Manual migration check for columns using INFORMATION_SCHEMA
-                const columns = [
-                    { name: 'departmentId', type: 'NVARCHAR(MAX)' },
-                    { name: 'sectionId', type: 'NVARCHAR(MAX)' },
-                    { name: 'isDeleted', type: 'BIT DEFAULT 0' }
-                ];
-
-                for (const col of columns) {
-                    const checkColQuery = `
-                        IF NOT EXISTS (
-                            SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-                            WHERE TABLE_NAME = 'courses' AND COLUMN_NAME = '${col.name}'
-                        )
-                        BEGIN
-                            ALTER TABLE [courses] ADD [${col.name}] ${col.type}
-                        END
-                    `;
-                    await executeQuery(checkColQuery);
-                }
+                // Manual migration check for columns
+                await migrationHelper.ensureColumnExists('courses', 'departmentId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnExists('courses', 'sectionId', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnExists('courses', 'isDeleted', 'BIT DEFAULT 0');
 
                 // Ensure correct types
                 await migrationHelper.ensureColumnType('courses', 'departmentId', 'NVARCHAR(MAX)');

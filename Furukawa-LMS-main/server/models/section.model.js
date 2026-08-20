@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 import CourseLevelConfig from "./courseLevelConfig.model.js";
@@ -109,257 +110,145 @@ class Section {
     static async init() {
         // Table creation
         const createQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'sections')
+            CREATE TABLE [sections] (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                name NVARCHAR(255) NOT NULL,
+                uniCode NVARCHAR(255) NOT NULL,
+                description NVARCHAR(MAX),
+                category NVARCHAR(50) DEFAULT 'Not Applicable',
+                users NVARCHAR(MAX) DEFAULT '[]',
+                daily5mFormType NVARCHAR(255) DEFAULT 'standard',
+                tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
+                departmentId INT NOT NULL,
+                isActive BIT DEFAULT 1,
+                hideTenCycle BIT DEFAULT 0,
+                hideOperatorObservance BIT DEFAULT 0,
+                daily5mApproverDeptId INT NULL,
+                daily5mApproverSectionId INT NULL,
+                daily5mApproverLineId INT NULL,
+                skillMatrixApproverQaDeptId INT NULL,
+                skillMatrixApproverQaSectionId INT NULL,
+                skillMatrixApproverQaLineId INT NULL,
+                skillMatrixApproverSafetyDeptId INT NULL,
+                skillMatrixApproverSafetySectionId INT NULL,
+                skillMatrixApproverSafetyLineId INT NULL,
+                skillMatrixApproverProcessDeptId INT NULL,
+                skillMatrixApproverProcessSectionId INT NULL,
+                skillMatrixApproverProcessLineId INT NULL,
+                skillUpgradationDayCount INT NULL,
+                multiSkillingDayCount INT NULL,
+                skillUpgradationDayCounts NVARCHAR(MAX) NULL,
+                multiSkillingDayCounts NVARCHAR(MAX) NULL,
+                createdAt DATETIME DEFAULT GETDATE(),
+                updatedAt DATETIME DEFAULT GETDATE(),
+                CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId),
+                FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
+            )
+        `;
+
+        // Column migration: simple "add if missing" columns are looped through the helper;
+        // daily5mFormType/tenCycleFormType (add-if-missing else widen), the data-migration
+        // UPDATEs, and the unique-constraint maintenance stay as their own raw statements below.
+        const columnsToEnsure = [
+            ['category', "NVARCHAR(50) DEFAULT 'Not Applicable'"],
+            ['users', "NVARCHAR(MAX) DEFAULT '[]'"],
+            ['daily5mApproverDeptId', 'INT NULL'],
+            ['daily5mApproverSectionId', 'INT NULL'],
+            ['daily5mApproverLineId', 'INT NULL'],
+            ['skillMatrixApproverQaDeptId', 'INT NULL'],
+            ['skillMatrixApproverQaSectionId', 'INT NULL'],
+            ['skillMatrixApproverQaLineId', 'INT NULL'],
+            ['skillMatrixApproverSafetyDeptId', 'INT NULL'],
+            ['skillMatrixApproverSafetySectionId', 'INT NULL'],
+            ['skillMatrixApproverSafetyLineId', 'INT NULL'],
+            ['skillMatrixApproverProcessDeptId', 'INT NULL'],
+            ['skillMatrixApproverProcessSectionId', 'INT NULL'],
+            ['skillMatrixApproverProcessLineId', 'INT NULL'],
+            ['skillUpgradationDayCount', 'INT NULL'],
+            ['multiSkillingDayCount', 'INT NULL'],
+            ['skillUpgradationDayCounts', 'NVARCHAR(MAX) NULL'],
+            ['multiSkillingDayCounts', 'NVARCHAR(MAX) NULL'],
+            ['hideTenCycle', 'BIT DEFAULT 0'],
+            ['hideOperatorObservance', 'BIT DEFAULT 0'],
+        ];
+
+        // daily5mFormType: add-if-missing / widen-if-present are mutually exclusive real
+        // behaviors (not a dead branch), so these stay as raw statements rather than
+        // migrationHelper.ensureColumnType (which only compares MAX-ness, not exact length).
+        const daily5mFormTypeQuery = `
+            IF NOT EXISTS (SELECT * FROM sys.columns
+                         WHERE object_id = OBJECT_ID('sections')
+                         AND name = 'daily5mFormType')
             BEGIN
-                CREATE TABLE [sections] (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(255) NOT NULL,
-                    uniCode NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    category NVARCHAR(50) DEFAULT 'Not Applicable',
-                    daily5mFormType NVARCHAR(255) DEFAULT 'standard',
-                    tenCycleFormType NVARCHAR(255) DEFAULT 'form1',
-                    departmentId INT NOT NULL,
-                    isActive BIT DEFAULT 1,
-                    hideTenCycle BIT DEFAULT 0,
-                    hideOperatorObservance BIT DEFAULT 0,
-                    daily5mApproverDeptId INT NULL,
-                    daily5mApproverSectionId INT NULL,
-                    daily5mApproverLineId INT NULL,
-                    skillMatrixApproverQaDeptId INT NULL,
-                    skillMatrixApproverQaSectionId INT NULL,
-                    skillMatrixApproverQaLineId INT NULL,
-                    skillMatrixApproverSafetyDeptId INT NULL,
-                    skillMatrixApproverSafetySectionId INT NULL,
-                    skillMatrixApproverSafetyLineId INT NULL,
-                    skillMatrixApproverProcessDeptId INT NULL,
-                    skillMatrixApproverProcessSectionId INT NULL,
-                    skillMatrixApproverProcessLineId INT NULL,
-                    skillUpgradationDayCount INT NULL,
-                    multiSkillingDayCount INT NULL,
-                    skillUpgradationDayCounts NVARCHAR(MAX) NULL,
-                    multiSkillingDayCounts NVARCHAR(MAX) NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId),
-                    FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
-                );
-                CREATE INDEX idx_dept_section ON [sections](departmentId);
+                ALTER TABLE [sections] ADD daily5mFormType NVARCHAR(255) DEFAULT 'standard';
+            END
+            ELSE
+            BEGIN
+                ALTER TABLE [sections] ALTER COLUMN daily5mFormType NVARCHAR(255);
+            END
+        `;
+        const tenCycleFormTypeQuery = `
+            IF NOT EXISTS (SELECT * FROM sys.columns
+                         WHERE object_id = OBJECT_ID('sections')
+                         AND name = 'tenCycleFormType')
+            BEGIN
+                ALTER TABLE [sections] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
+            END
+            ELSE
+            BEGIN
+                ALTER TABLE [sections] ALTER COLUMN tenCycleFormType NVARCHAR(255);
             END
         `;
 
-        // Column migration
-        const migrationQuery = `
-            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'sections')
+        // Data Migration: Set correct form types based on category or NAME if they are still 'standard'
+        const crimpingBackfillQuery = `
+            UPDATE [sections] SET daily5mFormType = 'crimping'
+            WHERE (category = 'CRIMPING' OR category = 'Cutting & Crimping' OR name LIKE '%Crimping%' OR name LIKE '%Cutting%')
+            AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
+        `;
+        const srcBackfillQuery = `
+            UPDATE [sections] SET daily5mFormType = 'src'
+            WHERE (category = 'SRC' OR name LIKE '%SRC%')
+            AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
+        `;
+
+        // Update Unique Constraint
+        // 1. Drop old constraint if exists
+        const dropOldUniqueConstraintQuery = `
+            IF EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_section' AND parent_object_id = OBJECT_ID('sections'))
             BEGIN
-                -- Add category column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                             WHERE object_id = OBJECT_ID('sections') 
-                             AND name = 'category')
-                BEGIN
-                    ALTER TABLE [sections] ADD category NVARCHAR(50) DEFAULT 'Not Applicable';
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                             WHERE object_id = OBJECT_ID('sections') 
-                             AND name = 'daily5mFormType')
-                BEGIN
-                    ALTER TABLE [sections] ADD daily5mFormType NVARCHAR(255) DEFAULT 'standard';
-                END
-                ELSE
-                BEGIN
-                    ALTER TABLE [sections] ALTER COLUMN daily5mFormType NVARCHAR(255);
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                             WHERE object_id = OBJECT_ID('sections') 
-                             AND name = 'tenCycleFormType')
-                BEGIN
-                    ALTER TABLE [sections] ADD tenCycleFormType NVARCHAR(255) DEFAULT 'form1';
-                END
-                ELSE
-                BEGIN
-                    ALTER TABLE [sections] ALTER COLUMN tenCycleFormType NVARCHAR(255);
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'users')
-                BEGIN
-                    ALTER TABLE [sections] ADD users NVARCHAR(MAX) DEFAULT '[]';
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'daily5mApproverDeptId')
-                BEGIN
-                    ALTER TABLE [sections] ADD daily5mApproverDeptId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'daily5mApproverSectionId')
-                BEGIN
-                    ALTER TABLE [sections] ADD daily5mApproverSectionId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'daily5mApproverLineId')
-                BEGIN
-                    ALTER TABLE [sections] ADD daily5mApproverLineId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverQaDeptId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverQaDeptId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverQaSectionId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverQaSectionId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverQaLineId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverQaLineId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverSafetyDeptId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverSafetyDeptId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverSafetySectionId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverSafetySectionId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverSafetyLineId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverSafetyLineId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverProcessDeptId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverProcessDeptId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverProcessSectionId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverProcessSectionId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillMatrixApproverProcessLineId')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillMatrixApproverProcessLineId INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillUpgradationDayCount')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillUpgradationDayCount INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'multiSkillingDayCount')
-                BEGIN
-                    ALTER TABLE [sections] ADD multiSkillingDayCount INT NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'skillUpgradationDayCounts')
-                BEGIN
-                    ALTER TABLE [sections] ADD skillUpgradationDayCounts NVARCHAR(MAX) NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'multiSkillingDayCounts')
-                BEGIN
-                    ALTER TABLE [sections] ADD multiSkillingDayCounts NVARCHAR(MAX) NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'hideTenCycle')
-                BEGIN
-                    ALTER TABLE [sections] ADD hideTenCycle BIT DEFAULT 0;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                             WHERE object_id = OBJECT_ID('sections')
-                             AND name = 'hideOperatorObservance')
-                BEGIN
-                    ALTER TABLE [sections] ADD hideOperatorObservance BIT DEFAULT 0;
-                END
-
-                -- Data Migration: Set correct form types based on category or NAME if they are still 'standard'
-                UPDATE [sections] SET daily5mFormType = 'crimping' 
-                WHERE (category = 'CRIMPING' OR category = 'Cutting & Crimping' OR name LIKE '%Crimping%' OR name LIKE '%Cutting%') 
-                AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
-
-                UPDATE [sections] SET daily5mFormType = 'src' 
-                WHERE (category = 'SRC' OR name LIKE '%SRC%') 
-                AND (daily5mFormType = 'standard' OR daily5mFormType IS NULL);
-
-                -- Update Unique Constraint
-                -- 1. Drop old constraint if exists
-                IF EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_section' AND parent_object_id = OBJECT_ID('sections'))
-                BEGIN
-                    ALTER TABLE [sections] DROP CONSTRAINT unique_dept_section;
-                END
-
-                -- 2. Drop global unique constraint on uniCode if exists
-                -- We look for any UNIQUE constraint or index on just the uniCode column
-                DECLARE @ConstraintName NVARCHAR(MAX);
-                SELECT @ConstraintName = so.name
-                FROM sys.objects so
-                WHERE so.type = 'UQ' AND so.parent_object_id = OBJECT_ID('sections')
-                AND so.name IN (
-                    SELECT si.name FROM sys.indexes si
-                    JOIN sys.index_columns ic ON si.object_id = ic.object_id AND si.index_id = ic.index_id
-                    JOIN sys.columns sc ON ic.object_id = sc.object_id AND ic.column_id = sc.column_id
-                    WHERE sc.name = 'uniCode' AND si.object_id = OBJECT_ID('sections')
-                );
-
-                IF @ConstraintName IS NOT NULL
-                BEGIN
-                    DECLARE @DropSql NVARCHAR(MAX) = 'ALTER TABLE [sections] DROP CONSTRAINT ' + @ConstraintName;
-                    EXEC sp_executesql @DropSql;
-                END
-
-                -- 3. Create new constraint if not exists
-                IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_section_category' AND parent_object_id = OBJECT_ID('sections'))
-                BEGIN
-                    ALTER TABLE [sections] ADD CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId);
-                END
-
-                -- Trim existing uniCode values so the unique index compares cleanly
-                UPDATE [sections] SET uniCode = LTRIM(RTRIM(uniCode)) WHERE uniCode IS NOT NULL;
+                ALTER TABLE [sections] DROP CONSTRAINT unique_dept_section;
             END
         `;
+        // 2. Drop global unique constraint on uniCode if exists
+        // We look for any UNIQUE constraint or index on just the uniCode column
+        const dropUniCodeOnlyConstraintQuery = `
+            DECLARE @ConstraintName NVARCHAR(MAX);
+            SELECT @ConstraintName = so.name
+            FROM sys.objects so
+            WHERE so.type = 'UQ' AND so.parent_object_id = OBJECT_ID('sections')
+            AND so.name IN (
+                SELECT si.name FROM sys.indexes si
+                JOIN sys.index_columns ic ON si.object_id = ic.object_id AND si.index_id = ic.index_id
+                JOIN sys.columns sc ON ic.object_id = sc.object_id AND ic.column_id = sc.column_id
+                WHERE sc.name = 'uniCode' AND si.object_id = OBJECT_ID('sections')
+            );
+
+            IF @ConstraintName IS NOT NULL
+            BEGIN
+                DECLARE @DropSql NVARCHAR(MAX) = 'ALTER TABLE [sections] DROP CONSTRAINT ' + @ConstraintName;
+                EXEC sp_executesql @DropSql;
+            END
+        `;
+        // 3. Create new constraint if not exists
+        const addUniqueDeptSectionCategoryQuery = `
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = 'unique_dept_section_category' AND parent_object_id = OBJECT_ID('sections'))
+            BEGIN
+                ALTER TABLE [sections] ADD CONSTRAINT unique_dept_section_category UNIQUE (name, category, departmentId);
+            END
+        `;
+        // Trim existing uniCode values so the unique index compares cleanly
+        const trimUniCodeQuery = `UPDATE [sections] SET uniCode = LTRIM(RTRIM(uniCode)) WHERE uniCode IS NOT NULL;`;
 
         // Rename duplicate/blank uniCode values before enforcing uniqueness so the
         // filtered unique index below does not fail on pre-existing data.
@@ -381,20 +270,29 @@ class Section {
             END
         `;
 
-        const uniqueIndexQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_unique_section_unicode' AND object_id = OBJECT_ID('sections'))
-            BEGIN
-                CREATE UNIQUE NONCLUSTERED INDEX idx_unique_section_unicode
-                ON [sections](uniCode)
-                WHERE uniCode IS NOT NULL AND uniCode <> '';
-            END
-        `;
-
         try {
-            await executeQuery(createQuery);
-            await executeQuery(migrationQuery);
+            if (!await migrationHelper.tableExists('sections')) {
+                await executeQuery(createQuery);
+                await migrationHelper.ensureIndexExists('sections', 'idx_dept_section', 'CREATE INDEX idx_dept_section ON [sections](departmentId)');
+            } else {
+                for (const [columnName, dataType] of columnsToEnsure) {
+                    await migrationHelper.ensureColumnExists('sections', columnName, dataType);
+                }
+                await executeQuery(daily5mFormTypeQuery);
+                await executeQuery(tenCycleFormTypeQuery);
+                await executeQuery(crimpingBackfillQuery);
+                await executeQuery(srcBackfillQuery);
+                await executeQuery(dropOldUniqueConstraintQuery);
+                await executeQuery(dropUniCodeOnlyConstraintQuery);
+                await executeQuery(addUniqueDeptSectionCategoryQuery);
+                await executeQuery(trimUniCodeQuery);
+            }
             await executeQuery(dedupeQuery);
-            await executeQuery(uniqueIndexQuery);
+            await migrationHelper.ensureIndexExists(
+                'sections',
+                'idx_unique_section_unicode',
+                "CREATE UNIQUE NONCLUSTERED INDEX idx_unique_section_unicode ON [sections](uniCode) WHERE uniCode IS NOT NULL AND uniCode <> ''"
+            );
             logger.info("Checked/Created sections table and migrated columns in MSSQL");
 
             // Startup full-table resync removed: section.users is kept current incrementally by

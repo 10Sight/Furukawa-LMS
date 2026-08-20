@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class TenCycleSheet {
     constructor(data) {
@@ -38,9 +39,8 @@ class TenCycleSheet {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ten_cycle_sheets')
-            BEGIN
+        if (!await migrationHelper.tableExists('ten_cycle_sheets')) {
+            await executeQuery(`
                 CREATE TABLE ten_cycle_sheets (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId INT NOT NULL,
@@ -67,45 +67,28 @@ class TenCycleSheet {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
-                );
-                CREATE INDEX idx_ten_cycle_sheets_dept ON ten_cycle_sheets(departmentId);
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'sectionId')
-                    ALTER TABLE ten_cycle_sheets ADD sectionId INT;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'lineId')
-                    ALTER TABLE ten_cycle_sheets ADD lineId INT;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'subSectionId')
-                    ALTER TABLE ten_cycle_sheets ADD subSectionId INT;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'status')
-                    ALTER TABLE ten_cycle_sheets ADD status NVARCHAR(50) DEFAULT 'Draft';
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'checkedBy')
-                    ALTER TABLE ten_cycle_sheets ADD checkedBy NVARCHAR(255);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedBy')
-                    ALTER TABLE ten_cycle_sheets ADD verifiedBy NVARCHAR(255);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedStatus')
-                    ALTER TABLE ten_cycle_sheets ADD verifiedStatus NVARCHAR(50);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'verifiedAt')
-                    ALTER TABLE ten_cycle_sheets ADD verifiedAt DATETIME;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedBy')
-                    ALTER TABLE ten_cycle_sheets ADD reviewedBy NVARCHAR(255);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedStatus')
-                    ALTER TABLE ten_cycle_sheets ADD reviewedStatus NVARCHAR(50);
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'reviewedAt')
-                    ALTER TABLE ten_cycle_sheets ADD reviewedAt DATETIME;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'lastEditRemark')
-                    ALTER TABLE ten_cycle_sheets ADD lastEditRemark NVARCHAR(MAX);
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'docNo')
-                    ALTER TABLE ten_cycle_sheets ADD docNo VARCHAR(255) NULL;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'revNo')
-                    ALTER TABLE ten_cycle_sheets ADD revNo VARCHAR(255) NULL;
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ten_cycle_sheets') AND name = 'revDate')
-                    ALTER TABLE ten_cycle_sheets ADD revDate VARCHAR(255) NULL;
-            END
-        `;
-        await executeQuery(query);
+                )
+            `);
+            await migrationHelper.ensureIndexExists('ten_cycle_sheets', 'idx_ten_cycle_sheets_dept',
+                'CREATE INDEX idx_ten_cycle_sheets_dept ON ten_cycle_sheets(departmentId)');
+        } else {
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'sectionId', 'INT');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'lineId', 'INT');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'subSectionId', 'INT');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'status', "NVARCHAR(50) DEFAULT 'Draft'");
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'checkedBy', 'NVARCHAR(255)');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'verifiedBy', 'NVARCHAR(255)');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'verifiedStatus', 'NVARCHAR(50)');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'verifiedAt', 'DATETIME');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'reviewedBy', 'NVARCHAR(255)');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'reviewedStatus', 'NVARCHAR(50)');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'reviewedAt', 'DATETIME');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'lastEditRemark', 'NVARCHAR(MAX)');
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'revDate', 'VARCHAR(255) NULL');
+        }
     }
 
     static async findById(id) {

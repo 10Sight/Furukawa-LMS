@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class ExtraAttemptAllowance {
@@ -17,9 +18,9 @@ class ExtraAttemptAllowance {
   }
 
   static async init() {
-    const query = `
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='extra_attempt_allowances' and xtype='U')
-        BEGIN
+    try {
+      if (!await migrationHelper.tableExists('extra_attempt_allowances')) {
+        await executeQuery(`
         CREATE TABLE extra_attempt_allowances (
             id INT IDENTITY(1,1) PRIMARY KEY,
             quiz NVARCHAR(255) NOT NULL,
@@ -29,12 +30,11 @@ class ExtraAttemptAllowance {
             approvedAt DATETIME,
             createdAt DATETIME DEFAULT GETDATE(),
             updatedAt DATETIME DEFAULT GETDATE()
-        );
-        CREATE INDEX idx_extra_quiz_student ON extra_attempt_allowances(quiz, student);
-        END
-    `;
-    try {
-      await executeQuery(query);
+        )
+    `);
+        await migrationHelper.ensureIndexExists('extra_attempt_allowances', 'idx_extra_quiz_student',
+          'CREATE INDEX idx_extra_quiz_student ON extra_attempt_allowances(quiz, student)');
+      }
     } catch (error) {
       logger.error("Failed to initialize ExtraAttemptAllowance table", error);
     }

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class Mail {
@@ -30,44 +31,24 @@ class Mail {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='email_report_recipients' and xtype='U')
-            BEGIN
-                CREATE TABLE email_report_recipients (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    email VARCHAR(255) NOT NULL,
-                    isDailyReport BIT DEFAULT 0,
-                    isManagementDailyReport BIT DEFAULT 0,
-                    reportTypes VARCHAR(255),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_email_report_email UNIQUE (email)
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('email_report_recipients')) {
+                await executeQuery(`
+                    CREATE TABLE email_report_recipients (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL,
+                        isDailyReport BIT DEFAULT 0,
+                        isManagementDailyReport BIT DEFAULT 0,
+                        reportTypes VARCHAR(255),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_email_report_email UNIQUE (email)
+                    )
+                `);
+            }
             // Add column if not exists
-            try {
-                await executeQuery("SELECT TOP 1 reportTypes FROM email_report_recipients");
-            } catch (e) {
-                try {
-                    await executeQuery("ALTER TABLE email_report_recipients ADD reportTypes VARCHAR(255)");
-                } catch (e2) { }
-            }
-            try {
-                await executeQuery("SELECT TOP 1 isManagementDailyReport FROM email_report_recipients");
-            } catch (e) {
-                try {
-                    await executeQuery("ALTER TABLE email_report_recipients ADD isManagementDailyReport BIT DEFAULT 0");
-                } catch (e2) { }
-            }
-            try {
-                await executeQuery("SELECT TOP 1 isMonthlyReport FROM email_report_recipients");
-            } catch (e) {
-                try {
-                    await executeQuery("ALTER TABLE email_report_recipients ADD isMonthlyReport BIT DEFAULT 0");
-                } catch (e2) { }
-            }
+            await migrationHelper.ensureColumnExists('email_report_recipients', 'reportTypes', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('email_report_recipients', 'isManagementDailyReport', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('email_report_recipients', 'isMonthlyReport', 'BIT DEFAULT 0');
         } catch (error) {
             logger.error("Failed to initialize Mail table", error);
         }

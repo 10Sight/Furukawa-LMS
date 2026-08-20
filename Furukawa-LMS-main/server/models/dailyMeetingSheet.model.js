@@ -1,23 +1,22 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class DailyMeetingSheet {
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_meeting_sheets')
-            BEGIN
-                CREATE TABLE daily_meeting_sheets (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    sectionId INT NOT NULL UNIQUE,
-                    data NVARCHAR(MAX) DEFAULT '{}',
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE CASCADE
-                );
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('daily_meeting_sheets')) {
+                await executeQuery(`
+                    CREATE TABLE daily_meeting_sheets (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        sectionId INT NOT NULL UNIQUE,
+                        data NVARCHAR(MAX) DEFAULT '{}',
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE CASCADE
+                    )
+                `);
+            }
             logger.info("Checked/Created daily_meeting_sheets table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_meeting_sheets table", error);

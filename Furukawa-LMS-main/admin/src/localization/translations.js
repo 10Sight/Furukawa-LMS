@@ -220,6 +220,22 @@ export const translations = {
     "charts.actualHandover": "Actual Handover",
     "charts.unassignedSection": "Unassigned",
 
+    // Skill Upgradation Plan Comparison Chart
+    "charts.skillUpgradationPlanComparison": "Skill Upgradation Plan Comparison",
+    "charts.skillUpgradationPlanComparisonDesc": "Planned vs Actual skill upgradation counts by date — grouped by department",
+    "charts.plannedUpgradation": "Planned Upgradation",
+    "charts.actualUpgradation": "Actual Upgradation",
+    "charts.failedToLoadSkillUpgradation": "Failed to load skill upgradation comparison.",
+    "charts.noSkillUpgradationData": "No skill upgradation data found for this period.",
+
+    // Multi-Skilling Plan Comparison Chart
+    "charts.multiSkillingPlanComparison": "Multi-Skilling Plan Comparison",
+    "charts.multiSkillingPlanComparisonDesc": "Planned vs Actual multi-skilling counts by date — grouped by department",
+    "charts.plannedMultiSkilling": "Planned Multi-Skilling",
+    "charts.actualMultiSkilling": "Actual Multi-Skilling",
+    "charts.failedToLoadMultiSkilling": "Failed to load multi-skilling comparison.",
+    "charts.noMultiSkillingData": "No multi-skilling data found for this period.",
+
     // Sixteen-Day Monitoring Status Chart
     "charts.sixteenDayMonitoringComparison": "16-Day Monitoring — Daily Filled Counts",
     "charts.sixteenDayMonitoringComparisonDesc": "Daily count of filled monitoring-sheet days (Day 1–16), grouped by department — or by section when a single department is selected",
@@ -988,6 +1004,22 @@ export const translations = {
     "charts.actualHandover": "वास्तविक हैंडओवर",
     "charts.unassignedSection": "अनिर्धारित",
 
+    // Skill Upgradation Plan Comparison Chart
+    "charts.skillUpgradationPlanComparison": "कौशल उन्नयन योजना तुलना",
+    "charts.skillUpgradationPlanComparisonDesc": "तारीख के अनुसार नियोजित बनाम वास्तविक कौशल उन्नयन संख्या — विभाग द्वारा समूहीकृत",
+    "charts.plannedUpgradation": "नियोजित उन्नयन",
+    "charts.actualUpgradation": "वास्तविक उन्नयन",
+    "charts.failedToLoadSkillUpgradation": "कौशल उन्नयन तुलना लोड करने में विफल।",
+    "charts.noSkillUpgradationData": "इस अवधि के लिए कोई कौशल उन्नयन डेटा नहीं मिला।",
+
+    // Multi-Skilling Plan Comparison Chart
+    "charts.multiSkillingPlanComparison": "मल्टी-स्किलिंग योजना तुलना",
+    "charts.multiSkillingPlanComparisonDesc": "तारीख के अनुसार नियोजित बनाम वास्तविक मल्टी-स्किलिंग संख्या — विभाग द्वारा समूहीकृत",
+    "charts.plannedMultiSkilling": "नियोजित मल्टी-स्किलिंग",
+    "charts.actualMultiSkilling": "वास्तविक मल्टी-स्किलिंग",
+    "charts.failedToLoadMultiSkilling": "मल्टी-स्किलिंग तुलना लोड करने में विफल।",
+    "charts.noMultiSkillingData": "इस अवधि के लिए कोई मल्टी-स्किलिंग डेटा नहीं मिला।",
+
     // Sixteen-Day Monitoring Status Chart
     "charts.sixteenDayMonitoringComparison": "16-दिवसीय निगरानी — दैनिक भरे गए दिनों की संख्या",
     "charts.sixteenDayMonitoringComparisonDesc": "निगरानी शीट के भरे गए दिनों (डे 1–16) की दैनिक संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
@@ -1755,6 +1787,22 @@ export const translations = {
     "charts.actualHandover": "実績引き継ぎ数",
     "charts.unassignedSection": "未割当",
 
+    // Skill Upgradation Plan Comparison Chart
+    "charts.skillUpgradationPlanComparison": "スキルアップグレード計画比較",
+    "charts.skillUpgradationPlanComparisonDesc": "日付ごとの計画対実績スキルアップグレード数 — 部門別グループ化",
+    "charts.plannedUpgradation": "計画アップグレード数",
+    "charts.actualUpgradation": "実績アップグレード数",
+    "charts.failedToLoadSkillUpgradation": "スキルアップグレード比較の読み込みに失敗しました。",
+    "charts.noSkillUpgradationData": "この期間のスキルアップグレードデータが見つかりません。",
+
+    // Multi-Skilling Plan Comparison Chart
+    "charts.multiSkillingPlanComparison": "マルチスキリング計画比較",
+    "charts.multiSkillingPlanComparisonDesc": "日付ごとの計画対実績マルチスキリング数 — 部門別グループ化",
+    "charts.plannedMultiSkilling": "計画マルチスキリング数",
+    "charts.actualMultiSkilling": "実績マルチスキリング数",
+    "charts.failedToLoadMultiSkilling": "マルチスキリング比較の読み込みに失敗しました。",
+    "charts.noMultiSkillingData": "この期間のマルチスキリングデータが見つかりません。",
+
     // Sixteen-Day Monitoring Status Chart
     "charts.sixteenDayMonitoringComparison": "16日間モニタリング — 日別入力日数",
     "charts.sixteenDayMonitoringComparisonDesc": "モニタリングシートの入力済み日数（Day1〜16）の日別集計、部門別グループ化 — 単一部門選択時はセクション別",
@@ -2502,6 +2550,22 @@ export const translations = {
     "charts.actualHandover": "实际交接",
     "charts.unassignedSection": "未分配",
 
+    // Skill Upgradation Plan Comparison Chart
+    "charts.skillUpgradationPlanComparison": "技能升级计划对比",
+    "charts.skillUpgradationPlanComparisonDesc": "按日期的计划技能升级数 vs 实际技能升级数 — 按部门分组",
+    "charts.plannedUpgradation": "计划升级数",
+    "charts.actualUpgradation": "实际升级数",
+    "charts.failedToLoadSkillUpgradation": "加载技能升级对比失败。",
+    "charts.noSkillUpgradationData": "未找到该时段的技能升级数据。",
+
+    // Multi-Skilling Plan Comparison Chart
+    "charts.multiSkillingPlanComparison": "多技能计划对比",
+    "charts.multiSkillingPlanComparisonDesc": "按日期的计划多技能数 vs 实际多技能数 — 按部门分组",
+    "charts.plannedMultiSkilling": "计划多技能数",
+    "charts.actualMultiSkilling": "实际多技能数",
+    "charts.failedToLoadMultiSkilling": "加载多技能对比失败。",
+    "charts.noMultiSkillingData": "未找到该时段的多技能数据。",
+
     // Sixteen-Day Monitoring Status Chart
     "charts.sixteenDayMonitoringComparison": "16天监控 — 每日填写天数",
     "charts.sixteenDayMonitoringComparisonDesc": "监控表已填写天数（第1天至第16天）的每日统计，按部门分组 — 选择单个部门时按科室分组",
@@ -3248,6 +3312,22 @@ export const translations = {
     "charts.expectedHandover": "Ожидаемая передача",
     "charts.actualHandover": "Фактическая передача",
     "charts.unassignedSection": "Не назначено",
+
+    // Skill Upgradation Plan Comparison Chart
+    "charts.skillUpgradationPlanComparison": "Сравнение плана повышения квалификации",
+    "charts.skillUpgradationPlanComparisonDesc": "Плановое vs Фактическое количество повышений квалификации по датам — сгруппировано по отделу",
+    "charts.plannedUpgradation": "Плановое повышение",
+    "charts.actualUpgradation": "Фактическое повышение",
+    "charts.failedToLoadSkillUpgradation": "Не удалось загрузить сравнение повышения квалификации.",
+    "charts.noSkillUpgradationData": "Данные о повышении квалификации за этот период не найдены.",
+
+    // Multi-Skilling Plan Comparison Chart
+    "charts.multiSkillingPlanComparison": "Сравнение плана мультинавыков",
+    "charts.multiSkillingPlanComparisonDesc": "Плановое vs Фактическое количество мультинавыков по датам — сгруппировано по отделу",
+    "charts.plannedMultiSkilling": "Плановые мультинавыки",
+    "charts.actualMultiSkilling": "Фактические мультинавыки",
+    "charts.failedToLoadMultiSkilling": "Не удалось загрузить сравнение мультинавыков.",
+    "charts.noMultiSkillingData": "Данные о мультинавыках за этот период не найдены.",
 
     // Sixteen-Day Monitoring Status Chart
     "charts.sixteenDayMonitoringComparison": "16-дневный мониторинг — количество заполненных дней",

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import Course from "./course.model.js";
 import Module from "./module.model.js";
@@ -35,37 +36,37 @@ class Progress {
   }
 
   static async init() {
-    const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'progress')
-            BEGIN
-                CREATE TABLE progress (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    student INT NOT NULL,
-                    course INT NOT NULL,
-                    completedLessons NVARCHAR(MAX),
-                    completedModules NVARCHAR(MAX),
-                    quizzes NVARCHAR(MAX),
-                    assignments NVARCHAR(MAX),
-                    currentLevel NVARCHAR(50) DEFAULT 'L1',
-                    levelStartDate DATETIME DEFAULT GETDATE(),
-                    pendingLevelUpgrade NVARCHAR(50) DEFAULT NULL,
-                    levelLockEnabled BIT DEFAULT 0,
-                    lockedLevel NVARCHAR(50),
-                    progressPercent DECIMAL(5, 2) DEFAULT 0,
-                    lastAccessed DATETIME DEFAULT GETDATE(),
-                    currentAccessibleModule INT,
-                    timelineViolations NVARCHAR(MAX),
-                    timelineNotifications NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_student_course UNIQUE (student, course)
-                );
-                CREATE INDEX idx_student_progress ON progress(student);
-                CREATE INDEX idx_course_progress ON progress(course);
-            END
-        `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('progress')) {
+        await executeQuery(`
+                    CREATE TABLE progress (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        student INT NOT NULL,
+                        course INT NOT NULL,
+                        completedLessons NVARCHAR(MAX),
+                        completedModules NVARCHAR(MAX),
+                        quizzes NVARCHAR(MAX),
+                        assignments NVARCHAR(MAX),
+                        currentLevel NVARCHAR(50) DEFAULT 'L1',
+                        levelStartDate DATETIME DEFAULT GETDATE(),
+                        pendingLevelUpgrade NVARCHAR(50) DEFAULT NULL,
+                        levelLockEnabled BIT DEFAULT 0,
+                        lockedLevel NVARCHAR(50),
+                        progressPercent DECIMAL(5, 2) DEFAULT 0,
+                        lastAccessed DATETIME DEFAULT GETDATE(),
+                        currentAccessibleModule INT,
+                        timelineViolations NVARCHAR(MAX),
+                        timelineNotifications NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT unique_student_course UNIQUE (student, course)
+                    )
+                `);
+        await migrationHelper.ensureIndexExists('progress', 'idx_student_progress',
+          'CREATE INDEX idx_student_progress ON progress(student)');
+        await migrationHelper.ensureIndexExists('progress', 'idx_course_progress',
+          'CREATE INDEX idx_course_progress ON progress(course)');
+      }
     } catch (error) {
       logger.error("Failed to initialize Progress table", error);
     }

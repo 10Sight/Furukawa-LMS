@@ -1305,3 +1305,148 @@ export const getContractorWiseOperatorStats = asyncHandler(async (req, res) => {
         new ApiResponse(200, { users: rows }, "Contractor-wise operator stats fetched successfully")
     );
 });
+
+
+/**
+ * Shared implementation for Skill Upgradation Plan / Multi-Skilling Plan comparison charts.
+ * Both plan tables (skill_upgradation_plans, multi_skilling_plans) share the same shape:
+ * one row per (departmentId, sectionId, year), with tableData being a studentId -> quarter
+ * map carrying q{1..4}Date (planned) / q{1..4}DateActual (actual) ISO "YYYY-MM-DD" strings
+ * (see admin/src/components/departments/SkillUpgradationPlan.jsx and MultiSkillingPlan.jsx).
+ * Counts each quarter's planned/actual date against the period it falls into, grouped by
+ * period (daily/monthly/yearly) and by department/section, mirroring the Expected/Actual
+ * shape getDojoHandoverComparison returns (trend + deptBreakdown).
+ */
+const getPlanComparisonStatus = async (tableName, req, res, successMessage) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    const startYear = Number(start.slice(0, 4));
+    const endYear = Number(end.slice(0, 4));
+
+    // Accepts comma-separated department IDs for multi-select.
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [startYear, endYear];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND p.departmentId IN (${ph})`;
+        params.push(...deptIds);
+    }
+
+    const [rows] = await executeQuery(`
+        SELECT
+            p.tableData,
+            CAST(p.departmentId AS NVARCHAR(20)) AS deptId,
+            COALESCE(CAST(p.sectionId AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned') AS sectionName
+        FROM ${tableName} p
+        LEFT JOIN sections s ON s.id = p.sectionId
+        WHERE p.year BETWEEN ? AND ?
+        ${deptClause}
+    `, params);
+
+    const QUARTERS = ['q1', 'q2', 'q3', 'q4'];
+    const periodTotals = {};             // period -> { period, expected, actual }
+    const deptPeriodTotals = {};         // "deptId__sectionId" -> period -> { expected, actual }
+    const deptMeta = {};                 // "deptId__sectionId" -> { deptId, sectionId, sectionName }
+
+    const bump = (key, period, field) => {
+        if (!periodTotals[period]) periodTotals[period] = { period, expected: 0, actual: 0 };
+        periodTotals[period][field]++;
+
+        if (!deptPeriodTotals[key]) deptPeriodTotals[key] = {};
+        if (!deptPeriodTotals[key][period]) deptPeriodTotals[key][period] = { expected: 0, actual: 0 };
+        deptPeriodTotals[key][period][field]++;
+    };
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        let tableData;
+        try {
+            tableData = typeof row.tableData === 'string' ? JSON.parse(row.tableData) : (row.tableData || {});
+        } catch {
+            continue;
+        }
+
+        const key = `${row.deptId}__${row.sectionId}`;
+        if (!deptMeta[key]) deptMeta[key] = { deptId: row.deptId, sectionId: row.sectionId, sectionName: row.sectionName };
+
+        for (const [studentKey, entry] of Object.entries(tableData)) {
+            if (studentKey === '__removedUserIds' || !entry || typeof entry !== 'object') continue;
+
+            for (const q of QUARTERS) {
+                const plannedDate = entry[`${q}Date`];
+                if (plannedDate && plannedDate >= start && plannedDate <= end) {
+                    bump(key, periodFromIso(plannedDate, safeGroupBy), 'expected');
+                }
+
+                const actualDate = entry[`${q}DateActual`];
+                if (actualDate && actualDate >= start && actualDate <= end) {
+                    bump(key, periodFromIso(actualDate, safeGroupBy), 'actual');
+                }
+            }
+        }
+    }
+
+    const trend = Object.values(periodTotals).sort((a, b) => a.period.localeCompare(b.period));
+
+    const deptBreakdown = [];
+    Object.entries(deptPeriodTotals).forEach(([key, periods]) => {
+        const meta = deptMeta[key];
+        Object.entries(periods).forEach(([period, vals]) => {
+            deptBreakdown.push({
+                period,
+                deptId: meta.deptId,
+                sectionId: meta.sectionId,
+                sectionName: meta.sectionName,
+                expected: vals.expected,
+                actual: vals.actual,
+            });
+        });
+    });
+    deptBreakdown.sort((a, b) =>
+        Number(a.deptId) - Number(b.deptId) ||
+        a.sectionName.localeCompare(b.sectionName) ||
+        a.period.localeCompare(b.period)
+    );
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, deptBreakdown, groupBy: safeGroupBy, start, end }, successMessage)
+    );
+};
+
+/**
+ * Get Skill Upgradation Plan comparison (Planned vs Actual) for Admin Home page.
+ */
+export const getSkillUpgradationPlanStatus = asyncHandler(async (req, res) => {
+    await getPlanComparisonStatus('skill_upgradation_plans', req, res, "Skill upgradation plan status fetched successfully");
+});
+
+/**
+ * Get Multi-Skilling Plan comparison (Planned vs Actual) for Admin Home page.
+ */
+export const getMultiSkillingPlanStatus = asyncHandler(async (req, res) => {
+    await getPlanComparisonStatus('multi_skilling_plans', req, res, "Multi-skilling plan status fetched successfully");
+});

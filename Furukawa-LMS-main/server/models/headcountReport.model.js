@@ -14,9 +14,8 @@ class HeadcountReport {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='headcount_reports' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('headcount_reports')) {
+            await executeQuery(`
                 CREATE TABLE headcount_reports (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId INT NOT NULL,
@@ -27,9 +26,8 @@ class HeadcountReport {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     UNIQUE (departmentId, month, year)
                 )
-            END
-        `;
-        await executeQuery(query);
+            `);
+        }
         await migrationHelper.ensureColumnExists('headcount_reports', 'lastEmailSentAt', 'DATETIME NULL');
     }
 

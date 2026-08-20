@@ -1,5 +1,6 @@
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class AttendanceLog {
     constructor(data) {
@@ -30,59 +31,49 @@ class AttendanceLog {
 
     static async init() {
         try {
-            const query = `
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='attendance_logs' AND xtype='U')
-                CREATE TABLE attendance_logs (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    userId INT NOT NULL,
-                    payCode NVARCHAR(50),
-                    cardNo NVARCHAR(50),
-                    employeeName NVARCHAR(255),
-                    [date] DATE NOT NULL,
-                    department NVARCHAR(100),
-                    designation NVARCHAR(100),
-                    shift NVARCHAR(50),
-                    startTime TIME,
-                    inTime TIME,
-                    outTime TIME,
-                    hrsWorked DECIMAL(5,2),
-                    status NVARCHAR(20) CHECK (status IN ('Present', 'Absent', 'Late', 'Half Day', 'Holiday')) NOT NULL,
-                    lateArrival DECIMAL(5,2) DEFAULT 0,
-                    earlyDeparture DECIMAL(5,2) DEFAULT 0,
-                    otHrs DECIMAL(5,2) DEFAULT 0,
-                    otAmount DECIMAL(10,2) DEFAULT 0,
-                    updatedBy INT, 
-                    updatedByRole NVARCHAR(50), 
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT FK_Attendance_Users FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-                    CONSTRAINT UC_User_Date UNIQUE (userId, [date])
-                )
-            `;
-            const pool = await poolPromise;
-            await pool.query(query);
-            console.log("AttendanceLog table initialized in MSSQL.");
+            if (!await migrationHelper.tableExists('attendance_logs')) {
+                const query = `
+                    CREATE TABLE attendance_logs (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        userId INT NOT NULL,
+                        payCode NVARCHAR(50),
+                        cardNo NVARCHAR(50),
+                        employeeName NVARCHAR(255),
+                        [date] DATE NOT NULL,
+                        department NVARCHAR(100),
+                        designation NVARCHAR(100),
+                        shift NVARCHAR(50),
+                        startTime TIME,
+                        inTime TIME,
+                        outTime TIME,
+                        hrsWorked DECIMAL(5,2),
+                        status NVARCHAR(20) CHECK (status IN ('Present', 'Absent', 'Late', 'Half Day', 'Holiday')) NOT NULL,
+                        lateArrival DECIMAL(5,2) DEFAULT 0,
+                        earlyDeparture DECIMAL(5,2) DEFAULT 0,
+                        otHrs DECIMAL(5,2) DEFAULT 0,
+                        otAmount DECIMAL(10,2) DEFAULT 0,
+                        updatedBy INT,
+                        updatedByRole NVARCHAR(50),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT FK_Attendance_Users FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT UC_User_Date UNIQUE (userId, [date])
+                    )
+                `;
+                const pool = await poolPromise;
+                await pool.query(query);
+                console.log("AttendanceLog table initialized in MSSQL.");
+            }
 
             // Create indexes for payCode and date columns to optimize queries
-            const indexQuery = `
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_payCode' AND object_id = OBJECT_ID('attendance_logs'))
-                BEGIN
-                    CREATE INDEX idx_attendance_logs_payCode ON attendance_logs(payCode);
-                END
-                
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_date' AND object_id = OBJECT_ID('attendance_logs'))
-                BEGIN
-                    CREATE INDEX idx_attendance_logs_date ON attendance_logs([date]);
-                END
-
-                -- The getAllStudents/getAllUsers attendance join does
-                -- WHERE [date] BETWEEN ? AND ? GROUP BY userId; this composite lets it seek the
-                -- date range and aggregate without a full scan, alongside the single-column index above.
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_attendance_logs_date_userId' AND object_id = OBJECT_ID('attendance_logs'))
-                BEGIN
-                    CREATE INDEX idx_attendance_logs_date_userId ON attendance_logs([date], userId);
-                END
-            `;
-            await pool.query(indexQuery);
+            await migrationHelper.ensureIndexExists('attendance_logs', 'idx_attendance_logs_payCode',
+                'CREATE INDEX idx_attendance_logs_payCode ON attendance_logs(payCode)');
+            await migrationHelper.ensureIndexExists('attendance_logs', 'idx_attendance_logs_date',
+                'CREATE INDEX idx_attendance_logs_date ON attendance_logs([date])');
+            // The getAllStudents/getAllUsers attendance join does
+            // WHERE [date] BETWEEN ? AND ? GROUP BY userId; this composite lets it seek the
+            // date range and aggregate without a full scan, alongside the single-column index above.
+            await migrationHelper.ensureIndexExists('attendance_logs', 'idx_attendance_logs_date_userId',
+                'CREATE INDEX idx_attendance_logs_date_userId ON attendance_logs([date], userId)');
             console.log("Indexes checked/created for attendance_logs.");
         } catch (err) {
             console.error("Table Init Error:", err);

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class OperatorObservance {
     constructor(data) {
@@ -34,9 +35,8 @@ class OperatorObservance {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='operator_observances' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('operator_observances')) {
+            await executeQuery(`
                 CREATE TABLE operator_observances (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
@@ -55,42 +55,22 @@ class OperatorObservance {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_observance FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'preparedBy')
-                BEGIN
-                    ALTER TABLE operator_observances ADD preparedBy VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'status')
-                BEGIN
-                    ALTER TABLE operator_observances ADD status VARCHAR(50) NULL;
-                END
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE operator_observances ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE operator_observances ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE operator_observances ADD revDate VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('operator_observances') AND name = 'level2Date')
-                BEGIN
-                    ALTER TABLE operator_observances ADD level2Date DATETIME NULL;
-                END
-            END
+            `);
+        } else {
+            await migrationHelper.ensureColumnExists('operator_observances', 'preparedBy', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('operator_observances', 'status', 'VARCHAR(50) NULL');
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('operator_observances', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('operator_observances', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('operator_observances', 'revDate', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('operator_observances', 'level2Date', 'DATETIME NULL');
+        }
 
-            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_operator_observances_studentId' AND object_id = OBJECT_ID('operator_observances'))
-            BEGIN
-                CREATE INDEX idx_operator_observances_studentId ON operator_observances(studentId);
-            END
-        `;
-        await executeQuery(query);
+        await migrationHelper.ensureIndexExists(
+            'operator_observances',
+            'idx_operator_observances_studentId',
+            'CREATE INDEX idx_operator_observances_studentId ON operator_observances(studentId)'
+        );
     }
 
     static async findByStudentId(studentId) {

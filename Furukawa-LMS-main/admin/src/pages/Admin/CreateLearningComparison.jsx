@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Video,
@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from 'sonner';
 import axiosInstance from '@/Helper/axiosInstance';
+import FileTransferProgress from '@/components/ui/FileTransferProgress';
 
 const emptyFiles = () => ({
     beforeVideo: [], beforePdf: [], beforeExcel: [], beforeWord: [], beforePpt: [], beforeImage: [],
@@ -213,6 +214,8 @@ const CreateLearningComparison = () => {
     const [files, setFiles] = useState(emptyFiles());
     const [selectedTypeBefore, setSelectedTypeBefore] = useState('beforeVideo');
     const [selectedTypeAfter, setSelectedTypeAfter] = useState('afterVideo');
+    const [transfer, setTransfer] = useState({ open: false, fileName: '', percent: 0, loaded: 0, total: 0 });
+    const abortControllerRef = useRef(null);
 
     const handleFileChange = (e, field) => {
         const newFiles = Array.from(e.target.files);
@@ -240,7 +243,15 @@ const CreateLearningComparison = () => {
         e.preventDefault();
         if (!formData.title) { toast.error("Please provide a title"); return; }
 
+        const allFiles = Object.values(files).flat();
+        const totalSize = allFiles.reduce((sum, item) => sum + item.file.size, 0);
+        const transferLabel = allFiles.length === 1 ? allFiles[0].file.name : `${allFiles.length} files`;
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setLoading(true);
+        setTransfer({ open: true, fileName: transferLabel, percent: 0, loaded: 0, total: totalSize });
         try {
             const data = new FormData();
             data.append('title', formData.title);
@@ -253,20 +264,46 @@ const CreateLearningComparison = () => {
             });
 
             await axiosInstance.post('/api/learning-comparisons', data, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                signal: controller.signal,
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (progressEvent) => {
+                    const total = progressEvent.total || totalSize;
+                    const percent = total ? Math.round((progressEvent.loaded * 100) / total) : 0;
+                    setTransfer(prev => ({ ...prev, percent, loaded: progressEvent.loaded, total }));
+                }
             });
             toast.success("Learning content created successfully!");
             navigate('/admin/learning');
         } catch (error) {
-            console.error(error);
-            toast.error("Failed to create learning content");
+            if (error.code === 'ERR_CANCELED') {
+                toast.info("Upload cancelled");
+            } else {
+                console.error(error);
+                toast.error("Failed to create learning content");
+            }
         } finally {
             setLoading(false);
+            setTransfer(prev => ({ ...prev, open: false }));
+            abortControllerRef.current = null;
         }
+    };
+
+    const handleCancelUpload = () => {
+        abortControllerRef.current?.abort();
     };
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 pb-12 animate-in fade-in duration-500">
+            <FileTransferProgress
+                open={transfer.open}
+                mode="upload"
+                fileName={transfer.fileName}
+                percent={transfer.percent}
+                loaded={transfer.loaded}
+                total={transfer.total}
+                onCancel={handleCancelUpload}
+            />
+
             {/* Header */}
             <div className="flex items-center justify-between border-b pb-6">
                 <div className="flex items-center gap-4">

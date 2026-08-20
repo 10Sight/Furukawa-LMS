@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
-import { 
+import {
     calculateUserEfficiency, 
     computeEarnedLevel, 
     getPeriodFromDate, 
@@ -29,26 +30,24 @@ class SkillMatrixEvaluation {
     }
 
     static async init() {
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='skill_matrix_evaluations' and xtype='U')
-            BEGIN
-                CREATE TABLE skill_matrix_evaluations (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    studentId INT NOT NULL,
-                    departmentId VARCHAR(255),
-                    headerData NVARCHAR(MAX),
-                    docData NVARCHAR(MAX),
-                    evalData NVARCHAR(MAX),
-                    opinion NVARCHAR(MAX),
-                    updatedBy INT,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_sm_eval_student UNIQUE (studentId)
-                )
-            END
-        `;
         try {
-            await executeQuery(createTableQuery);
+            if (!await migrationHelper.tableExists('skill_matrix_evaluations')) {
+                await executeQuery(`
+                    CREATE TABLE skill_matrix_evaluations (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        studentId INT NOT NULL,
+                        departmentId VARCHAR(255),
+                        headerData NVARCHAR(MAX),
+                        docData NVARCHAR(MAX),
+                        evalData NVARCHAR(MAX),
+                        opinion NVARCHAR(MAX),
+                        updatedBy INT,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_sm_eval_student UNIQUE (studentId)
+                    )
+                `);
+            }
 
             // Schema updates
             // 1. Drop unique constraint on studentId so multiple sheets can exist per user
@@ -60,26 +59,11 @@ class SkillMatrixEvaluation {
             `);
 
             // 2. Add sheetIndex, period, isActive, earnedLevel, efficiency columns if missing
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrix_evaluations', 'sheetIndex') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD sheetIndex INT;
-            `);
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrix_evaluations', 'period') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD period VARCHAR(50);
-            `);
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrix_evaluations', 'isActive') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD isActive BIT;
-            `);
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrix_evaluations', 'earnedLevel') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD earnedLevel VARCHAR(50);
-            `);
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrix_evaluations', 'efficiency') IS NULL
-                    ALTER TABLE skill_matrix_evaluations ADD efficiency FLOAT;
-            `);
+            await migrationHelper.ensureColumnExists('skill_matrix_evaluations', 'sheetIndex', 'INT');
+            await migrationHelper.ensureColumnExists('skill_matrix_evaluations', 'period', 'VARCHAR(50)');
+            await migrationHelper.ensureColumnExists('skill_matrix_evaluations', 'isActive', 'BIT');
+            await migrationHelper.ensureColumnExists('skill_matrix_evaluations', 'earnedLevel', 'VARCHAR(50)');
+            await migrationHelper.ensureColumnExists('skill_matrix_evaluations', 'efficiency', 'FLOAT');
             // Widen existing efficiency column to FLOAT so values >100 can be stored
             await executeQuery(`
                 IF COL_LENGTH('skill_matrix_evaluations', 'efficiency') IS NOT NULL
@@ -98,17 +82,13 @@ class SkillMatrixEvaluation {
             // Speeds up the "latest active sheet per student" lookup (getAllUsers'
             // includeEvaluationInfo OUTER APPLY, findActiveByStudentId) from a full scan to
             // an index seek: (studentId, isActive) covers the WHERE, INCLUDE covers the SELECT.
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.indexes
-                    WHERE name = 'idx_sme_student_active' AND object_id = OBJECT_ID('skill_matrix_evaluations')
-                )
-                BEGIN
-                    CREATE NONCLUSTERED INDEX idx_sme_student_active
-                    ON skill_matrix_evaluations (studentId, isActive)
-                    INCLUDE (sheetIndex, period, earnedLevel, efficiency, updatedAt);
-                END
-            `);
+            await migrationHelper.ensureIndexExists(
+                'skill_matrix_evaluations',
+                'idx_sme_student_active',
+                `CREATE NONCLUSTERED INDEX idx_sme_student_active
+                 ON skill_matrix_evaluations (studentId, isActive)
+                 INCLUDE (sheetIndex, period, earnedLevel, efficiency, updatedAt)`
+            );
 
             // Run automated migration for legacy single-sheet records
             await this.migrateExisting();

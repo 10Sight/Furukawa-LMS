@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class DailyProductionReport {
     constructor(data) {
@@ -74,91 +75,56 @@ class DailyProductionReport {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='daily_production_reports' and xtype='U')
-            BEGIN
-                CREATE TABLE daily_production_reports (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    date DATE NOT NULL,
-                    department_id INT NOT NULL,
-                    line_id INT NOT NULL,
-                    shift VARCHAR(50) NOT NULL,
-                    leaderName VARCHAR(255),
-                    delivery NVARCHAR(MAX),
-                    quality NVARCHAR(MAX),
-                    downTime NVARCHAR(MAX),
-                    shiftCommunication NVARCHAR(MAX),
-                    moral NVARCHAR(MAX),
-                    directEfficiency NVARCHAR(MAX),
-                    customerEndDefectDetails NVARCHAR(MAX),
-                    internalDefectDetails NVARCHAR(MAX),
-                    manpowerAttendance NVARCHAR(MAX),
-                    kaizenDetails NVARCHAR(MAX),
-                    madeBy VARCHAR(255),
-                    checkedBy VARCHAR(255),
-                    isSubmitted BIT DEFAULT 0,
-                    submittedBy INT,
-                    status VARCHAR(20) DEFAULT 'DRAFT',
-                    checkedByUserId INT,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_daily_report UNIQUE (date, department_id, line_id, shift)
-                )
-            END
-
-            -- Migration: Add columns if they don't exist
-            IF EXISTS (SELECT * FROM sysobjects WHERE name='daily_production_reports' and xtype='U')
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'isSubmitted')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD isSubmitted BIT DEFAULT 0;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'submittedBy')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD submittedBy INT;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'status')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD status VARCHAR(20) DEFAULT 'DRAFT';
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'checkedByUserId')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD checkedByUserId INT;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'customerEndDefectDetails')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD customerEndDefectDetails NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'internalDefectDetails')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD internalDefectDetails NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'manpowerAttendance')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD manpowerAttendance NVARCHAR(MAX);
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'kaizenDetails')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD kaizenDetails NVARCHAR(MAX);
-                END
-                -- Doc/revision snapshot: frozen at creation from the Revision Table, never
-                -- updated afterwards (see upsert() below).
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('daily_production_reports') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE daily_production_reports ADD revDate VARCHAR(255) NULL;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('daily_production_reports')) {
+                await executeQuery(`
+                    CREATE TABLE daily_production_reports (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        date DATE NOT NULL,
+                        department_id INT NOT NULL,
+                        line_id INT NOT NULL,
+                        shift VARCHAR(50) NOT NULL,
+                        leaderName VARCHAR(255),
+                        delivery NVARCHAR(MAX),
+                        quality NVARCHAR(MAX),
+                        downTime NVARCHAR(MAX),
+                        shiftCommunication NVARCHAR(MAX),
+                        moral NVARCHAR(MAX),
+                        directEfficiency NVARCHAR(MAX),
+                        customerEndDefectDetails NVARCHAR(MAX),
+                        internalDefectDetails NVARCHAR(MAX),
+                        manpowerAttendance NVARCHAR(MAX),
+                        kaizenDetails NVARCHAR(MAX),
+                        madeBy VARCHAR(255),
+                        checkedBy VARCHAR(255),
+                        isSubmitted BIT DEFAULT 0,
+                        submittedBy INT,
+                        status VARCHAR(20) DEFAULT 'DRAFT',
+                        checkedByUserId INT,
+                        docNo VARCHAR(255) NULL,
+                        revNo VARCHAR(255) NULL,
+                        revDate VARCHAR(255) NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_daily_report UNIQUE (date, department_id, line_id, shift)
+                    )
+                `);
+            } else {
+                // Migration: Add columns if they don't exist
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'isSubmitted', 'BIT DEFAULT 0');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'submittedBy', 'INT');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'status', "VARCHAR(20) DEFAULT 'DRAFT'");
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'checkedByUserId', 'INT');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'customerEndDefectDetails', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'internalDefectDetails', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'manpowerAttendance', 'NVARCHAR(MAX)');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'kaizenDetails', 'NVARCHAR(MAX)');
+                // Doc/revision snapshot: frozen at creation from the Revision Table, never
+                // updated afterwards (see upsert() below).
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'docNo', 'VARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'revNo', 'VARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'revDate', 'VARCHAR(255) NULL');
+            }
         } catch (error) {
             logger.error("Failed to initialize daily_production_reports table", error);
         }

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 
 class HandoverSheet {
@@ -41,9 +42,8 @@ class HandoverSheet {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='handover_sheets' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('handover_sheets')) {
+            await executeQuery(`
                 CREATE TABLE handover_sheets (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId INT NOT NULL,
@@ -60,9 +60,8 @@ class HandoverSheet {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_department_handover FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
                 )
-            END
-        `;
-        await executeQuery(query);
+            `);
+        }
 
         // Migration: Check if metadata column exists, if not add it
         try {
@@ -128,14 +127,11 @@ class HandoverSheet {
         // heavily (16-Day Monitoring list/get/save) to narrow rows before the
         // CROSS APPLY OPENJSON entries scan, so it needs an index to be effective.
         try {
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.indexes WHERE name = 'idx_handover_sheets_departmentId' AND object_id = OBJECT_ID('handover_sheets')
-                )
-                BEGIN
-                    CREATE INDEX idx_handover_sheets_departmentId ON handover_sheets(departmentId)
-                END
-            `);
+            await migrationHelper.ensureIndexExists(
+                'handover_sheets',
+                'idx_handover_sheets_departmentId',
+                'CREATE INDEX idx_handover_sheets_departmentId ON handover_sheets(departmentId)'
+            );
         } catch (e) {
             console.log("Failed to create idx_handover_sheets_departmentId:", e.message);
         }
@@ -144,14 +140,11 @@ class HandoverSheet {
         // comparison charts both filter on hs.date before CROSS APPLY OPENJSON explodes entries,
         // so an index here bounds the pre-filter scan instead of scanning every sheet row.
         try {
-            await executeQuery(`
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.indexes WHERE name = 'idx_handover_sheets_date' AND object_id = OBJECT_ID('handover_sheets')
-                )
-                BEGIN
-                    CREATE INDEX idx_handover_sheets_date ON handover_sheets(date)
-                END
-            `);
+            await migrationHelper.ensureIndexExists(
+                'handover_sheets',
+                'idx_handover_sheets_date',
+                'CREATE INDEX idx_handover_sheets_date ON handover_sheets(date)'
+            );
         } catch (e) {
             console.log("Failed to create idx_handover_sheets_date:", e.message);
         }

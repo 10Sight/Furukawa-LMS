@@ -1,20 +1,19 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class DesignationShutter {
   static async init() {
-    const createTable = `
-      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='designation_shutters' AND xtype='U')
-      BEGIN
-        CREATE TABLE designation_shutters (
-          id INT IDENTITY(1,1) PRIMARY KEY,
-          designation NVARCHAR(255) NOT NULL UNIQUE,
-          createdAt DATETIME DEFAULT GETDATE()
-        )
-      END
-    `;
     try {
-      await executeQuery(createTable);
+      if (!await migrationHelper.tableExists('designation_shutters')) {
+        await executeQuery(`
+          CREATE TABLE designation_shutters (
+            id INT IDENTITY(1,1) PRIMARY KEY,
+            designation NVARCHAR(255) NOT NULL UNIQUE,
+            createdAt DATETIME DEFAULT GETDATE()
+          )
+        `);
+      }
       logger.info("Checked/Created designation_shutters table");
     } catch (error) {
       logger.error("Failed to initialize designation_shutters table", error);

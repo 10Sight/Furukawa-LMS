@@ -29,8 +29,17 @@ export const saveToLocal = async (file, subFolder = 'others') => {
         const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
         const targetPath = path.join(targetDir, fileName);
 
-        // Move file from temp to target
-        fs.renameSync(file.path, targetPath);
+        // Move file from temp to target. Use async rename to avoid blocking the
+        // event loop on large files; fall back to copy+unlink if temp and target
+        // live on different mount points (EXDEV, e.g. separate disks/volumes).
+        await fs.promises.rename(file.path, targetPath).catch(async (err) => {
+            if (err.code === 'EXDEV') {
+                await fs.promises.copyFile(file.path, targetPath);
+                await fs.promises.unlink(file.path);
+            } else {
+                throw err;
+            }
+        });
 
         // Construct relative URL for storage in DB
         // Format: /uploads/subFolder/fileName

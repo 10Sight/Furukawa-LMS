@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class ModuleTimeline {
@@ -26,36 +27,38 @@ class ModuleTimeline {
   }
 
   static async init() {
-    const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'module_timelines')
-            BEGIN
-                CREATE TABLE module_timelines (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    course INT NOT NULL,
-                    module INT NOT NULL,
-                    department INT NOT NULL,
-                    deadline DATETIME NOT NULL,
-                    gracePeriodHours INT DEFAULT 24,
-                    isActive BIT DEFAULT 1,
-                    enableWarnings BIT DEFAULT 1,
-                    warningPeriods NVARCHAR(MAX),
-                    createdBy INT NOT NULL,
-                    updatedBy INT,
-                    missedDeadlineStudents NVARCHAR(MAX),
-                    warningsSent NVARCHAR(MAX),
-                    description NVARCHAR(MAX),
-                    lastProcessedAt DATETIME,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                );
-                CREATE INDEX idx_course_dept ON module_timelines(course, department);
-                CREATE INDEX idx_deadline_active ON module_timelines(deadline, isActive);
-                CREATE INDEX idx_dept_deadline ON module_timelines(department, deadline);
-                CREATE INDEX idx_lastProcessedAt ON module_timelines(lastProcessedAt);
-            END
-        `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('module_timelines')) {
+        await executeQuery(`
+                    CREATE TABLE module_timelines (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        course INT NOT NULL,
+                        module INT NOT NULL,
+                        department INT NOT NULL,
+                        deadline DATETIME NOT NULL,
+                        gracePeriodHours INT DEFAULT 24,
+                        isActive BIT DEFAULT 1,
+                        enableWarnings BIT DEFAULT 1,
+                        warningPeriods NVARCHAR(MAX),
+                        createdBy INT NOT NULL,
+                        updatedBy INT,
+                        missedDeadlineStudents NVARCHAR(MAX),
+                        warningsSent NVARCHAR(MAX),
+                        description NVARCHAR(MAX),
+                        lastProcessedAt DATETIME,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+        await migrationHelper.ensureIndexExists('module_timelines', 'idx_course_dept',
+          'CREATE INDEX idx_course_dept ON module_timelines(course, department)');
+        await migrationHelper.ensureIndexExists('module_timelines', 'idx_deadline_active',
+          'CREATE INDEX idx_deadline_active ON module_timelines(deadline, isActive)');
+        await migrationHelper.ensureIndexExists('module_timelines', 'idx_dept_deadline',
+          'CREATE INDEX idx_dept_deadline ON module_timelines(department, deadline)');
+        await migrationHelper.ensureIndexExists('module_timelines', 'idx_lastProcessedAt',
+          'CREATE INDEX idx_lastProcessedAt ON module_timelines(lastProcessedAt)');
+      }
     } catch (error) {
       logger.error("Failed to initialize ModuleTimeline table", error);
     }

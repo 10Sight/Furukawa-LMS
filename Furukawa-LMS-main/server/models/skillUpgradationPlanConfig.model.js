@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class SkillUpgradationPlanConfig {
     constructor(data) {
@@ -10,9 +11,9 @@ class SkillUpgradationPlanConfig {
     }
 
     static async init() {
-        const configTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'skill_upgradation_plan_configs')
-            BEGIN
+        // Main config table
+        if (!await migrationHelper.tableExists('skill_upgradation_plan_configs')) {
+            const configQuery = `
                 CREATE TABLE skill_upgradation_plan_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL UNIQUE,
@@ -20,13 +21,13 @@ class SkillUpgradationPlanConfig {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
-            END
-        `;
-        await executeQuery(configTableQuery);
+            `;
+            await executeQuery(configQuery);
+        }
 
-        const historyTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'skill_upgradation_plan_config_history')
-            BEGIN
+        // History table for tracking layout changes
+        if (!await migrationHelper.tableExists('skill_upgradation_plan_config_history')) {
+            const historyQuery = `
                 CREATE TABLE skill_upgradation_plan_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -35,10 +36,15 @@ class SkillUpgradationPlanConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_su_dept_history ON skill_upgradation_plan_config_history(departmentId)
-            END
-        `;
-        await executeQuery(historyTableQuery);
+            `;
+            await executeQuery(historyQuery);
+
+            await migrationHelper.ensureIndexExists(
+                'skill_upgradation_plan_config_history',
+                'idx_su_dept_history',
+                'CREATE INDEX idx_su_dept_history ON skill_upgradation_plan_config_history(departmentId)'
+            );
+        }
         console.log("SkillUpgradationPlanConfig tables verified/created in MSSQL.");
     }
 

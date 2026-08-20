@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 
@@ -83,44 +84,29 @@ class SubSection {
             }
 
             // 4. Ensure table exists with correct schema
-            const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'sub_sections')
-            BEGIN
-                CREATE TABLE [sub_sections] (
-                    id INT PRIMARY KEY IDENTITY(1,1),
-                    name NVARCHAR(255) NOT NULL,
-                    lineId INT NOT NULL,
-                    description NVARCHAR(MAX),
-                    isActive BIT DEFAULT 1,
-                    users NVARCHAR(MAX) DEFAULT '[]',
-                    minEfficiency DECIMAL(5,2) NULL,
-                    maxEfficiency DECIMAL(5,2) NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT FK_SubSections_Lines FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE
-                );
-                CREATE INDEX IX_SubSections_LineId ON [sub_sections](lineId);
-            END
-            ELSE
-            BEGIN
-                IF COL_LENGTH('sub_sections', 'users') IS NULL
-                BEGIN
-                    ALTER TABLE [sub_sections] ADD users NVARCHAR(MAX) DEFAULT '[]';
-                END
-                IF COL_LENGTH('sub_sections', 'minimumRequiredLevel') IS NULL
-                BEGIN
-                    ALTER TABLE [sub_sections] ADD minimumRequiredLevel NVARCHAR(50);
-                END
-                IF COL_LENGTH('sub_sections', 'minEfficiency') IS NULL
-                BEGIN
-                    ALTER TABLE [sub_sections] ADD minEfficiency DECIMAL(5,2) NULL;
-                END
-                IF COL_LENGTH('sub_sections', 'maxEfficiency') IS NULL
-                BEGIN
-                    ALTER TABLE [sub_sections] ADD maxEfficiency DECIMAL(5,2) NULL;
-                END
-            END`;
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('sub_sections')) {
+                await executeQuery(`
+                    CREATE TABLE [sub_sections] (
+                        id INT PRIMARY KEY IDENTITY(1,1),
+                        name NVARCHAR(255) NOT NULL,
+                        lineId INT NOT NULL,
+                        description NVARCHAR(MAX),
+                        isActive BIT DEFAULT 1,
+                        users NVARCHAR(MAX) DEFAULT '[]',
+                        minEfficiency DECIMAL(5,2) NULL,
+                        maxEfficiency DECIMAL(5,2) NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT FK_SubSections_Lines FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('sub_sections', 'IX_SubSections_LineId', 'CREATE INDEX IX_SubSections_LineId ON [sub_sections](lineId)');
+            } else {
+                await migrationHelper.ensureColumnExists('sub_sections', 'users', "NVARCHAR(MAX) DEFAULT '[]'");
+                await migrationHelper.ensureColumnExists('sub_sections', 'minimumRequiredLevel', 'NVARCHAR(50)');
+                await migrationHelper.ensureColumnExists('sub_sections', 'minEfficiency', 'DECIMAL(5,2) NULL');
+                await migrationHelper.ensureColumnExists('sub_sections', 'maxEfficiency', 'DECIMAL(5,2) NULL');
+            }
             logger.info("SubSection table initialized successfully");
 
             // Startup full-table resync removed: sub_sections.users is kept current incrementally by

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class DPRManualStatistics {
     constructor(data) {
@@ -38,44 +39,42 @@ class DPRManualStatistics {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'dpr_manual_statistics')
-            BEGIN
-                CREATE TABLE dpr_manual_statistics (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    date DATE NOT NULL UNIQUE,
-                    
-                    -- SRC Efficiency Performance
-                    srcEffPlan INT DEFAULT 0,
-                    srcEffActual INT DEFAULT 0,
-                    srcEffTarget FLOAT DEFAULT 95.0,
-                    
-                    -- SRC Defect Summary
-                    srcDefAuto INT DEFAULT 0,
-                    srcDefManual INT DEFAULT 0,
-                    srcDefJoint INT DEFAULT 0,
-                    srcDefProduction INT DEFAULT 0,
-                    srcDefTarget FLOAT DEFAULT 5.9,
-                    
-                    -- Quality Defect Summary
-                    qaDefAuto INT DEFAULT 0,
-                    qaDefManual INT DEFAULT 0,
-                    qaDefJoint INT DEFAULT 0,
-                    qaDefProduction INT DEFAULT 0,
-                    qaDefTarget FLOAT DEFAULT 5.9,
-                    
-                    -- Quality Efficiency Performance
-                    qaEffPlan INT DEFAULT 0,
-                    qaEffActual INT DEFAULT 0,
-                    qaEffTarget FLOAT DEFAULT 95.0,
-                    
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('dpr_manual_statistics')) {
+                await executeQuery(`
+                    CREATE TABLE dpr_manual_statistics (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        date DATE NOT NULL UNIQUE,
+
+                        -- SRC Efficiency Performance
+                        srcEffPlan INT DEFAULT 0,
+                        srcEffActual INT DEFAULT 0,
+                        srcEffTarget FLOAT DEFAULT 95.0,
+
+                        -- SRC Defect Summary
+                        srcDefAuto INT DEFAULT 0,
+                        srcDefManual INT DEFAULT 0,
+                        srcDefJoint INT DEFAULT 0,
+                        srcDefProduction INT DEFAULT 0,
+                        srcDefTarget FLOAT DEFAULT 5.9,
+
+                        -- Quality Defect Summary
+                        qaDefAuto INT DEFAULT 0,
+                        qaDefManual INT DEFAULT 0,
+                        qaDefJoint INT DEFAULT 0,
+                        qaDefProduction INT DEFAULT 0,
+                        qaDefTarget FLOAT DEFAULT 5.9,
+
+                        -- Quality Efficiency Performance
+                        qaEffPlan INT DEFAULT 0,
+                        qaEffActual INT DEFAULT 0,
+                        qaEffTarget FLOAT DEFAULT 95.0,
+
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            }
             console.log("dpr_manual_statistics table verified/created in MSSQL.");
         } catch (error) {
             console.error("Failed to initialize dpr_manual_statistics table:", error);

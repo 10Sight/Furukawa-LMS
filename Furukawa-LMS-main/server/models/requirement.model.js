@@ -1,5 +1,6 @@
 import { poolPromise } from "../db/connectDB.js";
 import logger from "../logger/winston.logger.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 const executeSql = async (queryStr, params = []) => {
     const activeConn = await poolPromise;
@@ -34,140 +35,84 @@ class Requirement {
     }
 
     static async init() {
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='requirements' and xtype='U')
-            BEGIN
-                CREATE TABLE requirements (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    srNo INT,
-                    sectionCode VARCHAR(50),
-                    sectionName NVARCHAR(510),
-                    lineCode VARCHAR(50),
-                    lineDescription NVARCHAR(MAX),
-                    monthName VARCHAR(15),
-                    monthNumber INT,
-                    salesPlan FLOAT DEFAULT 0,
-                    prodPlan FLOAT DEFAULT 0,
-                    prodPlanFN01 FLOAT DEFAULT 0,
-                    prodPlanFN02 FLOAT DEFAULT 0,
-                    year INT,
-                    is_active BIT DEFAULT 1,
-                    createdAt DATETIME DEFAULT GETDATE()
-                )
-            END
-            ELSE
-            BEGIN
-                -- Ensure is_active exists if table was already created
-                IF COL_LENGTH('requirements', 'is_active') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD is_active BIT DEFAULT 1;
-                END
-                -- Ensure prodPlanFN01 exists if table was already created
-                IF COL_LENGTH('requirements', 'prodPlanFN01') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD prodPlanFN01 FLOAT DEFAULT 0;
-                END
-                -- Ensure prodPlanFN02 exists if table was already created
-                IF COL_LENGTH('requirements', 'prodPlanFN02') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD prodPlanFN02 FLOAT DEFAULT 0;
-                END
-                -- Ensure monthNumber exists if table was created by an older schema version
-                IF COL_LENGTH('requirements', 'monthNumber') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD monthNumber INT;
-                END
-                -- Ensure monthName exists if table was created by an older schema version
-                IF COL_LENGTH('requirements', 'monthName') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD monthName VARCHAR(15);
-                END
-                -- Ensure year exists if table was created by an older schema version
-                IF COL_LENGTH('requirements', 'year') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD year INT;
-                END
-                -- Ensure salesPlan exists if table was created by an older schema version
-                IF COL_LENGTH('requirements', 'salesPlan') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD salesPlan FLOAT DEFAULT 0;
-                END
-                -- Ensure prodPlan exists if table was created by an older schema version
-                IF COL_LENGTH('requirements', 'prodPlan') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD prodPlan FLOAT DEFAULT 0;
-                END
-                -- Ensure approval-workflow columns exist (uploadBatchId/approve-reject tracking)
-                IF COL_LENGTH('requirements', 'uploadBatchId') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD uploadBatchId VARCHAR(100) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvalStatus') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvalStatus VARCHAR(50) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvalSource') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvalSource VARCHAR(50) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvedBy') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvedBy NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvedByEmail') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvedByEmail NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvedAt') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvedAt DATETIME NULL;
-                END
-                IF COL_LENGTH('requirements', 'rejectedBy') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD rejectedBy NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'rejectedAt') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD rejectedAt DATETIME NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvalOwnerName') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvalOwnerName NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'approvalOwnerEmail') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD approvalOwnerEmail NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'category') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD category NVARCHAR(255) NULL;
-                END
-                IF COL_LENGTH('requirements', 'sectionId') IS NULL
-                BEGIN
-                    ALTER TABLE requirements ADD sectionId INT NULL;
-                    ALTER TABLE requirements ADD CONSTRAINT FK_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
-                END
-            END
-
-            -- Backfill sectionId for existing rows using the same string-matching
-            -- logic the report queries fall back on, so old rows join reliably too.
-            IF COL_LENGTH('requirements', 'sectionId') IS NOT NULL
-            BEGIN
-                EXEC('
-                    UPDATE r
-                    SET r.sectionId = s.id
-                    FROM requirements r
-                    INNER JOIN [sections] s
-                        ON (
-                            UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
-                            OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
-                        )
-                    WHERE r.sectionId IS NULL
-                ');
-            END
-        `;
         try {
-            await executeSql(createTableQuery);
+            if (!await migrationHelper.tableExists('requirements')) {
+                await executeSql(`
+                    CREATE TABLE requirements (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        srNo INT,
+                        sectionCode VARCHAR(50),
+                        sectionName NVARCHAR(510),
+                        lineCode VARCHAR(50),
+                        lineDescription NVARCHAR(MAX),
+                        monthName VARCHAR(15),
+                        monthNumber INT,
+                        salesPlan FLOAT DEFAULT 0,
+                        prodPlan FLOAT DEFAULT 0,
+                        prodPlanFN01 FLOAT DEFAULT 0,
+                        prodPlanFN02 FLOAT DEFAULT 0,
+                        year INT,
+                        is_active BIT DEFAULT 1,
+                        createdAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            } else {
+                // Ensure is_active exists if table was already created
+                await migrationHelper.ensureColumnExists('requirements', 'is_active', 'BIT DEFAULT 1');
+                // Ensure prodPlanFN01 exists if table was already created
+                await migrationHelper.ensureColumnExists('requirements', 'prodPlanFN01', 'FLOAT DEFAULT 0');
+                // Ensure prodPlanFN02 exists if table was already created
+                await migrationHelper.ensureColumnExists('requirements', 'prodPlanFN02', 'FLOAT DEFAULT 0');
+                // Ensure monthNumber exists if table was created by an older schema version
+                await migrationHelper.ensureColumnExists('requirements', 'monthNumber', 'INT');
+                // Ensure monthName exists if table was created by an older schema version
+                await migrationHelper.ensureColumnExists('requirements', 'monthName', 'VARCHAR(15)');
+                // Ensure year exists if table was created by an older schema version
+                await migrationHelper.ensureColumnExists('requirements', 'year', 'INT');
+                // Ensure salesPlan exists if table was created by an older schema version
+                await migrationHelper.ensureColumnExists('requirements', 'salesPlan', 'FLOAT DEFAULT 0');
+                // Ensure prodPlan exists if table was created by an older schema version
+                await migrationHelper.ensureColumnExists('requirements', 'prodPlan', 'FLOAT DEFAULT 0');
+                // Ensure approval-workflow columns exist (uploadBatchId/approve-reject tracking)
+                await migrationHelper.ensureColumnExists('requirements', 'uploadBatchId', 'VARCHAR(100) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvalStatus', 'VARCHAR(50) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvalSource', 'VARCHAR(50) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvedBy', 'NVARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvedByEmail', 'NVARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvedAt', 'DATETIME NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'rejectedBy', 'NVARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'rejectedAt', 'DATETIME NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvalOwnerName', 'NVARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'approvalOwnerEmail', 'NVARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('requirements', 'category', 'NVARCHAR(255) NULL');
+                // sectionId + its FK are added together, atomically, only when the column is missing
+                await executeSql(`
+                    IF COL_LENGTH('requirements', 'sectionId') IS NULL
+                    BEGIN
+                        ALTER TABLE requirements ADD sectionId INT NULL;
+                        ALTER TABLE requirements ADD CONSTRAINT FK_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
+                    END
+                `);
+            }
+
+            // Backfill sectionId for existing rows using the same string-matching
+            // logic the report queries fall back on, so old rows join reliably too.
+            await executeSql(`
+                IF COL_LENGTH('requirements', 'sectionId') IS NOT NULL
+                BEGIN
+                    EXEC('
+                        UPDATE r
+                        SET r.sectionId = s.id
+                        FROM requirements r
+                        INNER JOIN [sections] s
+                            ON (
+                                UPPER(LTRIM(RTRIM(CAST(r.sectionCode AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.uniCode AS NVARCHAR(510)))))
+                                OR UPPER(LTRIM(RTRIM(CAST(r.sectionName AS NVARCHAR(510))))) = UPPER(LTRIM(RTRIM(CAST(s.name AS NVARCHAR(510)))))
+                            )
+                        WHERE r.sectionId IS NULL
+                    ');
+                END
+            `);
             logger.info("Requirement table initialized successfully.");
         } catch (err) {
             logger.error("Failed to initialize Requirement table:", err.message);

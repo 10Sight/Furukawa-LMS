@@ -164,9 +164,9 @@ class User {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='users' and xtype='U')
-            BEGIN
+        const createTableIfMissing = async () => {
+            if (await migrationHelper.tableExists('users')) return;
+            await executeQuery(`
                 CREATE TABLE users (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     fullName NVARCHAR(255) NOT NULL,
@@ -245,11 +245,11 @@ class User {
                     -- They are omitted here or can be added manually after all tables are created
                     -- to prevent dependency issues during initial table creation.
                 )
-            END
-        `;
+            `);
+        };
         try {
             const { executeQuery } = await import("../db/mssqlHelper.js");
-            await executeQuery(query);
+            await createTableIfMissing();
 
             // Column migration logic using helper
             const columnsToAdd = [

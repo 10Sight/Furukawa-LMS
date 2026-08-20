@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class SkillMatrix {
@@ -29,31 +30,24 @@ class SkillMatrix {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='skill_matrices' and xtype='U')
-            BEGIN
-                CREATE TABLE skill_matrices (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    department VARCHAR(255) NOT NULL,
-                    line VARCHAR(255) NOT NULL,
-                    month VARCHAR(7),
-                    entries NVARCHAR(MAX),
-                    headerInfo NVARCHAR(MAX),
-                    footerInfo NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_skill_matrix_dept_line_month UNIQUE (department, line, month)
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrices', 'month') IS NULL
-                BEGIN
-                    ALTER TABLE skill_matrices ADD month VARCHAR(7);
-                END
-            `);
+            if (!await migrationHelper.tableExists('skill_matrices')) {
+                await executeQuery(`
+                    CREATE TABLE skill_matrices (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        department VARCHAR(255) NOT NULL,
+                        line VARCHAR(255) NOT NULL,
+                        month VARCHAR(7),
+                        entries NVARCHAR(MAX),
+                        headerInfo NVARCHAR(MAX),
+                        footerInfo NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_skill_matrix_dept_line_month UNIQUE (department, line, month)
+                    )
+                `);
+            }
+            await migrationHelper.ensureColumnExists('skill_matrices', 'month', 'VARCHAR(7)');
             await executeQuery(`
                 UPDATE skill_matrices SET month = FORMAT(createdAt, 'yyyy-MM') WHERE month IS NULL;
             `);
@@ -85,16 +79,9 @@ class SkillMatrix {
 
             // Migration: month-based schema with full hierarchy columns (section/subSection/station)
             // and a nullable `line`, superseding the dept/line/month-only shape created above.
-            await executeQuery(`
-                IF COL_LENGTH('skill_matrices', 'section') IS NULL
-                    ALTER TABLE skill_matrices ADD section VARCHAR(255);
-
-                IF COL_LENGTH('skill_matrices', 'subSection') IS NULL
-                    ALTER TABLE skill_matrices ADD subSection VARCHAR(255);
-
-                IF COL_LENGTH('skill_matrices', 'station') IS NULL
-                    ALTER TABLE skill_matrices ADD station VARCHAR(255);
-            `);
+            await migrationHelper.ensureColumnExists('skill_matrices', 'section', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('skill_matrices', 'subSection', 'VARCHAR(255)');
+            await migrationHelper.ensureColumnExists('skill_matrices', 'station', 'VARCHAR(255)');
 
             // Drop old narrow constraint if present
             await executeQuery(`

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class Daily5MConfig {
     constructor(data) {
@@ -11,9 +12,8 @@ class Daily5MConfig {
 
     static async init() {
         // Main config table
-        const configQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_5m_configs')
-            BEGIN
+        if (!await migrationHelper.tableExists('daily_5m_configs')) {
+            await executeQuery(`
                 CREATE TABLE daily_5m_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL UNIQUE,
@@ -21,14 +21,12 @@ class Daily5MConfig {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
-            END
-        `;
-        await executeQuery(configQuery);
+            `);
+        }
 
         // History table for tracking layout changes
-        const historyQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_5m_config_history')
-            BEGIN
+        if (!await migrationHelper.tableExists('daily_5m_config_history')) {
+            await executeQuery(`
                 CREATE TABLE daily_5m_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -37,10 +35,13 @@ class Daily5MConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_dept_history ON daily_5m_config_history(departmentId)
-            END
-        `;
-        await executeQuery(historyQuery);
+            `);
+            await migrationHelper.ensureIndexExists(
+                'daily_5m_config_history',
+                'idx_dept_history',
+                'CREATE INDEX idx_dept_history ON daily_5m_config_history(departmentId)'
+            );
+        }
         console.log("Daily5MConfig tables verified/created in MSSQL.");
     }
 

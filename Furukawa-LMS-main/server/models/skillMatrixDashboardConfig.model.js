@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class SkillMatrixDashboardConfig {
     constructor(data) {
@@ -10,9 +11,8 @@ class SkillMatrixDashboardConfig {
     }
 
     static async init() {
-        const configTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'skill_matrix_dashboard_configs')
-            BEGIN
+        if (!await migrationHelper.tableExists('skill_matrix_dashboard_configs')) {
+            await executeQuery(`
                 CREATE TABLE skill_matrix_dashboard_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL UNIQUE,
@@ -20,13 +20,11 @@ class SkillMatrixDashboardConfig {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
-            END
-        `;
-        await executeQuery(configTableQuery);
+            `);
+        }
 
-        const historyTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'skill_matrix_dashboard_config_history')
-            BEGIN
+        if (!await migrationHelper.tableExists('skill_matrix_dashboard_config_history')) {
+            await executeQuery(`
                 CREATE TABLE skill_matrix_dashboard_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -35,10 +33,13 @@ class SkillMatrixDashboardConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_sm_dash_dept_history ON skill_matrix_dashboard_config_history(departmentId)
-            END
-        `;
-        await executeQuery(historyTableQuery);
+            `);
+            await migrationHelper.ensureIndexExists(
+                'skill_matrix_dashboard_config_history',
+                'idx_sm_dash_dept_history',
+                'CREATE INDEX idx_sm_dash_dept_history ON skill_matrix_dashboard_config_history(departmentId)'
+            );
+        }
         console.log("SkillMatrixDashboardConfig tables verified/created in MSSQL.");
     }
 

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class EvaluationTest {
@@ -22,43 +23,35 @@ class EvaluationTest {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='evaluation_tests' AND xtype='U')
-            BEGIN
-                CREATE TABLE evaluation_tests (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    performDateCount INT DEFAULT 4,
-                    processType NVARCHAR(255) DEFAULT 'Former process',
-                    contentStructure NVARCHAR(MAX),
-                    departmentId INT,
-                    createdBy NVARCHAR(255),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT fk_evaluation_tests_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
-                )
-            END
-            ELSE
-            BEGIN
-                IF COL_LENGTH('evaluation_tests', 'processType') IS NULL
-                BEGIN
-                    ALTER TABLE evaluation_tests ADD processType NVARCHAR(255) DEFAULT 'Former process'
-                END
-                IF COL_LENGTH('evaluation_tests', 'departmentId') IS NULL
-                BEGIN
-                    ALTER TABLE evaluation_tests ADD departmentId INT
-                END
-                IF NOT EXISTS (
-                    SELECT * FROM sys.foreign_keys WHERE name = 'fk_evaluation_tests_department'
-                )
-                BEGIN
-                    ALTER TABLE evaluation_tests ADD CONSTRAINT fk_evaluation_tests_department
-                        FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('evaluation_tests')) {
+                await executeQuery(`
+                    CREATE TABLE evaluation_tests (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        title NVARCHAR(255) NOT NULL,
+                        performDateCount INT DEFAULT 4,
+                        processType NVARCHAR(255) DEFAULT 'Former process',
+                        contentStructure NVARCHAR(MAX),
+                        departmentId INT,
+                        createdBy NVARCHAR(255),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT fk_evaluation_tests_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
+                    )
+                `);
+            } else {
+                await migrationHelper.ensureColumnExists('evaluation_tests', 'processType', "NVARCHAR(255) DEFAULT 'Former process'");
+                await migrationHelper.ensureColumnExists('evaluation_tests', 'departmentId', 'INT');
+                await executeQuery(`
+                    IF NOT EXISTS (
+                        SELECT * FROM sys.foreign_keys WHERE name = 'fk_evaluation_tests_department'
+                    )
+                    BEGIN
+                        ALTER TABLE evaluation_tests ADD CONSTRAINT fk_evaluation_tests_department
+                            FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL
+                    END
+                `);
+            }
             logger.info("MSSQL evaluation_tests table initialized successfully.");
         } catch (error) {
             logger.error("Failed to initialize evaluation_tests table", error);

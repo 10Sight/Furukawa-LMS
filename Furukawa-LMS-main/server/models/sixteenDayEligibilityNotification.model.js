@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 // Tracks which students have already been emailed about their 16-Day Monitoring
@@ -6,21 +7,19 @@ import logger from "../logger/winston.logger.js";
 // re-approval cycle (e.g. re-hire) naturally triggers a fresh notification.
 class SixteenDayEligibilityNotification {
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='sixteen_day_eligibility_notifications' and xtype='U')
-            BEGIN
-                CREATE TABLE sixteen_day_eligibility_notifications (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    studentId INT NOT NULL,
-                    handoverApprovedAt VARCHAR(50) NOT NULL,
-                    notifiedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT fk_eligibility_notif_student FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE,
-                    CONSTRAINT uq_eligibility_notif UNIQUE (studentId, handoverApprovedAt)
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('sixteen_day_eligibility_notifications')) {
+                await executeQuery(`
+                    CREATE TABLE sixteen_day_eligibility_notifications (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        studentId INT NOT NULL,
+                        handoverApprovedAt VARCHAR(50) NOT NULL,
+                        notifiedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT fk_eligibility_notif_student FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT uq_eligibility_notif UNIQUE (studentId, handoverApprovedAt)
+                    )
+                `);
+            }
         } catch (error) {
             logger.error("Failed to initialize sixteen_day_eligibility_notifications table", error);
         }

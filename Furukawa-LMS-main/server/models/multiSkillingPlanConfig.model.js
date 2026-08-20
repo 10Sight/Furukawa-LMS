@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class MultiSkillingPlanConfig {
     constructor(data) {
@@ -10,9 +11,8 @@ class MultiSkillingPlanConfig {
     }
 
     static async init() {
-        const configTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'multi_skilling_plan_configs')
-            BEGIN
+        if (!await migrationHelper.tableExists('multi_skilling_plan_configs')) {
+            await executeQuery(`
                 CREATE TABLE multi_skilling_plan_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL UNIQUE,
@@ -20,13 +20,11 @@ class MultiSkillingPlanConfig {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
-            END
-        `;
-        await executeQuery(configTableQuery);
+            `);
+        }
 
-        const historyTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'multi_skilling_plan_config_history')
-            BEGIN
+        if (!await migrationHelper.tableExists('multi_skilling_plan_config_history')) {
+            await executeQuery(`
                 CREATE TABLE multi_skilling_plan_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -35,10 +33,13 @@ class MultiSkillingPlanConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_ms_dept_history ON multi_skilling_plan_config_history(departmentId)
-            END
-        `;
-        await executeQuery(historyTableQuery);
+            `);
+            await migrationHelper.ensureIndexExists(
+                'multi_skilling_plan_config_history',
+                'idx_ms_dept_history',
+                'CREATE INDEX idx_ms_dept_history ON multi_skilling_plan_config_history(departmentId)'
+            );
+        }
         console.log("MultiSkillingPlanConfig tables verified/created in MSSQL.");
     }
 

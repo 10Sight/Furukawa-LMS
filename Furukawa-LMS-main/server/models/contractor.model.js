@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class Contractor {
     constructor(data) {
@@ -20,24 +21,22 @@ class Contractor {
     }
 
     static async init() {
-        const createTable = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='contractors' and xtype='U')
-            BEGIN
-                CREATE TABLE contractors (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(255) NOT NULL,
-                    location NVARCHAR(255) NULL,
-                    phoneNumber NVARCHAR(50) NULL,
-                    email NVARCHAR(255) NULL,
-                    startDate DATE DEFAULT GETDATE(),
-                    status NVARCHAR(50) DEFAULT 'active',
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
         try {
-            await executeQuery(createTable);
+            if (!await migrationHelper.tableExists('contractors')) {
+                await executeQuery(`
+                    CREATE TABLE contractors (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name NVARCHAR(255) NOT NULL,
+                        location NVARCHAR(255) NULL,
+                        phoneNumber NVARCHAR(50) NULL,
+                        email NVARCHAR(255) NULL,
+                        startDate DATE DEFAULT GETDATE(),
+                        status NVARCHAR(50) DEFAULT 'active',
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            }
             logger.info("Checked/Created contractors table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize Contractor table", error);

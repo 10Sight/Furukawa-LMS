@@ -29,29 +29,23 @@ class CustomRole {
     }
 
     static async init() {
-        // SQL for creating the table
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='custom_roles' AND xtype='U')
-            BEGIN
-                CREATE TABLE custom_roles (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(100) NOT NULL UNIQUE,
-                    description NVARCHAR(500),
-                    color NVARCHAR(20) DEFAULT '#3B82F6',
-                    allowedPages NVARCHAR(MAX),
-                    permissions NVARCHAR(MAX),
-                    generateManagementPage BIT DEFAULT 0,
-                    targetLayout NVARCHAR(50),
-                    isSystem BIT DEFAULT 0,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
-
         try {
-            const [, metadata] = await executeQuery(createTableQuery);
-            if (metadata.affectedRows > 0) {
+            if (!await migrationHelper.tableExists('custom_roles')) {
+                await executeQuery(`
+                    CREATE TABLE custom_roles (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name NVARCHAR(100) NOT NULL UNIQUE,
+                        description NVARCHAR(500),
+                        color NVARCHAR(20) DEFAULT '#3B82F6',
+                        allowedPages NVARCHAR(MAX),
+                        permissions NVARCHAR(MAX),
+                        generateManagementPage BIT DEFAULT 0,
+                        targetLayout NVARCHAR(50),
+                        isSystem BIT DEFAULT 0,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
                 logger.info("custom_roles table created in MSSQL");
             }
 

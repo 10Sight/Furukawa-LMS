@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 // Default document-control register seeded on first run — one row per form that
@@ -81,79 +82,77 @@ class RevisionRecord {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'revision_records')
-            BEGIN
-                CREATE TABLE [revision_records] (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    sheetKey VARCHAR(255) NOT NULL,
-                    sheetName VARCHAR(255) NOT NULL,
-                    departmentId INT NULL,
-                    sectionId INT NULL,
-                    docNo VARCHAR(255) NULL,
-                    revNo VARCHAR(255) NULL,
-                    revDate VARCHAR(255) NULL,
-                    affectedSrNoPage VARCHAR(255) NULL,
-                    affectedSrNoPageHi NVARCHAR(255) NULL,
-                    changeDetails NVARCHAR(MAX) NULL,
-                    changeDetailsHi NVARCHAR(MAX) NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId),
-                    FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
-                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION
-                );
-            END
-            ELSE
-            BEGIN
-                -- Department/section scoping: a form can now have a global default
-                -- (both NULL) plus per-department and per-department+section overrides.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_records') AND name = 'departmentId')
-                BEGIN
-                    ALTER TABLE [revision_records] ADD departmentId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_records') AND name = 'sectionId')
-                BEGIN
-                    ALTER TABLE [revision_records] ADD sectionId INT NULL;
-                END
-
-                -- Drop the old single-column UNIQUE(sheetKey) constraint, if present —
-                -- it would block inserting department/section-specific overrides for a
-                -- sheetKey that already has a global row.
-                DECLARE @OldConstraintName NVARCHAR(255);
-                SELECT TOP 1 @OldConstraintName = kc.name
-                FROM sys.key_constraints kc
-                JOIN sys.index_columns ic ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id
-                JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE kc.parent_object_id = OBJECT_ID('revision_records')
-                  AND kc.type = 'UQ'
-                  AND kc.name <> 'uq_revision_records_scope'
-                GROUP BY kc.name
-                HAVING COUNT(*) = 1 AND MAX(c.name) = 'sheetKey';
-
-                IF @OldConstraintName IS NOT NULL
-                BEGIN
-                    DECLARE @DropOldUnique NVARCHAR(MAX) = 'ALTER TABLE [revision_records] DROP CONSTRAINT ' + QUOTENAME(@OldConstraintName);
-                    EXEC sp_executesql @DropOldUnique;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.key_constraints WHERE name = 'uq_revision_records_scope' AND type = 'UQ')
-                BEGIN
-                    ALTER TABLE [revision_records] ADD CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId);
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('departments'))
-                BEGIN
-                    ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('sections'))
-                BEGIN
-                    ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_section FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('revision_records')) {
+                await executeQuery(`
+                    CREATE TABLE [revision_records] (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        sheetKey VARCHAR(255) NOT NULL,
+                        sheetName VARCHAR(255) NOT NULL,
+                        departmentId INT NULL,
+                        sectionId INT NULL,
+                        docNo VARCHAR(255) NULL,
+                        revNo VARCHAR(255) NULL,
+                        revDate VARCHAR(255) NULL,
+                        affectedSrNoPage VARCHAR(255) NULL,
+                        affectedSrNoPageHi NVARCHAR(255) NULL,
+                        changeDetails NVARCHAR(MAX) NULL,
+                        changeDetailsHi NVARCHAR(MAX) NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId),
+                        FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
+                        FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION
+                    )
+                `);
+            } else {
+                // Department/section scoping: a form can now have a global default
+                // (both NULL) plus per-department and per-department+section overrides.
+                await migrationHelper.ensureColumnExists('revision_records', 'departmentId', 'INT NULL');
+                await migrationHelper.ensureColumnExists('revision_records', 'sectionId', 'INT NULL');
+
+                // Drop the old single-column UNIQUE(sheetKey) constraint, if present —
+                // it would block inserting department/section-specific overrides for a
+                // sheetKey that already has a global row.
+                await executeQuery(`
+                    DECLARE @OldConstraintName NVARCHAR(255);
+                    SELECT TOP 1 @OldConstraintName = kc.name
+                    FROM sys.key_constraints kc
+                    JOIN sys.index_columns ic ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id
+                    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                    WHERE kc.parent_object_id = OBJECT_ID('revision_records')
+                      AND kc.type = 'UQ'
+                      AND kc.name <> 'uq_revision_records_scope'
+                    GROUP BY kc.name
+                    HAVING COUNT(*) = 1 AND MAX(c.name) = 'sheetKey';
+
+                    IF @OldConstraintName IS NOT NULL
+                    BEGIN
+                        DECLARE @DropOldUnique NVARCHAR(MAX) = 'ALTER TABLE [revision_records] DROP CONSTRAINT ' + QUOTENAME(@OldConstraintName);
+                        EXEC sp_executesql @DropOldUnique;
+                    END
+                `);
+
+                await executeQuery(`
+                    IF NOT EXISTS (SELECT * FROM sys.key_constraints WHERE name = 'uq_revision_records_scope' AND type = 'UQ')
+                    BEGIN
+                        ALTER TABLE [revision_records] ADD CONSTRAINT uq_revision_records_scope UNIQUE (sheetKey, departmentId, sectionId);
+                    END
+                `);
+
+                await executeQuery(`
+                    IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('departments'))
+                    BEGIN
+                        ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_department FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE;
+                    END
+                `);
+                await executeQuery(`
+                    IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('revision_records') AND referenced_object_id = OBJECT_ID('sections'))
+                    BEGIN
+                        ALTER TABLE [revision_records] ADD CONSTRAINT fk_revision_records_section FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE NO ACTION;
+                    END
+                `);
+            }
             logger.info("Checked/Created revision_records table in MSSQL");
         } catch (error) {
             logger.error(`Failed to initialize RevisionRecord table: ${error.message}`);

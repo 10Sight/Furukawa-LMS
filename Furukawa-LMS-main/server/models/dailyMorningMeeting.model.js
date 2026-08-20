@@ -1,29 +1,28 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class DailyMorningMeeting {
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_morning_meetings')
-            BEGIN
-                CREATE TABLE daily_morning_meetings (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    sectionId INT NOT NULL,
-                    agenda NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    meetingDate DATE NOT NULL,
-                    meetingTime TIME NOT NULL,
-                    createdBy INT NOT NULL,
-                    sheetData NVARCHAR(MAX) DEFAULT '{}',
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE CASCADE,
-                    FOREIGN KEY (createdBy) REFERENCES users(id)
-                );
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('daily_morning_meetings')) {
+                await executeQuery(`
+                    CREATE TABLE daily_morning_meetings (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        sectionId INT NOT NULL,
+                        agenda NVARCHAR(255) NOT NULL,
+                        description NVARCHAR(MAX),
+                        meetingDate DATE NOT NULL,
+                        meetingTime TIME NOT NULL,
+                        createdBy INT NOT NULL,
+                        sheetData NVARCHAR(MAX) DEFAULT '{}',
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE CASCADE,
+                        FOREIGN KEY (createdBy) REFERENCES users(id)
+                    )
+                `);
+            }
             logger.info("Checked/Created daily_morning_meetings table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_morning_meetings table", error);

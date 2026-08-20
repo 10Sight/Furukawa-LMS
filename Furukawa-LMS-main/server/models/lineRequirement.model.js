@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class LineRequirement {
     constructor(data) {
@@ -21,61 +22,58 @@ class LineRequirement {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'line_requirements')
-            BEGIN
-                CREATE TABLE line_requirements (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    lineId INT NOT NULL,
-                    sectionId INT NULL,
-                    requirementDate DATE NULL,
-                    requirementMonth INT NULL,
-                    requirementYear INT NOT NULL,
-                    fn01 INT DEFAULT 0,
-                    fn02 INT DEFAULT 0,
-                    quantity INT DEFAULT 0,
-                    type NVARCHAR(10) NOT NULL CHECK (type IN ('DAILY', 'MONTHLY')),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE,
-                    FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL,
-                    CONSTRAINT unique_line_requirement UNIQUE (lineId, requirementDate, requirementMonth, requirementYear, type)
-                );
-                CREATE INDEX idx_line_req ON line_requirements(lineId);
-                CREATE INDEX idx_date_req ON line_requirements(requirementDate);
-            END
-            ELSE
-            BEGIN
-                IF COL_LENGTH('line_requirements', 'fn01') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirements ADD fn01 INT DEFAULT 0;
-                END
-                IF COL_LENGTH('line_requirements', 'fn02') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirements ADD fn02 INT DEFAULT 0;
-                END
-                IF COL_LENGTH('line_requirements', 'sectionId') IS NULL
-                BEGIN
-                    ALTER TABLE line_requirements ADD sectionId INT NULL;
-                    ALTER TABLE line_requirements ADD CONSTRAINT FK_line_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
-                END
-            END
-
-            -- Ensure any existing records with NULL sectionId are updated to their correct sectionId
-            IF COL_LENGTH('line_requirements', 'sectionId') IS NOT NULL
-            BEGIN
-                EXEC('
-                    UPDATE lr
-                    SET lr.sectionId = l.sectionId
-                    FROM line_requirements lr
-                    INNER JOIN [lines] l ON lr.lineId = l.id
-                    INNER JOIN [sections] s ON l.sectionId = s.id
-                    WHERE lr.sectionId IS NULL
-                ');
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('line_requirements')) {
+                await executeQuery(`
+                    CREATE TABLE line_requirements (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        lineId INT NOT NULL,
+                        sectionId INT NULL,
+                        requirementDate DATE NULL,
+                        requirementMonth INT NULL,
+                        requirementYear INT NOT NULL,
+                        fn01 INT DEFAULT 0,
+                        fn02 INT DEFAULT 0,
+                        quantity INT DEFAULT 0,
+                        type NVARCHAR(10) NOT NULL CHECK (type IN ('DAILY', 'MONTHLY')),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (lineId) REFERENCES [lines](id) ON DELETE CASCADE,
+                        FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL,
+                        CONSTRAINT unique_line_requirement UNIQUE (lineId, requirementDate, requirementMonth, requirementYear, type)
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('line_requirements', 'idx_line_req',
+                    'CREATE INDEX idx_line_req ON line_requirements(lineId)');
+                await migrationHelper.ensureIndexExists('line_requirements', 'idx_date_req',
+                    'CREATE INDEX idx_date_req ON line_requirements(requirementDate)');
+            } else {
+                await migrationHelper.ensureColumnExists('line_requirements', 'fn01', 'INT DEFAULT 0');
+                await migrationHelper.ensureColumnExists('line_requirements', 'fn02', 'INT DEFAULT 0');
+                // sectionId + its FK are added together, atomically, only when the column is missing
+                await executeQuery(`
+                    IF COL_LENGTH('line_requirements', 'sectionId') IS NULL
+                    BEGIN
+                        ALTER TABLE line_requirements ADD sectionId INT NULL;
+                        ALTER TABLE line_requirements ADD CONSTRAINT FK_line_requirements_sections FOREIGN KEY (sectionId) REFERENCES [sections](id) ON DELETE SET NULL;
+                    END
+                `);
+            }
+
+            // Ensure any existing records with NULL sectionId are updated to their correct sectionId
+            await executeQuery(`
+                IF COL_LENGTH('line_requirements', 'sectionId') IS NOT NULL
+                BEGIN
+                    EXEC('
+                        UPDATE lr
+                        SET lr.sectionId = l.sectionId
+                        FROM line_requirements lr
+                        INNER JOIN [lines] l ON lr.lineId = l.id
+                        INNER JOIN [sections] s ON l.sectionId = s.id
+                        WHERE lr.sectionId IS NULL
+                    ');
+                END
+            `);
             logger.info("LineRequirement table initialized successfully");
         } catch (error) {
             logger.error(`Failed to initialize LineRequirement table: ${error.message}`);

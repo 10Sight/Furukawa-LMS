@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class MonitoringConfig {
     constructor(data) {
@@ -16,9 +17,8 @@ class MonitoringConfig {
 
     static async init() {
         // Create table with VARCHAR for departmentId to support names directly
-        const createTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='monitoring_configs' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('monitoring_configs')) {
+            await executeQuery(`
                 CREATE TABLE monitoring_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     type VARCHAR(20) NOT NULL, -- '3DAY', '16DAY', '10CYCLE'
@@ -32,28 +32,18 @@ class MonitoringConfig {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT uc_type_dept_sect_line_sub_monitor UNIQUE (type, departmentId, sectionId, lineId, subSectionId)
                 )
-            END
-            ELSE
-            BEGIN
-                -- Ensure sectionId exists
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_configs') AND name = 'sectionId')
-                BEGIN
-                    ALTER TABLE monitoring_configs ADD sectionId INT DEFAULT 0;
-                END
+            `);
+        } else {
+            // Ensure sectionId exists
+            await migrationHelper.ensureColumnExists('monitoring_configs', 'sectionId', 'INT DEFAULT 0');
 
-                -- Ensure lineId/subSectionId exist
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_configs') AND name = 'lineId')
-                BEGIN
-                    ALTER TABLE monitoring_configs ADD lineId INT DEFAULT 0;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_configs') AND name = 'subSectionId')
-                BEGIN
-                    ALTER TABLE monitoring_configs ADD subSectionId INT DEFAULT 0;
-                END
+            // Ensure lineId/subSectionId exist
+            await migrationHelper.ensureColumnExists('monitoring_configs', 'lineId', 'INT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('monitoring_configs', 'subSectionId', 'INT DEFAULT 0');
 
-                -- Ensure history table exists has sectionId/lineId/subSectionId
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='monitoring_config_history' and xtype='U')
-                BEGIN
+            // Ensure history table exists has sectionId/lineId/subSectionId
+            if (!await migrationHelper.tableExists('monitoring_config_history')) {
+                await executeQuery(`
                     CREATE TABLE monitoring_config_history (
                         id INT IDENTITY(1,1) PRIMARY KEY,
                         configId INT NOT NULL,
@@ -67,24 +57,15 @@ class MonitoringConfig {
                         updatedBy VARCHAR(255),
                         updatedAt DATETIME DEFAULT GETDATE()
                     )
-                END
-                ELSE
-                BEGIN
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_config_history') AND name = 'sectionId')
-                    BEGIN
-                        ALTER TABLE monitoring_config_history ADD sectionId INT DEFAULT 0;
-                    END
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_config_history') AND name = 'lineId')
-                    BEGIN
-                        ALTER TABLE monitoring_config_history ADD lineId INT DEFAULT 0;
-                    END
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('monitoring_config_history') AND name = 'subSectionId')
-                    BEGIN
-                        ALTER TABLE monitoring_config_history ADD subSectionId INT DEFAULT 0;
-                    END
-                END
+                `);
+            } else {
+                await migrationHelper.ensureColumnExists('monitoring_config_history', 'sectionId', 'INT DEFAULT 0');
+                await migrationHelper.ensureColumnExists('monitoring_config_history', 'lineId', 'INT DEFAULT 0');
+                await migrationHelper.ensureColumnExists('monitoring_config_history', 'subSectionId', 'INT DEFAULT 0');
+            }
 
-                -- Update unique constraint to include sectionId
+            // Update unique constraint to include sectionId
+            await executeQuery(`
                 IF EXISTS (SELECT * FROM sys.objects WHERE name = 'uc_type_dept_monitor' AND parent_object_id = OBJECT_ID('monitoring_configs'))
                 BEGIN
                     ALTER TABLE monitoring_configs DROP CONSTRAINT uc_type_dept_monitor;
@@ -93,8 +74,10 @@ class MonitoringConfig {
                         ALTER TABLE monitoring_configs ADD CONSTRAINT uc_type_dept_sect_monitor UNIQUE (type, departmentId, sectionId);
                     END
                 END
+            `);
 
-                -- Update unique constraint to include lineId/subSectionId
+            // Update unique constraint to include lineId/subSectionId
+            await executeQuery(`
                 IF EXISTS (SELECT * FROM sys.objects WHERE name = 'uc_type_dept_sect_monitor' AND parent_object_id = OBJECT_ID('monitoring_configs'))
                 BEGIN
                     ALTER TABLE monitoring_configs DROP CONSTRAINT uc_type_dept_sect_monitor;
@@ -103,8 +86,10 @@ class MonitoringConfig {
                         ALTER TABLE monitoring_configs ADD CONSTRAINT uc_type_dept_sect_line_sub_monitor UNIQUE (type, departmentId, sectionId, lineId, subSectionId);
                     END
                 END
+            `);
 
-                -- MIGRATE departmentId from INT to VARCHAR(255) if necessary
+            // MIGRATE departmentId from INT to VARCHAR(255) if necessary
+            await executeQuery(`
                 IF (SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_NAME = 'monitoring_configs' AND COLUMN_NAME = 'departmentId') = 'int'
                 BEGIN
@@ -127,9 +112,8 @@ class MonitoringConfig {
 
                     ALTER TABLE monitoring_configs ADD CONSTRAINT uc_type_dept_sect_line_sub_monitor UNIQUE (type, departmentId, sectionId, lineId, subSectionId);
                 END
-            END
-        `;
-        await executeQuery(createTableQuery);
+            `);
+        }
     }
 
     static async findByTypeAndDepartment(type, departmentId, sectionId = 0) {

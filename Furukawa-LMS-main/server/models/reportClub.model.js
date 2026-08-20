@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class ReportClub {
@@ -17,40 +18,36 @@ class ReportClub {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'report_clubs')
-            BEGIN
-                CREATE TABLE [report_clubs] (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(255) NOT NULL,
-                    departmentId INT NULL, -- single dept for backward compat; NULL when a club spans multiple departments
-                    sectionIds NVARCHAR(MAX) NOT NULL, -- JSON array of section IDs
-                    showInReport BIT DEFAULT 0,
-                    createdBy INT NOT NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
-                    FOREIGN KEY (createdBy) REFERENCES users(id)
-                );
-                CREATE INDEX idx_report_club_dept ON [report_clubs](departmentId);
-            END
-            ELSE
-            BEGIN
-                -- Add showInReport column if it doesn't exist
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('report_clubs') AND name = 'showInReport')
-                BEGIN
-                    ALTER TABLE [report_clubs] ADD showInReport BIT DEFAULT 0;
-                END
-
-                -- Allow departmentId to be NULL so a club can span multiple departments
-                IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('report_clubs') AND name = 'departmentId' AND is_nullable = 0)
-                BEGIN
-                    ALTER TABLE [report_clubs] ALTER COLUMN departmentId INT NULL;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('report_clubs')) {
+                await executeQuery(`
+                    CREATE TABLE [report_clubs] (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name NVARCHAR(255) NOT NULL,
+                        departmentId INT NULL, -- single dept for backward compat; NULL when a club spans multiple departments
+                        sectionIds NVARCHAR(MAX) NOT NULL, -- JSON array of section IDs
+                        showInReport BIT DEFAULT 0,
+                        createdBy INT NOT NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE,
+                        FOREIGN KEY (createdBy) REFERENCES users(id)
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('report_clubs', 'idx_report_club_dept',
+                    'CREATE INDEX idx_report_club_dept ON [report_clubs](departmentId)');
+            } else {
+                // Add showInReport column if it doesn't exist
+                await migrationHelper.ensureColumnExists('report_clubs', 'showInReport', 'BIT DEFAULT 0');
+
+                // Allow departmentId to be NULL so a club can span multiple departments
+                await executeQuery(`
+                    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('report_clubs') AND name = 'departmentId' AND is_nullable = 0)
+                    BEGIN
+                        ALTER TABLE [report_clubs] ALTER COLUMN departmentId INT NULL;
+                    END
+                `);
+            }
             logger.info("Checked/Created report_clubs table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize ReportClub table", error);

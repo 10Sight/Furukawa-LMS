@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class Audit {
     constructor(data) {
@@ -15,25 +16,23 @@ class Audit {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='audits' and xtype='U')
-            BEGIN
-                CREATE TABLE audits (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    [user] NVARCHAR(255),
-                    action NVARCHAR(255) NOT NULL,
-                    resourceType NVARCHAR(255),
-                    resourceId NVARCHAR(255),
-                    ip NVARCHAR(50),
-                    userAgent NVARCHAR(MAX),
-                    severity NVARCHAR(50) DEFAULT 'info',
-                    details NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('audits')) {
+                await executeQuery(`
+                    CREATE TABLE audits (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        [user] NVARCHAR(255),
+                        action NVARCHAR(255) NOT NULL,
+                        resourceType NVARCHAR(255),
+                        resourceId NVARCHAR(255),
+                        ip NVARCHAR(50),
+                        userAgent NVARCHAR(MAX),
+                        severity NVARCHAR(50) DEFAULT 'info',
+                        details NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            }
             console.log("Audits table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating audits table in MSSQL:", error);

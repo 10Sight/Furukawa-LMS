@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class HandoverSheetConfig {
     constructor(data) {
@@ -11,9 +12,8 @@ class HandoverSheetConfig {
     }
 
     static async init() {
-        const configTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'handover_sheet_configs')
-            BEGIN
+        if (!await migrationHelper.tableExists('handover_sheet_configs')) {
+            await executeQuery(`
                 CREATE TABLE handover_sheet_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -23,9 +23,8 @@ class HandoverSheetConfig {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_hs_config UNIQUE (departmentId, sectionId)
                 )
-            END
-        `;
-        await executeQuery(configTableQuery);
+            `);
+        }
 
         // Migration: Add sectionId column if missing
         try {
@@ -47,9 +46,8 @@ class HandoverSheetConfig {
             } catch (e) { console.error("Migration error hs-config:", e); }
         }
 
-        const historyTableQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'handover_sheet_config_history')
-            BEGIN
+        if (!await migrationHelper.tableExists('handover_sheet_config_history')) {
+            await executeQuery(`
                 CREATE TABLE handover_sheet_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -59,10 +57,10 @@ class HandoverSheetConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_hs_dept_history ON handover_sheet_config_history(departmentId, sectionId)
-            END
-        `;
-        await executeQuery(historyTableQuery);
+            `);
+            await migrationHelper.ensureIndexExists('handover_sheet_config_history', 'idx_hs_dept_history',
+                'CREATE INDEX idx_hs_dept_history ON handover_sheet_config_history(departmentId, sectionId)');
+        }
 
         // Migration: Add sectionId to history if missing
         try {

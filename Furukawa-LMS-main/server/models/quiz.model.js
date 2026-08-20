@@ -116,9 +116,8 @@ class Quiz {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-                const query = `
-                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'quizzes')
-                    BEGIN
+                if (!await migrationHelper.tableExists('quizzes')) {
+                    await executeQuery(`
                         CREATE TABLE quizzes (
                             id INT IDENTITY(1,1) PRIMARY KEY,
                             title NVARCHAR(255) NOT NULL,
@@ -155,14 +154,13 @@ class Quiz {
                             targetSectionId NVARCHAR(MAX),
                             createdAt DATETIME DEFAULT GETDATE(),
                             updatedAt DATETIME DEFAULT GETDATE()
-                        );
-                        CREATE INDEX idx_quiz_course ON quizzes(course);
-                        CREATE INDEX idx_quiz_module ON quizzes(module);
-                    END
-                `;
-                await executeQuery(query);
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('quizzes', 'idx_quiz_course', 'CREATE INDEX idx_quiz_course ON quizzes(course)');
+                    await migrationHelper.ensureIndexExists('quizzes', 'idx_quiz_module', 'CREATE INDEX idx_quiz_module ON quizzes(module)');
+                }
 
-                // Manual migration check for columns using INFORMATION_SCHEMA
+                // Manual migration check for columns
                 const columns = [
                     { name: 'departmentId', type: 'NVARCHAR(MAX)' },
                     { name: 'sectionId', type: 'NVARCHAR(MAX)' },
@@ -181,16 +179,7 @@ class Quiz {
                 ];
 
                 for (const col of columns) {
-                    const checkColQuery = `
-                        IF NOT EXISTS (
-                            SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-                            WHERE TABLE_NAME = 'quizzes' AND COLUMN_NAME = '${col.name}'
-                        )
-                        BEGIN
-                            ALTER TABLE [quizzes] ADD [${col.name}] ${col.type}
-                        END
-                    `;
-                    await executeQuery(checkColQuery);
+                    await migrationHelper.ensureColumnExists('quizzes', col.name, col.type);
                 }
 
                 // Ensure correct types

@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class AbnormalConditionSheet {
     constructor(data) {
@@ -36,23 +37,6 @@ class AbnormalConditionSheet {
     }
 
     static async init() {
-        const createQuery = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='abnormal_condition_sheets' and xtype='U')
-            BEGIN
-                CREATE TABLE abnormal_condition_sheets (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    departmentId INT NOT NULL,
-                    date DATE NOT NULL,
-                    entries NVARCHAR(MAX),
-                    signatures NVARCHAR(MAX),
-                    metadata NVARCHAR(MAX),
-                    isSubmitted BIT DEFAULT 0,
-                    updatedBy NVARCHAR(255),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT fk_department_abnormal FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
-                )
-            END
-        `;
         const migrateQuery = `
             IF EXISTS (SELECT * FROM sysobjects WHERE name='abnormal_condition_sheets' AND xtype='U')
             BEGIN
@@ -96,7 +80,22 @@ class AbnormalConditionSheet {
             END
         `;
         try {
-            await executeQuery(createQuery);
+            if (!await migrationHelper.tableExists('abnormal_condition_sheets')) {
+                await executeQuery(`
+                    CREATE TABLE abnormal_condition_sheets (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        departmentId INT NOT NULL,
+                        date DATE NOT NULL,
+                        entries NVARCHAR(MAX),
+                        signatures NVARCHAR(MAX),
+                        metadata NVARCHAR(MAX),
+                        isSubmitted BIT DEFAULT 0,
+                        updatedBy NVARCHAR(255),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT fk_department_abnormal FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
+                    )
+                `);
+            }
             await executeQuery(migrateQuery);
             console.log("Checked/Simplified abnormal_condition_sheets table in MSSQL");
         } catch (error) {

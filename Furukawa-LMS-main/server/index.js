@@ -166,8 +166,8 @@ app.use(cors(corsOptions));
 app.use(compression()); // Enable gzip/deflate compression
 
 // Body parsing middleware
-app.use(express.json({ limit: '500mb' })); // Increased limit for file uploads (e.g. large PDFs)
-app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+app.use(express.json({ limit: '2gb' })); // Increased limit for file uploads (e.g. large PDFs)
+app.use(express.urlencoded({ extended: true, limit: '2gb' }));
 app.use(cookieParser()); // Add cookie parser middleware
 
 // Serve static files from uploads directory

@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import { slugify } from "../utils/slugify.js";
 import logger from "../logger/winston.logger.js";
 
@@ -20,27 +21,26 @@ class Module {
   }
 
   static async init() {
-    const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'modules')
-            BEGIN
-                CREATE TABLE modules (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    course INT NOT NULL,
-                    title NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    slug NVARCHAR(255),
-                    [order] INT DEFAULT 1,
-                    lessons NVARCHAR(MAX),
-                    resources NVARCHAR(MAX),
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    CONSTRAINT unique_course_slug UNIQUE (course, slug)
-                );
-                CREATE INDEX idx_course_module ON modules(course);
-            END
-        `;
     try {
-      await executeQuery(query);
+      if (!await migrationHelper.tableExists('modules')) {
+        await executeQuery(`
+                    CREATE TABLE modules (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        course INT NOT NULL,
+                        title NVARCHAR(255) NOT NULL,
+                        description NVARCHAR(MAX),
+                        slug NVARCHAR(255),
+                        [order] INT DEFAULT 1,
+                        lessons NVARCHAR(MAX),
+                        resources NVARCHAR(MAX),
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        CONSTRAINT unique_course_slug UNIQUE (course, slug)
+                    )
+                `);
+        await migrationHelper.ensureIndexExists('modules', 'idx_course_module',
+          'CREATE INDEX idx_course_module ON modules(course)');
+      }
     } catch (error) {
       logger.error("Failed to initialize Module table", error);
     }

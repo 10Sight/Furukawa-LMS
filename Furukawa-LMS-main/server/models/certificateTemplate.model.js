@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class CertificateTemplate {
@@ -21,27 +22,25 @@ class CertificateTemplate {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'certificate_templates')
-            BEGIN
-                CREATE TABLE certificate_templates (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    name NVARCHAR(255) NOT NULL UNIQUE,
-                    description NVARCHAR(MAX),
-                    template NVARCHAR(MAX) NOT NULL,
-                    styles NVARCHAR(MAX),
-                    placeholders NVARCHAR(MAX),
-                    isDefault BIT DEFAULT 0,
-                    isActive BIT DEFAULT 1,
-                    createdBy NVARCHAR(255) NOT NULL,
-                    updatedBy NVARCHAR(255) NOT NULL,
-                    createdAt DATETIME DEFAULT GETDATE(),
-                    updatedAt DATETIME DEFAULT GETDATE()
-                )
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('certificate_templates')) {
+                await executeQuery(`
+                    CREATE TABLE certificate_templates (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        name NVARCHAR(255) NOT NULL UNIQUE,
+                        description NVARCHAR(MAX),
+                        template NVARCHAR(MAX) NOT NULL,
+                        styles NVARCHAR(MAX),
+                        placeholders NVARCHAR(MAX),
+                        isDefault BIT DEFAULT 0,
+                        isActive BIT DEFAULT 1,
+                        createdBy NVARCHAR(255) NOT NULL,
+                        updatedBy NVARCHAR(255) NOT NULL,
+                        createdAt DATETIME DEFAULT GETDATE(),
+                        updatedAt DATETIME DEFAULT GETDATE()
+                    )
+                `);
+            }
             console.log("CertificateTemplate table verified/created in MSSQL.");
         } catch (error) {
             logger.error("Failed to initialize CertificateTemplate table", error);

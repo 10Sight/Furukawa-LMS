@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 
 class AttemptExtensionRequest {
@@ -19,9 +20,9 @@ class AttemptExtensionRequest {
   }
 
   static async init() {
-    const query = `
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='attempt_extension_requests' and xtype='U')
-        BEGIN
+    try {
+      if (!await migrationHelper.tableExists('attempt_extension_requests')) {
+        await executeQuery(`
         CREATE TABLE attempt_extension_requests (
             id INT IDENTITY(1,1) PRIMARY KEY,
             quiz NVARCHAR(255) NOT NULL,
@@ -33,12 +34,11 @@ class AttemptExtensionRequest {
             extraAttemptsGranted INT DEFAULT 1,
             createdAt DATETIME DEFAULT GETDATE(),
             updatedAt DATETIME DEFAULT GETDATE()
-        );
-        CREATE INDEX idx_quiz_student_status ON attempt_extension_requests(quiz, student, status);
-        END
-    `;
-    try {
-      await executeQuery(query);
+        )
+    `);
+        await migrationHelper.ensureIndexExists('attempt_extension_requests', 'idx_quiz_student_status',
+          'CREATE INDEX idx_quiz_student_status ON attempt_extension_requests(quiz, student, status)');
+      }
     } catch (error) {
       logger.error("Failed to initialize AttemptExtensionRequest table", error);
     }

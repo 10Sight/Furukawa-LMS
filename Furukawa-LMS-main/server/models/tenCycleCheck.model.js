@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class TenCycleCheck {
     constructor(data) {
@@ -24,9 +25,8 @@ class TenCycleCheck {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ten_cycle_checks' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('ten_cycle_checks')) {
+            await executeQuery(`
                 CREATE TABLE ten_cycle_checks (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
@@ -42,18 +42,11 @@ class TenCycleCheck {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_tencycle FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
-            END
-        `;
-        await executeQuery(query);
+            `);
+        }
 
         // Migration: Add formType column if it doesn't exist
-        try {
-            await executeQuery("SELECT TOP 1 formType FROM ten_cycle_checks");
-        } catch (err) {
-            try {
-                await executeQuery("ALTER TABLE ten_cycle_checks ADD formType VARCHAR(50) DEFAULT 'form1'");
-            } catch (e) { }
-        }
+        await migrationHelper.ensureColumnExists('ten_cycle_checks', 'formType', "VARCHAR(50) DEFAULT 'form1'");
     }
 
     static async findByStudentId(studentId) {

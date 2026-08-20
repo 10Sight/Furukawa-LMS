@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class DailyProductionReportConfig {
     constructor(data) {
@@ -11,9 +12,8 @@ class DailyProductionReportConfig {
 
     static async init() {
         // Main config table
-        const configQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_production_report_configs')
-            BEGIN
+        if (!await migrationHelper.tableExists('daily_production_report_configs')) {
+            const configQuery = `
                 CREATE TABLE daily_production_report_configs (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL UNIQUE,
@@ -21,14 +21,13 @@ class DailyProductionReportConfig {
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE()
                 )
-            END
-        `;
-        await executeQuery(configQuery);
+            `;
+            await executeQuery(configQuery);
+        }
 
         // History table for tracking layout changes
-        const historyQuery = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'daily_production_report_config_history')
-            BEGIN
+        if (!await migrationHelper.tableExists('daily_production_report_config_history')) {
+            const historyQuery = `
                 CREATE TABLE daily_production_report_config_history (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     departmentId NVARCHAR(255) NOT NULL,
@@ -37,10 +36,15 @@ class DailyProductionReportConfig {
                     updatedBy NVARCHAR(255),
                     createdAt DATETIME DEFAULT GETDATE()
                 )
-                CREATE INDEX idx_dpr_dept_history ON daily_production_report_config_history(departmentId)
-            END
-        `;
-        await executeQuery(historyQuery);
+            `;
+            await executeQuery(historyQuery);
+
+            await migrationHelper.ensureIndexExists(
+                'daily_production_report_config_history',
+                'idx_dpr_dept_history',
+                'CREATE INDEX idx_dpr_dept_history ON daily_production_report_config_history(departmentId)'
+            );
+        }
         console.log("DailyProductionReportConfig tables verified/created in MSSQL.");
     }
 

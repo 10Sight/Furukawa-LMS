@@ -1,4 +1,5 @@
 import { executeQuery } from "../db/mssqlHelper.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class ThreeDayMonitoring {
     constructor(data) {
@@ -35,9 +36,8 @@ class ThreeDayMonitoring {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='three_day_monitorings' and xtype='U')
-            BEGIN
+        if (!await migrationHelper.tableExists('three_day_monitorings')) {
+            await executeQuery(`
                 CREATE TABLE three_day_monitorings (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     studentId INT NOT NULL,
@@ -56,35 +56,17 @@ class ThreeDayMonitoring {
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_3day FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
-            END
-            ELSE
-            BEGIN
-                -- Add status column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'status')
-                BEGIN
-                    ALTER TABLE three_day_monitorings ADD status VARCHAR(50) DEFAULT 'Draft';
-                END
-                -- Add attemptNumber column if missing
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'attemptNumber')
-                BEGIN
-                    ALTER TABLE three_day_monitorings ADD attemptNumber INT DEFAULT 1;
-                END
-                -- Doc/revision snapshot: frozen at creation from the Revision Table.
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'docNo')
-                BEGIN
-                    ALTER TABLE three_day_monitorings ADD docNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'revNo')
-                BEGIN
-                    ALTER TABLE three_day_monitorings ADD revNo VARCHAR(255) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('three_day_monitorings') AND name = 'revDate')
-                BEGIN
-                    ALTER TABLE three_day_monitorings ADD revDate VARCHAR(255) NULL;
-                END
-            END
-        `;
-        await executeQuery(query);
+            `);
+        } else {
+            // Add status column if missing
+            await migrationHelper.ensureColumnExists('three_day_monitorings', 'status', "VARCHAR(50) DEFAULT 'Draft'");
+            // Add attemptNumber column if missing
+            await migrationHelper.ensureColumnExists('three_day_monitorings', 'attemptNumber', 'INT DEFAULT 1');
+            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            await migrationHelper.ensureColumnExists('three_day_monitorings', 'docNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('three_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('three_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
+        }
     }
 
     static async findByStudentId(studentId) {

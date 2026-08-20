@@ -1,5 +1,6 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
+import migrationHelper from "../db/migrationHelper.js";
 
 class RevisionHistory {
     constructor(data) {
@@ -24,45 +25,36 @@ class RevisionHistory {
     }
 
     static async init() {
-        const query = `
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'revision_history')
-            BEGIN
-                CREATE TABLE [revision_history] (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    revisionRecordId INT NOT NULL,
-                    sheetKey VARCHAR(255) NOT NULL,
-                    sheetName VARCHAR(255) NOT NULL,
-                    departmentId INT NULL,
-                    sectionId INT NULL,
-                    docNo VARCHAR(255) NULL,
-                    revNo VARCHAR(255) NULL,
-                    revDate VARCHAR(255) NULL,
-                    affectedSrNoPage VARCHAR(255) NULL,
-                    affectedSrNoPageHi NVARCHAR(255) NULL,
-                    changeDetails NVARCHAR(MAX) NULL,
-                    changeDetailsHi NVARCHAR(MAX) NULL,
-                    updatedBy INT NULL,
-                    updatedByName NVARCHAR(255) NULL,
-                    updatedAt DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (revisionRecordId) REFERENCES [revision_records](id) ON DELETE CASCADE,
-                    FOREIGN KEY (updatedBy) REFERENCES users(id) ON DELETE SET NULL
-                );
-                CREATE INDEX idx_revision_history_record ON [revision_history](revisionRecordId);
-            END
-            ELSE
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_history') AND name = 'departmentId')
-                BEGIN
-                    ALTER TABLE [revision_history] ADD departmentId INT NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('revision_history') AND name = 'sectionId')
-                BEGIN
-                    ALTER TABLE [revision_history] ADD sectionId INT NULL;
-                END
-            END
-        `;
         try {
-            await executeQuery(query);
+            if (!await migrationHelper.tableExists('revision_history')) {
+                await executeQuery(`
+                    CREATE TABLE [revision_history] (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        revisionRecordId INT NOT NULL,
+                        sheetKey VARCHAR(255) NOT NULL,
+                        sheetName VARCHAR(255) NOT NULL,
+                        departmentId INT NULL,
+                        sectionId INT NULL,
+                        docNo VARCHAR(255) NULL,
+                        revNo VARCHAR(255) NULL,
+                        revDate VARCHAR(255) NULL,
+                        affectedSrNoPage VARCHAR(255) NULL,
+                        affectedSrNoPageHi NVARCHAR(255) NULL,
+                        changeDetails NVARCHAR(MAX) NULL,
+                        changeDetailsHi NVARCHAR(MAX) NULL,
+                        updatedBy INT NULL,
+                        updatedByName NVARCHAR(255) NULL,
+                        updatedAt DATETIME DEFAULT GETDATE(),
+                        FOREIGN KEY (revisionRecordId) REFERENCES [revision_records](id) ON DELETE CASCADE,
+                        FOREIGN KEY (updatedBy) REFERENCES users(id) ON DELETE SET NULL
+                    )
+                `);
+                await migrationHelper.ensureIndexExists('revision_history', 'idx_revision_history_record',
+                    'CREATE INDEX idx_revision_history_record ON [revision_history](revisionRecordId)');
+            } else {
+                await migrationHelper.ensureColumnExists('revision_history', 'departmentId', 'INT NULL');
+                await migrationHelper.ensureColumnExists('revision_history', 'sectionId', 'INT NULL');
+            }
             logger.info("Checked/Created revision_history table in MSSQL");
         } catch (error) {
             logger.error(`Failed to initialize RevisionHistory table: ${error.message}`);

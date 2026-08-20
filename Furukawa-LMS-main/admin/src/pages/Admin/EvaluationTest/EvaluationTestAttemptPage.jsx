@@ -371,23 +371,37 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
         }
 
         for (let idx = 0; idx < performDateCount; idx++) {
-            if (performDates[idx] && performDates[idx].trim() !== "") {
-                const emptyQuestions = [];
-                precomputedBlocks.forEach(block => {
-                    (block.rows || []).forEach(row => {
-                        const cellVal = attemptData[row.qId]?.results?.[idx];
-                        if (!cellVal || cellVal.trim() === "") {
-                            emptyQuestions.push(row.qIndex);
-                        }
-                    });
-                });
+            const dateVal = performDates[idx];
+            const hasDate = !!(dateVal && dateVal.trim() !== "");
 
-                if (emptyQuestions.length > 0) {
-                    alert(
-                        `Please fill all cells in Column ${idx + 1} (Perform Date: ${performDates[idx]}) before saving. Missing grades for checking item(s): ${emptyQuestions.join(", ")}.`
-                    );
-                    return;
-                }
+            const emptyQuestions = [];
+            let filledGradesCount = 0;
+
+            precomputedBlocks.forEach(block => {
+                (block.rows || []).forEach(row => {
+                    const cellVal = attemptData[row.qId]?.results?.[idx];
+                    if (cellVal && cellVal.trim() !== "") {
+                        filledGradesCount++;
+                    } else {
+                        emptyQuestions.push(row.qIndex);
+                    }
+                });
+            });
+
+            // Case A: Date is filled, but some grades are missing
+            if (hasDate && emptyQuestions.length > 0) {
+                alert(
+                    `Please fill all cells in Column ${idx + 1} (Perform Date: ${dateVal}) before saving. Missing grades for checking item(s): ${emptyQuestions.join(", ")}.`
+                );
+                return;
+            }
+
+            // Case B: Grades are filled (partially or fully), but Perform Date is missing
+            if (!hasDate && filledGradesCount > 0) {
+                alert(
+                    `Column ${idx + 1} has grades filled, but is missing a Perform Date. Please set the Perform Date and ensure all cells in Column ${idx + 1} are filled. Missing grades for checking item(s): ${emptyQuestions.join(", ")}.`
+                );
+                return;
             }
         }
 

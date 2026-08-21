@@ -58,22 +58,6 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
         punchesByDate[p.dateKey].push(p);
     });
 
-    // Collapsed to one status per userId per date (MAX(status) string comparison, matching the
-    // "GROUP BY userId, [date] / MAX(status)" pattern the club/global attendance SQL used to use),
-    // so a user with more than one attendance_logs row for the same day isn't double-counted.
-    // Keyed by userId (not empId/payCode) to match the club present/absent join's u.id = al.userId
-    // semantics below.
-    const dedupedStatusByUserDate = {};
-    attendanceLogs.forEach(p => {
-        if (!dedupedStatusByUserDate[p.dateKey]) dedupedStatusByUserDate[p.dateKey] = new Map();
-        const dayMap = dedupedStatusByUserDate[p.dateKey];
-        const statusVal = p.status || '';
-        const existing = dayMap.get(p.userId);
-        if (existing === undefined || statusVal > existing) {
-            dayMap.set(p.userId, statusVal);
-        }
-    });
-
     // Declared holidays suppress the subtraction-method Absent count to 0 below, matching the
     // dashboard's Daily Absenteeism Rate graph. Best-effort: if the table is missing/unreachable,
     // fall back to treating no date as a holiday rather than failing the whole sync.
@@ -486,9 +470,9 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // left and later rejoined is evaluated against the stint actually open on dateKey — not just
     // their current status. Combined with the handover-date promotion cutoff (handoverDateMap,
     // sourced from the handover sheet's own [date] column above) to drop anyone already promoted
-    // out of the Dojo by dateKey, plus same-day exclusions for attrition (leftUsers) and
-    // absenteeism (dedupedStatusByUserDate) so a handover/separation/absence event on dateKey is
-    // reflected the same day rather than only from the next sync. Shared by both the daily loop
+    // out of the Dojo by dateKey, plus a same-day exclusion for attrition (leftUsers) so a
+    // handover/separation event on dateKey is reflected the same day rather than only from the
+    // next sync. Shared by both the daily loop
     // and the previous-month reference column below so "back month" totals line up exactly with
     // how the current month is computed.
     const isDojoMemberActiveOnDate = (u, dateKey) => {
@@ -653,7 +637,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
     // Trend "mappedPresentCount" exactly: the roster (allEligibleUsers, per-stint active on
     // dateKey) count whose empId matches a Present punch's payCode that day — not merely any
     // Present-status attendance_logs row joined by userId.
-    const getMappedPresentCount = (dateKey) => {
+    const getMappedPresentCount = (dateKey, targetSectionIds = null) => {
         const punchesForDay = punchesByDate[dateKey] || [];
         const presentPayCodes = new Set();
         punchesForDay.forEach(p => {
@@ -666,6 +650,7 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         let present = 0;
         allEligibleUsers.forEach(u => {
+            if (targetSectionIds && !targetSectionIds.includes(String(u.sectionId))) return;
             const empIdClean = String(u.empId || '').trim().toUpperCase();
             if (!empIdClean || !presentPayCodes.has(empIdClean)) return;
             if (getUserActiveStintOnDate(u, dateKey).active) present++;
@@ -904,36 +889,26 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
 
         const normalizedSectionIds = sectionIds.map(String);
 
-        // Club present/absent counts, computed in memory from the same statusHistory-aware
-        // getUserActiveStintOnDate used everywhere else in this file, instead of the old
-        // notYetLeftCondition SQL fragment (plain u.status/u.leavingDate/u.updatedAt check).
-        // That condition didn't account for a user who left and later rejoined — statusHistory
-        // is the source of truth for who was actually on an active stint on a given date, matching
-        // the MPS dashboard's Daily Manpower Trend graph. Matches by userId (not empId/payCode),
-        // same join semantics as the SQL query this replaces (u.id = al.userId).
+        // Club present/absent counts use the same subtraction method as the global Absent row and
+        // the dashboard's Daily Absenteeism Rate graph (Absent = active roster - payCode-matched
+        // present), scoped to this club's sectionIds via getNetAvailableHeadcount/
+        // getMappedPresentCount's targetSectionIds filter — not the old explicit-status-check
+        // (ABSENT/A in attendance_logs, joined loosely by userId), which ignored users with no
+        // attendance record at all and under-counted absences relative to the dashboard.
         const clubPresentMap = {};
         const clubDateKeys = [prevMonthLastDateKey];
         for (let d = 1; d <= totalDays; d++) {
             clubDateKeys.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
         }
         clubDateKeys.forEach(dKey => {
-            const dayMap = dedupedStatusByUserDate[dKey];
-            let presentCount = 0;
-            let absentCount = 0;
-            if (dayMap) {
-                allEligibleUsers.forEach(u => {
-                    if (!normalizedSectionIds.includes(String(u.sectionId))) return;
-                    if (u.isAdmin) return;
-                    if (!getUserActiveStintOnDate(u, dKey).active) return;
+            const clubNetAvailableTotal = getNetAvailableHeadcount(dKey, null, normalizedSectionIds).countTotal;
+            const clubPresent = (dKey <= todayYMD) ? getMappedPresentCount(dKey, normalizedSectionIds) : 0;
+            const isHolidayForClub = holidaySet.has(dKey);
+            const clubAbsent = (dKey <= todayYMD)
+                ? (isHolidayForClub ? 0 : Math.max(clubNetAvailableTotal - clubPresent, 0))
+                : 0;
 
-                    const status = dayMap.get(u.id);
-                    if (status === undefined) return;
-                    const statusUpper = String(status).trim().toUpperCase();
-                    if (statusUpper === 'PRESENT') presentCount++;
-                    else if (statusUpper === 'ABSENT' || statusUpper === 'A') absentCount++;
-                });
-            }
-            clubPresentMap[dKey] = { presentCount, absentCount };
+            clubPresentMap[dKey] = { presentCount: clubPresent, absentCount: clubAbsent };
         });
         clubAbsentMapByClubId[club.id] = clubPresentMap;
 
@@ -946,10 +921,11 @@ export const computeHeadcountTableData = async (departmentId, month, year) => {
                 normalizedSectionIds.includes(String(u.sectionId)) && isRosterActiveOnDate(u, dDate)
             ).length;
 
-            // Same attendance_logs-direct rule as the global Absent row above.
+            // Same subtraction-method rule as the global Absent row above.
             const absent = (dKey <= todayYMD) ? (row.absentCount || 0) : 0;
             // totalPA (roster/activeInClub-based) is kept as-is for Absenteeism % below — only the
-            // "Total Headcount (Present + Absent)" row switches to attendance_logs, 0 on future dates.
+            // "Total Headcount (Present + Absent)" row switches to the subtraction-derived
+            // present/absent pair, 0 on future dates.
             const totalPA = activeInClub;
             const clubTotalHeadcountPresentAbsent = (dKey <= todayYMD)
                 ? (row.presentCount || 0) + (row.absentCount || 0)

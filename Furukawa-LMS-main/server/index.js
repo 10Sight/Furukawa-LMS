@@ -139,6 +139,12 @@ const isAllowedOrigin = (origin) => {
     return LAN_ORIGIN_REGEX.test(origin);
 };
 const server = createServer(app);
+// Large (up to 10 GB) uploads/downloads over slow connections can take a long time to
+// complete; the defaults (2min timeout, 5s keep-alive) would otherwise kill the connection
+// mid-transfer. headersTimeout must stay above keepAliveTimeout per Node's requirements.
+server.timeout = 60 * 60 * 1000; // 1 hour
+server.keepAliveTimeout = 60 * 60 * 1000; // 1 hour
+server.headersTimeout = 60 * 60 * 1000 + 1000; // slightly above keepAliveTimeout
 const io = new Server(server, {
     cors: {
         origin: (origin, callback) => {
@@ -166,8 +172,8 @@ app.use(cors(corsOptions));
 app.use(compression()); // Enable gzip/deflate compression
 
 // Body parsing middleware
-app.use(express.json({ limit: '2gb' })); // Increased limit for file uploads (e.g. large PDFs)
-app.use(express.urlencoded({ extended: true, limit: '2gb' }));
+app.use(express.json({ limit: '10gb' })); // Increased limit for file uploads (e.g. large PDFs)
+app.use(express.urlencoded({ extended: true, limit: '10gb' }));
 app.use(cookieParser()); // Add cookie parser middleware
 
 // Serve static files from uploads directory

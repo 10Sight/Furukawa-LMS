@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { 
-    createComparison, 
-    getAllComparisons, 
+import {
+    createComparison,
+    getAllComparisons,
     getComparisonById,
     updateComparison,
-    deleteComparison 
+    deleteComparison,
+    downloadFile
 } from "../controllers/learningComparison.controller.js";
 import upload from "../middlewares/multer.middleware.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
@@ -31,6 +32,7 @@ const uploadFields = [
 
 router.post("/", upload.fields(uploadFields), createComparison);
 router.get("/", getAllComparisons);
+router.get("/download", downloadFile);
 router.get("/:id", getComparisonById);
 router.put("/:id", upload.fields(uploadFields), updateComparison);
 router.delete("/:id", deleteComparison);

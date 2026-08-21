@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Video,
@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
 import axiosInstance, { BASE_URL } from '@/Helper/axiosInstance';
-import FileTransferProgress from '@/components/ui/FileTransferProgress';
 
 const LearningComparisonDetail = () => {
     const { id } = useParams();
@@ -29,8 +28,6 @@ const LearningComparisonDetail = () => {
     const [content, setContent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showBefore, setShowBefore] = useState(false);
-    const [transfer, setTransfer] = useState({ open: false, fileName: '', percent: 0, loaded: 0, total: 0 });
-    const downloadControllerRef = useRef(null);
 
     const baseUrl = BASE_URL;
 
@@ -69,46 +66,18 @@ const LearningComparisonDetail = () => {
         }
     };
 
-    const handleDownload = async (path, fileName) => {
-        const controller = new AbortController();
-        downloadControllerRef.current = controller;
-        const savedName = path.split('/').pop() || fileName || 'download';
-
-        setTransfer({ open: true, fileName: fileName || savedName, percent: 0, loaded: 0, total: 0 });
-        try {
-            const response = await axiosInstance.get(path, {
-                responseType: 'blob',
-                signal: controller.signal,
-                onDownloadProgress: (progressEvent) => {
-                    const total = progressEvent.total || 0;
-                    const percent = total ? Math.round((progressEvent.loaded * 100) / total) : 0;
-                    setTransfer(prev => ({ ...prev, percent, loaded: progressEvent.loaded, total }));
-                }
-            });
-
-            const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = savedName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(blobUrl);
-        } catch (error) {
-            if (error.code === 'ERR_CANCELED') {
-                toast.info("Download cancelled");
-            } else {
-                console.error(error);
-                toast.error("Failed to download file");
-            }
-        } finally {
-            setTransfer(prev => ({ ...prev, open: false }));
-            downloadControllerRef.current = null;
-        }
-    };
-
-    const handleCancelDownload = () => {
-        downloadControllerRef.current?.abort();
+    const handleDownload = (path) => {
+        // Files can be up to 10 GB — reading them into an in-memory Blob (the old Axios
+        // approach) would exceed browser memory limits and crash the tab. Instead we hand
+        // the URL to the browser's native download manager, which streams straight to disk.
+        const token = localStorage.getItem('token');
+        const downloadUrl = `${baseUrl}/api/learning-comparisons/download?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`;
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     };
 
     const handleView = (path) => {
@@ -265,16 +234,6 @@ const LearningComparisonDetail = () => {
 
     return (
         <div className="max-w-7xl mx-auto space-y-8 pb-12 animate-in fade-in duration-500">
-            <FileTransferProgress
-                open={transfer.open}
-                mode="download"
-                fileName={transfer.fileName}
-                percent={transfer.percent}
-                loaded={transfer.loaded}
-                total={transfer.total}
-                onCancel={handleCancelDownload}
-            />
-
             {/* Navigation & Header */}
             <div className="flex flex-col gap-6 border-b pb-8">
                 <div className="flex items-center gap-4">

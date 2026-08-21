@@ -1,3 +1,4 @@
+import path from "path";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -100,6 +101,32 @@ export const updateComparison = asyncHandler(async (req, res) => {
 
     const updated = await LearningComparison.update(id, updateData);
     res.json(new ApiResponse(200, updated, "Learning comparison updated successfully"));
+});
+
+export const downloadFile = asyncHandler(async (req, res, next) => {
+    const { path: relativePath } = req.query;
+
+    if (!relativePath || typeof relativePath !== "string" || !relativePath.startsWith("/uploads/")) {
+        throw new ApiError("Invalid file path", 400);
+    }
+
+    const uploadsRoot = path.join(process.cwd(), "uploads");
+    const absolutePath = path.join(process.cwd(), relativePath);
+
+    // Guard against directory traversal (e.g. "/uploads/../../.env") by ensuring the
+    // resolved path still lives inside the uploads directory before streaming it back.
+    if (!absolutePath.startsWith(uploadsRoot + path.sep)) {
+        throw new ApiError("Invalid file path", 400);
+    }
+
+    res.download(absolutePath, (err) => {
+        // res.download's callback fires after the promise this handler returns has
+        // already settled, so asyncHandler can't catch a throw here — route errors
+        // through next() instead.
+        if (err && !res.headersSent) {
+            next(new ApiError("File not found", 404));
+        }
+    });
 });
 
 export const deleteComparison = asyncHandler(async (req, res) => {

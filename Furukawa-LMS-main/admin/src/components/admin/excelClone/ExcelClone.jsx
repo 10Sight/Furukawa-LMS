@@ -13,7 +13,7 @@ import {
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
     IconSum, IconChevronDown, IconChevronUp, IconLayoutAlignTop, IconLayoutAlignMiddle,
     IconLayoutAlignBottom, IconTextWrap, IconCheck, IconBorderBottom, IconBorderNone, IconBorderRight, IconBorderLeft,
-    IconFilter, IconFilterFilled
+    IconFilter, IconFilterFilled, IconPhoto, IconVideo
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
@@ -30,6 +30,8 @@ const DEFAULT_ROW_HEIGHT = 28;
 const MIN_COLUMN_WIDTH = 40;
 const MIN_ROW_HEIGHT = 20;
 const ROW_HEADER_WIDTH = 40;
+const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
+const MEDIA_MIN_SIZE = 40;
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24];
 const FONT_FAMILIES = ["Aptos Narrow", "Calibri", "Arial", "Segoe UI"];
 const HISTORY_LIMIT = 100;
@@ -84,7 +86,7 @@ const TableStyleSwatch = ({ preset }) => (
     </div>
 );
 
-const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [] });
+const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
 
 const isBlankCell = (cell) => {
     if (!cell) return true;
@@ -214,6 +216,136 @@ const RibbonGroup = ({ label, children }) => (
     </div>
 );
 
+// Finds the largest cumulative-offset index whose offset is <= px, i.e. which
+// row/column band a pixel coordinate falls inside — used both to place a
+// media item (row/col + offset -> px) and, on drag release, to re-anchor it
+// (px -> row/col + offset) so it stays cell-relative across resizes.
+const bandIndexForPixel = (offsets, px) => {
+    let idx = 0;
+    for (let i = 0; i < offsets.length - 1; i++) {
+        if (px >= offsets[i]) idx = i; else break;
+    }
+    return idx;
+};
+
+// Floating image/video box, anchored to a grid cell (row/col + pixel offset)
+// rather than an absolute page position, so it tracks column/row resizes the
+// way Excel's floating objects do. Drag/resize use local component state and
+// window listeners scoped to the active gesture (added on pointerdown, torn
+// down on pointerup) so idle media items cost nothing, and commit back to the
+// sheet (via onUpdate) only once the gesture ends — keeping every intermediate
+// frame a cheap local re-render instead of an undo-history-producing update.
+const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly }) => {
+    const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
+    const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
+    const gestureRef = useRef(null);
+
+    const baseLeft = (colOffsets[item.col] ?? colOffsets[0]) + (item.offsetX || 0);
+    const baseTop = (rowOffsets[item.row] ?? rowOffsets[0]) + (item.offsetY || 0);
+    const baseWidth = item.width || 280;
+    const baseHeight = item.height || 200;
+
+    const left = baseLeft + (dragOffset?.dx || 0);
+    const top = baseTop + (dragOffset?.dy || 0);
+    const width = Math.max(MEDIA_MIN_SIZE, baseWidth + (resizeDelta?.dw || 0));
+    const height = Math.max(MEDIA_MIN_SIZE, baseHeight + (resizeDelta?.dh || 0));
+
+    const startDrag = useCallback((e) => {
+        if (readOnly) return;
+        e.preventDefault();
+        e.stopPropagation();
+        gestureRef.current = { startX: e.clientX, startY: e.clientY };
+        const onMove = (ev) => {
+            setDragOffset({ dx: ev.clientX - gestureRef.current.startX, dy: ev.clientY - gestureRef.current.startY });
+        };
+        const onUp = (ev) => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            const dx = ev.clientX - gestureRef.current.startX;
+            const dy = ev.clientY - gestureRef.current.startY;
+            gestureRef.current = null;
+            setDragOffset(null);
+            if (dx === 0 && dy === 0) return;
+            const newLeft = Math.max(colOffsets[0], baseLeft + dx);
+            const newTop = Math.max(rowOffsets[0], baseTop + dy);
+            const col = Math.min(columnCount - 1, bandIndexForPixel(colOffsets, newLeft));
+            const row = Math.min(rowCount - 1, bandIndexForPixel(rowOffsets, newTop));
+            onUpdate({ row, col, offsetX: Math.max(0, newLeft - colOffsets[col]), offsetY: Math.max(0, newTop - rowOffsets[row]) });
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate]);
+
+    const startResize = useCallback((e) => {
+        if (readOnly) return;
+        e.preventDefault();
+        e.stopPropagation();
+        gestureRef.current = { startX: e.clientX, startY: e.clientY };
+        const onMove = (ev) => {
+            setResizeDelta({ dw: ev.clientX - gestureRef.current.startX, dh: ev.clientY - gestureRef.current.startY });
+        };
+        const onUp = (ev) => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            const dw = ev.clientX - gestureRef.current.startX;
+            const dh = ev.clientY - gestureRef.current.startY;
+            gestureRef.current = null;
+            setResizeDelta(null);
+            if (dw === 0 && dh === 0) return;
+            onUpdate({ width: Math.max(MEDIA_MIN_SIZE, baseWidth + dw), height: Math.max(MEDIA_MIN_SIZE, baseHeight + dh) });
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [readOnly, baseWidth, baseHeight, onUpdate]);
+
+    return (
+        <div
+            className="absolute group"
+            style={{ left, top, width, height, zIndex: 15 }}
+        >
+            <div className="relative w-full h-full border border-transparent group-hover:border-indigo-400 rounded overflow-hidden bg-white">
+                {item.type === "image" ? (
+                    <img
+                        src={item.src}
+                        alt=""
+                        draggable={false}
+                        className={cn("w-full h-full object-contain select-none", !readOnly && "cursor-move")}
+                        onMouseDown={startDrag}
+                    />
+                ) : (
+                    <>
+                        <video src={item.src} controls className="w-full h-full bg-black" />
+                        {!readOnly && (
+                            <div
+                                onMouseDown={startDrag}
+                                className="absolute inset-x-0 top-0 h-4 bg-slate-900/0 group-hover:bg-slate-900/20 cursor-move z-10"
+                                title="Drag to move"
+                            />
+                        )}
+                    </>
+                )}
+                {!readOnly && (
+                    <>
+                        <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={onDelete}
+                            className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Remove"
+                        >
+                            <IconX className="w-3.5 h-3.5" />
+                        </button>
+                        <div
+                            onMouseDown={startResize}
+                            className="absolute right-0 bottom-0 w-3 h-3 bg-indigo-600 cursor-nwse-resize opacity-0 group-hover:opacity-100 z-20"
+                            title="Drag to resize"
+                        />
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
     const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
@@ -262,6 +394,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const [resizePreview, setResizePreview] = useState(null); // { type: 'col'|'row', index, size }
 
+    const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
+    const [videoPopoverOpen, setVideoPopoverOpen] = useState(false);
+    const [imageUrlDraft, setImageUrlDraft] = useState("");
+    const [videoUrlDraft, setVideoUrlDraft] = useState("");
+    const mediaImageInputRef = useRef(null);
+    const mediaVideoInputRef = useRef(null);
+
     const isSelecting = useRef(false);
     const isFilling = useRef(false);
     const fileInputRef = useRef(null);
@@ -289,8 +428,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const loadedSheets = sheetData.data.sheets && Object.keys(sheetData.data.sheets).length > 0
                 ? sheetData.data.sheets
                 : { [DEFAULT_SHEET_NAME]: emptySheet() };
-            setSheets(loadedSheets);
-            setActiveSheetName(sheetData.data.activeSheet && loadedSheets[sheetData.data.activeSheet] ? sheetData.data.activeSheet : Object.keys(loadedSheets)[0]);
+            // Older saved sheets predate the `media` field — backfill it so
+            // `.map`/`.push` on sheet.media never has to null-check callers.
+            const sanitizedSheets = Object.fromEntries(
+                Object.entries(loadedSheets).map(([name, sheet]) => [name, { ...sheet, media: sheet.media || [] }])
+            );
+            setSheets(sanitizedSheets);
+            setActiveSheetName(sheetData.data.activeSheet && sanitizedSheets[sheetData.data.activeSheet] ? sheetData.data.activeSheet : Object.keys(sanitizedSheets)[0]);
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];
@@ -323,6 +467,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const columnWidths = activeSheet.columnWidths || {};
     const rowHeights = activeSheet.rowHeights || {};
     const tables = activeSheet.tables || [];
+    const media = activeSheet.media || [];
 
     const columns = useMemo(() => Array.from({ length: columnCount }, (_, i) => indexToCol(i)), [columnCount]);
     const rows = useMemo(() => Array.from({ length: rowCount }, (_, i) => i), [rowCount]);
@@ -468,6 +613,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         resizePreview?.type === "row" && resizePreview.index === rowIdx ? resizePreview.size : (rowHeights[rowIdx] || DEFAULT_ROW_HEIGHT)
     ), [resizePreview, rowHeights]);
 
+    // Cumulative pixel offsets per column/row (including the fixed header
+    // width/height), used to place floating media at its anchor cell and to
+    // re-derive that anchor after a drag. Recomputed whenever a column/row
+    // resize (even a live in-progress one) changes widthForCol/heightForRow,
+    // so media tracks resizes the same frame the grid does.
+    const colOffsets = useMemo(() => {
+        const offsets = [ROW_HEADER_WIDTH];
+        for (let i = 0; i < columnCount; i++) offsets.push(offsets[offsets.length - 1] + widthForCol(i));
+        return offsets;
+    }, [columnCount, widthForCol]);
+
+    const rowOffsets = useMemo(() => {
+        const offsets = [HEADER_ROW_HEIGHT];
+        for (let i = 0; i < rowCount; i++) offsets.push(offsets[offsets.length - 1] + heightForRow(i));
+        return offsets;
+    }, [rowCount, heightForRow]);
+
     const startColumnResize = useCallback((e, colIdx) => {
         e.preventDefault();
         e.stopPropagation();
@@ -517,6 +679,64 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             window.removeEventListener("mouseup", onMouseUp);
         };
     }, [updateSheets, activeSheetName]);
+
+    // --- Floating media (images/video) ---
+    // Anchored to whatever cell is active at insert time, like Excel dropping
+    // a picture near the current selection. Position/size then live on the
+    // media item itself (row/col + pixel offset, width/height) and are only
+    // ever touched again by a drag/resize gesture's onUpdate.
+
+    const handleInsertMedia = useCallback((type, src) => {
+        if (!src) return;
+        const anchor = parseCellRef(activeCell) || { row: 0, col: 0 };
+        const newItem = {
+            id: `media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            type,
+            src,
+            row: anchor.row,
+            col: anchor.col,
+            offsetX: 8,
+            offsetY: 8,
+            width: 280,
+            height: 200,
+        };
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (!sheet) return;
+            if (!sheet.media) sheet.media = [];
+            sheet.media.push(newItem);
+        });
+    }, [activeCell, activeSheetName, updateSheets]);
+
+    const handleInsertMediaFile = useCallback((type, file) => {
+        if (!file) return;
+        const maxBytes = 8 * 1024 * 1024; // sheets are stored as JSON, so embedded media rides along as base64 — keep it bounded
+        if (file.size > maxBytes) {
+            toast.error("File is too large to embed (max 8MB).");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (evt) => handleInsertMedia(type, evt.target.result);
+        reader.onerror = () => toast.error("Failed to read file.");
+        reader.readAsDataURL(file);
+    }, [handleInsertMedia]);
+
+    const handleUpdateMedia = useCallback((id, patch) => {
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            const idx = (sheet?.media || []).findIndex((m) => m.id === id);
+            if (idx === -1) return;
+            sheet.media[idx] = { ...sheet.media[idx], ...patch };
+        });
+    }, [activeSheetName, updateSheets]);
+
+    const handleDeleteMedia = useCallback((id) => {
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (!sheet?.media) return;
+            sheet.media = sheet.media.filter((m) => m.id !== id);
+        });
+    }, [activeSheetName, updateSheets]);
 
     const undo = useCallback(() => {
         if (historyPast.current.length === 0) return;
@@ -1381,7 +1601,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         conditionalRules: [],
                         merges: [],
                         columnWidths: {},
-                        rowHeights: {}
+                        rowHeights: {},
+                        media: next[activeSheetName]?.media || []
                     };
                 });
                 toast.success("Spreadsheet imported. Click Save to persist it.");
@@ -1448,6 +1669,67 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("cut")} title="Cut (Ctrl+X)"><IconCut className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={handlePaste} disabled={!clipboard} title="Paste (Ctrl+V)"><IconClipboard className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className={ribbonBtnClass(!!formatPainterStyle)} onClick={activateFormatPainter} title="Format Painter — click a cell to apply"><IconBrush className="w-4 h-4" /></Button>
+                </RibbonGroup>
+
+                <RibbonGroup label="Insert">
+                    <Popover open={imagePopoverOpen} onOpenChange={setImagePopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert image"><IconPhoto className="w-4 h-4" /> Image</Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1">Image URL</div>
+                            <div className="flex gap-1">
+                                <input
+                                    className="flex-1 h-7 text-xs border border-slate-200 rounded px-2"
+                                    placeholder="https://…"
+                                    value={imageUrlDraft}
+                                    onChange={(e) => setImageUrlDraft(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && imageUrlDraft.trim()) { handleInsertMedia("image", imageUrlDraft.trim()); setImageUrlDraft(""); setImagePopoverOpen(false); } }}
+                                />
+                                <Button size="sm" className="h-7 text-xs cursor-pointer" disabled={!imageUrlDraft.trim()} onClick={() => { handleInsertMedia("image", imageUrlDraft.trim()); setImageUrlDraft(""); setImagePopoverOpen(false); }}>Add</Button>
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1 pt-1">Or Upload</div>
+                            <Button variant="outline" size="sm" className="w-full h-7 text-xs cursor-pointer" onClick={() => mediaImageInputRef.current?.click()}>
+                                <IconUpload className="w-3.5 h-3.5" /> Choose Image File
+                            </Button>
+                            <input
+                                ref={mediaImageInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleInsertMediaFile("image", f); setImagePopoverOpen(false); } e.target.value = ""; }}
+                            />
+                        </PopoverContent>
+                    </Popover>
+                    <Popover open={videoPopoverOpen} onOpenChange={setVideoPopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert video"><IconVideo className="w-4 h-4" /> Video</Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1">Video URL</div>
+                            <div className="flex gap-1">
+                                <input
+                                    className="flex-1 h-7 text-xs border border-slate-200 rounded px-2"
+                                    placeholder="https://… (mp4, webm)"
+                                    value={videoUrlDraft}
+                                    onChange={(e) => setVideoUrlDraft(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && videoUrlDraft.trim()) { handleInsertMedia("video", videoUrlDraft.trim()); setVideoUrlDraft(""); setVideoPopoverOpen(false); } }}
+                                />
+                                <Button size="sm" className="h-7 text-xs cursor-pointer" disabled={!videoUrlDraft.trim()} onClick={() => { handleInsertMedia("video", videoUrlDraft.trim()); setVideoUrlDraft(""); setVideoPopoverOpen(false); }}>Add</Button>
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1 pt-1">Or Upload</div>
+                            <Button variant="outline" size="sm" className="w-full h-7 text-xs cursor-pointer" onClick={() => mediaVideoInputRef.current?.click()}>
+                                <IconUpload className="w-3.5 h-3.5" /> Choose Video File
+                            </Button>
+                            <input
+                                ref={mediaVideoInputRef}
+                                type="file"
+                                accept="video/*"
+                                className="hidden"
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleInsertMediaFile("video", f); setVideoPopoverOpen(false); } e.target.value = ""; }}
+                            />
+                        </PopoverContent>
+                    </Popover>
                 </RibbonGroup>
 
                 <RibbonGroup label="Font">
@@ -1750,6 +2032,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 onKeyDown={handleGridKeyDown}
                 onMouseLeave={() => setHoveredCell(null)}
             >
+                <div className="relative">
+                {media.map((item) => (
+                    <DraggableMedia
+                        key={item.id}
+                        item={item}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                        columnCount={columnCount}
+                        rowCount={rowCount}
+                        readOnly={readOnly}
+                        onUpdate={(patch) => handleUpdateMedia(item.id, patch)}
+                        onDelete={() => handleDeleteMedia(item.id)}
+                    />
+                ))}
                 <table
                     className="border-collapse"
                     style={{ tableLayout: "fixed", width: ROW_HEADER_WIDTH + columns.reduce((sum, _, colIdx) => sum + widthForCol(colIdx), 0) }}
@@ -1989,6 +2285,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         })}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* Sheet tabs */}

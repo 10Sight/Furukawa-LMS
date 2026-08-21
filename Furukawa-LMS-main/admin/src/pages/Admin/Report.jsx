@@ -18,8 +18,6 @@ import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
 import { useGetAllClubsQuery } from '@/Redux/AllApi/ReportClubApi';
 
-const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual", "Rejoining", "Present in Training Cell", "Rejoining in Training Cell"];
-
 // Reactively derives every formula-driven cell from the raw/manual ones already in `data`,
 // so the UI, "Save", and "Sync Data" all show the exact same numbers without re-fetching.
 // "Present in Training Cell" itself is still sourced from the server (statusHistory +
@@ -28,15 +26,22 @@ const SYNCED_READONLY_ROWS = ["Hiring Actual", "Handover Plan", "Handover Actual
 // derived from it via the same backward pass headcountData.service.js runs, using the Dojo
 // bridge rows (Hiring Actual Dojo / Dojo Rejoining & Returns / Dojo Handover / Dojo Attrition /
 // Dojo On Leave) already present in `data` from the last sync.
-const recalculateReportData = (data, headerDates) => {
+//
+// Every cell in the grid is user-editable, so `modifiedCells` (keys like "Gap_2026-08-21") marks
+// cells the user has typed into directly — those are left untouched by the formulas below instead
+// of being silently overwritten on the next keystroke elsewhere in the grid.
+const recalculateReportData = (data, headerDates, modifiedCells = new Set()) => {
     const newData = { ...data };
 
-    // Gap = Actual Separations (Cumulative) - Expected Separations (Cumulative), for every date.
+    // Gap = Actual Separations (Cumulative) - Expected Separations (Cumulative), for every date,
+    // unless the user has manually overridden that date's Gap.
     headerDates.forEach(dateObj => {
         const dateKey = dateObj.fullDate;
+        const gapKey = `Gap_${dateKey}`;
+        if (modifiedCells.has(gapKey)) return;
         const actual = parseFloat(newData[`Actual Separations (Cumulative)_${dateKey}`]) || 0;
         const expected = parseFloat(newData[`Expected Separations (Cumulative)_${dateKey}`]) || 0;
-        newData[`Gap_${dateKey}`] = (actual - expected).toFixed(0);
+        newData[gapKey] = (actual - expected).toFixed(0);
     });
 
     // Present in Training Cell must read 0 for any date after today, even if a stale value from
@@ -76,6 +81,14 @@ const recalculateReportData = (data, headerDates) => {
         for (let i = presentAnchorIndex; i > 0; i--) {
             const todayKey = headerDates[i].fullDate;
             const yesterdayKey = headerDates[i - 1].fullDate;
+            const yesterdayModKey = `Present in Training Cell_${yesterdayKey}`;
+
+            // A manually edited past value is kept as-is, and becomes the new running baseline
+            // that earlier dates are derived from.
+            if (modifiedCells.has(yesterdayModKey)) {
+                runningPresentValue = parseFloat(newData[yesterdayModKey]) || 0;
+                continue;
+            }
 
             const hires = parseFloat(newData[`Hiring Actual Dojo_${todayKey}`]) || 0;
             const rejoiningReturns = parseFloat(newData[`Dojo Rejoining & Returns_${todayKey}`]) || 0;
@@ -84,7 +97,7 @@ const recalculateReportData = (data, headerDates) => {
             const onLeave = parseFloat(newData[`Dojo On Leave_${todayKey}`]) || 0;
 
             runningPresentValue = runningPresentValue - hires - rejoiningReturns + handover + attrition + onLeave;
-            newData[`Present in Training Cell_${yesterdayKey}`] = String(runningPresentValue);
+            newData[yesterdayModKey] = String(runningPresentValue);
         }
     }
 
@@ -200,6 +213,7 @@ const buildHiringActualNote = (tableData, dateObj) => {
 const Report = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [tableData, setTableData] = useState({});
+    const [modifiedCells, setModifiedCells] = useState(() => new Set());
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -272,7 +286,8 @@ const Report = () => {
 
                 if (response.data?.success) {
                     const loadedData = response.data.data.tableData || {};
-                    setTableData(recalculateReportData(loadedData, headerDates));
+                    setModifiedCells(new Set());
+                    setTableData(recalculateReportData(loadedData, headerDates, new Set()));
                 }
             } catch (error) {
                 console.error("Fetch error:", error);
@@ -286,13 +301,18 @@ const Report = () => {
     }, [currentDate, headerDates]);
 
     const handleInputChange = (rowLabel, dateKey, value) => {
+        const cellKey = `${rowLabel}_${dateKey}`;
+        const nextModifiedCells = new Set(modifiedCells);
+        nextModifiedCells.add(cellKey);
+        setModifiedCells(nextModifiedCells);
+
         setTableData(prev => {
             const newData = {
                 ...prev,
-                [`${rowLabel}_${dateKey}`]: value
+                [cellKey]: value
             };
 
-            return recalculateReportData(newData, headerDates);
+            return recalculateReportData(newData, headerDates, nextModifiedCells);
         });
     };
 
@@ -334,9 +354,10 @@ const Report = () => {
             if (response.data?.success) {
                 const syncedData = response.data.data.tableData;
 
+                setModifiedCells(new Set());
                 setTableData(prev => {
                     const merged = { ...prev, ...syncedData };
-                    return recalculateReportData(merged, headerDates);
+                    return recalculateReportData(merged, headerDates, new Set());
                 });
 
                 toast.success("Data synced from Attendance, User logs & Requirements!", { id: toastId });
@@ -637,7 +658,6 @@ const Report = () => {
                                             {headerDates.map((dateObj, colIndex) => {
                                                 const cellKey = dateObj.fullDate;
                                                 const key = `${row.dataKey || row.label}_${cellKey}`;
-                                                const isSyncedReadOnly = SYNCED_READONLY_ROWS.includes(row.label);
                                                 const rawValue = tableData[key];
                                                 const value = (rawValue === undefined || rawValue === null || rawValue === '')
                                                     ? '0'
@@ -656,17 +676,16 @@ const Report = () => {
                                                     <input
                                                         type="text"
                                                         value={value}
-                                                        readOnly={isSyncedReadOnly}
                                                         onChange={(e) =>
                                                             handleInputChange(row.dataKey || row.label, cellKey, e.target.value)
                                                         }
                                                         className={`
                                                             w-full h-full px-1 py-1.5 bg-transparent text-center focus:outline-none transition-colors
-                                                            ${hasClickableNote ? 'cursor-pointer hover:bg-indigo-100' : (isSyncedReadOnly ? 'cursor-not-allowed' : 'focus:bg-blue-100')}
+                                                            ${hasClickableNote ? 'cursor-pointer hover:bg-indigo-100 focus:bg-blue-100' : 'focus:bg-blue-100'}
                                                             ${row.bold ? 'font-bold' : ''}
                                                         `}
                                                         style={{ minHeight: '28px' }}
-                                                        title={isPresentInTrainingCell ? 'Click for calculation details' : isHiringActual ? 'Click for hiring details' : (isSyncedReadOnly ? 'Auto-calculated on sync' : undefined)}
+                                                        title={isPresentInTrainingCell ? 'Click for calculation details' : isHiringActual ? 'Click for hiring details' : undefined}
                                                     />
                                                 );
 

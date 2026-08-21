@@ -90,37 +90,39 @@ const parseLocalDate = (dateStr) => {
     return new Date(year, month - 1, day);
 };
 
-// Scans a record's recordData JSON to determine whether the 1st/2nd/3rd
-// "Dimension Check (Every 2 hours)" entries (C/H or Length, std or observed) were filled.
-const getDimensionChecksStatus = (recordData) => {
-    if (!recordData || typeof recordData !== 'object') {
-        return { first: false, second: false, third: false };
-    }
+// Both Crimping and Assembly/SRC have a "Dimension Check (Every 2 hours)" section with
+// 1st/2nd/3rd checks, but the underlying fields differ: Crimping captures C/H + Length
+// std/observed values (rec_i_Cont_CH_Std1/Obs1, Cont_Len_Std1/Obs1, etc.), while
+// Assembly/SRC capture a single free-text value per check (rec_i_Cont_Dim_1/2/3).
+const ORDINALS = ["1st", "2nd", "3rd"];
 
-    let first = false;
-    let second = false;
-    let third = false;
+const getDimensionChecksStatus = (record) => {
+    const recordData = record?.recordData;
+    if (!recordData || typeof recordData !== 'object') return null;
 
-    Object.entries(recordData).forEach(([key, val]) => {
-        if (val && String(val).trim() !== "") {
-            if (key.includes("Cont_CH_Std1") || key.includes("Cont_CH_Obs1") || key.includes("Cont_Len_Std1") || key.includes("Cont_Len_Obs1")) {
-                first = true;
-            }
-            if (key.includes("Cont_CH_Std2") || key.includes("Cont_CH_Obs2") || key.includes("Cont_Len_Std2") || key.includes("Cont_Len_Obs2")) {
-                second = true;
-            }
-            if (key.includes("Cont_CH_Std3") || key.includes("Cont_CH_Obs3") || key.includes("Cont_Len_Std3") || key.includes("Cont_Len_Obs3")) {
-                third = true;
-            }
-        }
-    });
+    const anyKeyFilled = (fragment) =>
+        Object.entries(recordData).some(([key, val]) => key.includes(fragment) && val && String(val).trim() !== "");
 
-    return { first, second, third };
+    const isCrimping = record.formType === 'crimping';
+
+    return {
+        checks: ORDINALS.map((label, i) => {
+            const n = i + 1;
+            return {
+                label,
+                title: `${label} Check`,
+                filled: isCrimping
+                    ? anyKeyFilled(`Cont_CH_Std${n}`) || anyKeyFilled(`Cont_CH_Obs${n}`) ||
+                        anyKeyFilled(`Cont_Len_Std${n}`) || anyKeyFilled(`Cont_Len_Obs${n}`)
+                    : anyKeyFilled(`Cont_Dim_${n}`)
+            };
+        })
+    };
 };
 
-const DimensionCheckPill = ({ label, filled }) => (
+const DimensionCheckPill = ({ label, title, filled }) => (
     <span
-        title={`${label} Check: ${filled ? "Filled" : "Empty"}`}
+        title={`${title}: ${filled ? "Filled" : "Empty"}`}
         className={cn(
             "inline-flex items-center justify-center w-7 h-5 rounded-full text-[10px] font-bold border transition-colors",
             filled
@@ -1032,12 +1034,13 @@ const Daily5MDashboard = () => {
                                         </TableCell>
                                         <TableCell onClick={(e) => e.stopPropagation()}>
                                             {(() => {
-                                                const { first, second, third } = getDimensionChecksStatus(record.recordData);
+                                                const status = getDimensionChecksStatus(record);
+                                                if (!status) return <span className="text-xs text-slate-300">—</span>;
                                                 return (
-                                                    <div className="flex items-center gap-1">
-                                                        <DimensionCheckPill label="1st" filled={first} />
-                                                        <DimensionCheckPill label="2nd" filled={second} />
-                                                        <DimensionCheckPill label="3rd" filled={third} />
+                                                    <div className="flex items-center gap-1 flex-wrap max-w-[160px]">
+                                                        {status.checks.map((check) => (
+                                                            <DimensionCheckPill key={check.label} label={check.label} title={check.title} filled={check.filled} />
+                                                        ))}
                                                     </div>
                                                 );
                                             })()}

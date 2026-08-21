@@ -266,6 +266,13 @@ export const translations = {
     "charts.failedToLoadOperatorObservance": "Failed to load operator observance status.",
     "charts.noOperatorObservanceData": "No operator observance data found for this period.",
 
+    // OJT Approved Comparison Chart
+    "charts.ojtApprovedComparison": "On-Job Training — Approved Users",
+    "charts.ojtApprovedComparisonDesc": "Count of trainees approved on OJT evaluation and record sheets, grouped by department — or by section when a single department is selected",
+    "charts.failedToLoadOjt": "Failed to load on-job training status.",
+    "charts.noOjtData": "No on-job training data found for this period.",
+    "charts.approvedUsers": "Approved Users",
+
     "charts.totalFilledDays": "Total Filled Days",
     "charts.filledDays": "Filled Days",
     "charts.filledItems": "Filled Items",
@@ -1050,6 +1057,13 @@ export const translations = {
     "charts.failedToLoadOperatorObservance": "ऑपरेटर ऑब्ज़र्वेंस स्थिति लोड करने में विफल।",
     "charts.noOperatorObservanceData": "इस अवधि के लिए कोई ऑपरेटर ऑब्ज़र्वेंस डेटा नहीं मिला।",
 
+    // OJT Approved Comparison Chart
+    "charts.ojtApprovedComparison": "ऑन-जॉब ट्रेनिंग — स्वीकृत उपयोगकर्ता",
+    "charts.ojtApprovedComparisonDesc": "OJT मूल्यांकन और रिकॉर्ड शीट पर स्वीकृत प्रशिक्षुओं की संख्या, विभाग के अनुसार समूहीकृत — या एकल विभाग चुनने पर अनुभाग के अनुसार",
+    "charts.failedToLoadOjt": "ऑन-जॉब ट्रेनिंग स्थिति लोड करने में विफल।",
+    "charts.noOjtData": "इस अवधि के लिए कोई ऑन-जॉब ट्रेनिंग डेटा नहीं मिला।",
+    "charts.approvedUsers": "स्वीकृत उपयोगकर्ता",
+
     "charts.totalFilledDays": "कुल भरे गए दिन",
     "charts.filledDays": "भरे गए दिन",
     "charts.filledItems": "भरी गई प्रविष्टियाँ",
@@ -1814,6 +1828,14 @@ export const translations = {
     "charts.threeDayMonitoringComparisonDesc": "モニタリングシートの入力済み日数（Day1〜3）の日別集計、部門別グループ化 — 単一部門選択時はセクション別",
     "charts.failedToLoadThreeDay": "3日間モニタリング状況の読み込みに失敗しました。",
     "charts.noThreeDayData": "この期間の3日間モニタリングデータが見つかりません。",
+
+    // OJT Approved Comparison Chart
+    "charts.ojtApprovedComparison": "OJT実地訓練 — 承認済みユーザー数",
+    "charts.ojtApprovedComparisonDesc": "OJT評価・記録シートで承認された研修生数、部門別グループ化 — 単一部門選択時はセクション別",
+    "charts.failedToLoadOjt": "OJT実地訓練状況の読み込みに失敗しました。",
+    "charts.noOjtData": "この期間のOJT実地訓練データが見つかりません。",
+    "charts.approvedUsers": "承認済みユーザー数",
+
     "charts.totalFilledDays": "合計入力日数",
     "charts.filledDays": "入力日数",
     "charts.showDetails": "詳細を表示",
@@ -2577,6 +2599,14 @@ export const translations = {
     "charts.threeDayMonitoringComparisonDesc": "监控表已填写天数（第1天至第3天）的每日统计，按部门分组 — 选择单个部门时按科室分组",
     "charts.failedToLoadThreeDay": "3天监控状态加载失败。",
     "charts.noThreeDayData": "未找到该时段的3天监控数据。",
+
+    // OJT Approved Comparison Chart
+    "charts.ojtApprovedComparison": "在岗培训 — 已批准用户数",
+    "charts.ojtApprovedComparisonDesc": "OJT评估表和记录表中已批准学员数量，按部门分组 — 选择单个部门时按科室分组",
+    "charts.failedToLoadOjt": "在岗培训状态加载失败。",
+    "charts.noOjtData": "未找到该时段的在岗培训数据。",
+    "charts.approvedUsers": "已批准用户数",
+
     "charts.totalFilledDays": "填写总天数",
     "charts.filledDays": "填写天数",
     "charts.showDetails": "显示详情",
@@ -3340,6 +3370,14 @@ export const translations = {
     "charts.threeDayMonitoringComparisonDesc": "Ежедневное количество заполненных дней листа мониторинга (День 1–3), сгруппировано по отделам — или по секциям при выборе одного отдела",
     "charts.failedToLoadThreeDay": "Не удалось загрузить статус 3-дневного мониторинга.",
     "charts.noThreeDayData": "Данные 3-дневного мониторинга за этот период не найдены.",
+
+    // OJT Approved Comparison Chart
+    "charts.ojtApprovedComparison": "Обучение на рабочем месте — одобренные пользователи",
+    "charts.ojtApprovedComparisonDesc": "Количество стажёров, одобренных в листах оценки и учёта OJT, сгруппировано по отделам — или по секциям при выборе одного отдела",
+    "charts.failedToLoadOjt": "Не удалось загрузить статус обучения на рабочем месте.",
+    "charts.noOjtData": "Данные обучения на рабочем месте за этот период не найдены.",
+    "charts.approvedUsers": "Одобренные пользователи",
+
     "charts.totalFilledDays": "Всего заполнено дней",
     "charts.filledDays": "Заполнено дней",
     "charts.showDetails": "Показать детали",

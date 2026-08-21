@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getOnJobTrainingStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -37,6 +37,9 @@ router.get("/skill-matrix-status", verifyJWT, authorizeRoles("isAdmin", "SUPERAD
 
 // Get Operator Observance Sheet filled-column breakdown for Admin Home
 router.get("/operator-observance-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getOperatorObservanceStatus);
+
+// Get On-Job Training approved-user breakdown for Admin Home
+router.get("/on-job-training-status", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getOnJobTrainingStatus);
 
 // Get Contractor-wise Operator stats for Admin Home
 router.get("/contractor-wise-operator-stats", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getContractorWiseOperatorStats);

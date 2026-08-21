@@ -463,9 +463,16 @@ class User {
                 // 2. Make column nullable (only if it isn't already, so a routine restart
                 // doesn't take a schema-modification lock on the whole table every time)
                 const [colRows] = await executeQuery(`
-                    SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'phoneNumber'
+                    SELECT
+                        t.name AS DATA_TYPE,
+                        CASE
+                            WHEN t.name IN ('nchar', 'nvarchar') AND c.max_length <> -1 THEN c.max_length / 2
+                            ELSE c.max_length
+                        END AS CHARACTER_MAXIMUM_LENGTH,
+                        CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS IS_NULLABLE
+                    FROM sys.columns c
+                    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID('users') AND c.name = 'phoneNumber'
                 `);
                 const col = colRows[0];
                 const alreadyApplied = col
@@ -551,9 +558,16 @@ class User {
             // take a schema-modification lock on the whole table every time)
             try {
                 const [emailColRows] = await executeQuery(`
-                    SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'email'
+                    SELECT
+                        t.name AS DATA_TYPE,
+                        CASE
+                            WHEN t.name IN ('nchar', 'nvarchar') AND c.max_length <> -1 THEN c.max_length / 2
+                            ELSE c.max_length
+                        END AS CHARACTER_MAXIMUM_LENGTH,
+                        CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS IS_NULLABLE
+                    FROM sys.columns c
+                    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID('users') AND c.name = 'email'
                 `);
                 const emailCol = emailColRows[0];
                 const emailAlreadyApplied = emailCol

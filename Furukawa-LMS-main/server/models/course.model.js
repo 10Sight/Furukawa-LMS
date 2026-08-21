@@ -82,8 +82,11 @@ class Course {
                 // (instructors are now associated via department.instructor instead)
                 await executeQuery(`
                     IF EXISTS (
-                        SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-                        WHERE TABLE_NAME = 'courses' AND COLUMN_NAME = 'instructor' AND IS_NULLABLE = 'NO'
+                        SELECT 1
+                        FROM sys.columns
+                        WHERE object_id = OBJECT_ID('courses')
+                          AND name = 'instructor'
+                          AND is_nullable = 0
                     )
                     BEGIN
                         ALTER TABLE courses ALTER COLUMN instructor INT NULL;

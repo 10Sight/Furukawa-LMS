@@ -102,20 +102,31 @@ class OnJobTraining {
                 // Ensure student, line, and machine columns are nullable and updated to appropriate types
                 await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN student VARCHAR(255) NULL`);
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'line' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN [line] NVARCHAR(255) NULL
+                // Single fast catalog-view query for all column types instead of 8 separate
+                // INFORMATION_SCHEMA.COLUMNS round-trips (each of which is notoriously slow on
+                // SQL Server under load).
+                const [colTypeRows] = await executeQuery(`
+                    SELECT c.name AS COLUMN_NAME, t.name AS DATA_TYPE
+                    FROM sys.columns c
+                    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID('on_job_trainings')
                 `);
+                const columnTypes = {};
+                for (const row of colTypeRows) {
+                    columnTypes[row.COLUMN_NAME] = row.DATA_TYPE.toLowerCase();
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'machine' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN machine NVARCHAR(255) NULL
-                `);
+                if (columnTypes['line'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN [line] NVARCHAR(255) NULL`);
+                }
+
+                if (columnTypes['machine'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN machine NVARCHAR(255) NULL`);
+                }
 
                 // Alter other existing columns to NVARCHAR to support Unicode (Hindi, etc.)
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'name' AND DATA_TYPE = 'varchar')
-                    BEGIN
+                if (columnTypes['name'] === 'varchar') {
+                    await executeQuery(`
                         DECLARE @ConstraintName nvarchar(200)
                         SELECT @ConstraintName = Name
                         FROM sys.default_constraints
@@ -128,33 +139,28 @@ class OnJobTraining {
                         ALTER TABLE on_job_trainings ALTER COLUMN name NVARCHAR(255) NULL;
 
                         ALTER TABLE on_job_trainings ADD CONSTRAINT DF_on_job_trainings_name DEFAULT 'Level-1 Practical Evaluation of On the Job Training' FOR name;
-                    END
-                `);
+                    `);
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'section' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN section NVARCHAR(255) NULL
-                `);
+                if (columnTypes['section'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN section NVARCHAR(255) NULL`);
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'subSection' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN subSection NVARCHAR(255) NULL
-                `);
+                if (columnTypes['subSection'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN subSection NVARCHAR(255) NULL`);
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'areaLine' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN areaLine NVARCHAR(255) NULL
-                `);
+                if (columnTypes['areaLine'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN areaLine NVARCHAR(255) NULL`);
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'trainingGivenBy' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN trainingGivenBy NVARCHAR(255) NULL
-                `);
+                if (columnTypes['trainingGivenBy'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN trainingGivenBy NVARCHAR(255) NULL`);
+                }
 
-                await executeQuery(`
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'on_job_trainings' AND COLUMN_NAME = 'trainingTopic' AND DATA_TYPE = 'varchar')
-                        ALTER TABLE on_job_trainings ALTER COLUMN trainingTopic NVARCHAR(255) NULL
-                `);
+                if (columnTypes['trainingTopic'] === 'varchar') {
+                    await executeQuery(`ALTER TABLE on_job_trainings ALTER COLUMN trainingTopic NVARCHAR(255) NULL`);
+                }
             }
             logger.info("Checked/Created on_job_trainings table in MSSQL");
         } catch (error) {

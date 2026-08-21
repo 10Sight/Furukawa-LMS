@@ -90,8 +90,14 @@ class MonitoringConfig {
 
             // MIGRATE departmentId from INT to VARCHAR(255) if necessary
             await executeQuery(`
-                IF (SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = 'monitoring_configs' AND COLUMN_NAME = 'departmentId') = 'int'
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.columns c
+                    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID('monitoring_configs')
+                      AND c.name = 'departmentId'
+                      AND t.name = 'int'
+                )
                 BEGIN
                     -- Handle existing unique constraint before altering
                     IF EXISTS (SELECT * FROM sys.objects WHERE name = 'uc_type_dept_sect_line_sub_monitor' AND parent_object_id = OBJECT_ID('monitoring_configs'))

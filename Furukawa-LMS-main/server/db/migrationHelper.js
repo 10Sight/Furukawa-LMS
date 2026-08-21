@@ -91,9 +91,15 @@ export const migrationHelper = {
     ensureColumnType: async (tableName, columnName, expectedType) => {
         try {
             const checkQuery = `
-                SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = '${tableName}' AND COLUMN_NAME = '${columnName}'
+                SELECT
+                    t.name AS DATA_TYPE,
+                    CASE
+                        WHEN t.name IN ('nchar', 'nvarchar') AND c.max_length <> -1 THEN c.max_length / 2
+                        ELSE c.max_length
+                    END AS CHARACTER_MAXIMUM_LENGTH
+                FROM sys.columns c
+                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                WHERE c.object_id = OBJECT_ID('${tableName}') AND c.name = '${columnName}'
             `;
             const [rows] = await executeQuery(checkQuery);
             

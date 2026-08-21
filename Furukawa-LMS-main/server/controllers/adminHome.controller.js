@@ -1197,6 +1197,150 @@ export const getOperatorObservanceStatus = asyncHandler(async (req, res) => {
 
 
 /**
+ * Get On-Job Training (OJT) approved-user breakdown for Admin Home page.
+ * OJT approvals live in two shapes on on_job_trainings: single-trainee Evaluation sheets
+ * (student column set, sheet-level result decides approval) and group Record sheets
+ * (student NULL, attendanceRecords holds one JSON row per trainee with its own
+ * ecode/result/date). A CTE + OPENJSON flattens both shapes into a common
+ * (studentRef, result, entryDate) row before resolving each trainee's current department/section
+ * via the users table, grouped by department — or by section once the caller has narrowed to a
+ * single department ("drill mode"), matching the same convention as the other monitoring charts.
+ * Counts distinct approved users per period (not raw approval rows), so a trainee re-approved
+ * more than once within the same period is only counted once.
+ */
+export const getOnJobTrainingStatus = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Accepts comma-separated department IDs for multi-select. Narrowing to exactly one
+    // department switches the breakdown from department-level to section-level ("drill mode").
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND COALESCE(u.departmentId, u.targetDeptId) IN (${ph})`;
+        params.push(...deptIds);
+    }
+    const isSectionDrill = deptIds.length === 1;
+
+    // studentRef is either a user id (single-trainee sheets) or an ecode — matched against
+    // empId/userName the same way OnJobTraining.update syncs badges (onJobTraining.controller.js).
+    const [rows] = await executeQuery(`
+        WITH FlatOjt AS (
+            SELECT
+                CAST(ojt.student AS NVARCHAR(255)) AS studentRef,
+                ojt.result AS entryResult,
+                ojt.trainingDate AS trainingDate,
+                ojt.createdAt AS createdAt,
+                CAST(NULL AS NVARCHAR(50)) AS entryDate
+            FROM on_job_trainings ojt
+            WHERE ojt.student IS NOT NULL AND LTRIM(RTRIM(ojt.student)) <> ''
+
+            UNION ALL
+
+            SELECT
+                JSON_VALUE(ar.value, '$.ecode') AS studentRef,
+                JSON_VALUE(ar.value, '$.result') AS entryResult,
+                ojt.trainingDate AS trainingDate,
+                ojt.createdAt AS createdAt,
+                JSON_VALUE(ar.value, '$.date') AS entryDate
+            FROM on_job_trainings ojt
+            CROSS APPLY OPENJSON(CASE WHEN ISJSON(ojt.attendanceRecords) = 1 THEN ojt.attendanceRecords ELSE '[]' END) ar
+            WHERE (ojt.student IS NULL OR LTRIM(RTRIM(ojt.student)) = '')
+        )
+        SELECT
+            u.id AS userId,
+            f.trainingDate, f.createdAt, f.entryDate,
+            CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS departmentName,
+            COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
+            COALESCE(s.name, 'Unassigned') AS sectionName
+        FROM FlatOjt f
+        INNER JOIN users u
+            ON u.id = TRY_CAST(f.studentRef AS INT)
+            OR (TRY_CAST(f.studentRef AS INT) IS NULL AND (u.empId = f.studentRef OR u.userName = f.studentRef))
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
+        LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
+        WHERE f.entryResult IN ('Approved', 'Pass')
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+    `, params);
+
+    // Group key + display name per row, depending on drill mode.
+    const groupKeyFor = (row) => isSectionDrill
+        ? { key: `sec_${row.sectionId}`, name: row.sectionName || 'Unassigned' }
+        : { key: `dept_${row.deptId}`, name: row.departmentName || 'Unassigned' };
+
+    const periodSets  = {};  // period -> { [seriesKey]: Set of userId }
+    const seriesNames = {};  // seriesKey -> display name
+
+    for (const row of rows) {
+        if (!row.deptId) continue;
+
+        // Prefer the trainee's own attendance-row date; fall back to the sheet's training
+        // date, then its creation date, mirroring the same fallback chain used when the
+        // approval badge date is set on the user record.
+        let dateObj = row.entryDate ? parseFlexibleDate(row.entryDate) : null;
+        if (!dateObj && row.trainingDate) {
+            const d = new Date(row.trainingDate);
+            if (!isNaN(d.getTime())) dateObj = d;
+        }
+        if (!dateObj && row.createdAt) {
+            const d = new Date(row.createdAt);
+            if (!isNaN(d.getTime())) dateObj = d;
+        }
+        if (!dateObj) continue;
+
+        const iso = formatDateObj(dateObj);
+        if (iso < start || iso > end) continue;
+
+        const { key: seriesKey, name: seriesName } = groupKeyFor(row);
+        if (!seriesNames[seriesKey]) seriesNames[seriesKey] = seriesName;
+
+        const period = periodFromIso(iso, safeGroupBy);
+        if (!periodSets[period]) periodSets[period] = {};
+        if (!periodSets[period][seriesKey]) periodSets[period][seriesKey] = new Set();
+        periodSets[period][seriesKey].add(row.userId);
+    }
+
+    const seriesKeys = Object.entries(seriesNames)
+        .map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const row = { period };
+        seriesKeys.forEach(({ key }) => { row[key] = periodSets[period]?.[key]?.size || 0; });
+        return row;
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, seriesKeys, groupBy: safeGroupBy, start, end }, "On-job training status fetched successfully")
+    );
+});
+
+
+/**
  * Get User Status stats for the Admin Home page
  * Groups counts by isTemporary (Dojo vs Operator) and status
  */

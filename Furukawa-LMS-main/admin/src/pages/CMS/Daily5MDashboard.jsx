@@ -90,6 +90,48 @@ const parseLocalDate = (dateStr) => {
     return new Date(year, month - 1, day);
 };
 
+// Scans a record's recordData JSON to determine whether the 1st/2nd/3rd
+// "Dimension Check (Every 2 hours)" entries (C/H or Length, std or observed) were filled.
+const getDimensionChecksStatus = (recordData) => {
+    if (!recordData || typeof recordData !== 'object') {
+        return { first: false, second: false, third: false };
+    }
+
+    let first = false;
+    let second = false;
+    let third = false;
+
+    Object.entries(recordData).forEach(([key, val]) => {
+        if (val && String(val).trim() !== "") {
+            if (key.includes("Cont_CH_Std1") || key.includes("Cont_CH_Obs1") || key.includes("Cont_Len_Std1") || key.includes("Cont_Len_Obs1")) {
+                first = true;
+            }
+            if (key.includes("Cont_CH_Std2") || key.includes("Cont_CH_Obs2") || key.includes("Cont_Len_Std2") || key.includes("Cont_Len_Obs2")) {
+                second = true;
+            }
+            if (key.includes("Cont_CH_Std3") || key.includes("Cont_CH_Obs3") || key.includes("Cont_Len_Std3") || key.includes("Cont_Len_Obs3")) {
+                third = true;
+            }
+        }
+    });
+
+    return { first, second, third };
+};
+
+const DimensionCheckPill = ({ label, filled }) => (
+    <span
+        title={`${label} Check: ${filled ? "Filled" : "Empty"}`}
+        className={cn(
+            "inline-flex items-center justify-center w-7 h-5 rounded-full text-[10px] font-bold border transition-colors",
+            filled
+                ? "bg-green-100 text-green-700 border-green-300"
+                : "bg-slate-100 text-slate-400 border-slate-200"
+        )}
+    >
+        {label}
+    </span>
+);
+
 const Daily5MDashboard = () => {
     const navigate = useNavigate();
     const { data: departmentsData } = useGetAllDepartmentsQuery();
@@ -950,6 +992,7 @@ const Daily5MDashboard = () => {
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead className="whitespace-nowrap">Dimension Checks (2h)</TableHead>
                                     <TableHead className="min-w-[180px]">Admin Remarks</TableHead>
                                     <TableHead>Last Saved</TableHead>
                                     <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
@@ -986,6 +1029,18 @@ const Daily5MDashboard = () => {
                                             ) : (
                                                 <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">Pending</span>
                                             )}
+                                        </TableCell>
+                                        <TableCell onClick={(e) => e.stopPropagation()}>
+                                            {(() => {
+                                                const { first, second, third } = getDimensionChecksStatus(record.recordData);
+                                                return (
+                                                    <div className="flex items-center gap-1">
+                                                        <DimensionCheckPill label="1st" filled={first} />
+                                                        <DimensionCheckPill label="2nd" filled={second} />
+                                                        <DimensionCheckPill label="3rd" filled={third} />
+                                                    </div>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell className="max-w-[200px]">
                                             {record.adminRemarksHistory?.length > 0 ? (

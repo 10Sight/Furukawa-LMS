@@ -646,11 +646,28 @@ const ThreeDayMonitoringSheet = ({
             });
         });
 
+        // Derivation logic for Operator Present Days: count of filled day-column dates
+        let calculatedPresentDays = "";
+        const date1 = newGridData['day_date_1'] || gridData['day_date_1'];
+        const date2 = newGridData['day_date_2'] || gridData['day_date_2'];
+        const date3 = newGridData['day_date_3'] || gridData['day_date_3'];
+
+        if (date1) {
+            calculatedPresentDays = "1";
+            if (date2) {
+                calculatedPresentDays = "2";
+                if (date3) {
+                    calculatedPresentDays = "3";
+                }
+            }
+        }
+        updateKey('attendPresent_day1', calculatedPresentDays);
+
         // Attendance (Category 6) Calculations
         let attSum = 0;
         let attCount = 0;
         days.forEach(d => {
-            const val = parseFloat(gridData[`attendPresent_${d}`]) || 0;
+            const val = parseFloat(newGridData[`attendPresent_${d}`] || gridData[`attendPresent_${d}`]) || 0;
             if (val > 0) {
                 attSum += val;
                 attCount++;
@@ -1368,9 +1385,9 @@ const ThreeDayMonitoringSheet = ({
                                     <td className="border-r border-b border-black p-2 font-bold text-[12px]">Operator Present day's</td>
                                     <td className="border-r border-b border-black p-0">
                                         <input
-                                            className="w-full h-full text-center border-none outline-none font-bold text-[13px]"
+                                            className="w-full h-full text-center border-none outline-none font-bold text-[13px] bg-gray-100 cursor-not-allowed"
                                             value={gridData[`attendPresent_day1`] || ""}
-                                            onChange={(e) => handleGridChange('attendPresent', 'day1', e.target.value)}
+                                            readOnly
                                         />
                                     </td>
                                 </tr>

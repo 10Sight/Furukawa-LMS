@@ -127,7 +127,7 @@ const DimensionCheckPill = ({ label, title, filled }) => (
             "inline-flex items-center justify-center w-7 h-5 rounded-full text-[10px] font-bold border transition-colors",
             filled
                 ? "bg-green-100 text-green-700 border-green-300"
-                : "bg-slate-100 text-slate-400 border-slate-200"
+                : "bg-amber-50 text-amber-700 border-amber-200"
         )}
     >
         {label}

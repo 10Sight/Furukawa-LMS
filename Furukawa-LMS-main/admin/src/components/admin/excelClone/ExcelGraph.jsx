@@ -436,6 +436,7 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     const [activeChartId, setActiveChartId] = useState(null);
     const [renamingChartId, setRenamingChartId] = useState(null);
     const [renameValue, setRenameValue] = useState("");
+    const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
 
     const activeSheet = excelData?.sheets?.[excelData.activeSheetName] || null;
     const displayGrid = excelData?.displayGrid || {};
@@ -767,7 +768,8 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     return (
         <div className="w-full border border-slate-200 rounded-lg overflow-hidden bg-white">
             {/* Chart tabs — one per table on the sheet */}
-            <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-slate-50 overflow-x-auto">
+            <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
                 {charts.map((chart) => (
                     <div
                         key={chart.id}
@@ -810,6 +812,18 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                 <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={addChart} title="Add chart">
                     <IconPlus className="w-4 h-4" />
                 </button>
+                </div>
+                {config && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
+                        onClick={() => setIsToolbarExpanded((v) => !v)}
+                        title={isToolbarExpanded ? "Collapse chart toolbar" : "Expand chart toolbar"}
+                    >
+                        {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
+                    </Button>
+                )}
             </div>
 
             {!config ? (
@@ -818,6 +832,10 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                 </div>
             ) : (
             <>
+            <div className={cn(
+                "transition-all duration-300 ease-in-out overflow-hidden",
+                isToolbarExpanded ? "max-h-[220px] opacity-100" : "max-h-0 opacity-0"
+            )}>
             <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 border-b border-slate-200 bg-slate-50/60">
                 <div className="flex items-center flex-wrap">
                     {CHART_TYPE_GROUPS.map((group) => (
@@ -1159,6 +1177,7 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                         </PopoverContent>
                     </Popover>
                 </div>
+            </div>
             </div>
 
             <div className="p-3">

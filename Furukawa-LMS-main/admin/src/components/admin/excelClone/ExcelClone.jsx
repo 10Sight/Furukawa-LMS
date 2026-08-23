@@ -771,6 +771,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [hoveredCell, setHoveredCell] = useState(null);
     const [gridlinesVisible, setGridlinesVisible] = useState(true);
     const [isFormulaBarExpanded, setIsFormulaBarExpanded] = useState(false);
+    const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
     const [coordInputValue, setCoordInputValue] = useState("A1");
 
     const [fillPreview, setFillPreview] = useState(null); // { axis: 'vertical'|'horizontal', extraCount }
@@ -2480,9 +2481,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={handleExport} disabled={!!ioProgress} title="Export to Excel">
                     <IconDownload className="w-4 h-4" /> Export
                 </Button>
+                <div className="w-[1px] h-6 bg-slate-200 mx-1 shrink-0" />
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 cursor-pointer text-slate-500 hover:bg-slate-100 shrink-0"
+                    onClick={() => setIsToolbarExpanded((v) => !v)}
+                    title={isToolbarExpanded ? "Collapse ribbon" : "Expand ribbon"}
+                >
+                    {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
+                </Button>
             </div>
 
             {/* Ribbon */}
+            <div className={cn(
+                "transition-all duration-300 ease-in-out overflow-hidden",
+                isToolbarExpanded ? "max-h-[160px] opacity-100" : "max-h-0 opacity-0"
+            )}>
             <div className="flex flex-wrap items-start border-b border-slate-200 bg-slate-50/60 overflow-x-auto">
                 <RibbonGroup label="Clipboard">
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("copy")} title="Copy (Ctrl+C)"><IconCopy className="w-4 h-4" /></Button>
@@ -2769,6 +2784,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <IconSearch className="w-4 h-4" /> Find
                     </Button>
                 </RibbonGroup>
+            </div>
             </div>
             </>
             )}

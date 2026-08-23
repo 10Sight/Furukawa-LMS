@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
-    IconCalendar, IconFolder, IconChevronDown, IconSettings, IconLoader2, IconAlertCircle, IconEye,
+    IconCalendar, IconFolder, IconChevronDown, IconChevronUp, IconSettings, IconLoader2, IconAlertCircle, IconEye,
     IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy
 } from "@tabler/icons-react";
 import {
@@ -28,6 +28,7 @@ import {
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import ExcelClone from "@/components/admin/excelClone/ExcelClone";
 import ExcelGraph from "@/components/admin/excelClone/ExcelGraph";
 
@@ -348,6 +349,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const [editDetailsMeeting, setEditDetailsMeeting] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [cloneTarget, setCloneTarget] = useState(null);
+    const [isGraphVisible, setIsGraphVisible] = useState(true);
 
     const { data: meetingsData, isLoading: isListLoading } = useGetDailyMorningMeetingsQuery({ sectionId }, { skip: !sectionId });
     const meetings = useMemo(() => meetingsData?.data || [], [meetingsData]);
@@ -452,14 +454,29 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                                     )}
                                 </div>
                             </div>
-                            {canUpdate && (
-                                <Button variant="outline" size="sm" className="shrink-0 cursor-pointer flex items-center gap-1.5" onClick={() => setEditDetailsMeeting(selectedMeeting)}>
-                                    <IconPencil className="w-3.5 h-3.5" /> Edit Details
+                            <div className="flex items-center gap-2 shrink-0">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="cursor-pointer flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-200"
+                                    onClick={() => setIsGraphVisible((v) => !v)}
+                                    title={isGraphVisible ? "Hide Charts" : "Show Charts"}
+                                >
+                                    {isGraphVisible ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
+                                    <span>{isGraphVisible ? "Hide Charts" : "Show Charts"}</span>
                                 </Button>
-                            )}
+                                {canUpdate && (
+                                    <Button variant="outline" size="sm" className="shrink-0 cursor-pointer flex items-center gap-1.5" onClick={() => setEditDetailsMeeting(selectedMeeting)}>
+                                        <IconPencil className="w-3.5 h-3.5" /> Edit Details
+                                    </Button>
+                                )}
+                            </div>
                         </CardHeader>
                         <CardContent className="p-0 bg-white">
-                            <div className="p-3 bg-slate-50/50 border-b border-slate-100">
+                            <div className={cn(
+                                "transition-all duration-300 ease-in-out overflow-hidden bg-slate-50/50 border-b border-slate-100",
+                                isGraphVisible ? "max-h-[500px] opacity-100 p-3" : "max-h-0 opacity-0 p-0 border-b-0"
+                            )}>
                                 <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
                             </div>
                             <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />

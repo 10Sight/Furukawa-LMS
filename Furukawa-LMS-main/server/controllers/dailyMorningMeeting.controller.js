@@ -137,6 +137,58 @@ export const createMeeting = async (req, res) => {
     }
 };
 
+// Clones a meeting's metadata and full sheet (cells, charts, media — whatever
+// lives under sheetData) into a brand new row, timestamped to right now on
+// the server so a client can't backdate/forge the clone's meeting date/time.
+export const cloneMeeting = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { agenda, description } = req.body;
+
+        if (!agenda || !agenda.trim()) {
+            return res.status(400).json({ success: false, message: "Agenda is required" });
+        }
+
+        const sourceMeeting = await DailyMorningMeeting.findById(id);
+        if (!sourceMeeting) {
+            return res.status(404).json({ success: false, message: "Source meeting not found" });
+        }
+
+        if (!(await canModifyDailyMeetingSection(req.user, sourceMeeting.sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const meetingDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        const meetingTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+        const newMeeting = await DailyMorningMeeting.createWithSheetData({
+            sectionId: sourceMeeting.sectionId,
+            agenda: agenda.trim(),
+            description: description || null,
+            meetingDate,
+            meetingTime,
+            createdBy: req.user.id,
+            sheetData: sourceMeeting.sheetData
+        });
+
+        // Include the parsed sheets/activeSheet (same shape getMeetingDetail returns) so
+        // the client can seed the detail query's cache directly from this response,
+        // instead of navigating to the new meeting and waiting on a follow-up GET.
+        const workbook = normalizeWorkbook(parseSheetData(newMeeting.sheetData));
+
+        return res.status(201).json({
+            success: true,
+            message: "Meeting cloned successfully",
+            data: { ...formatMeetingRow(newMeeting), sheets: workbook.sheets, activeSheet: workbook.activeSheet }
+        });
+    } catch (error) {
+        logger.error("Error in cloneMeeting:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
 export const updateMeeting = async (req, res) => {
     try {
         const { id } = req.params;

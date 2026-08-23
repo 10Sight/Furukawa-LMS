@@ -254,13 +254,13 @@ export const applyNumberFormat = (num, cell) => {
     }
 };
 
-// Evaluates every formula cell in `cells` ({cellId: {value, ...}}) in one pass,
-// sharing a memo cache across cells and tracking the in-progress resolution
-// path per top-level cell so a circular reference (A1=B1, B1=A1) hits the
-// `visited` check and resolves to NaN/"#ERROR!" instead of recursing forever.
-export const buildDisplayGrid = (cells) => {
+// Shared evaluator behind both buildDisplayGrid and buildRawValueGrid below:
+// resolves every cell to its evaluated-but-unformatted value (a number for
+// formulas/numeric cells, the original string otherwise), memoized per call
+// and guarded against circular references the same way. Kept private so the
+// two public grid builders can't drift out of sync with each other.
+const evaluateCellsRaw = (cells) => {
     const memo = new Map();
-    const display = {};
 
     const evalCell = (cellId, visited) => {
         if (memo.has(cellId)) return memo.get(cellId);
@@ -293,12 +293,23 @@ export const buildDisplayGrid = (cells) => {
         return num;
     };
 
+    return (cellId) => evalCell(cellId, new Set());
+};
+
+// Evaluates every formula cell in `cells` ({cellId: {value, ...}}) in one pass,
+// sharing a memo cache across cells and tracking the in-progress resolution
+// path per top-level cell so a circular reference (A1=B1, B1=A1) hits the
+// `visited` check and resolves to NaN/"#ERROR!" instead of recursing forever.
+export const buildDisplayGrid = (cells) => {
+    const evalCell = evaluateCellsRaw(cells);
+    const display = {};
+
     for (const cellId of Object.keys(cells)) {
         const cell = cells[cellId];
         const raw = cell?.value;
         if (raw === undefined || raw === null || raw === "") { display[cellId] = ""; continue; }
         if (typeof raw === "string" && raw.trim().startsWith("=")) {
-            const result = evalCell(cellId, new Set());
+            const result = evalCell(cellId);
             display[cellId] = (typeof result !== "number" || isNaN(result)) ? "#ERROR!" : applyNumberFormat(result, cell);
         } else {
             const trimmed = String(raw).trim();
@@ -307,4 +318,18 @@ export const buildDisplayGrid = (cells) => {
         }
     }
     return display;
+};
+
+// Same evaluation as buildDisplayGrid, but returns the raw evaluated value
+// (a number, or the original string for non-numeric text) instead of the
+// per-cell formatted display string — e.g. a currency-formatted "$1,234.56"
+// comes back as the number 1234.56, not that formatted string. For callers
+// that need to do arithmetic on cell values (like the pivot engine) rather
+// than render them, since parsing a formatted display string back into a
+// number is lossy/wrong for currency, comma, and percentage formats.
+export const buildRawValueGrid = (cells) => {
+    const evalCell = evaluateCellsRaw(cells);
+    const raw = {};
+    for (const cellId of Object.keys(cells)) raw[cellId] = evalCell(cellId);
+    return raw;
 };

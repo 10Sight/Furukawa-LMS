@@ -58,6 +58,7 @@ export const getKeyByPath = (path, layout) => {
         lookupPaths.push(`/admin/${subPath}`);
         lookupPaths.push(`/cms/${subPath}`);
         lookupPaths.push(`/dashboard/${subPath}`);
+        lookupPaths.push(`/${subPath}`);
     }
 
     for (const p of lookupPaths) {
@@ -145,7 +146,7 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
     if (!pageKey) {
         // Fallback: Check if the path is within any layout the user has access to
         // This handles cases where a user in Layout A is accessing a page from Layout B
-        const otherLayouts = ['admin', 'dashboard', 'trainer', 'student', 'cms'].filter(l => l !== layout);
+        const otherLayouts = ['admin', 'dashboard', 'trainer', 'student', 'cms', 'daily-meeting'].filter(l => l !== layout);
         for (const l of otherLayouts) {
             const k = getKeyByPath(pathname, l);
             if (k && normalizeAllowedPages(user).includes(k)) return true;
@@ -214,6 +215,8 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
                 link = "/portal/" + link.slice(11);
             } else if (link.startsWith("/dashboard")) {
                 link = "/portal" + link.slice(10);
+            } else if (link.startsWith("/daily-meeting")) {
+                link = "/portal/daily-meeting";
             }
         }
         return {
@@ -359,6 +362,6 @@ export const PAGE_REGISTRY = [
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
-    { key: "daily-meeting", label: "Daily Meeting", labelKey: "nav.dailyMeeting", layout: "cms", link: "/cms/daily-meeting", icon: "IconCalendar" },
+    { key: "daily-meeting", label: "Daily Meeting", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
     { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

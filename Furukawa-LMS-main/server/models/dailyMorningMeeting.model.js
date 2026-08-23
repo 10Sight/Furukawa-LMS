@@ -63,6 +63,18 @@ class DailyMorningMeeting {
         return DailyMorningMeeting.findById(insertedId);
     }
 
+    static async createWithSheetData({ sectionId, agenda, description, meetingDate, meetingTime, createdBy, sheetData }) {
+        const dataJson = typeof sheetData === "string" ? sheetData : JSON.stringify(sheetData || {});
+        const [result] = await executeQuery(
+            `INSERT INTO daily_morning_meetings (sectionId, agenda, description, meetingDate, meetingTime, createdBy, sheetData, createdAt, updatedAt)
+             OUTPUT INSERTED.id
+             VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+            [sectionId, agenda, description || null, meetingDate, meetingTime, createdBy, dataJson]
+        );
+        const insertedId = result[0].id;
+        return DailyMorningMeeting.findById(insertedId);
+    }
+
     static async updateDetails(id, { agenda, description }) {
         await executeQuery(
             "UPDATE daily_morning_meetings SET agenda = ?, description = ?, updatedAt = GETDATE() WHERE id = ?",

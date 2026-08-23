@@ -16,6 +16,7 @@ const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("./Layout/DashboardLayout.jsx"));
 const CmsLayout = lazy(() => import("./Layout/CmsLayout").then(m => ({ default: m.CmsLayout })));
 const CustomRoleLayout = lazy(() => import("./Layout/CustomRoleLayout").then(m => ({ default: m.CustomRoleLayout })));
+const DailyMeetingLayout = lazy(() => import("./Layout/DailyMeetingLayout").then(m => ({ default: m.DailyMeetingLayout })));
 
 const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
@@ -371,7 +372,18 @@ const App = () => {
               </RequireAccess>
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
-            <Route path="daily-meeting" element={<DailyMeeting />} />
+          </Route>
+
+          {/* Daily Meeting Layout Routes */}
+          <Route
+            path="/daily-meeting"
+            element={
+              <ProtectedRoute>
+                <DailyMeetingLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DailyMeeting />} />
           </Route>
 
           {/* Instructor routes */}

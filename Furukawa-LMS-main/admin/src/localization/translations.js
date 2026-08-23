@@ -147,6 +147,8 @@ export const translations = {
     "landing.sdpDesc": "Skill Development Program.",
     "landing.cmsTitle": "CMS Portal",
     "landing.cmsDesc": "Check Sheet Management System.",
+    "landing.dailyMeetingTitle": "Daily Meeting Portal",
+    "landing.dailyMeetingDesc": "Daily morning standup and section tallies.",
     "landing.enterPortal": "Enter Portal",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.",
 
@@ -938,6 +940,8 @@ export const translations = {
     "landing.sdpDesc": "कौशल विकास कार्यक्रम।",
     "landing.cmsTitle": "CMS पोर्टल",
     "landing.cmsDesc": "चेक शीट प्रबंधन प्रणाली।",
+    "landing.dailyMeetingTitle": "दैनिक बैठक पोर्टल",
+    "landing.dailyMeetingDesc": "दैनिक सुबह की बैठक और सेक्शन गणना।",
     "landing.enterPortal": "पोर्टल में प्रवेश करें",
     "landing.copyright": "© 2024 फुरुकावा मिंडा इलेक्ट्रिक प्राइवेट लिमिटेड। सर्वाधिकार सुरक्षित।",
 
@@ -1728,6 +1732,8 @@ export const translations = {
     "landing.sdpDesc": "スキル開発プログラム。",
     "landing.cmsTitle": "CMS ポータル",
     "landing.cmsDesc": "チェックシート管理システム。",
+    "landing.dailyMeetingTitle": "日次ミーティングポータル",
+    "landing.dailyMeetingDesc": "毎朝のスタンドアップとセクション集計。",
     "landing.enterPortal": "ポータルに入る",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.",
 
@@ -2499,6 +2505,8 @@ export const translations = {
     "landing.sdpDesc": "技能开发项目。",
     "landing.cmsTitle": "CMS 门户",
     "landing.cmsDesc": "检查表管理系统。",
+    "landing.dailyMeetingTitle": "每日会议门户",
+    "landing.dailyMeetingDesc": "每日晨会与工段统计。",
     "landing.enterPortal": "进入门户",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. 保留所有权利。",
 
@@ -3270,6 +3278,8 @@ export const translations = {
     "landing.sdpDesc": "Программа развития навыков.",
     "landing.cmsTitle": "Портал CMS",
     "landing.cmsDesc": "Система управления контрольными листами.",
+    "landing.dailyMeetingTitle": "Портал ежедневных встреч",
+    "landing.dailyMeetingDesc": "Ежедневная утренняя летучка и подсчёт по участкам.",
     "landing.enterPortal": "Войти в портал",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. Все права защищены.",
 

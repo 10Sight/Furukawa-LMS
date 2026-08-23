@@ -5,6 +5,7 @@ import {
     getMeetingsForSection,
     getMeetingDetail,
     createMeeting,
+    cloneMeeting,
     updateMeeting,
     saveMeetingSheet,
     deleteMeeting
@@ -23,6 +24,7 @@ router.get("/:id", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN")
 // department/section (enforced in the controller via canModifyDailyMeetingSection),
 // unless they're an admin/superadmin.
 router.post("/", authorizeRoles("daily_meeting:create", "isAdmin", "SUPERADMIN"), createMeeting);
+router.post("/:id/clone", authorizeRoles("daily_meeting:create", "isAdmin", "SUPERADMIN"), cloneMeeting);
 router.put("/:id", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), updateMeeting);
 router.post("/:id/sheet", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), saveMeetingSheet);
 router.delete("/:id", authorizeRoles("daily_meeting:delete", "isAdmin", "SUPERADMIN"), deleteMeeting);

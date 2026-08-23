@@ -289,6 +289,32 @@ export const departmentApi = createApi({
             invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
         }),
 
+        cloneDailyMorningMeeting: builder.mutation({
+            query: ({ meetingId, agenda, description }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/clone`,
+                method: "POST",
+                data: { agenda, description }
+            }),
+            invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
+            // The response already carries the new meeting's sheets/activeSheet (the
+            // clone endpoint returns the same shape getDailyMorningMeetingDetail does) —
+            // seed that query's cache directly instead of letting the UI navigate to the
+            // new meeting and wait on a separate GET, which was landing on an empty sheet
+            // the first time it opened.
+            async onQueryStarted(arg, { dispatch, queryFulfilled }) {
+                try {
+                    const { data: response } = await queryFulfilled;
+                    if (response?.data?.id) {
+                        dispatch(
+                            departmentApi.util.upsertQueryData('getDailyMorningMeetingDetail', String(response.data.id), response)
+                        );
+                    }
+                } catch {
+                    // Clone failed — nothing to seed; the error is surfaced via .unwrap() at the call site.
+                }
+            },
+        }),
+
         updateDailyMorningMeeting: builder.mutation({
             query: ({ meetingId, agenda, description }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}`,
@@ -352,6 +378,7 @@ export const {
     useGetDailyMorningMeetingsQuery,
     useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation,
+    useCloneDailyMorningMeetingMutation,
     useUpdateDailyMorningMeetingMutation,
     useSaveDailyMorningMeetingSheetMutation,
     useDeleteDailyMorningMeetingMutation,

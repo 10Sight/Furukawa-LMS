@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
-    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList
+    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "./formulaEngine";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ const CHART_TYPE_GROUPS = [
     { label: "Bar", types: [{ key: "barGrouped", label: "Clustered Bar" }, { key: "barStacked", label: "Stacked Bar" }] },
     { label: "Line", types: [{ key: "line", label: "Line" }, { key: "lineStacked", label: "Stacked Line" }] },
     { label: "Area", types: [{ key: "area", label: "Area" }] },
+    { label: "Combo", types: [{ key: "combo", label: "Combo Chart" }] },
     { label: "Pie", types: [{ key: "pie", label: "Pie" }, { key: "doughnut", label: "Doughnut" }] },
 ];
 
@@ -55,6 +56,7 @@ const buildDefaultChart = (columnCount, rowCount, id = "chart-1", name = "Chart 
     legendPosition: "bottom",
     labelPosition: "auto",
     pointColors: {},
+    comboSettings: {},
 });
 
 // A sheet may still have the old singular `chartConfig` (pre-multi-chart), or
@@ -68,6 +70,7 @@ const withDesignDefaults = (chart) => ({
     title: "",
     labelPosition: "auto",
     pointColors: {},
+    comboSettings: {},
     ...chart,
     legendPosition: chart.legendPosition || (chart.showLegend === false ? "none" : "bottom"),
 });
@@ -194,6 +197,11 @@ const LABEL_POSITION_OPTIONS_BY_TYPE = {
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
     ],
+    combo: [
+        { value: "above", label: "Above" },
+        { value: "below", label: "Below" },
+        { value: "center", label: "Center" },
+    ],
     pie: [
         { value: "outsideEnd", label: "Outside End" },
         { value: "insideEnd", label: "Inside End" },
@@ -213,7 +221,7 @@ const getLabelPositionOptions = (chartType) => LABEL_POSITION_OPTIONS_BY_TYPE[ch
 const AUTO_LABEL_POSITION = {
     columnGrouped: "outsideEnd", columnStacked: "center",
     barGrouped: "outsideEnd", barStacked: "center",
-    line: "above", lineStacked: "above", area: "above",
+    line: "above", lineStacked: "above", area: "above", combo: "above",
     pie: "outsideEnd", doughnut: "outsideEnd",
 };
 
@@ -227,6 +235,7 @@ const RECHARTS_LABEL_POSITION = {
     line: { above: "top", below: "bottom", center: "center" },
     lineStacked: { above: "top", below: "bottom", center: "center" },
     area: { above: "top", below: "bottom", center: "center" },
+    combo: { above: "top", below: "bottom", center: "center" },
 };
 
 const resolveLabelPosition = (config) => {
@@ -286,6 +295,16 @@ const pointColorFor = (config, seriesCol, categoryName, seriesIndex) => (
 const pieCellColorFor = (config, seriesCol, categoryName, rowIndex) => (
     config.pointColors?.[seriesCol]?.[categoryName] || CATEGORICAL_COLORS[rowIndex % CATEGORICAL_COLORS.length]
 );
+
+// Combo chart per-series overrides fall back to alternating column/line by
+// index (mirrors Excel's own combo-chart default) and the primary axis when unset.
+const getComboSeriesSettings = (config, col, index) => {
+    const override = config.comboSettings?.[col];
+    return {
+        type: override?.type || (index % 2 === 0 ? "column" : "line"),
+        yAxisId: override?.yAxisId || "left",
+    };
+};
 
 function ChartTooltip({ active, payload, label }) {
     if (!active || !payload || payload.length === 0) return null;
@@ -374,6 +393,16 @@ function ChartTypePreview({ type }) {
                 <PreviewSvg>
                     <path d="M2,18 L9,10 L16,14 L23,5 L30,9 L30,22 L2,22 Z" fill="#a5b4fc" opacity="0.6" />
                     <polyline points="2,18 9,10 16,14 23,5 30,9" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </PreviewSvg>
+            );
+        case "combo":
+            return (
+                <PreviewSvg>
+                    <rect x="3" y="14" width="5" height="8" rx="1" fill="#c7d2fe" />
+                    <rect x="12" y="9" width="5" height="13" rx="1" fill="#c7d2fe" />
+                    <rect x="21" y="12" width="5" height="10" rx="1" fill="#c7d2fe" />
+                    <polyline points="2,10 14,4 26,8" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx="14" cy="4" r="2" fill="#4f46e5" />
                 </PreviewSvg>
             );
         case "pie":
@@ -485,8 +514,9 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     };
 
     // bar/column and pie/doughnut only — recharts (like Excel) has no clean
-    // way to recolor part of a single continuous Line/Area path.
-    const supportsPointColors = config && !["line", "lineStacked", "area"].includes(config.type);
+    // way to recolor part of a single continuous Line/Area path. Combo mixes
+    // series types per-column, so per-point overrides are skipped there too.
+    const supportsPointColors = config && !["line", "lineStacked", "area", "combo"].includes(config.type);
 
     const toggleDraftValueCol = (col) => {
         setDraft((d) => {
@@ -646,6 +676,59 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                         ))}
                     </AreaChart>
                 );
+            case "combo": {
+                const seriesMeta = seriesKeys.map((key, i) => {
+                    const col = config.valueCols[i];
+                    return { key, ...getComboSeriesSettings(config, col, i), color: colorFor(i) };
+                });
+                const hasRightAxis = seriesMeta.some((s) => s.yAxisId === "right");
+                const renderSeries = (s) => {
+                    const labelList = config.showDataLabels && (
+                        <LabelList key="ll" dataKey={s.key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />
+                    );
+                    if (s.type === "column") {
+                        return (
+                            <Bar key={s.key} dataKey={s.key} yAxisId={s.yAxisId} fill={s.color} maxBarSize={24} radius={[4, 4, 0, 0]}>
+                                {labelList}
+                            </Bar>
+                        );
+                    }
+                    if (s.type === "area") {
+                        return (
+                            <Area key={s.key} type="monotone" dataKey={s.key} yAxisId={s.yAxisId} stroke={s.color} strokeWidth={2} fill={s.color} fillOpacity={0.12}>
+                                {labelList}
+                            </Area>
+                        );
+                    }
+                    return (
+                        <Line
+                            key={s.key}
+                            type="monotone"
+                            dataKey={s.key}
+                            yAxisId={s.yAxisId}
+                            stroke={s.color}
+                            strokeWidth={2}
+                            dot={{ r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: s.color }}
+                            activeDot={{ r: 5, strokeWidth: 2, stroke: CHART_SURFACE }}
+                        >
+                            {labelList}
+                        </Line>
+                    );
+                };
+                return (
+                    <ComposedChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...commonAxisProps} />
+                        <YAxis yAxisId="left" {...commonAxisProps} width={40} />
+                        {hasRightAxis && <YAxis yAxisId="right" orientation="right" {...commonAxisProps} width={40} />}
+                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />
+                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
+                        {seriesMeta.filter((s) => s.type === "column").map(renderSeries)}
+                        {seriesMeta.filter((s) => s.type === "area").map(renderSeries)}
+                        {seriesMeta.filter((s) => s.type === "line").map(renderSeries)}
+                    </ComposedChart>
+                );
+            }
             case "pie":
             case "doughnut": {
                 const key = seriesKeys[0];
@@ -921,6 +1004,45 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                             ))}
                                         </div>
                                     </div>
+
+                                    {designDraft.type === "combo" && (
+                                        <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                                            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Combo Series Configuration</Label>
+                                            <div className="space-y-1.5">
+                                                {designDraft.valueCols.map((c, i) => {
+                                                    const settings = getComboSeriesSettings(designDraft, c, i);
+                                                    return (
+                                                        <div key={c} className="flex items-center gap-1.5">
+                                                            <span className="text-[11px] text-slate-600 w-12 shrink-0 truncate">Col {c}</span>
+                                                            <select
+                                                                className="flex-1 h-7 text-[11px] border border-slate-200 rounded px-1.5 cursor-pointer"
+                                                                value={settings.type}
+                                                                onChange={(e) => setDesignDraft((d) => ({
+                                                                    ...d,
+                                                                    comboSettings: { ...d.comboSettings, [c]: { ...getComboSeriesSettings(d, c, i), type: e.target.value } },
+                                                                }))}
+                                                            >
+                                                                <option value="column">Column</option>
+                                                                <option value="line">Line</option>
+                                                                <option value="area">Area</option>
+                                                            </select>
+                                                            <select
+                                                                className="flex-1 h-7 text-[11px] border border-slate-200 rounded px-1.5 cursor-pointer"
+                                                                value={settings.yAxisId}
+                                                                onChange={(e) => setDesignDraft((d) => ({
+                                                                    ...d,
+                                                                    comboSettings: { ...d.comboSettings, [c]: { ...getComboSeriesSettings(d, c, i), yAxisId: e.target.value } },
+                                                                }))}
+                                                            >
+                                                                <option value="left">Primary (Left)</option>
+                                                                <option value="right">Secondary (Right)</option>
+                                                            </select>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <div className="space-y-1.5 border-t border-slate-100 pt-2">
                                         <div className="flex items-center gap-2">

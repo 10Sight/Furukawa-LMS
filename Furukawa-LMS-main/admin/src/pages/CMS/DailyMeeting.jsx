@@ -18,12 +18,13 @@ import {
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
     IconCalendar, IconFolder, IconChevronDown, IconSettings, IconLoader2, IconAlertCircle, IconEye,
-    IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock
+    IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy
 } from "@tabler/icons-react";
 import {
     useGetAllDepartmentsQuery, useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
     useGetDailyMorningMeetingsQuery, useGetDailyMorningMeetingDetailQuery,
-    useCreateDailyMorningMeetingMutation, useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation
+    useCreateDailyMorningMeetingMutation, useCloneDailyMorningMeetingMutation,
+    useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { toast } from "sonner";
@@ -179,7 +180,70 @@ function EditDetailsDialog({ meeting, onOpenChange, onSave, isSaving }) {
     );
 }
 
-function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, canUpdate, canDelete }) {
+// Prefills from the source meeting's agenda/description (both editable before
+// saving), but the date/time shown are always "now" — the clone is always
+// timestamped at creation time, matching the server (which ignores any
+// date/time the client might send and stamps it itself).
+function CloneMeetingDialog({ meeting, onOpenChange, onClone, isCloning }) {
+    const [agenda, setAgenda] = useState("");
+    const [description, setDescription] = useState("");
+    const [now, setNow] = useState(() => new Date());
+
+    useEffect(() => {
+        if (meeting) {
+            setAgenda(meeting.agenda || "");
+            setDescription(meeting.description || "");
+            setNow(new Date());
+        }
+    }, [meeting]);
+
+    const handleSubmit = () => {
+        if (!agenda.trim()) {
+            toast.error("Agenda is required.");
+            return;
+        }
+        onClone({ agenda: agenda.trim(), description: description.trim() });
+    };
+
+    return (
+        <Dialog open={!!meeting} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Save As New Meeting</DialogTitle>
+                    <DialogDescription>Creates a copy of "{meeting?.agenda}" — same spreadsheet and charts, timestamped to right now.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Date</Label>
+                            <Input readOnly disabled value={now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} className="bg-slate-50" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Time</Label>
+                            <Input readOnly disabled value={now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })} className="bg-slate-50" />
+                        </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>Agenda *</Label>
+                        <Input value={agenda} onChange={(e) => setAgenda(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label>Description</Label>
+                        <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" className="cursor-pointer" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleSubmit} disabled={isCloning} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
+                        {isCloning ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconCopy className="w-4 h-4" />} Save As
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, onCloneRequest, canUpdate, canDelete, canCreate }) {
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-10">
@@ -225,12 +289,17 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, c
                                             <IconPencil className="w-3.5 h-3.5 text-slate-500" />
                                         </Button>
                                     )}
+                                    {canCreate && (
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => onCloneRequest(m)} title="Save As (Clone)">
+                                            <IconCopy className="w-3.5 h-3.5 text-slate-500" />
+                                        </Button>
+                                    )}
                                     {canDelete && (
                                         <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => onDeleteRequest(m)} title="Delete meeting">
                                             <IconTrash className="w-3.5 h-3.5 text-red-500" />
                                         </Button>
                                     )}
-                                    {!canUpdate && !canDelete && <span className="text-slate-300 text-xs">—</span>}
+                                    {!canUpdate && !canDelete && !canCreate && <span className="text-slate-300 text-xs">—</span>}
                                 </div>
                             </TableCell>
                         </TableRow>
@@ -278,6 +347,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const [createOpen, setCreateOpen] = useState(false);
     const [editDetailsMeeting, setEditDetailsMeeting] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [cloneTarget, setCloneTarget] = useState(null);
 
     const { data: meetingsData, isLoading: isListLoading } = useGetDailyMorningMeetingsQuery({ sectionId }, { skip: !sectionId });
     const meetings = useMemo(() => meetingsData?.data || [], [meetingsData]);
@@ -299,6 +369,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     }, []);
 
     const [createMeeting, { isLoading: isCreating }] = useCreateDailyMorningMeetingMutation();
+    const [cloneMeeting, { isLoading: isCloning }] = useCloneDailyMorningMeetingMutation();
     const [updateMeeting, { isLoading: isUpdating }] = useUpdateDailyMorningMeetingMutation();
     const [deleteMeeting, { isLoading: isDeleting }] = useDeleteDailyMorningMeetingMutation();
 
@@ -314,6 +385,17 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
             openEdit(res.data);
         } catch (err) {
             toast.error("Failed to create meeting. Please try again.");
+        }
+    };
+
+    const handleClone = async ({ agenda, description }) => {
+        try {
+            const res = await cloneMeeting({ meetingId: cloneTarget.id, sectionId, agenda, description }).unwrap();
+            toast.success("Meeting cloned successfully!");
+            setCloneTarget(null);
+            openEdit(res.data);
+        } catch (err) {
+            toast.error("Failed to clone meeting. Please try again.");
         }
     };
 
@@ -412,14 +494,21 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                     <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Daily Meetings</TabsTrigger>
                 </TabsList>
                 <TabsContent value="month" className="mt-3">
-                    <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} canUpdate={canUpdate} canDelete={canDelete} />
+                    <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
                 <TabsContent value="all" className="mt-3">
-                    <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} canUpdate={canUpdate} canDelete={canDelete} />
+                    <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
             </Tabs>
 
             <CreateMeetingDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={handleCreate} isCreating={isCreating} />
+
+            <CloneMeetingDialog
+                meeting={cloneTarget}
+                onOpenChange={(open) => { if (!open) setCloneTarget(null); }}
+                onClone={handleClone}
+                isCloning={isCloning}
+            />
 
             <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
                 <AlertDialogContent>

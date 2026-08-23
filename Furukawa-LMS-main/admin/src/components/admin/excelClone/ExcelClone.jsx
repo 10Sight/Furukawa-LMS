@@ -2,24 +2,28 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, forwardRef, u
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import {
     IconBold, IconItalic, IconUnderline, IconStrikethrough,
     IconAlignLeft, IconAlignCenter, IconAlignRight, IconPalette,
-    IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus,
+    IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus, IconMinus,
     IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll,
     IconCopy, IconCut, IconClipboard, IconBrush, IconCurrencyDollar, IconPercentage,
     IconBorderOuter, IconSortAscending, IconSortDescending, IconRowInsertTop, IconRowInsertBottom,
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
     IconSum, IconChevronDown, IconChevronUp, IconLayoutAlignTop, IconLayoutAlignMiddle,
     IconLayoutAlignBottom, IconTextWrap, IconCheck, IconBorderBottom, IconBorderNone, IconBorderRight, IconBorderLeft,
-    IconFilter, IconFilterFilled, IconPhoto, IconVideo
+    IconFilter, IconFilterFilled, IconPhoto, IconVideo, IconCrop, IconPencil
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
     useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation
 } from "@/Redux/AllApi/DepartmentApi";
-import { getCellId, parseCellRef, indexToCol, expandRange, buildDisplayGrid, adjustFormula, extrapolateSeries } from "./formulaEngine";
+import { getCellId, parseCellRef, indexToCol, expandRange, buildDisplayGrid, buildRawValueGrid, adjustFormula, extrapolateSeries } from "./formulaEngine";
+import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_ROW_COUNT = 30;
@@ -32,6 +36,8 @@ const MIN_ROW_HEIGHT = 20;
 const ROW_HEADER_WIDTH = 40;
 const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
 const MEDIA_MIN_SIZE = 40;
+const ROW_VIRTUALIZATION_BUFFER = 10;
+const IO_CHUNK_SIZE = 250; // rows processed per batch during import/export, between UI-yielding pauses
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24];
 const FONT_FAMILIES = ["Aptos Narrow", "Calibri", "Arial", "Segoe UI"];
 const HISTORY_LIMIT = 100;
@@ -87,6 +93,127 @@ const TableStyleSwatch = ({ preset }) => (
 );
 
 const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
+
+// Prompts for the source sheet + range before a new PivotTable sheet is
+// created — re-seeded from `defaultSourceSheet`/`defaultSourceRange` (the
+// caller's current selection) every time it's opened.
+const CreatePivotDialog = ({ open, onOpenChange, sheetNames, defaultSourceSheet, defaultSourceRange, onCreate }) => {
+    const [sourceSheet, setSourceSheet] = useState(defaultSourceSheet);
+    const [sourceRange, setSourceRange] = useState(defaultSourceRange);
+
+    useEffect(() => {
+        if (open) { setSourceSheet(defaultSourceSheet); setSourceRange(defaultSourceRange); }
+    }, [open, defaultSourceSheet, defaultSourceRange]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-sm">
+                <DialogHeader>
+                    <DialogTitle>Create PivotTable</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 py-1">
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 block mb-1">Source Sheet</label>
+                        <select
+                            className="w-full h-8 text-xs border border-slate-200 rounded px-2 bg-white cursor-pointer"
+                            value={sourceSheet}
+                            onChange={(e) => setSourceSheet(e.target.value)}
+                        >
+                            {sheetNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 block mb-1">Source Range</label>
+                        <input
+                            className="w-full h-8 text-xs border border-slate-200 rounded px-2"
+                            placeholder="e.g. A1:D15"
+                            value={sourceRange}
+                            onChange={(e) => setSourceRange(e.target.value.toUpperCase())}
+                        />
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                        The first row of the range is used as field headers. A new sheet will be created for the PivotTable.
+                    </p>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                    <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button size="sm" className="h-8 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => onCreate(sourceSheet, sourceRange)}>Create</Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
+// Right-side "PivotTable Fields" panel shown while a Pivot Sheet is active.
+// Each field gets three independent toggle pills (Row / Column / Value) —
+// mirroring Excel's field list checkboxes rather than a single-zone picker,
+// so a field can drive both a row and column grouping if the user wants
+// that. Checking Value shows an aggregation dropdown for that field.
+const PivotPanel = ({ pivotConfig, sourceFields, onToggleZone, onChangeAgg, onClose }) => {
+    const valueEntry = (field) => pivotConfig.values.find((v) => v.field === field);
+
+    return (
+        <div className="w-64 shrink-0 border border-slate-200 rounded-lg bg-white flex flex-col" style={{ maxHeight: 560 }}>
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 shrink-0">
+                <span className="text-xs font-semibold text-slate-700">PivotTable Fields</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6 cursor-pointer" onClick={onClose} title="Close">
+                    <IconX className="w-3.5 h-3.5" />
+                </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {sourceFields.map(({ name, isNumeric }) => (
+                    <div key={name} className="border border-slate-100 rounded-lg p-2">
+                        <div className="text-xs font-medium text-slate-800 truncate mb-1.5" title={name}>{name}</div>
+                        <div className="flex gap-1 flex-wrap">
+                            <button
+                                type="button"
+                                className={cn(
+                                    "text-[10px] px-2 py-1 rounded-full border cursor-pointer transition-colors",
+                                    pivotConfig.rows.includes(name) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                )}
+                                onClick={() => onToggleZone(name, "rows", isNumeric)}
+                            >
+                                Row
+                            </button>
+                            <button
+                                type="button"
+                                className={cn(
+                                    "text-[10px] px-2 py-1 rounded-full border cursor-pointer transition-colors",
+                                    pivotConfig.cols.includes(name) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                )}
+                                onClick={() => onToggleZone(name, "cols", isNumeric)}
+                            >
+                                Column
+                            </button>
+                            <button
+                                type="button"
+                                className={cn(
+                                    "text-[10px] px-2 py-1 rounded-full border cursor-pointer transition-colors",
+                                    valueEntry(name) ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                )}
+                                onClick={() => onToggleZone(name, "values", isNumeric)}
+                            >
+                                Value
+                            </button>
+                        </div>
+                        {valueEntry(name) && (
+                            <select
+                                className="mt-1.5 w-full h-6 text-[10px] border border-slate-200 rounded px-1 bg-white text-slate-700 cursor-pointer"
+                                value={valueEntry(name).agg}
+                                onChange={(e) => onChangeAgg(name, e.target.value)}
+                            >
+                                {PIVOT_AGGREGATIONS.map((a) => <option key={a} value={a}>{AGG_LABELS[a]}</option>)}
+                            </select>
+                        )}
+                    </div>
+                ))}
+                {sourceFields.length === 0 && (
+                    <div className="text-[11px] text-slate-400 text-center py-6">No fields found in the source range.</div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 const isBlankCell = (cell) => {
     if (!cell) return true;
@@ -217,16 +344,61 @@ const RibbonGroup = ({ label, children }) => (
 );
 
 // Finds the largest cumulative-offset index whose offset is <= px, i.e. which
-// row/column band a pixel coordinate falls inside — used both to place a
-// media item (row/col + offset -> px) and, on drag release, to re-anchor it
-// (px -> row/col + offset) so it stays cell-relative across resizes.
+// row/column band a pixel coordinate falls inside — used to place a media
+// item (row/col + offset -> px) and re-anchor it on drag release (px ->
+// row/col + offset), and to drive row virtualization's scroll-position ->
+// row-index lookup. Binary search since `offsets` can have thousands of
+// entries once a sheet has thousands of rows.
 const bandIndexForPixel = (offsets, px) => {
-    let idx = 0;
-    for (let i = 0; i < offsets.length - 1; i++) {
-        if (px >= offsets[i]) idx = i; else break;
+    let lo = 0, hi = offsets.length - 2;
+    if (hi < 0) return 0;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (offsets[mid] <= px) lo = mid; else hi = mid - 1;
     }
-    return idx;
+    return lo;
 };
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+// Excel-style duplicate-name suffixing: "Sheet 1" -> "Sheet 1 (1)"; copying an
+// already-suffixed sheet bumps the number ("Sheet 1 (1)" -> "Sheet 1 (2)")
+// rather than nesting another suffix onto it, and either way skips forward
+// past any names already taken.
+const getDuplicateSheetName = (originalName, existingNames) => {
+    const match = originalName.match(/^(.*?)\s*\((\d+)\)$/);
+    let baseName = originalName;
+    let counter = 1;
+    if (match) {
+        baseName = match[1];
+        counter = parseInt(match[2], 10) + 1;
+    }
+
+    let newName = `${baseName} (${counter})`;
+    while (existingNames.includes(newName)) {
+        counter++;
+        newName = `${baseName} (${counter})`;
+    }
+    return newName;
+};
+
+const MIN_CROP_FRACTION = 0.1;
+const DEFAULT_CROP = { x: 0, y: 0, w: 1, h: 1 };
+
+// Non-destructive crop: `crop` is the {x,y,w,h} fraction (0-1) of the media
+// box that stays visible. Rendered by oversizing the media to `1/w` x `1/h`
+// of the box and shifting it by `-x/w`, `-y/h` so that sub-rectangle exactly
+// fills the (overflow: hidden) box — same trick as a CSS sprite/zoom-pan, no
+// canvas or re-encoding involved, so it's instant and reversible.
+const mediaCropStyle = (crop) => ({
+    position: "absolute",
+    left: `${-(crop.x / crop.w) * 100}%`,
+    top: `${-(crop.y / crop.h) * 100}%`,
+    width: `${(1 / crop.w) * 100}%`,
+    height: `${(1 / crop.h) * 100}%`,
+    maxWidth: "none",
+    maxHeight: "none",
+});
 
 // Floating image/video box, anchored to a grid cell (row/col + pixel offset)
 // rather than an absolute page position, so it tracks column/row resizes the
@@ -235,9 +407,11 @@ const bandIndexForPixel = (offsets, px) => {
 // down on pointerup) so idle media items cost nothing, and commit back to the
 // sheet (via onUpdate) only once the gesture ends — keeping every intermediate
 // frame a cheap local re-render instead of an undo-history-producing update.
-const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly }) => {
+const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom }) => {
     const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
     const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
+    const [isCropping, setIsCropping] = useState(false);
+    const [cropDraft, setCropDraft] = useState(null); // { x, y, w, h } fractions, only set while isCropping
     const gestureRef = useRef(null);
 
     const baseLeft = (colOffsets[item.col] ?? colOffsets[0]) + (item.offsetX || 0);
@@ -256,13 +430,13 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         e.stopPropagation();
         gestureRef.current = { startX: e.clientX, startY: e.clientY };
         const onMove = (ev) => {
-            setDragOffset({ dx: ev.clientX - gestureRef.current.startX, dy: ev.clientY - gestureRef.current.startY });
+            setDragOffset({ dx: (ev.clientX - gestureRef.current.startX) / zoom, dy: (ev.clientY - gestureRef.current.startY) / zoom });
         };
         const onUp = (ev) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
-            const dx = ev.clientX - gestureRef.current.startX;
-            const dy = ev.clientY - gestureRef.current.startY;
+            const dx = (ev.clientX - gestureRef.current.startX) / zoom;
+            const dy = (ev.clientY - gestureRef.current.startY) / zoom;
             gestureRef.current = null;
             setDragOffset(null);
             if (dx === 0 && dy === 0) return;
@@ -274,7 +448,7 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate]);
+    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, zoom]);
 
     const startResize = useCallback((e) => {
         if (readOnly) return;
@@ -282,13 +456,13 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         e.stopPropagation();
         gestureRef.current = { startX: e.clientX, startY: e.clientY };
         const onMove = (ev) => {
-            setResizeDelta({ dw: ev.clientX - gestureRef.current.startX, dh: ev.clientY - gestureRef.current.startY });
+            setResizeDelta({ dw: (ev.clientX - gestureRef.current.startX) / zoom, dh: (ev.clientY - gestureRef.current.startY) / zoom });
         };
         const onUp = (ev) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
-            const dw = ev.clientX - gestureRef.current.startX;
-            const dh = ev.clientY - gestureRef.current.startY;
+            const dw = (ev.clientX - gestureRef.current.startX) / zoom;
+            const dh = (ev.clientY - gestureRef.current.startY) / zoom;
             gestureRef.current = null;
             setResizeDelta(null);
             if (dw === 0 && dh === 0) return;
@@ -296,25 +470,85 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseWidth, baseHeight, onUpdate]);
+    }, [readOnly, baseWidth, baseHeight, onUpdate, zoom]);
+
+    const openCrop = useCallback((e) => {
+        e.stopPropagation();
+        setCropDraft(item.crop || DEFAULT_CROP);
+        setIsCropping(true);
+    }, [item.crop]);
+
+    const commitCrop = useCallback((e) => {
+        e.stopPropagation();
+        onUpdate({ crop: cropDraft });
+        setIsCropping(false);
+        setCropDraft(null);
+    }, [cropDraft, onUpdate]);
+
+    const cancelCrop = useCallback((e) => {
+        e.stopPropagation();
+        setIsCropping(false);
+        setCropDraft(null);
+    }, []);
+
+    // Drags one edge of the crop rectangle, keeping the opposite edge fixed.
+    // Deltas are converted from px to box-relative fractions using the box's
+    // own (un-resizing, since resize is disabled while cropping) width/height.
+    const startEdgeDrag = useCallback((edge) => (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX, startY = e.clientY;
+        const startCrop = cropDraft;
+        const onMove = (ev) => {
+            const dxFrac = (ev.clientX - startX) / (baseWidth * zoom);
+            const dyFrac = (ev.clientY - startY) / (baseHeight * zoom);
+            setCropDraft(() => {
+                let { x, y, w, h } = startCrop;
+                if (edge === "left") {
+                    const newX = clamp(startCrop.x + dxFrac, 0, startCrop.x + startCrop.w - MIN_CROP_FRACTION);
+                    x = newX; w = startCrop.w - (newX - startCrop.x);
+                } else if (edge === "right") {
+                    w = clamp(startCrop.w + dxFrac, MIN_CROP_FRACTION, 1 - startCrop.x);
+                } else if (edge === "top") {
+                    const newY = clamp(startCrop.y + dyFrac, 0, startCrop.y + startCrop.h - MIN_CROP_FRACTION);
+                    y = newY; h = startCrop.h - (newY - startCrop.y);
+                } else if (edge === "bottom") {
+                    h = clamp(startCrop.h + dyFrac, MIN_CROP_FRACTION, 1 - startCrop.y);
+                }
+                return { x, y, w, h };
+            });
+        };
+        const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [cropDraft, baseWidth, baseHeight, zoom]);
 
     return (
         <div
             className="absolute group"
-            style={{ left, top, width, height, zIndex: 15 }}
+            style={{ left, top, width, height, zIndex: isCropping ? 50 : 15 }}
         >
             <div className="relative w-full h-full border border-transparent group-hover:border-indigo-400 rounded overflow-hidden bg-white">
-                {item.type === "image" ? (
+                {!isCropping && (item.type === "image" ? (
                     <img
                         src={item.src}
                         alt=""
                         draggable={false}
-                        className={cn("w-full h-full object-contain select-none", !readOnly && "cursor-move")}
+                        className={cn("select-none", !readOnly && "cursor-move", item.crop ? undefined : "w-full h-full object-contain")}
+                        style={item.crop ? mediaCropStyle(item.crop) : undefined}
                         onMouseDown={startDrag}
                     />
                 ) : (
                     <>
-                        <video src={item.src} controls className="w-full h-full bg-black" />
+                        <video
+                            src={item.src}
+                            controls
+                            className={cn("bg-black", item.crop ? undefined : "w-full h-full")}
+                            style={item.crop ? mediaCropStyle(item.crop) : undefined}
+                        />
                         {!readOnly && (
                             <div
                                 onMouseDown={startDrag}
@@ -323,9 +557,45 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                             />
                         )}
                     </>
+                ))}
+
+                {isCropping && cropDraft && (
+                    <div className="absolute inset-0 bg-slate-900" onMouseDown={(e) => e.stopPropagation()}>
+                        {item.type === "image" ? (
+                            <img src={item.src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain opacity-35 select-none pointer-events-none" />
+                        ) : (
+                            <video src={item.src} muted className="absolute inset-0 w-full h-full object-contain opacity-35 pointer-events-none" />
+                        )}
+                        <div
+                            className="absolute border-2 border-indigo-400 bg-indigo-400/10"
+                            style={{ left: `${cropDraft.x * 100}%`, top: `${cropDraft.y * 100}%`, width: `${cropDraft.w * 100}%`, height: `${cropDraft.h * 100}%` }}
+                        >
+                            <div onMouseDown={startEdgeDrag("left")} className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-ew-resize bg-indigo-500/70 hover:bg-indigo-500" title="Drag to adjust left edge" />
+                            <div onMouseDown={startEdgeDrag("right")} className="absolute right-0 top-0 bottom-0 w-1.5 -mr-0.5 cursor-ew-resize bg-indigo-500/70 hover:bg-indigo-500" title="Drag to adjust right edge" />
+                            <div onMouseDown={startEdgeDrag("top")} className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-ns-resize bg-indigo-500/70 hover:bg-indigo-500" title="Drag to adjust top edge" />
+                            <div onMouseDown={startEdgeDrag("bottom")} className="absolute bottom-0 left-0 right-0 h-1.5 -mb-0.5 cursor-ns-resize bg-indigo-500/70 hover:bg-indigo-500" title="Drag to adjust bottom edge" />
+                        </div>
+                        <div className="absolute top-1 right-1 flex gap-1 z-10">
+                            <button onMouseDown={(e) => e.stopPropagation()} onClick={cancelCrop} className="w-6 h-6 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white cursor-pointer" title="Cancel crop">
+                                <IconX className="w-4 h-4" />
+                            </button>
+                            <button onMouseDown={(e) => e.stopPropagation()} onClick={commitCrop} className="w-6 h-6 flex items-center justify-center rounded bg-white/90 text-green-600 hover:bg-white cursor-pointer" title="Apply crop">
+                                <IconCheck className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
                 )}
-                {!readOnly && (
+
+                {!readOnly && !isCropping && (
                     <>
+                        <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={openCrop}
+                            className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Crop"
+                        >
+                            <IconCrop className="w-3.5 h-3.5" />
+                        </button>
                         <button
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={onDelete}
@@ -346,6 +616,138 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
     );
 };
 
+// --- ExcelJS import/export helpers ---
+// SheetJS (the previous import path) only round-trips raw values — no colors,
+// fonts, alignment, borders, number formats, merges, or column/row sizing.
+// ExcelJS exposes all of that per-cell, so import can approximate the source
+// file's look instead of dumping it as a bare grid of strings.
+
+// Modern Office theme palette (Background1/Text1/Background2/Text2/Accent1-6).
+// A themed cell color only carries a {theme, tint} pair — ExcelJS doesn't
+// surface the workbook's actual custom theme XML through the basic cell API —
+// so this approximates with the standard Office default palette, which is
+// right for the large majority of real files (those that don't customize it).
+const EXCEL_THEME_COLORS = ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"];
+
+// Blends a #RRGGBB color toward white (tint > 0) or black (tint < 0) using
+// Excel's own tint formula, so a themed color with a lighter/darker shade
+// applied in the source file still looks approximately right after import.
+const applyTint = (hex, tint) => {
+    if (!tint) return hex;
+    const num = parseInt(hex, 16);
+    const channels = [(num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff].map((c) => {
+        const blended = tint > 0 ? c * (1 - tint) + 255 * tint : c * (1 + tint);
+        return Math.max(0, Math.min(255, Math.round(blended)));
+    });
+    return channels.map((c) => c.toString(16).padStart(2, "0")).join("");
+};
+
+// Resolves an ExcelJS color object ({argb}, {theme, tint}, or unset) to a
+// "#RRGGBB" string, or null if the cell doesn't specify a color at all.
+const parseExcelColor = (colorObj) => {
+    if (!colorObj) return null;
+    if (colorObj.argb) return `#${colorObj.argb.slice(-6)}`;
+    if (colorObj.theme !== undefined) return `#${applyTint(EXCEL_THEME_COLORS[colorObj.theme] || "000000", colorObj.tint || 0)}`;
+    return null;
+};
+
+// Excel's richer border-style vocabulary collapses onto this app's three
+// weights: "double" stays "double", medium-and-bolder styles read as "thick",
+// everything else (thin, hair, dotted, dashed variants) reads as "thin".
+const mapBorderStyle = (excelStyle) => {
+    if (!excelStyle) return null;
+    if (excelStyle === "double") return "double";
+    if (["medium", "thick", "mediumDashed", "mediumDashDot", "mediumDashDotDot", "slantDashDot"].includes(excelStyle)) return "thick";
+    return "thin";
+};
+
+// Classifies an Excel number-format code string into this app's presets by
+// pattern, not an exhaustive lookup — real files use a huge variety of custom
+// format codes, so this only needs to catch the common shapes.
+const mapNumberFormat = (numFmt) => {
+    if (!numFmt || numFmt === "General") return undefined;
+    if (numFmt.includes("%")) return "percentage";
+    if (/[$€£¥]/.test(numFmt)) return "currency";
+    if (numFmt.includes(",")) return "comma";
+    if (/^[0#.]+$/.test(numFmt.replace(/;.*/, ""))) return "number";
+    return undefined;
+};
+
+const getDecimalPlaces = (numFmt) => {
+    if (!numFmt) return undefined;
+    const match = numFmt.match(/\.([0#]+)/);
+    return match ? match[1].length : 0;
+};
+
+// Hands control back to the browser for a frame so a progress-bar state
+// update set just before this actually paints, instead of getting batched
+// away behind a long synchronous run of row-processing work.
+const yieldToUI = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+const excelDateToLocalString = (date) => {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+// Reduces an ExcelJS cell's `.value` (primitive, formula object, rich text,
+// hyperlink, error, or Date) to the plain string this app's cell model stores.
+const extractExcelCellValue = (cell) => {
+    const v = cell.value;
+    if (v === null || v === undefined) return "";
+    if (v instanceof Date) return excelDateToLocalString(v);
+    if (typeof v === "object") {
+        if (v.formula !== undefined) return `=${v.formula}`;
+        if (v.richText) return v.richText.map((r) => r.text).join("");
+        if (v.text !== undefined) return String(v.text);
+        if (v.error) return String(v.error);
+        return "";
+    }
+    return String(v);
+};
+
+// Reduces an ExcelJS cell's font/fill/alignment/border/numFmt into this app's
+// flat per-cell style fields (see cellStyleFor / CellBorderOverlay above).
+const extractExcelCellStyle = (cell) => {
+    const style = {};
+    const font = cell.font;
+    if (font) {
+        if (font.bold) style.bold = true;
+        if (font.italic) style.italic = true;
+        if (font.underline) style.underline = true;
+        if (font.strike) style.strike = true;
+        if (font.size) style.fontSize = Math.round(font.size);
+        if (font.name) style.fontFamily = font.name;
+        const color = parseExcelColor(font.color);
+        if (color) style.color = color;
+    }
+    const fill = cell.fill;
+    if (fill && fill.type === "pattern" && fill.pattern === "solid") {
+        const bg = parseExcelColor(fill.fgColor);
+        if (bg) style.bg = bg;
+    }
+    const alignment = cell.alignment;
+    if (alignment) {
+        if (["left", "center", "right"].includes(alignment.horizontal)) style.align = alignment.horizontal;
+        if (["top", "middle", "bottom"].includes(alignment.vertical)) style.valign = alignment.vertical;
+        if (alignment.wrapText) style.wrap = true;
+    }
+    const border = cell.border;
+    if (border) {
+        const b = {};
+        for (const side of ["top", "bottom", "left", "right"]) {
+            const mapped = border[side] && mapBorderStyle(border[side].style);
+            if (mapped) b[side] = mapped;
+        }
+        if (Object.keys(b).length > 0) style.border = b;
+    }
+    const mappedFmt = mapNumberFormat(cell.numFmt);
+    if (mappedFmt) {
+        style.numberFormat = mappedFmt;
+        style.decimalPlaces = getDecimalPlaces(cell.numFmt);
+    }
+    return style;
+};
+
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
     const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
@@ -360,6 +762,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [activeSheetName, setActiveSheetName] = useState(DEFAULT_SHEET_NAME);
     const [isDirty, setIsDirty] = useState(false);
     const loadedRef = useRef(false);
+    const prevIdsRef = useRef({ sectionId, meetingId });
 
     const [activeCell, setActiveCell] = useState("A1");
     const [selection, setSelection] = useState({ start: "A1", end: "A1" });
@@ -393,6 +796,38 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [filterDraft, setFilterDraft] = useState(null); // { search, selected: Set<string>, allValues: string[] }
 
     const [resizePreview, setResizePreview] = useState(null); // { type: 'col'|'row', index, size }
+
+    const [createPivotDialogOpen, setCreatePivotDialogOpen] = useState(false);
+    const [pivotPanelOpen, setPivotPanelOpen] = useState(true);
+
+    // Grid zoom, applied via CSS `zoom` directly on gridContainerRef (the
+    // scroll container itself, not a child wrapper). Because the scaled
+    // element and the scrollable element are one and the same, its own
+    // scrollTop/scrollLeft/clientHeight/clientWidth stay in the same authored,
+    // unzoomed coordinate space as rowOffsets/colOffsets/cell sizes — no
+    // conversion needed there. The only places that still need to know about
+    // `zoom` explicitly are ones converting real screen pixels (mouse-drag
+    // deltas for resize/media gestures) into that authored space.
+    const [zoom, setZoom] = useState(1.0); // 1.0 = 100%
+    const handleZoomIn = useCallback(() => {
+        setZoom((prev) => Math.min(4.0, Math.round((prev + 0.1) * 10) / 10));
+    }, []);
+    const handleZoomOut = useCallback(() => {
+        setZoom((prev) => Math.max(0.1, Math.round((prev - 0.1) * 10) / 10));
+    }, []);
+
+    // Row virtualization: only rows within [scrollTop, scrollTop+viewportHeight]
+    // (plus a buffer) are rendered, so a 5000+-row sheet doesn't put 5000+ <tr>s
+    // in the DOM. Tracked as state (not read straight off the DOM at render time)
+    // so scrolling/resizing the container actually triggers a re-render.
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(0);
+    const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
+
+    // Import/export progress dialog. { title, label, current, total } | null —
+    // total === 0 means an indeterminate phase (spinner only), since ExcelJS
+    // doesn't expose progress callbacks for its own parse/write step.
+    const [ioProgress, setIoProgress] = useState(null);
 
     const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
     const [videoPopoverOpen, setVideoPopoverOpen] = useState(false);
@@ -442,20 +877,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
     }, [sheetData, bumpHistory]);
 
-    // Reset load-guard and local state when switching to a different section's sheet.
+    // Reset load-guard and local state only when switching to a DIFFERENT
+    // section's sheet/meeting on an already-mounted instance. Without the
+    // prevIdsRef guard this fired unconditionally on mount too — and since
+    // RTK Query can already have this meeting's data cached (no network
+    // round trip), the load effect above and this one could both fire in the
+    // same commit, with this one running second and wiping out what was just
+    // loaded, so a saved sheet appeared blank the next time it was opened.
     useEffect(() => {
-        loadedRef.current = false;
-        setIsDirty(false);
-        setActiveCell("A1");
-        setSelection({ start: "A1", end: "A1" });
-        setEditingCell(null);
-        setClipboard(null);
-        setFormatPainterStyle(null);
-        setSheets({ [DEFAULT_SHEET_NAME]: emptySheet() });
-        setActiveSheetName(DEFAULT_SHEET_NAME);
-        historyPast.current = [];
-        historyFuture.current = [];
-        bumpHistory();
+        const prev = prevIdsRef.current;
+        if (prev.sectionId !== sectionId || prev.meetingId !== meetingId) {
+            loadedRef.current = false;
+            setIsDirty(false);
+            setActiveCell("A1");
+            setSelection({ start: "A1", end: "A1" });
+            setEditingCell(null);
+            setClipboard(null);
+            setFormatPainterStyle(null);
+            setSheets({ [DEFAULT_SHEET_NAME]: emptySheet() });
+            setActiveSheetName(DEFAULT_SHEET_NAME);
+            historyPast.current = [];
+            historyFuture.current = [];
+            bumpHistory();
+            prevIdsRef.current = { sectionId, meetingId };
+        }
     }, [sectionId, meetingId, bumpHistory]);
 
     const activeSheet = sheets[activeSheetName] || emptySheet();
@@ -468,6 +913,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const rowHeights = activeSheet.rowHeights || {};
     const tables = activeSheet.tables || [];
     const media = activeSheet.media || [];
+    const pivotConfig = activeSheet.pivotConfig || null;
+    // Pivot sheets are fully computed from their source — direct cell edits,
+    // ribbon formatting, merges, sorting, and structural row/col changes are
+    // all disabled on them, matching Excel's own pivot table protection.
+    const isSheetReadOnly = readOnly || !!pivotConfig;
 
     const columns = useMemo(() => Array.from({ length: columnCount }, (_, i) => indexToCol(i)), [columnCount]);
     const rows = useMemo(() => Array.from({ length: rowCount }, (_, i) => i), [rowCount]);
@@ -507,6 +957,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const merge = mergeMap[cellId];
         return merge ? merge.start : cellId;
     }, [mergeMap]);
+
+    // Field list for the PivotTable panel — recomputed whenever the source
+    // sheet's data or the pivot's own source range changes.
+    const pivotSourceFields = useMemo(() => {
+        if (!pivotConfig) return [];
+        return getPivotSourceFields(sheets, pivotConfig.sourceSheet, pivotConfig.sourceRange, buildRawValueGrid);
+    }, [pivotConfig, sheets]);
+
+    // Re-show the fields panel whenever the user navigates onto a (different)
+    // pivot sheet, even if they'd previously closed it on another one.
+    useEffect(() => { if (pivotConfig) setPivotPanelOpen(true); }, [activeSheetName]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Excel-style AutoFilter: a row is hidden if it sits in some table's data
     // range and fails at least one of that table's active column filters. Row
@@ -590,18 +1051,78 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setSheets((prev) => {
             const next = JSON.parse(JSON.stringify(prev));
             updater(next);
+            // Every commit — a source-sheet edit, a pivot config change, an
+            // import, a sheet rename — can affect a pivot sheet's output, so
+            // just recompute all of them unconditionally rather than trying
+            // to track which commits actually matter.
+            recomputePivotSheets(next, buildRawValueGrid);
             return next;
         });
         setIsDirty(true);
     }, [sheets, bumpHistory]);
 
     const mutateActiveCells = useCallback((mutator) => {
+        if (isSheetReadOnly) return;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             if (!sheet) return;
             mutator(sheet.cells);
         });
+    }, [updateSheets, activeSheetName, isSheetReadOnly]);
+
+    // --- PivotTable creation & field configuration ---
+
+    const openCreatePivotDialog = () => {
+        if (isSheetReadOnly) return;
+        if (!selectionBounds || selectionBounds.maxRow - selectionBounds.minRow < 1 || selectionBounds.maxCol - selectionBounds.minCol < 1) {
+            toast.error("Select a range of at least 2 rows and 2 columns to create a PivotTable.");
+            return;
+        }
+        setCreatePivotDialogOpen(true);
+    };
+
+    const createPivotTable = (sourceSheet, sourceRange) => {
+        const [startRef, endRef] = (sourceRange || "").includes(":") ? sourceRange.split(":") : [sourceRange, sourceRange];
+        const rangeValid = !!(parseCellRef((startRef || "").trim().toUpperCase()) && parseCellRef((endRef || "").trim().toUpperCase()));
+        if (!sourceSheet || !sheets[sourceSheet] || !rangeValid) {
+            toast.error("Enter a valid source sheet and range, e.g. A1:D15.");
+            return;
+        }
+        let n = 1;
+        let name = `Pivot Table ${n}`;
+        while (sheets[name]) { n += 1; name = `Pivot Table ${n}`; }
+        updateSheets((next) => {
+            next[name] = { ...emptySheet(), pivotConfig: { sourceSheet, sourceRange: sourceRange.trim().toUpperCase(), rows: [], cols: [], values: [] } };
+        });
+        setActiveSheetName(name);
+        setCreatePivotDialogOpen(false);
+        toast.success(`Created "${name}" — check fields in the panel to build it out.`);
+    };
+
+    const updatePivotConfig = useCallback((patch) => {
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (!sheet?.pivotConfig) return;
+            const resolved = typeof patch === "function" ? patch(sheet.pivotConfig) : patch;
+            sheet.pivotConfig = { ...sheet.pivotConfig, ...resolved };
+        });
     }, [updateSheets, activeSheetName]);
+
+    const togglePivotZone = useCallback((field, zone, isNumeric) => {
+        updatePivotConfig((cfg) => {
+            if (zone === "values") {
+                const exists = cfg.values.some((v) => v.field === field);
+                return { values: exists ? cfg.values.filter((v) => v.field !== field) : [...cfg.values, { field, agg: isNumeric ? "sum" : "count" }] };
+            }
+            const list = cfg[zone] || [];
+            const exists = list.includes(field);
+            return { [zone]: exists ? list.filter((f) => f !== field) : [...list, field] };
+        });
+    }, [updatePivotConfig]);
+
+    const changePivotAgg = useCallback((field, agg) => {
+        updatePivotConfig((cfg) => ({ values: cfg.values.map((v) => (v.field === field ? { ...v, agg } : v)) }));
+    }, [updatePivotConfig]);
 
     // --- Column/row resize (drag handles on the headers) ---
 
@@ -630,6 +1151,84 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return offsets;
     }, [rowCount, heightForRow]);
 
+    // Keeps scrollTop/viewportHeight in sync with the actual DOM so virtualization
+    // can compute which rows are visible. A plain scroll listener (not rAF-throttled)
+    // is fine here — each resulting re-render is cheap since it only re-renders the
+    // visible row slice, not the whole sheet.
+    useEffect(() => {
+        const el = gridContainerRef.current;
+        if (!el) return;
+        const onScroll = () => setScrollTop(el.scrollTop);
+        el.addEventListener("scroll", onScroll, { passive: true });
+        setScrollTop(el.scrollTop);
+        setViewportHeight(el.clientHeight);
+        const ro = new ResizeObserver((entries) => {
+            for (const entry of entries) setViewportHeight(entry.contentRect.height);
+        });
+        ro.observe(el);
+        return () => {
+            el.removeEventListener("scroll", onScroll);
+            ro.disconnect();
+        };
+    }, []);
+
+    // Visible row window for virtualization: the scroll-position -> row-index
+    // binary search, padded by a buffer, then widened to fully contain any
+    // merge that pokes into the window — merges never overlap each other, so a
+    // single pass over them is enough (widening from a merge can't make the
+    // window newly overlap a second one it didn't already touch).
+    const visibleRowRange = useMemo(() => {
+        if (rowCount === 0) return { startRow: 0, endRow: -1 };
+        const viewTop = scrollTop;
+        const viewBottom = scrollTop + viewportHeight;
+        let startRow = clamp(bandIndexForPixel(rowOffsets, viewTop) - ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
+        let endRow = clamp(bandIndexForPixel(rowOffsets, viewBottom) + ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
+        for (const m of merges) {
+            const s = parseCellRef(m.start), e = parseCellRef(m.end);
+            if (!s || !e) continue;
+            const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+            if (maxRow >= startRow && minRow <= endRow) {
+                startRow = Math.min(startRow, minRow);
+                endRow = Math.max(endRow, maxRow);
+            }
+        }
+        return { startRow, endRow };
+    }, [scrollTop, viewportHeight, rowOffsets, rowCount, merges]);
+
+    // Keyboard navigation can move the active cell to a row/column that isn't
+    // currently rendered at all (virtualized rows) or is just scrolled out of
+    // view (columns, which aren't virtualized but can still be off-screen).
+    // Guarded on activeCell itself (not just present in the deps array) so a
+    // resize drag — which also changes rowOffsets/colOffsets — never jumps the
+    // scroll position on its own.
+    useEffect(() => {
+        if (lastScrolledCellRef.current === activeCell) return;
+        lastScrolledCellRef.current = activeCell;
+        const el = gridContainerRef.current;
+        const ref = parseCellRef(activeCell);
+        if (!el || !ref) return;
+
+        const viewTop = el.scrollTop;
+        const headerHeight = HEADER_ROW_HEIGHT;
+        const rowStart = rowOffsets[ref.row];
+        const rowEnd = rowOffsets[ref.row + 1];
+        if (rowStart < viewTop + headerHeight) {
+            el.scrollTop = Math.max(0, rowStart - headerHeight);
+        } else if (rowEnd > viewTop + el.clientHeight) {
+            el.scrollTop = rowEnd - el.clientHeight;
+        }
+
+        const viewLeft = el.scrollLeft;
+        const headerWidth = ROW_HEADER_WIDTH;
+        const colStart = colOffsets[ref.col];
+        const colEnd = colOffsets[ref.col + 1];
+        if (colStart < viewLeft + headerWidth) {
+            el.scrollLeft = Math.max(0, colStart - headerWidth);
+        } else if (colEnd > viewLeft + el.clientWidth) {
+            el.scrollLeft = colEnd - el.clientWidth;
+        }
+    }, [activeCell, rowOffsets, colOffsets]);
+
     const startColumnResize = useCallback((e, colIdx) => {
         e.preventDefault();
         e.stopPropagation();
@@ -650,7 +1249,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const onMouseMove = (e) => {
             const r = resizeRef.current;
             if (!r) return;
-            const delta = r.type === "col" ? e.clientX - r.startPos : e.clientY - r.startPos;
+            // e.clientX/Y are real screen pixels (the zoomed render); startSize
+            // and the resulting preview size are authored, unzoomed pixels.
+            const delta = (r.type === "col" ? e.clientX - r.startPos : e.clientY - r.startPos) / zoom;
             const min = r.type === "col" ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
             const newSize = Math.max(min, r.startSize + delta);
             resizeRef.current = { ...r, currentSize: newSize };
@@ -678,7 +1279,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
         };
-    }, [updateSheets, activeSheetName]);
+    }, [updateSheets, activeSheetName, zoom]);
 
     // --- Floating media (images/video) ---
     // Anchored to whatever cell is active at insert time, like Excel dropping
@@ -775,10 +1376,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const startEditing = useCallback((cellId, initialValue) => {
         setActiveCell(cellId);
         setSelection({ start: cellId, end: cellId });
+        if (isSheetReadOnly) {
+            toast.info("This is a PivotTable — edit the source data instead.");
+            return;
+        }
         setEditingCell(cellId);
         setEditValue(initialValue !== undefined ? initialValue : (cells[cellId]?.value ?? ""));
         formulaInsertRange.current = null;
-    }, [cells]);
+    }, [cells, isSheetReadOnly]);
 
     const cancelEdit = useCallback(() => {
         setEditingCell(null);
@@ -873,11 +1478,39 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
             else if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
             else if (key === "x") { e.preventDefault(); copySelection("cut"); }
-            else if (key === "v") { e.preventDefault(); handlePaste(); }
         };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [undo, redo, copySelection, handlePaste, readOnly]);
+    }, [undo, redo, copySelection, readOnly]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const onPaste = (e) => {
+            if (!e.clipboardData) return;
+            const items = e.clipboardData.items;
+            let hasImage = false;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf("image") !== -1) {
+                    const file = items[i].getAsFile();
+                    if (file) {
+                        e.preventDefault();
+                        handleInsertMediaFile("image", file);
+                        hasImage = true;
+                        break;
+                    }
+                }
+            }
+            if (hasImage) return;
+
+            const tag = document.activeElement?.tagName;
+            if (tag !== "INPUT" && tag !== "TEXTAREA") {
+                e.preventDefault();
+                handlePaste();
+            }
+        };
+        window.addEventListener("paste", onPaste);
+        return () => window.removeEventListener("paste", onPaste);
+    }, [handlePaste, handleInsertMediaFile, readOnly]);
 
     const handleCellMouseDown = useCallback((cellId) => {
         // Point mode: while typing a formula, clicking another cell inserts its
@@ -1141,6 +1774,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // on an already-merged range unmerges instead. Any existing merges that
     // overlap the new range are removed first so merges never overlap.
     const mergeCenter = () => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         if (minRow === maxRow && minCol === maxCol) {
@@ -1176,6 +1810,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setActiveCell(rangeStart);
         setSelection({ start: rangeStart, end: rangeEnd });
     };
+    // Unmerge Cells: drops every existing merge whose bounding box overlaps
+    // the current selection, regardless of whether the selection exactly
+    // matches a merge's own range — mirrors Excel's dedicated "Unmerge Cells"
+    // command. (mergeCenter's own toggle above only unmerges on an exact
+    // start/end match.) The freed-up cells keep whatever content they already
+    // had (only the merge anchor ever holds content after a merge), so no
+    // cell data needs clearing here.
+    const unmergeCells = useCallback(() => {
+        if (!selectionBounds) return;
+        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+
+        const intersecting = merges.filter((m) => {
+            const s = parseCellRef(m.start), e = parseCellRef(m.end);
+            if (!s || !e) return false;
+            const mMinRow = Math.min(s.row, e.row), mMaxRow = Math.max(s.row, e.row);
+            const mMinCol = Math.min(s.col, e.col), mMaxCol = Math.max(s.col, e.col);
+            return minRow <= mMaxRow && maxRow >= mMinRow && minCol <= mMaxCol && maxCol >= mMinCol;
+        });
+
+        if (intersecting.length === 0) {
+            toast.info("No merged cells found in selection");
+            return;
+        }
+
+        const removeIds = new Set(intersecting.map((m) => `${m.start}:${m.end}`));
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            sheet.merges = (sheet.merges || []).filter((m) => !removeIds.has(`${m.start}:${m.end}`));
+        });
+        toast.success(`Unmerged ${intersecting.length} cell range${intersecting.length === 1 ? "" : "s"}`);
+    }, [selectionBounds, merges, activeSheetName, updateSheets]);
     const setFontSize = (fontSize) => applyToSelection((cell) => ({ ...cell, fontSize: fontSize ? Number(fontSize) : undefined }));
     const setFontFamily = (fontFamily) => applyToSelection((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
     const setBg = (bg) => applyToSelection((cell) => ({ ...cell, bg }));
@@ -1202,6 +1867,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // over the same exact range updates that table in place instead of stacking
     // a duplicate.
     const applyTable = (presetKey, filtersEnabled) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
         const preset = TABLE_STYLE_PRESETS.find((p) => p.key === presetKey) || TABLE_STYLE_PRESETS[0];
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
@@ -1303,6 +1969,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // matching a plain insert/delete, not Excel's full reference-repair.
 
     const insertRowAt = (rowIdx) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
@@ -1316,6 +1983,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     };
     const deleteRowAt = (rowIdx) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
@@ -1330,6 +1998,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     };
     const insertColumnAt = (colIdx) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
@@ -1343,6 +2012,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     };
     const deleteColumnAt = (colIdx) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
@@ -1378,6 +2048,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // insert/delete — does not adjust formulas elsewhere that reference the
     // rows being reordered.
     const sortSelection = (direction) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const sortCol = minCol;
@@ -1436,6 +2107,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setActiveSheetName(name);
     };
 
+    // updateSheets already deep-clones the whole workbook before handing it to
+    // the updater, so `next[name]` is a private copy — re-cloning it into
+    // `next[newName]` is what gives the duplicate and the original independent
+    // object graphs (editing one can never mutate the other).
+    const copySheet = (name) => {
+        if (!sheets[name]) return;
+        const newName = getDuplicateSheetName(name, Object.keys(sheets));
+        updateSheets((next) => {
+            next[newName] = JSON.parse(JSON.stringify(next[name]));
+        });
+        setActiveSheetName(newName);
+        toast.success(`Sheet "${name}" duplicated as "${newName}"`);
+    };
+
     const switchSheet = (name) => {
         if (editingCell) commitEdit();
         setActiveSheetName(name);
@@ -1454,6 +2139,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateSheets((next) => {
             next[newName] = next[oldName];
             delete next[oldName];
+            renamePivotSourceReferences(next, oldName, newName);
         });
         if (activeSheetName === oldName) setActiveSheetName(newName);
     };
@@ -1557,16 +2243,113 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateCharts: persistCharts,
     }), [persistCharts]);
 
+    // Excel's column-width unit is "characters of the default font" rather
+    // than pixels; ExcelJS surfaces widths/heights in those native units
+    // (characters, points), so these two conversions are shared by both
+    // import (Excel units -> px) and export (px -> Excel units). The 7px/char
+    // + 5px padding and 96/72 dpi ratio are the standard approximations most
+    // spreadsheet tooling uses for this — Excel doesn't expose an exact ratio.
+    const excelWidthToPx = (chars) => Math.round(chars * 7 + 5);
+    const pxToExcelWidth = (px) => Math.max(2, Math.round((px - 5) / 7));
+    const excelHeightToPx = (points) => Math.round((points * 4) / 3);
+    const pxToExcelHeight = (px) => Math.round((px * 3) / 4);
+
     const handleExport = async () => {
-        const XLSX = await import("xlsx");
-        const aoa = rows.map((r) => columns.map((_, c) => {
-            const id = getCellId(r, c);
-            return displayGrid[id] ?? "";
-        }));
-        const worksheet = XLSX.utils.aoa_to_sheet(aoa);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, activeSheetName.slice(0, 31));
-        XLSX.writeFile(workbook, `daily-meeting-section-${sectionId}-${activeSheetName}.xlsx`);
+        setIoProgress({ title: "Exporting Spreadsheet", label: "Preparing workbook…", current: 0, total: 0 });
+        try {
+            const ExcelJS = (await import("exceljs")).default;
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet(activeSheetName.slice(0, 31) || "Sheet 1");
+
+            setIoProgress({ title: "Exporting Spreadsheet", label: "Writing cells…", current: 0, total: rowCount });
+            for (let r = 0; r < rowCount; r++) {
+                for (let c = 0; c < columnCount; c++) {
+                    const id = getCellId(r, c);
+                    const cellData = cells[id];
+                    if (!cellData) continue;
+                    const excelCell = worksheet.getCell(r + 1, c + 1);
+                    const raw = cellData.value;
+
+                    if (typeof raw === "string" && raw.trim().startsWith("=")) {
+                        excelCell.value = { formula: raw.trim().slice(1) };
+                    } else if (raw !== undefined && raw !== "" && String(raw).trim() !== "" && !isNaN(Number(raw))) {
+                        excelCell.value = Number(raw);
+                    } else if (raw !== undefined && raw !== "") {
+                        excelCell.value = raw;
+                    }
+
+                    const font = {};
+                    if (cellData.bold) font.bold = true;
+                    if (cellData.italic) font.italic = true;
+                    if (cellData.underline) font.underline = true;
+                    if (cellData.strike) font.strike = true;
+                    if (cellData.fontSize) font.size = cellData.fontSize;
+                    if (cellData.fontFamily) font.name = cellData.fontFamily;
+                    if (cellData.color) font.color = { argb: `FF${cellData.color.replace("#", "").toUpperCase()}` };
+                    if (Object.keys(font).length > 0) excelCell.font = font;
+
+                    if (cellData.bg) {
+                        excelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${cellData.bg.replace("#", "").toUpperCase()}` } };
+                    }
+
+                    if (cellData.align || cellData.valign || cellData.wrap) {
+                        excelCell.alignment = { horizontal: cellData.align, vertical: cellData.valign, wrapText: !!cellData.wrap };
+                    }
+
+                    if (cellData.border) {
+                        const excelBorderStyle = (weight) => (weight === "thick" ? "medium" : weight === "double" ? "double" : "thin");
+                        const b = {};
+                        for (const side of ["top", "bottom", "left", "right"]) {
+                            if (cellData.border[side]) b[side] = { style: excelBorderStyle(cellData.border[side]) };
+                        }
+                        excelCell.border = b;
+                    }
+
+                    if (cellData.numberFormat) {
+                        const decimals = cellData.decimalPlaces !== undefined ? cellData.decimalPlaces : 2;
+                        const decimalStr = decimals > 0 ? `.${"0".repeat(decimals)}` : "";
+                        const fmtMap = {
+                            number: `0${decimalStr}`,
+                            comma: `#,##0${decimalStr}`,
+                            currency: `"$"#,##0${decimalStr}`,
+                            accounting: `"$"#,##0${decimalStr}`,
+                            percentage: `0${decimalStr}%`
+                        };
+                        excelCell.numFmt = fmtMap[cellData.numberFormat] || "General";
+                    }
+                }
+                if ((r + 1) % IO_CHUNK_SIZE === 0 || r === rowCount - 1) {
+                    setIoProgress({ title: "Exporting Spreadsheet", label: "Writing cells…", current: r + 1, total: rowCount });
+                    await yieldToUI();
+                }
+            }
+
+            for (const [colIdxStr, width] of Object.entries(columnWidths)) {
+                worksheet.getColumn(Number(colIdxStr) + 1).width = pxToExcelWidth(width);
+            }
+            for (const [rowIdxStr, height] of Object.entries(rowHeights)) {
+                worksheet.getRow(Number(rowIdxStr) + 1).height = pxToExcelHeight(height);
+            }
+            for (const m of merges) {
+                try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
+            }
+
+            setIoProgress({ title: "Exporting Spreadsheet", label: "Generating file…", current: 0, total: 0 });
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `daily-meeting-section-${sectionId}-${activeSheetName}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            toast.error("Failed to export the spreadsheet.");
+        } finally {
+            setIoProgress(null);
+        }
     };
 
     const handleImportClick = () => fileInputRef.current?.click();
@@ -1574,24 +2357,54 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const handleImportFile = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        setIoProgress({ title: "Importing Spreadsheet", label: "Reading file…", current: 0, total: 0 });
         const reader = new FileReader();
         reader.onload = async (evt) => {
             try {
-                const XLSX = await import("xlsx");
-                const workbook = XLSX.read(evt.target.result, { type: "array" });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                const ExcelJS = (await import("exceljs")).default;
+                const workbook = new ExcelJS.Workbook();
+                setIoProgress({ title: "Importing Spreadsheet", label: "Parsing workbook…", current: 0, total: 0 });
+                await workbook.xlsx.load(evt.target.result);
+                const worksheet = workbook.worksheets[0];
+                if (!worksheet) throw new Error("No worksheet found in file");
 
                 const importedCells = {};
+                const importedColumnWidths = {};
+                const importedRowHeights = {};
                 let maxRow = 0, maxCol = 0;
-                aoa.forEach((rowArr, rIdx) => {
-                    rowArr.forEach((val, cIdx) => {
-                        if (val === "" || val === null || val === undefined) return;
-                        importedCells[getCellId(rIdx, cIdx)] = { value: String(val) };
+
+                const totalRows = worksheet.rowCount || 0;
+                setIoProgress({ title: "Importing Spreadsheet", label: "Reading rows…", current: 0, total: totalRows });
+                for (let rowNumber = 1; rowNumber <= totalRows; rowNumber++) {
+                    const row = worksheet.getRow(rowNumber);
+                    const rIdx = rowNumber - 1;
+                    if (row.height) importedRowHeights[rIdx] = excelHeightToPx(row.height);
+                    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                        const cIdx = colNumber - 1;
+                        const value = extractExcelCellValue(cell);
+                        const style = extractExcelCellStyle(cell);
+                        if (value === "" && Object.keys(style).length === 0) return;
+                        importedCells[getCellId(rIdx, cIdx)] = { value, ...style };
                         maxRow = Math.max(maxRow, rIdx + 1);
                         maxCol = Math.max(maxCol, cIdx + 1);
                     });
-                });
+                    if (rowNumber % IO_CHUNK_SIZE === 0 || rowNumber === totalRows) {
+                        setIoProgress({ title: "Importing Spreadsheet", label: "Reading rows…", current: rowNumber, total: totalRows });
+                        await yieldToUI();
+                    }
+                }
+
+                const totalCols = Math.max(worksheet.columnCount || 0, maxCol);
+                for (let i = 0; i < totalCols; i++) {
+                    const col = worksheet.getColumn(i + 1);
+                    if (col?.width) importedColumnWidths[i] = excelWidthToPx(col.width);
+                }
+
+                const importedMerges = [];
+                for (const range of worksheet.model?.merges || []) {
+                    const [start, end] = range.split(":");
+                    if (parseCellRef(start) && parseCellRef(end)) importedMerges.push({ start, end });
+                }
 
                 updateSheets((next) => {
                     next[activeSheetName] = {
@@ -1599,15 +2412,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         rowCount: Math.max(DEFAULT_ROW_COUNT, maxRow),
                         columnCount: Math.max(DEFAULT_COLUMN_COUNT, maxCol),
                         conditionalRules: [],
-                        merges: [],
-                        columnWidths: {},
-                        rowHeights: {},
+                        merges: importedMerges,
+                        columnWidths: importedColumnWidths,
+                        rowHeights: importedRowHeights,
+                        tables: [],
                         media: next[activeSheetName]?.media || []
                     };
                 });
                 toast.success("Spreadsheet imported. Click Save to persist it.");
             } catch (err) {
                 toast.error("Failed to read the Excel file.");
+            } finally {
+                setIoProgress(null);
             }
         };
         reader.readAsArrayBuffer(file);
@@ -1615,6 +2431,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     };
 
     const ribbonBtnClass = (active) => cn("h-7 w-7 cursor-pointer", active && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100");
+
+    const defaultPivotSourceRange = selectionBounds
+        ? `${getCellId(selectionBounds.minRow, selectionBounds.minCol)}:${getCellId(selectionBounds.maxRow, selectionBounds.maxCol)}`
+        : "";
 
     if (isLoading) {
         return (
@@ -1653,11 +2473,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 >
                     <IconSearch className="w-4 h-4" /> Find
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={handleImportClick} title="Import from Excel">
+                <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={handleImportClick} disabled={!!ioProgress} title="Import from Excel">
                     <IconUpload className="w-4 h-4" /> Import
                 </Button>
-                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportFile} />
-                <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={handleExport} title="Export to Excel">
+                <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportFile} />
+                <Button variant="outline" size="sm" className="h-8 cursor-pointer" onClick={handleExport} disabled={!!ioProgress} title="Export to Excel">
                     <IconDownload className="w-4 h-4" /> Export
                 </Button>
             </div>
@@ -1672,6 +2492,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 </RibbonGroup>
 
                 <RibbonGroup label="Insert">
+                    <Button
+                        variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer"
+                        title={isSheetReadOnly ? "Switch to a non-PivotTable sheet to insert a PivotTable" : "Insert PivotTable from the current selection"}
+                        disabled={isSheetReadOnly}
+                        onClick={openCreatePivotDialog}
+                    >
+                        <IconTable className="w-4 h-4" /> PivotTable
+                    </Button>
                     <Popover open={imagePopoverOpen} onOpenChange={setImagePopoverOpen}>
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert image"><IconPhoto className="w-4 h-4" /> Image</Button>
@@ -1796,7 +2624,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.align === "center")} onClick={() => setAlign("center")} title="Align center"><IconAlignCenter className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.align === "right")} onClick={() => setAlign("right")} title="Align right"><IconAlignRight className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.wrap)} onClick={toggleWrap} title="Wrap text"><IconTextWrap className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" onClick={mergeCenter} title="Merge & Center — merges the selection into one cell; click again to unmerge">Merge</Button>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer flex items-center gap-0.5" title="Merge options">
+                                Merge <IconChevronDown className="w-3 h-3 text-slate-400" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-36 p-1 bg-white border border-slate-200 shadow-md rounded-lg flex flex-col z-[100]" align="start">
+                            <Button variant="ghost" size="sm" className="justify-start text-[11px] h-7 cursor-pointer w-full text-left font-normal hover:bg-slate-100" onClick={mergeCenter}>
+                                Merge & Center
+                            </Button>
+                            <Button variant="ghost" size="sm" className="justify-start text-[11px] h-7 cursor-pointer w-full text-left font-normal hover:bg-slate-100" onClick={unmergeCells}>
+                                Unmerge Cells
+                            </Button>
+                        </PopoverContent>
+                    </Popover>
                 </RibbonGroup>
 
                 <RibbonGroup label="Number">
@@ -1903,8 +2745,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => deleteColumnAt(parseCellRef(activeCell).col)}><IconColumnRemove className="w-3.5 h-3.5" /> Delete Column</button>
                         </PopoverContent>
                     </Popover>
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} title="Add column at end"><IconPlus className="w-3.5 h-3.5" /> Col</Button>
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} title="Add row at end"><IconPlus className="w-3.5 h-3.5" /> Row</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} title="Add column at end"><IconPlus className="w-3.5 h-3.5" /> Col</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} title="Add row at end"><IconPlus className="w-3.5 h-3.5" /> Row</Button>
                 </RibbonGroup>
 
                 <RibbonGroup label="Editing">
@@ -2023,15 +2865,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 </Button>
             </div>
 
-            {/* Grid */}
-            <div
-                ref={gridContainerRef}
-                className="overflow-auto border border-slate-200 outline-none select-none"
-                style={{ maxHeight: 560 }}
-                tabIndex={0}
-                onKeyDown={handleGridKeyDown}
-                onMouseLeave={() => setHoveredCell(null)}
-            >
+            {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
+            <div className="flex items-start gap-2">
+            <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 min-w-0">
+                <div
+                    ref={gridContainerRef}
+                    className="overflow-auto outline-none select-none"
+                    style={{ maxHeight: 560 / zoom, zoom }}
+                    tabIndex={0}
+                    onKeyDown={handleGridKeyDown}
+                    onMouseLeave={() => setHoveredCell(null)}
+                >
                 <div className="relative">
                 {media.map((item) => (
                     <DraggableMedia
@@ -2042,6 +2886,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         columnCount={columnCount}
                         rowCount={rowCount}
                         readOnly={readOnly}
+                        zoom={zoom}
                         onUpdate={(patch) => handleUpdateMedia(item.id, patch)}
                         onDelete={() => handleDeleteMedia(item.id)}
                     />
@@ -2058,7 +2903,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     key={c}
                                     onClick={() => selectColumn(colIdx)}
                                     className={cn(
-                                        "sticky top-0 z-20 border border-slate-200 text-[11px] font-semibold h-7 cursor-pointer hover:bg-slate-200 relative",
+                                        "sticky top-0 z-20 border border-slate-200 text-[11px] font-semibold h-7 cursor-pointer hover:bg-slate-200",
                                         (hoveredCell?.col === colIdx || (selectionBounds && colIdx >= selectionBounds.minCol && colIdx <= selectionBounds.maxCol))
                                             ? "bg-indigo-100 text-indigo-700"
                                             : "bg-slate-100 text-slate-600"
@@ -2077,14 +2922,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((rowIdx) => {
+                        {visibleRowRange.startRow > 0 && (
+                            <tr key="top-spacer">
+                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
+                            </tr>
+                        )}
+                        {rows.slice(visibleRowRange.startRow, visibleRowRange.endRow + 1).map((rowIdx) => {
                             if (hiddenRowSet.has(rowIdx)) return null;
                             return (
                             <tr key={rowIdx}>
                                 <td
                                     onClick={() => selectRow(rowIdx)}
                                     className={cn(
-                                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 relative",
+                                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200",
                                         (hoveredCell?.row === rowIdx || (selectionBounds && rowIdx >= selectionBounds.minRow && rowIdx <= selectionBounds.maxRow))
                                             ? "bg-indigo-100 text-indigo-700"
                                             : "bg-slate-100 text-slate-500"
@@ -2283,58 +3133,174 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             </tr>
                             );
                         })}
+                        {visibleRowRange.endRow < rowCount - 1 && (
+                            <tr key="bottom-spacer">
+                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
+                            </tr>
+                        )}
                     </tbody>
                 </table>
                 </div>
+                </div>
+            </div>
+            {pivotConfig && pivotPanelOpen && (
+                <PivotPanel
+                    pivotConfig={pivotConfig}
+                    sourceFields={pivotSourceFields}
+                    onToggleZone={togglePivotZone}
+                    onChangeAgg={changePivotAgg}
+                    onClose={() => setPivotPanelOpen(false)}
+                />
+            )}
             </div>
 
-            {/* Sheet tabs */}
-            <div className="flex items-center gap-1 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg overflow-x-auto">
-                {Object.keys(sheets).map((name) => (
-                    <div
-                        key={name}
-                        className={cn(
-                            "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border shrink-0",
-                            name === activeSheetName
-                                ? "bg-white border-slate-300 text-indigo-700 shadow-sm"
-                                : "bg-transparent border-transparent text-slate-500 hover:bg-slate-100"
-                        )}
-                        onClick={() => switchSheet(name)}
-                        onDoubleClick={readOnly ? undefined : () => startRenameSheet(name)}
-                    >
-                        {renamingSheet === name ? (
-                            <input
-                                autoFocus
-                                className="w-20 text-xs px-1 py-0 border border-indigo-300 rounded outline-none"
-                                value={renameValue}
-                                onChange={(e) => setRenameValue(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") commitRenameSheet();
-                                    else if (e.key === "Escape") setRenamingSheet(null);
-                                }}
-                                onBlur={commitRenameSheet}
-                            />
-                        ) : (
-                            <span>{name}</span>
-                        )}
-                        {!readOnly && Object.keys(sheets).length > 1 && renamingSheet !== name && (
-                            <button
-                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
-                                onClick={(e) => { e.stopPropagation(); deleteSheet(name); }}
-                                title="Delete sheet"
-                            >
-                                <IconX className="w-3 h-3" />
-                            </button>
-                        )}
-                    </div>
-                ))}
+            {/* Sheet tabs + zoom controls */}
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none">
+            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+                {Object.keys(sheets).map((name) => {
+                    const tabBadge = (
+                        <div
+                            className={cn(
+                                "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border shrink-0",
+                                name === activeSheetName
+                                    ? "bg-white border-slate-300 text-indigo-700 shadow-sm"
+                                    : "bg-transparent border-transparent text-slate-500 hover:bg-slate-100"
+                            )}
+                            onClick={() => switchSheet(name)}
+                            onDoubleClick={readOnly ? undefined : () => startRenameSheet(name)}
+                        >
+                            {renamingSheet === name ? (
+                                <input
+                                    autoFocus
+                                    className="w-20 text-xs px-1 py-0 border border-indigo-300 rounded outline-none"
+                                    value={renameValue}
+                                    onChange={(e) => setRenameValue(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") commitRenameSheet();
+                                        else if (e.key === "Escape") setRenamingSheet(null);
+                                    }}
+                                    onBlur={commitRenameSheet}
+                                />
+                            ) : (
+                                <span>{name}</span>
+                            )}
+                            {!readOnly && Object.keys(sheets).length > 1 && renamingSheet !== name && (
+                                <button
+                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
+                                    onClick={(e) => { e.stopPropagation(); deleteSheet(name); }}
+                                    title="Delete sheet"
+                                >
+                                    <IconX className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+                    );
+
+                    if (readOnly) return <React.Fragment key={name}>{tabBadge}</React.Fragment>;
+
+                    return (
+                        <ContextMenu key={name}>
+                            <ContextMenuTrigger asChild>{tabBadge}</ContextMenuTrigger>
+                            <ContextMenuContent className="w-44">
+                                <ContextMenuItem onClick={() => copySheet(name)} className="cursor-pointer">
+                                    <IconCopy className="w-3.5 h-3.5" /> Copy Sheet
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => startRenameSheet(name)} className="cursor-pointer">
+                                    <IconPencil className="w-3.5 h-3.5" /> Rename Sheet
+                                </ContextMenuItem>
+                                {Object.keys(sheets).length > 1 && (
+                                    <>
+                                        <ContextMenuSeparator />
+                                        <ContextMenuItem onClick={() => deleteSheet(name)} variant="destructive" className="cursor-pointer">
+                                            <IconX className="w-3.5 h-3.5" /> Delete Sheet
+                                        </ContextMenuItem>
+                                    </>
+                                )}
+                            </ContextMenuContent>
+                        </ContextMenu>
+                    );
+                })}
                 {!readOnly && (
                 <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={addSheet} title="Add sheet">
                     <IconPlus className="w-4 h-4" />
                 </button>
                 )}
             </div>
+
+            {/* Zoom controls */}
+            <div className="flex items-center gap-2 shrink-0 border-l border-slate-200 pl-3 text-slate-500 text-xs">
+                <button
+                    className="p-1 rounded hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors"
+                    onClick={handleZoomOut}
+                    disabled={zoom <= 0.1}
+                    title="Zoom out"
+                >
+                    <IconMinus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                    type="range"
+                    min="0.1"
+                    max="4.0"
+                    step="0.1"
+                    value={zoom}
+                    onChange={(e) => setZoom(parseFloat(e.target.value))}
+                    className="w-20 accent-indigo-600 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                    title={`Zoom: ${Math.round(zoom * 100)}%`}
+                />
+                <button
+                    className="p-1 rounded hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors"
+                    onClick={handleZoomIn}
+                    disabled={zoom >= 4.0}
+                    title="Zoom in"
+                >
+                    <IconPlus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                    className="min-w-[40px] text-right font-medium hover:text-indigo-600 hover:underline cursor-pointer"
+                    onClick={() => setZoom(1.0)}
+                    title="Reset zoom to 100%"
+                >
+                    {Math.round(zoom * 100)}%
+                </button>
+            </div>
+            </div>
+
+            {/* Import/export progress — non-dismissible while active; ExcelJS gives no
+                progress callback for its own parse/write step, so those phases show an
+                indeterminate spinner, while the row-by-row work this component chunks
+                itself (see IO_CHUNK_SIZE) drives a real percentage. */}
+            {ioProgress && (
+                <Dialog open onOpenChange={() => {}}>
+                    <DialogContent className="max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle>{ioProgress.title}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                            <p className="text-sm text-slate-600">{ioProgress.label}</p>
+                            {ioProgress.total > 0 ? (
+                                <>
+                                    <Progress value={Math.round((ioProgress.current / ioProgress.total) * 100)} />
+                                    <p className="text-xs text-slate-400 text-right">{ioProgress.current.toLocaleString()} / {ioProgress.total.toLocaleString()} rows</p>
+                                </>
+                            ) : (
+                                <div className="flex justify-center py-2">
+                                    <IconLoader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                                </div>
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            <CreatePivotDialog
+                open={createPivotDialogOpen}
+                onOpenChange={setCreatePivotDialogOpen}
+                sheetNames={Object.keys(sheets)}
+                defaultSourceSheet={activeSheetName}
+                defaultSourceRange={defaultPivotSourceRange}
+                onCreate={createPivotTable}
+            />
         </div>
     );
 });

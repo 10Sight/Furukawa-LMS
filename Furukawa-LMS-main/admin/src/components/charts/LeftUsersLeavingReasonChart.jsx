@@ -278,38 +278,238 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             ? (allLines.find(l => String(l.id) === selectedLines[0])?.name ?? '1 Line')
             : `${selectedLines.length} ${t('charts.lines')}`;
 
-    const activeReasons = useMemo(() => {
-        const active = reasonsList.filter(reason => rawTrend.some(r => Number(r.reasons?.[reason]) > 0));
-        return active.length > 0 ? active : reasonsList;
-    }, [reasonsList, rawTrend]);
+    // ── Reason Breakdown Flattening ──────────────────────────────────────────
+    // Each active reason on each period gets its own separate column slot.
+    // Under each column is the reason name (wrapped nicely).
+    // Under the whole group of reason columns for a date is the centered Date label.
+    // Between date groups are dashed vertical divider lines.
+    const { flatCategories, flatData, dateGroups, reasonTodaySlotIdx } = useMemo(() => {
+        if (!rawTrend.length) return { flatCategories: [], flatData: [], dateGroups: [], reasonTodaySlotIdx: -1 };
 
-    // ── Highcharts shared base ────────────────────────────────────────────────
-    // When showing separate bars per reason, expand each category slot to comfortably fit the group of bars.
-    const SLOT_WIDTH    = viewMode === 'reason' ? Math.max(90, (activeReasons.length * 24) + 30) : 72;
-    const needsScroll   = categories.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+        const cats = [];
+        const data = [];
+        const groups = [];
+        let idx = 0;
+        let todayIdx = -1;
 
-    const scrollPositionX = useMemo(() => {
-        if (!needsScroll || todaySlotIdx === -1) return 1;
+        rawTrend.forEach(r => {
+            const dateLabel = formatPeriodLabel(r.period, groupBy, language);
+            const isToday = r.period === currentPeriodKey;
+            const start = idx;
+
+            // Find reasons with count > 0 for this period
+            const reasonsPresent = (reasonsList || []).filter(reason => (Number(r.reasons?.[reason]) || 0) > 0);
+
+            if (reasonsPresent.length === 0) {
+                if (isToday && todayIdx === -1) todayIdx = idx;
+                cats.push('');
+                data.push({
+                    y: null,
+                    color: '#cbd5e1',
+                    custom: { reason: '', dateLabel, period: r.period },
+                });
+                groups.push({ period: r.period, dateLabel, isToday, start: idx, end: idx });
+                idx += 1;
+            } else {
+                reasonsPresent.forEach(reason => {
+                    if (isToday && todayIdx === -1) todayIdx = idx;
+                    const y = Number(r.reasons?.[reason]) || 0;
+                    const color = colorForReason(reason);
+
+                    // Multi-line formatted reason name so it never overflows horizontally
+                    const reasonHtml = reason
+                        .split(' ')
+                        .map(w => `<span style="color:#334155;font-weight:700;font-size:12px;line-height:1.2">${w}</span>`)
+                        .join('<br/>');
+
+                    cats.push(reasonHtml);
+                    data.push({
+                        y,
+                        color,
+                        custom: { reason, dateLabel, period: r.period },
+                    });
+                    idx += 1;
+                });
+                groups.push({ period: r.period, dateLabel, isToday, start, end: idx - 1 });
+            }
+        });
+
+        return { flatCategories: cats, flatData: data, dateGroups: groups, reasonTodaySlotIdx: todayIdx };
+    }, [rawTrend, reasonsList, groupBy, language, currentPeriodKey]);
+
+    // Dashed vertical lines separating different date groups
+    const groupPlotLines = useMemo(() => dateGroups.slice(1).map(g => ({
+        value: g.start - 0.5,
+        color: '#cbd5e1',
+        width: 1,
+        dashStyle: 'Dash',
+        zIndex: 3,
+    })), [dateGroups]);
+
+    // Centered date labels under each group of reason columns
+    const groupPlotBands = useMemo(() => dateGroups.map(g => ({
+        from: g.start - 0.5,
+        to: g.end + 0.5,
+        color: 'transparent',
+        label: {
+            useHTML: true,
+            text: g.isToday
+                ? `<span style="color:#2563eb;font-weight:900;font-size:14px;text-decoration:underline">${g.dateLabel}</span>`
+                : `<span style="color:#64748b;font-weight:800;font-size:14px">${g.dateLabel}</span>`,
+            align: 'center',
+            verticalAlign: 'bottom',
+            y: 60,
+        },
+    })), [dateGroups]);
+
+    // ── Highcharts options: By Reason ─────────────────────────────────────────
+    const REASON_SLOT_WIDTH = 80;
+    const reasonNeedsScroll = flatCategories.length * REASON_SLOT_WIDTH > 800;
+    const reasonScrollMinWidth = reasonNeedsScroll ? flatCategories.length * REASON_SLOT_WIDTH : undefined;
+
+    const reasonScrollPositionX = useMemo(() => {
+        if (!reasonNeedsScroll || reasonTodaySlotIdx === -1) return 1;
         const viewportWidth = 800;
-        const targetPx = todaySlotIdx * SLOT_WIDTH;
-        const maxScrollPx = (categories.length * SLOT_WIDTH) - viewportWidth;
+        const targetPx = reasonTodaySlotIdx * REASON_SLOT_WIDTH;
+        const maxScrollPx = (flatCategories.length * REASON_SLOT_WIDTH) - viewportWidth;
         if (maxScrollPx <= 0) return 1;
         const centeredPx = targetPx - (viewportWidth / 2);
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
-    }, [needsScroll, todaySlotIdx, categories.length, SLOT_WIDTH]);
+    }, [reasonNeedsScroll, reasonTodaySlotIdx, flatCategories.length]);
+
+    const reasonSeries = useMemo(() => [{
+        type: 'column',
+        name: t('charts.leftEmployees'),
+        data: flatData,
+        colorByPoint: true,
+    }], [flatData, t]);
+
+    const reasonOptions = useMemo(() => ({
+        chart: {
+            type: 'column',
+            backgroundColor: 'transparent',
+            height: 440,
+            marginBottom: reasonNeedsScroll ? 130 : 105,
+            marginTop: 40,
+            style: { fontFamily: 'inherit' },
+            animation: false,
+            ...(reasonNeedsScroll && {
+                scrollablePlotArea: {
+                    minWidth: reasonScrollMinWidth,
+                    scrollPositionX: reasonScrollPositionX,
+                    opacity: 1,
+                },
+            }),
+        },
+        title: { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories: flatCategories,
+            crosshair: true,
+            lineWidth: 1,
+            lineColor: '#e2e8f0',
+            labels: {
+                useHTML: true,
+                rotation: 0,
+                align: 'center',
+                y: 20,
+                style: { textAlign: 'center' },
+            },
+            gridLineWidth: 0,
+            plotLines: groupPlotLines,
+            plotBands: groupPlotBands,
+        },
+        yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: t('charts.leftEmployees'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: { enabled: false },
+        tooltip: {
+            useHTML: true,
+            style: { fontSize: '13px' },
+            formatter() {
+                const { reason, dateLabel } = this.point?.custom || {};
+                if (this.y === null || this.y === undefined) {
+                    return `<b>${dateLabel || ''}</b>: ${t('charts.noLeavingData') || 'No Leavers'}`;
+                }
+                return (
+                    `<b style="font-size:14px;color:#0f172a">${reason || ''}</b><br/>` +
+                    `Date: <b>${dateLabel || ''}</b><br/>` +
+                    `<span style="color:${this.point.color}">●</span> ${t('charts.leftEmployees')}: <b>${this.y}</b>`
+                );
+            },
+        },
+        plotOptions: {
+            column: {
+                animation: false,
+                borderRadius: 4,
+                borderWidth: 0,
+                pointPadding: 0.05,
+                groupPadding: 0.15,
+                maxPointWidth: 38,
+                dataLabels: {
+                    enabled: true,
+                    formatter() { return (this.y === null || this.y === undefined || this.y === 0) ? '' : String(this.y); },
+                    style: { fontSize: '13px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
+                    verticalAlign: 'top',
+                    align: 'center',
+                    y: -18,
+                    allowOverlap: true,
+                },
+            },
+        },
+        responsive: {
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 360 } },
+                },
+            ],
+        },
+        series: reasonSeries,
+    }), [flatCategories, reasonSeries, groupPlotLines, groupPlotBands, reasonNeedsScroll, reasonScrollMinWidth, reasonScrollPositionX, t]);
+
+    // ── Highcharts options: Total ─────────────────────────────────────────────
+    const TOTAL_SLOT_WIDTH = 72;
+    const totalNeedsScroll = categories.length * TOTAL_SLOT_WIDTH > 800;
+    const totalScrollMinWidth = totalNeedsScroll ? categories.length * TOTAL_SLOT_WIDTH : undefined;
+
+    const totalScrollPositionX = useMemo(() => {
+        if (!totalNeedsScroll || todaySlotIdx === -1) return 1;
+        const viewportWidth = 800;
+        const targetPx = todaySlotIdx * TOTAL_SLOT_WIDTH;
+        const maxScrollPx = (categories.length * TOTAL_SLOT_WIDTH) - viewportWidth;
+        if (maxScrollPx <= 0) return 1;
+        const centeredPx = targetPx - (viewportWidth / 2);
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [totalNeedsScroll, todaySlotIdx, categories.length]);
+
+    const totalPlotLines = useMemo(() => categories.slice(1).map((_, i) => ({
+        value: i + 0.5,
+        color: '#cbd5e1',
+        width: 1,
+        dashStyle: 'Dash',
+        zIndex: 3,
+    })), [categories]);
 
     const totalOptions = useMemo(() => ({
         chart: {
             backgroundColor: 'transparent',
-            height: 360,
+            height: 380,
             style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            marginBottom: needsScroll ? 75 : 40,
-            ...(needsScroll && {
+            animation: false,
+            marginBottom: totalNeedsScroll ? 75 : 45,
+            ...(totalNeedsScroll && {
                 scrollablePlotArea: {
-                    minWidth: scrollMinWidth,
-                    scrollPositionX,
+                    minWidth: totalScrollMinWidth,
+                    scrollPositionX: totalScrollPositionX,
                 },
             }),
         },
@@ -318,10 +518,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         xAxis: {
             categories,
             crosshair: true,
-            gridLineWidth: 1,
-            gridLineDashStyle: 'Dash',
-            gridLineColor: '#cbd5e1',
-            tickmarkPlacement: 'between',
+            plotLines: totalPlotLines,
             labels: {
                 useHTML: true,
                 style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
@@ -366,81 +563,10 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             data: totalSeries,
             color: '#ef4444',
         }],
-    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
-
-    const reasonSeries = useMemo(() => activeReasons.map((reason, idx) => ({
-        type: 'column',
-        name: reason,
-        data: rawTrend.map(r => Number(r.reasons?.[reason]) || 0),
-        color: colorForReason(reason, idx),
-    })), [activeReasons, rawTrend]);
-
-    const reasonOptions = useMemo(() => ({
-        chart: {
-            backgroundColor: 'transparent',
-            height: 360,
-            style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            marginBottom: needsScroll ? 75 : 40,
-            ...(needsScroll && {
-                scrollablePlotArea: {
-                    minWidth: scrollMinWidth,
-                    scrollPositionX,
-                },
-            }),
-        },
-        title: { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories,
-            crosshair: true,
-            gridLineWidth: 1,
-            gridLineDashStyle: 'Dash',
-            gridLineColor: '#cbd5e1',
-            tickmarkPlacement: 'between',
-            labels: {
-                useHTML: true,
-                style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
-                rotation: 0,
-                align: 'center',
-            },
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: t('charts.leftEmployees'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
-            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
-            gridLineColor: '#f1f5f9',
-        },
-        legend: { enabled: true },
-        responsive: {
-            rules: [
-                {
-                    condition: { minWidth: 768, maxWidth: 1024 },
-                    chartOptions: { chart: { height: 500 } },
-                },
-                {
-                    condition: { maxWidth: 767 },
-                    chartOptions: { chart: { height: 320 } },
-                },
-            ],
-        },
-        plotOptions: {
-            column: {
-                ...basePlotOptions.column,
-                dataLabels: aboveBarLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
-        },
-        series: reasonSeries,
-    }), [categories, reasonSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
+    }), [categories, totalSeries, totalPlotLines, totalNeedsScroll, totalScrollMinWidth, totalScrollPositionX, t]);
 
     const cfg = INPUT_CONFIG[timeframe];
-    const chartHeight = isTablet ? 500 : isMobile ? 320 : 360;
+    const chartHeight = isTablet ? 500 : isMobile ? 360 : 440;
 
     return (
         <Card className="col-span-2">

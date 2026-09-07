@@ -130,6 +130,27 @@ const stackLabelsAboveBar = {
     style: { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
 };
 
+const wrapReasonLabel = (str, maxCharsPerLine = 12) => {
+    if (!str) return '';
+    const words = str.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const word of words) {
+        if (!cur) {
+            cur = word;
+        } else if ((cur + ' ' + word).length <= maxCharsPerLine) {
+            cur += ' ' + word;
+        } else {
+            lines.push(cur);
+            cur = word;
+        }
+    }
+    if (cur) lines.push(cur);
+    return lines
+        .map(line => `<span style="color:#334155;font-weight:700;font-size:12px;line-height:1.25">${line}</span>`)
+        .join('<br/>');
+};
+
 const basePlotOptions = {
     column: {
         borderRadius: 4,
@@ -280,9 +301,9 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
 
     // ── Reason Breakdown Flattening ──────────────────────────────────────────
     // Each active reason on each period gets its own separate column slot.
-    // Under each column is the reason name (wrapped nicely).
-    // Under the whole group of reason columns for a date is the centered Date label.
-    // Between date groups are dashed vertical divider lines.
+    // Both the wrapped reason name and the date label are rendered in a shared flex container,
+    // ensuring the date label always sits beneath the reason without overlapping.
+    // Dashed vertical divider lines separate different dates/periods.
     const { flatCategories, flatData, dateGroups, reasonTodaySlotIdx } = useMemo(() => {
         if (!rawTrend.length) return { flatCategories: [], flatData: [], dateGroups: [], reasonTodaySlotIdx: -1 };
 
@@ -302,30 +323,47 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
 
             if (reasonsPresent.length === 0) {
                 if (isToday && todayIdx === -1) todayIdx = idx;
-                cats.push('');
+                const dateLine = isToday
+                    ? `<span style="color:#2563eb;font-weight:900;font-size:13px;text-decoration:underline">${dateLabel}</span>`
+                    : `<span style="color:#64748b;font-weight:800;font-size:13px">${dateLabel}</span>`;
+
+                cats.push(
+                    `<div style="display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:85px">` +
+                    `<div style="color:#94a3b8;font-size:12px;font-style:italic">—</div>` +
+                    `<div style="margin-top:auto;padding-top:6px;text-align:center">${dateLine}</div>` +
+                    `</div>`
+                );
                 data.push({
                     y: null,
-                    color: '#cbd5e1',
                     custom: { reason: '', dateLabel, period: r.period },
                 });
                 groups.push({ period: r.period, dateLabel, isToday, start: idx, end: idx });
                 idx += 1;
             } else {
-                reasonsPresent.forEach(reason => {
+                const N = reasonsPresent.length;
+                const midIdx = Math.floor((N - 1) / 2);
+
+                reasonsPresent.forEach((reason, rIdx) => {
                     if (isToday && todayIdx === -1) todayIdx = idx;
                     const y = Number(r.reasons?.[reason]) || 0;
-                    const color = colorForReason(reason);
+                    const isDateSlot = rIdx === midIdx;
 
-                    // Multi-line formatted reason name so it never overflows horizontally
-                    const reasonHtml = reason
-                        .split(' ')
-                        .map(w => `<span style="color:#334155;font-weight:700;font-size:12px;line-height:1.2">${w}</span>`)
-                        .join('<br/>');
+                    const topHtml = wrapReasonLabel(reason);
+                    const dateLine = isDateSlot
+                        ? (isToday
+                            ? `<span style="color:#2563eb;font-size:13px;font-weight:900;display:inline-block;margin-top:8px;text-decoration:underline">${dateLabel}</span>`
+                            : `<span style="color:#64748b;font-size:13px;font-weight:800;display:inline-block;margin-top:8px">${dateLabel}</span>`)
+                        : `<span style="visibility:hidden;font-size:13px;display:inline-block;margin-top:8px">${dateLabel}</span>`;
 
-                    cats.push(reasonHtml);
+                    cats.push(
+                        `<div style="display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:85px">` +
+                        `<div style="text-align:center">${topHtml}</div>` +
+                        `<div style="margin-top:auto;padding-top:6px;text-align:center">${dateLine}</div>` +
+                        `</div>`
+                    );
+
                     data.push({
                         y,
-                        color,
                         custom: { reason, dateLabel, period: r.period },
                     });
                     idx += 1;
@@ -344,22 +382,6 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         width: 1,
         dashStyle: 'Dash',
         zIndex: 3,
-    })), [dateGroups]);
-
-    // Centered date labels under each group of reason columns
-    const groupPlotBands = useMemo(() => dateGroups.map(g => ({
-        from: g.start - 0.5,
-        to: g.end + 0.5,
-        color: 'transparent',
-        label: {
-            useHTML: true,
-            text: g.isToday
-                ? `<span style="color:#2563eb;font-weight:900;font-size:14px;text-decoration:underline">${g.dateLabel}</span>`
-                : `<span style="color:#64748b;font-weight:800;font-size:14px">${g.dateLabel}</span>`,
-            align: 'center',
-            verticalAlign: 'bottom',
-            y: 60,
-        },
     })), [dateGroups]);
 
     // ── Highcharts options: By Reason ─────────────────────────────────────────
@@ -381,7 +403,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         type: 'column',
         name: t('charts.leftEmployees'),
         data: flatData,
-        colorByPoint: true,
+        color: '#ef4444',
     }], [flatData, t]);
 
     const reasonOptions = useMemo(() => ({
@@ -389,7 +411,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             type: 'column',
             backgroundColor: 'transparent',
             height: 440,
-            marginBottom: reasonNeedsScroll ? 130 : 105,
+            marginBottom: reasonNeedsScroll ? 140 : 115,
             marginTop: 40,
             style: { fontFamily: 'inherit' },
             animation: false,
@@ -412,12 +434,11 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                 useHTML: true,
                 rotation: 0,
                 align: 'center',
-                y: 20,
+                y: 16,
                 style: { textAlign: 'center' },
             },
             gridLineWidth: 0,
             plotLines: groupPlotLines,
-            plotBands: groupPlotBands,
         },
         yAxis: {
             min: 0,
@@ -437,8 +458,8 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                 }
                 return (
                     `<b style="font-size:14px;color:#0f172a">${reason || ''}</b><br/>` +
-                    `Date: <b>${dateLabel || ''}</b><br/>` +
-                    `<span style="color:${this.point.color}">●</span> ${t('charts.leftEmployees')}: <b>${this.y}</b>`
+                    `<span style="color:#64748b">Date:</span> <b>${dateLabel || ''}</b><br/>` +
+                    `<span style="color:#ef4444">●</span> ${t('charts.leftEmployees')}: <b>${this.y}</b>`
                 );
             },
         },
@@ -474,7 +495,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             ],
         },
         series: reasonSeries,
-    }), [flatCategories, reasonSeries, groupPlotLines, groupPlotBands, reasonNeedsScroll, reasonScrollMinWidth, reasonScrollPositionX, t]);
+    }), [flatCategories, reasonSeries, groupPlotLines, reasonNeedsScroll, reasonScrollMinWidth, reasonScrollPositionX, t]);
 
     // ── Highcharts options: Total ─────────────────────────────────────────────
     const TOTAL_SLOT_WIDTH = 72;

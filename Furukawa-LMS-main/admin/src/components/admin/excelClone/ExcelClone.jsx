@@ -2769,10 +2769,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="AutoSum"><IconSum className="w-4 h-4" /> AutoSum</Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-32 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
+                        <PopoverContent className="w-40 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
                             {AUTOSUM_FUNCS.map((fn) => (
                                 <button key={fn} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertAutoSum(fn)}>{fn}</button>
                             ))}
+                            <div className="my-1 border-t border-slate-100" />
+                            <button
+                                className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer"
+                                onClick={() => startEditing(activeCell, "=VLOOKUP(lookup_value, table_array, col_index_num, FALSE)")}
+                                title="Insert a VLOOKUP template"
+                            >
+                                VLOOKUP...
+                            </button>
                         </PopoverContent>
                     </Popover>
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => sortSelection("asc")} title="Sort ascending by leftmost column"><IconSortAscending className="w-4 h-4" /></Button>

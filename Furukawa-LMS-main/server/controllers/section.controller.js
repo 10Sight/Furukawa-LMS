@@ -23,7 +23,8 @@ const filterSectionsByUserScope = (sections, user) => {
     const permissions = user?.customRole?.permissions || [];
     const hasBypass = permissions.includes('dojo:handover_sheet') ||
         permissions.includes('dojo:sixteenday_monitoring') ||
-        permissions.includes('test_paper:access_all');
+        permissions.includes('test_paper:access_all') ||
+        permissions.includes('user:access_all');
     if (hasBypass) return sections;
 
     const { isFullAccessLayout, allowedDepts, allowedSections } = getCustomRoleScope(user);

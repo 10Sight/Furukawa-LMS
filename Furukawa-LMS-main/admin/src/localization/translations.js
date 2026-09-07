@@ -153,6 +153,8 @@ export const translations = {
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.",
 
     // Home Page
+    "home.dashboardTitle": "Admin Dashboard",
+    "home.dashboardSubtitle": "Real-time analytics & insights",
     "home.totalOperators": "Total Operators",
     "home.registeredOperators": "All registered operators",
     "home.totalSections": "Total Sections",
@@ -303,6 +305,26 @@ export const translations = {
     "charts.totalHired": "Total Hired",
     "charts.failedToLoadHiringTrend": "Failed to load hiring trend.",
     "charts.noHiringData": "No hiring data found for this period.",
+
+    // Left Users Leaving-Reason Trend Chart
+    "charts.leftUsersReasonTrend": "Left Users — Leaving Reason Trend",
+    "charts.leftUsersReasonTrendDesc": "Attrition tracking and leaving-reason breakdown for DOJO Candidates and Operators",
+    "charts.dojoCandidates": "DOJO Candidates",
+    "charts.operators": "Operators",
+    "charts.byReason": "By Reason",
+    "charts.leftEmployees": "Left Employees",
+    "charts.totalLeft": "Total Left",
+    "charts.topReason": "Top Reason",
+    "charts.highestAttritionPeriod": "Peak Attrition",
+    "charts.failedToLoadLeavingTrend": "Failed to load leaving-reason trend.",
+    "charts.noLeavingData": "No leaving data found for this period.",
+    "charts.section": "Section",
+    "charts.sections": "Sections",
+    "charts.line": "Line",
+    "charts.lines": "Lines",
+    "charts.allSections": "All Sections",
+    "charts.allLines": "All Lines",
+    "charts.noOptions": "No options available",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO Candidate Attendance Status",

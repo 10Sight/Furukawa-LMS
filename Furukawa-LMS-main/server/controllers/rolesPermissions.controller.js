@@ -16,6 +16,7 @@ const SYSTEM_PERMISSIONS = {
   USER_IMPORT_EXCEL: "user:import_excel",
   USER_IMPORT_LOGS: "user:import_logs",
   USER_CHANGE_STATUS: "user:change_status",
+  USER_ACCESS_ALL: "user:access_all",
 
   // Course Management
   COURSE_CREATE: "course:create",
@@ -461,7 +462,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" },
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" },
-        { id: SYSTEM_PERMISSIONS.USER_CHANGE_STATUS, name: "Change User Status", description: "Change status of user accounts (Present, On Leave, Left)" }
+        { id: SYSTEM_PERMISSIONS.USER_CHANGE_STATUS, name: "Change User Status", description: "Change status of user accounts (Present, On Leave, Left)" },
+        { id: SYSTEM_PERMISSIONS.USER_ACCESS_ALL, name: "Access All Users (Cross Department)", description: "Allows unrestricted access to view all users and operators across all departments, sections, and lines, bypassing assigned department restrictions." }
       ],
       "Course Management": [
         { id: SYSTEM_PERMISSIONS.COURSE_CREATE, name: "Create Courses", description: "Create new courses" },

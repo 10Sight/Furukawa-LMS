@@ -173,9 +173,17 @@ const formatDuration = (totalSeconds) => {
 const Students = () => {
   const currentUser = useSelector((state) => state.auth.user);
 
+  const hasAccessAllUsers = useMemo(() => {
+    if (!currentUser) return false;
+    return currentUser.role === 'SUPERADMIN' ||
+      currentUser.role === 'ADMIN' ||
+      currentUser.isAdmin ||
+      !!currentUser.customRole?.permissions?.includes('user:access_all');
+  }, [currentUser]);
+
   const isRestrictedUser = useMemo(() => {
     if (!currentUser) return false;
-    if (currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.isAdmin) return false;
+    if (hasAccessAllUsers) return false;
     if (currentUser.role === 'INSTRUCTOR') return true;
     if (currentUser.role === 'CUSTOM') {
       const layout = String(currentUser.customRole?.targetLayout || '').toLowerCase();
@@ -193,7 +201,7 @@ const Students = () => {
       return allowedDepts.length > 0 || allowedSections.length > 0;
     }
     return false;
-  }, [currentUser]);
+  }, [currentUser, hasAccessAllUsers]);
 
   const hasPermission = (permission) => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
@@ -318,6 +326,12 @@ const Students = () => {
   const [assignmentType, setAssignmentType] = useState("department");
   const [empDatePopoverOpen, setEmpDatePopoverOpen] = useState(false);
   const [empDateField, setEmpDateField] = useState("joining");
+
+  const reasonOfLeavingOptions = useMemo(() => [
+    { value: "ALL", label: "All Reasons" },
+    ...LEAVING_REASONS.map((r) => ({ value: r, label: r })),
+    { value: "Other", label: "Other / Custom" },
+  ], []);
 
   const [logAction] = useLogActionMutation();
   useEffect(() => {
@@ -555,6 +569,7 @@ const Students = () => {
   };
 
   const availableDepartments = useMemo(() => {
+    if (hasAccessAllUsers) return departments;
     if (currentUser?.role === 'CUSTOM') {
       let allowedDepts = [];
       if (currentUser.departmentId) allowedDepts.push(String(currentUser.departmentId));
@@ -569,16 +584,16 @@ const Students = () => {
       return departments;
     }
     return departments;
-  }, [departments, currentUser]);
+  }, [departments, currentUser, hasAccessAllUsers]);
 
   const allowedSectionsList = useMemo(() => {
-    if (!currentUser) return [];
+    if (!currentUser || hasAccessAllUsers) return [];
     let allowed = [];
     if (currentUser.sectionId) allowed.push(String(currentUser.sectionId));
     const sectList = Array.isArray(currentUser.sections) ? currentUser.sections : [];
     sectList.forEach(s => allowed.push(String(s)));
     return [...new Set(allowed)].filter(Boolean);
-  }, [currentUser]);
+  }, [currentUser, hasAccessAllUsers]);
 
   const availableSections = useMemo(() => {
     const rawSections = filterSections;
@@ -2304,6 +2319,29 @@ const Students = () => {
               </Button>
             </div>
           </div>
+
+          {activeTab === "left" && (
+            <div className="flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Reason of Leaving:
+                </span>
+                <FilterSelect
+                  value={filters.reasonOfLeaving || "ALL"}
+                  onValueChange={(val) => {
+                    setFilters((prev) => ({
+                      ...prev,
+                      reasonOfLeaving: val === "ALL" ? "" : val,
+                    }));
+                    setCurrentPage(1);
+                  }}
+                  options={reasonOfLeavingOptions}
+                  placeholder="Reason of Leaving"
+                  className="w-[200px] h-9 bg-white border-slate-200 shadow-sm"
+                />
+              </div>
+            </div>
+          )}
 
           {(activeTab === "assigned" || activeTab === "unassigned") && (
             <div className="flex flex-wrap gap-2">

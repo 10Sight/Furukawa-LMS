@@ -137,6 +137,14 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 60,
         }),
+        getLeftUsersReasonTrend: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", candidateType = "dojo", departmentId = "", sectionId = "", lineId = "" } = {}) => ({
+                url: "/api/admin-home/left-users-reason-trend",
+                method: "GET",
+                params: { startDate, endDate, groupBy, candidateType, departmentId, sectionId, lineId }
+            }),
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
@@ -156,4 +164,5 @@ export const {
     useGetContractorWiseOperatorStatsQuery,
     useGetSkillUpgradationPlanStatusQuery,
     useGetMultiSkillingPlanStatusQuery,
+    useGetLeftUsersReasonTrendQuery,
 } = adminHomeApi;

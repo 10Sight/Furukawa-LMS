@@ -1594,3 +1594,157 @@ export const getSkillUpgradationPlanStatus = asyncHandler(async (req, res) => {
 export const getMultiSkillingPlanStatus = asyncHandler(async (req, res) => {
     await getPlanComparisonStatus('multi_skilling_plans', req, res, "Multi-skilling plan status fetched successfully");
 });
+
+// Fixed leaving-reason vocabulary offered in the Mark-as-Left dropdown (DojoHiring.jsx
+// LEAVING_REASONS) — kept in this exact order so the chart's stacked series/legend match the
+// order admins pick reasons in. Anything outside this list is a free-text custom reason and is
+// grouped by its own trimmed text; blank/NULL becomes "Not Specified".
+const PREDEFINED_LEAVING_REASONS = [
+    "Employee not response",
+    "Exam",
+    "Family Function",
+    "Marriage",
+    "Family Problem",
+    "Festival",
+    "Health Problem",
+    "Join other company",
+    "Indiscipline case",
+];
+const NOT_SPECIFIED_REASON = "Not Specified";
+
+/**
+ * Get Left Users Leaving-Reason Trend for Admin Home page.
+ * Buckets left employees (status = 'LEFT' OR a non-blank leavingDate) by period and by leaving
+ * reason, split into DOJO Candidates (isTemporary = 1) vs Operators (isTemporary = 0) via
+ * `candidateType`. The effective date used for both the range filter and period bucketing falls
+ * back leavingDate -> updatedAt -> createdAt so rows missing a leavingDate still land on the
+ * timeline instead of being dropped.
+ */
+export const getLeftUsersReasonTrend = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', candidateType = 'dojo', departmentId, sectionId, lineId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+    const isTemporaryValue = candidateType === 'operator' ? 0 : 1;
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    // Effective date: leavingDate first, falling back to updatedAt then createdAt so rows
+    // missing a leavingDate still land on the timeline instead of being dropped.
+    const dateExpr = "COALESCE(TRY_CAST(leavingDate AS DATE), CAST(updatedAt AS DATE), CAST(createdAt AS DATE))";
+    const periodFormatMap = {
+        daily:   `FORMAT(${dateExpr}, 'yyyy-MM-dd')`,
+        monthly: `FORMAT(${dateExpr}, 'yyyy-MM')`,
+        yearly:  `FORMAT(${dateExpr}, 'yyyy')`,
+    };
+    const periodExpr = periodFormatMap[safeGroupBy];
+    const reasonExpr = "CASE WHEN reasonOfLeaving IS NULL OR LTRIM(RTRIM(reasonOfLeaving)) = '' THEN 'Not Specified' ELSE LTRIM(RTRIM(reasonOfLeaving)) END";
+
+    // Hierarchical filters accept comma-separated IDs for multi-select. Temp users store their
+    // department/section/line in target*Id until handover, after which it moves to the plain
+    // column — COALESCE covers both, mirroring getDojoHiringTrend/getDojoHandoverComparison.
+    let hierarchyClause = '';
+    const params = [isTemporaryValue, start, end];
+    const addHierarchyFilter = (raw, column) => {
+        const ids = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        if (ids.length === 0) return;
+        const ph = ids.map(() => '?').join(',');
+        hierarchyClause += ` AND ${column} IN (${ph})`;
+        params.push(...ids);
+    };
+    addHierarchyFilter(departmentId, 'COALESCE(departmentId, targetDeptId)');
+    addHierarchyFilter(sectionId,    'COALESCE(sectionId, targetSectionId)');
+    addHierarchyFilter(lineId,       'COALESCE(lineId, targetLineId)');
+
+    const [rows] = await executeQuery(`
+        SELECT
+            ${periodExpr} AS period,
+            ${reasonExpr} AS reason,
+            COUNT(*)      AS count
+        FROM users
+        WHERE isTemporary = ?
+          AND (status = 'LEFT' OR (leavingDate IS NOT NULL AND LTRIM(RTRIM(CAST(leavingDate AS NVARCHAR(50)))) <> ''))
+          AND (isDeleted = 0 OR isDeleted IS NULL)
+          AND ${dateExpr} >= ? AND ${dateExpr} <= ?
+          ${hierarchyClause}
+        GROUP BY ${periodExpr}, ${reasonExpr}
+        ORDER BY period ASC
+    `, params);
+
+    // Reason display order: the fixed dropdown vocabulary first (so legend/series order matches
+    // the Mark-as-Left form), then any free-text custom reasons alphabetically, "Not Specified" last.
+    const customReasons = [...new Set(rows.map(r => r.reason))]
+        .filter(r => r !== NOT_SPECIFIED_REASON && !PREDEFINED_LEAVING_REASONS.includes(r))
+        .sort((a, b) => a.localeCompare(b));
+    const seenReasons = new Set(rows.map(r => r.reason));
+    const reasonsList = [
+        ...PREDEFINED_LEAVING_REASONS.filter(r => seenReasons.has(r)),
+        ...customReasons,
+        ...(seenReasons.has(NOT_SPECIFIED_REASON) ? [NOT_SPECIFIED_REASON] : []),
+    ];
+
+    // period -> { [reason]: count }
+    const periodReasonMap = {};
+    rows.forEach(r => {
+        if (!periodReasonMap[r.period]) periodReasonMap[r.period] = {};
+        periodReasonMap[r.period][r.reason] = Number(r.count) || 0;
+    });
+
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period => {
+        const reasons = periodReasonMap[period] || {};
+        const total = Object.values(reasons).reduce((a, b) => a + b, 0);
+        return { period, total, reasons };
+    });
+
+    // KPI summary
+    const reasonTotals = {};
+    rows.forEach(r => { reasonTotals[r.reason] = (reasonTotals[r.reason] || 0) + Number(r.count); });
+    const totalLeft = Object.values(reasonTotals).reduce((a, b) => a + b, 0);
+
+    let topReason = null;
+    Object.entries(reasonTotals).forEach(([name, count]) => {
+        if (!topReason || count > topReason.count) topReason = { name, count };
+    });
+    if (topReason) {
+        topReason.percentage = totalLeft > 0 ? Math.round((topReason.count / totalLeft) * 1000) / 10 : 0;
+    }
+
+    let highestPeriod = null;
+    trend.forEach(t => {
+        if (t.total > 0 && (!highestPeriod || t.total > highestPeriod.total)) {
+            highestPeriod = { period: t.period, total: t.total };
+        }
+    });
+
+    res.status(200).json(
+        new ApiResponse(200, {
+            trend,
+            reasonsList,
+            groupBy: safeGroupBy,
+            start,
+            end,
+            summary: {
+                totalLeft,
+                topReason,
+                highestPeriod,
+                periodsTracked: trend.length,
+            },
+        }, "Left users leaving-reason trend fetched successfully")
+    );
+});

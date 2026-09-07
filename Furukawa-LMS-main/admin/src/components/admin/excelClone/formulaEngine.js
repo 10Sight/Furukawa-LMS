@@ -26,7 +26,8 @@ export const indexToCol = (index) => {
 export const getCellId = (rowIndex, colIndex) => `${indexToCol(colIndex)}${rowIndex + 1}`;
 
 export const parseCellRef = (ref) => {
-    const m = /^([A-Z]+)(\d+)$/.exec(ref);
+    const cleaned = ref.replace(/\$/g, "");
+    const m = /^([A-Z]+)(\d+)$/.exec(cleaned);
     if (!m) return null;
     return { col: colToIndex(m[1]), row: parseInt(m[2], 10) - 1 };
 };
@@ -93,9 +94,11 @@ export const expandRange = (startRef, endRef) => {
 };
 
 const TOKEN_MATCHERS = [
-    { type: "range", re: /^[A-Z]+[0-9]+:[A-Z]+[0-9]+/ },
-    { type: "cell", re: /^[A-Z]+[0-9]+/ },
+    { type: "string", re: /^"[^"]*"|^'[^']*'/ },
+    { type: "range", re: /^\$?[A-Z]+\$?[0-9]+:\$?[A-Z]+\$?[0-9]+/ },
+    { type: "cell", re: /^\$?[A-Z]+\$?[0-9]+/ },
     { type: "func", re: /^[A-Z]+(?=\()/ },
+    { type: "bool", re: /^(TRUE|FALSE)\b/ },
     { type: "number", re: /^\d+(\.\d+)?/ },
 ];
 
@@ -127,6 +130,40 @@ export const tokenize = (formula) => {
     return tokens;
 };
 
+// Coerces a resolved value (number, string, boolean, or NaN/blank) to a number
+// for use in arithmetic (+ - * /) and unary negation — mirrors how a
+// spreadsheet treats TRUE/FALSE as 1/0 and non-numeric text as 0 when it lands
+// in a numeric context, without forcing every cell reference everywhere to be
+// pre-coerced (VLOOKUP and friends need the raw string/boolean/number instead).
+const toNumber = (v) => {
+    if (typeof v === "number") return isNaN(v) ? 0 : v;
+    if (typeof v === "boolean") return v ? 1 : 0;
+    if (v === undefined || v === null || v === "") return 0;
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+};
+
+// Type-aware equality for VLOOKUP exact match: numeric values compare
+// numerically (so a cell holding 101 matches a lookup value typed as "101"),
+// everything else compares as case-insensitive text.
+const valuesEqual = (a, b) => {
+    const an = typeof a === "number" ? a : parseFloat(a);
+    const bn = typeof b === "number" ? b : parseFloat(b);
+    if (typeof a !== "boolean" && typeof b !== "boolean" && !isNaN(an) && !isNaN(bn)) return an === bn;
+    return String(a).toUpperCase() === String(b).toUpperCase();
+};
+
+// Type-aware ordering for VLOOKUP approximate match, assuming the table's
+// first column is sorted ascending: numeric comparison when both sides look
+// like numbers, otherwise case-insensitive lexicographic comparison.
+const compareValues = (a, b) => {
+    const an = typeof a === "number" ? a : parseFloat(a);
+    const bn = typeof b === "number" ? b : parseFloat(b);
+    if (typeof a !== "boolean" && typeof b !== "boolean" && !isNaN(an) && !isNaN(bn)) return an < bn ? -1 : an > bn ? 1 : 0;
+    const as = String(a).toUpperCase(), bs = String(b).toUpperCase();
+    return as < bs ? -1 : as > bs ? 1 : 0;
+};
+
 class FormulaParser {
     constructor(tokens, resolveCell) {
         this.tokens = tokens;
@@ -141,7 +178,7 @@ class FormulaParser {
         while (this.peek() && this.peek().type === "op" && (this.peek().value === "+" || this.peek().value === "-")) {
             const op = this.next().value;
             const rhs = this.parseTerm();
-            value = op === "+" ? value + rhs : value - rhs;
+            value = op === "+" ? toNumber(value) + toNumber(rhs) : toNumber(value) - toNumber(rhs);
         }
         return value;
     }
@@ -151,7 +188,7 @@ class FormulaParser {
         while (this.peek() && this.peek().type === "op" && (this.peek().value === "*" || this.peek().value === "/")) {
             const op = this.next().value;
             const rhs = this.parseFactor();
-            value = op === "*" ? value * rhs : value / rhs;
+            value = op === "*" ? toNumber(value) * toNumber(rhs) : toNumber(value) / toNumber(rhs);
         }
         return value;
     }
@@ -161,9 +198,11 @@ class FormulaParser {
         if (!tok) throw new Error("#ERROR!");
         if (tok.type === "op" && tok.value === "-") {
             this.next();
-            return -this.parseFactor();
+            return -toNumber(this.parseFactor());
         }
         if (tok.type === "number") { this.next(); return parseFloat(tok.value); }
+        if (tok.type === "string") { this.next(); return tok.value.slice(1, -1); }
+        if (tok.type === "bool") { this.next(); return tok.value === "TRUE"; }
         if (tok.type === "cell") { this.next(); return this.resolveCell(tok.value); }
         if (tok.type === "lparen") {
             this.next();
@@ -204,15 +243,20 @@ class FormulaParser {
     }
 
     applyFunc(name, args) {
+        if (name === "VLOOKUP") return this.evalVlookup(args);
+
         const numbers = [];
         for (const arg of args) {
             if (arg.range) {
                 for (const cellId of expandRange(arg.range[0], arg.range[1])) {
                     const v = this.resolveCell(cellId);
                     if (typeof v === "number" && !isNaN(v)) numbers.push(v);
+                    else if (typeof v === "boolean") numbers.push(v ? 1 : 0);
                 }
             } else {
-                numbers.push(arg.value);
+                const v = arg.value;
+                if (typeof v === "number" && !isNaN(v)) numbers.push(v);
+                else if (typeof v === "boolean") numbers.push(v ? 1 : 0);
             }
         }
         switch (name) {
@@ -224,6 +268,56 @@ class FormulaParser {
             case "COUNT": return numbers.length;
             default: throw new Error("#NAME?");
         }
+    }
+
+    // =VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])
+    // Searches the first column of table_array for lookup_value and returns
+    // the value from col_index_num columns across, on the matching row.
+    evalVlookup(args) {
+        if (args.length < 3 || args.length > 4) throw new Error("#VALUE!");
+
+        const [lookupArg, tableArg, colArg, rangeArg] = args;
+        if (!tableArg.range) throw new Error("#VALUE!");
+
+        const lookupValue = lookupArg.value;
+
+        const colIndexRaw = colArg.value;
+        const colIndex = typeof colIndexRaw === "number" ? colIndexRaw : parseFloat(colIndexRaw);
+        if (isNaN(colIndex) || !Number.isInteger(colIndex) || colIndex < 1) throw new Error("#VALUE!");
+
+        const [startRef, endRef] = tableArg.range;
+        const start = parseCellRef(startRef);
+        const end = parseCellRef(endRef);
+        if (!start || !end) throw new Error("#VALUE!");
+
+        const minRow = Math.min(start.row, end.row), maxRow = Math.max(start.row, end.row);
+        const minCol = Math.min(start.col, end.col), maxCol = Math.max(start.col, end.col);
+        const totalCols = maxCol - minCol + 1;
+        if (colIndex > totalCols) throw new Error("#REF!");
+
+        let approximate = true;
+        if (rangeArg !== undefined) {
+            const rv = rangeArg.value;
+            if (rv === false || rv === 0 || (typeof rv === "string" && rv.toUpperCase() === "FALSE")) approximate = false;
+            else if (rv === true || rv === 1 || (typeof rv === "string" && rv.toUpperCase() === "TRUE")) approximate = true;
+            else approximate = !!toNumber(rv);
+        }
+
+        let matchedRow = -1;
+        if (!approximate) {
+            for (let r = minRow; r <= maxRow; r++) {
+                const cv = this.resolveCell(getCellId(r, minCol));
+                if (valuesEqual(cv, lookupValue)) { matchedRow = r; break; }
+            }
+        } else {
+            for (let r = minRow; r <= maxRow; r++) {
+                const cv = this.resolveCell(getCellId(r, minCol));
+                if (compareValues(cv, lookupValue) <= 0) matchedRow = r; else break;
+            }
+        }
+        if (matchedRow === -1) throw new Error("#N/A");
+
+        return this.resolveCell(getCellId(matchedRow, minCol + colIndex - 1));
     }
 }
 
@@ -272,18 +366,20 @@ const evaluateCellsRaw = (cells) => {
         if (typeof raw === "string" && raw.trim().startsWith("=")) {
             const nextVisited = new Set(visited);
             nextVisited.add(cellId);
-            const resolveCell = (ref) => {
-                const v = evalCell(ref, nextVisited);
-                return typeof v === "number" ? v : 0;
-            };
+            // Returns the raw evaluated value (number, string, or boolean) rather
+            // than coercing to 0 — VLOOKUP and bare cell-reference formulas need
+            // the actual text/number, not a numeric stand-in. Arithmetic operators
+            // coerce via toNumber() at the point they combine values instead.
+            const resolveCell = (ref) => evalCell(ref.replace(/\$/g, ""), nextVisited);
             try {
                 const tokens = tokenize(raw.trim().slice(1));
                 const result = new FormulaParser(tokens, resolveCell).parseExpression();
                 memo.set(cellId, result);
                 return result;
             } catch (e) {
-                memo.set(cellId, NaN);
-                return NaN;
+                const code = typeof e?.message === "string" && e.message.startsWith("#") ? e.message : "#ERROR!";
+                memo.set(cellId, code);
+                return code;
             }
         }
 
@@ -310,7 +406,10 @@ export const buildDisplayGrid = (cells) => {
         if (raw === undefined || raw === null || raw === "") { display[cellId] = ""; continue; }
         if (typeof raw === "string" && raw.trim().startsWith("=")) {
             const result = evalCell(cellId);
-            display[cellId] = (typeof result !== "number" || isNaN(result)) ? "#ERROR!" : applyNumberFormat(result, cell);
+            if (typeof result === "number") display[cellId] = isNaN(result) ? "#ERROR!" : applyNumberFormat(result, cell);
+            else if (typeof result === "boolean") display[cellId] = result ? "TRUE" : "FALSE";
+            else if (typeof result === "string") display[cellId] = result;
+            else display[cellId] = "#ERROR!";
         } else {
             const trimmed = String(raw).trim();
             const num = /^-?\d+(\.\d+)?$/.test(trimmed) ? parseFloat(trimmed) : NaN;

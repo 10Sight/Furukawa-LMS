@@ -517,7 +517,8 @@ const buildPassedTestPaperClause = (req) => {
 // scope when filtering the department/section dropdown data those pages read from.
 export const getCustomRoleScope = (user) => {
   const targetLayout = String(user?.customRole?.targetLayout || '').toLowerCase();
-  const isFullAccessLayout = ['admin', 'superadmin', 'trainer', 'instructor'].includes(targetLayout);
+  const hasAccessAllPermission = user?.customRole?.permissions?.includes('user:access_all');
+  const isFullAccessLayout = ['admin', 'superadmin', 'trainer', 'instructor'].includes(targetLayout) || hasAccessAllPermission;
 
   let allowedDepts = [];
   if (user?.departmentId) allowedDepts.push(String(user.departmentId));
@@ -2181,6 +2182,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   } else if (req.user.role === "CUSTOM") {
     const customTargetLayout = String(req.user.customRole?.targetLayout || '').toLowerCase();
     const isFullAccessLayout = ['admin', 'superadmin', 'trainer', 'instructor'].includes(customTargetLayout);
+    // Users with this permission see every department regardless of their own
+    // department assignment(s) -- explicit departmentId/sectionId filters above still apply.
+    const hasAccessAllPermission = req.user.customRole?.permissions?.includes('user:access_all');
 
     // Resolve the set of departments this custom user is allowed to see
     let allowedDepts = [];
@@ -2191,8 +2195,8 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     } catch (e) { }
     allowedDepts = [...new Set(allowedDepts)].filter(Boolean);
 
-    if (isFullAccessLayout && allowedDepts.length === 0) {
-      // Admin/Trainer-layout with no assigned departments: full access, no restriction
+    if (hasAccessAllPermission || (isFullAccessLayout && allowedDepts.length === 0)) {
+      // Full access, no department restriction
     } else if (allowedDepts.length > 0) {
       // Restricted to assigned departments (applies to both layouts when depts are assigned)
       const placeholders = allowedDepts.map(() => '?').join(',');

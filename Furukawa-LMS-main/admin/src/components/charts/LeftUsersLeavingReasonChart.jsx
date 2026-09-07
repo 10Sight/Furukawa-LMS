@@ -101,6 +101,44 @@ const REASON_COLORS = ['#3b82f6', '#f97316', '#a855f7', '#ec4899', '#14b8a6', '#
 const NOT_SPECIFIED_COLOR = '#94a3b8';
 const colorForReason = (reason, idx) => reason === 'Not Specified' ? NOT_SPECIFIED_COLOR : REASON_COLORS[idx % REASON_COLORS.length];
 
+const aboveBarLabels = {
+    enabled: true,
+    formatter() { return this.y > 0 ? this.y : ''; },
+    rotation: 0,
+    allowOverlap: true,
+    style: { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
+    verticalAlign: 'top',
+    align: 'center',
+    y: -20,
+};
+
+const insideSegmentLabels = {
+    enabled: true,
+    formatter() { return this.y > 0 ? this.y : ''; },
+    rotation: 0,
+    allowOverlap: true,
+    style: { fontSize: '12px', fontWeight: '900', color: '#ffffff', textOutline: 'none' },
+    verticalAlign: 'middle',
+    align: 'center',
+    inside: true,
+};
+
+const stackLabelsAboveBar = {
+    enabled: true,
+    formatter() { return this.total > 0 ? this.total : ''; },
+    allowOverlap: true,
+    style: { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
+};
+
+const basePlotOptions = {
+    column: {
+        borderRadius: 4,
+        borderWidth: 0,
+        groupPadding: 0.2,
+        maxPointWidth: 36,
+    },
+};
+
 const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
@@ -177,7 +215,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             : `<span style="color:#64748b;font-size:14px;font-weight:800">${label}</span>`;
     }), [rawTrend, groupBy, language, currentPeriodKey]);
 
-    const totalSeries = rawTrend.map(r => Number(r.total) || 0);
+    const totalSeries = useMemo(() => rawTrend.map(r => Number(r.total) || 0), [rawTrend]);
     const grandTotal  = summary.totalLeft ?? totalSeries.reduce((a, b) => a + b, 0);
 
     const handleTimeframeChange = (tf) => {
@@ -240,8 +278,14 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             ? (allLines.find(l => String(l.id) === selectedLines[0])?.name ?? '1 Line')
             : `${selectedLines.length} ${t('charts.lines')}`;
 
+    const activeReasons = useMemo(() => {
+        const active = reasonsList.filter(reason => rawTrend.some(r => Number(r.reasons?.[reason]) > 0));
+        return active.length > 0 ? active : reasonsList;
+    }, [reasonsList, rawTrend]);
+
     // ── Highcharts shared base ────────────────────────────────────────────────
-    const SLOT_WIDTH    = 72;
+    // When showing separate bars per reason, expand each category slot to comfortably fit the group of bars.
+    const SLOT_WIDTH    = viewMode === 'reason' ? Math.max(90, (activeReasons.length * 24) + 30) : 72;
     const needsScroll   = categories.length * SLOT_WIDTH > 800;
     const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
 
@@ -253,18 +297,9 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         if (maxScrollPx <= 0) return 1;
         const centeredPx = targetPx - (viewportWidth / 2);
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
-    }, [needsScroll, todaySlotIdx, categories.length]);
+    }, [needsScroll, todaySlotIdx, categories.length, SLOT_WIDTH]);
 
-    const basePlotOptions = {
-        column: {
-            borderRadius: 4,
-            borderWidth: 0,
-            groupPadding: 0.2,
-            maxPointWidth: 36,
-        },
-    };
-
-    const baseChart = {
+    const totalOptions = useMemo(() => ({
         chart: {
             backgroundColor: 'transparent',
             height: 360,
@@ -278,11 +313,15 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                 },
             }),
         },
-        title:   { text: '' },
+        title: { text: '' },
         credits: { enabled: false },
         xAxis: {
             categories,
             crosshair: true,
+            gridLineWidth: 1,
+            gridLineDashStyle: 'Dash',
+            gridLineColor: '#cbd5e1',
+            tickmarkPlacement: 'between',
             labels: {
                 useHTML: true,
                 style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
@@ -297,7 +336,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: viewMode === 'reason' },
+        legend: { enabled: false },
         responsive: {
             rules: [
                 {
@@ -310,39 +349,6 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                 },
             ],
         },
-    };
-
-    const aboveBarLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
-        verticalAlign: 'top',
-        align: 'center',
-        y: -20,
-    };
-
-    const insideSegmentLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: { fontSize: '12px', fontWeight: '900', color: '#ffffff', textOutline: 'none' },
-        verticalAlign: 'middle',
-        align: 'center',
-        inside: true,
-    };
-
-    const stackLabelsAboveBar = {
-        enabled: true,
-        formatter() { return this.total > 0 ? this.total : ''; },
-        allowOverlap: true,
-        style: { fontSize: '14px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
-    };
-
-    const totalOptions = useMemo(() => ({
-        ...baseChart,
         plotOptions: {
             column: {
                 ...basePlotOptions.column,
@@ -360,17 +366,69 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             data: totalSeries,
             color: '#ef4444',
         }],
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
+    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
+
+    const reasonSeries = useMemo(() => activeReasons.map((reason, idx) => ({
+        type: 'column',
+        name: reason,
+        data: rawTrend.map(r => Number(r.reasons?.[reason]) || 0),
+        color: colorForReason(reason, idx),
+    })), [activeReasons, rawTrend]);
 
     const reasonOptions = useMemo(() => ({
-        ...baseChart,
-        yAxis: { ...baseChart.yAxis, stackLabels: stackLabelsAboveBar },
+        chart: {
+            backgroundColor: 'transparent',
+            height: 360,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            marginBottom: needsScroll ? 75 : 40,
+            ...(needsScroll && {
+                scrollablePlotArea: {
+                    minWidth: scrollMinWidth,
+                    scrollPositionX,
+                },
+            }),
+        },
+        title: { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories,
+            crosshair: true,
+            gridLineWidth: 1,
+            gridLineDashStyle: 'Dash',
+            gridLineColor: '#cbd5e1',
+            tickmarkPlacement: 'between',
+            labels: {
+                useHTML: true,
+                style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
+                rotation: 0,
+                align: 'center',
+            },
+        },
+        yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: t('charts.leftEmployees'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: { enabled: true },
+        responsive: {
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 320 } },
+                },
+            ],
+        },
         plotOptions: {
             column: {
                 ...basePlotOptions.column,
-                stacking: 'normal',
-                dataLabels: insideSegmentLabels,
+                dataLabels: aboveBarLabels,
             },
         },
         tooltip: {
@@ -378,14 +436,8 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             useHTML: true,
             pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
         },
-        series: reasonsList.map((reason, idx) => ({
-            type: 'column',
-            name: reason,
-            data: rawTrend.map(r => Number(r.reasons?.[reason]) || 0),
-            color: colorForReason(reason, idx),
-        })),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, rawTrend, reasonsList, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
+        series: reasonSeries,
+    }), [categories, reasonSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
 
     const cfg = INPUT_CONFIG[timeframe];
     const chartHeight = isTablet ? 500 : isMobile ? 320 : 360;
@@ -708,4 +760,4 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
     );
 };
 
-export default LeftUsersLeavingReasonChart;
+export default React.memo(LeftUsersLeavingReasonChart);

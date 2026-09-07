@@ -143,6 +143,49 @@ const INPUT_CONFIG = {
     yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1,        placeholder: 'YYYY' },
 };
 
+// Data labels above each bar (total view)
+const aboveBarLabels = {
+    enabled: true,
+    formatter() { return this.y > 0 ? this.y : ''; },
+    rotation: 0,
+    allowOverlap: true,
+    style: {
+        fontSize: '14px',
+        fontWeight: '900',
+        color: '#1e293b',
+        textOutline: '2px white',
+    },
+    verticalAlign: 'top',
+    align: 'center',
+    y: -20,
+};
+
+// Data labels inside stacked segments (gender view)
+const insideSegmentLabels = {
+    enabled: true,
+    formatter() { return this.y > 0 ? this.y : ''; },
+    rotation: 0,
+    allowOverlap: true,
+    style: {
+        fontSize: '13px',
+        fontWeight: '900',
+        color: '#ffffff',
+        textOutline: 'none',
+    },
+    verticalAlign: 'middle',
+    align: 'center',
+    inside: true,
+};
+
+const basePlotOptions = {
+    column: {
+        borderRadius: 4,
+        borderWidth: 0,
+        groupPadding: 0.2,
+        maxPointWidth: 36,
+    },
+};
+
 const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
@@ -155,8 +198,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
 
     // Home.jsx already fetches the department list once and passes it down; only fall back
     // to a local (RTK-Query-cached) fetch when this chart is used standalone.
-    const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
-    const departments = departmentsProp ?? (deptsData?.data?.departments || []);
+    const EMPTY_ARRAY = useMemo(() => [], []);
+    const departments = departmentsProp ?? (deptsData?.data?.departments || EMPTY_ARRAY);
 
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
@@ -170,7 +213,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
     });
 
-    const rawTrend = data?.data?.trend   || [];
+    const rawTrend = useMemo(() => data?.data?.trend || [], [data]);
     const groupBy  = data?.data?.groupBy || timeframe;
     const apiStart = data?.data?.start   || '';
     const apiEnd   = data?.data?.end     || '';
@@ -190,7 +233,10 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         [groupBy, apiStart, apiEnd, rawTrend]
     );
 
-    const todaySlotIdx = trend.findIndex(r => r.period === currentPeriodKey);
+    const todaySlotIdx = useMemo(
+        () => trend.findIndex(r => r.period === currentPeriodKey),
+        [trend, currentPeriodKey]
+    );
 
     const categories = useMemo(() => trend.map(r => {
         const label = formatPeriodLabel(r.period, groupBy, language);
@@ -199,13 +245,30 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             ? `<span style="color:#2563eb;font-size:14px;font-weight:900;text-decoration:underline">${label}</span>`
             : `<span style="color:#64748b;font-size:14px;font-weight:800">${label}</span>`;
     }), [trend, groupBy, language, currentPeriodKey]);
-    const totalSeries  = trend.map(r => Number(r.total)       || 0);
-    const maleSeries   = trend.map(r => Number(r.maleCount)   || 0);
-    const femaleSeries = trend.map(r => Number(r.femaleCount) || 0);
-    const otherSeries  = trend.map(r => Number(r.otherCount)  || 0);
-    const grandTotal   = totalSeries.reduce((a, b) => a + b, 0);
-    const totalMale    = maleSeries.reduce((a, b) => a + b, 0);
-    const totalFemale  = femaleSeries.reduce((a, b) => a + b, 0);
+
+    const { totalSeries, maleSeries, femaleSeries, otherSeries, grandTotal, totalMale, totalFemale } = useMemo(() => {
+        const total = [];
+        const male = [];
+        const female = [];
+        const other = [];
+        let gTotal = 0;
+        let tMale = 0;
+        let tFemale = 0;
+        for (const r of trend) {
+            const tot = Number(r.total) || 0;
+            const m = Number(r.maleCount) || 0;
+            const f = Number(r.femaleCount) || 0;
+            const o = Number(r.otherCount) || 0;
+            total.push(tot);
+            male.push(m);
+            female.push(f);
+            other.push(o);
+            gTotal += tot;
+            tMale += m;
+            tFemale += f;
+        }
+        return { totalSeries: total, maleSeries: male, femaleSeries: female, otherSeries: other, grandTotal: gTotal, totalMale: tMale, totalFemale: tFemale };
+    }, [trend]);
 
     const handleTimeframeChange = (tf) => {
         setTimeframe(tf);
@@ -250,26 +313,13 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
         return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
     }, [needsScroll, todaySlotIdx, categories.length]);
 
-    const basePlotOptions = {
-        column: {
-            borderRadius: 4,
-            borderWidth: 0,
-            groupPadding: 0.2,
-            maxPointWidth: 36,
-        },
-    };
-
-    const baseChart = {
+    const totalOptions = useMemo(() => ({
         chart: {
             backgroundColor: 'transparent',
             height: 360,
             style: { fontFamily: 'inherit' },
             animation: { duration: 400 },
-            // Extra breathing room below the date labels so the horizontal scrollbar
-            // (rendered right under the plot area when scrollablePlotArea is active)
-            // doesn't sit flush against them.
             marginBottom: needsScroll ? 75 : 40,
-            // scrollablePlotArea expands the inner canvas; scrollPositionX centers on today
             ...(needsScroll && {
                 scrollablePlotArea: {
                     minWidth: scrollMinWidth,
@@ -277,7 +327,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
                 },
             }),
         },
-        title:   { text: '' },
+        title: { text: '' },
         credits: { enabled: false },
         xAxis: {
             categories,
@@ -296,9 +346,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
-        legend: { enabled: viewMode === 'gender' },
-        // Taller chart on tablet widths so labels/legend fit in one frame without overlap;
-        // shorter on phones so a single bar chart doesn't dominate the screen.
+        legend: { enabled: false },
         responsive: {
             rules: [
                 {
@@ -311,44 +359,6 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
                 },
             ],
         },
-    };
-
-    // Data labels above each bar (total view)
-    const aboveBarLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: {
-            fontSize: '14px',
-            fontWeight: '900',
-            color: '#1e293b',
-            textOutline: '2px white',
-        },
-        verticalAlign: 'top',
-        align: 'center',
-        y: -20,
-    };
-
-    // Data labels inside stacked segments (gender view)
-    const insideSegmentLabels = {
-        enabled: true,
-        formatter() { return this.y > 0 ? this.y : ''; },
-        rotation: 0,
-        allowOverlap: true,
-        style: {
-            fontSize: '13px',
-            fontWeight: '900',
-            color: '#ffffff',
-            textOutline: 'none',
-        },
-        verticalAlign: 'middle',
-        align: 'center',
-        inside: true,
-    };
-
-    const totalOptions = useMemo(() => ({
-        ...baseChart,
         plotOptions: {
             column: {
                 ...basePlotOptions.column,
@@ -366,11 +376,62 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             data: totalSeries,
             color: '#3b82f6',
         }],
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
+    }), [categories, totalSeries, needsScroll, scrollMinWidth, scrollPositionX, t]);
+
+    const genderSeries = useMemo(() => [
+        { type: 'column', name: t('charts.male'),   data: maleSeries,   color: '#3b82f6' },
+        { type: 'column', name: t('charts.female'), data: femaleSeries, color: '#ec4899' },
+        ...(otherSeries.some(v => v > 0)
+            ? [{ type: 'column', name: t('charts.other'), data: otherSeries, color: '#94a3b8' }]
+            : []),
+    ], [maleSeries, femaleSeries, otherSeries, t]);
 
     const genderOptions = useMemo(() => ({
-        ...baseChart,
+        chart: {
+            backgroundColor: 'transparent',
+            height: 360,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            marginBottom: needsScroll ? 75 : 40,
+            ...(needsScroll && {
+                scrollablePlotArea: {
+                    minWidth: scrollMinWidth,
+                    scrollPositionX,
+                },
+            }),
+        },
+        title: { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories,
+            crosshair: true,
+            labels: {
+                useHTML: true,
+                style: { fontSize: '14px', fontWeight: 'bold', textAlign: 'center' },
+                rotation: 0,
+                align: 'center',
+            },
+        },
+        yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: { enabled: true },
+        responsive: {
+            rules: [
+                {
+                    condition: { minWidth: 768, maxWidth: 1024 },
+                    chartOptions: { chart: { height: 500 } },
+                },
+                {
+                    condition: { maxWidth: 767 },
+                    chartOptions: { chart: { height: 320 } },
+                },
+            ],
+        },
         plotOptions: {
             column: {
                 ...basePlotOptions.column,
@@ -383,15 +444,8 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
             useHTML: true,
             pointFormat: '<span style="color:{series.color}">●</span> {series.name}: <b>{point.y}</b><br/>',
         },
-        series: [
-            { type: 'column', name: t('charts.male'),   data: maleSeries,   color: '#3b82f6' },
-            { type: 'column', name: t('charts.female'), data: femaleSeries, color: '#ec4899' },
-            ...(otherSeries.some(v => v > 0)
-                ? [{ type: 'column', name: t('charts.other'), data: otherSeries, color: '#94a3b8' }]
-                : []),
-        ],
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [categories, maleSeries, femaleSeries, otherSeries, needsScroll, scrollMinWidth, scrollPositionX, viewMode, t]);
+        series: genderSeries,
+    }), [categories, genderSeries, needsScroll, scrollMinWidth, scrollPositionX]);
 
     // ── Render ────────────────────────────────────────────────────────────────
     const cfg = INPUT_CONFIG[timeframe];
@@ -605,4 +659,4 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     );
 };
 
-export default DojoHiringTrendChart;
+export default React.memo(DojoHiringTrendChart);

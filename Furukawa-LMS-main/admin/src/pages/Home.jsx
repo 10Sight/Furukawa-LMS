@@ -22,24 +22,36 @@ import MultiSkillingPlanComparisonChart from "@/components/charts/MultiSkillingP
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import { useIsTablet, useIsMobile } from "@/hooks/useIsTablet";
 
+const DashboardClock = () => {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 text-right">
+      <IconClock className="h-4 w-4 text-gray-400 shrink-0" />
+      <div>
+        <div className="text-sm font-bold text-gray-800 tabular-nums">{format(now, 'hh:mm:ss a')}</div>
+        <div className="text-xs text-gray-500">{format(now, 'EEEE, dd MMM yyyy')}</div>
+      </div>
+    </div>
+  );
+};
+
 const Home = () => {
   const { t } = useTranslate();
   const isTablet = useIsTablet();
   const isMobile = useIsMobile();
   const [logAction] = useLogActionMutation();
-  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     logAction({ action: "VIEW_DASHBOARD", details: { page: "Admin Home" } })
       .unwrap()
       .catch((err) => console.error("Failed to log page view:", err));
   }, [logAction]);
-
-  // Live clock in the dashboard header, ticking every second.
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Shared across every chart below for department selection/metadata.
   const { data: departmentsData, isLoading: departmentsLoading } = useGetAllDepartmentsQuery();
@@ -56,13 +68,7 @@ const Home = () => {
             <p className="text-xs text-gray-500">{t('home.dashboardSubtitle')}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-right">
-          <IconClock className="h-4 w-4 text-gray-400 shrink-0" />
-          <div>
-            <div className="text-sm font-bold text-gray-800 tabular-nums">{format(now, 'hh:mm:ss a')}</div>
-            <div className="text-xs text-gray-500">{format(now, 'EEEE, dd MMM yyyy')}</div>
-          </div>
-        </div>
+        <DashboardClock />
       </div>
 
       {/* Charts Section */}

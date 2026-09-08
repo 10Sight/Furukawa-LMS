@@ -268,6 +268,9 @@ export default function SetRequirements() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [approvalMinutes, setApprovalMinutes] = useState(24);
+  const [approvalUnit, setApprovalUnit] = useState('hours');
+  const [approvalTimeLoading, setApprovalTimeLoading] = useState(false);
 
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
 
@@ -653,6 +656,37 @@ export default function SetRequirements() {
 
     return counts;
   }, [rows]);
+
+  const fetchApprovalTime = async () => {
+    try {
+      const res = await axiosInstance.get("/api/requirements/system-approval-time");
+      setApprovalMinutes(res.data?.data?.minutes || 24);
+      setApprovalUnit(res.data?.data?.unit || 'hours');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updateApprovalTime = async () => {
+    try {
+      setApprovalTimeLoading(true);
+      await axiosInstance.put("/api/requirements/system-approval-time", {
+        minutes: approvalMinutes,
+        unit: approvalUnit,
+      });
+      toast.success("System approval timing updated");
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to update timing");
+    } finally {
+      setApprovalTimeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.isAdmin || String(user?.role || "").toUpperCase() === "SUPERADMIN") {
+      fetchApprovalTime();
+    }
+  }, [user]);
 
   const handleFileChange = (e) => {
     if (e.target.files?.[0]) setSelectedFile(e.target.files[0]);
@@ -1132,7 +1166,22 @@ export default function SetRequirements() {
             </Button>
           )}
 
-          {canUpload && (
+          {(user?.isAdmin || String(user?.role || "").toUpperCase() === "SUPERADMIN") && (
+  <div className="flex items-center gap-2 mb-3">
+    <Label>System Approval Time (Minutes)</Label>
+    <Input
+      type="number"
+      className="w-28"
+      value={approvalMinutes}
+      onChange={(e)=>setApprovalMinutes(Number(e.target.value))}
+    />
+    <Button onClick={updateApprovalTime} disabled={approvalTimeLoading}>
+      {approvalTimeLoading ? "Saving..." : "Save"}
+    </Button>
+  </div>
+)}
+
+{canUpload && (
             <Button
               onClick={() => setIsUploadOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"

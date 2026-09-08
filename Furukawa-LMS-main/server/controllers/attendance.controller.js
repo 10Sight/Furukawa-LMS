@@ -440,6 +440,8 @@ import { formatLocalDate } from "../utils/istDate.util.js";
 
 
 export const uploadAttendance = async (req, res, next) => {
+    let transaction = null;
+
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -448,10 +450,21 @@ export const uploadAttendance = async (req, res, next) => {
             });
         }
 
+        /*
+         * IMPORTANT:
+         * We intentionally read worksheet rows with raw: false.
+         * This makes SheetJS return the DISPLAYED Excel value instead of the
+         * underlying serial value wherever possible. Example:
+         *   Excel Start = 5:59  -> "5:59" (not 0.249305555...)
+         *   Hrs Works   = 8.59  -> "8.59"
+         *   Late Arriv. = 0.35  -> "0.35"
+         *
+         * This avoids timezone shifting of Start/In/Out and preserves the
+         * attendance report's H.MM-style numeric fields exactly as displayed.
+         */
         const workbook = xlsx.read(req.file.buffer, {
             type: "buffer",
-            cellDates: true,
-            raw: false,
+            cellDates: false,
         });
 
         const sheetName = workbook.SheetNames[0];
@@ -460,7 +473,8 @@ export const uploadAttendance = async (req, res, next) => {
         const rows2D = xlsx.utils.sheet_to_json(sheet, {
             header: 1,
             defval: "",
-            blankrows: false
+            blankrows: false,
+            raw: false,
         });
 
         if (!rows2D.length) {
@@ -471,55 +485,119 @@ export const uploadAttendance = async (req, res, next) => {
         }
 
         const clean = (v) =>
-            String(v || "")
+            String(v ?? "")
                 .trim()
                 .toLowerCase()
                 .replace(/[^a-z0-9]/g, "");
 
-        const normalizeText = (v) =>
-            String(v || "").trim();
+        const normalizeText = (v) => String(v ?? "").trim();
 
         // Attendance matching rule:
         // Excel PayCode must match users.empId only.
-        // No idCard fallback and no hierarchy-snapshot dependency.
         const normalizePayCode = (v) =>
-            String(v || "")
+            String(v ?? "")
                 .trim()
                 .replace(/\.0$/, "")
                 .replace(/\s+/g, "")
                 .toUpperCase();
 
-        const normalizeStatus = (v) => {
-            const val = String(v || "").trim().toLowerCase();
+        /*
+         * attendance_logs.status has an MSSQL CHECK constraint.
+         * Therefore raw Excel codes (P, A, MIS, HLF, WO, EL, ...) must NOT
+         * be written directly to attendance_logs.status. Convert them to the
+         * DB enum/check values that the existing application already uses.
+         *
+         * Important for the uploaded HR attendance format:
+         *   P   -> Present
+         *   A   -> Absent
+         *   HLF -> Half Day
+         *   WO  -> Holiday
+         *   MIS / EL / leave-type / unknown non-present codes -> Absent
+         *
+         * This keeps upload resilient while the detailed Excel columns
+         * (including the final OT column) are still saved independently.
+         */
+        const normalizeAttendanceStatusForDb = (value) => {
+            const status = normalizeText(value).toUpperCase();
 
-            if (val === "p" || val === "present") return "Present";
-            if (val === "a" || val === "absent") return "Absent";
-            if (val === "hd" || val === "halfday" || val === "half day") return "Half Day";
-            if (val === "l" || val === "leave") return "Leave";
+            if (!status) return "Absent";
 
-            return "Present";
+            if (["P", "PRESENT"].includes(status)) {
+                return "Present";
+            }
+
+            if (["L", "LATE"].includes(status)) {
+                return "Late";
+            }
+
+            if (["HD", "HLF", "HALF DAY", "HALFDAY", "HALF-DAY"].includes(status)) {
+                return "Half Day";
+            }
+
+            if (["WO", "H", "HOLIDAY", "WEEK OFF", "WEEKOFF", "WEEK-OFF", "OFF"].includes(status)) {
+                return "Holiday";
+            }
+
+            // A, MIS, EL, CL, SL, PL, LWP and any other non-present code
+            // are intentionally treated as Absent because that value is
+            // accepted by the existing attendance status CHECK constraint.
+            return "Absent";
         };
 
+        const isPresentStatus = (value) => {
+            const status = normalizeText(value).toUpperCase();
+            return status === "P" || status === "PRESENT";
+        };
+
+        /*
+         * Parse Start / In / Out without applying the server's local timezone.
+         * Supports:
+         * - Excel formatted text: 5:59, 14:54, 05:59:00
+         * - AM/PM text
+         * - Excel numeric time serials as a safety fallback
+         * - Date objects as a safety fallback (UTC getters are intentional)
+         */
         const parseTime = (timeVal) => {
-            if (!timeVal) return null;
+            if (timeVal === null || timeVal === undefined || timeVal === "") {
+                return null;
+            }
 
             if (timeVal instanceof Date) {
-                const h = timeVal.getHours();
-                const m = timeVal.getMinutes();
-                const s = timeVal.getSeconds();
+                if (Number.isNaN(timeVal.getTime())) return null;
+
+                const h = timeVal.getUTCHours();
+                const m = timeVal.getUTCMinutes();
+                const s = timeVal.getUTCSeconds();
+
                 return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
             }
 
-            const str = String(timeVal).trim();
+            if (typeof timeVal === "number" && Number.isFinite(timeVal)) {
+                const fraction = ((timeVal % 1) + 1) % 1;
+                let totalSeconds = Math.round(fraction * 24 * 60 * 60);
+                totalSeconds %= 24 * 60 * 60;
 
-            const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+
+                return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+            }
+
+            const str = normalizeText(timeVal);
+            if (!str || str === "-" || str.toLowerCase() === "nan") return null;
+
+            const match = str.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM)?$/i);
             if (match) {
                 let [, h, m, s, mer] = match;
-                h = parseInt(h, 10);
-                m = parseInt(m, 10);
-                s = s ? parseInt(s, 10) : 0;
+                h = Number.parseInt(h, 10);
+                m = Number.parseInt(m, 10);
+                s = s ? Number.parseInt(s, 10) : 0;
+
+                if (m > 59 || s > 59 || h > 23) return null;
 
                 if (mer) {
+                    if (h > 12) return null;
                     if (mer.toUpperCase() === "PM" && h < 12) h += 12;
                     if (mer.toUpperCase() === "AM" && h === 12) h = 0;
                 }
@@ -527,12 +605,62 @@ export const uploadAttendance = async (req, res, next) => {
                 return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
             }
 
+            // Safety fallback if an Excel decimal time arrives as text.
+            const numeric = Number(str);
+            if (Number.isFinite(numeric) && numeric >= 0 && numeric < 1) {
+                let totalSeconds = Math.round(numeric * 24 * 60 * 60);
+                totalSeconds %= 24 * 60 * 60;
+
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+
+                return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+            }
+
             return null;
         };
 
-        const parseHours = (v) => {
-            const n = parseFloat(String(v || "").trim());
-            return isNaN(n) ? 0 : n;
+        /*
+         * Hrs Works / Early / Late / Shift Early / OT in this attendance report
+         * are report values such as 8.59, 0.35, 3.19 etc. They must be stored
+         * exactly as those numeric report values, not converted to decimal hours.
+         *
+         * If another report provides H:MM text, it is converted to the same H.MM
+         * representation (e.g. 3:19 -> 3.19) before saving to the FLOAT column.
+         */
+        const parseReportNumber = (value) => {
+            if (value === null || value === undefined || value === "") return 0;
+
+            if (typeof value === "number") {
+                return Number.isFinite(value) ? value : 0;
+            }
+
+            if (value instanceof Date) {
+                if (Number.isNaN(value.getTime())) return 0;
+
+                const h = value.getUTCHours();
+                const m = value.getUTCMinutes();
+                return Number(`${h}.${String(m).padStart(2, "0")}`);
+            }
+
+            const str = normalizeText(value);
+            if (!str || str === "-" || str.toLowerCase() === "nan") return 0;
+
+            // If a duration is formatted as H:MM, preserve report semantics as H.MM.
+            const durationMatch = str.match(/^(\d{1,3}):(\d{1,2})(?::\d{1,2})?$/);
+            if (durationMatch) {
+                const h = Number.parseInt(durationMatch[1], 10);
+                const m = Number.parseInt(durationMatch[2], 10);
+                if (m <= 59) {
+                    return Number(`${h}.${String(m).padStart(2, "0")}`);
+                }
+            }
+
+            // Handles values like "8.59", "0.35", "1,234.50", "₹123.50".
+            const cleaned = str.replace(/,/g, "").replace(/[^0-9.+-]/g, "");
+            const n = Number(cleaned);
+            return Number.isFinite(n) ? n : 0;
         };
 
         const formatDateToYMD = (day, month, year) => {
@@ -543,13 +671,12 @@ export const uploadAttendance = async (req, res, next) => {
             if (!filename) return null;
 
             const base = String(filename).split("/").pop().split("\\").pop();
-
             const match = base.match(/(\d{1,2})[.\-_\/](\d{1,2})[.\-_\/](\d{4})/);
             if (!match) return null;
 
-            const day = parseInt(match[1], 10);
-            const month = parseInt(match[2], 10);
-            const year = parseInt(match[3], 10);
+            const day = Number.parseInt(match[1], 10);
+            const month = Number.parseInt(match[2], 10);
+            const year = Number.parseInt(match[3], 10);
 
             if (!day || !month || !year) return null;
             if (day > 31 || month > 12) return null;
@@ -562,21 +689,21 @@ export const uploadAttendance = async (req, res, next) => {
                 const row = rows[i] || [];
 
                 for (const cell of row) {
-                    const text = String(cell || "").trim();
+                    const text = String(cell ?? "").trim();
                     if (!text) continue;
 
-                    // Match formats like DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
                     const match = text.match(/date\s*[:\-]?\s*(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/i);
                     if (match) {
-                        const day = parseInt(match[1], 10);
-                        const month = parseInt(match[2], 10);
-                        const year = parseInt(match[3], 10);
+                        const day = Number.parseInt(match[1], 10);
+                        const month = Number.parseInt(match[2], 10);
+                        const year = Number.parseInt(match[3], 10);
 
                         if (!day || !month || !year) return null;
                         return formatDateToYMD(day, month, year);
                     }
                 }
             }
+
             return null;
         };
 
@@ -588,7 +715,7 @@ export const uploadAttendance = async (req, res, next) => {
         const attendanceDate =
             parseDateFromFilename(uploadedFileName) ||
             parseDateFromSheetText(rows2D) ||
-            req.query.date; // Fallback to query param if available
+            req.query.date;
 
         if (!attendanceDate) {
             logger.warn(`Could not determine attendance date for file: ${uploadedFileName}`);
@@ -627,22 +754,29 @@ export const uploadAttendance = async (req, res, next) => {
         const headers = rows2D[headerRowIndex].map(clean);
         logger.info(`Found headers at row ${headerRowIndex + 1}: ${headers.join(", ")}`);
 
+        const findColumn = (...aliases) => {
+            const normalizedAliases = aliases.map(clean);
+            return headers.findIndex((header) => normalizedAliases.includes(header));
+        };
+
         const columnMap = {
-            payCode: headers.findIndex(h => h === "paycode" || h.includes("paycode") || h.includes("pay")),
-            cardNo: headers.findIndex(h => h === "cardno" || h.includes("card")),
-            employeeName: headers.findIndex(h => h === "employeename" || h.includes("name")),
-            department: headers.findIndex(h => h.includes("department") || h.includes("dept")),
-            designation: headers.findIndex(h => h.includes("designation") || h.includes("desig")),
-            shift: headers.findIndex(h => h.includes("shift")),
-            startTime: headers.findIndex(h => h.includes("start")),
-            inTime: headers.findIndex(h => h === "in" || h.includes("intime")),
-            outTime: headers.findIndex(h => h === "out" || h.includes("outtime")),
-            hrsWorked: headers.findIndex(h => h.includes("hrsworks") || h.includes("hrsworked") || (h.includes("hrs") && h.includes("work"))),
-            status: headers.findIndex(h => h.includes("status")),
-            lateArrival: headers.findIndex(h => (h.includes("late") && h.includes("arriv")) || h === "latearriv"),
-            earlyDeparture: headers.findIndex(h => (h.includes("early") && h.includes("depart")) || h === "shiftearly"),
-            otHrs: headers.findIndex(h => h === "ot" || h.includes("othrs")),
-            otAmount: headers.findIndex(h => h.includes("ot") && h.includes("amount"))
+            payCode: findColumn("PayCode", "Pay Code", "Employee Code", "Emp Code"),
+            cardNo: findColumn("Card No", "CardNo", "Card Number", "Card"),
+            employeeName: findColumn("Employee Name", "EmployeeName", "Emp Name", "Name"),
+            department: findColumn("Department", "Dept", "Section"),
+            designation: findColumn("Designation", "Desig"),
+            shift: findColumn("Shift", "Shift Name"),
+            startTime: findColumn("Start", "Start Time", "Shift Start"),
+            inTime: findColumn("In", "In Time", "InTime"),
+            outTime: findColumn("Out", "Out Time", "OutTime"),
+            hrsWorked: findColumn("Hrs Works", "Hrs Worked", "Hrs", "Total Hrs", "Work Hrs"),
+            status: findColumn("Status", "Att Status", "Attendance Status"),
+            earlyArrival: findColumn("Early Arriv", "Early Arrival"),
+            lateArrival: findColumn("Late Arriv", "Late Arrival", "Late"),
+            earlyDeparture: findColumn("Shift Early", "Early Departure", "Early Depart", "Early"),
+            excessLunch: findColumn("Excess Lunch", "Lunch Excess"),
+            otHrs: findColumn("Ot", "OT", "OT Hrs", "OT Hours", "Overtime", "Overtime Hrs"),
+            otAmount: findColumn("OT Amt", "OT Amount", "Overtime Amount")
         };
 
         logger.info(`Column mapping: ${JSON.stringify(columnMap)}`);
@@ -654,21 +788,45 @@ export const uploadAttendance = async (req, res, next) => {
             });
         }
 
+        const requiredAttendanceColumns = [
+            ["Start", columnMap.startTime],
+            ["In", columnMap.inTime],
+            ["Out", columnMap.outTime],
+            ["Hrs Works", columnMap.hrsWorked],
+            ["Status", columnMap.status],
+            ["Early Arriv.", columnMap.earlyArrival],
+            ["Late Arriv.", columnMap.lateArrival],
+            ["Shift Early", columnMap.earlyDeparture],
+            ["OT", columnMap.otHrs],
+        ];
+
+        const missingAttendanceColumns = requiredAttendanceColumns
+            .filter(([, index]) => index === -1)
+            .map(([name]) => name);
+
+        if (missingAttendanceColumns.length > 0) {
+            logger.warn(`Optional attendance columns not found: ${missingAttendanceColumns.join(", ")}`);
+        }
+
         const dataRows = rows2D
             .slice(headerRowIndex + 1)
-            .filter(row => {
+            .filter((row) => {
                 const payCode = row[columnMap.payCode];
                 return Boolean(normalizePayCode(payCode));
             });
+
+        if (dataRows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No valid attendance rows were found in the Excel file."
+            });
+        }
 
         logger.info(`Found ${dataRows.length} data rows to process.`);
 
         const pool = await poolPromise;
 
-        // Build the attendance master map from users.empId only.
-        // Active/non-deleted duplicate rows are preferred, but if an empId exists
-        // only on another users row it is still treated as a valid users-table match.
-        // No hierarchy snapshot table is used.
+        // Build attendance user map from users.empId only.
         const usersResult = await pool.request().query(`
             SELECT id, empId, isDeleted
             FROM users
@@ -691,21 +849,11 @@ export const uploadAttendance = async (req, res, next) => {
 
         logger.info(`Users mapped by users.empId only: ${userMapByEmpId.size}.`);
 
-        // 1. Delete existing unmapped logs for this date
-        try {
-            const deleteReq = pool.request();
-            deleteReq.input("date", sql.VarChar(10), attendanceDate);
-            await deleteReq.query("DELETE FROM attendance_unmapped_logs WHERE CONVERT(date, [date]) = CONVERT(date, @date, 23)");
-            logger.info(`Cleared old unmapped logs for date: ${attendanceDate}`);
-        } catch (delErr) {
-            logger.error(`Error deleting from attendance_unmapped_logs: ${delErr.message}`);
-        }
-
         const mergeSql = `
             MERGE attendance_logs AS target
             USING (SELECT @userId AS userId, CONVERT(date, @date, 23) AS [date]) AS source
             ON target.userId = source.userId AND target.[date] = source.[date]
-            WHEN MATCHED THEN 
+            WHEN MATCHED THEN
                 UPDATE SET
                     payCode = @payCode,
                     cardNo = @cardNo,
@@ -718,6 +866,7 @@ export const uploadAttendance = async (req, res, next) => {
                     outTime = @outT,
                     hrsWorked = @hrs,
                     status = @status,
+                    earlyArrival = @earlyArrival,
                     lateArrival = @late,
                     earlyDeparture = @early,
                     otHrs = @otH,
@@ -728,13 +877,13 @@ export const uploadAttendance = async (req, res, next) => {
                     userId, payCode, cardNo, employeeName, [date],
                     department, designation, shift, startTime,
                     inTime, outTime, hrsWorked, status,
-                    lateArrival, earlyDeparture, otHrs, otAmount, updatedAt
+                    earlyArrival, lateArrival, earlyDeparture, otHrs, otAmount, updatedAt
                 )
                 VALUES (
                     @userId, @payCode, @cardNo, @empName, CONVERT(date, @date, 23),
                     @dept, @desig, @shift, @startTime,
                     @inT, @outT, @hrs, @status,
-                    @late, @early, @otH, @otA, GETDATE()
+                    @earlyArrival, @late, @early, @otH, @otA, GETDATE()
                 );
         `;
 
@@ -743,141 +892,228 @@ export const uploadAttendance = async (req, res, next) => {
                 payCode, cardNo, employeeName, [date],
                 department, designation, shift, startTime,
                 inTime, outTime, hrsWorked, status,
-                lateArrival, earlyDeparture, otHrs, otAmount, reason, createdAt
+                earlyArrival, lateArrival, earlyDeparture, otHrs, otAmount, reason, createdAt
             ) VALUES (
                 @payCode, @cardNo, @employeeName, CONVERT(date, @date, 23),
                 @department, @designation, @shift, @startTime,
                 @inTime, @outTime, @hrsWorked, @status,
-                @lateArrival, @earlyDeparture, @otHrs, @otAmount, @reason, GETDATE()
+                @earlyArrival, @lateArrival, @earlyDeparture, @otHrs, @otAmount, @reason, GETDATE()
             );
         `;
 
         let matchedRowsSaved = 0;
         let unmappedRowsSaved = 0;
-        let skippedRows = 0;
         let presentInAttendanceLogs = 0;
         let presentInUnmappedLogs = 0;
-        const skippedLog = [];
 
-        for (let index = 0; index < dataRows.length; index++) {
-            const row = dataRows[index];
+        /*
+         * SAME-DATE REUPLOAD = FULL REPLACEMENT
+         * --------------------------------------
+         * Everything for attendanceDate is deleted and inserted again inside one
+         * SQL transaction. If any DB operation fails, the transaction rolls back,
+         * so the previously uploaded day's data remains safe and unchanged.
+         */
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-            const rawPayCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
-            const rawCardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
+        try {
+            const deleteAttendanceReq = new sql.Request(transaction);
+            deleteAttendanceReq.input("date", sql.VarChar(10), attendanceDate);
+            await deleteAttendanceReq.query(`
+                DELETE FROM attendance_logs
+                WHERE CONVERT(date, [date]) = CONVERT(date, @date, 23)
+            `);
 
-            const normalizedPayCode = normalizePayCode(rawPayCode);
+            const deleteUnmappedReq = new sql.Request(transaction);
+            deleteUnmappedReq.input("date", sql.VarChar(10), attendanceDate);
+            await deleteUnmappedReq.query(`
+                DELETE FROM attendance_unmapped_logs
+                WHERE CONVERT(date, [date]) = CONVERT(date, @date, 23)
+            `);
 
-            // Strict attendance mapping:
-            // Excel PayCode -> users.empId only.
-            // Card No and hierarchy snapshot data are not used for matching.
-            const userId = normalizedPayCode
-                ? userMapByEmpId.get(normalizedPayCode)
-                : null;
+            logger.info(`Existing attendance fully cleared inside transaction for date: ${attendanceDate}`);
 
-            const rowStatus = columnMap.status !== -1 ? normalizeStatus(row[columnMap.status]) : "Present";
+            for (let index = 0; index < dataRows.length; index++) {
+                const row = dataRows[index];
 
-            if (userId) {
-                // Matched user -> upsert into attendance_logs
-                const reqDB = pool.request();
-                reqDB.input("userId", sql.Int, userId);
-                reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
-                reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
-                reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
-                reqDB.input("date", sql.VarChar(10), attendanceDate);
-                reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
-                reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
-                reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
-                reqDB.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
-                reqDB.input("inT", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
-                reqDB.input("outT", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
-                reqDB.input("hrs", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
-                reqDB.input("status", sql.VarChar, rowStatus);
-                reqDB.input("late", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
-                reqDB.input("early", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
-                reqDB.input("otH", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
-                reqDB.input("otA", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
+                const rawPayCode = columnMap.payCode !== -1 ? row[columnMap.payCode] : null;
+                const rawCardNo = columnMap.cardNo !== -1 ? row[columnMap.cardNo] : null;
+                const normalizedPayCode = normalizePayCode(rawPayCode);
+                const userId = normalizedPayCode
+                    ? userMapByEmpId.get(normalizedPayCode)
+                    : null;
 
-                try {
-                    await reqDB.query(mergeSql);
+                // Keep raw Excel status only for diagnostics; save a DB-safe value.
+                const rawStatus = columnMap.status !== -1
+                    ? normalizeText(row[columnMap.status]) || null
+                    : null;
+                const rowStatus = normalizeAttendanceStatusForDb(rawStatus);
+
+                const startTime = columnMap.startTime !== -1
+                    ? parseTime(row[columnMap.startTime])
+                    : null;
+
+                const inTime = columnMap.inTime !== -1
+                    ? parseTime(row[columnMap.inTime])
+                    : null;
+
+                const outTime = columnMap.outTime !== -1
+                    ? parseTime(row[columnMap.outTime])
+                    : null;
+
+                const hrsWorked = columnMap.hrsWorked !== -1
+                    ? parseReportNumber(row[columnMap.hrsWorked])
+                    : 0;
+
+                const earlyArrival = columnMap.earlyArrival !== -1
+                    ? parseReportNumber(row[columnMap.earlyArrival])
+                    : 0;
+
+                const lateArrival = columnMap.lateArrival !== -1
+                    ? parseReportNumber(row[columnMap.lateArrival])
+                    : 0;
+
+                const earlyDeparture = columnMap.earlyDeparture !== -1
+                    ? parseReportNumber(row[columnMap.earlyDeparture])
+                    : 0;
+
+                const otHrs = columnMap.otHrs !== -1
+                    ? parseReportNumber(row[columnMap.otHrs])
+                    : 0;
+
+                // Current uploaded Excel has no OT Amount column, so this is 0.
+                // If a future Excel contains OT Amt / OT Amount, the exact numeric value is saved.
+                const otAmount = columnMap.otAmount !== -1
+                    ? parseReportNumber(row[columnMap.otAmount])
+                    : 0;
+
+                if (userId) {
+                    const reqDB = new sql.Request(transaction);
+                    reqDB.input("userId", sql.Int, userId);
+                    reqDB.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
+                    reqDB.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
+                    reqDB.input("empName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
+                    reqDB.input("date", sql.VarChar(10), attendanceDate);
+                    reqDB.input("dept", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
+                    reqDB.input("desig", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
+                    reqDB.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
+                    reqDB.input("startTime", sql.VarChar, startTime);
+                    reqDB.input("inT", sql.VarChar, inTime);
+                    reqDB.input("outT", sql.VarChar, outTime);
+                    reqDB.input("hrs", sql.Float, hrsWorked);
+                    reqDB.input("status", sql.VarChar, rowStatus);
+                    reqDB.input("earlyArrival", sql.Float, earlyArrival);
+                    reqDB.input("late", sql.Float, lateArrival);
+                    reqDB.input("early", sql.Float, earlyDeparture);
+                    reqDB.input("otH", sql.Float, otHrs);
+                    reqDB.input("otA", sql.Float, otAmount);
+
+                    try {
+                        await reqDB.query(mergeSql);
+                    } catch (rowError) {
+                        const excelRowNumber = headerRowIndex + 2 + index;
+                        rowError.message = `Excel row ${excelRowNumber}, PayCode ${normalizeText(rawPayCode) || "N/A"}, raw status ${rawStatus || "blank"}, DB status ${rowStatus}: ${rowError.message}`;
+                        throw rowError;
+                    }
                     matchedRowsSaved++;
-                    if (rowStatus === "Present") {
+
+                    if (isPresentStatus(rowStatus)) {
                         presentInAttendanceLogs++;
                     }
-                } catch (err) {
-                    logger.error(`Error processing matched row ${index + 1}: ${err.message}`);
-                    skippedRows++;
-                    if (skippedLog.length < 50) {
-                        skippedLog.push({
-                            row: headerRowIndex + index + 2,
-                            payCode: rawPayCode,
-                            cardNo: rawCardNo,
-                            reason: `Database error on merge: ${err.message}`
-                        });
-                    }
-                }
-            } else {
-                // Unmatched user -> insert into attendance_unmapped_logs
-                const reqUnmapped = pool.request();
-                reqUnmapped.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
-                reqUnmapped.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
-                reqUnmapped.input("employeeName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
-                reqUnmapped.input("date", sql.VarChar(10), attendanceDate);
-                reqUnmapped.input("department", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
-                reqUnmapped.input("designation", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
-                reqUnmapped.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
-                reqUnmapped.input("startTime", sql.VarChar, columnMap.startTime !== -1 ? parseTime(row[columnMap.startTime]) : null);
-                reqUnmapped.input("inTime", sql.VarChar, columnMap.inTime !== -1 ? parseTime(row[columnMap.inTime]) : null);
-                reqUnmapped.input("outTime", sql.VarChar, columnMap.outTime !== -1 ? parseTime(row[columnMap.outTime]) : null);
-                reqUnmapped.input("hrsWorked", sql.Float, columnMap.hrsWorked !== -1 ? parseHours(row[columnMap.hrsWorked]) : 0);
-                reqUnmapped.input("status", sql.VarChar, rowStatus);
-                reqUnmapped.input("lateArrival", sql.Float, columnMap.lateArrival !== -1 ? parseHours(row[columnMap.lateArrival]) : 0);
-                reqUnmapped.input("earlyDeparture", sql.Float, columnMap.earlyDeparture !== -1 ? parseHours(row[columnMap.earlyDeparture]) : 0);
-                reqUnmapped.input("otHrs", sql.Float, columnMap.otHrs !== -1 ? parseHours(row[columnMap.otHrs]) : 0);
-                reqUnmapped.input("otAmount", sql.Float, columnMap.otAmount !== -1 ? parseHours(row[columnMap.otAmount]) : 0);
-                reqUnmapped.input("reason", sql.VarChar, 'Excel PayCode not found in users.empId');
+                } else {
+                    const reqUnmapped = new sql.Request(transaction);
+                    reqUnmapped.input("payCode", sql.VarChar, normalizeText(rawPayCode) || null);
+                    reqUnmapped.input("cardNo", sql.VarChar, normalizeText(rawCardNo) || null);
+                    reqUnmapped.input("employeeName", sql.VarChar, columnMap.employeeName !== -1 ? normalizeText(row[columnMap.employeeName]) || null : null);
+                    reqUnmapped.input("date", sql.VarChar(10), attendanceDate);
+                    reqUnmapped.input("department", sql.VarChar, columnMap.department !== -1 ? normalizeText(row[columnMap.department]) || null : null);
+                    reqUnmapped.input("designation", sql.VarChar, columnMap.designation !== -1 ? normalizeText(row[columnMap.designation]) || null : null);
+                    reqUnmapped.input("shift", sql.VarChar, columnMap.shift !== -1 ? normalizeText(row[columnMap.shift]) || null : null);
+                    reqUnmapped.input("startTime", sql.VarChar, startTime);
+                    reqUnmapped.input("inTime", sql.VarChar, inTime);
+                    reqUnmapped.input("outTime", sql.VarChar, outTime);
+                    reqUnmapped.input("hrsWorked", sql.Float, hrsWorked);
+                    reqUnmapped.input("status", sql.VarChar, rowStatus);
+                    reqUnmapped.input("earlyArrival", sql.Float, earlyArrival);
+                    reqUnmapped.input("lateArrival", sql.Float, lateArrival);
+                    reqUnmapped.input("earlyDeparture", sql.Float, earlyDeparture);
+                    reqUnmapped.input("otHrs", sql.Float, otHrs);
+                    reqUnmapped.input("otAmount", sql.Float, otAmount);
+                    reqUnmapped.input("reason", sql.VarChar, "Excel PayCode not found in users.empId");
 
-                try {
-                    await reqUnmapped.query(insertUnmappedSql);
-                    unmappedRowsSaved++;
-                    if (rowStatus === "Present") {
-                        presentInUnmappedLogs++;
+                    try {
+                        await reqUnmapped.query(insertUnmappedSql);
+                    } catch (rowError) {
+                        const excelRowNumber = headerRowIndex + 2 + index;
+                        rowError.message = `Excel row ${excelRowNumber}, unmapped PayCode ${normalizeText(rawPayCode) || "N/A"}, raw status ${rawStatus || "blank"}, DB status ${rowStatus}: ${rowError.message}`;
+                        throw rowError;
                     }
-                } catch (err) {
-                    logger.error(`Error processing unmapped row ${index + 1}: ${err.message}`);
-                    skippedRows++;
-                    if (skippedLog.length < 50) {
-                        skippedLog.push({
-                            row: headerRowIndex + index + 2,
-                            payCode: rawPayCode,
-                            cardNo: rawCardNo,
-                            reason: `Database error on unmapped insert: ${err.message}`
-                        });
+                    unmappedRowsSaved++;
+
+                    if (isPresentStatus(rowStatus)) {
+                        presentInUnmappedLogs++;
                     }
                 }
             }
+
+            await transaction.commit();
+            transaction = null;
+        } catch (dbError) {
+            try {
+                if (transaction) {
+                    await transaction.rollback();
+                    transaction = null;
+                }
+            } catch (rollbackError) {
+                logger.error(`Attendance rollback error: ${rollbackError.message}`);
+            }
+
+            throw dbError;
         }
 
-        logger.info(`Upload complete: ${matchedRowsSaved} matched, ${unmappedRowsSaved} unmapped, ${skippedRows} skipped.`);
+        logger.info(
+            `Upload complete for ${attendanceDate}: ${matchedRowsSaved} matched, ${unmappedRowsSaved} unmapped. Existing date data was fully replaced.`
+        );
 
         return res.status(200).json({
             success: true,
-            message: `Successfully processed attendance for ${attendanceDate}.`,
+            message: `Successfully replaced attendance for ${attendanceDate}.`,
             data: {
                 attendanceDate,
+                replaceMode: true,
                 totalRows: dataRows.length,
                 matchedRowsSaved,
                 unmappedRowsSaved,
-                skippedRows,
+                skippedRows: 0,
                 presentInAttendanceLogs,
                 presentInUnmappedLogs,
                 totalPresentUploaded: presentInAttendanceLogs + presentInUnmappedLogs,
-                skippedLog: skippedRows > 0 ? skippedLog : undefined
+                missingOptionalColumns: missingAttendanceColumns,
+                columnMapping: {
+                    start: columnMap.startTime,
+                    in: columnMap.inTime,
+                    out: columnMap.outTime,
+                    hrsWorks: columnMap.hrsWorked,
+                    status: columnMap.status,
+                    earlyArrival: columnMap.earlyArrival,
+                    lateArrival: columnMap.lateArrival,
+                    shiftEarly: columnMap.earlyDeparture,
+                    otHrs: columnMap.otHrs,
+                    otAmount: columnMap.otAmount,
+                }
             }
         });
-
-
     } catch (error) {
+        if (transaction) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                logger.error(`Attendance rollback error: ${rollbackError.message}`);
+            }
+        }
+
         console.error("Attendance Upload Error:", error);
+        logger.error(`Attendance Upload Error: ${error.message}`);
 
         return res.status(500).json({
             success: false,
@@ -885,8 +1121,6 @@ export const uploadAttendance = async (req, res, next) => {
         });
     }
 };
-
-
 
 
 const formatMssqlTime = (val) => {
@@ -1131,11 +1365,12 @@ export const getAttendance = async (req, res, next) => {
                         al.department AS attDepartment,
                         al.designation,
                         al.shift,
-                        al.startTime,
-                        al.inTime,
-                        al.outTime,
+                        CONVERT(VARCHAR(5), al.startTime, 108) AS startTime,
+                        CONVERT(VARCHAR(5), al.inTime, 108) AS inTime,
+                        CONVERT(VARCHAR(5), al.outTime, 108) AS outTime,
                         al.hrsWorked,
                         al.status,
+                        al.earlyArrival,
                         al.lateArrival,
                         al.earlyDeparture,
                         al.otHrs,
@@ -1179,6 +1414,7 @@ export const getAttendance = async (req, res, next) => {
                     outTime,
                     hrsWorked,
                     status,
+                    earlyArrival,
                     lateArrival,
                     earlyDeparture,
                     otHrs,
@@ -1205,11 +1441,12 @@ export const getAttendance = async (req, res, next) => {
                     al.department AS attDepartment,
                     al.designation,
                     al.shift,
-                    al.startTime,
-                    al.inTime,
-                    al.outTime,
+                    CONVERT(VARCHAR(5), al.startTime, 108) AS startTime,
+                    CONVERT(VARCHAR(5), al.inTime, 108) AS inTime,
+                    CONVERT(VARCHAR(5), al.outTime, 108) AS outTime,
                     al.hrsWorked,
                     al.status,
+                    al.earlyArrival,
                     al.lateArrival,
                     al.earlyDeparture,
                     al.otHrs,
@@ -1251,6 +1488,7 @@ export const getAttendance = async (req, res, next) => {
             outTime: formatMssqlTime(row.outTime),
             hrsWorked: row.hrsWorked,
             status: row.status || "Absent",
+            earlyArrival: row.earlyArrival,
             lateArrival: row.lateArrival,
             earlyDeparture: row.earlyDeparture,
             otHrs: row.otHrs,
@@ -1513,8 +1751,8 @@ export const getUnmappedPresent = async (req, res, next) => {
                 designation,
                 shift,
                 status,
-                inTime,
-                outTime,
+                CONVERT(VARCHAR(5), inTime, 108) AS inTime,
+                CONVERT(VARCHAR(5), outTime, 108) AS outTime,
                 hrsWorked,
                 reason
             FROM attendance_unmapped_logs

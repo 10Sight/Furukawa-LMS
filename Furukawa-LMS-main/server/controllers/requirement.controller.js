@@ -522,6 +522,75 @@ const updateRequirementToken = async (token, updates) => {
     );
 };
 
+
+// ================= SYSTEM APPROVAL TIME SETTINGS =================
+const ensureRequirementApprovalSettingTable = async () => {
+    await executeSql(`
+        IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'requirement_settings')
+        BEGIN
+            CREATE TABLE requirement_settings (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                approval_minutes INT NOT NULL DEFAULT 24,
+                approval_unit VARCHAR(20) NOT NULL DEFAULT 'hours',
+                updatedBy INT NULL,
+                updatedAt DATETIME DEFAULT GETDATE()
+            );
+
+            INSERT INTO requirement_settings (approval_minutes, approval_unit)
+            VALUES (24, 'hours');
+        END
+    `);
+};
+
+const getSystemApprovalMinutes = async () => {
+    await ensureRequirementApprovalSettingTable();
+
+    const [rows] = await executeSql(`
+        SELECT TOP 1 approval_minutes, approval_unit
+        FROM requirement_settings
+        ORDER BY id DESC
+    `);
+
+    return { value: Number(rows?.[0]?.approval_minutes || 24), unit: rows?.[0]?.approval_unit || 'hours' };
+};
+
+export const getSystemApprovalTime = asyncHandler(async (req, res) => {
+    if (!req.user?.isAdmin && String(req.user?.role || "").toUpperCase() !== "SUPERADMIN") {
+        throw new ApiError("Only admin can access approval timing.", 403);
+    }
+
+    const timing = await getSystemApprovalMinutes();
+
+    return res.status(200).json(
+        new ApiResponse(200, timing, "Approval timing fetched")
+    );
+});
+
+export const updateSystemApprovalTime = asyncHandler(async (req, res) => {
+    if (!req.user?.isAdmin && String(req.user?.role || "").toUpperCase() !== "SUPERADMIN") {
+        throw new ApiError("Only admin can update approval timing.", 403);
+    }
+
+    const minutes = Number(req.body.minutes);
+    const unit = String(req.body.unit || 'hours').toLowerCase();
+
+    if (!Number.isInteger(minutes) || minutes < 1 || !['minutes','hours','days'].includes(unit)) {
+        throw new ApiError("Invalid approval timing.", 400);
+    }
+
+    await ensureRequirementApprovalSettingTable();
+
+    await executeSql(`
+        UPDATE requirement_settings
+        SET approval_minutes = ?, approval_unit = ?, updatedBy = ?, updatedAt = GETDATE()
+        WHERE id = (SELECT TOP 1 id FROM requirement_settings ORDER BY id DESC)
+    `, [minutes, unit, req.user?.id || null]);
+
+    return res.status(200).json(
+        new ApiResponse(200, { minutes, unit }, "Approval timing updated")
+    );
+});
+
 const createRequirementTokenSafe = async ({
     token,
     requirementId = null,
@@ -814,7 +883,9 @@ const sendRequirementEditApprovalMail = async ({
         );
 
         const token = crypto.randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours expiration
+        const approvalTime = await getSystemApprovalMinutes();
+        const multiplier = approvalTime.unit === 'days' ? 86400000 : approvalTime.unit === 'hours' ? 3600000 : 60000;
+        const expiresAt = new Date(Date.now() + approvalTime.value * multiplier);
 
         await createRequirementTokenSafe({
             token,
@@ -1992,7 +2063,7 @@ export const addRequirements = asyncHandler(async (req, res) => {
                     sectionName: secName,
                     recipientEmail: approvalHeads.length > 0 ? (getValueIgnoreCase(approvalHeads[0], ["email", "Email", "EMAIL"]) || "") : "",
                     senderEmail: req.user?.email || "admin@furukawa.com",
-                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours expiration
+                    expiresAt: new Date(Date.now() + 20 * 60 * 1000), // 20 minutes expiration
                     status: "pending",
                 });
 
@@ -2340,6 +2411,84 @@ const parseJsonArrayIds = (value) => {
     return [...new Set(ids)];
 };
 
+const getLatestUserRequirementSectionAssignment = async (user) => {
+    if (!user) {
+        return {
+            sectionId: null,
+            sections: null,
+            sectionIds: [],
+        };
+    }
+
+    let latestSectionId = user.sectionId ?? null;
+    let latestSections = user.sections ?? null;
+
+    const rawUserId = user.id ?? user._id ?? null;
+    const numericUserId = Number(rawUserId);
+    const userEmail = safeTrim(user.email).toLowerCase();
+
+    try {
+        let rows = [];
+
+        if (Number.isInteger(numericUserId) && numericUserId > 0) {
+            [rows] = await executeSql(
+                `
+                SELECT TOP 1
+                    sectionId,
+                    sections
+                FROM users WITH (NOLOCK)
+                WHERE id = ?
+                `,
+                [numericUserId]
+            );
+        }
+
+        if ((!rows || rows.length === 0) && userEmail) {
+            [rows] = await executeSql(
+                `
+                SELECT TOP 1
+                    sectionId,
+                    sections
+                FROM users WITH (NOLOCK)
+                WHERE LOWER(LTRIM(RTRIM(email))) = ?
+                `,
+                [userEmail]
+            );
+        }
+
+        if (rows && rows.length > 0) {
+            latestSectionId = rows[0].sectionId ?? null;
+            latestSections = rows[0].sections ?? null;
+        }
+    } catch (error) {
+        // If the fresh DB lookup fails, preserve the existing authenticated-user fallback.
+        console.error(
+            "[REQUIREMENT-SECTION-ACCESS] Failed to load latest user section assignment:",
+            error.message
+        );
+    }
+
+    const sectionIds = [
+        ...parseJsonArrayIds(latestSectionId),
+        ...parseJsonArrayIds(latestSections),
+    ]
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0);
+
+    // Approval access must use ONLY users.sections.
+    // users.sectionId remains available for the existing non-approval access logic.
+    const approvalSectionIds = parseJsonArrayIds(latestSections)
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0);
+
+    return {
+        sectionId: latestSectionId,
+        sections: latestSections,
+        sectionIds: [...new Set(sectionIds)],
+        approvalSectionIds: [...new Set(approvalSectionIds)],
+    };
+};
+
 const hasActionPermission = (user, action) => {
     if (!user) return false;
     const userRole = String(user.role || "").trim().toUpperCase();
@@ -2387,15 +2536,16 @@ const checkSectionAccess = async (user, sectionIds) => {
         return { hasAccess: true, isGlobal: true };
     }
 
-    const userSectionIds = [
-        ...parseJsonArrayIds(user.sectionId),
-        ...parseJsonArrayIds(user.sections),
-    ].map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    // Always load the latest section assignment from users table so approval
+    // does not depend on stale sectionId/sections values inside JWT/session data.
+    const latestAssignment = await getLatestUserRequirementSectionAssignment(user);
+    const userSectionIds = latestAssignment.sectionIds;
+    const latestSections = latestAssignment.sections;
 
     const hasWildcard =
         userSectionIds.includes(-1) ||
-        (typeof user.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
-        (Array.isArray(user.sections) && (user.sections.includes('*') || user.sections.includes('all')));
+        (typeof latestSections === 'string' && (latestSections.includes('*') || latestSections.toLowerCase().includes('all'))) ||
+        (Array.isArray(latestSections) && (latestSections.includes('*') || latestSections.includes('all')));
 
     const customRolePermissions = user.customRole?.permissions || [];
     const hasGlobalPermission =
@@ -2417,6 +2567,58 @@ const checkSectionAccess = async (user, sectionIds) => {
     }
 
     return { hasAccess: true, isGlobal: false, userSectionIds };
+};
+
+const checkApprovalSectionAccess = async (user, sectionIds = []) => {
+    if (!user) {
+        return {
+            hasAccess: false,
+            isGlobal: false,
+            userSectionIds: [],
+            unauthorizedIds: sectionIds,
+        };
+    }
+
+    const userRole = String(user.role || "").trim().toUpperCase();
+    const isSuperUser =
+        user.isAdmin === true ||
+        user.isAdmin === 1 ||
+        userRole === "SUPERADMIN" ||
+        userRole === "ADMIN";
+
+    if (isSuperUser) {
+        return { hasAccess: true, isGlobal: true, userSectionIds: [] };
+    }
+
+    // Non-admin approval is controlled strictly by the users.sections array.
+    const latestAssignment = await getLatestUserRequirementSectionAssignment(user);
+    const userSectionIds = latestAssignment.approvalSectionIds || [];
+
+    const cleanTargetSectionIds = [...new Set(
+        (sectionIds || [])
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0)
+    )];
+
+    if (userSectionIds.length === 0) {
+        return {
+            hasAccess: false,
+            isGlobal: false,
+            userSectionIds,
+            unauthorizedIds: cleanTargetSectionIds,
+        };
+    }
+
+    const unauthorizedIds = cleanTargetSectionIds.filter(
+        (id) => !userSectionIds.includes(id)
+    );
+
+    return {
+        hasAccess: unauthorizedIds.length === 0,
+        isGlobal: false,
+        userSectionIds,
+        unauthorizedIds,
+    };
 };
 
 const resolveSectionIdsFromCodesOrNames = async (codes = [], names = []) => {
@@ -2461,15 +2663,16 @@ const getAssignedRequirementSectionsForUser = async (req) => {
 
     if (isSuperUser) return null;
 
-    const userSectionIds = [
-        ...parseJsonArrayIds(user.sectionId),
-        ...parseJsonArrayIds(user.sections),
-    ].map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    // Use the latest users.sectionId + users.sections values from DB.
+    // This keeps dashboard visibility/isAssigned aligned with approval access.
+    const latestAssignment = await getLatestUserRequirementSectionAssignment(user);
+    const userSectionIds = latestAssignment.sectionIds;
+    const latestSections = latestAssignment.sections;
 
     const hasWildcard =
         userSectionIds.includes(-1) ||
-        (typeof user.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
-        (Array.isArray(user.sections) && (user.sections.includes('*') || user.sections.includes('all')));
+        (typeof latestSections === 'string' && (latestSections.includes('*') || latestSections.toLowerCase().includes('all'))) ||
+        (Array.isArray(latestSections) && (latestSections.includes('*') || latestSections.includes('all')));
 
     const customRolePermissions = user.customRole?.permissions || [];
     const hasGlobalPermission =
@@ -2556,7 +2759,7 @@ export const getRequirements = asyncHandler(async (req, res) => {
     const offset = (page - 1) * limit;
 
     let countSql = "SELECT COUNT(r.id) AS total FROM requirements r WHERE 1=1";
-    let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory, (SELECT TOP 1 id FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionId FROM requirements r WHERE 1=1";
+    let sql = "SELECT r.*, (SELECT TOP 1 category FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name) AS sectionCategory, COALESCE(TRY_CONVERT(INT, r.sectionId), (SELECT TOP 1 id FROM [sections] sec WHERE r.sectionCode = sec.uniCode OR r.sectionName = sec.name)) AS approvalSectionId FROM requirements r WHERE 1=1";
     let params = [];
 
     const hasViewAllSections = hasPermission(req.user, "mps_requirement:view_all_sections");
@@ -2684,29 +2887,23 @@ export const getRequirements = asyncHandler(async (req, res) => {
         loggedInRole === "SUPERADMIN" ||
         loggedInRole === "ADMIN";
 
+    const approvalAssignment = isSuperUser
+        ? null
+        : await getLatestUserRequirementSectionAssignment(req.user);
+    const approvalSectionIds = approvalAssignment?.approvalSectionIds || [];
+
     const data = results.map((row) => {
-        let isAssigned = true;
-        if (!isSuperUser) {
-            if (assignedSections?.noAssignedSection) {
-                isAssigned = false;
-            } else if (assignedSections?.sectionCodes?.length || assignedSections?.sectionNames?.length) {
-                const codeMatched = assignedSections.sectionCodes?.some(
-                    (code) => String(code).trim().toUpperCase() === String(row.sectionCode || "").trim().toUpperCase()
-                );
-                const nameMatched = assignedSections.sectionNames?.some(
-                    (name) => String(name).trim().toUpperCase() === String(row.sectionName || "").trim().toUpperCase()
-                );
-                isAssigned = !!(codeMatched || nameMatched);
-            } else {
-                isAssigned = false;
-            }
-        }
+        const approvalSectionId = Number(row.approvalSectionId ?? row.sectionId);
+        const isAssigned = isSuperUser || (
+            Number.isInteger(approvalSectionId) &&
+            approvalSectionIds.includes(approvalSectionId)
+        );
 
         return {
             ...row,
             count: row.salesPlan,
             section: row.sectionName,
-            sectionId: row.sectionId,
+            sectionId: Number.isInteger(approvalSectionId) ? approvalSectionId : null,
             sectionCategory: row.category || row.sectionCategory || "Not Applicable",
             sub_section: row.lineDescription,
             line_area: "N/A",
@@ -3419,7 +3616,7 @@ export const approveDashboardRequirements = asyncHandler(async (req, res) => {
     const uniqueNames = [...new Set(reqSections.map(r => r.sectionName).filter(Boolean))];
 
     const resolvedIds = await resolveSectionIdsFromCodesOrNames(uniqueCodes, uniqueNames);
-    const sectionAccess = await checkSectionAccess(req.user, resolvedIds);
+    const sectionAccess = await checkApprovalSectionAccess(req.user, resolvedIds);
     if (!sectionAccess.hasAccess) {
         throw new ApiError("You do not have permission to approve requirements for one or more of the selected sections.", 403);
     }
@@ -3791,7 +3988,7 @@ p {
         tSectionName ? [tSectionName] : []
     );
     if (resolvedIds.length > 0) {
-        const sectionAccess = await checkSectionAccess(user, resolvedIds);
+        const sectionAccess = await checkApprovalSectionAccess(user, resolvedIds);
         if (!sectionAccess.hasAccess) {
             return res
                 .status(403)
@@ -4142,7 +4339,7 @@ p {
         sectionName ? [sectionName] : []
     );
     if (resolvedIds.length > 0) {
-        const sectionAccess = await checkSectionAccess(user, resolvedIds);
+        const sectionAccess = await checkApprovalSectionAccess(user, resolvedIds);
         if (!sectionAccess.hasAccess) {
             return res
                 .status(403)

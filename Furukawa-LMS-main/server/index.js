@@ -481,7 +481,7 @@ const startServer = async () => {
         // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
         await User.init();
 
-        server.listen(PORT, () => {
+        server.listen(PORT, "0.0.0.0", () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
         });
 

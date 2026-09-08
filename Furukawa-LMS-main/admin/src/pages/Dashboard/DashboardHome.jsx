@@ -417,6 +417,29 @@ const formatDisplayDate = (dateStr) => {
     return `${day}-${month}-${year}`;
 };
 
+// Keep range calendars open after the first click.
+// Some react-day-picker versions return { from: day, to: day } on the first click,
+// which previously made the Popover think the range was already complete and close.
+const normalizeCalendarRangeSelection = (range) => {
+    if (!range?.from) return undefined;
+
+    const from = new Date(range.from);
+    const to = range?.to ? new Date(range.to) : null;
+
+    const isSameDay = Boolean(
+        to &&
+        from.getFullYear() === to.getFullYear() &&
+        from.getMonth() === to.getMonth() &&
+        from.getDate() === to.getDate()
+    );
+
+    return {
+        from: range.from,
+        // A same-day `to` on the first click is treated as an unfinished range.
+        to: range.to && !isSameDay ? range.to : undefined,
+    };
+};
+
 const ATTENDANCE_DATE_TEXT_COLOR = "#1e3a8a";
 
 const getPreviousAttendanceDateLabel = (stats) => {
@@ -1374,20 +1397,20 @@ const GraphFilterBar = ({
     };
 
     const handleDateRangeSelect = (range) => {
-        // Range mode stores only two values: from and to.
-        // First click selects the start date; second click selects the end date
-        // and closes the calendar. A new click after a completed range starts a new range.
-        if (!range?.from) {
+        // IMPORTANT: keep the calendar open after selecting only the start date.
+        // react-day-picker can return from === to on the first click, so normalize
+        // that same-day value to an unfinished range.
+        const nextRange = normalizeCalendarRangeSelection(range);
+
+        if (!nextRange?.from) {
             handleFilterChange("dateRange", undefined);
             return;
         }
 
-        handleFilterChange("dateRange", {
-            from: range.from,
-            to: range.to || undefined,
-        });
+        handleFilterChange("dateRange", nextRange);
 
-        if (range.to) {
+        // Close only after a real second/end date has been selected.
+        if (nextRange.to) {
             setDatePopoverOpen(false);
         }
     };
@@ -1511,6 +1534,7 @@ const GraphFilterBar = ({
                             <CalendarComponent
                                 initialFocus
                                 mode="range"
+                                min={1}
                                 defaultMonth={filter.dateRange?.from}
                                 selected={filter.dateRange}
                                 onSelect={handleDateRangeSelect}
@@ -1599,17 +1623,17 @@ const DateRangeOnlyFilter = ({ value, onChange }) => {
     const [open, setOpen] = useState(false);
 
     const handleSelect = (range) => {
-        if (!range?.from) {
+        const nextRange = normalizeCalendarRangeSelection(range);
+
+        if (!nextRange?.from) {
             onChange(undefined);
             return;
         }
 
-        onChange({
-            from: range.from,
-            to: range.to || undefined,
-        });
+        onChange(nextRange);
 
-        if (range.to) {
+        // Keep open after first date; close only after a real end date.
+        if (nextRange.to) {
             setOpen(false);
         }
     };
@@ -1644,6 +1668,7 @@ const DateRangeOnlyFilter = ({ value, onChange }) => {
                     <CalendarComponent
                         initialFocus
                         mode="range"
+                        min={1}
                         defaultMonth={value?.from}
                         selected={value}
                         onSelect={handleSelect}
@@ -3960,14 +3985,13 @@ const DashboardHome = () => {
                             type="button"
                             variant="outline"
                             onClick={() => setShowRejoiningTrend(prev => !prev)}
-                            className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                            className="h-9 w-9 p-0 flex items-center justify-center border-blue-200 text-blue-700 hover:bg-blue-50"
+                            aria-label="Toggle Rejoining & Handover Trends"
+                            title="Toggle Rejoining & Handover Trends"
                         >
-                            {showRejoiningTrend ? (
-                                <EyeOff className="w-4 h-4" />
-                            ) : (
-                                <Eye className="w-4 h-4" />
-                            )}
-                            {showRejoiningTrend ? "Hide Rejoining & Handover Trends" : "Show Rejoining & Handover Trends"}
+                            <span className="text-xl font-semibold leading-none" aria-hidden="true">
+                                {showRejoiningTrend ? "−" : "+"}
+                            </span>
                         </Button>
 
                         {showRejoiningTrend && (

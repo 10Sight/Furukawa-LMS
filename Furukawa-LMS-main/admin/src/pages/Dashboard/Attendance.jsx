@@ -209,7 +209,16 @@ const Attendance = () => {
                     `Present count in Unmapped logs: ${summary.presentInUnmappedLogs || 0}\n` +
                     `Total Present Uploaded: ${summary.totalPresentUploaded || 0}`
                 );
-                fetchAttendance();
+                // Show the attendance date that was just uploaded.
+                // The existing [filters] useEffect will fetch that exact date.
+                if (summary.attendanceDate) {
+                    setFilters(prev => ({
+                        ...prev,
+                        date: summary.attendanceDate
+                    }));
+                } else {
+                    fetchAttendance();
+                }
                 if (fileInputRef.current) fileInputRef.current.value = "";
             } else {
                 alert("Upload Failed: " + (res.data.message || "Unknown error"));
@@ -338,6 +347,7 @@ const Attendance = () => {
                     { header: "Out Time", value: "outTime" },
                     { header: "Hrs Worked", value: (row) => row.hrsWorked ?? "" },
                     { header: "Status", value: "status" },
+                    { header: "Early Arrival", value: (row) => row.earlyArrival ?? "" },
                     { header: "Late Arrival", value: (row) => row.lateArrival ?? "" },
                     { header: "Early Departure", value: (row) => row.earlyDeparture ?? "" },
                     { header: "OT Hrs", value: (row) => row.otHrs ?? "" },
@@ -692,8 +702,10 @@ const Attendance = () => {
                                     <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Out</th>
                                     <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Hrs</th>
                                     <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Status</th>
+                                    <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Early Arrival</th>
+                                    {/* <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Early Arrival</th> */}
                                     <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Late</th>
-                                    <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Early</th>
+                                    {/* <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">Early</th> */}
                                     <th className="py-3 pl-3 pr-3 font-medium whitespace-nowrap">OT Hrs</th>
                                     <th className="py-3 pl-3 pr-6 font-medium whitespace-nowrap text-right">OT Amt</th>
                                 </tr>
@@ -744,10 +756,13 @@ const Attendance = () => {
                                                     {log.status || 'ABSENT'}
                                                 </span>
                                             </td>
-
-                                            <td className="py-3 pl-3 pr-3 text-xs font-mono text-center text-orange-600">
-                                                {Number(log.lateArrival) > 0 ? Number(log.lateArrival).toFixed(2) : <span className="text-slate-300">-</span>}
+                                            <td className="py-3 pl-3 pr-3 text-xs font-mono text-center text-green-700">
+                                                {Number(log.earlyArrival) > 0 ? Number(log.earlyArrival).toFixed(2) : <span className="text-slate-300">-</span>}
                                             </td>
+
+                                            {/* <td className="py-3 pl-3 pr-3 text-xs font-mono text-center text-orange-600">
+                                                {Number(log.lateArrival) > 0 ? Number(log.lateArrival).toFixed(2) : <span className="text-slate-300">-</span>}
+                                            </td> */}
                                             <td className="py-3 pl-3 pr-3 text-xs font-mono text-center text-orange-600">
                                                 {Number(log.earlyDeparture) > 0 ? Number(log.earlyDeparture).toFixed(2) : <span className="text-slate-300">-</span>}
                                             </td>

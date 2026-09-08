@@ -83,8 +83,14 @@ const TakeQuiz = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [conductedBy, setConductedBy] = useState("");
+  const [department, setDepartment] = useState("");
   const nameSearchTimeoutRef = useRef(null);
   const eCodeSearchTimeoutRef = useRef(null);
+
+  const getStudentDepartment = (student) => {
+    if (!student) return "";
+    return student.department?.name || student.department || student.departmentName || "";
+  };
 
   // Scroll to top when the result summary is shown
   useEffect(() => {
@@ -100,6 +106,7 @@ const TakeQuiz = () => {
       const code = (currentUser.userName || "").toUpperCase();
       setECode(code);
       setSelectedStudent(currentUser);
+      setDepartment(getStudentDepartment(currentUser));
     }
   }, [currentUser, canAdminister]);
 
@@ -186,6 +193,7 @@ const TakeQuiz = () => {
         if (exactMatch) {
           setCandidateName(exactMatch.fullName);
           setSelectedStudent(exactMatch);
+          setDepartment(getStudentDepartment(exactMatch));
         }
       } catch (err) {
         console.error("Failed to search student by E.code:", err);
@@ -198,6 +206,7 @@ const TakeQuiz = () => {
     const code = (student.userName || "").toUpperCase();
     setECode(code);
     setSelectedStudent(student);
+    setDepartment(getStudentDepartment(student));
     setShowSuggestions(false);
   };
 
@@ -270,6 +279,7 @@ const TakeQuiz = () => {
               if (restoredSession.eCode) setECode(restoredSession.eCode);
               if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
               if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
+              if (restoredSession.department) setDepartment(restoredSession.department);
 
               setStep("quiz");
               setLoading(false);
@@ -305,6 +315,7 @@ const TakeQuiz = () => {
           if (restoredSession.eCode) setECode(restoredSession.eCode);
           if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
           if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
+          if (restoredSession.department) setDepartment(restoredSession.department);
 
         } else {
           // Initialize fresh attempt
@@ -350,11 +361,12 @@ const TakeQuiz = () => {
         eCode,
         selectedStudent,
         conductedBy,
+        department,
         startTime
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
-  }, [answers, candidateName, eCode, selectedStudent, conductedBy, startTime, step, STORAGE_KEY]);
+  }, [answers, candidateName, eCode, selectedStudent, conductedBy, department, startTime, step, STORAGE_KEY]);
 
   // Timer countdown
   useEffect(() => {
@@ -469,7 +481,8 @@ const TakeQuiz = () => {
         studentId: studentIdToSubmit,
         candidateName: submitCandidateName,
         eCode: submitECode,
-        conductedBy: conductedBy
+        conductedBy: conductedBy,
+        department: department.trim()
       });
 
       const resultData = response.data.data;
@@ -808,7 +821,13 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">{t("takeQuiz.meta.department")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-black px-1 font-semibold font-sans">
-                  {(selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName) || "—"}
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full bg-transparent focus:outline-none focus:ring-0 text-black border-none"
+                    placeholder={t("takeQuiz.phEnterDepartment")}
+                  />
                 </span>
               </div>
             </div>
@@ -1084,7 +1103,7 @@ const TakeQuiz = () => {
     const processName = quiz?.subSectionNames && quiz.subSectionNames.length > 0
       ? quiz.subSectionNames.join(", ")
       : quiz?.title || "—";
-    const department = selectedStudent?.department?.name || selectedStudent?.department || selectedStudent?.departmentName || "—";
+    const resultDepartment = department || getStudentDepartment(selectedStudent) || "—";
     const testDate = result.createdAt
       ? new Date(result.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.')
       : new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
@@ -1143,7 +1162,7 @@ const TakeQuiz = () => {
                 </div>
                 <div>
                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.department")}</div>
-                  <div className="text-sm font-bold text-gray-800 truncate">{department}</div>
+                  <div className="text-sm font-bold text-gray-800 truncate">{resultDepartment}</div>
                 </div>
                 <div>
                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.processName")}</div>

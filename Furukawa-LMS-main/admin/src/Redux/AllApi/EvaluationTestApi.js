@@ -72,6 +72,16 @@ export const EvaluationTestApi = createApi({
             }),
             providesTags: ["EvaluationAttempt"],
         }),
+        getStudentEvaluationTestAttempts: builder.query({
+            query: (studentId) => ({
+                url: `/api/evaluation-tests/attempts/student/${studentId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, studentId) => [
+                { type: "EvaluationAttempt", id: `STUDENT_${studentId}` },
+                "EvaluationAttempt",
+            ],
+        }),
         createEvaluationTestAttempt: builder.mutation({
             query: (data) => ({
                 url: "/api/evaluation-tests/attempts",
@@ -111,6 +121,7 @@ export const {
     useGetEvaluationTestAttemptsQuery,
     useGetEvaluationTestAttemptByIdQuery,
     useGetEvaluationTestAttemptsByTestIdQuery,
+    useGetStudentEvaluationTestAttemptsQuery,
     useCreateEvaluationTestAttemptMutation,
     useUpdateEvaluationTestAttemptMutation,
     useDeleteEvaluationTestAttemptMutation,

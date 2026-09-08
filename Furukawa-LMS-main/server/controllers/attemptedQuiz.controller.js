@@ -868,7 +868,7 @@ export const startQuiz = asyncHandler(async (req, res) => {
 });
 
 export const submitQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy } = req.body;
+    const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy, department } = req.body;
     let userId = req.user.id;
 
     const isCustomAdminOrTrainer = req.user?.role === 'CUSTOM' &&
@@ -921,12 +921,21 @@ export const submitQuiz = asyncHandler(async (req, res) => {
                 [req.user.id]
             );
             const parentUnit = currentUserRows[0]?.unit || "FME";
-            const parentDeptId = currentUserRows[0]?.departmentId || null;
-            const parentDeptName = currentUserRows[0]?.department || null;
             const parentSectionId = currentUserRows[0]?.sectionId || null;
             const parentLineId = currentUserRows[0]?.lineId || null;
             const parentSubSectionId = currentUserRows[0]?.subSectionId || null;
             const parentStationId = currentUserRows[0]?.stationId || null;
+
+            // Prefer the department typed/selected on the quiz paper; fall back to the
+            // submitting admin/trainer's own department when none was provided.
+            const trimmedDepartment = (department || "").trim();
+            let resolvedDeptId = currentUserRows[0]?.departmentId || null;
+            let resolvedDeptName = currentUserRows[0]?.department || null;
+            if (trimmedDepartment) {
+                resolvedDeptName = trimmedDepartment;
+                const [deptRows] = await executeQuery("SELECT id FROM departments WHERE name = ?", [trimmedDepartment]);
+                resolvedDeptId = deptRows.length > 0 ? deptRows[0].id : null;
+            }
 
             const fields = [
                 "fullName", "userName", "slug", "email", "role", "password", "unit", "status",
@@ -950,8 +959,8 @@ export const submitQuiz = asyncHandler(async (req, res) => {
                 0, // isTrainer
                 "L1",
                 0, // isTemporary
-                parentDeptId,
-                parentDeptName,
+                resolvedDeptId,
+                resolvedDeptName,
                 parentSectionId,
                 parentLineId,
                 parentSubSectionId,

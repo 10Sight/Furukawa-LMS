@@ -91,8 +91,15 @@ const normalizeContentStructure = (structure, fallbackTitle) => {
     ];
 };
 
-const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
-    const { id, attemptId } = useParams();
+const EvaluationTestAttemptPage = ({
+    isViewMode = false,
+    attemptId: propAttemptId = null,
+    testId: propTestId = null,
+    onBack = null
+}) => {
+    const { id: paramId, attemptId: paramAttemptId } = useParams();
+    const id = propTestId || paramId;
+    const attemptId = propAttemptId || paramAttemptId;
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const location = useLocation();
@@ -1056,7 +1063,10 @@ const EvaluationTestAttemptPage = ({ isViewMode = false }) => {
                     <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => navigate(fromPath, { state: { from: grandFromPath } })}
+                        onClick={() => {
+                            if (onBack) onBack();
+                            else navigate(fromPath, { state: { from: grandFromPath } });
+                        }}
                         className="h-9 w-9 border-gray-200 text-gray-600 hover:text-gray-800"
                     >
                         <IconArrowLeft className="h-5 w-5" />

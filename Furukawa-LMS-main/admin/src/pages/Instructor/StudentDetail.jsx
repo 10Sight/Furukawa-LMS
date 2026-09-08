@@ -5,6 +5,8 @@ import { useGetStudentProgressQuery } from "@/Redux/AllApi/ProgressApi";
 import { useGetStudentSubmissionsQuery } from "@/Redux/AllApi/SubmissionApi";
 import { useGetStudentAttemptsQuery } from "@/Redux/AllApi/AttemptedQuizApi";
 import { useGetStudentOJTsQuery, useCreateOnJobTrainingMutation } from "@/Redux/AllApi/OnJobTrainingApi";
+import { useGetStudentEvaluationTestAttemptsQuery } from "@/Redux/AllApi/EvaluationTestApi";
+import EvaluationTestAttemptPage from "@/pages/Admin/EvaluationTest/EvaluationTestAttemptPage";
 import { useGetLinesByDepartmentQuery } from "@/Redux/AllApi/LineApi";
 import { useGetMachinesByLineQuery } from "@/Redux/AllApi/MachineApi";
 import {
@@ -54,6 +56,7 @@ import {
     IconMail,
     IconPhone,
     IconRefresh,
+    IconClipboardCheck,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -70,6 +73,9 @@ const StudentDetail = () => {
     const [selectedLine, setSelectedLine] = useState("");
     const [selectedMachine, setSelectedMachine] = useState("");
     const [selectedOjt, setSelectedOjt] = useState(null);
+
+    // Dojo Evaluation Test State
+    const [selectedEvaluationAttemptId, setSelectedEvaluationAttemptId] = useState(null);
 
     // API Queries
     const {
@@ -123,6 +129,16 @@ const StudentDetail = () => {
     });
     const [createOJT] = useCreateOnJobTrainingMutation();
     const ojt = ojtData?.data?.[0];
+
+    const {
+        data: dojoAttemptsData,
+        isLoading: dojoAttemptsLoading,
+        refetch: refetchDojoAttempts,
+    } = useGetStudentEvaluationTestAttemptsQuery(studentId, {
+        skip: !studentId || studentId === "undefined",
+        refetchOnMountOrArgChange: true,
+    });
+    const dojoAttempts = dojoAttemptsData?.data || [];
 
     // Fetch lines dependent on student department
     // student.department can be populated object or ID string. Safely handle both.
@@ -191,7 +207,7 @@ const StudentDetail = () => {
     }, [progressList, submissions, attempts]);
 
     const handleRefreshAll = () => {
-        [refetchStudent, refetchProgress, refetchSubmissions, refetchAttempts, refetchOjt].forEach(fn => {
+        [refetchStudent, refetchProgress, refetchSubmissions, refetchAttempts, refetchOjt, refetchDojoAttempts].forEach(fn => {
             try { fn(); } catch (e) { /* query not started yet, nothing to refresh */ }
         });
         toast.success("Operator data refreshed successfully!");
@@ -542,6 +558,7 @@ const StudentDetail = () => {
                     <TabsTrigger value="submissions">Submissions ({stats.totalSubmissions})</TabsTrigger>
                     <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
                     <TabsTrigger value="ojt">On Job Training</TabsTrigger>
+                    <TabsTrigger value="dojoEvaluation">Dojo Evaluation Test ({dojoAttempts.length})</TabsTrigger>
                     <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
                     <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
                 </TabsList>
@@ -1095,6 +1112,116 @@ const StudentDetail = () => {
                                     </TableCell>
                                   </TableRow>
                                 ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="dojoEvaluation">
+                  {selectedEvaluationAttemptId ? (
+                    <EvaluationTestAttemptPage
+                      attemptId={selectedEvaluationAttemptId}
+                      isViewMode={true}
+                      onBack={() => setSelectedEvaluationAttemptId(null)}
+                    />
+                  ) : (
+                    <Card className="border-slate-200 shadow-md">
+                      <CardHeader className="pb-3 border-b bg-slate-50/50">
+                        <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                          <IconClipboardCheck className="h-5 w-5 text-blue-600" />
+                          Dojo Evaluation Test Portfolio
+                        </CardTitle>
+                        <CardDescription>
+                          Practical DOJO evaluation sheets submitted for this operator
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-6">
+                        {dojoAttemptsLoading ? (
+                          <div className="space-y-3">
+                            {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+                          </div>
+                        ) : dojoAttempts.length === 0 ? (
+                          <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50/30 text-slate-500">
+                            <IconClipboardCheck className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                            <h3 className="text-base font-semibold text-slate-700">No Dojo Evaluation Attempts</h3>
+                            <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+                              This operator has not submitted any practical DOJO evaluation sheets yet.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                            <Table>
+                              <TableHeader className="bg-slate-50">
+                                <TableRow>
+                                  <TableHead className="font-bold text-slate-700">Test Title</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Department / Section</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Educator</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Evaluation Date</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Approval</TableHead>
+                                  <TableHead className="font-bold text-slate-700">Status</TableHead>
+                                  <TableHead className="font-bold text-slate-700 text-right">Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {dojoAttempts.map((attempt) => {
+                                  const approvedStatus = attempt.attemptData?._approvedStatus;
+                                  const confirmedStatus = attempt.attemptData?._confirmedStatus;
+                                  const isRejected = approvedStatus === "REJECTED" || confirmedStatus === "REJECTED";
+                                  const isFullyApproved = approvedStatus === "APPROVED" && confirmedStatus === "APPROVED";
+                                  const statusLabel = isRejected ? "Failed" : isFullyApproved ? "Passed" : "In Progress";
+                                  const statusClass = isRejected
+                                    ? "bg-red-100 text-red-800 border-red-200 hover:bg-red-100"
+                                    : isFullyApproved
+                                      ? "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                                      : "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100";
+
+                                  return (
+                                    <TableRow key={attempt.id} className="hover:bg-slate-50/40 transition-colors">
+                                      <TableCell className="font-semibold text-slate-900">
+                                        {attempt.testTitle || "Evaluation Test"}
+                                      </TableCell>
+                                      <TableCell className="text-slate-600">
+                                        <span className="font-medium">{attempt.departmentName || "-"}</span>
+                                        <span className="text-slate-400 mx-1">/</span>
+                                        <span className="text-xs">{attempt.sectionName || "-"}</span>
+                                      </TableCell>
+                                      <TableCell className="text-slate-600">
+                                        {attempt.educatorName || "-"}
+                                      </TableCell>
+                                      <TableCell className="text-slate-600">
+                                        {attempt.createdAt ? new Date(attempt.createdAt).toLocaleDateString() : "-"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex flex-wrap gap-1">
+                                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${approvedStatus === "APPROVED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : approvedStatus === "REJECTED" ? "bg-red-50 text-red-700 border-red-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                                            Approved: {approvedStatus || "Pending"}
+                                          </Badge>
+                                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${confirmedStatus === "APPROVED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : confirmedStatus === "REJECTED" ? "bg-red-50 text-red-700 border-red-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                                            Confirmed: {confirmedStatus || "Pending"}
+                                          </Badge>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge className={`font-bold ${statusClass}`}>{statusLabel}</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="border-indigo-100 text-indigo-700 hover:bg-indigo-50/50 hover:text-indigo-800 gap-1.5"
+                                          onClick={() => setSelectedEvaluationAttemptId(attempt.id)}
+                                        >
+                                          <IconEye className="h-4 w-4" />
+                                          View Sheet
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
                               </TableBody>
                             </Table>
                           </div>

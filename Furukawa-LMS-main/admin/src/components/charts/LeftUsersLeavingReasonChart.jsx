@@ -165,9 +165,9 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
 
-    const [candidateType, setCandidateType] = useState('dojo');
+    const [candidateType, setCandidateType] = useState('operator');
     const [viewMode,      setViewMode]      = useState('reason');
-    const [timeframe,     setTimeframe]     = useState('monthly');
+    const [timeframe,     setTimeframe]     = useState('daily');
     const [rawStart,      setRawStart]      = useState('');
     const [rawEnd,        setRawEnd]        = useState('');
     const [selectedDepts,    setSelectedDepts]    = useState([]);
@@ -246,7 +246,8 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
     };
 
     const handleReset = () => {
-        setTimeframe('monthly');
+        setCandidateType('operator');
+        setTimeframe('daily');
         setRawStart('');
         setRawEnd('');
         setSelectedDepts([]);

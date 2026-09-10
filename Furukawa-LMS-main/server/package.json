@@ -21,6 +21,8 @@
     ]
   },
   "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "adm-zip": "^0.5.18",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.2",

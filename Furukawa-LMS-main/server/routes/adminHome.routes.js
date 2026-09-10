@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getOnJobTrainingStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus, getLeftUsersReasonTrend } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getOnJobTrainingStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus, getLeftUsersReasonTrend, getJoiningHandoverCohortTrend } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -52,5 +52,8 @@ router.get("/multi-skilling-status", verifyJWT, authorizeRoles("isAdmin", "SUPER
 
 // Get Left Users Leaving-Reason Trend (DOJO Candidates vs Operators) for Admin Home
 router.get("/left-users-reason-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getLeftUsersReasonTrend);
+
+// Get Joining, Handover & Left Cohort Trend for Admin Home
+router.get("/joining-handover-cohort-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getJoiningHandoverCohortTrend);
 
 export default router;

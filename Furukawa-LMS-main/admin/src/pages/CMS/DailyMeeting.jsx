@@ -24,13 +24,17 @@ import {
     useGetAllDepartmentsQuery, useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
     useGetDailyMorningMeetingsQuery, useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation, useCloneDailyMorningMeetingMutation,
-    useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation
+    useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation,
+    useMigrateDailyMorningMeetingToM365Mutation, useRefreshDailyMorningMeetingEmbedUrlMutation,
+    useSaveDailyMorningMeetingSheetMutation, useLazyGetDailyMorningMeetingM365SnapshotQuery
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import ExcelClone from "@/components/admin/excelClone/ExcelClone";
 import ExcelGraph from "@/components/admin/excelClone/ExcelGraph";
+import MicrosoftExcelEmbed from "@/components/admin/m365Excel/MicrosoftExcelEmbed";
+import { IconCloudUpload, IconChartBar } from "@tabler/icons-react";
 
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
@@ -374,6 +378,67 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const [cloneMeeting, { isLoading: isCloning }] = useCloneDailyMorningMeetingMutation();
     const [updateMeeting, { isLoading: isUpdating }] = useUpdateDailyMorningMeetingMutation();
     const [deleteMeeting, { isLoading: isDeleting }] = useDeleteDailyMorningMeetingMutation();
+    const [migrateToM365, { isLoading: isMigrating }] = useMigrateDailyMorningMeetingToM365Mutation();
+    const [refreshEmbedUrl, { isLoading: isRefreshingEmbed }] = useRefreshDailyMorningMeetingEmbedUrlMutation();
+    const [saveMeetingSheet] = useSaveDailyMorningMeetingSheetMutation();
+    const [fetchM365Snapshot, { isFetching: isLoadingM365Chart }] = useLazyGetDailyMorningMeetingM365SnapshotQuery();
+
+    // M365-backed meetings have no live in-browser editor to pull cell values from
+    // (editing happens in a separate Excel Online tab), so the chart is fed by an
+    // on-demand snapshot pulled from Microsoft Graph instead of live keystrokes.
+    const handleLoadM365Chart = async () => {
+        try {
+            const res = await fetchM365Snapshot(selectedMeeting.id).unwrap();
+            const snapshot = res.data;
+            const sheetName = snapshot.sheetName || selectedMeeting.activeSheet || "Sheet 1";
+            const existingCharts = selectedMeeting.sheets?.[sheetName]?.charts;
+            setExcelState({
+                sheets: {
+                    [sheetName]: {
+                        charts: existingCharts,
+                        rowCount: snapshot.rowCount,
+                        columnCount: snapshot.columnCount,
+                    }
+                },
+                activeSheetName: sheetName,
+                displayGrid: snapshot.displayGrid,
+                columnCount: snapshot.columnCount,
+                rowCount: snapshot.rowCount,
+            });
+        } catch (err) {
+            toast.error(err?.data?.message || "Failed to load live data from Excel Online.");
+        }
+    };
+
+    // Chart config (type/columns/colors) has nowhere else to live for a M365
+    // meeting — ExcelClone isn't mounted to persist it the way it does for
+    // LOCAL_JSON meetings — so this saves straight through the same sheet-save
+    // endpoint, merging into whatever sheetData already exists (e.g. from before
+    // migration) rather than overwriting it.
+    const handleM365ChartsChange = async (newCharts) => {
+        // Mirrors ExcelClone's own persistCharts, which no-ops when its `readOnly`
+        // prop is set — same rule here since there's no ExcelClone instance mounted
+        // to enforce it for a M365-backed meeting.
+        if (!excelState || !selectedMeeting || mode !== "edit") return;
+        const sheetName = excelState.activeSheetName;
+        setExcelState((prev) => prev ? {
+            ...prev,
+            sheets: { ...prev.sheets, [sheetName]: { ...prev.sheets[sheetName], charts: newCharts } }
+        } : prev);
+        try {
+            const baseSheets = selectedMeeting.sheets || {};
+            const nextSheets = {
+                ...baseSheets,
+                [sheetName]: {
+                    ...(baseSheets[sheetName] || { cells: {}, rowCount: excelState.rowCount, columnCount: excelState.columnCount }),
+                    charts: newCharts
+                }
+            };
+            await saveMeetingSheet({ meetingId: selectedMeeting.id, sheets: nextSheets, activeSheet: sheetName }).unwrap();
+        } catch {
+            toast.error("Failed to save chart settings.");
+        }
+    };
 
     const openView = (meeting) => updateParams({ meeting: String(meeting.id), mode: "view" });
     const openEdit = (meeting) => updateParams({ meeting: String(meeting.id), mode: "edit" });
@@ -422,6 +487,23 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
         }
     };
 
+    const handleMigrateToM365 = async () => {
+        try {
+            await migrateToM365({ meetingId: selectedMeeting.id }).unwrap();
+            toast.success("Meeting migrated to Microsoft 365!");
+        } catch (err) {
+            toast.error(err?.data?.message || "Failed to migrate to Microsoft 365.");
+        }
+    };
+
+    const handleRefreshEmbedUrl = async () => {
+        try {
+            await refreshEmbedUrl({ meetingId: selectedMeeting.id }).unwrap();
+        } catch (err) {
+            toast.error(err?.data?.message || "Failed to refresh the Excel embed link.");
+        }
+    };
+
     if (mode !== "list") {
         return (
             <div className="space-y-3 p-3">
@@ -465,6 +547,18 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                                     {isGraphVisible ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
                                     <span>{isGraphVisible ? "Hide Charts" : "Show Charts"}</span>
                                 </Button>
+                                {canUpdate && selectedMeeting.fileProvider !== "M365_SHAREPOINT" && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="shrink-0 cursor-pointer flex items-center gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                                        onClick={handleMigrateToM365}
+                                        disabled={isMigrating}
+                                        title="Copy this meeting's spreadsheet into Microsoft 365 Excel Online"
+                                    >
+                                        {isMigrating ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCloudUpload className="w-3.5 h-3.5" />} Migrate to Microsoft 365
+                                    </Button>
+                                )}
                                 {canUpdate && (
                                     <Button variant="outline" size="sm" className="shrink-0 cursor-pointer flex items-center gap-1.5" onClick={() => setEditDetailsMeeting(selectedMeeting)}>
                                         <IconPencil className="w-3.5 h-3.5" /> Edit Details
@@ -473,13 +567,45 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                             </div>
                         </CardHeader>
                         <CardContent className="p-0 bg-white">
-                            <div className={cn(
-                                "transition-all duration-300 ease-in-out overflow-hidden bg-slate-50/50 border-b border-slate-100",
-                                isGraphVisible ? "max-h-[500px] opacity-100 p-3" : "max-h-0 opacity-0 p-0 border-b-0"
-                            )}>
-                                <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
-                            </div>
-                            <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />
+                            {selectedMeeting.fileProvider === "M365_SHAREPOINT" ? (
+                                <>
+                                    <div className={cn(
+                                        "transition-all duration-300 ease-in-out overflow-hidden bg-slate-50/50 border-b border-slate-100",
+                                        isGraphVisible ? "max-h-[500px] opacity-100 p-3" : "max-h-0 opacity-0 p-0 border-b-0"
+                                    )}>
+                                        {excelState ? (
+                                            <ExcelGraph excelData={excelState} onChartsChange={handleM365ChartsChange} />
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                                                <p className="text-xs text-slate-500 max-w-xs">
+                                                    Charts read a snapshot of this workbook's live values from Microsoft 365 — pull it whenever you want an up-to-date chart.
+                                                </p>
+                                                <Button size="sm" className="cursor-pointer flex items-center gap-1.5" onClick={handleLoadM365Chart} disabled={isLoadingM365Chart}>
+                                                    {isLoadingM365Chart ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconChartBar className="w-3.5 h-3.5" />} Load Chart from Excel
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="p-3">
+                                        <MicrosoftExcelEmbed
+                                            webUrl={selectedMeeting.m365WebUrl}
+                                            title={selectedMeeting.agenda}
+                                            onRefresh={canUpdate ? handleRefreshEmbedUrl : undefined}
+                                            isRefreshing={isRefreshingEmbed}
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className={cn(
+                                        "transition-all duration-300 ease-in-out overflow-hidden bg-slate-50/50 border-b border-slate-100",
+                                        isGraphVisible ? "max-h-[500px] opacity-100 p-3" : "max-h-0 opacity-0 p-0 border-b-0"
+                                    )}>
+                                        <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
+                                    </div>
+                                    <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />
+                                </>
+                            )}
                         </CardContent>
                     </Card>
                 ) : null}

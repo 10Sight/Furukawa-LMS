@@ -1748,3 +1748,123 @@ export const getLeftUsersReasonTrend = asyncHandler(async (req, res) => {
         }, "Left users leaving-reason trend fetched successfully")
     );
 });
+
+
+/**
+ * Get Joining, Handover & Left Cohort Trend for Admin Home page.
+ * For every period (daily/monthly/yearly) this groups DOJO hires by their joining date — same
+ * identity/date rules as getDojoHiringTrend — and reports three counts per cohort:
+ *   - joinedCount:   total hires whose joining period fell in that bucket
+ *   - handoverCount: how many of them have ever completed handover (approved in any
+ *                    handover_sheets entry, regardless of when — handover typically happens
+ *                    well after the joining date, so this is intentionally NOT date-scoped)
+ *   - leftCount:     how many of them currently have status = 'LEFT'
+ * The handover lookup is a single LEFT JOIN against a pre-aggregated subquery of approved
+ * studentIds (rather than an IN-list of candidate ids), which keeps this a fixed number of
+ * query parameters regardless of cohort size.
+ */
+export const getJoiningHandoverCohortTrend = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'monthly', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'daily') {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    const formatMap = {
+        daily:   "FORMAT(COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)), 'yyyy-MM-dd')",
+        monthly: "FORMAT(COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)), 'yyyy-MM')",
+        yearly:  "FORMAT(COALESCE(u.joiningDate, CAST(u.createdAt AS DATE)), 'yyyy')",
+    };
+    const periodExpr = formatMap[safeGroupBy];
+
+    // Temp users store dept in targetDeptId; after handover it moves to departmentId.
+    // Accepts comma-separated IDs for multi-select.
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const params = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND (u.targetDeptId IN (${ph}) OR u.departmentId IN (${ph}))`;
+        params.push(...deptIds, ...deptIds);
+    }
+
+    // Date range appears twice (joiningDate branch + createdAt fallback branch) so the WHERE
+    // clause stays sargable instead of wrapping the column in COALESCE(...) >= ?.
+    const dateRangeParams = [start, end, start, end];
+
+    const [rows] = await executeQuery(`
+        SELECT
+            ${periodExpr}                                                       AS period,
+            COUNT(DISTINCT u.id)                                                AS joinedCount,
+            COUNT(DISTINCT CASE WHEN ho.userId IS NOT NULL THEN u.id END)       AS handoverCount,
+            COUNT(DISTINCT CASE WHEN u.status = 'LEFT' THEN u.id END)           AS leftCount
+        FROM users u
+        LEFT JOIN (
+            SELECT DISTINCT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS userId
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) AS entry
+            WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+        ) ho ON ho.userId = u.id
+        WHERE (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          AND (
+              (u.joiningDate >= ? AND u.joiningDate <= ?)
+              OR (u.joiningDate IS NULL AND CAST(u.createdAt AS DATE) >= ? AND CAST(u.createdAt AS DATE) <= ?)
+          )
+          ${deptClause}
+        GROUP BY ${periodExpr}
+        ORDER BY period ASC
+    `, [...dateRangeParams, ...params]);
+
+    const periodMap = {};
+    rows.forEach(r => {
+        if (!r.period) return;
+        periodMap[r.period] = {
+            period: r.period,
+            joinedCount: Number(r.joinedCount) || 0,
+            handoverCount: Number(r.handoverCount) || 0,
+            leftCount: Number(r.leftCount) || 0,
+        };
+    });
+
+    const EMPTY_ROW = { joinedCount: 0, handoverCount: 0, leftCount: 0 };
+    const trend = buildFullPeriods(safeGroupBy, start, end).map(period =>
+        periodMap[period] ?? { period, ...EMPTY_ROW }
+    );
+
+    const totals = trend.reduce((acc, r) => {
+        acc.totalJoined += r.joinedCount;
+        acc.totalHandover += r.handoverCount;
+        acc.totalLeft += r.leftCount;
+        return acc;
+    }, { totalJoined: 0, totalHandover: 0, totalLeft: 0 });
+
+    const summary = {
+        ...totals,
+        handoverRate: totals.totalJoined > 0 ? Math.round((totals.totalHandover / totals.totalJoined) * 1000) / 10 : 0,
+        attritionRate: totals.totalJoined > 0 ? Math.round((totals.totalLeft / totals.totalJoined) * 1000) / 10 : 0,
+        pendingHandover: Math.max(0, totals.totalJoined - totals.totalHandover - totals.totalLeft),
+        periodsTracked: trend.length,
+    };
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, summary, groupBy: safeGroupBy, start, end }, "Joining, handover & left cohort trend fetched successfully")
+    );
+});

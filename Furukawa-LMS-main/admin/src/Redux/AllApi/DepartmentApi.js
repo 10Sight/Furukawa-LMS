@@ -343,6 +343,32 @@ export const departmentApi = createApi({
             }),
             invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-morning-meetings-${sectionId}` }],
         }),
+
+        migrateDailyMorningMeetingToM365: builder.mutation({
+            query: ({ meetingId }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/migrate-to-m365`,
+                method: "POST",
+            }),
+            invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+        }),
+
+        refreshDailyMorningMeetingEmbedUrl: builder.mutation({
+            query: ({ meetingId }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/refresh-embed-url`,
+                method: "POST",
+            }),
+            invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+        }),
+
+        // Not cached via providesTags/invalidatesTags — this is a manual, on-demand
+        // "pull the latest values from Excel Online" snapshot, not part of the
+        // meeting record itself.
+        getDailyMorningMeetingM365Snapshot: builder.query({
+            query: (meetingId) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/m365-snapshot`,
+                method: "GET",
+            }),
+        }),
     }),
 });
 
@@ -382,4 +408,7 @@ export const {
     useUpdateDailyMorningMeetingMutation,
     useSaveDailyMorningMeetingSheetMutation,
     useDeleteDailyMorningMeetingMutation,
+    useMigrateDailyMorningMeetingToM365Mutation,
+    useRefreshDailyMorningMeetingEmbedUrlMutation,
+    useLazyGetDailyMorningMeetingM365SnapshotQuery,
 } = departmentApi;

@@ -1,0 +1,188 @@
+import { ClientSecretCredential } from "@azure/identity";
+import { Client } from "@microsoft/microsoft-graph-client";
+import { TokenCredentialAuthenticationProvider } from "@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials/index.js";
+import logger from "../logger/winston.logger.js";
+
+// 0 -> A, 1 -> B, ..., 25 -> Z, 26 -> AA, matching ExcelClone's own column letters.
+const columnIndexToLetter = (index) => {
+    let n = index + 1;
+    let letters = "";
+    while (n > 0) {
+        const rem = (n - 1) % 26;
+        letters = String.fromCharCode(65 + rem) + letters;
+        n = Math.floor((n - 1) / 26);
+    }
+    return letters;
+};
+
+// Daemon-only (app-only) Graph access: files are created/edited "as the app",
+// not as an individual signed-in user. That's fine for provisioning/backup,
+// but co-authoring/edit-history won't reflect real LMS users until this app
+// also does delegated (on-behalf-of) auth for each person — out of scope here.
+class MicrosoftGraphService {
+    constructor() {
+        this.client = null;
+    }
+
+    get tenantId() { return process.env.AZURE_TENANT_ID; }
+    get clientId() { return process.env.AZURE_CLIENT_ID; }
+    get clientSecret() { return process.env.AZURE_CLIENT_SECRET; }
+    get driveId() { return process.env.SHAREPOINT_DRIVE_ID; }
+
+    // Lets callers check up front and fail with a clear message instead of a
+    // confusing Graph SDK error the first time a request actually goes out.
+    isConfigured() {
+        return !!(this.tenantId && this.clientId && this.clientSecret && this.driveId);
+    }
+
+    getClient() {
+        if (!this.isConfigured()) {
+            throw new Error(
+                "Microsoft 365 integration is not configured. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, " +
+                "AZURE_CLIENT_SECRET and SHAREPOINT_DRIVE_ID in the server environment."
+            );
+        }
+        if (!this.client) {
+            const credential = new ClientSecretCredential(this.tenantId, this.clientId, this.clientSecret);
+            const authProvider = new TokenCredentialAuthenticationProvider(credential, {
+                scopes: ["https://graph.microsoft.com/.default"]
+            });
+            this.client = Client.initWithMiddleware({ authProvider });
+        }
+        return this.client;
+    }
+
+    async executeWithRetry(fn, maxRetries = 3) {
+        let attempt = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            try {
+                return await fn();
+            } catch (error) {
+                attempt++;
+                const isRateLimited = error.statusCode === 429 || error.statusCode === 503;
+                if (isRateLimited && attempt < maxRetries) {
+                    const retryAfter = error.headers?.get?.("Retry-After") || Math.pow(2, attempt);
+                    const delayMs = parseInt(retryAfter, 10) * 1000 + Math.random() * 200;
+                    logger.warn(`Microsoft Graph rate-limited. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})`);
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                } else {
+                    throw error;
+                }
+            }
+        }
+    }
+
+    async ensureFolder(folderPath) {
+        const client = this.getClient();
+        const segments = folderPath.split("/").filter(Boolean);
+        let builtPath = "";
+        for (const segment of segments) {
+            const parentPath = builtPath;
+            builtPath = builtPath ? `${builtPath}/${segment}` : segment;
+            try {
+                await client.api(`/drives/${this.driveId}/root:/${builtPath}`).get();
+            } catch (err) {
+                if (err.statusCode !== 404) throw err;
+                const parentApi = parentPath
+                    ? `/drives/${this.driveId}/root:/${parentPath}:/children`
+                    : `/drives/${this.driveId}/root/children`;
+                await client.api(parentApi).post({
+                    name: segment,
+                    folder: {},
+                    "@microsoft.graph.conflictBehavior": "replace"
+                });
+            }
+        }
+    }
+
+    /**
+     * Uploads a workbook buffer (already-built .xlsx) into SharePoint and returns
+     * an editable embed link. Caller is responsible for building the buffer
+     * (e.g. via exceljs from the meeting's existing sheetData).
+     */
+    async createMeetingWorkbook({ departmentName, sectionName, meetingId, fileBuffer }) {
+        const cleanDept = (departmentName || "General").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const cleanSection = (sectionName || "Section").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const folderPath = `DailyMeetings/${cleanDept}/${cleanSection}`;
+        const fileName = `DailyMeeting_${meetingId}_${Date.now()}.xlsx`;
+
+        return this.executeWithRetry(async () => {
+            const client = this.getClient();
+            await this.ensureFolder(folderPath);
+
+            const uploadRes = await client
+                .api(`/drives/${this.driveId}/root:/${folderPath}/${fileName}:/content`)
+                .put(fileBuffer);
+
+            const itemId = uploadRes.id;
+            const { webUrl, embedUrl } = await this._createEditLink(itemId);
+
+            return { driveId: this.driveId, itemId, webUrl, embedUrl, fileName, folderPath };
+        });
+    }
+
+    async getEmbedUrl(itemId) {
+        return this.executeWithRetry(() => this._createEditLink(itemId));
+    }
+
+    async _createEditLink(itemId) {
+        const client = this.getClient();
+        const linkRes = await client
+            .api(`/drives/${this.driveId}/items/${itemId}/createLink`)
+            .post({ type: "edit", scope: "organization" });
+
+        const webUrl = linkRes.link.webUrl;
+        const embedUrl = `${webUrl}${webUrl.includes("?") ? "&" : "?"}action=embedview&wdbipreview=true`;
+        return { webUrl, embedUrl };
+    }
+
+    /**
+     * Reads the live computed values of a workbook's first worksheet (no session
+     * needed for a plain read with app-only permissions). Used to feed charts from
+     * a Microsoft-365-backed meeting without keeping a persistent connection open.
+     */
+    async getWorksheetSnapshot(itemId) {
+        return this.executeWithRetry(async () => {
+            const client = this.getClient();
+            const worksheetsRes = await client.api(`/drives/${this.driveId}/items/${itemId}/workbook/worksheets`).get();
+            const sheet = worksheetsRes.value?.[0];
+            if (!sheet) return { sheetName: null, displayGrid: {}, rowCount: 0, columnCount: 0 };
+
+            const rangeRes = await client
+                .api(`/drives/${this.driveId}/items/${itemId}/workbook/worksheets/${sheet.id}/usedRange(valuesOnly=true)`)
+                .get();
+
+            const values = rangeRes.values || [];
+            const rowCount = values.length;
+            const columnCount = rowCount > 0 ? values[0].length : 0;
+            const displayGrid = {};
+            values.forEach((row, r) => {
+                row.forEach((val, c) => {
+                    if (val !== null && val !== "") {
+                        displayGrid[`${columnIndexToLetter(c)}${r + 1}`] = val;
+                    }
+                });
+            });
+
+            return { sheetName: sheet.name, displayGrid, rowCount, columnCount };
+        });
+    }
+
+    // Compensating action: called when the DB write after a successful upload
+    // fails, so we don't leave an orphaned file with nothing pointing at it.
+    async deleteWorkbook(itemId) {
+        if (!itemId || !this.isConfigured()) return;
+        try {
+            await this.executeWithRetry(async () => {
+                const client = this.getClient();
+                await client.api(`/drives/${this.driveId}/items/${itemId}`).delete();
+            });
+        } catch (err) {
+            logger.warn(`Failed to cleanup orphaned M365 file ${itemId}:`, err.message || err);
+        }
+    }
+}
+
+export const microsoftGraphService = new MicrosoftGraphService();
+export default microsoftGraphService;

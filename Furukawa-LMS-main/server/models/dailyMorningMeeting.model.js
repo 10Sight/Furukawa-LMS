@@ -23,6 +23,13 @@ class DailyMorningMeeting {
                     )
                 `);
             }
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'fileProvider', "NVARCHAR(30) NOT NULL DEFAULT 'LOCAL_JSON'");
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365DriveId', 'NVARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365ItemId', 'NVARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365WebUrl', 'NVARCHAR(1000) NULL');
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365EmbedUrl', 'NVARCHAR(2000) NULL');
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'lastSyncedAt', 'DATETIME NULL');
+
             logger.info("Checked/Created daily_morning_meetings table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_morning_meetings table", error);
@@ -88,6 +95,16 @@ class DailyMorningMeeting {
         await executeQuery(
             "UPDATE daily_morning_meetings SET sheetData = ?, updatedAt = GETDATE() WHERE id = ?",
             [dataJson, id]
+        );
+        return DailyMorningMeeting.findById(id);
+    }
+
+    static async updateM365Info(id, { fileProvider, m365DriveId, m365ItemId, m365WebUrl, m365EmbedUrl }) {
+        await executeQuery(
+            `UPDATE daily_morning_meetings
+             SET fileProvider = ?, m365DriveId = ?, m365ItemId = ?, m365WebUrl = ?, m365EmbedUrl = ?, lastSyncedAt = GETDATE(), updatedAt = GETDATE()
+             WHERE id = ?`,
+            [fileProvider, m365DriveId || null, m365ItemId || null, m365WebUrl || null, m365EmbedUrl || null, id]
         );
         return DailyMorningMeeting.findById(id);
     }

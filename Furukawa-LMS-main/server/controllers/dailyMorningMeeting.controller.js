@@ -1,6 +1,9 @@
+import ExcelJS from "exceljs";
 import DailyMorningMeeting from "../models/dailyMorningMeeting.model.js";
 import logger from "../logger/winston.logger.js";
 import { canModifyDailyMeetingSection } from "../utils/dailyMeetingAccess.util.js";
+import { executeQuery } from "../db/mssqlHelper.js";
+import microsoftGraphService from "../services/microsoftGraph.service.js";
 
 const DEFAULT_ROW_COUNT = 30;
 const DEFAULT_COLUMN_COUNT = 15;
@@ -49,7 +52,43 @@ const formatMeetingRow = (row) => {
         createdByName: row.createdByName || "",
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        fileProvider: row.fileProvider || "LOCAL_JSON",
+        m365WebUrl: row.m365WebUrl || null,
+        m365EmbedUrl: row.m365EmbedUrl || null,
+        lastSyncedAt: row.lastSyncedAt || null,
     };
+};
+
+// Builds a real .xlsx buffer from the same { sheets, activeSheet } shape ExcelClone
+// persists, so a migrated meeting opens in Excel Online with its existing cell data
+// instead of a blank workbook. Only plain cell values/formulas are carried over —
+// ExcelClone's charts/media/pivot state aren't representable in a single xlsx sheet.
+const buildWorkbookBuffer = async (workbook) => {
+    const wb = new ExcelJS.Workbook();
+    const sheetNames = Object.keys(workbook.sheets || {});
+    for (const sheetName of sheetNames.length ? sheetNames : ["Sheet 1"]) {
+        const sheetData = workbook.sheets?.[sheetName] || {};
+        const ws = wb.addWorksheet(sheetName.slice(0, 31) || "Sheet 1");
+        const cells = sheetData.cells || {};
+        for (const [cellKey, cell] of Object.entries(cells)) {
+            // ExcelClone keys cells as "row,col" (0-indexed) — see formulaEngine.js.
+            const [r, c] = cellKey.split(",").map(Number);
+            if (Number.isNaN(r) || Number.isNaN(c)) continue;
+            const value = cell?.formula ? { formula: String(cell.formula).replace(/^=/, "") } : (cell?.value ?? "");
+            ws.getCell(r + 1, c + 1).value = value;
+        }
+    }
+    return wb.xlsx.writeBuffer();
+};
+
+const getSectionAndDepartmentNames = async (sectionId) => {
+    const [rows] = await executeQuery(
+        `SELECT s.name AS sectionName, d.name AS departmentName
+         FROM [sections] s LEFT JOIN [departments] d ON d.id = s.departmentId
+         WHERE s.id = ?`,
+        [sectionId]
+    );
+    return rows[0] || {};
 };
 
 export const getMeetingsForSection = async (req, res) => {
@@ -90,6 +129,9 @@ export const getMeetingDetail = async (req, res) => {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
         // Read access is permission-gated only (route middleware) — no department/section lock.
+        // M365-backed meetings render via the embed iframe on the client, which reads the
+        // live workbook straight from Excel Online — the sheetData column is only kept
+        // in sync (best-effort) for search/export/fallback, not used to render the editor.
         const workbook = normalizeWorkbook(parseSheetData(meeting.sheetData));
 
         return res.status(200).json({
@@ -235,6 +277,119 @@ export const saveMeetingSheet = async (req, res) => {
     } catch (error) {
         logger.error("Error in saveMeetingSheet:", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// One-shot, opt-in migration for a single meeting: exports its current sheetData
+// to a real .xlsx and uploads it to SharePoint via Graph. Left as an explicit
+// per-meeting action (not automatic on create) so a Graph outage/misconfiguration
+// never blocks the plain create/save flow every meeting currently depends on.
+export const migrateMeetingToM365 = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!microsoftGraphService.isConfigured()) {
+            return res.status(400).json({
+                success: false,
+                message: "Microsoft 365 integration is not configured on the server yet. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and SHAREPOINT_DRIVE_ID."
+            });
+        }
+
+        const existing = await DailyMorningMeeting.findById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        if (!(await canModifyDailyMeetingSection(req.user, existing.sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+        if (existing.fileProvider === "M365_SHAREPOINT") {
+            return res.status(400).json({ success: false, message: "This meeting is already backed by Microsoft 365." });
+        }
+
+        const workbook = normalizeWorkbook(parseSheetData(existing.sheetData));
+        const fileBuffer = await buildWorkbookBuffer(workbook);
+        const { sectionName, departmentName } = await getSectionAndDepartmentNames(existing.sectionId);
+
+        let uploadResult;
+        try {
+            uploadResult = await microsoftGraphService.createMeetingWorkbook({
+                departmentName, sectionName, meetingId: existing.id, fileBuffer
+            });
+        } catch (graphError) {
+            logger.error("Microsoft Graph upload failed during migrateMeetingToM365:", graphError);
+            return res.status(502).json({ success: false, message: "Failed to create the workbook in Microsoft 365. Please try again." });
+        }
+
+        let meeting;
+        try {
+            meeting = await DailyMorningMeeting.updateM365Info(id, {
+                fileProvider: "M365_SHAREPOINT",
+                m365DriveId: uploadResult.driveId,
+                m365ItemId: uploadResult.itemId,
+                m365WebUrl: uploadResult.webUrl,
+                m365EmbedUrl: uploadResult.embedUrl,
+            });
+        } catch (dbError) {
+            // Compensating action: don't leave an orphaned SharePoint file the DB has no record of.
+            await microsoftGraphService.deleteWorkbook(uploadResult.itemId);
+            throw dbError;
+        }
+
+        return res.status(200).json({ success: true, message: "Meeting migrated to Microsoft 365 successfully", data: formatMeetingRow(meeting) });
+    } catch (error) {
+        logger.error("Error in migrateMeetingToM365:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const refreshMeetingEmbedUrl = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await DailyMorningMeeting.findById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        if (!(await canModifyDailyMeetingSection(req.user, existing.sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+        if (existing.fileProvider !== "M365_SHAREPOINT" || !existing.m365ItemId) {
+            return res.status(400).json({ success: false, message: "This meeting is not backed by Microsoft 365." });
+        }
+
+        const { webUrl, embedUrl } = await microsoftGraphService.getEmbedUrl(existing.m365ItemId);
+        const meeting = await DailyMorningMeeting.updateM365Info(id, {
+            fileProvider: "M365_SHAREPOINT",
+            m365DriveId: existing.m365DriveId,
+            m365ItemId: existing.m365ItemId,
+            m365WebUrl: webUrl,
+            m365EmbedUrl: embedUrl,
+        });
+
+        return res.status(200).json({ success: true, message: "Embed link refreshed", data: formatMeetingRow(meeting) });
+    } catch (error) {
+        logger.error("Error in refreshMeetingEmbedUrl:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// Read-only snapshot of a Microsoft-365-backed meeting's live cell values, used
+// to feed ExcelGraph's charts — gated the same as getMeetingDetail (permission-only,
+// no department/section lock), since it's non-destructive.
+export const getMeetingM365Snapshot = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await DailyMorningMeeting.findById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        if (existing.fileProvider !== "M365_SHAREPOINT" || !existing.m365ItemId) {
+            return res.status(400).json({ success: false, message: "This meeting is not backed by Microsoft 365." });
+        }
+
+        const snapshot = await microsoftGraphService.getWorksheetSnapshot(existing.m365ItemId);
+        return res.status(200).json({ success: true, data: snapshot });
+    } catch (error) {
+        logger.error("Error in getMeetingM365Snapshot:", error);
+        return res.status(500).json({ success: false, message: "Failed to read live data from Microsoft 365. Please try again." });
     }
 };
 

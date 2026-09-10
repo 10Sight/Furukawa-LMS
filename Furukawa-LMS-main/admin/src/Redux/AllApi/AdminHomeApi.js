@@ -145,6 +145,16 @@ export const adminHomeApi = createApi({
             }),
             keepUnusedDataFor: 60,
         }),
+        getJoiningHandoverCohortTrend: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/joining-handover-cohort-trend",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
@@ -165,4 +175,5 @@ export const {
     useGetSkillUpgradationPlanStatusQuery,
     useGetMultiSkillingPlanStatusQuery,
     useGetLeftUsersReasonTrendQuery,
+    useGetJoiningHandoverCohortTrendQuery,
 } = adminHomeApi;

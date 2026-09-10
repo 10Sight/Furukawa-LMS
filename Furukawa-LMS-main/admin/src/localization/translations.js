@@ -306,6 +306,18 @@ export const translations = {
     "charts.failedToLoadHiringTrend": "Failed to load hiring trend.",
     "charts.noHiringData": "No hiring data found for this period.",
 
+    // Joining, Handover & Left Cohort Trend Chart
+    "charts.joiningHandoverCohortTrend": "Joining, Handover & Left Cohort Trend",
+    "charts.joiningHandoverCohortTrendDesc": "Hiring cohorts — how many joined, completed handover, and left, per period",
+    "charts.employeesJoined": "Employees Joined",
+    "charts.handoverCompleted": "Handover Completed",
+    "charts.employeesLeft": "Employees Left",
+    "charts.handoverRate": "Handover Rate",
+    "charts.attritionRate": "Attrition Rate",
+    "charts.pendingHandover": "Pending Handover",
+    "charts.failedToLoadCohortTrend": "Failed to load cohort trend.",
+    "charts.noCohortData": "No cohort data found for this period.",
+
     // Left Users Leaving-Reason Trend Chart
     "charts.leftUsersReasonTrend": "Left Users — Leaving Reason Trend",
     "charts.leftUsersReasonTrendDesc": "Attrition tracking and leaving-reason breakdown for DOJO Candidates and Operators",
@@ -1120,6 +1132,18 @@ export const translations = {
     "charts.failedToLoadHiringTrend": "भर्ती प्रवृत्ति लोड करने में विफल।",
     "charts.noHiringData": "इस अवधि के लिए कोई भर्ती डेटा नहीं मिला।",
 
+    // Joining, Handover & Left Cohort Trend Chart
+    "charts.joiningHandoverCohortTrend": "जॉइनिंग, हैंडओवर और लेफ्ट कोहॉर्ट ट्रेंड",
+    "charts.joiningHandoverCohortTrendDesc": "भर्ती समूह — प्रत्येक अवधि में कितने शामिल हुए, हैंडओवर पूरा किया, और छोड़ गए",
+    "charts.employeesJoined": "कर्मचारी शामिल हुए",
+    "charts.handoverCompleted": "हैंडओवर पूर्ण",
+    "charts.employeesLeft": "कर्मचारी छोड़ गए",
+    "charts.handoverRate": "हैंडओवर दर",
+    "charts.attritionRate": "एट्रिशन दर",
+    "charts.pendingHandover": "लंबित हैंडओवर",
+    "charts.failedToLoadCohortTrend": "कोहॉर्ट ट्रेंड लोड करने में विफल।",
+    "charts.noCohortData": "इस अवधि के लिए कोई कोहॉर्ट डेटा नहीं मिला।",
+
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO उम्मीदवार उपस्थिति स्थिति",
     "charts.attendanceStatusDesc": "उपस्थिति और निकास स्थिति - Dojo उपयोगकर्ता",
@@ -1893,6 +1917,18 @@ export const translations = {
     "charts.totalHired": "総採用数",
     "charts.failedToLoadHiringTrend": "採用傾向の読み込みに失敗しました。",
     "charts.noHiringData": "この期間 of 採用データが見つかりません。",
+
+    // Joining, Handover & Left Cohort Trend Chart
+    "charts.joiningHandoverCohortTrend": "入社・引き継ぎ・退職コホート傾向",
+    "charts.joiningHandoverCohortTrendDesc": "採用コホート — 期間ごとの入社数、引き継ぎ完了数、退職数",
+    "charts.employeesJoined": "入社者数",
+    "charts.handoverCompleted": "引き継ぎ完了",
+    "charts.employeesLeft": "退職者数",
+    "charts.handoverRate": "引き継ぎ率",
+    "charts.attritionRate": "離職率",
+    "charts.pendingHandover": "引き継ぎ保留中",
+    "charts.failedToLoadCohortTrend": "コホート傾向の読み込みに失敗しました。",
+    "charts.noCohortData": "この期間のコホートデータが見つかりません。",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候補者の出席状況",
@@ -2668,6 +2704,18 @@ export const translations = {
     "charts.failedToLoadHiringTrend": "招聘趋势加载失败。",
     "charts.noHiringData": "未找到该时段的招聘数据。",
 
+    // Joining, Handover & Left Cohort Trend Chart
+    "charts.joiningHandoverCohortTrend": "入职、交接与离职群组趋势",
+    "charts.joiningHandoverCohortTrendDesc": "招聘群组 — 每个时段的入职、完成交接和离职人数",
+    "charts.employeesJoined": "入职员工",
+    "charts.handoverCompleted": "交接完成",
+    "charts.employeesLeft": "离职员工",
+    "charts.handoverRate": "交接率",
+    "charts.attritionRate": "流失率",
+    "charts.pendingHandover": "待交接",
+    "charts.failedToLoadCohortTrend": "群组趋势加载失败。",
+    "charts.noCohortData": "未找到该时段的群组数据。",
+
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候选人出勤状态",
     "charts.attendanceStatusDesc": "出勤与离职状态 — Dojo 用户",
@@ -3441,6 +3489,18 @@ export const translations = {
     "charts.totalHired": "Всего нанято",
     "charts.failedToLoadHiringTrend": "Не удалось загрузить тренд найма.",
     "charts.noHiringData": "Данные о найме за этот период не найдены.",
+
+    // Joining, Handover & Left Cohort Trend Chart
+    "charts.joiningHandoverCohortTrend": "Тренд когорты приёма, передачи и увольнения",
+    "charts.joiningHandoverCohortTrendDesc": "Когорты найма — сколько присоединилось, завершило передачу и уволилось за период",
+    "charts.employeesJoined": "Принято сотрудников",
+    "charts.handoverCompleted": "Передача завершена",
+    "charts.employeesLeft": "Уволено сотрудников",
+    "charts.handoverRate": "Коэффициент передачи",
+    "charts.attritionRate": "Коэффициент текучести",
+    "charts.pendingHandover": "Ожидает передачи",
+    "charts.failedToLoadCohortTrend": "Не удалось загрузить тренд когорты.",
+    "charts.noCohortData": "Данные когорты за этот период не найдены.",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "Статус посещаемости кандидатов DOJO",

@@ -4,6 +4,7 @@ import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 
 export const DEFAULT_SKILL_CONFIG = {
     headerDefaults: {
+        processName: '',
         processInCharge: '',
         resultPerson: ''
     },

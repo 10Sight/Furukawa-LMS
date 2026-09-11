@@ -68,6 +68,7 @@ const LevelIcon = ({ level, maxLevels = 4, size = 24 }) => {
 // Static content mapping for fallback
 const DEFAULT_SKILL_CONFIG = {
     headerDefaults: {
+        processName: '',
         processInCharge: '',
         resultPerson: ''
     },
@@ -245,6 +246,7 @@ const SkillMatrixCertificate = ({
         dateOfEvaluation: formatTodayDate(),
         trainee: studentName || '',
         employeeNo: employeeCode || '',
+        processName: '',
         processInCharge: '',
         resultPerson: ''
     });
@@ -374,7 +376,8 @@ const SkillMatrixCertificate = ({
                     setHeaderData(prev => ({
                         ...prev,
                         trainee: studentName || prev.trainee,
-                        employeeNo: user.empId || employeeCode || prev.employeeNo
+                        employeeNo: user.empId || employeeCode || prev.employeeNo,
+                        processName: prev.processName || user.subSectionName || ''
                     }));
                     setStudentCurrentLevel(user.currentLevel || null);
                     setStudentSkillMap(user.currentSkill || {});
@@ -453,6 +456,7 @@ const SkillMatrixCertificate = ({
                 dateOfEvaluation: formatTodayDate(),
                 trainee: studentName || '',
                 employeeNo: employeeCode || '',
+                processName: '',
                 processInCharge: '',
                 resultPerson: authUser?.fullName || authUser?.name || ''
             };
@@ -717,7 +721,8 @@ const SkillMatrixCertificate = ({
         setHeaderData(prev => ({
             ...prev,
             trainee: student.fullName,
-            employeeNo: student.empId || ''
+            employeeNo: student.empId || '',
+            processName: student.subSectionName || prev.processName || ''
         }));
         setTraineeSuggestions([]);
         setShowTraineeSuggestions(false);
@@ -936,6 +941,19 @@ const SkillMatrixCertificate = ({
                                         value={headerData.employeeNo}
                                         onChange={e => setHeaderData({ ...headerData, employeeNo: e.target.value })}
                                         disabled={!isEditable}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex border-b border-black">
+                                <div className="w-[40%] p-2 font-bold bg-white text-center border-r border-black flex items-center justify-center text-xs">Process Name</div>
+                                <div className="w-[60%] p-2 text-center text-blue-600 font-bold bg-white">
+                                    <input
+                                        type="text"
+                                        className="w-full text-center outline-none bg-transparent"
+                                        value={headerData.processName || ''}
+                                        onChange={e => setHeaderData(prev => ({ ...prev, processName: e.target.value }))}
+                                        disabled={!isEditable}
+                                        placeholder="Process / Sub-section"
                                     />
                                 </div>
                             </div>

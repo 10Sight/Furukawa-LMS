@@ -854,7 +854,7 @@ const saveEvaluationSheet = asyncHandler(async (req, res) => {
                 studentCode: headerData?.employeeNo || user.empId || "N/A",
                 departmentName: departmentName || "N/A",
                 lineName: headerData?.processInCharge || "N/A",
-                processName: headerData?.processInCharge || "N/A",
+                processName: headerData?.processName || headerData?.processInCharge || "N/A",
                 level: user.currentLevel || "N/A",
                 skillDescription: opinion || "The associate has successfully completed the training and evaluation for the specified process.",
                 ...req.body

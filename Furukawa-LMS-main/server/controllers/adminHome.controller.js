@@ -425,10 +425,12 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         SELECT
             ${expectedFormatMap[safeGroupBy]('u.')} AS period,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned')    AS deptName,
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned')    AS sectionName,
             COUNT(*)                          AS expected
         FROM users u
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
         WHERE (u.isTemporary = 1 OR u.expectedHandover IS NOT NULL)
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
@@ -436,7 +438,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
           AND ${expectedDateExpr('u.')} >= ?
           AND ${expectedDateExpr('u.')} <= ?
           ${expectedDeptClausePrefixed}
-        GROUP BY ${expectedFormatMap[safeGroupBy]('u.')}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
+        GROUP BY ${expectedFormatMap[safeGroupBy]('u.')}, COALESCE(u.departmentId, u.targetDeptId), d.name, COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
     `, expectedParams);
 
@@ -464,12 +466,14 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         SELECT
             ${actualFormatMap[safeGroupBy]}            AS period,
             CAST(COALESCE(u.departmentId, u.targetDeptId) AS NVARCHAR(20))     AS deptId,
+            COALESCE(d.name, 'Unassigned')             AS deptName,
             COALESCE(CAST(COALESCE(u.sectionId, u.targetSectionId) AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned')             AS sectionName,
             COUNT(DISTINCT u.id)                       AS actual
         FROM handover_sheets hs
         CROSS APPLY OPENJSON(hs.entries) as entry
         INNER JOIN users u ON u.id = TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
         LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)
         WHERE hs.date >= ?
           AND hs.date <= ?
@@ -477,7 +481,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
           AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
           AND COALESCE(u.departmentId, u.targetDeptId) IS NOT NULL
           ${actualDeptClausePrefixed}
-        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), COALESCE(u.sectionId, u.targetSectionId), s.name
+        GROUP BY ${actualFormatMap[safeGroupBy]}, COALESCE(u.departmentId, u.targetDeptId), d.name, COALESCE(u.sectionId, u.targetSectionId), s.name
         ORDER BY period ASC
     `, actualParams);
 
@@ -520,6 +524,7 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
         if (!deptPeriodPairs.has(key)) {
             deptPeriodPairs.set(key, {
                 deptId: String(r.deptId),
+                deptName: r.deptName,
                 sectionId: String(r.sectionId),
                 sectionName: r.sectionName,
                 period: r.period,
@@ -529,11 +534,12 @@ export const getDojoHandoverComparison = asyncHandler(async (req, res) => {
     deptExpectedRows.forEach(addPair);
     deptActualRows.forEach(addPair);
 
-    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, sectionId, sectionName, period }) => {
+    const deptBreakdown = [...deptPeriodPairs.values()].map(({ deptId, deptName, sectionId, sectionName, period }) => {
         const key = `${deptId}__${sectionId}`;
         return {
             period,
             deptId,
+            deptName: deptName || 'Unassigned',
             sectionId,
             sectionName,
             expected: deptExpMap[key]?.[period] || 0,
@@ -1502,9 +1508,11 @@ const getPlanComparisonStatus = async (tableName, req, res, successMessage) => {
         SELECT
             p.tableData,
             CAST(p.departmentId AS NVARCHAR(20)) AS deptId,
+            COALESCE(d.name, 'Unassigned') AS deptName,
             COALESCE(CAST(p.sectionId AS NVARCHAR(20)), 'unassigned') AS sectionId,
             COALESCE(s.name, 'Unassigned') AS sectionName
         FROM ${tableName} p
+        LEFT JOIN departments d ON d.id = p.departmentId
         LEFT JOIN sections s ON s.id = p.sectionId
         WHERE p.year BETWEEN ? AND ?
         ${deptClause}
@@ -1535,7 +1543,7 @@ const getPlanComparisonStatus = async (tableName, req, res, successMessage) => {
         }
 
         const key = `${row.deptId}__${row.sectionId}`;
-        if (!deptMeta[key]) deptMeta[key] = { deptId: row.deptId, sectionId: row.sectionId, sectionName: row.sectionName };
+        if (!deptMeta[key]) deptMeta[key] = { deptId: row.deptId, deptName: row.deptName, sectionId: row.sectionId, sectionName: row.sectionName };
 
         for (const [studentKey, entry] of Object.entries(tableData)) {
             if (studentKey === '__removedUserIds' || !entry || typeof entry !== 'object') continue;
@@ -1563,6 +1571,7 @@ const getPlanComparisonStatus = async (tableName, req, res, successMessage) => {
             deptBreakdown.push({
                 period,
                 deptId: meta.deptId,
+                deptName: meta.deptName || 'Unassigned',
                 sectionId: meta.sectionId,
                 sectionName: meta.sectionName,
                 expected: vals.expected,

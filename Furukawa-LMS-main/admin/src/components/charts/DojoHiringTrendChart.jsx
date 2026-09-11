@@ -201,6 +201,18 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const EMPTY_ARRAY = useMemo(() => [], []);
     const departments = departmentsProp ?? (deptsData?.data?.departments || EMPTY_ARRAY);
 
+    // O(1) lookup for department names, keyed by id as string. Falls back gracefully for
+    // custom-role/department-scoped users whose /api/departments list only contains their
+    // own assigned department(s).
+    const deptMap = useMemo(() => {
+        const map = new Map();
+        (departments || []).forEach(d => {
+            if (d?.id != null) map.set(String(d.id), d.name);
+            if (d?._id != null) map.set(String(d._id), d.name);
+        });
+        return map;
+    }, [departments]);
+
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
         [timeframe, rawStart, rawEnd]
@@ -290,7 +302,7 @@ const DojoHiringTrendChart = ({ departments: departmentsProp } = {}) => {
     const deptLabel = selectedDepts.length === 0
         ? t('charts.allDepartments')
         : selectedDepts.length === 1
-            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
+            ? (deptMap.get(String(selectedDepts[0])) ?? '1 Dept')
             : `${selectedDepts.length} ${t('nav.departments')}`;
 
     // ── Highcharts shared base ────────────────────────────────────────────────

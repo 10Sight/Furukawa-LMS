@@ -136,6 +136,18 @@ const SkillUpgradationPlanComparisonChart = ({ departments: departmentsProp } = 
     const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
     const departments = departmentsProp ?? (deptsData?.data?.departments || []);
 
+    // O(1) lookup for department names, keyed by id as string. Falls back gracefully for
+    // custom-role/department-scoped users whose /api/departments list only contains their
+    // own assigned department(s) — chart payloads carry deptName directly for those cases.
+    const deptMap = useMemo(() => {
+        const map = new Map();
+        (departments || []).forEach(d => {
+            if (d?.id != null) map.set(String(d.id), d.name);
+            if (d?._id != null) map.set(String(d._id), d.name);
+        });
+        return map;
+    }, [departments]);
+
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, rawStart, rawEnd),
         [timeframe, rawStart, rawEnd]
@@ -194,7 +206,7 @@ const SkillUpgradationPlanComparisonChart = ({ departments: departmentsProp } = 
                 orderedKeys.push(key);
                 nameMap[key] = isSectionDrill
                     ? (r.sectionName || t('charts.unassignedSection'))
-                    : (departments.find(d => String(d.id ?? d._id) === r.deptId)?.name ?? `Dept ${r.deptId}`);
+                    : (r.deptName || deptMap.get(String(r.deptId)) || `Department ${r.deptId}`);
             }
             const bucket = dataMap[key][r.period] ?? { expected: 0, actual: 0 };
             bucket.expected += Number(r.expected) || 0;
@@ -286,7 +298,7 @@ const SkillUpgradationPlanComparisonChart = ({ departments: departmentsProp } = 
         }
 
         return { expectedPoints, actualPoints, categories, groupSeparators, todaySlotIdx };
-    }, [deptBreakdown, fullPeriods, groupBy, departments, language, isSectionDrill, t, currentPeriodKey]);
+    }, [deptBreakdown, fullPeriods, groupBy, deptMap, language, isSectionDrill, t, currentPeriodKey]);
 
     const SLOT_WIDTH = 120;
     const needsScroll = categories.length * SLOT_WIDTH > 800;
@@ -305,7 +317,7 @@ const SkillUpgradationPlanComparisonChart = ({ departments: departmentsProp } = 
     const hasAnyData = totalExpected > 0 || totalActual > 0;
 
     const selectedDeptName = isSectionDrill
-        ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '')
+        ? (deptMap.get(String(selectedDepts[0])) ?? '')
         : '';
 
     const chartOptions = useMemo(() => ({
@@ -421,7 +433,7 @@ const SkillUpgradationPlanComparisonChart = ({ departments: departmentsProp } = 
     const deptLabel = selectedDepts.length === 0
         ? t('charts.allDepartments')
         : selectedDepts.length === 1
-            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
+            ? (deptMap.get(String(selectedDepts[0])) ?? '1 Dept')
             : `${selectedDepts.length} ${t('nav.departments')}`;
 
     const handleTimeframeChange = (tf) => {

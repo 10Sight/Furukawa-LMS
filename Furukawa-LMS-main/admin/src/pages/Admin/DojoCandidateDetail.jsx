@@ -19,7 +19,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   IconArrowLeft, IconUser, IconMail, IconPhone, IconBuilding,
-  IconSettings, IconCalendar, IconTrash, IconEdit, IconCheck,
+  IconSettings, IconCalendar, IconTrash, IconEdit,
   IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar,
   IconClipboardList, IconEye, IconClock, IconShieldCheck, IconHistory,
   IconActivity, IconCircleCheck, IconAlertTriangle, IconLoader2,
@@ -329,11 +329,9 @@ const DojoCandidateDetail = () => {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-4 border-t grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 p-4 rounded-lg">
-                  <TimelineItem label="Registration Date" value={new Date(candidate.createdAt).toLocaleDateString()} icon={IconCalendar} color="blue" />
+                <div className="mt-8 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg">
                   <TimelineItem label="Target Joining" value={candidate.joiningDate && displayDate(candidate.joiningDate)} icon={IconCalendar} color="green" />
                   <TimelineItem label="Expected Handover" value={candidate.expectedHandover ? displayDate(candidate.expectedHandover) : "—"} icon={IconCalendar} color="amber" />
-                  <TimelineItem label="Hiring Status" value={candidate.isTemporary ? "Assessment Pending" : "Promoted"} icon={IconCheck} color="amber" />
                 </div>
               </CardContent>
             </Card>

@@ -129,6 +129,18 @@ const OperatorObservanceComparisonChart = ({ departments: departmentsProp } = {}
     const { data: deptsData } = useGetAllDepartmentsQuery(undefined, { skip: !!departmentsProp });
     const departments = departmentsProp ?? (deptsData?.data?.departments || []);
 
+    // O(1) lookup for department names, keyed by id as string. Falls back gracefully for
+    // custom-role/department-scoped users whose /api/departments list only contains their
+    // own assigned department(s).
+    const deptMap = useMemo(() => {
+        const map = new Map();
+        (departments || []).forEach(d => {
+            if (d?.id != null) map.set(String(d.id), d.name);
+            if (d?._id != null) map.set(String(d._id), d.name);
+        });
+        return map;
+    }, [departments]);
+
     const { startDate, endDate } = useMemo(
         () => toApiDates(timeframe, debouncedRawStart, debouncedRawEnd),
         [timeframe, debouncedRawStart, debouncedRawEnd]
@@ -355,7 +367,7 @@ const OperatorObservanceComparisonChart = ({ departments: departmentsProp } = {}
     const deptLabel = selectedDepts.length === 0
         ? t('charts.allDepartments')
         : selectedDepts.length === 1
-            ? (departments.find(d => String(d.id ?? d._id) === selectedDepts[0])?.name ?? '1 Dept')
+            ? (deptMap.get(String(selectedDepts[0])) ?? '1 Dept')
             : `${selectedDepts.length} ${t('nav.departments')}`;
 
     const handleTimeframeChange = (tf) => {

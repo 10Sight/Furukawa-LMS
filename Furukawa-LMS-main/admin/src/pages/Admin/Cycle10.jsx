@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, History } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, History, ArrowLeft } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -214,9 +214,20 @@ const Cycle10 = () => {
     const [layoutResolvedScope, setLayoutResolvedScope] = useState(null);
     const [layoutRemark, setLayoutRemark] = useState("");
     const [loadingLayout, setLoadingLayout] = useState(false);
-    const [savingLayout, setSavingLayout] = useState(false);
     const [layoutHistory, setLayoutHistory] = useState([]);
     const [showLayoutHistory, setShowLayoutHistory] = useState(false);
+
+    // Deep-linked from the Revision Table's Edit button (RevisionSheetHistory.jsx)
+    // for the ten-cycle-sheet row: ?tab=editLayout&global=1 or &departmentId=&sectionId=
+    const cameFromRevisionTable = searchParams.get('tab') === 'editLayout';
+
+    // Revision-details confirmation dialog: every layout save must also record a
+    // doc-control revision (docNo/revNo/revDate/changeDetails) via the atomic
+    // save-with-revision endpoint, tying structural changes to the Revision Table.
+    const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+    const [loadingRevisionInfo, setLoadingRevisionInfo] = useState(false);
+    const [savingLayoutRevision, setSavingLayoutRevision] = useState(false);
+    const [revisionForm, setRevisionForm] = useState({ docNo: '', revNo: '', revDate: '', affectedSrNoPage: '', changeDetails: '' });
 
     // Live preview for a not-yet-created sheet reflects whatever department/section
     // is currently selected (the page filter, or the "Add Sheet" dialog's own pick).
@@ -373,6 +384,22 @@ const Cycle10 = () => {
             fetchSheetById(id, false);
         }
     }, [searchParams]);
+
+    // One-time: land directly on the Edit Layout tab, pre-scoped, when arriving
+    // from the Revision Table's Edit / Add Department Override buttons.
+    useEffect(() => {
+        if (searchParams.get('tab') !== 'editLayout') return;
+        setActiveTab('editLayout');
+        if (searchParams.get('global') === '1') {
+            setLayoutIsGlobal(true);
+        } else {
+            const dept = searchParams.get('departmentId');
+            const sect = searchParams.get('sectionId');
+            if (dept) setLayoutDeptId(dept);
+            if (sect) setLayoutSectionId(sect);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         fetchSheets();
@@ -539,7 +566,11 @@ const Cycle10 = () => {
         });
     };
 
-    const handleSaveLayoutConfig = async () => {
+    // Opens the revision-details confirmation dialog, pre-filled with whatever the
+    // Revision Table currently has for this scope (falls back to department/global
+    // if this exact scope has no override yet) — changeDetails is always left blank
+    // since it should describe THIS revision, not carry over the previous one.
+    const openRevisionDialog = async () => {
         if (!layoutIsGlobal && !layoutDeptId) {
             toast.error("Select a department, or switch to Global");
             return;
@@ -549,20 +580,59 @@ const Cycle10 = () => {
             return;
         }
         if (!layoutFullConfig) return;
+
+        setLoadingRevisionInfo(true);
         try {
-            setSavingLayout(true);
+            const params = {};
+            if (!layoutIsGlobal && layoutDeptId) params.departmentId = layoutDeptId;
+            if (!layoutIsGlobal && layoutSectionId) params.sectionId = layoutSectionId;
+            const response = await axiosInstance.get(`/api/revision-records/sheet/ten-cycle-sheet`, { params });
+            const record = response.data?.data || {};
+            setRevisionForm({
+                docNo: record.docNo || '',
+                revNo: record.revNo || '',
+                revDate: record.revDate || '',
+                affectedSrNoPage: record.affectedSrNoPage || '',
+                changeDetails: '',
+            });
+        } catch {
+            setRevisionForm({ docNo: '', revNo: '', revDate: '', affectedSrNoPage: '', changeDetails: '' });
+        } finally {
+            setLoadingRevisionInfo(false);
+            setRevisionDialogOpen(true);
+        }
+    };
+
+    // Atomically saves the layout config for this scope AND the revision record
+    // documenting it, via the combined save-with-revision endpoint.
+    const handleConfirmSaveLayoutWithRevision = async () => {
+        if (!revisionForm.docNo.trim() || !revisionForm.revNo.trim()) {
+            toast.error("Document No. and Revision No. are required");
+            return;
+        }
+        if (!layoutFullConfig) return;
+        try {
+            setSavingLayoutRevision(true);
             const newConfig = normalizeConfig(layoutFullConfig);
-            await axiosInstance.post(`/api/ten-cycle-sheets/config/save`, {
+            await axiosInstance.post(`/api/ten-cycle-sheets/config/save-with-revision`, {
                 departmentId: layoutIsGlobal ? null : layoutDeptId,
                 sectionId: layoutIsGlobal ? 0 : (layoutSectionId || 0),
                 lineId: layoutIsGlobal ? 0 : (layoutLineId || 0),
                 subSectionId: 0,
                 config: newConfig,
                 remark: layoutRemark,
+                revision: {
+                    docNo: revisionForm.docNo.trim(),
+                    revNo: revisionForm.revNo.trim(),
+                    revDate: revisionForm.revDate,
+                    affectedSrNoPage: revisionForm.affectedSrNoPage,
+                    changeDetails: revisionForm.changeDetails,
+                },
             });
             setLayoutFullConfig(newConfig);
             setLayoutRemark("");
-            toast.success("Layout configuration saved successfully");
+            setRevisionDialogOpen(false);
+            toast.success("Layout and revision updated successfully");
 
             logAction({
                 action: "SAVE_TEN_CYCLE_SHEET_LAYOUT_CONFIG",
@@ -571,13 +641,19 @@ const Cycle10 = () => {
                     sectionId: layoutIsGlobal ? null : (layoutSectionId || null),
                     lineId: layoutIsGlobal ? null : (layoutLineId || null),
                     remark: layoutRemark,
+                    docNo: revisionForm.docNo,
+                    revNo: revisionForm.revNo,
                 }
             }).catch(() => {});
+
+            if (cameFromRevisionTable) {
+                navigate('/admin/revision-table/ten-cycle-sheet');
+            }
         } catch (error) {
-            console.error("Error saving 10-Cycle layout config:", error);
-            toast.error(error?.response?.data?.message || "Failed to save layout configuration");
+            console.error("Error saving 10-Cycle layout & revision:", error);
+            toast.error(error?.response?.data?.message || "Failed to save layout & revision");
         } finally {
-            setSavingLayout(false);
+            setSavingLayoutRevision(false);
         }
     };
 
@@ -2075,6 +2151,16 @@ const Cycle10 = () => {
                 {activeTab === 'editLayout' && canEditConfig && (
                     <div className="space-y-4">
                         <div>
+                            {cameFromRevisionTable && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="gap-1 -ml-2 mb-1 text-slate-500"
+                                    onClick={() => navigate('/admin/revision-table/ten-cycle-sheet')}
+                                >
+                                    <ArrowLeft size={14} /> Back to Revision Table
+                                </Button>
+                            )}
                             <h1 className="text-xl font-bold">10-Cycle Sheet Layout Editor</h1>
                             <p className="text-sm text-slate-500">
                                 Customize Section A questions &amp; general points, Section B measuring instruments, and Section C inspection columns. Changes apply to whichever scope you select below.
@@ -2318,11 +2404,11 @@ const Cycle10 = () => {
                                             <History size={14} /> History
                                         </Button>
                                         <Button
-                                            onClick={handleSaveLayoutConfig}
-                                            disabled={savingLayout || !layoutRemark.trim()}
+                                            onClick={openRevisionDialog}
+                                            disabled={loadingRevisionInfo || !layoutRemark.trim()}
                                             className="gap-2 bg-blue-600 hover:bg-blue-700"
                                         >
-                                            {savingLayout ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Layout
+                                            {loadingRevisionInfo ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Layout & Update Revision
                                         </Button>
                                     </div>
                                 </div>
@@ -2396,6 +2482,76 @@ const Cycle10 = () => {
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setShowLayoutHistory(false)}>Close</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* ── Save Layout & Update Revision Dialog ─────────────────── */}
+                <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Save Layout & Update Revision</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                            <p className="text-xs text-slate-500">
+                                This layout change will update the Revision Table record for the 10 Cycle Sheet at{" "}
+                                {layoutIsGlobal ? "the Global scope" : "this Department/Section scope"}.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <Label className="text-xs mb-1 block">Doc. No. *</Label>
+                                    <Input
+                                        className="h-9 text-sm"
+                                        value={revisionForm.docNo}
+                                        onChange={(e) => setRevisionForm((f) => ({ ...f, docNo: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs mb-1 block">Rev. No. *</Label>
+                                    <Input
+                                        className="h-9 text-sm"
+                                        value={revisionForm.revNo}
+                                        onChange={(e) => setRevisionForm((f) => ({ ...f, revNo: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs mb-1 block">Rev. Date</Label>
+                                    <Input
+                                        className="h-9 text-sm"
+                                        value={revisionForm.revDate}
+                                        onChange={(e) => setRevisionForm((f) => ({ ...f, revDate: e.target.value }))}
+                                        placeholder="DD.MM.YYYY"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs mb-1 block">Affected Sr. No. / Page</Label>
+                                    <Input
+                                        className="h-9 text-sm"
+                                        value={revisionForm.affectedSrNoPage}
+                                        onChange={(e) => setRevisionForm((f) => ({ ...f, affectedSrNoPage: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <Label className="text-xs mb-1 block">Change Details</Label>
+                                <Textarea
+                                    className="text-sm"
+                                    value={revisionForm.changeDetails}
+                                    onChange={(e) => setRevisionForm((f) => ({ ...f, changeDetails: e.target.value }))}
+                                    placeholder="Describe what changed in this revision"
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
+                            <Button
+                                onClick={handleConfirmSaveLayoutWithRevision}
+                                disabled={savingLayoutRevision || !revisionForm.docNo.trim() || !revisionForm.revNo.trim()}
+                                className="bg-blue-600 hover:bg-blue-700"
+                            >
+                                {savingLayoutRevision ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
+                                Confirm & Save
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

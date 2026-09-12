@@ -10,6 +10,7 @@ import {
     deleteTenCycleSheet,
     getTenCycleSheetConfig,
     saveTenCycleSheetConfig,
+    saveTenCycleSheetConfigWithRevision,
     getTenCycleSheetHistory
 } from "../controllers/tenCycleSheet.controller.js";
 
@@ -21,6 +22,7 @@ router.get("/", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:
 router.post("/", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:create", "ten_cycle:manage"), createTenCycleSheet);
 router.get("/config/:departmentId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), getTenCycleSheetConfig);
 router.post("/config/save", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage"), saveTenCycleSheetConfig);
+router.post("/config/save-with-revision", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage", "revision:update"), saveTenCycleSheetConfigWithRevision);
 router.get("/history/:departmentId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage"), getTenCycleSheetHistory);
 router.get("/:id", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), getTenCycleSheetById);
 router.put("/:id", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:update", "ten_cycle:manage"), updateTenCycleSheetById);

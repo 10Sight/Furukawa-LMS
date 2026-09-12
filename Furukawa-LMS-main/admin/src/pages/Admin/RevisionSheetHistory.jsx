@@ -12,6 +12,11 @@ import RevisionHistoryList from '@/components/admin/revision/RevisionHistoryList
 import RevisionEditModal from '@/components/admin/revision/RevisionEditModal';
 import RevisionHistoryModal from '@/components/admin/revision/RevisionHistoryModal';
 
+// The 10-Cycle Check Sheet's revisions are tied to structural layout changes
+// (questions, instruments, columns), so Edit/Add Override for this sheet deep-link
+// into its dedicated Layout Editor tab (Cycle10.jsx) instead of the plain text modal.
+const TEN_CYCLE_SHEET_KEY = 'ten-cycle-sheet';
+
 // Per-sheet detail page: the global default plus every department/section
 // override for this sheetKey, and the sheet's full audit log history.
 const RevisionSheetHistory = () => {
@@ -73,12 +78,27 @@ const RevisionSheetHistory = () => {
     }, [fetchRecords, fetchHistory]);
 
     const handleEdit = (record) => {
+        if (sheetKey === TEN_CYCLE_SHEET_KEY) {
+            const params = new URLSearchParams({ tab: 'editLayout' });
+            if (record.departmentId) {
+                params.set('departmentId', String(record.departmentId));
+                if (record.sectionId) params.set('sectionId', String(record.sectionId));
+            } else {
+                params.set('global', '1');
+            }
+            navigate(`/admin/10-cycle?${params.toString()}`);
+            return;
+        }
         setEditingRecord(record);
         setOverrideTarget(null);
         setModalOpen(true);
     };
 
     const handleAddOverride = () => {
+        if (sheetKey === TEN_CYCLE_SHEET_KEY) {
+            navigate('/admin/10-cycle?tab=editLayout');
+            return;
+        }
         setEditingRecord(null);
         setOverrideTarget({ sheetKey, sheetName });
         setModalOpen(true);

@@ -344,6 +344,70 @@ export const saveTenCycleSheetConfig = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, null, "10 Cycle Sheet layout config saved"));
 });
 
+// RevisionRecord only scopes by (sheetKey, departmentId, sectionId) — it has no
+// concept of lineId/subSectionId — so a line/sub-section-level layout save still
+// ties to its department+section revision record (the closest scope it supports).
+// MonitoringConfig also uses departmentId=VARCHAR with the literal string 'global'
+// as its "no department" sentinel and sectionId=0 for "not section-scoped", while
+// RevisionRecord uses real SQL NULLs for both — these helpers translate between them.
+const toRevisionDepartmentId = (departmentId) => {
+    if (!departmentId || departmentId === 'global') return null;
+    const parsed = parseInt(departmentId, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+};
+const toRevisionSectionId = (sectionId) => {
+    const parsed = parseInt(sectionId, 10);
+    return Number.isNaN(parsed) || parsed === 0 ? null : parsed;
+};
+
+// Atomically saves a 10-Cycle layout config for a scope AND records the
+// doc-control revision (docNo/revNo/revDate/changeDetails) that the layout
+// change corresponds to, so a structural edit can never be saved without also
+// updating the Revision Table entry operators/instructors see on the printed sheet.
+export const saveTenCycleSheetConfigWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId = 0, lineId = 0, subSectionId = 0, config, remark, revision } = req.body || {};
+
+    if (!config) throw new ApiError("Config is required", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+
+    await MonitoringConfig.upsert({
+        type: '10CYCLE',
+        departmentId: departmentId || null,
+        sectionId,
+        lineId,
+        subSectionId,
+        config,
+        remark,
+        updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+    });
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        'ten-cycle-sheet',
+        toRevisionDepartmentId(departmentId),
+        toRevisionSectionId(sectionId),
+        {
+            sheetName: "10 Cycle Sheet",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_TEN_CYCLE_SHEET_CONFIG_WITH_REVISION",
+        { departmentId: departmentId || null, sectionId, lineId, subSectionId, remark, revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "MonitoringConfig", resourceId: departmentId || 'global', req }
+    ).catch(err => console.error("logAudit(SAVE_TEN_CYCLE_SHEET_CONFIG_WITH_REVISION) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, { revision: savedRevision }, "10 Cycle Sheet layout and revision saved"));
+});
+
 export const getTenCycleSheetHistory = asyncHandler(async (req, res) => {
     const departmentId = resolveDeptParam(req.params.departmentId);
     const { sectionId = 0, lineId = 0, subSectionId = 0 } = req.query;

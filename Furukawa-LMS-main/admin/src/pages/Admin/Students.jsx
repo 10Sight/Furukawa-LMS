@@ -207,6 +207,8 @@ const Students = () => {
     if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN") return true;
     return currentUser?.customRole?.permissions?.includes(permission);
   };
+  const canDelete = hasPermission("user:delete");
+  const canUpdate = hasPermission("user:update");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -932,6 +934,7 @@ const Students = () => {
   };
 
   const handleEditStudent = async () => {
+    if (!canUpdate) return;
     // Reset previous errors
     setFormErrors({});
     const errors = {};
@@ -1027,6 +1030,7 @@ const Students = () => {
   };
 
   const handleDeleteStudent = async () => {
+    if (!canDelete) return;
     try {
       await deleteStudent(selectedStudent._id).unwrap();
       showToast("success", "Operator deleted successfully!");
@@ -1051,7 +1055,7 @@ const Students = () => {
   };
 
   const handleSaveStudentShift = async () => {
-    if (!shiftStudent) return;
+    if (!shiftStudent || !canUpdate) return;
     try {
       const cleanedSchedule = Object.fromEntries(
         Object.entries(shiftScheduleDraft).filter(([, v]) => v !== "REMOVE")
@@ -1066,7 +1070,7 @@ const Students = () => {
   };
 
   const handleBulkDelete = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || !canDelete) return;
     setIsSubmitting(true);
     try {
       const payload = isAllSelectedAcrossPages
@@ -1112,6 +1116,7 @@ const Students = () => {
   };
 
   const handleSaveBulkShift = async () => {
+    if (!canUpdate) return;
     if (Object.keys(bulkShiftScheduleDraft).length === 0) {
       showToast("error", "No shift changes to apply. Use the calendar to assign shifts first.");
       return;
@@ -1151,6 +1156,7 @@ const Students = () => {
   };
 
   const handleConfirmBulkLeftStatus = async () => {
+    if (!canUpdate) return;
     if (!bulkLeftConfirmDate) {
       showToast("error", "Please select a date of leaving");
       return;
@@ -1222,6 +1228,7 @@ const Students = () => {
   };
 
   const handleAssignToDepartment = async (departmentId) => {
+    if (!canUpdate) return;
     try {
       await assignStudent({
         departmentId,
@@ -2771,38 +2778,44 @@ const Students = () => {
                   >
                     Clear Selection
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setBulkShiftScheduleDraft({}); setIsBulkShiftDialogOpen(true); }}
-                    className="bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
-                  >
-                    <IconCalendar className="h-4 w-4 mr-2" />
-                    Bulk Shift Schedule
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBulkLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
-                      setBulkLeftConfirmReason("");
-                      setBulkLeftConfirmCustomReason("");
-                      setIsBulkLeftConfirmOpen(true);
-                    }}
-                    className="bg-white hover:bg-red-50 text-red-700 border-red-200"
-                  >
-                    <IconUserMinus className="h-4 w-4 mr-2" />
-                    Bulk Mark as Left
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setIsBulkDeleteDialogOpen(true)}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    <IconTrash className="h-4 w-4 mr-2" />
-                    Bulk Delete Permanently
-                  </Button>
+                  {canUpdate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setBulkShiftScheduleDraft({}); setIsBulkShiftDialogOpen(true); }}
+                      className="bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
+                    >
+                      <IconCalendar className="h-4 w-4 mr-2" />
+                      Bulk Shift Schedule
+                    </Button>
+                  )}
+                  {canUpdate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setBulkLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
+                        setBulkLeftConfirmReason("");
+                        setBulkLeftConfirmCustomReason("");
+                        setIsBulkLeftConfirmOpen(true);
+                      }}
+                      className="bg-white hover:bg-red-50 text-red-700 border-red-200"
+                    >
+                      <IconUserMinus className="h-4 w-4 mr-2" />
+                      Bulk Mark as Left
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setIsBulkDeleteDialogOpen(true)}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      <IconTrash className="h-4 w-4 mr-2" />
+                      Bulk Delete Permanently
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -2950,26 +2963,28 @@ const Students = () => {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {getDepartmentInfo(student)}
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation(); // Stop event propagation
-                                  openDepartmentDialog(student);
-                                }}
-                                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <IconPencil className="h-3 w-3" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Assign to department</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canUpdate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Stop event propagation
+                                    openDepartmentDialog(student);
+                                  }}
+                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <IconPencil className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Assign to department</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -3004,68 +3019,74 @@ const Students = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-1">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditDialog(student);
-                                }}
-                                className="h-8 w-8 p-0"
-                              >
-                                <IconPencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Edit operator</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canUpdate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditDialog(student);
+                                  }}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <IconPencil className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Edit operator</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
 
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenShiftDialog(student);
-                                }}
-                                className="h-8 w-8 p-0 text-indigo-600"
-                              >
-                                <IconCalendar className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Shift schedule</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canUpdate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenShiftDialog(student);
+                                  }}
+                                  className="h-8 w-8 p-0 text-indigo-600"
+                                >
+                                  <IconCalendar className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Shift schedule</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
 
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openDeleteDialog(student);
-                                }}
-                                className="h-8 w-8 p-0 text-red-600"
-                              >
-                                <IconTrash className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Delete operator</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canDelete && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDeleteDialog(student);
+                                  }}
+                                  className="h-8 w-8 p-0 text-red-600"
+                                >
+                                  <IconTrash className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Delete operator</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -53,6 +53,33 @@ import axiosInstance from "@/Helper/axiosInstance";
 export default function RoleUserManager() {
     const { roleId } = useParams();
     const navigate = useNavigate();
+    const { user: currentUser } = useSelector((state) => state.auth);
+    const isMasterAdmin = !!(currentUser?.isAdmin || currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN");
+    const hasPermission = (permission) => {
+        if (isMasterAdmin) return true;
+        return !!currentUser?.customRole?.permissions?.includes(permission);
+    };
+    const canDeleteUser = hasPermission("user:delete");
+    const canDeleteDojo = hasPermission("dojo_hiring:delete");
+    const canDeleteMentor = hasPermission("mentor:delete");
+    // A user in this list can be a regular operator, a DOJO candidate, or a mentor -
+    // the permission that gates deleting them depends on which one they are.
+    const canDeleteTarget = (user) => {
+        if (isMasterAdmin) return true;
+        if (user?.isTemporary) return canDeleteDojo;
+        if (user?.isMentor) return canDeleteMentor || canDeleteUser;
+        return canDeleteUser;
+    };
+    const canUpdateUser = hasPermission("user:update");
+    const canUpdateDojo = hasPermission("dojo_hiring:update");
+    const canUpdateMentor = hasPermission("mentor:update");
+    // Same per-target logic as canDeleteTarget, but for editing.
+    const canUpdateTarget = (user) => {
+        if (isMasterAdmin) return true;
+        if (user?.isTemporary) return canUpdateDojo;
+        if (user?.isMentor) return canUpdateMentor || canUpdateUser;
+        return canUpdateUser;
+    };
     const [searchTerm, setSearchTerm] = useState("");
     const [role, setRole] = useState(null);
     const [page, setPage] = useState(1);
@@ -144,6 +171,7 @@ export default function RoleUserManager() {
     const [deleteUser] = useDeleteUserMutation();
 
     const handleDelete = async (user) => {
+        if (!canDeleteTarget(user)) return;
         if (!confirm(`Are you sure you want to PERMANENTLY DELETE ${user.fullName}? This action cannot be undone and will remove the user's account from the entire system.`)) return;
         try {
             await deleteUser(user.id).unwrap();
@@ -179,12 +207,16 @@ export default function RoleUserManager() {
     };
 
     const handleBulkDelete = async () => {
+        if (!canDeleteUser && !canDeleteDojo && !canDeleteMentor) return;
         setIsSubmitting(true);
         try {
-            await Promise.all(
+            const results = await Promise.allSettled(
                 selectedIds.map(id => deleteUser(id).unwrap())
             );
-            toast.success(`${selectedIds.length} users deleted permanently`);
+            const failed = results.filter(r => r.status === "rejected").length;
+            const succeeded = results.length - failed;
+            if (succeeded > 0) toast.success(`${succeeded} user(s) deleted permanently`);
+            if (failed > 0) toast.error(`${failed} user(s) could not be deleted (insufficient permissions)`);
             setSelectedIds([]);
             setIsAllSelectedAcrossPages(false);
             setIsBulkDeleteOpen(false);
@@ -246,7 +278,7 @@ export default function RoleUserManager() {
                     <p className="text-sm text-gray-500">{role?.description || "Manage users assigned to this custom role"}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {selectedIds.length > 0 && (
+                    {selectedIds.length > 0 && (canDeleteUser || canDeleteDojo || canDeleteMentor) && (
                         <div className="flex items-center gap-2 mr-2">
                             <span className="text-sm font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full border">
                                 {selectedIds.length} selected
@@ -413,18 +445,20 @@ export default function RoleUserManager() {
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                 </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                                    onClick={() => {
-                                                        setUserToEdit(user);
-                                                        setIsEditUserOpen(true);
-                                                    }}
-                                                    title="Edit User"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
+                                                {canUpdateTarget(user) && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                        onClick={() => {
+                                                            setUserToEdit(user);
+                                                            setIsEditUserOpen(true);
+                                                        }}
+                                                        title="Edit User"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -440,15 +474,17 @@ export default function RoleUserManager() {
                                                 >
                                                     <Key className="w-4 h-4" />
                                                 </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
-                                                    onClick={() => handleDelete(user)}
-                                                    title="Delete User Permanently"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
+                                                {canDeleteTarget(user) && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                        onClick={() => handleDelete(user)}
+                                                        title="Delete User Permanently"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>

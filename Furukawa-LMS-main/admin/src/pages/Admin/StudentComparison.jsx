@@ -1,6 +1,7 @@
 // src/pages/Admin/StudentComparison.jsx
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { useLazyGetAllStudentsQuery } from "@/Redux/AllApi/InstructorApi";
@@ -92,6 +93,13 @@ const getSectionDisplay = (student) => {
 
 const StudentComparison = () => {
   const navigate = useNavigate();
+  const currentUser = useSelector((state) => state.auth.user);
+  const hasPermission = (permission) => {
+    if (currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN" || currentUser?.isAdmin) return true;
+    return !!currentUser?.customRole?.permissions?.includes(permission);
+  };
+  const canDelete = hasPermission("user:delete");
+  const canUpdate = hasPermission("user:update");
 
   // Excel upload state
   const fileInputRef = useRef(null);
@@ -341,7 +349,7 @@ const StudentComparison = () => {
   };
 
   const handleUpdateStudent = async () => {
-    if (!selectedStudent) return;
+    if (!selectedStudent || !canUpdate) return;
     if (!editFormData.fullName?.trim() || !editFormData.empId?.trim()) {
       toast.error("Name and Employee ID are required");
       return;
@@ -378,7 +386,7 @@ const StudentComparison = () => {
   };
 
   const handleDeleteStudent = async () => {
-    if (!selectedStudent) return;
+    if (!selectedStudent || !canDelete) return;
     setIsSubmitting(true);
     try {
       await deleteStudent(selectedStudent._id).unwrap();
@@ -598,17 +606,21 @@ const StudentComparison = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => openEditDialog(student)}>
-                              <IconPencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-red-600"
-                              onClick={() => openDeleteDialog(student)}
-                            >
-                              <IconTrash className="h-4 w-4" />
-                            </Button>
+                            {canUpdate && (
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => openEditDialog(student)}>
+                                <IconPencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-red-600"
+                                onClick={() => openDeleteDialog(student)}
+                              >
+                                <IconTrash className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

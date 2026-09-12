@@ -116,6 +116,36 @@ const checkOjtApprovedGenerally = async (userId) => {
     }
 };
 
+// Combines a user-selected calendar date (YYYY-MM-DD) with the current time-of-day, so the
+// resulting timestamp still sorts correctly against same-day attempts. Defaults to now when no
+// date is supplied (legacy callers), and rejects anything after the end of the current day so
+// completedAt/createdAt can never be backdated into the future.
+const resolveAttemptDate = (testDate) => {
+    const now = new Date();
+    if (!testDate) return now;
+
+    if (typeof testDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(testDate)) {
+        throw new ApiError("Invalid test date format. Expected YYYY-MM-DD.", 400);
+    }
+
+    const [year, month, day] = testDate.split("-").map(Number);
+    const attemptDate = new Date(
+        year, month - 1, day,
+        now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()
+    );
+
+    if (isNaN(attemptDate.getTime()) || attemptDate.getMonth() !== month - 1) {
+        throw new ApiError("Invalid test date", 400);
+    }
+
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    if (attemptDate.getTime() > endOfToday.getTime()) {
+        throw new ApiError("Test date cannot be in the future", 400);
+    }
+
+    return attemptDate;
+};
+
 // Resolves the snapshot fields (identity + status/hierarchy at attempt time) for the actual
 // candidate taking the quiz. Always queries by the candidate's userId — never req.user — since
 // admins/trainers frequently submit attempts on behalf of a candidate.
@@ -311,8 +341,9 @@ const populateAttempt = async (attempt) => {
 };
 
 export const attemptQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers, conductedBy } = req.body;
+    const { quizId, answers, conductedBy, testDate } = req.body;
     const userId = req.user.id;
+    const attemptDate = resolveAttemptDate(testDate);
 
     if (!quizId) throw new ApiError("Quiz ID is required", 400);
 
@@ -399,7 +430,8 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
         })),
         score,
         status: passed ? "PASSED" : "FAILED",
-        completedAt: new Date(),
+        completedAt: attemptDate,
+        createdAt: attemptDate,
         attemptNumber: 1,
         timeTaken: 0,
         conductedBy: conductedBy !== undefined && conductedBy !== null ? conductedBy : ""
@@ -868,8 +900,9 @@ export const startQuiz = asyncHandler(async (req, res) => {
 });
 
 export const submitQuiz = asyncHandler(async (req, res) => {
-    const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy, department } = req.body;
+    const { quizId, answers, timeTaken, studentId, candidateName, eCode, conductedBy, department, testDate } = req.body;
     let userId = req.user.id;
+    const attemptDate = resolveAttemptDate(testDate);
 
     const isCustomAdminOrTrainer = req.user?.role === 'CUSTOM' &&
         ['admin', 'superadmin', 'trainer', 'instructor'].includes(
@@ -1166,7 +1199,8 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         }),
         score: score || 0,
         status: passed ? "PASSED" : "FAILED",
-        completedAt: new Date(),
+        completedAt: attemptDate,
+        createdAt: attemptDate,
         attemptNumber: previousAttempts + 1,
         timeTaken: timeTaken || 0,
         conductedBy: conductedBy !== undefined && conductedBy !== null ? conductedBy : ""

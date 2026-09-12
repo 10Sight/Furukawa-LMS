@@ -457,7 +457,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_CREATE, name: "Create Users", description: "Create new user accounts" },
         { id: SYSTEM_PERMISSIONS.USER_READ, name: "View Users", description: "View user information and profiles" },
         { id: SYSTEM_PERMISSIONS.USER_UPDATE, name: "Update Users", description: "Edit user information and profiles" },
-        { id: SYSTEM_PERMISSIONS.USER_DELETE, name: "Delete Users", description: "Permanently delete user accounts" },
+        { id: SYSTEM_PERMISSIONS.USER_DELETE, name: "Delete Operators / Users", description: "Permanently or soft delete regular operator/student accounts (isTemporary = 0)" },
         { id: SYSTEM_PERMISSIONS.USER_SUSPEND, name: "Suspend Users", description: "Suspend user accounts" },
         { id: SYSTEM_PERMISSIONS.USER_ACTIVATE, name: "Activate Users", description: "Activate suspended accounts" },
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
@@ -626,7 +626,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, name: "Onboard Candidates", description: "Onboard new temporary candidates into the pipeline" },
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, name: "Update Candidates", description: "Edit candidate information" },
-        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, name: "Delete Candidates", description: "Remove temporary candidates from the pipeline" }
+        { id: SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, name: "Delete DOJO Candidates", description: "Remove temporary candidates from the DOJO pipeline (isTemporary = 1)" }
       ],
       "Test Paper Management": [
         { id: SYSTEM_PERMISSIONS.TEST_PAPER_READ, name: "View Test Papers", description: "Access and view the list of test papers" },

@@ -43,6 +43,11 @@ const DojoCandidateDetail = () => {
 
   const currentUser = useSelector((state) => state.auth.user);
   const isAdminUser = !!(currentUser?.isAdmin || currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN");
+  const hasPermission = (permission) => {
+    if (isAdminUser) return true;
+    return !!currentUser?.customRole?.permissions?.includes(permission);
+  };
+  const canDelete = hasPermission("dojo_hiring:delete");
 
   const { data: candidateData, isLoading, refetch } = useGetUserByIdQuery(studentId);
   const [updateUser] = useUpdateUserMutation();
@@ -147,6 +152,7 @@ const DojoCandidateDetail = () => {
 
   // Handle Delete User
   const handleDelete = async () => {
+    if (!canDelete) return;
     try {
       await deleteUser(studentId).unwrap();
       toast.success("Candidate deleted successfully");
@@ -187,26 +193,28 @@ const DojoCandidateDetail = () => {
         </div>
 
         <div className="flex gap-2">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-2">
-                <IconTrash className="w-4 h-4" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete the candidate record for {candidate.fullName}.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="bg-red-600">Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {canDelete && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-2">
+                  <IconTrash className="w-4 h-4" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the candidate record for {candidate.fullName}.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete} className="bg-red-600">Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
 
           <Button onClick={() => refetch()} variant="outline" size="sm">
             <IconRefresh className="h-4 w-4" />

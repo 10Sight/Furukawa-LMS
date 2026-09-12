@@ -32,6 +32,22 @@ import {
 import { getMediaUrl } from "@/utils/mediaUtils";
 import { useSelector } from "react-redux";
 
+// Local YYYY-MM-DD (not UTC) so IST/other +offset zones don't roll the date back at midnight.
+const getTodayDateString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (dateStr) => {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-");
+  if (!year || !month || !day) return dateStr;
+  return `${day}.${month}.${year}`;
+};
+
 const TakeQuiz = () => {
   const { t } = useTranslate();
   const { quizId } = useParams();
@@ -84,6 +100,7 @@ const TakeQuiz = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [conductedBy, setConductedBy] = useState("");
   const [department, setDepartment] = useState("");
+  const [testDate, setTestDate] = useState(getTodayDateString());
   const nameSearchTimeoutRef = useRef(null);
   const eCodeSearchTimeoutRef = useRef(null);
 
@@ -280,6 +297,10 @@ const TakeQuiz = () => {
               if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
               if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
               if (restoredSession.department) setDepartment(restoredSession.department);
+              if (restoredSession.testDate) {
+                const today = getTodayDateString();
+                setTestDate(restoredSession.testDate > today ? today : restoredSession.testDate);
+              }
 
               setStep("quiz");
               setLoading(false);
@@ -316,6 +337,10 @@ const TakeQuiz = () => {
           if (restoredSession.selectedStudent) setSelectedStudent(restoredSession.selectedStudent);
           if (restoredSession.conductedBy) setConductedBy(restoredSession.conductedBy);
           if (restoredSession.department) setDepartment(restoredSession.department);
+          if (restoredSession.testDate) {
+            const today = getTodayDateString();
+            setTestDate(restoredSession.testDate > today ? today : restoredSession.testDate);
+          }
 
         } else {
           // Initialize fresh attempt
@@ -362,11 +387,12 @@ const TakeQuiz = () => {
         selectedStudent,
         conductedBy,
         department,
+        testDate,
         startTime
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
-  }, [answers, candidateName, eCode, selectedStudent, conductedBy, department, startTime, step, STORAGE_KEY]);
+  }, [answers, candidateName, eCode, selectedStudent, conductedBy, department, testDate, startTime, step, STORAGE_KEY]);
 
   // Timer countdown
   useEffect(() => {
@@ -390,6 +416,12 @@ const TakeQuiz = () => {
     if (!submitting) {
       handleSubmit(true);
     }
+  };
+
+  const handleTestDateChange = (e) => {
+    const val = e.target.value;
+    const today = getTodayDateString();
+    setTestDate(val > today ? today : val);
   };
 
   const handleAnswerChange = (questionIndex, option) => {
@@ -482,7 +514,8 @@ const TakeQuiz = () => {
         candidateName: submitCandidateName,
         eCode: submitECode,
         conductedBy: conductedBy,
-        department: department.trim()
+        department: department.trim(),
+        testDate
       });
 
       const resultData = response.data.data;
@@ -545,6 +578,7 @@ const TakeQuiz = () => {
     setStartTime(Date.now());
     setTimerActive(quiz?.timeLimit ? true : false);
     setError(null);
+    setTestDate(getTodayDateString());
 
     // Reinitialize answers
     const initialAnswers = {};
@@ -866,7 +900,16 @@ const TakeQuiz = () => {
               <div className="flex gap-2 items-center">
                 <span className="text-black">{t("takeQuiz.meta.testDate")}</span>
                 <span className="border-b border-dashed border-black flex-1 pb-0.5 text-center text-black font-semibold">
-                  {new Date().toLocaleDateString('en-GB').replace(/\//g, '.')}
+                  <input
+                    type="date"
+                    value={testDate}
+                    max={getTodayDateString()}
+                    onChange={handleTestDateChange}
+                    className="w-full bg-transparent text-center focus:outline-none focus:ring-0 border-none font-semibold text-black no-print"
+                  />
+                  <span className="hidden print:inline-block font-semibold text-black">
+                    {formatDisplayDate(testDate)}
+                  </span>
                 </span>
               </div>
             </div>
@@ -1104,9 +1147,6 @@ const TakeQuiz = () => {
       ? quiz.subSectionNames.join(", ")
       : quiz?.title || "—";
     const resultDepartment = department || getStudentDepartment(selectedStudent) || "—";
-    const testDate = result.createdAt
-      ? new Date(result.createdAt).toLocaleDateString('en-GB').replace(/\//g, '.')
-      : new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
     const passingMarks = Math.round(result.totalMarks * (quiz?.passingScore || 70) / 100);
 
     return (
@@ -1170,7 +1210,7 @@ const TakeQuiz = () => {
                 </div>
                 <div>
                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400">{t("takeQuiz.meta.testDate")}</div>
-                  <div className="text-sm font-bold text-gray-800">{testDate}</div>
+                  <div className="text-sm font-bold text-gray-800">{formatDisplayDate(testDate)}</div>
                 </div>
               </div>
             </div>

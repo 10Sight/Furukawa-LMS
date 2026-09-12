@@ -6,6 +6,7 @@ import { authorizeRole, authorizeAnyPermission, hasPermission } from "../middlew
 import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
 import { checkPrivilege } from "../middlewares/checkPrivilege.middleware.js";
 import { executeQuery } from "../db/mssqlHelper.js";
+import { ApiError } from "../utils/ApiError.js";
 import {
   getAllUsers,
   getUserById,
@@ -48,41 +49,52 @@ const checkUserManagementPrivilege = (req, res, next) => {
   return checkPrivilege("user management")(req, res, next);
 };
 
-const checkUserUpdatePrivilege = async (req, res, next) => {
-  const hasDojoUpdate = req.user.role === 'SUPERADMIN' || req.user.customRole?.permissions?.includes(SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE);
-  
-  if (hasDojoUpdate) {
-    try {
-      // If the target user is temporary, bypass checkPrivilege
-      const [targetUser] = await executeQuery("SELECT isTemporary FROM users WHERE id = ?", [req.params.id]);
-      if (targetUser?.length && targetUser[0].isTemporary) {
-        return next();
-      }
-    } catch (e) {
-      console.error("[checkUserUpdatePrivilege Error]", e);
+// Explicit, per-target authorization for mutating a single user. Unlike the old
+// checkUserUpdatePrivilege/checkUserDeletePrivilege, this never falls back to the generic
+// checkPrivilege("user management") gate - that check treats any one of user/dojo_hiring/
+// mentor permission (including an unrelated one like dojo_hiring:update) as sufficient,
+// which would let a DOJO-only manager edit regular operators. Instead the exact permission
+// required is derived from the target record's own current type:
+//   - isTemporary = 1 (DOJO candidate)      -> requires dojo_hiring:{action}
+//   - isMentor = 1 (and not temporary)      -> requires mentor:{action} (or user:{action})
+//   - everything else (regular operator)    -> requires user:{action}
+const authorizeUserMutation = (action) => async (req, res, next) => {
+  try {
+    if (req.user.role === 'SUPERADMIN' || req.user.isAdmin) {
+      return next();
     }
+
+    const [rows] = await executeQuery("SELECT isTemporary, isMentor FROM users WHERE id = ?", [req.params.id]);
+    if (!rows?.length) {
+      throw new ApiError("User not found", 404);
+    }
+
+    const target = rows[0];
+    const permissions = req.user.customRole?.permissions || [];
+    const verb = action === 'delete' ? 'delete' : 'update';
+
+    if (target.isTemporary) {
+      if (!permissions.includes(SYSTEM_PERMISSIONS[`DOJO_HIRING_${action.toUpperCase()}`])) {
+        throw new ApiError(`Insufficient permissions to ${verb} DOJO candidate`, 403);
+      }
+    } else if (target.isMentor) {
+      if (!permissions.includes(SYSTEM_PERMISSIONS[`MENTOR_${action.toUpperCase()}`]) && !permissions.includes(SYSTEM_PERMISSIONS[`USER_${action.toUpperCase()}`])) {
+        throw new ApiError(`Insufficient permissions to ${verb} mentor`, 403);
+      }
+    } else {
+      if (!permissions.includes(SYSTEM_PERMISSIONS[`USER_${action.toUpperCase()}`])) {
+        throw new ApiError(`Insufficient permissions to ${verb} regular operator`, 403);
+      }
+    }
+
+    next();
+  } catch (e) {
+    next(e);
   }
-  
-  return checkPrivilege("user management")(req, res, next);
 };
 
-const checkUserDeletePrivilege = async (req, res, next) => {
-  const hasDojoDelete = req.user.role === 'SUPERADMIN' || req.user.customRole?.permissions?.includes(SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE);
-  
-  if (hasDojoDelete) {
-    try {
-      // If the target user is temporary, bypass checkPrivilege
-      const [targetUser] = await executeQuery("SELECT isTemporary FROM users WHERE id = ?", [req.params.id]);
-      if (targetUser?.length && targetUser[0].isTemporary) {
-        return next();
-      }
-    } catch (e) {
-      console.error("[checkUserDeletePrivilege Error]", e);
-    }
-  }
-  
-  return checkPrivilege("user management")(req, res, next);
-};
+const authorizeUserUpdate = authorizeUserMutation('update');
+const authorizeUserDelete = authorizeUserMutation('delete');
 
 // Create user (admin/super-admin only) - sends welcome email with credentials
 router.post("/", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_CREATE, SYSTEM_PERMISSIONS.DOJO_HIRING_CREATE, SYSTEM_PERMISSIONS.MENTOR_CREATE]), checkUserManagementPrivilege, createUser);
@@ -144,9 +156,9 @@ router.patch(
 router.post("/bulk-shift", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateShiftSchedule);
 router.post("/bulk-left", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_UPDATE]), checkPrivilege("user management"), bulkUpdateStatusLeft);
 router.get("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.DOJO_HIRING_READ]), getUserById);
-router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, SYSTEM_PERMISSIONS.MENTOR_UPDATE]), checkUserUpdatePrivilege, updateUser);
+router.patch("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_UPDATE, SYSTEM_PERMISSIONS.DOJO_HIRING_UPDATE, SYSTEM_PERMISSIONS.MENTOR_UPDATE]), authorizeUserUpdate, updateUser);
 router.patch("/:id/admin-change-password", verifyJWT, adminChangePassword);
-router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), checkPrivilege("user management"), bulkDeleteUsers);
-router.delete("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_DELETE, SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, SYSTEM_PERMISSIONS.MENTOR_DELETE]), checkUserDeletePrivilege, deleteUser);
+router.delete("/bulk", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_DELETE]), bulkDeleteUsers);
+router.delete("/:id", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_DELETE, SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE, SYSTEM_PERMISSIONS.MENTOR_DELETE]), authorizeUserDelete, deleteUser);
 
 export default router;

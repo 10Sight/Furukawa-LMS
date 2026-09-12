@@ -154,8 +154,10 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   // Granular Mentor permissions (only enforced for the Mentor page; other
   // roles served by this component fall back to the previous always-shown behavior)
   const canCreate = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:create");
-  const canUpdate = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:update");
-  const canDelete = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:delete");
+  // Update/Delete are always gated: mentor:{action} for the Mentor page, user:{action} for
+  // the other roles served here (Supervisor/Incharge - regular, non-temporary operators).
+  const canUpdate = isMasterAdmin || userPermissions.includes(isMentorRole ? "mentor:update" : "user:update");
+  const canDelete = isMasterAdmin || userPermissions.includes(isMentorRole ? "mentor:delete" : "user:delete");
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -309,6 +311,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   };
 
   const handleEditUser = async () => {
+    if (!canUpdate) return;
     setIsSubmitting(true);
     try {
       await updateUser({ id: selectedUser._id, ...formData, mentorLimit: Number(formData.mentorLimit) || 0 }).unwrap();
@@ -324,6 +327,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   };
 
   const handleDeleteUser = async (user) => {
+    if (!canDelete) return;
     if (window.confirm(`Are you sure you want to delete this ${roleName}?`)) {
       try {
         await deleteUser(user._id).unwrap();
@@ -338,6 +342,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   // Un-flags the user as a Mentor while keeping them as an Operator, so they don't
   // disappear from user management entirely -- just move back to the Operators page.
   const handleRemoveFromMentor = async (user) => {
+    if (!canUpdate) return;
     if (!window.confirm(`Remove ${user.fullName} from Mentors? They will remain as an Operator.`)) return;
     try {
       await updateUser({ id: user._id, isMentor: false, isEmployee: true }).unwrap();

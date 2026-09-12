@@ -29,13 +29,14 @@ export const authorizeRole = (requiredPermissions) => {
         return next();
       }
 
-      // Merge default system permissions with custom role permissions
-      // This allows both Role-based and User-specific (Custom) permissions to co-exist
-      // For CUSTOM roles, inherit base permissions from targetLayout (e.g. 'admin' → ADMIN permissions)
-      const targetLayout = userRole === 'CUSTOM' ? String(req.user.customRole?.targetLayout || '').toUpperCase() : null;
+      // Merge default system permissions with custom role permissions.
+      // CUSTOM roles must NOT inherit the full permission set of their targetLayout
+      // (e.g. 'admin') - that would silently grant every ADMIN permission, including
+      // destructive ones like user:delete, regardless of what the custom role actually
+      // configures. A CUSTOM role's permissions come strictly from its own configuration.
       const defaultPermissions = userRole !== 'CUSTOM'
         ? (DEFAULT_ROLES[userRole]?.permissions || [])
-        : (DEFAULT_ROLES[targetLayout]?.permissions || []);
+        : [];
       const customPermissions = req.user.customRole?.permissions || [];
       const allPermissions = [...new Set([...defaultPermissions, ...customPermissions])];
 
@@ -92,10 +93,9 @@ export const hasPermission = (user, permission) => {
   // SuperAdmin has all permissions
   if (userRole === 'SUPERADMIN') return true;
 
-  const targetLayout = userRole === 'CUSTOM' ? String(user.customRole?.targetLayout || '').toUpperCase() : null;
   const rolePermissions = userRole !== 'CUSTOM'
     ? (DEFAULT_ROLES[userRole]?.permissions || [])
-    : (DEFAULT_ROLES[targetLayout]?.permissions || []);
+    : [];
   const customPermissions = user.customRole?.permissions || [];
 
   return rolePermissions.includes(permission) || customPermissions.includes(permission);
@@ -115,10 +115,9 @@ export const hasAnyPermission = (user, permissions) => {
   // SuperAdmin has all permissions
   if (userRole === 'SUPERADMIN') return true;
 
-  const targetLayout = userRole === 'CUSTOM' ? String(user.customRole?.targetLayout || '').toUpperCase() : null;
   const rolePermissions = userRole !== 'CUSTOM'
     ? (DEFAULT_ROLES[userRole]?.permissions || [])
-    : (DEFAULT_ROLES[targetLayout]?.permissions || []);
+    : [];
   const customPermissions = user.customRole?.permissions || [];
   const allPermissions = [...new Set([...rolePermissions, ...customPermissions])];
 
@@ -252,10 +251,9 @@ export const authorizeAnyPermission = (allowedPermissions) => {
         return next();
       }
 
-      const targetLayout = userRole === 'CUSTOM' ? String(req.user.customRole?.targetLayout || '').toUpperCase() : null;
       const defaultPermissions = userRole !== 'CUSTOM'
         ? (DEFAULT_ROLES[userRole]?.permissions || [])
-        : (DEFAULT_ROLES[targetLayout]?.permissions || []);
+        : [];
       const customPermissions = req.user.customRole?.permissions || [];
       const allPermissions = [...new Set([...defaultPermissions, ...customPermissions])];
 

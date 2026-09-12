@@ -2886,6 +2886,22 @@ export const restoreUser = asyncHandler(async (req, res) => {
 export const bulkDeleteUsers = asyncHandler(async (req, res) => {
   const { ids, isAllSelected, filters } = req.body;
 
+  // DELETE /api/users/bulk only requires user:delete (see user.routes.js), which is scoped
+  // to regular operators (isTemporary = 0). Without this guard, a caller with user:delete
+  // but not dojo_hiring:delete could sweep DOJO candidates into a bulk delete.
+  const canDeleteDojo = req.user.role === 'SUPERADMIN' || req.user.isAdmin ||
+    (req.user.customRole?.permissions || []).includes(SYSTEM_PERMISSIONS.DOJO_HIRING_DELETE);
+
+  if (!isAllSelected && ids?.length && !canDeleteDojo) {
+    const [temporaryRows] = await executeQuery(
+      `SELECT id FROM users WHERE isTemporary = 1 AND id IN (${ids.map(() => "?").join(",")})`,
+      ids
+    );
+    if (temporaryRows.length) {
+      throw new ApiError("Insufficient permissions to delete DOJO candidates in this selection", 403);
+    }
+  }
+
   if (isAllSelected) {
     const assignmentStatus = filters?.assignmentStatus;
     const needsHierarchy = assignmentStatus && ['assigned', 'unassigned'].includes(assignmentStatus);
@@ -2894,6 +2910,9 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
       // Use the hierarchy join to resolve IDs matching the assignment-level filter
       let hierWhere = ["u.isEmployee = 1", "(u.isTrainer = 0 OR u.isTrainer IS NULL)", "(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
       let hierParams = [];
+      if (!canDeleteDojo) {
+        hierWhere.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+      }
 
       if (filters?.search) {
         const t = `%${filters.search}%`;
@@ -2948,6 +2967,9 @@ export const bulkDeleteUsers = asyncHandler(async (req, res) => {
     // Handle filtered bulk delete (all matching records) — flat path when no assignment filter
     let whereClauses = ["isEmployee = 1", "(isTrainer = 0 OR isTrainer IS NULL)", "(isDeleted = 0 OR isDeleted IS NULL)"];
     let params = [];
+    if (!canDeleteDojo) {
+      whereClauses.push("(isTemporary = 0 OR isTemporary IS NULL)");
+    }
 
     if (filters?.search) {
       const t = `%${filters.search}%`;

@@ -205,15 +205,73 @@ export const cloneMeeting = async (req, res) => {
         const meetingDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
         const meetingTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
-        const newMeeting = await DailyMorningMeeting.createWithSheetData({
-            sectionId: sourceMeeting.sectionId,
-            agenda: agenda.trim(),
-            description: description || null,
-            meetingDate,
-            meetingTime,
-            createdBy: req.user.id,
-            sheetData: sourceMeeting.sheetData
-        });
+        let newMeeting;
+        if (sourceMeeting.fileProvider === "M365_SHAREPOINT" && sourceMeeting.m365ItemId) {
+            // The source is a real SharePoint workbook — duplicate the actual file via
+            // Graph instead of cloning sheetData (which is only a best-effort mirror
+            // for a M365-backed meeting, not the source of truth).
+            if (!microsoftGraphService.isConfigured()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Microsoft 365 integration is not configured on the server yet. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and SHAREPOINT_DRIVE_ID."
+                });
+            }
+
+            const { sectionName, departmentName } = await getSectionAndDepartmentNames(sourceMeeting.sectionId);
+            const newFileName = `DailyMeeting_${Date.now()}_Copy.xlsx`;
+
+            let copyResult;
+            try {
+                copyResult = await microsoftGraphService.copyWorkbookInSharePoint({
+                    sourceItemId: sourceMeeting.m365ItemId,
+                    targetDepartmentName: departmentName,
+                    targetSectionName: sectionName,
+                    newFileName
+                });
+            } catch (graphError) {
+                logger.error("Microsoft Graph copy failed during cloneMeeting:", graphError);
+                return res.status(502).json({ success: false, message: "Failed to duplicate the Microsoft 365 workbook. Please try again." });
+            }
+
+            try {
+                newMeeting = await DailyMorningMeeting.createFromM365File({
+                    sectionId: sourceMeeting.sectionId,
+                    agenda: agenda.trim(),
+                    description: description || null,
+                    meetingDate,
+                    meetingTime,
+                    createdBy: req.user.id,
+                    m365Info: {
+                        driveId: copyResult.driveId,
+                        itemId: copyResult.itemId,
+                        webUrl: copyResult.webUrl,
+                        embedUrl: copyResult.embedUrl,
+                        fileName: copyResult.fileName,
+                    }
+                });
+
+                // For a M365-backed meeting, sheetData only ever holds chart settings
+                // (the real cell content lives in the SharePoint workbook) — carry it
+                // over so the clone doesn't lose whatever charts were configured.
+                if (sourceMeeting.sheetData && sourceMeeting.sheetData !== "{}") {
+                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, sourceMeeting.sheetData);
+                }
+            } catch (dbError) {
+                // Compensating action: don't leave an orphaned SharePoint copy the DB has no record of.
+                await microsoftGraphService.deleteWorkbook(copyResult.itemId);
+                throw dbError;
+            }
+        } else {
+            newMeeting = await DailyMorningMeeting.createWithSheetData({
+                sectionId: sourceMeeting.sectionId,
+                agenda: agenda.trim(),
+                description: description || null,
+                meetingDate,
+                meetingTime,
+                createdBy: req.user.id,
+                sheetData: sourceMeeting.sheetData
+            });
+        }
 
         // Include the parsed sheets/activeSheet (same shape getMeetingDetail returns) so
         // the client can seed the detail query's cache directly from this response,
@@ -337,6 +395,175 @@ export const migrateMeetingToM365 = async (req, res) => {
         return res.status(200).json({ success: true, message: "Meeting migrated to Microsoft 365 successfully", data: formatMeetingRow(meeting) });
     } catch (error) {
         logger.error("Error in migrateMeetingToM365:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// On-demand, 1-click access: auto-provisions the SharePoint workbook the first
+// time anyone opens it (no separate "migrate" step needed), then returns a
+// sharing link scoped to the requester's own access. Same department/admin get
+// an "edit" link; everyone else gets a strictly read-only "view" link — decided
+// server-side via canModifyDailyMeetingSection, never trusted from the client.
+// Deliberately leaves fileProvider/m365WebUrl untouched when handing out a view
+// link, so it never overwrites the stored edit link a same-department user (or
+// the legacy embed view) relies on.
+export const openMeetingInM365 = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!microsoftGraphService.isConfigured()) {
+            return res.status(400).json({
+                success: false,
+                message: "Microsoft 365 integration is not configured on the server yet. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and SHAREPOINT_DRIVE_ID."
+            });
+        }
+
+        const existing = await DailyMorningMeeting.findById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+
+        const canEdit = await canModifyDailyMeetingSection(req.user, existing.sectionId);
+        const linkType = canEdit ? "edit" : "view";
+
+        let itemId = existing.m365ItemId;
+
+        if (!itemId) {
+            const workbook = normalizeWorkbook(parseSheetData(existing.sheetData));
+            const fileBuffer = await buildWorkbookBuffer(workbook);
+            const { sectionName, departmentName } = await getSectionAndDepartmentNames(existing.sectionId);
+
+            let uploadResult;
+            try {
+                uploadResult = await microsoftGraphService.createMeetingWorkbook({
+                    departmentName, sectionName, meetingId: existing.id, fileBuffer
+                });
+            } catch (graphError) {
+                logger.error("Microsoft Graph upload failed during openMeetingInM365:", graphError);
+                return res.status(502).json({ success: false, message: "Failed to create the workbook in Microsoft 365. Please try again." });
+            }
+
+            try {
+                await DailyMorningMeeting.updateM365Info(id, {
+                    fileProvider: existing.fileProvider || "LOCAL_JSON",
+                    m365DriveId: uploadResult.driveId,
+                    m365ItemId: uploadResult.itemId,
+                    m365WebUrl: uploadResult.webUrl,
+                    m365EmbedUrl: uploadResult.embedUrl,
+                });
+            } catch (dbError) {
+                // Compensating action: don't leave an orphaned SharePoint file the DB has no record of.
+                await microsoftGraphService.deleteWorkbook(uploadResult.itemId);
+                throw dbError;
+            }
+
+            itemId = uploadResult.itemId;
+            // The upload already minted an edit-type link — reuse it instead of a second Graph round-trip.
+            if (linkType === "edit") {
+                return res.status(200).json({ success: true, mode: "edit", url: uploadResult.webUrl });
+            }
+        }
+
+        let shareLink;
+        try {
+            shareLink = await microsoftGraphService.getShareLink(itemId, linkType);
+        } catch (graphError) {
+            logger.error("Microsoft Graph link creation failed during openMeetingInM365:", graphError);
+            return res.status(502).json({ success: false, message: "Failed to generate the Microsoft 365 link. Please try again." });
+        }
+
+        return res.status(200).json({ success: true, mode: linkType, url: shareLink.webUrl });
+    } catch (error) {
+        logger.error("Error in openMeetingInM365:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// Reconciles a section's SharePoint folder against MSSQL: files created (or
+// "Save a Copy"-d) directly in Excel Online/SharePoint never touch the LMS API,
+// so without this the section's meeting list would never learn about them.
+// Idempotent — every M365 item is keyed by m365ItemId, so re-running never
+// creates duplicate rows for a file already tracked (in this section or any other).
+export const syncSectionMeetingsFromM365 = async (req, res) => {
+    try {
+        const { sectionId } = req.params;
+        if (!microsoftGraphService.isConfigured()) {
+            return res.status(400).json({
+                success: false,
+                message: "Microsoft 365 integration is not configured on the server yet. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and SHAREPOINT_DRIVE_ID."
+            });
+        }
+        if (!(await canModifyDailyMeetingSection(req.user, sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+
+        const { sectionName, departmentName } = await getSectionAndDepartmentNames(sectionId);
+
+        let files;
+        try {
+            files = await microsoftGraphService.getSectionFolderFiles({ departmentName, sectionName });
+        } catch (graphError) {
+            logger.error("Microsoft Graph folder listing failed during syncSectionMeetingsFromM365:", graphError);
+            return res.status(502).json({ success: false, message: "Failed to read the section's Microsoft 365 folder. Please try again." });
+        }
+
+        const knownItemIds = new Set(await DailyMorningMeeting.findM365ItemIdsBySectionId(sectionId));
+        const newFiles = files.filter((f) => !knownItemIds.has(f.itemId));
+
+        let newCount = 0;
+        for (const file of newFiles) {
+            // A file already tracked under a different section (e.g. moved in
+            // SharePoint after being synced) is left untouched — reconciliation
+            // only adds rows here, it never reassigns an existing one.
+            const trackedElsewhere = await DailyMorningMeeting.findByM365ItemId(file.itemId);
+            if (trackedElsewhere) continue;
+
+            const created = file.createdDateTime ? new Date(file.createdDateTime) : new Date();
+            const pad = (n) => String(n).padStart(2, "0");
+            const meetingDate = `${created.getFullYear()}-${pad(created.getMonth() + 1)}-${pad(created.getDate())}`;
+            const meetingTime = `${pad(created.getHours())}:${pad(created.getMinutes())}:${pad(created.getSeconds())}`;
+            const agenda = file.name.replace(/\.xlsx$/i, "").replace(/[_-]+/g, " ").trim() || "Untitled Meeting";
+
+            let shareLink;
+            try {
+                shareLink = await microsoftGraphService.getShareLink(file.itemId, "edit");
+            } catch (graphError) {
+                logger.error(`Microsoft Graph link creation failed for discovered file ${file.itemId}:`, graphError);
+                continue; // Skip this file for now — it'll be retried on the next sync.
+            }
+
+            await DailyMorningMeeting.createFromM365File({
+                sectionId,
+                agenda,
+                description: "Imported from Microsoft Excel Online",
+                meetingDate,
+                meetingTime,
+                createdBy: req.user.id,
+                m365Info: {
+                    driveId: process.env.SHAREPOINT_DRIVE_ID,
+                    itemId: file.itemId,
+                    webUrl: shareLink.webUrl,
+                    embedUrl: shareLink.embedUrl,
+                    fileName: file.name,
+                    eTag: file.eTag,
+                    createdDateTime: file.createdDateTime,
+                    lastModifiedDateTime: file.lastModifiedDateTime,
+                }
+            });
+            newCount++;
+        }
+
+        const rows = await DailyMorningMeeting.findBySectionId(sectionId);
+        const meetings = rows.map(formatMeetingRow);
+
+        return res.status(200).json({
+            success: true,
+            message: newCount > 0
+                ? `Synced ${newCount} new meeting sheet${newCount === 1 ? "" : "s"} from Microsoft Excel.`
+                : "All Microsoft Excel sheets are up to date.",
+            data: { syncedCount: files.length, newCount, totalCount: meetings.length, meetings }
+        });
+    } catch (error) {
+        logger.error("Error in syncSectionMeetingsFromM365:", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };

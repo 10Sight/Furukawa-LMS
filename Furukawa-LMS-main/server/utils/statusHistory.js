@@ -35,16 +35,23 @@ export const buildStatusHistoryEntry = ({ status, joiningDate, leavingDate, chan
     });
 };
 
+// Genesis rows written before this module wrapped every entry in an array can have a bare
+// JSON object ({"status":...}) instead of an array ([{"status":...}]). Treat a single object
+// as a one-entry history instead of discarding it, so OPENJSON()-based SQL and this module's
+// own array operations (push, index into last entry) keep working on old rows.
 const parseHistory = (existingHistory) => {
     if (Array.isArray(existingHistory)) return [...existingHistory];
     if (typeof existingHistory === "string") {
         try {
             const parsed = JSON.parse(existingHistory || "[]");
-            return Array.isArray(parsed) ? parsed : [];
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === "object") return [parsed];
+            return [];
         } catch (e) {
             return [];
         }
     }
+    if (existingHistory && typeof existingHistory === "object") return [existingHistory];
     return [];
 };
 

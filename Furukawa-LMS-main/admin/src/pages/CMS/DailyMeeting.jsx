@@ -18,14 +18,16 @@ import {
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
     IconCalendar, IconFolder, IconChevronDown, IconChevronUp, IconSettings, IconLoader2, IconAlertCircle, IconEye,
-    IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy
+    IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy,
+    IconFileSpreadsheet, IconRefresh, IconCloud
 } from "@tabler/icons-react";
 import {
     useGetAllDepartmentsQuery, useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
     useGetDailyMorningMeetingsQuery, useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation, useCloneDailyMorningMeetingMutation,
     useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation,
-    useMigrateDailyMorningMeetingToM365Mutation, useRefreshDailyMorningMeetingEmbedUrlMutation,
+    useRefreshDailyMorningMeetingEmbedUrlMutation, useOpenDailyMorningMeetingInM365Mutation,
+    useSyncSectionDailyMeetingsFromM365Mutation,
     useSaveDailyMorningMeetingSheetMutation, useLazyGetDailyMorningMeetingM365SnapshotQuery
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
@@ -34,7 +36,7 @@ import { cn } from "@/lib/utils";
 import ExcelClone from "@/components/admin/excelClone/ExcelClone";
 import ExcelGraph from "@/components/admin/excelClone/ExcelGraph";
 import MicrosoftExcelEmbed from "@/components/admin/m365Excel/MicrosoftExcelEmbed";
-import { IconCloudUpload, IconChartBar } from "@tabler/icons-react";
+import { IconChartBar } from "@tabler/icons-react";
 
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
@@ -248,7 +250,7 @@ function CloneMeetingDialog({ meeting, onOpenChange, onClone, isCloning }) {
     );
 }
 
-function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, onCloneRequest, canUpdate, canDelete, canCreate }) {
+function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, onCloneRequest, onOpenM365, openingM365Id, canUpdate, canDelete, canCreate }) {
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-10">
@@ -282,13 +284,37 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, o
                     {meetings.map((m, idx) => (
                         <TableRow key={m.id} className="cursor-pointer" onClick={() => onView(m)}>
                             <TableCell className="text-slate-500">{idx + 1}</TableCell>
-                            <TableCell className="font-medium text-slate-800">{m.agenda}</TableCell>
+                            <TableCell className="font-medium text-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                    <span>{m.agenda}</span>
+                                    {m.fileProvider === "M365_SHAREPOINT" && (
+                                        <span
+                                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full shrink-0"
+                                            title="Backed by Microsoft 365 / SharePoint"
+                                        >
+                                            <IconCloud className="w-2.5 h-2.5" /> M365
+                                        </span>
+                                    )}
+                                </div>
+                            </TableCell>
                             <TableCell className="text-slate-500 max-w-xs truncate">{m.description || "—"}</TableCell>
                             <TableCell className="text-slate-600 whitespace-nowrap">{formatMeetingDate(m.meetingDate)}</TableCell>
                             <TableCell className="text-slate-600 whitespace-nowrap">{formatMeetingTime(m.meetingTime)}</TableCell>
                             <TableCell className="text-slate-600">{m.createdByName || "—"}</TableCell>
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 cursor-pointer"
+                                        onClick={() => onOpenM365(m)}
+                                        disabled={openingM365Id === m.id}
+                                        title="Open in Microsoft Excel Online"
+                                    >
+                                        {openingM365Id === m.id
+                                            ? <IconLoader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                                            : <IconFileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
+                                    </Button>
                                     {canUpdate && (
                                         <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => onEdit(m)} title="Edit spreadsheet">
                                             <IconPencil className="w-3.5 h-3.5 text-slate-500" />
@@ -304,7 +330,6 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, o
                                             <IconTrash className="w-3.5 h-3.5 text-red-500" />
                                         </Button>
                                     )}
-                                    {!canUpdate && !canDelete && !canCreate && <span className="text-slate-300 text-xs">—</span>}
                                 </div>
                             </TableCell>
                         </TableRow>
@@ -378,8 +403,10 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const [cloneMeeting, { isLoading: isCloning }] = useCloneDailyMorningMeetingMutation();
     const [updateMeeting, { isLoading: isUpdating }] = useUpdateDailyMorningMeetingMutation();
     const [deleteMeeting, { isLoading: isDeleting }] = useDeleteDailyMorningMeetingMutation();
-    const [migrateToM365, { isLoading: isMigrating }] = useMigrateDailyMorningMeetingToM365Mutation();
     const [refreshEmbedUrl, { isLoading: isRefreshingEmbed }] = useRefreshDailyMorningMeetingEmbedUrlMutation();
+    const [openInM365] = useOpenDailyMorningMeetingInM365Mutation();
+    const [openingM365Id, setOpeningM365Id] = useState(null);
+    const [syncFromM365, { isLoading: isSyncingM365 }] = useSyncSectionDailyMeetingsFromM365Mutation();
     const [saveMeetingSheet] = useSaveDailyMorningMeetingSheetMutation();
     const [fetchM365Snapshot, { isFetching: isLoadingM365Chart }] = useLazyGetDailyMorningMeetingM365SnapshotQuery();
 
@@ -487,12 +514,31 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
         }
     };
 
-    const handleMigrateToM365 = async () => {
+    // 1-click open: the server auto-provisions the SharePoint workbook on first
+    // use and decides edit-vs-view access itself (same department/admin -> edit,
+    // everyone else -> read-only) — the client just opens whatever URL comes back.
+    const handleOpenInM365 = async (meeting) => {
+        setOpeningM365Id(meeting.id);
         try {
-            await migrateToM365({ meetingId: selectedMeeting.id }).unwrap();
-            toast.success("Meeting migrated to Microsoft 365!");
+            const res = await openInM365({ meetingId: meeting.id }).unwrap();
+            window.open(res.url, "_blank", "noopener,noreferrer");
+            toast.success(res.mode === "edit" ? "Opening in Excel (Edit mode)" : "Opening in Excel (View-only mode)");
         } catch (err) {
-            toast.error(err?.data?.message || "Failed to migrate to Microsoft 365.");
+            toast.error(err?.data?.message || "Failed to open in Microsoft Excel.");
+        } finally {
+            setOpeningM365Id(null);
+        }
+    };
+
+    // Picks up files created or "Save a Copy"-d directly in Excel Online/SharePoint,
+    // which never touch the LMS API on their own — the section's meeting list would
+    // otherwise never learn about them.
+    const handleSyncFromM365 = async () => {
+        try {
+            const res = await syncFromM365({ sectionId }).unwrap();
+            toast.success(res?.message || "Sync complete.");
+        } catch (err) {
+            toast.error(err?.data?.message || "Failed to sync with Microsoft Excel.");
         }
     };
 
@@ -547,18 +593,16 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                                     {isGraphVisible ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
                                     <span>{isGraphVisible ? "Hide Charts" : "Show Charts"}</span>
                                 </Button>
-                                {canUpdate && selectedMeeting.fileProvider !== "M365_SHAREPOINT" && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="shrink-0 cursor-pointer flex items-center gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                                        onClick={handleMigrateToM365}
-                                        disabled={isMigrating}
-                                        title="Copy this meeting's spreadsheet into Microsoft 365 Excel Online"
-                                    >
-                                        {isMigrating ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCloudUpload className="w-3.5 h-3.5" />} Migrate to Microsoft 365
-                                    </Button>
-                                )}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 cursor-pointer flex items-center gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                                    onClick={() => handleOpenInM365(selectedMeeting)}
+                                    disabled={openingM365Id === selectedMeeting.id}
+                                    title="Open this meeting's spreadsheet in Microsoft Excel Online"
+                                >
+                                    {openingM365Id === selectedMeeting.id ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconFileSpreadsheet className="w-3.5 h-3.5" />} Open in Microsoft Excel
+                                </Button>
                                 {canUpdate && (
                                     <Button variant="outline" size="sm" className="shrink-0 cursor-pointer flex items-center gap-1.5" onClick={() => setEditDetailsMeeting(selectedMeeting)}>
                                         <IconPencil className="w-3.5 h-3.5" /> Edit Details
@@ -624,11 +668,25 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
         <div className="space-y-3 p-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Daily Morning Meetings</div>
-                {canCreate && (
-                    <Button size="sm" onClick={() => setCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
-                        <IconPlus className="w-4 h-4" /> Daily Morning Meeting
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    {canUpdate && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSyncFromM365}
+                            disabled={isSyncingM365}
+                            className="cursor-pointer flex items-center gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                            title="Pull in files created or copied directly in Microsoft Excel Online"
+                        >
+                            {isSyncingM365 ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconRefresh className="w-3.5 h-3.5" />} Sync with Excel / M365
+                        </Button>
+                    )}
+                    {canCreate && (
+                        <Button size="sm" onClick={() => setCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
+                            <IconPlus className="w-4 h-4" /> Daily Morning Meeting
+                        </Button>
+                    )}
+                </div>
             </div>
 
             <Tabs value={activeTab} onValueChange={(val) => updateParams({ mtab: val === "all" ? "all" : null })} className="w-full">
@@ -637,10 +695,10 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                     <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Daily Meetings</TabsTrigger>
                 </TabsList>
                 <TabsContent value="month" className="mt-3">
-                    <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
+                    <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} onOpenM365={handleOpenInM365} openingM365Id={openingM365Id} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
                 <TabsContent value="all" className="mt-3">
-                    <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
+                    <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} onOpenM365={handleOpenInM365} openingM365Id={openingM365Id} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
             </Tabs>
 

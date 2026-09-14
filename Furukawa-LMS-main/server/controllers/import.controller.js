@@ -19,6 +19,7 @@ import {
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
 import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { normalizeOperatorStatus } from "../utils/userEligibility.js";
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -261,15 +262,11 @@ const syncDepartmentStudents = async (userId, departmentId) => {
 
 
 /**
- * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON_LEAVE)
+ * Normalize status values from Excel to canonical DB values (PRESENT / LEFT / ON_LEAVE).
+ * Delegates to the single source of truth in userEligibility.js so imports stay in sync
+ * with every other write path (manual create/update, bulk status update).
  */
-const normalizeStatus = (val) => {
-    if (!val) return "PRESENT";
-    const v = val.toString().trim().toUpperCase().replace(/[\s\-_]+/g, '');
-    if (v === "LEFT" || v === "LEAVING" || v === "RESIGNED" || v === "TERMINATED") return "LEFT";
-    if (v === "ONLEAVE" || v === "LEAVE") return "ON_LEAVE";
-    return "PRESENT";
-};
+const normalizeStatus = normalizeOperatorStatus;
 
 /**
  * Bulk-backfills a Skill Matrix Check Sheet from an import row's Level + Target/Actual Second

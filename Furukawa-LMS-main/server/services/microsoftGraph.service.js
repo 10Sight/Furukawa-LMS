@@ -1,5 +1,5 @@
 import { ClientSecretCredential } from "@azure/identity";
-import { Client } from "@microsoft/microsoft-graph-client";
+import { Client, ResponseType } from "@microsoft/microsoft-graph-client";
 import { TokenCredentialAuthenticationProvider } from "@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials/index.js";
 import logger from "../logger/winston.logger.js";
 
@@ -116,21 +116,29 @@ class MicrosoftGraphService {
                 .put(fileBuffer);
 
             const itemId = uploadRes.id;
-            const { webUrl, embedUrl } = await this._createEditLink(itemId);
+            const { webUrl, embedUrl } = await this.createShareLink(itemId, "edit");
 
             return { driveId: this.driveId, itemId, webUrl, embedUrl, fileName, folderPath };
         });
     }
 
     async getEmbedUrl(itemId) {
-        return this.executeWithRetry(() => this._createEditLink(itemId));
+        return this.executeWithRetry(() => this.createShareLink(itemId, "edit"));
     }
 
-    async _createEditLink(itemId) {
+    // Department-based access control (server/utils/dailyMeetingAccess.util.js)
+    // maps to this "type": same department/admin get "edit", every other viewer
+    // gets "view". Graph's createLink is idempotent per (type, scope) pair — it
+    // reuses an existing link of that type instead of minting a new one each call.
+    async getShareLink(itemId, type = "edit") {
+        return this.executeWithRetry(() => this.createShareLink(itemId, type));
+    }
+
+    async createShareLink(itemId, type = "edit") {
         const client = this.getClient();
         const linkRes = await client
             .api(`/drives/${this.driveId}/items/${itemId}/createLink`)
-            .post({ type: "edit", scope: "organization" });
+            .post({ type, scope: "organization" });
 
         const webUrl = linkRes.link.webUrl;
         const embedUrl = `${webUrl}${webUrl.includes("?") ? "&" : "?"}action=embedview&wdbipreview=true`;
@@ -167,6 +175,124 @@ class MicrosoftGraphService {
 
             return { sheetName: sheet.name, displayGrid, rowCount, columnCount };
         });
+    }
+
+    /**
+     * Lists the .xlsx workbooks directly inside a section's SharePoint folder, so
+     * the caller can reconcile them against what's already tracked in MSSQL (files
+     * created or "Save a Copy"-d directly in Excel Online never touch the LMS API).
+     * Returns [] for a section that has no folder yet, rather than throwing.
+     */
+    async getSectionFolderFiles({ departmentName, sectionName }) {
+        const cleanDept = (departmentName || "General").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const cleanSection = (sectionName || "Section").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const folderPath = `DailyMeetings/${cleanDept}/${cleanSection}`;
+
+        return this.executeWithRetry(async () => {
+            const client = this.getClient();
+            let children;
+            try {
+                const res = await client.api(`/drives/${this.driveId}/root:/${folderPath}:/children`).get();
+                children = res.value || [];
+            } catch (err) {
+                if (err.statusCode === 404) return [];
+                throw err;
+            }
+
+            return children
+                .filter((item) => item.file && /\.xlsx$/i.test(item.name))
+                .map((item) => ({
+                    itemId: item.id,
+                    name: item.name,
+                    webUrl: item.webUrl,
+                    eTag: item.eTag,
+                    createdDateTime: item.createdDateTime,
+                    lastModifiedDateTime: item.lastModifiedDateTime,
+                    size: item.size,
+                    createdBy: item.createdBy?.user?.displayName || null,
+                }));
+        });
+    }
+
+    /**
+     * Fetches up-to-date metadata for a single tracked item — used to refresh
+     * change-tracking fields (eTag/lastModifiedDateTime) without listing the
+     * whole folder.
+     */
+    async getFileMetadata(itemId) {
+        return this.executeWithRetry(async () => {
+            const client = this.getClient();
+            const item = await client.api(`/drives/${this.driveId}/items/${itemId}`).get();
+            return {
+                itemId: item.id,
+                name: item.name,
+                webUrl: item.webUrl,
+                eTag: item.eTag,
+                createdDateTime: item.createdDateTime,
+                lastModifiedDateTime: item.lastModifiedDateTime,
+                size: item.size,
+            };
+        });
+    }
+
+    /**
+     * Duplicates an existing SharePoint workbook into a (possibly different)
+     * section folder using Graph's native async copy — cheaper and more faithful
+     * than downloading + re-uploading, and preserves things a buffer round-trip
+     * through exceljs would drop (formatting, etc).
+     */
+    async copyWorkbookInSharePoint({ sourceItemId, targetDepartmentName, targetSectionName, newFileName }) {
+        const cleanDept = (targetDepartmentName || "General").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const cleanSection = (targetSectionName || "Section").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const folderPath = `DailyMeetings/${cleanDept}/${cleanSection}`;
+        const fileName = newFileName || `DailyMeeting_Copy_${Date.now()}.xlsx`;
+
+        return this.executeWithRetry(async () => {
+            const client = this.getClient();
+            await this.ensureFolder(folderPath);
+            const folderItem = await client.api(`/drives/${this.driveId}/root:/${folderPath}`).get();
+
+            // Graph's copy action is async: it responds 202 with a Location header
+            // pointing at a monitor URL rather than the new item itself.
+            const copyResponse = await client
+                .api(`/drives/${this.driveId}/items/${sourceItemId}/copy`)
+                .responseType(ResponseType.RAW)
+                .post({
+                    parentReference: { driveId: this.driveId, id: folderItem.id },
+                    name: fileName
+                });
+
+            const monitorUrl = copyResponse.headers.get("location");
+            if (!monitorUrl) {
+                throw new Error("Microsoft Graph did not return a monitor URL for the copy operation.");
+            }
+            const newItemId = await this._waitForCopyCompletion(monitorUrl);
+
+            const newItem = await client.api(`/drives/${this.driveId}/items/${newItemId}`).get();
+            const { webUrl, embedUrl } = await this.createShareLink(newItemId, "edit");
+
+            return { driveId: this.driveId, itemId: newItemId, webUrl, embedUrl, fileName: newItem.name, folderPath };
+        });
+    }
+
+    // The monitor URL is queried directly (no Authorization header, per Graph docs)
+    // until it reports completion. Polls with mild backoff instead of a fixed
+    // interval since most copies of small workbooks finish within a second or two.
+    async _waitForCopyCompletion(monitorUrl, maxAttempts = 15) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const res = await fetch(monitorUrl);
+            const body = await res.json().catch(() => ({}));
+
+            if (res.status === 200 && (body.status === "completed" || body.resourceId)) {
+                if (body.resourceId) return body.resourceId;
+                if (body.id) return body.id;
+            }
+            if (body.status === "failed") {
+                throw new Error(`Microsoft Graph copy operation failed: ${body.statusDescription || "unknown error"}`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1000 + attempt * 500));
+        }
+        throw new Error("Timed out waiting for Microsoft Graph to finish copying the workbook.");
     }
 
     // Compensating action: called when the DB write after a successful upload

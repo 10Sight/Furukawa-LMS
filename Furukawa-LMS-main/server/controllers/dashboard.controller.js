@@ -2,7 +2,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
-import { getEligibleUserSql, getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+import { getEligibleUserSql, getDesignationShutterExclusionSql, getNonTrainerConditionSql, normalizeOperatorStatus } from "../utils/userEligibility.js";
 import logger from "../logger/winston.logger.js";
 
 /*
@@ -307,10 +307,13 @@ const getDashboardDesignationShutterExclusionSql = (alias = "u") => getDesignati
 // Base population shared by every Dashboard Total Manpower / Users Total query.
 // Keep this aligned with the SDP employee population before applying date-wise statusHistory.
 // Historical reconstruction needs PRESENT and LEFT users, but every other current status is excluded.
+// Trainers are excluded here to match the Students page's "operator" population
+// ((u.isTrainer = 0 OR u.isTrainer IS NULL)) — see userEligibility.js's getNonTrainerConditionSql.
 const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
     AND ISNULL(${alias}.isDeleted, 0) = 0
     AND ISNULL(${alias}.isTemporary, 0) = 0
     AND ISNULL(${alias}.isEmployee, 0) = 1
+    AND ${getNonTrainerConditionSql(alias)}
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
     ${getDashboardDesignationShutterExclusionSql(alias)}
@@ -324,6 +327,7 @@ const getRejoiningTrendBaseEligibilitySql = (alias = "u") => `
     AND ISNULL(${alias}.isDeleted, 0) = 0
     AND ISNULL(${alias}.isTemporary, 0) = 0
     AND ISNULL(${alias}.isEmployee, 0) = 1
+    AND ${getNonTrainerConditionSql(alias)}
     AND ${alias}.empId IS NOT NULL
     AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
     ${getDashboardDesignationShutterExclusionSql(alias)}
@@ -1397,7 +1401,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const prepareManpowerUser = (userRow = {}) => ({
         id: userRow.id,
-        currentStatus: String(userRow.status || '').trim().toUpperCase(),
+        currentStatus: normalizeOperatorStatus(userRow.status),
         historyPeriods: getValidStatusHistoryPeriods(userRow),
         legacyJoiningDateKey: parseManpowerDateKey(userRow.joiningDate),
         legacyLeavingDateKey: parseManpowerDateKey(userRow.leavingDate),

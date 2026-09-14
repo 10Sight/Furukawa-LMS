@@ -360,6 +360,32 @@ export const departmentApi = createApi({
             invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
         }),
 
+        // 1-click "open in Excel Online": auto-provisions the SharePoint workbook on
+        // first call, then returns { url, mode: "edit" | "view" } scoped to the caller.
+        // Invalidates the meeting detail tag since a first-time open persists new
+        // m365ItemId/m365WebUrl fields onto the meeting record.
+        openDailyMorningMeetingInM365: builder.mutation({
+            query: ({ meetingId }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/open-m365`,
+                method: "POST",
+            }),
+            invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+        }),
+
+        // Reconciles the section's SharePoint folder against MSSQL so files
+        // created/copied directly in Excel Online show up without a manual
+        // "create meeting" step. Invalidates the section's meeting list since it
+        // may insert new rows.
+        syncSectionDailyMeetingsFromM365: builder.mutation({
+            query: ({ sectionId }) => ({
+                url: `/api/daily-morning-meetings/section/${sectionId}/sync-m365`,
+                method: "POST",
+            }),
+            invalidatesTags: (result, error, { sectionId }) => [
+                { type: 'Department', id: `daily-morning-meetings-${sectionId}` }
+            ],
+        }),
+
         // Not cached via providesTags/invalidatesTags — this is a manual, on-demand
         // "pull the latest values from Excel Online" snapshot, not part of the
         // meeting record itself.
@@ -410,5 +436,7 @@ export const {
     useDeleteDailyMorningMeetingMutation,
     useMigrateDailyMorningMeetingToM365Mutation,
     useRefreshDailyMorningMeetingEmbedUrlMutation,
+    useOpenDailyMorningMeetingInM365Mutation,
+    useSyncSectionDailyMeetingsFromM365Mutation,
     useLazyGetDailyMorningMeetingM365SnapshotQuery,
 } = departmentApi;

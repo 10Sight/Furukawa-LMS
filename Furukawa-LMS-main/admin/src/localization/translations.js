@@ -318,6 +318,19 @@ export const translations = {
     "charts.failedToLoadCohortTrend": "Failed to load cohort trend.",
     "charts.noCohortData": "No cohort data found for this period.",
 
+    // Dojo Temporary Metrics Trend Chart
+    "charts.dojoTemporaryMetricsTrend": "Dojo Temporary Candidates — Theoretical, Practical, Left & Gender Trend",
+    "charts.dojoTemporaryMetricsTrendDesc": "Day-by-day breakdown of Theoretical (Day-1), Practical, Left, and gender split among Dojo temporary candidates",
+    "charts.theoretical": "Theoretical",
+    "charts.practical": "Practical",
+    "charts.viewMode": "View",
+    "charts.allMetrics": "All Metrics",
+    "charts.byStage": "By Stage",
+    "charts.newJoiners": "New Joiners",
+    "charts.currentlyActive": "Currently Active",
+    "charts.failedToLoadTemporaryMetrics": "Failed to load temporary metrics trend.",
+    "charts.noTemporaryMetricsData": "No temporary metrics data found for this period.",
+
     // Left Users Leaving-Reason Trend Chart
     "charts.leftUsersReasonTrend": "Left Users — Leaving Reason Trend",
     "charts.leftUsersReasonTrendDesc": "Attrition tracking and leaving-reason breakdown for DOJO Candidates and Operators",
@@ -1144,6 +1157,19 @@ export const translations = {
     "charts.failedToLoadCohortTrend": "कोहॉर्ट ट्रेंड लोड करने में विफल।",
     "charts.noCohortData": "इस अवधि के लिए कोई कोहॉर्ट डेटा नहीं मिला।",
 
+    // Dojo Temporary Metrics Trend Chart
+    "charts.dojoTemporaryMetricsTrend": "डोजो अस्थायी उम्मीदवार — थ्योरेटिकल, प्रैक्टिकल, लेफ्ट और जेंडर ट्रेंड",
+    "charts.dojoTemporaryMetricsTrendDesc": "डोजो अस्थायी उम्मीदवारों में थ्योरेटिकल (दिन-1), प्रैक्टिकल, लेफ्ट और जेंडर विभाजन का दिन-प्रतिदिन विवरण",
+    "charts.theoretical": "थ्योरेटिकल",
+    "charts.practical": "प्रैक्टिकल",
+    "charts.viewMode": "दृश्य",
+    "charts.allMetrics": "सभी मेट्रिक्स",
+    "charts.byStage": "चरण अनुसार",
+    "charts.newJoiners": "नए शामिल",
+    "charts.currentlyActive": "वर्तमान में सक्रिय",
+    "charts.failedToLoadTemporaryMetrics": "अस्थायी मेट्रिक्स ट्रेंड लोड करने में विफल।",
+    "charts.noTemporaryMetricsData": "इस अवधि के लिए कोई अस्थायी मेट्रिक्स डेटा नहीं मिला।",
+
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO उम्मीदवार उपस्थिति स्थिति",
     "charts.attendanceStatusDesc": "उपस्थिति और निकास स्थिति - Dojo उपयोगकर्ता",
@@ -1929,6 +1955,19 @@ export const translations = {
     "charts.pendingHandover": "引き継ぎ保留中",
     "charts.failedToLoadCohortTrend": "コホート傾向の読み込みに失敗しました。",
     "charts.noCohortData": "この期間のコホートデータが見つかりません。",
+
+    // Dojo Temporary Metrics Trend Chart
+    "charts.dojoTemporaryMetricsTrend": "DOJO臨時候補者 — 理論・実技・離脱・性別トレンド",
+    "charts.dojoTemporaryMetricsTrendDesc": "DOJO臨時候補者の理論(1日目)、実技、離脱、性別内訳の日次推移",
+    "charts.theoretical": "理論",
+    "charts.practical": "実技",
+    "charts.viewMode": "表示",
+    "charts.allMetrics": "全指標",
+    "charts.byStage": "段階別",
+    "charts.newJoiners": "新規入社",
+    "charts.currentlyActive": "現在活動中",
+    "charts.failedToLoadTemporaryMetrics": "臨時候補者メトリクスの読み込みに失敗しました。",
+    "charts.noTemporaryMetricsData": "この期間の臨時候補者データが見つかりません。",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候補者の出席状況",
@@ -2716,6 +2755,19 @@ export const translations = {
     "charts.failedToLoadCohortTrend": "群组趋势加载失败。",
     "charts.noCohortData": "未找到该时段的群组数据。",
 
+    // Dojo Temporary Metrics Trend Chart
+    "charts.dojoTemporaryMetricsTrend": "道场临时候选人 — 理论、实操、离职与性别趋势",
+    "charts.dojoTemporaryMetricsTrendDesc": "道场临时候选人理论(第一天)、实操、离职及性别构成的每日趋势",
+    "charts.theoretical": "理论",
+    "charts.practical": "实操",
+    "charts.viewMode": "视图",
+    "charts.allMetrics": "全部指标",
+    "charts.byStage": "按阶段",
+    "charts.newJoiners": "新入职",
+    "charts.currentlyActive": "当前在岗",
+    "charts.failedToLoadTemporaryMetrics": "加载临时候选人趋势失败。",
+    "charts.noTemporaryMetricsData": "未找到此时段的临时候选人数据。",
+
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候选人出勤状态",
     "charts.attendanceStatusDesc": "出勤与离职状态 — Dojo 用户",
@@ -3501,6 +3553,19 @@ export const translations = {
     "charts.pendingHandover": "Ожидает передачи",
     "charts.failedToLoadCohortTrend": "Не удалось загрузить тренд когорты.",
     "charts.noCohortData": "Данные когорты за этот период не найдены.",
+
+    // Dojo Temporary Metrics Trend Chart
+    "charts.dojoTemporaryMetricsTrend": "Временные кандидаты Dojo — теория, практика, уход и гендерный тренд",
+    "charts.dojoTemporaryMetricsTrendDesc": "Ежедневная динамика теории (1-й день), практики, ухода и гендерного состава временных кандидатов Dojo",
+    "charts.theoretical": "Теория",
+    "charts.practical": "Практика",
+    "charts.viewMode": "Вид",
+    "charts.allMetrics": "Все показатели",
+    "charts.byStage": "По этапу",
+    "charts.newJoiners": "Новые сотрудники",
+    "charts.currentlyActive": "Сейчас активны",
+    "charts.failedToLoadTemporaryMetrics": "Не удалось загрузить тренд временных показателей.",
+    "charts.noTemporaryMetricsData": "Данные о временных показателях за этот период не найдены.",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "Статус посещаемости кандидатов DOJO",

@@ -7,6 +7,7 @@ import useTranslate from "@/hooks/useTranslate";
 import DepartmentQuizChart from "@/components/charts/DepartmentQuizChart";
 import DojoHiringTrendChart from "@/components/charts/DojoHiringTrendChart";
 import DailyJoiningHandoverCohortChart from "@/components/charts/DailyJoiningHandoverCohortChart";
+import DojoTemporaryMetricsChart from "@/components/charts/DojoTemporaryMetricsChart";
 import LeftUsersLeavingReasonChart from "@/components/charts/LeftUsersLeavingReasonChart";
 import TestPaperPassChart from "@/components/charts/TestPaperPassChart";
 import EfficiencyChart from "@/components/charts/EfficiencyChart";
@@ -79,6 +80,9 @@ const Home = () => {
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 600 : isMobile ? 420 : 460}>
           <DailyJoiningHandoverCohortChart departments={departments} departmentsLoading={departmentsLoading} />
+        </LazyContainer>
+        <LazyContainer minHeight={isTablet ? 600 : isMobile ? 420 : 460}>
+          <DojoTemporaryMetricsChart departments={departments} departmentsLoading={departmentsLoading} />
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 600 : isMobile ? 420 : 460}>
           <LeftUsersLeavingReasonChart departments={departments} departmentsLoading={departmentsLoading} />

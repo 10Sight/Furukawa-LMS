@@ -155,6 +155,16 @@ export const adminHomeApi = createApi({
             // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
             keepUnusedDataFor: 60,
         }),
+        getDojoTemporaryMetricsTrend: builder.query({
+            query: ({ startDate = "", endDate = "", groupBy = "daily", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/dojo-temporary-metrics-trend",
+                method: "GET",
+                params: { startDate, endDate, groupBy, departmentId }
+            }),
+            // Keep results around after switching away so flipping back to a previously-viewed
+            // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
@@ -176,4 +186,5 @@ export const {
     useGetMultiSkillingPlanStatusQuery,
     useGetLeftUsersReasonTrendQuery,
     useGetJoiningHandoverCohortTrendQuery,
+    useGetDojoTemporaryMetricsTrendQuery,
 } = adminHomeApi;

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getOnJobTrainingStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus, getLeftUsersReasonTrend, getJoiningHandoverCohortTrend } from "../controllers/adminHome.controller.js";
+import { getAdminHomeDojoStats, getAdminHomeHandoverStats, getAdminHomeTestPaperStats, getAdminHomeUserStatusStats, getDojoHiringTrend, getDojoHandoverComparison, getSixteenDayMonitoringStatus, getThreeDayMonitoringStatus, getCycle10MonitoringStatus, getSkillMatrixCertificateStatus, getOperatorObservanceStatus, getOnJobTrainingStatus, getContractorWiseOperatorStats, getSkillUpgradationPlanStatus, getMultiSkillingPlanStatus, getLeftUsersReasonTrend, getJoiningHandoverCohortTrend, getDojoTemporaryMetricsTrend } from "../controllers/adminHome.controller.js";
 
 const router = Router();
 
@@ -55,5 +55,8 @@ router.get("/left-users-reason-trend", verifyJWT, authorizeRoles("isAdmin", "SUP
 
 // Get Joining, Handover & Left Cohort Trend for Admin Home
 router.get("/joining-handover-cohort-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getJoiningHandoverCohortTrend);
+
+// Get Dojo Temporary candidate metrics trend (Theoretical / Practical / Left / Male / Female) for Admin Home
+router.get("/dojo-temporary-metrics-trend", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN"), getDojoTemporaryMetricsTrend);
 
 export default router;

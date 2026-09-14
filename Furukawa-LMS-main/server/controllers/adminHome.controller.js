@@ -1877,3 +1877,153 @@ export const getJoiningHandoverCohortTrend = asyncHandler(async (req, res) => {
         new ApiResponse(200, { trend, summary, groupBy: safeGroupBy, start, end }, "Joining, handover & left cohort trend fetched successfully")
     );
 });
+
+// Every period's [periodStart, periodEnd] date bounds, clamped to the overall query range so
+// the first/last bucket don't reach outside what was actually requested.
+const periodDateBounds = (groupBy, period, overallStart, overallEnd) => {
+    let periodStart, periodEnd;
+    if (groupBy === 'daily') {
+        periodStart = periodEnd = period;
+    } else if (groupBy === 'monthly') {
+        const [y, m] = period.split('-').map(Number);
+        periodStart = `${period}-01`;
+        periodEnd = `${period}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    } else {
+        periodStart = `${period}-01-01`;
+        periodEnd = `${period}-12-31`;
+    }
+    if (periodStart < overallStart) periodStart = overallStart;
+    if (periodEnd > overallEnd) periodEnd = overallEnd;
+    return { period, periodStart, periodEnd };
+};
+
+/**
+ * Get DOJO Temporary candidate metrics trend (Theoretical / Practical / Left / Male / Female)
+ * for Admin Home page.
+ *
+ * "Theoretical" = candidates who joined (Day-1 induction) within the period.
+ * "Practical"   = candidates who joined in an earlier period and are still active — not left,
+ *                 not yet handed over — as of the period's end (a snapshot, not a flow count).
+ * "Left"        = candidates who left within the period.
+ * "Male"/"Female" = gender split of the full active roster (Theoretical ∪ Practical) as of the
+ *                 period's end, so it reads as headcount, not a sum-over-time.
+ */
+export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
+    const { startDate, endDate, groupBy = 'daily', departmentId } = req.query;
+
+    const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'daily';
+
+    const now = new Date();
+    let start, end;
+    if (startDate && endDate) {
+        start = startDate;
+        end   = endDate;
+    } else if (safeGroupBy === 'monthly') {
+        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    } else if (safeGroupBy === 'yearly') {
+        start = `${now.getFullYear() - 4}-01-01`;
+        end   = now.toISOString().split('T')[0];
+    } else {
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
+        start = past.toISOString().split('T')[0];
+        end   = now.toISOString().split('T')[0];
+    }
+
+    const periods = buildFullPeriods(safeGroupBy, start, end)
+        .map(period => periodDateBounds(safeGroupBy, period, start, end));
+
+    if (periods.length === 0) {
+        res.status(200).json(
+            new ApiResponse(200, { trend: [], summary: null, groupBy: safeGroupBy, start, end }, "Dojo temporary metrics trend fetched successfully")
+        );
+        return;
+    }
+
+    // Temp users store dept in targetDeptId; after handover it moves to departmentId.
+    // Accepts comma-separated IDs for multi-select.
+    let deptClause = '';
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const deptParams = [];
+    if (deptIds.length > 0) {
+        const ph = deptIds.map(() => '?').join(',');
+        deptClause = `AND (u.targetDeptId IN (${ph}) OR u.departmentId IN (${ph}))`;
+        deptParams.push(...deptIds, ...deptIds);
+    }
+
+    const valuesSQL = periods.map(() => '(?, ?, ?)').join(', ');
+    const periodParams = periods.flatMap(p => [p.period, p.periodStart, p.periodEnd]);
+
+    const [rows] = await executeQuery(`
+        SELECT
+            p.period,
+            COUNT(DISTINCT CASE WHEN u.joiningDate >= p.periodStart AND u.joiningDate <= p.periodEnd
+                                 THEN u.id END)                                                          AS theoreticalCount,
+            COUNT(DISTINCT CASE WHEN u.joiningDate < p.periodStart
+                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
+                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
+                                 THEN u.id END)                                                          AS practicalCount,
+            COUNT(DISTINCT CASE WHEN TRY_CAST(u.leavingDate AS DATE) >= p.periodStart AND TRY_CAST(u.leavingDate AS DATE) <= p.periodEnd
+                                 THEN u.id END)                                                          AS leftCount,
+            COUNT(DISTINCT CASE WHEN u.joiningDate <= p.periodEnd
+                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
+                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
+                                      AND u.gender = 'MALE'
+                                 THEN u.id END)                                                          AS maleCount,
+            COUNT(DISTINCT CASE WHEN u.joiningDate <= p.periodEnd
+                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
+                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
+                                      AND u.gender = 'FEMALE'
+                                 THEN u.id END)                                                          AS femaleCount
+        FROM (VALUES ${valuesSQL}) AS p(period, periodStart, periodEnd)
+        CROSS JOIN users u
+        LEFT JOIN (
+            SELECT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS userId, MIN(hs.date) AS handoverDate
+            FROM handover_sheets hs
+            CROSS APPLY OPENJSON(hs.entries) AS entry
+            WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+            GROUP BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
+        ) ho ON ho.userId = u.id
+        WHERE (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)
+          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
+          ${deptClause}
+        GROUP BY p.period
+    `, [...periodParams, ...deptParams]);
+
+    const periodMap = {};
+    rows.forEach(r => {
+        if (!r.period) return;
+        periodMap[r.period] = {
+            period: r.period,
+            theoreticalCount: Number(r.theoreticalCount) || 0,
+            practicalCount: Number(r.practicalCount) || 0,
+            leftCount: Number(r.leftCount) || 0,
+            maleCount: Number(r.maleCount) || 0,
+            femaleCount: Number(r.femaleCount) || 0,
+        };
+    });
+
+    const EMPTY_ROW = { theoreticalCount: 0, practicalCount: 0, leftCount: 0, maleCount: 0, femaleCount: 0 };
+    const trend = periods.map(({ period }) => periodMap[period] ?? { period, ...EMPTY_ROW });
+
+    const totalTheoretical = trend.reduce((sum, r) => sum + r.theoreticalCount, 0);
+    const totalLeft = trend.reduce((sum, r) => sum + r.leftCount, 0);
+    const lastRow = trend[trend.length - 1];
+
+    const summary = {
+        totalTheoretical,
+        totalLeft,
+        currentPractical: lastRow.practicalCount,
+        currentMale: lastRow.maleCount,
+        currentFemale: lastRow.femaleCount,
+        currentActive: lastRow.maleCount + lastRow.femaleCount,
+        attritionRate: totalTheoretical > 0 ? Math.round((totalLeft / totalTheoretical) * 1000) / 10 : 0,
+        periodsTracked: trend.length,
+    };
+
+    res.status(200).json(
+        new ApiResponse(200, { trend, summary, groupBy: safeGroupBy, start, end }, "Dojo temporary metrics trend fetched successfully")
+    );
+});

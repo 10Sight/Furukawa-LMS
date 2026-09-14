@@ -6,7 +6,6 @@ import crypto from "crypto";
 import ENV from "../configs/env.config.js";
 import { slugify } from "../utils/slugify.js";
 import { buildStatusHistoryEntry } from "../utils/statusHistory.js";
-import { normalizeOperatorStatus } from "../utils/userEligibility.js";
 
 // Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
 // mirrored target* chain used for temporary users) on a plain object carrying those keys.
@@ -937,7 +936,7 @@ class User {
         // Apply defaults if fields are missing in userData
         const dataToInsert = { ...userData };
         if (!dataToInsert.createdAt) dataToInsert.createdAt = new Date();
-        dataToInsert.status = normalizeOperatorStatus(dataToInsert.status);
+        if (dataToInsert.status === undefined) dataToInsert.status = 'PRESENT';
         dataToInsert.statusHistory = `[${buildStatusHistoryEntry({
             status: dataToInsert.status,
             joiningDate: dataToInsert.joiningDate,

@@ -56,7 +56,6 @@ import dailyMeetingSheetRoutes from "./routes/dailyMeetingSheet.routes.js";
 import dailyMorningMeetingRoutes from "./routes/dailyMorningMeeting.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import User from "./models/auth.model.js";
-import healDatabaseIntegrity from "./db/healDatabaseIntegrity.js";
 import timelineScheduler from "./services/timelineScheduler.js";
 import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
@@ -481,13 +480,6 @@ const startServer = async () => {
         // creation touch `users` heavily, and letting it run unawaited alongside the later
         // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
         await User.init();
-
-        // Self-heals users.status/statusHistory data-integrity defects (non-canonical status
-        // strings, malformed statusHistory JSON) that cause the Students page and Dashboard
-        // to disagree on headcount. Idempotent and cheap once the data is clean — safe to run
-        // on every boot. Awaited here (unlike the background inits below) so every request
-        // sees consistent data from the moment the server starts accepting connections.
-        await healDatabaseIntegrity();
 
         server.listen(PORT, "0.0.0.0", () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);

@@ -16,7 +16,7 @@ import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
-import { getDesignationShutterExclusionCondition, normalizeOperatorStatus, getOperatorPresentCondition } from "../utils/userEligibility.js";
+import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 
 // Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
@@ -1023,7 +1023,6 @@ export const createUser = asyncHandler(async (req, res) => {
   if (!data.fullName || !data.userName || !data.password || !data.unit) {
     throw new ApiError("Missing required fields (fullName, userName, password, unit)", 400);
   }
-  data.status = normalizeOperatorStatus(data.status);
 
   // Duplicate Check
   let dupQuery = "SELECT id FROM users WHERE userName = ?";
@@ -1208,8 +1207,6 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   const [rows] = await executeQuery("SELECT * FROM users WHERE id = ?", [userId]);
   if (rows.length === 0) throw new ApiError("User not found", 404);
-
-  if (data.status !== undefined) data.status = normalizeOperatorStatus(data.status);
 
   // Parse departments, stations, sections, lines, subSections if they exist in request body
   if (data.departments !== undefined) {
@@ -2137,12 +2134,6 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   let statusParamAdded = false;
   let statusParamIndex = -1;
 
-  // Employee-status "present": single source of truth shared with the Present Operators
-  // stat card (counts/presentCount below) and the Dashboard's Daily Manpower Trend, so both
-  // pages always agree — canonical PRESENT status, tolerant of un-healed legacy status
-  // strings, and excludes pending joiners whose joiningDate is still in the future.
-  const presentConditionSql = getOperatorPresentCondition("u");
-
   if (isAttendancePresent) {
     if (dateFrom && dateTo) whereClauses.push("al.presentDaysCount > 0");
     else whereClauses.push("al.logStatus IN ('P', 'PRESENT', 'Present')");
@@ -2150,7 +2141,9 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     if (dateFrom && dateTo) whereClauses.push("(al.userId IS NULL OR al.presentDaysCount = 0)");
     else whereClauses.push("(al.userId IS NULL OR al.logStatus = 'Absent' OR al.logStatus NOT IN ('P', 'PRESENT', 'Present'))");
   } else if (status === "PRESENT") {
-    whereClauses.push(presentConditionSql);
+    // Employee-status "present": same definition as the Present Operators stat card
+    // (counts/presentCount below) — anyone not LEFT/ON_LEAVE, treating unset status as present.
+    whereClauses.push("(u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE'))");
   } else if (status) {
     whereClauses.push("u.status = ?");
     params.push(status);
@@ -2235,7 +2228,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   const countsWhereClauses = whereClauses.filter(c =>
     c !== "u.status = ?" &&
     c !== "(u.status IS NULL OR u.status != 'LEFT')" &&
-    c !== presentConditionSql &&
+    c !== "(u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE'))" &&
     c !== rejoinClause &&
     !c.includes("al.")
   );
@@ -2284,7 +2277,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
       COUNT(*) as totalHeadcount,
       SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
       SUM(CASE WHEN u.status = 'ON_LEAVE' THEN 1 ELSE 0 END) as onLeaveCount,
-      SUM(CASE WHEN ${presentConditionSql} THEN 1 ELSE 0 END) as presentCount,
+      SUM(CASE WHEN (u.status IS NULL OR (u.status != 'LEFT' AND u.status != 'ON_LEAVE')) THEN 1 ELSE 0 END) as presentCount,
       SUM(CASE WHEN ${buildRejoinHistoryClause("u.statusHistory")} THEN 1 ELSE 0 END) as rejoinCount
     FROM users u ${getHierarchyFilterJoinSQL}
     ${countsWhereSQL}

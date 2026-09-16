@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, History, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2 } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -32,110 +32,10 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-
-const ALL_FORM_TYPES = [
-    { id: 'form1', label: 'Form 1 (Standard)' },
-    { id: 'form2', label: 'Form 2 (Complete)' },
-    { id: 'form3', label: 'Form 3 (10 Cycle Numerical)' }
-];
+import { ALL_FORM_TYPES, DEFAULT_10CYCLE_CONFIG, normalizeConfig } from "@/utils/tenCycleSheetConfig";
 
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[field] || "").trim());
-
-// Layout configuration: labels/descriptions for Section A questions & general
-// points, Section B measuring instruments, and Section C inspection columns.
-// Field keys on each row (secA_q1, secB_linearScale, etc.) stay derived from
-// each item's `id`, so relabeling never breaks previously saved sheet data.
-//
-// Each form type (form1/form2/form3) keeps its own independent set of
-// questions/instruments/columns — a sheet is permanently one form type, so
-// editing Form 1's layout must never change what Form 2 or Form 3 show.
-// buildDefaultFormConfig() is called fresh every time so the three forms
-// (and any fallback/default reads) never share the same array/object
-// references — editing one can never leak into another via object mutation.
-const buildDefaultFormConfig = () => ({
-    secA: {
-        questions: [
-            { id: 'q1', label: 'Q1', desc: 'Is Operator aware of SOP Availability?' },
-            { id: 'q2', label: 'Q2', desc: 'Does Operator understand SOP?' },
-            { id: 'q3', label: 'Q3', desc: 'Is Operator adhering SOP?' },
-            { id: 'q4', label: 'Q4', desc: 'Does Operator know operation cycle time?' },
-        ],
-        generalPoints: [
-            { id: 'gp1', label: 'Q1', desc: "Is process started after 5'S?" },
-            { id: 'gp2', label: 'Q2', desc: 'Is station check sheet filled?' },
-            { id: 'gp3', label: 'Q3', desc: 'Is defective part identified?' },
-            { id: 'gp4', label: 'Q4', desc: 'Is NC part handling system followed?' },
-            { id: 'gp5', label: 'Q5', desc: 'Is Operator aware about 5 safety principle?' },
-            { id: 'gp6', label: 'Q6', desc: 'Is operator aware about abnormal condition?' },
-        ],
-    },
-    secB: {
-        instruments: [
-            { id: 'linearScale', label: 'Linear Scale' },
-            { id: 'micrometer', label: 'Point Micrometer' },
-            { id: 'bladeMicrometer', label: 'Blade Micrometer' },
-            { id: 'strippingGauge', label: 'Stripping Gauge' },
-            { id: 'others', label: 'Others' },
-        ],
-    },
-    secC: {
-        columns: [
-            { id: '1', label: '1' },
-            { id: '2', label: '2' },
-            { id: '3', label: '3' },
-            { id: '4', label: '4' },
-            { id: '5', label: '5' },
-        ],
-    },
-});
-
-// Normalizes ONE form's {secA,secB,secC} shape. Always returns fresh
-// objects/arrays (never a shared reference to a fallback or default),
-// so callers can safely hand the result to state without risking one
-// scope's edits mutating another scope's in-memory config.
-const normalizeFormConfig = (raw) => {
-    const fallback = buildDefaultFormConfig();
-    if (!raw || typeof raw !== 'object') return fallback;
-    const pick = (arr, fb) => (Array.isArray(arr) && arr.length > 0 ? arr.map(x => ({ ...x })) : fb);
-    return {
-        secA: {
-            questions: pick(raw.secA?.questions, fallback.secA.questions),
-            generalPoints: pick(raw.secA?.generalPoints, fallback.secA.generalPoints),
-        },
-        secB: {
-            instruments: pick(raw.secB?.instruments, fallback.secB.instruments),
-        },
-        secC: {
-            columns: pick(raw.secC?.columns, fallback.secC.columns),
-        },
-    };
-};
-
-const DEFAULT_10CYCLE_CONFIG = {
-    form1: buildDefaultFormConfig(),
-    form2: buildDefaultFormConfig(),
-    form3: buildDefaultFormConfig(),
-};
-
-// Normalizes the full { form1, form2, form3 } config blob for a scope.
-// Also upgrades older saved rows (from before per-form configs existed)
-// that stored a single flat {secA,secB,secC} shape shared by all forms.
-const normalizeConfig = (raw) => {
-    if (raw && typeof raw === 'object' && (raw.secA || raw.secB || raw.secC) && !raw.form1 && !raw.form2 && !raw.form3) {
-        return {
-            form1: normalizeFormConfig(raw),
-            form2: normalizeFormConfig(raw),
-            form3: normalizeFormConfig(raw),
-        };
-    }
-    return {
-        form1: normalizeFormConfig(raw?.form1),
-        form2: normalizeFormConfig(raw?.form2),
-        form3: normalizeFormConfig(raw?.form3),
-    };
-};
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
@@ -194,41 +94,6 @@ const Cycle10 = () => {
     const secBInstrumentFields = config.secB.instruments.map(i => `secB_${i.id}`);
     const secCColumnFields = config.secC.columns.map(c => `secC_${c.id}`);
 
-    // ── "Edit Layout" tab: independent department/section/line/global scope picker
-    // for editing the layout config, separate from whichever sheet happens to be open.
-    const [layoutIsGlobal, setLayoutIsGlobal] = useState(false);
-    const [layoutDeptId, setLayoutDeptId] = useState("");
-    const [layoutSectionId, setLayoutSectionId] = useState("");
-    const [layoutLineId, setLayoutLineId] = useState("");
-    // Which form's branch of the scope's config is currently being edited — each
-    // form type owns an independent set of questions/instruments/columns.
-    const [layoutFormType, setLayoutFormType] = useState("form1");
-    // Full { form1, form2, form3 } blob for the selected scope; layoutDraft below
-    // is a derived read of just the layoutFormType branch, so edits only ever
-    // touch that one form's data even though the whole blob lives in one DB row.
-    const [layoutFullConfig, setLayoutFullConfig] = useState(null);
-    const layoutDraft = layoutFullConfig ? layoutFullConfig[layoutFormType] : null;
-    // Which scope the loaded config actually came from (hierarchical fallback can resolve
-    // broader than what's selected above) — null once a row truly matches nothing at all
-    // (i.e. showing the hardcoded default, not even a saved Global template).
-    const [layoutResolvedScope, setLayoutResolvedScope] = useState(null);
-    const [layoutRemark, setLayoutRemark] = useState("");
-    const [loadingLayout, setLoadingLayout] = useState(false);
-    const [layoutHistory, setLayoutHistory] = useState([]);
-    const [showLayoutHistory, setShowLayoutHistory] = useState(false);
-
-    // Deep-linked from the Revision Table's Edit button (RevisionSheetHistory.jsx)
-    // for the ten-cycle-sheet row: ?tab=editLayout&global=1 or &departmentId=&sectionId=
-    const cameFromRevisionTable = searchParams.get('tab') === 'editLayout';
-
-    // Revision-details confirmation dialog: every layout save must also record a
-    // doc-control revision (docNo/revNo/revDate/changeDetails) via the atomic
-    // save-with-revision endpoint, tying structural changes to the Revision Table.
-    const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
-    const [loadingRevisionInfo, setLoadingRevisionInfo] = useState(false);
-    const [savingLayoutRevision, setSavingLayoutRevision] = useState(false);
-    const [revisionForm, setRevisionForm] = useState({ docNo: '', revNo: '', revDate: '', affectedSrNoPage: '', changeDetails: '' });
-
     // Live preview for a not-yet-created sheet reflects whatever department/section
     // is currently selected (the page filter, or the "Add Sheet" dialog's own pick).
     const revisionInfo = useRevisionInfo("ten-cycle-sheet", {}, {
@@ -250,11 +115,6 @@ const Cycle10 = () => {
 
     const { data: machineData } = useGetMachinesByLineQuery(selectedLineFilter, { skip: !selectedLineFilter });
     const stations = machineData?.data || [];
-
-    const { data: layoutSectionData } = useGetSectionsByDepartmentQuery(layoutDeptId, { skip: !layoutDeptId });
-    const layoutSections = layoutSectionData?.data || [];
-    const { data: layoutLineData } = useGetLinesBySectionQuery(layoutSectionId, { skip: !layoutSectionId });
-    const layoutLines = layoutLineData?.data || [];
 
     const assignableDepartments = useMemo(() => {
         const rawAssigned = Array.isArray(user?.departments) ? [...user.departments] : [];
@@ -385,19 +245,22 @@ const Cycle10 = () => {
         }
     }, [searchParams]);
 
-    // One-time: land directly on the Edit Layout tab, pre-scoped, when arriving
-    // from the Revision Table's Edit / Add Department Override buttons.
+    // Compatibility redirect for old bookmarked/emailed links that used the
+    // now-removed inline "Edit Layout" tab (?tab=editLayout&...) — send them to
+    // the dedicated Layout Editor page instead, preserving their scope params.
     useEffect(() => {
         if (searchParams.get('tab') !== 'editLayout') return;
-        setActiveTab('editLayout');
+        const base = isAdmin ? '/admin/10-cycle/layout' : '/portal/10-cycle/layout';
+        const params = new URLSearchParams();
         if (searchParams.get('global') === '1') {
-            setLayoutIsGlobal(true);
+            params.set('global', '1');
         } else {
             const dept = searchParams.get('departmentId');
             const sect = searchParams.get('sectionId');
-            if (dept) setLayoutDeptId(dept);
-            if (sect) setLayoutSectionId(sect);
+            if (dept) params.set('departmentId', dept);
+            if (sect) params.set('sectionId', sect);
         }
+        navigate(`${base}${params.toString() ? `?${params.toString()}` : ''}`, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -450,228 +313,6 @@ const Cycle10 = () => {
         } catch (error) {
             console.error("Error fetching 10-Cycle layout config:", error);
             return DEFAULT_10CYCLE_CONFIG;
-        }
-    };
-
-    // Explains whether the loaded config is a saved override for exactly this scope, or
-    // inherited from somewhere broader (Department-wide / Global) — makes the hierarchical
-    // fallback visible instead of silently looking like "the same config everywhere".
-    const layoutInheritanceNote = () => {
-        if (!layoutFullConfig) return null;
-        if (layoutIsGlobal) {
-            return layoutResolvedScope
-                ? { tone: 'ok', text: "Editing the saved Global template — this applies to every department/section/line with no override of its own." }
-                : { tone: 'warn', text: "No Global template saved yet — showing the built-in defaults. Saving here creates the Global template." };
-        }
-        if (!layoutResolvedScope) {
-            return { tone: 'warn', text: "Nothing saved anywhere in this chain — showing the built-in defaults. Saving here creates a config just for this exact selection." };
-        }
-        if (!layoutResolvedScope.departmentId) {
-            return { tone: 'warn', text: "No override saved for this Department/Section/Line — currently showing the Global template. Saving here creates a new override just for this exact selection; it will NOT change the Global template or any other department." };
-        }
-        const exactSection = String(layoutResolvedScope.sectionId || 0) === String(layoutSectionId || 0);
-        const exactLine = String(layoutResolvedScope.lineId || 0) === String(layoutLineId || 0);
-        if (exactSection && exactLine) {
-            return { tone: 'ok', text: "Showing a config saved specifically for this exact Department/Section/Line selection." };
-        }
-        return { tone: 'warn', text: "Showing an inherited config from a broader level (e.g. Department-wide). Saving here creates a new, more specific override just for this exact selection." };
-    };
-
-    // ── Edit Layout tab: scope is chosen independently (department/section/line/global) ──
-    const layoutScopeParams = () => {
-        const params = new URLSearchParams();
-        if (!layoutIsGlobal) {
-            if (layoutSectionId) params.set("sectionId", layoutSectionId);
-            if (layoutLineId) params.set("lineId", layoutLineId);
-        }
-        return params.toString();
-    };
-    const layoutDeptParam = () => (layoutIsGlobal ? "global" : layoutDeptId);
-
-    const fetchLayoutConfig = async () => {
-        if (!layoutIsGlobal && !layoutDeptId) {
-            setLayoutFullConfig({ form1: buildDefaultFormConfig(), form2: buildDefaultFormConfig(), form3: buildDefaultFormConfig() });
-            setLayoutResolvedScope(null);
-            return;
-        }
-        try {
-            setLoadingLayout(true);
-            const qs = layoutScopeParams();
-            const response = await axiosInstance.get(`/api/ten-cycle-sheets/config/${layoutDeptParam()}${qs ? `?${qs}` : ""}`);
-            const normalized = normalizeConfig(response.data?.data?.config);
-            setLayoutFullConfig(normalized);
-            setLayoutResolvedScope(response.data?.data?.resolvedScope || null);
-        } catch (error) {
-            console.error("Error fetching 10-Cycle layout config:", error);
-            toast.error("Failed to load layout configuration");
-        } finally {
-            setLoadingLayout(false);
-        }
-    };
-
-    useEffect(() => {
-        if (activeTab !== 'editLayout') return;
-        fetchLayoutConfig();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, layoutIsGlobal, layoutDeptId, layoutSectionId, layoutLineId]);
-
-    // Maps a group name to where its array lives inside one form's {secA,secB,secC} config
-    const LAYOUT_GROUP_PATHS = {
-        questions: ['secA', 'questions'],
-        generalPoints: ['secA', 'generalPoints'],
-        instruments: ['secB', 'instruments'],
-        columns: ['secC', 'columns'],
-    };
-    const getLayoutGroupArray = (formCfg, group) => {
-        const [sec, key] = LAYOUT_GROUP_PATHS[group];
-        return formCfg[sec][key];
-    };
-
-    // All three of these only ever touch the layoutFormType branch of the full
-    // blob, so editing Form 1 never mutates Form 2's or Form 3's saved data.
-    const updateLayoutItem = (group, idx, field, value) => {
-        setLayoutFullConfig(prev => {
-            if (!prev) return prev;
-            const next = JSON.parse(JSON.stringify(prev));
-            getLayoutGroupArray(next[layoutFormType], group)[idx][field] = value;
-            return next;
-        });
-    };
-
-    const addLayoutItem = (group) => {
-        setLayoutFullConfig(prev => {
-            if (!prev) return prev;
-            const next = JSON.parse(JSON.stringify(prev));
-            const arr = getLayoutGroupArray(next[layoutFormType], group);
-            const newId = `custom_${Date.now()}`;
-            const n = arr.length + 1;
-            if (group === 'columns') arr.push({ id: newId, label: String(n) });
-            else if (group === 'instruments') arr.push({ id: newId, label: `New Instrument ${n}` });
-            else arr.push({ id: newId, label: `Q${n}`, desc: '' });
-            return next;
-        });
-    };
-
-    const removeLayoutItem = (group, idx) => {
-        setLayoutFullConfig(prev => {
-            if (!prev) return prev;
-            const arr = getLayoutGroupArray(prev[layoutFormType], group);
-            if (arr.length <= 1) {
-                toast.error("At least one item is required in this section");
-                return prev;
-            }
-            const next = JSON.parse(JSON.stringify(prev));
-            getLayoutGroupArray(next[layoutFormType], group).splice(idx, 1);
-            return next;
-        });
-    };
-
-    // Opens the revision-details confirmation dialog, pre-filled with whatever the
-    // Revision Table currently has for this scope (falls back to department/global
-    // if this exact scope has no override yet) — changeDetails is always left blank
-    // since it should describe THIS revision, not carry over the previous one.
-    const openRevisionDialog = async () => {
-        if (!layoutIsGlobal && !layoutDeptId) {
-            toast.error("Select a department, or switch to Global");
-            return;
-        }
-        if (!layoutRemark.trim()) {
-            toast.error("Please enter a remark describing your changes");
-            return;
-        }
-        if (!layoutFullConfig) return;
-
-        setLoadingRevisionInfo(true);
-        try {
-            const params = {};
-            if (!layoutIsGlobal && layoutDeptId) params.departmentId = layoutDeptId;
-            if (!layoutIsGlobal && layoutSectionId) params.sectionId = layoutSectionId;
-            const response = await axiosInstance.get(`/api/revision-records/sheet/ten-cycle-sheet`, { params });
-            const record = response.data?.data || {};
-            setRevisionForm({
-                docNo: record.docNo || '',
-                revNo: record.revNo || '',
-                revDate: record.revDate || '',
-                affectedSrNoPage: record.affectedSrNoPage || '',
-                changeDetails: '',
-            });
-        } catch {
-            setRevisionForm({ docNo: '', revNo: '', revDate: '', affectedSrNoPage: '', changeDetails: '' });
-        } finally {
-            setLoadingRevisionInfo(false);
-            setRevisionDialogOpen(true);
-        }
-    };
-
-    // Atomically saves the layout config for this scope AND the revision record
-    // documenting it, via the combined save-with-revision endpoint.
-    const handleConfirmSaveLayoutWithRevision = async () => {
-        if (!revisionForm.docNo.trim() || !revisionForm.revNo.trim()) {
-            toast.error("Document No. and Revision No. are required");
-            return;
-        }
-        if (!layoutFullConfig) return;
-        try {
-            setSavingLayoutRevision(true);
-            const newConfig = normalizeConfig(layoutFullConfig);
-            await axiosInstance.post(`/api/ten-cycle-sheets/config/save-with-revision`, {
-                departmentId: layoutIsGlobal ? null : layoutDeptId,
-                sectionId: layoutIsGlobal ? 0 : (layoutSectionId || 0),
-                lineId: layoutIsGlobal ? 0 : (layoutLineId || 0),
-                subSectionId: 0,
-                config: newConfig,
-                remark: layoutRemark,
-                revision: {
-                    docNo: revisionForm.docNo.trim(),
-                    revNo: revisionForm.revNo.trim(),
-                    revDate: revisionForm.revDate,
-                    affectedSrNoPage: revisionForm.affectedSrNoPage,
-                    changeDetails: revisionForm.changeDetails,
-                },
-            });
-            setLayoutFullConfig(newConfig);
-            setLayoutRemark("");
-            setRevisionDialogOpen(false);
-            toast.success("Layout and revision updated successfully");
-
-            logAction({
-                action: "SAVE_TEN_CYCLE_SHEET_LAYOUT_CONFIG",
-                details: {
-                    departmentId: layoutIsGlobal ? null : layoutDeptId,
-                    sectionId: layoutIsGlobal ? null : (layoutSectionId || null),
-                    lineId: layoutIsGlobal ? null : (layoutLineId || null),
-                    remark: layoutRemark,
-                    docNo: revisionForm.docNo,
-                    revNo: revisionForm.revNo,
-                }
-            }).catch(() => {});
-
-            if (cameFromRevisionTable) {
-                navigate('/admin/revision-table/ten-cycle-sheet');
-            }
-        } catch (error) {
-            console.error("Error saving 10-Cycle layout & revision:", error);
-            toast.error(error?.response?.data?.message || "Failed to save layout & revision");
-        } finally {
-            setSavingLayoutRevision(false);
-        }
-    };
-
-    const fetchLayoutHistory = async () => {
-        if (!layoutIsGlobal && !layoutDeptId) return;
-        try {
-            const qs = layoutScopeParams();
-            const response = await axiosInstance.get(`/api/ten-cycle-sheets/history/${layoutDeptParam()}${qs ? `?${qs}` : ""}`);
-            if (response.data.success) {
-                setLayoutHistory(response.data.data || []);
-                setShowLayoutHistory(true);
-                logAction({
-                    action: "VIEW_TEN_CYCLE_SHEET_LAYOUT_HISTORY",
-                    details: { departmentId: layoutIsGlobal ? null : layoutDeptId, sectionId: layoutIsGlobal ? null : (layoutSectionId || null), lineId: layoutIsGlobal ? null : (layoutLineId || null) }
-                }).catch(() => {});
-            }
-        } catch (error) {
-            toast.error("Failed to fetch layout history");
         }
     };
 
@@ -1142,31 +783,45 @@ const Cycle10 = () => {
             <CardContent className="p-4 space-y-4">
 
                 {/* ── Tab Bar ─────────────────────────────────────────────── */}
-                <div className="flex border-b border-slate-200 gap-0 -mx-4 px-4">
-                    <button
-                        onClick={() => setActiveTab('monitoring')}
-                        className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === 'monitoring' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                    >
-                        Monitoring
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('sheet')}
-                        className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-2 ${activeTab === 'sheet' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                    >
-                        10-Cycle Sheet
-                        {selectedSheetId && (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isEditMode ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
-                                {isEditMode ? 'EDIT' : 'VIEW'}
-                            </span>
-                        )}
-                    </button>
-                    {canEditConfig && (
+                <div className="flex items-center justify-between border-b border-slate-200 -mx-4 px-4">
+                    <div className="flex gap-0">
                         <button
-                            onClick={() => setActiveTab('editLayout')}
-                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === 'editLayout' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                            onClick={() => setActiveTab('monitoring')}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === 'monitoring' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
                         >
-                            <Edit2 size={14} /> Edit Layout
+                            Monitoring
                         </button>
+                        <button
+                            onClick={() => setActiveTab('sheet')}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-2 ${activeTab === 'sheet' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                        >
+                            10-Cycle Sheet
+                            {selectedSheetId && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isEditMode ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
+                                    {isEditMode ? 'EDIT' : 'VIEW'}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                    {canEditConfig && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5 mb-1.5"
+                            onClick={() => {
+                                const base = isAdmin ? '/admin/10-cycle/layout' : '/portal/10-cycle/layout';
+                                const params = new URLSearchParams();
+                                if (selectedDepartmentFilter) {
+                                    params.set('departmentId', selectedDepartmentFilter);
+                                    if (selectedSectionFilter) params.set('sectionId', selectedSectionFilter);
+                                } else {
+                                    params.set('global', '1');
+                                }
+                                navigate(`${base}?${params.toString()}`);
+                            }}
+                        >
+                            <Edit2 size={14} /> Edit Layout & Revision
+                        </Button>
                     )}
                 </div>
 
@@ -2147,276 +1802,7 @@ const Cycle10 = () => {
                     </div>
                 )}
 
-                {/* ── EDIT LAYOUT TAB ──────────────────────────────────────── */}
-                {activeTab === 'editLayout' && canEditConfig && (
-                    <div className="space-y-4">
-                        <div>
-                            {cameFromRevisionTable && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="gap-1 -ml-2 mb-1 text-slate-500"
-                                    onClick={() => navigate('/admin/revision-table/ten-cycle-sheet')}
-                                >
-                                    <ArrowLeft size={14} /> Back to Revision Table
-                                </Button>
-                            )}
-                            <h1 className="text-xl font-bold">10-Cycle Sheet Layout Editor</h1>
-                            <p className="text-sm text-slate-500">
-                                Customize Section A questions &amp; general points, Section B measuring instruments, and Section C inspection columns. Changes apply to whichever scope you select below.
-                            </p>
-                        </div>
-
-                        {/* Scope + Form selectors */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="border rounded p-4 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-xs font-bold uppercase tracking-wide">Scope</Label>
-                                    <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={layoutIsGlobal}
-                                            onChange={(e) => {
-                                                setLayoutIsGlobal(e.target.checked);
-                                                setLayoutDeptId("");
-                                                setLayoutSectionId("");
-                                                setLayoutLineId("");
-                                            }}
-                                        />
-                                        Global (applies to all departments)
-                                    </label>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                    <div>
-                                        <Label className="text-xs mb-1 block">Department</Label>
-                                        <Select
-                                            value={layoutDeptId}
-                                            onValueChange={(v) => { setLayoutDeptId(v); setLayoutSectionId(""); setLayoutLineId(""); }}
-                                            disabled={layoutIsGlobal}
-                                        >
-                                            <SelectTrigger className="h-9 text-xs">
-                                                <SelectValue placeholder="Select department" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {assignableDepartments.map((dept) => (
-                                                    <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
-                                                        {dept.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs mb-1 block">Section (optional)</Label>
-                                        <Select
-                                            value={layoutSectionId}
-                                            onValueChange={(v) => { setLayoutSectionId(v); setLayoutLineId(""); }}
-                                            disabled={layoutIsGlobal || !layoutDeptId}
-                                        >
-                                            <SelectTrigger className="h-9 text-xs">
-                                                <SelectValue placeholder="All sections" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {layoutSections.map((sec) => (
-                                                    <SelectItem key={sec._id || sec.id} value={String(sec._id || sec.id)}>
-                                                        {sec.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs mb-1 block">Line (optional)</Label>
-                                        <Select
-                                            value={layoutLineId}
-                                            onValueChange={setLayoutLineId}
-                                            disabled={layoutIsGlobal || !layoutSectionId}
-                                        >
-                                            <SelectTrigger className="h-9 text-xs">
-                                                <SelectValue placeholder="All lines" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {layoutLines.map((line) => (
-                                                    <SelectItem key={line._id || line.id} value={String(line._id || line.id)}>
-                                                        {line.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                                <p className="text-[10px] text-slate-400">
-                                    The most specific saved config wins: Line &gt; Section &gt; Department &gt; Global. Leave Section/Line blank to edit at a broader level.
-                                </p>
-                            </div>
-
-                            <div className="border rounded p-4 space-y-3">
-                                <Label className="text-xs font-bold uppercase tracking-wide">Form Type</Label>
-                                <div className="flex gap-2">
-                                    {ALL_FORM_TYPES.map((t) => (
-                                        <Button
-                                            key={t.id}
-                                            size="sm"
-                                            variant={layoutFormType === t.id ? "default" : "outline"}
-                                            onClick={() => setLayoutFormType(t.id)}
-                                        >
-                                            {t.label}
-                                        </Button>
-                                    ))}
-                                </div>
-                                <p className="text-[10px] text-slate-400">
-                                    Each form type has its own independent questions, general points, instruments, and columns — editing Form 1 here never changes Form 2 or Form 3 (Form 3 also doesn&apos;t use Section B instruments at all).
-                                </p>
-                            </div>
-                        </div>
-
-                        {loadingLayout ? (
-                            <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
-                        ) : !layoutDraft ? (
-                            <div className="text-center py-12 text-slate-500 border-2 border-dashed rounded-lg">
-                                Select a Department (or switch to Global) to load its layout configuration.
-                            </div>
-                        ) : (
-                            <>
-                                {(() => {
-                                    const note = layoutInheritanceNote();
-                                    if (!note) return null;
-                                    return (
-                                        <div className={`text-xs rounded p-2 border ${note.tone === 'ok' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-                                            {note.text}
-                                        </div>
-                                    );
-                                })()}
-
-                                {/* Live preview */}
-                                <div className="border rounded overflow-x-auto">
-                                    <table className="text-[10px] border-collapse w-full">
-                                        <thead>
-                                            <tr className="bg-gray-100 text-center font-bold">
-                                                <th colSpan={layoutDraft.secA.questions.length + layoutDraft.secA.generalPoints.length} className="border border-black p-1">Section - A</th>
-                                                {layoutFormType !== 'form3' && (
-                                                    <th colSpan={layoutDraft.secB.instruments.length} className="border border-black p-1">Section - B</th>
-                                                )}
-                                                <th colSpan={layoutDraft.secC.columns.length} className="border border-black p-1">Section-C</th>
-                                            </tr>
-                                            <tr className="bg-gray-50 text-center">
-                                                {layoutDraft.secA.questions.map(q => (
-                                                    <th key={`pq_${q.id}`} className="border border-black w-12 p-1">{q.label || '(empty)'}</th>
-                                                ))}
-                                                {layoutDraft.secA.generalPoints.map(g => (
-                                                    <th key={`pg_${g.id}`} className="border border-black w-12 p-1">{g.label || '(empty)'}</th>
-                                                ))}
-                                                {layoutFormType !== 'form3' && layoutDraft.secB.instruments.map(i => (
-                                                    <th key={`pi_${i.id}`} className="border border-black w-16 p-1">{i.label || '(empty)'}</th>
-                                                ))}
-                                                {layoutDraft.secC.columns.map(c => (
-                                                    <th key={`pc_${c.id}`} className="border border-black w-10 p-1">{c.label || '(empty)'}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                    </table>
-                                </div>
-
-                                {/* Editors */}
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    <div className="border rounded p-3 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-bold text-sm">Section A — Ask Four Questions</h3>
-                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('questions')}>
-                                                <Plus size={12} /> Add
-                                            </Button>
-                                        </div>
-                                        {layoutDraft.secA.questions.map((q, idx) => (
-                                            <div key={q.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
-                                                <Input className="h-8 text-xs" value={q.label} onChange={(e) => updateLayoutItem('questions', idx, 'label', e.target.value)} placeholder="Label" />
-                                                <Input className="h-8 text-xs" value={q.desc} onChange={(e) => updateLayoutItem('questions', idx, 'desc', e.target.value)} placeholder="Description" />
-                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('questions', idx)}>
-                                                    <Trash2 size={12} />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="border rounded p-3 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-bold text-sm">Section A — General Points</h3>
-                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('generalPoints')}>
-                                                <Plus size={12} /> Add
-                                            </Button>
-                                        </div>
-                                        {layoutDraft.secA.generalPoints.map((g, idx) => (
-                                            <div key={g.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
-                                                <Input className="h-8 text-xs" value={g.label} onChange={(e) => updateLayoutItem('generalPoints', idx, 'label', e.target.value)} placeholder="Label" />
-                                                <Input className="h-8 text-xs" value={g.desc} onChange={(e) => updateLayoutItem('generalPoints', idx, 'desc', e.target.value)} placeholder="Description" />
-                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('generalPoints', idx)}>
-                                                    <Trash2 size={12} />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="border rounded p-3 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-bold text-sm">
-                                                Section B — Measuring Instruments
-                                                {layoutFormType === 'form3' && <span className="text-[10px] text-slate-400 font-normal ml-2">(not shown on Form 3)</span>}
-                                            </h3>
-                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('instruments')}>
-                                                <Plus size={12} /> Add
-                                            </Button>
-                                        </div>
-                                        {layoutDraft.secB.instruments.map((i, idx) => (
-                                            <div key={i.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
-                                                <Input className="h-8 text-xs" value={i.label} onChange={(e) => updateLayoutItem('instruments', idx, 'label', e.target.value)} placeholder="Label" />
-                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('instruments', idx)}>
-                                                    <Trash2 size={12} />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="border rounded p-3 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-bold text-sm">Section C — Cross Inspection Columns</h3>
-                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLayoutItem('columns')}>
-                                                <Plus size={12} /> Add
-                                            </Button>
-                                        </div>
-                                        {layoutDraft.secC.columns.map((c, idx) => (
-                                            <div key={c.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
-                                                <Input className="h-8 text-xs" value={c.label} onChange={(e) => updateLayoutItem('columns', idx, 'label', e.target.value)} placeholder="Label" />
-                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLayoutItem('columns', idx)}>
-                                                    <Trash2 size={12} />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Remark + Save + History */}
-                                <div className="border rounded p-4 space-y-3">
-                                    <Label className="text-xs mb-1 block">Remark (required to save)</Label>
-                                    <Textarea
-                                        className="text-sm"
-                                        value={layoutRemark}
-                                        onChange={(e) => setLayoutRemark(e.target.value)}
-                                        placeholder="e.g. Renamed 'Linear Scale' to 'Caliper' for this line"
-                                    />
-                                    <div className="flex justify-between items-center">
-                                        <Button variant="outline" className="gap-2" onClick={fetchLayoutHistory}>
-                                            <History size={14} /> History
-                                        </Button>
-                                        <Button
-                                            onClick={openRevisionDialog}
-                                            disabled={loadingRevisionInfo || !layoutRemark.trim()}
-                                            className="gap-2 bg-blue-600 hover:bg-blue-700"
-                                        >
-                                            {loadingRevisionInfo ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Layout & Update Revision
-                                        </Button>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                )}
-
+                {/* EDIT LAYOUT TAB removed - now Cycle10LayoutEditor.jsx at /admin/10-cycle/layout */}
                 {/* ── Mandatory Edit Remark Dialog ─────────────────────────── */}
                 <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
                     <DialogContent>
@@ -2440,117 +1826,6 @@ const Cycle10 = () => {
                             <Button onClick={handleConfirmRemark} disabled={!editRemarkText.trim() || saving || submitting} className="bg-blue-600 hover:bg-blue-700">
                                 {(saving || submitting) ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
                                 Confirm & {pendingIsSubmit ? "Submit" : "Save"}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-
-                {/* ── Layout History Dialog ────────────────────────────────── */}
-                <Dialog open={showLayoutHistory} onOpenChange={setShowLayoutHistory}>
-                    <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                            <DialogTitle>10-Cycle Sheet Layout History</DialogTitle>
-                        </DialogHeader>
-                        <div className="max-h-96 overflow-y-auto space-y-3">
-                            {layoutHistory.length === 0 ? (
-                                <div className="text-sm text-muted-foreground">No layout changes recorded yet for this scope.</div>
-                            ) : (
-                                layoutHistory.map((entry) => (
-                                    <div key={entry.id} className="border rounded p-2 text-xs space-y-1">
-                                        <div className="flex justify-between">
-                                            <span className="font-semibold">{entry.updatedBy || "Unknown"}</span>
-                                            <span className="text-muted-foreground">{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : ""}</span>
-                                        </div>
-                                        {entry.remark && <div className="italic text-slate-600">&quot;{entry.remark}&quot;</div>}
-                                        <div className="flex justify-end">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-6 text-[10px]"
-                                                onClick={() => {
-                                                    setLayoutFullConfig(normalizeConfig(entry.config));
-                                                    setLayoutRemark('');
-                                                    setShowLayoutHistory(false);
-                                                }}
-                                            >
-                                                Restore this version (all 3 forms)
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setShowLayoutHistory(false)}>Close</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-
-                {/* ── Save Layout & Update Revision Dialog ─────────────────── */}
-                <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Save Layout & Update Revision</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                            <p className="text-xs text-slate-500">
-                                This layout change will update the Revision Table record for the 10 Cycle Sheet at{" "}
-                                {layoutIsGlobal ? "the Global scope" : "this Department/Section scope"}.
-                            </p>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <Label className="text-xs mb-1 block">Doc. No. *</Label>
-                                    <Input
-                                        className="h-9 text-sm"
-                                        value={revisionForm.docNo}
-                                        onChange={(e) => setRevisionForm((f) => ({ ...f, docNo: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs mb-1 block">Rev. No. *</Label>
-                                    <Input
-                                        className="h-9 text-sm"
-                                        value={revisionForm.revNo}
-                                        onChange={(e) => setRevisionForm((f) => ({ ...f, revNo: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs mb-1 block">Rev. Date</Label>
-                                    <Input
-                                        className="h-9 text-sm"
-                                        value={revisionForm.revDate}
-                                        onChange={(e) => setRevisionForm((f) => ({ ...f, revDate: e.target.value }))}
-                                        placeholder="DD.MM.YYYY"
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs mb-1 block">Affected Sr. No. / Page</Label>
-                                    <Input
-                                        className="h-9 text-sm"
-                                        value={revisionForm.affectedSrNoPage}
-                                        onChange={(e) => setRevisionForm((f) => ({ ...f, affectedSrNoPage: e.target.value }))}
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <Label className="text-xs mb-1 block">Change Details</Label>
-                                <Textarea
-                                    className="text-sm"
-                                    value={revisionForm.changeDetails}
-                                    onChange={(e) => setRevisionForm((f) => ({ ...f, changeDetails: e.target.value }))}
-                                    placeholder="Describe what changed in this revision"
-                                />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
-                            <Button
-                                onClick={handleConfirmSaveLayoutWithRevision}
-                                disabled={savingLayoutRevision || !revisionForm.docNo.trim() || !revisionForm.revNo.trim()}
-                                className="bg-blue-600 hover:bg-blue-700"
-                            >
-                                {savingLayoutRevision ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
-                                Confirm & Save
                             </Button>
                         </DialogFooter>
                     </DialogContent>

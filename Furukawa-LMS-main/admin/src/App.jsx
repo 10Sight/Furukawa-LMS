@@ -81,6 +81,7 @@ const SkillMatrix = lazy(() => import("./pages/Admin/SkillMatrix"));
 const OnboardingID = lazy(() => import("./pages/Admin/OnboardingID"));
 const Report = lazy(() => import("./pages/Admin/Report"));
 const Cycle10 = lazy(() => import("./pages/Admin/Cycle10"));
+const Cycle10LayoutEditor = lazy(() => import("./pages/Admin/Cycle10LayoutEditor"));
 const DailyProductionReport = lazy(() => import("./pages/Admin/DailyProductionReport"));
 const RoleManager = lazy(() => import("./pages/Admin/RoleManager"));
 const RoleUserManager = lazy(() => import("./pages/Admin/RoleUserManager"));
@@ -286,6 +287,7 @@ const App = () => {
             <Route path="skill-matrix" element={<SkillMatrix />} />
             <Route path="report" element={<Report />} />
             <Route path="10-cycle" element={<Cycle10 />} />
+            <Route path="10-cycle/layout" element={<Cycle10LayoutEditor />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
             <Route path="dpr-manage" element={<DPRManage />} />
             <Route path="on-job-training" element={<OnJobTraining />} />
@@ -311,6 +313,11 @@ const App = () => {
             <Route path="revision-table/:sheetKey" element={
               <RequireAccess allow={["revision:read", "dept_revision_logs:read"]}>
                 <RevisionSheetHistory />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/:sheetKey/layout" element={
+              <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "ten_cycle:edit_layout", "ten_cycle:manage"]}>
+                <Cycle10LayoutEditor />
               </RequireAccess>
             } />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
@@ -541,6 +548,7 @@ const App = () => {
             <Route path="take-test/:quizId" element={<TakeQuiz />} />
             <Route path="attempt-requests" element={<AdminAttemptRequests />} />
             <Route path="10-cycle" element={<Cycle10 />} />
+            <Route path="10-cycle/layout" element={<Cycle10LayoutEditor />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
             <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="onboarding-id" element={<OnboardingID />} />

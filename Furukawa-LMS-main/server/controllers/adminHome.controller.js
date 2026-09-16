@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import DojoStageHistory from "../models/dojoStagHistory.model.js";
 
 /**
  * Get stats for the Admin Home page
@@ -1897,16 +1898,21 @@ const periodDateBounds = (groupBy, period, overallStart, overallEnd) => {
     return { period, periodStart, periodEnd };
 };
 
+const ZERO_STAGE_ROW = { theoreticalCount: 0, practicalCount: 0, leftCount: 0, maleCount: 0, femaleCount: 0 };
+
 /**
  * Get DOJO Temporary candidate metrics trend (Theoretical / Practical / Left / Male / Female)
- * for Admin Home page.
+ * for Admin Home page. Reads from the persisted `dojo_stage_history` daily-snapshot table
+ * (kept fresh by dojoStageHistoryScheduler.js and write-path hooks in dojoRegister/updateUser/
+ * importDojoUsers), auto-backfilling any gap in the requested range before reading.
  *
- * "Theoretical" = candidates who joined (Day-1 induction) within the period.
- * "Practical"   = candidates who joined in an earlier period and are still active — not left,
- *                 not yet handed over — as of the period's end (a snapshot, not a flow count).
- * "Left"        = candidates who left within the period.
- * "Male"/"Female" = gender split of the full active roster (Theoretical ∪ Practical) as of the
- *                 period's end, so it reads as headcount, not a sum-over-time.
+ * "Theoretical" = candidates whose joiningDate (Day-1 induction) fell within the period — a flow
+ *                 count, summed across the days in the period.
+ * "Practical"   = candidates active in practical training as of the period's end — a stock
+ *                 snapshot (the period's last synced day), not summed across days.
+ * "Left"        = candidates who left within the period — a flow count, summed like Theoretical.
+ * "Male"/"Female" = gender split of the active roster as of the period's end — a stock snapshot,
+ *                 same as Practical.
  */
 export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
     const { startDate, endDate, groupBy = 'daily', departmentId } = req.query;
@@ -1932,6 +1938,13 @@ export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
         end   = now.toISOString().split('T')[0];
     }
 
+    // dojo_stage_history only ever holds snapshots up to today (see DojoStageHistory.syncDate) —
+    // clamp here too so a future-reaching request (e.g. "this month" spanning past today) doesn't
+    // build periods/trigger backfill attempts for days that can never have real data.
+    const todayStr = now.toISOString().split('T')[0];
+    if (end > todayStr) end = todayStr;
+    if (start > end) start = end;
+
     const periods = buildFullPeriods(safeGroupBy, start, end)
         .map(period => periodDateBounds(safeGroupBy, period, start, end));
 
@@ -1942,71 +1955,38 @@ export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
         return;
     }
 
-    // Temp users store dept in targetDeptId; after handover it moves to departmentId.
+    // Temp users store dept in targetDeptId — matches how dojo_stage_history rows are keyed.
     // Accepts comma-separated IDs for multi-select.
-    let deptClause = '';
     const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const deptParams = [];
-    if (deptIds.length > 0) {
-        const ph = deptIds.map(() => '?').join(',');
-        deptClause = `AND (u.targetDeptId IN (${ph}) OR u.departmentId IN (${ph}))`;
-        deptParams.push(...deptIds, ...deptIds);
-    }
 
-    const valuesSQL = periods.map(() => '(?, ?, ?)').join(', ');
-    const periodParams = periods.flatMap(p => [p.period, p.periodStart, p.periodEnd]);
+    // Deliberately no auto-backfill here. A date with no persisted row means no contemporaneous
+    // snapshot was ever taken for it (before this feature existed, or before dojo_stage_history had
+    // a chance to run) — it renders as zero via ZERO_STAGE_ROW below rather than being manufactured
+    // on the fly from today's current state, which would be fabricated history, not real data.
+    const dailyRows = await DojoStageHistory.getTrend({ startDate: start, endDate: end, departmentIds: deptIds });
+    const dailyMap = {};
+    dailyRows.forEach(r => { dailyMap[r.date] = r; });
 
-    const [rows] = await executeQuery(`
-        SELECT
-            p.period,
-            COUNT(DISTINCT CASE WHEN u.joiningDate >= p.periodStart AND u.joiningDate <= p.periodEnd
-                                 THEN u.id END)                                                          AS theoreticalCount,
-            COUNT(DISTINCT CASE WHEN u.joiningDate < p.periodStart
-                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
-                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
-                                 THEN u.id END)                                                          AS practicalCount,
-            COUNT(DISTINCT CASE WHEN TRY_CAST(u.leavingDate AS DATE) >= p.periodStart AND TRY_CAST(u.leavingDate AS DATE) <= p.periodEnd
-                                 THEN u.id END)                                                          AS leftCount,
-            COUNT(DISTINCT CASE WHEN u.joiningDate <= p.periodEnd
-                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
-                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
-                                      AND u.gender = 'MALE'
-                                 THEN u.id END)                                                          AS maleCount,
-            COUNT(DISTINCT CASE WHEN u.joiningDate <= p.periodEnd
-                                      AND (TRY_CAST(u.leavingDate AS DATE) IS NULL OR TRY_CAST(u.leavingDate AS DATE) > p.periodEnd)
-                                      AND (ho.handoverDate IS NULL OR ho.handoverDate > p.periodEnd)
-                                      AND u.gender = 'FEMALE'
-                                 THEN u.id END)                                                          AS femaleCount
-        FROM (VALUES ${valuesSQL}) AS p(period, periodStart, periodEnd)
-        CROSS JOIN users u
-        LEFT JOIN (
-            SELECT TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) AS userId, MIN(hs.date) AS handoverDate
-            FROM handover_sheets hs
-            CROSS APPLY OPENJSON(hs.entries) AS entry
-            WHERE JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
-            GROUP BY TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT)
-        ) ho ON ho.userId = u.id
-        WHERE (u.expectedHandover IS NOT NULL OR u.isTemporary = 1)
-          AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          ${deptClause}
-        GROUP BY p.period
-    `, [...periodParams, ...deptParams]);
-
-    const periodMap = {};
-    rows.forEach(r => {
-        if (!r.period) return;
-        periodMap[r.period] = {
-            period: r.period,
-            theoreticalCount: Number(r.theoreticalCount) || 0,
-            practicalCount: Number(r.practicalCount) || 0,
-            leftCount: Number(r.leftCount) || 0,
-            maleCount: Number(r.maleCount) || 0,
-            femaleCount: Number(r.femaleCount) || 0,
+    // Theoretical/Left are flows (summed across the days in the period); Practical/Male/Female are
+    // stock snapshots (the period's last day) — mirrors the same distinction the frontend expects.
+    const trend = periods.map(({ period, periodStart, periodEnd }) => {
+        const daysInPeriod = buildFullPeriods('daily', periodStart, periodEnd);
+        let theoreticalCount = 0, leftCount = 0, lastRow = ZERO_STAGE_ROW;
+        for (const d of daysInPeriod) {
+            const row = dailyMap[d] || ZERO_STAGE_ROW;
+            theoreticalCount += row.theoreticalCount;
+            leftCount += row.leftCount;
+            lastRow = row;
+        }
+        return {
+            period,
+            theoreticalCount,
+            practicalCount: lastRow.practicalCount,
+            leftCount,
+            maleCount: lastRow.maleCount,
+            femaleCount: lastRow.femaleCount,
         };
     });
-
-    const EMPTY_ROW = { theoreticalCount: 0, practicalCount: 0, leftCount: 0, maleCount: 0, femaleCount: 0 };
-    const trend = periods.map(({ period }) => periodMap[period] ?? { period, ...EMPTY_ROW });
 
     const totalTheoretical = trend.reduce((sum, r) => sum + r.theoreticalCount, 0);
     const totalLeft = trend.reduce((sum, r) => sum + r.leftCount, 0);
@@ -2025,5 +2005,27 @@ export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
 
     res.status(200).json(
         new ApiResponse(200, { trend, summary, groupBy: safeGroupBy, start, end }, "Dojo temporary metrics trend fetched successfully")
+    );
+});
+
+/**
+ * Get a single date's DOJO Temporary stage x gender breakdown (Theoretical / Practical / Handover
+ * / Left, each split Male / Female) for the "Snapshot" chart view — a point-in-time read of
+ * dojo_stage_history, not a trend across periods. Defaults to today; a date with no persisted row
+ * (before this feature existed, or a day nothing was ever synced for) comes back all-zero rather
+ * than being reconstructed on the fly.
+ */
+export const getDojoTemporaryStageSnapshot = asyncHandler(async (req, res) => {
+    const { date, departmentId } = req.query;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(date || '') && date <= todayStr ? date : todayStr;
+
+    const deptIds = departmentId ? departmentId.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const snapshot = await DojoStageHistory.getSnapshot(safeDate, deptIds);
+
+    res.status(200).json(
+        new ApiResponse(200, { snapshot, date: safeDate }, "Dojo temporary stage snapshot fetched successfully")
     );
 });

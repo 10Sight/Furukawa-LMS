@@ -14,6 +14,8 @@ import { AvailableUserRoles, AvailableUnits } from "../constants.js";
 import validator from "validator";
 import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import { checkAndProcessLevelUpgrades, formatUser } from "./user.controller.js";
+import DojoStageHistory from "../models/dojoStagHistory.model.js";
+import logger from "../logger/winston.logger.js";
 
 // Helper to sanitize user object
 const sanitizeUser = (user) => {
@@ -486,6 +488,12 @@ export const dojoRegister = asyncHandler(async (req, res) => {
   );
 
   await logAudit(user.id, "REGISTER_DOJO", { role: "STUDENT", isTemporary: true }, { req });
+
+  // Keep dojo_stage_history current for the new candidate's join date — non-blocking so it
+  // never adds to this request's latency.
+  const syncDate = userData.joiningDate || new Date().toISOString().split('T')[0];
+  DojoStageHistory.syncDate(syncDate, { syncedBy: 'dojoRegister' })
+    .catch(err => logger.error('[dojoRegister] DojoStageHistory.syncDate failed', err));
 
   return res
     .status(201)

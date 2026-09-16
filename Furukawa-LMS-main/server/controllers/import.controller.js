@@ -19,6 +19,8 @@ import {
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
 import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import DojoStageHistory from "../models/dojoStagHistory.model.js";
+import logger from "../logger/winston.logger.js";
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -1596,6 +1598,7 @@ export const importDojoUsers = async (req, res) => {
         const { deptMap, sectionMap, contractorMap, lineMap, subSectionMap, stationMap } = await buildImportHierarchyMaps(true);
 
         const results = { success: [], failed: [], total: data.length, updatedCount: 0 };
+        const joiningDatesTouched = new Set();
 
         const [logResult] = await executeQuery(
             "INSERT INTO import_logs (fileName, importType, totalRows, importedBy) OUTPUT INSERTED.id VALUES (?, ?, ?, ?)",
@@ -1721,6 +1724,7 @@ export const importDojoUsers = async (req, res) => {
                 const newUser = await User.create(userData);
 
                 results.success.push({ row: rowNumber, userName: userData.userName, empId: userData.empId });
+                if (userData.joiningDate) joiningDatesTouched.add(userData.joiningDate);
                 await executeQuery(
                     "INSERT INTO import_log_details (logId, rowNumber, rowData, status, entityId) VALUES (?, ?, ?, ?, ?)",
                     [logId, rowNumber, JSON.stringify(row), "CREATED", newUser.id]
@@ -1743,6 +1747,13 @@ export const importDojoUsers = async (req, res) => {
         // user_hierarchy_snapshots has no live reader (see report.controller.js's unwired
         // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
         // UserHierarchySnapshot.init() instead of rebuilding on every import.
+
+        // Keep dojo_stage_history current for every join date this import touched — non-blocking
+        // so it never adds to this request's latency.
+        for (const d of joiningDatesTouched) {
+            DojoStageHistory.syncDate(d, { syncedBy: 'importDojoUsers' })
+                .catch(err => logger.error(`[importDojoUsers] DojoStageHistory.syncDate(${d}) failed`, err));
+        }
 
         res.json(new ApiResponse(200, results, `Import: ${results.success.length} ok, ${results.failed.length} failed`));
     } catch (error) {

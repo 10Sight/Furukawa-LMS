@@ -165,6 +165,14 @@ export const adminHomeApi = createApi({
             // timeframe/filter combo (daily <-> monthly, dept A <-> dept B) is instant, cache-only.
             keepUnusedDataFor: 60,
         }),
+        getDojoTemporaryStageSnapshot: builder.query({
+            query: ({ date = "", departmentId = "" } = {}) => ({
+                url: "/api/admin-home/dojo-temporary-stage-snapshot",
+                method: "GET",
+                params: { date, departmentId }
+            }),
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
@@ -187,4 +195,5 @@ export const {
     useGetLeftUsersReasonTrendQuery,
     useGetJoiningHandoverCohortTrendQuery,
     useGetDojoTemporaryMetricsTrendQuery,
+    useGetDojoTemporaryStageSnapshotQuery,
 } = adminHomeApi;

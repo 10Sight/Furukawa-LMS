@@ -407,7 +407,7 @@ const mediaCropStyle = (crop) => ({
 // down on pointerup) so idle media items cost nothing, and commit back to the
 // sheet (via onUpdate) only once the gesture ends — keeping every intermediate
 // frame a cheap local re-render instead of an undo-history-producing update.
-const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom }) => {
+const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect }) => {
     const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
     const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
     const [isCropping, setIsCropping] = useState(false);
@@ -425,9 +425,10 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
     const height = Math.max(MEDIA_MIN_SIZE, baseHeight + (resizeDelta?.dh || 0));
 
     const startDrag = useCallback((e) => {
+        e.stopPropagation();
+        onSelect?.();
         if (readOnly) return;
         e.preventDefault();
-        e.stopPropagation();
         gestureRef.current = { startX: e.clientX, startY: e.clientY };
         const onMove = (ev) => {
             setDragOffset({ dx: (ev.clientX - gestureRef.current.startX) / zoom, dy: (ev.clientY - gestureRef.current.startY) / zoom });
@@ -448,7 +449,7 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, zoom]);
+    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, zoom, onSelect]);
 
     const startResize = useCallback((e) => {
         if (readOnly) return;
@@ -531,7 +532,20 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
             className="absolute group"
             style={{ left, top, width, height, zIndex: isCropping ? 50 : 15 }}
         >
-            <div className="relative w-full h-full border border-transparent group-hover:border-indigo-400 rounded overflow-hidden bg-white">
+            <div
+                className={cn(
+                    "relative w-full h-full border rounded overflow-hidden bg-white",
+                    isSelected ? "border-indigo-500 ring-2 ring-indigo-500 ring-offset-1" : "border-transparent group-hover:border-indigo-400"
+                )}
+            >
+                {isSelected && !isCropping && (
+                    <>
+                        <div className="absolute -left-1 -top-1 w-2 h-2 bg-indigo-600 rounded-sm z-20 pointer-events-none" />
+                        <div className="absolute -right-1 -top-1 w-2 h-2 bg-indigo-600 rounded-sm z-20 pointer-events-none" />
+                        <div className="absolute -left-1 -bottom-1 w-2 h-2 bg-indigo-600 rounded-sm z-20 pointer-events-none" />
+                        <div className="absolute -right-1 -bottom-1 w-2 h-2 bg-indigo-600 rounded-sm z-20 pointer-events-none" />
+                    </>
+                )}
                 {!isCropping && (item.type === "image" ? (
                     <img
                         src={item.src}
@@ -766,6 +780,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const [activeCell, setActiveCell] = useState("A1");
     const [selection, setSelection] = useState({ start: "A1", end: "A1" });
+    const [selectedMediaId, setSelectedMediaId] = useState(null);
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState("");
     const [hoveredCell, setHoveredCell] = useState(null);
@@ -969,6 +984,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Re-show the fields panel whenever the user navigates onto a (different)
     // pivot sheet, even if they'd previously closed it on another one.
     useEffect(() => { if (pivotConfig) setPivotPanelOpen(true); }, [activeSheetName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // A media selection is scoped to the sheet it was made on — deselect when
+    // switching away so a stray Delete press can't reach into another sheet.
+    useEffect(() => { setSelectedMediaId(null); }, [activeSheetName]);
 
     // Excel-style AutoFilter: a row is hidden if it sits in some table's data
     // range and fails at least one of that table's active column filters. Row
@@ -1338,6 +1357,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             if (!sheet?.media) return;
             sheet.media = sheet.media.filter((m) => m.id !== id);
         });
+        setSelectedMediaId((prev) => (prev === id ? null : prev));
     }, [activeSheetName, updateSheets]);
 
     const undo = useCallback(() => {
@@ -1535,6 +1555,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
         isSelecting.current = true;
+        setSelectedMediaId(null);
         setActiveCell(cellId);
         setSelection({ start: cellId, end: cellId });
     }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference]);
@@ -1702,11 +1723,43 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setSelection({ start, end });
     }, [rowCount, editingCell, commitEdit]);
 
+    const applyToSelection = useCallback((mutator) => {
+        const ids = expandRange(selection.start, selection.end);
+        mutateActiveCells((next) => {
+            for (const id of ids) {
+                const merged = mutator({ ...(next[id] || {}) }, id);
+                if (isBlankCell(merged)) delete next[id];
+                else next[id] = merged;
+            }
+        });
+    }, [selection, mutateActiveCells]);
+
+    // Excel's Delete/Backspace: clears cell contents but leaves formatting
+    // (colors, borders, alignment, ...) in place, matching applyToSelection's
+    // own blank-cell cleanup so a fully-cleared, unstyled cell drops out of
+    // the sparse `cells` map entirely.
+    const clearSelectedCells = useCallback(() => {
+        applyToSelection((cell) => ({ ...cell, value: undefined }));
+    }, [applyToSelection]);
+
     // Keyboard navigation over the grid: arrows move/extend selection, Enter/F2
     // or a printable keypress opens the cell editor, matching common
-    // spreadsheet muscle memory without pulling in a grid library.
+    // spreadsheet muscle memory without pulling in a grid library. Delete and
+    // Backspace clear the selected media item if one is active, otherwise the
+    // selected cells' contents — mirroring Excel, where either key clears
+    // contents/removes the object without touching formatting.
     const handleGridKeyDown = useCallback((e) => {
         if (editingCell) return;
+        if (e.key === "Delete" || e.key === "Backspace") {
+            if (selectedMediaId) {
+                if (!readOnly) handleDeleteMedia(selectedMediaId);
+                e.preventDefault();
+                return;
+            }
+            if (!isSheetReadOnly) clearSelectedCells();
+            e.preventDefault();
+            return;
+        }
         const ref = /^([A-Z]+)(\d+)$/.exec(activeCell);
         if (!ref) return;
         const colLetters = ref[1];
@@ -1743,18 +1796,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         } else {
             setSelection({ start: nextId, end: nextId });
         }
-    }, [activeCell, columns, rowCount, columnCount, editingCell, startEditing, resolveToAnchor, readOnly]);
-
-    const applyToSelection = useCallback((mutator) => {
-        const ids = expandRange(selection.start, selection.end);
-        mutateActiveCells((next) => {
-            for (const id of ids) {
-                const merged = mutator({ ...(next[id] || {}) }, id);
-                if (isBlankCell(merged)) delete next[id];
-                else next[id] = merged;
-            }
-        });
-    }, [selection, mutateActiveCells]);
+    }, [activeCell, columns, rowCount, columnCount, editingCell, startEditing, resolveToAnchor, readOnly, selectedMediaId, isSheetReadOnly, handleDeleteMedia, clearSelectedCells]);
 
     const activeCellData = cells[activeCell];
 
@@ -2911,6 +2953,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         rowCount={rowCount}
                         readOnly={readOnly}
                         zoom={zoom}
+                        isSelected={selectedMediaId === item.id}
+                        onSelect={() => {
+                            setSelectedMediaId(item.id);
+                            // Route Delete/Backspace through handleGridKeyDown, which
+                            // requires the grid container to hold focus — clicking a
+                            // media item (a non-focusable div) wouldn't move focus there
+                            // on its own.
+                            gridContainerRef.current?.focus();
+                        }}
                         onUpdate={(patch) => handleUpdateMedia(item.id, patch)}
                         onDelete={() => handleDeleteMedia(item.id)}
                     />

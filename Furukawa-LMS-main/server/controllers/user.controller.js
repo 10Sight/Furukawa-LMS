@@ -18,6 +18,7 @@ import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
+import DojoStageHistory from "../models/dojoStagHistory.model.js";
 
 // Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
 // A "reasonOfLeaving" filter value of "Other" means "any custom reason not in this list".
@@ -1529,6 +1530,24 @@ export const updateUser = asyncHandler(async (req, res) => {
       const changedFields = fieldsToUpdate.filter(f => data[f] !== undefined);
       logAudit(req.user?.id, "UPDATE_STUDENT", { studentId: userId, changedFields }, { resourceType: "User", resourceId: userId, req })
         .catch(err => console.error("logAudit(UPDATE_STUDENT) failed:", err.message));
+    }
+  }
+
+  // Keep dojo_stage_history current when a change could affect Dojo Temporary metrics — status,
+  // joining/leaving dates, department, gender, or the isTemporary flag itself. Non-blocking so it
+  // never adds to this request's latency. Syncs today plus every joiningDate/leavingDate value
+  // written or overwritten, so both a live status change and a retroactive date correction land.
+  const dojoRelevantFields = ['status', 'leavingDate', 'joiningDate', 'isTemporary', 'targetDeptId', 'gender'];
+  const wasOrIsTemporary = !!oldUser.isTemporary || data.isTemporary === true || data.isTemporary === 1;
+  if (wasOrIsTemporary && dojoRelevantFields.some(f => data[f] !== undefined)) {
+    const toDateStr = (d) => (typeof d === 'string' ? d.split('T')[0] : new Date(d).toISOString().split('T')[0]);
+    const datesToSync = new Set([new Date().toISOString().split('T')[0]]);
+    [data.joiningDate, oldUser.joiningDate, data.leavingDate, oldUser.leavingDate].forEach(d => {
+      if (d) datesToSync.add(toDateStr(d));
+    });
+    for (const d of datesToSync) {
+      DojoStageHistory.syncDate(d, { syncedBy: 'updateUser' })
+        .catch(err => logger.error(`[updateUser] DojoStageHistory.syncDate(${d}) failed`, err));
     }
   }
 

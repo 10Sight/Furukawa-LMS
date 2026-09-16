@@ -64,6 +64,8 @@ import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringSchedu
 import sixteenDayEligibilityScheduler from "./services/sixteenDayEligibilityScheduler.js";
 import planNotificationScheduler from "./services/planNotificationScheduler.js";
 import headcountReportScheduler from "./services/headcountReportScheduler.js";
+import DojoStageHistory from "./models/dojoStagHistory.model.js";
+import dojoStageHistoryScheduler from "./services/dojoStageHistoryScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -525,6 +527,7 @@ const startServer = async () => {
                 await MenteeFeedback.init();
                 await import("./models/abnormalCondition.model.js").then(m => m.default.init());
                 await import("./models/designationShutter.model.js").then(m => m.default.init());
+                await DojoStageHistory.init();
 
                 // Initialize Schedulers only after every table/migration init above has completed, so
                 // their cron ticks can never race a still-running migration for locks on the same tables.
@@ -536,6 +539,13 @@ const startServer = async () => {
                 sixteenDayEligibilityScheduler.init();
                 planNotificationScheduler.init();
                 headcountReportScheduler.init();
+                dojoStageHistoryScheduler.init();
+
+                // Deliberately no historical backfill here. dojo_stage_history should only ever hold
+                // snapshots that were actually captured on (or very near) the date they're for — via
+                // this scheduler going forward, and the write-path hooks for same-day edits. Manufacturing
+                // "history" for dates before this feature existed produces fabricated data that doesn't
+                // correspond to anything that was ever true, which is worse than just having no data.
 
                 logger.info("Background table initialization complete — all tables and schedulers ready.");
             } catch (error) {

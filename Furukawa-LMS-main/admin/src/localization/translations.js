@@ -330,6 +330,14 @@ export const translations = {
     "charts.currentlyActive": "Currently Active",
     "charts.failedToLoadTemporaryMetrics": "Failed to load temporary metrics trend.",
     "charts.noTemporaryMetricsData": "No temporary metrics data found for this period.",
+    "charts.dojoStageGenderSnapshot": "Dojo Theoretical, Practical, Handover & Left — Gender Snapshot",
+    "charts.dojoStageGenderSnapshotDesc": "One day's breakdown of Theoretical, Practical, Handover and Left, split by Male / Female",
+    "charts.trendMode": "Trend",
+    "charts.snapshotMode": "Snapshot",
+    "charts.selectedDate": "Date",
+    "charts.prevDay": "Previous day",
+    "charts.nextDay": "Next day",
+    "charts.handover": "Handover",
 
     // Left Users Leaving-Reason Trend Chart
     "charts.leftUsersReasonTrend": "Left Users — Leaving Reason Trend",
@@ -1169,6 +1177,14 @@ export const translations = {
     "charts.currentlyActive": "वर्तमान में सक्रिय",
     "charts.failedToLoadTemporaryMetrics": "अस्थायी मेट्रिक्स ट्रेंड लोड करने में विफल।",
     "charts.noTemporaryMetricsData": "इस अवधि के लिए कोई अस्थायी मेट्रिक्स डेटा नहीं मिला।",
+    "charts.dojoStageGenderSnapshot": "डोजो थ्योरेटिकल, प्रैक्टिकल, हैंडओवर और लेफ्ट — जेंडर स्नैपशॉट",
+    "charts.dojoStageGenderSnapshotDesc": "एक दिन का थ्योरेटिकल, प्रैक्टिकल, हैंडओवर और लेफ्ट का विवरण, पुरुष/महिला अनुसार विभाजित",
+    "charts.trendMode": "ट्रेंड",
+    "charts.snapshotMode": "स्नैपशॉट",
+    "charts.selectedDate": "तारीख",
+    "charts.prevDay": "पिछला दिन",
+    "charts.nextDay": "अगला दिन",
+    "charts.handover": "हैंडओवर",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO उम्मीदवार उपस्थिति स्थिति",
@@ -1968,6 +1984,14 @@ export const translations = {
     "charts.currentlyActive": "現在活動中",
     "charts.failedToLoadTemporaryMetrics": "臨時候補者メトリクスの読み込みに失敗しました。",
     "charts.noTemporaryMetricsData": "この期間の臨時候補者データが見つかりません。",
+    "charts.dojoStageGenderSnapshot": "DOJO 理論・実技・引き継ぎ・離脱 — 性別スナップショット",
+    "charts.dojoStageGenderSnapshotDesc": "1日の理論・実技・引き継ぎ・離脱の内訳を男性/女性別に表示",
+    "charts.trendMode": "トレンド",
+    "charts.snapshotMode": "スナップショット",
+    "charts.selectedDate": "日付",
+    "charts.prevDay": "前日",
+    "charts.nextDay": "翌日",
+    "charts.handover": "引き継ぎ",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候補者の出席状況",
@@ -2767,6 +2791,14 @@ export const translations = {
     "charts.currentlyActive": "当前在岗",
     "charts.failedToLoadTemporaryMetrics": "加载临时候选人趋势失败。",
     "charts.noTemporaryMetricsData": "未找到此时段的临时候选人数据。",
+    "charts.dojoStageGenderSnapshot": "道场理论、实操、交接与离职 — 性别快照",
+    "charts.dojoStageGenderSnapshotDesc": "某一天理论、实操、交接和离职的明细，按男/女划分",
+    "charts.trendMode": "趋势",
+    "charts.snapshotMode": "快照",
+    "charts.selectedDate": "日期",
+    "charts.prevDay": "前一天",
+    "charts.nextDay": "后一天",
+    "charts.handover": "交接",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "DOJO 候选人出勤状态",
@@ -3566,6 +3598,14 @@ export const translations = {
     "charts.currentlyActive": "Сейчас активны",
     "charts.failedToLoadTemporaryMetrics": "Не удалось загрузить тренд временных показателей.",
     "charts.noTemporaryMetricsData": "Данные о временных показателях за этот период не найдены.",
+    "charts.dojoStageGenderSnapshot": "Dojo Теория, Практика, Передача и Уход — гендерный снимок",
+    "charts.dojoStageGenderSnapshotDesc": "Разбивка за один день по теории, практике, передаче и уходу, по полу",
+    "charts.trendMode": "Тренд",
+    "charts.snapshotMode": "Снимок",
+    "charts.selectedDate": "Дата",
+    "charts.prevDay": "Предыдущий день",
+    "charts.nextDay": "Следующий день",
+    "charts.handover": "Передача",
 
     // User Status Distribution Chart
     "charts.attendanceStatus": "Статус посещаемости кандидатов DOJO",

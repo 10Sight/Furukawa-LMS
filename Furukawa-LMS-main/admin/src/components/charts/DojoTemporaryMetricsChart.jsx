@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetDojoTemporaryMetricsTrendQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetDojoTemporaryMetricsTrendQuery, useGetDojoTemporaryStageSnapshotQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { IconUsers, IconCalendar, IconRefresh, IconChevronDown } from "@tabler/icons-react";
+import { IconUsers, IconCalendar, IconRefresh, IconChevronDown, IconChevronLeft, IconChevronRight, IconChartBar } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
@@ -30,11 +30,14 @@ const MONTH_END    = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1
 const getDefaultDates = (timeframe) => {
     const now = new Date();
     if (timeframe === 'daily') {
-        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        // Last 29 days ending today — never reaches into the future. dojo_stage_history only
+        // ever holds snapshots up to today, so a "this calendar month" range (which can run past
+        // today mid-month) would ask for days that don't have — and can never get — real data.
+        const past = new Date(now);
+        past.setDate(past.getDate() - 29);
         return {
-            rawStart: formatDate(firstOfMonth),
-            rawEnd:   formatDate(lastOfMonth),
+            rawStart: formatDate(past),
+            rawEnd:   formatDate(now),
         };
     }
     if (timeframe === 'monthly') {
@@ -150,15 +153,24 @@ const LEFT_COLOR        = '#ef4444';
 const MALE_COLOR        = '#6366f1';
 const FEMALE_COLOR      = '#ec4899';
 
+const SNAPSHOT_ZERO = {
+    theoreticalCount: 0, practicalCount: 0, handoverCount: 0, leftCount: 0,
+    theoreticalMale: 0, theoreticalFemale: 0, practicalMale: 0, practicalFemale: 0,
+    handoverMale: 0, handoverFemale: 0, leftMale: 0, leftFemale: 0,
+    maleCount: 0, femaleCount: 0,
+};
+
 const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
+    const [chartMode, setChartMode] = useState('trend'); // 'trend' | 'snapshot'
     const [timeframe, setTimeframe] = useState('daily');
     const [rawStart, setRawStart] = useState('');
     const [rawEnd, setRawEnd] = useState('');
     const [selectedDepts, setSelectedDepts] = useState([]);
     const [viewMode, setViewMode] = useState('all');
+    const [snapshotDate, setSnapshotDate] = useState('');
 
     // Home.jsx already fetches the department list once and passes it down; only fall back
     // to a local (RTK-Query-cached) fetch when this chart is used standalone.
@@ -261,6 +273,42 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
     const currentActive    = summary?.currentActive ?? (currentMale + currentFemale);
     const attritionRate    = summary?.attritionRate ?? (totalTheoretical > 0 ? Math.round((totalLeft / totalTheoretical) * 1000) / 10 : 0);
 
+    // --- Snapshot mode: one date's Theoretical/Practical/Handover/Left x Male/Female breakdown ---
+    const todayStr = useMemo(() => formatDate(new Date()), []);
+    const effectiveSnapshotDate = snapshotDate || todayStr;
+
+    const { data: snapshotData, isLoading: snapshotLoading, error: snapshotError } = useGetDojoTemporaryStageSnapshotQuery(
+        { date: effectiveSnapshotDate, departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '' },
+        { skip: chartMode !== 'snapshot' }
+    );
+
+    const snapshot = snapshotData?.data?.snapshot || SNAPSHOT_ZERO;
+
+    const snapshotCategories = useMemo(() => [
+        t('charts.theoretical'), t('charts.practical'), t('charts.handover'), t('charts.left'),
+    ], [t]);
+
+    const snapshotSeries = useMemo(() => [
+        {
+            type: 'column', name: t('charts.male'), color: MALE_COLOR,
+            data: [snapshot.theoreticalMale, snapshot.practicalMale, snapshot.handoverMale, snapshot.leftMale],
+        },
+        {
+            type: 'column', name: t('charts.female'), color: FEMALE_COLOR,
+            data: [snapshot.theoreticalFemale, snapshot.practicalFemale, snapshot.handoverFemale, snapshot.leftFemale],
+        },
+    ], [snapshot, t]);
+
+    const snapshotHasData = snapshot.theoreticalCount > 0 || snapshot.practicalCount > 0
+        || snapshot.handoverCount > 0 || snapshot.leftCount > 0;
+
+    const shiftSnapshotDate = (deltaDays) => {
+        const d = new Date(`${effectiveSnapshotDate}T00:00:00`);
+        d.setDate(d.getDate() + deltaDays);
+        const next = formatDate(d);
+        setSnapshotDate(next > todayStr ? todayStr : next);
+    };
+
     const handleTimeframeChange = (tf) => {
         setTimeframe(tf);
         setRawStart('');
@@ -273,6 +321,7 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
         setRawEnd('');
         setSelectedDepts([]);
         setViewMode('all');
+        setSnapshotDate('');
     };
 
     const toggleDept = (id, checked) =>
@@ -377,6 +426,65 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
         series: metricsSeries,
     }), [categories, groupSeparators, metricsSeries, needsScroll, scrollMinWidth, scrollPositionX]);
 
+    const snapshotChartOptions = useMemo(() => ({
+        chart: {
+            backgroundColor: 'transparent',
+            height: 420,
+            style: { fontFamily: 'inherit' },
+            animation: { duration: 400 },
+            marginBottom: 75,
+        },
+        title: { text: '' },
+        credits: { enabled: false },
+        xAxis: {
+            categories: snapshotCategories,
+            crosshair: true,
+            labels: {
+                style: { fontSize: '16px', fontWeight: 'bold', textAlign: 'center' },
+                rotation: 0,
+                align: 'center',
+                y: 26,
+            },
+        },
+        yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '15px', fontWeight: 'bold' } },
+            labels: { style: { fontSize: '14px', fontWeight: 'bold' } },
+            gridLineColor: '#f1f5f9',
+        },
+        legend: {
+            enabled: true,
+            margin: 34,
+            itemStyle: { fontSize: '14px', fontWeight: 'bold', color: '#475569' },
+        },
+        responsive: {
+            rules: [
+                { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 500 } } },
+                { condition: { maxWidth: 767 }, chartOptions: { chart: { height: 380 } } },
+            ],
+        },
+        plotOptions: {
+            column: {
+                ...basePlotOptions.column,
+                dataLabels: aboveBarLabels,
+            },
+        },
+        tooltip: {
+            shared: true,
+            useHTML: true,
+            formatter() {
+                const points = this.points || [];
+                let html = `<b>${this.x}</b><br/>`;
+                points.forEach(p => {
+                    html += `<span style="color:${p.series.color}">●</span> ${p.series.name}: <b>${p.y}</b><br/>`;
+                });
+                return html;
+            },
+        },
+        series: snapshotSeries,
+    }), [snapshotCategories, snapshotSeries]);
+
     const cfg = INPUT_CONFIG[timeframe];
     const hasAnyData = totalTheoretical > 0 || currentPractical > 0 || totalLeft > 0 || currentMale > 0 || currentFemale > 0;
 
@@ -387,17 +495,72 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                     <div className="space-y-1">
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <IconUsers className="h-5 w-5 text-blue-600" />
-                            {t('charts.dojoTemporaryMetricsTrend')}
+                            {chartMode === 'snapshot' ? t('charts.dojoStageGenderSnapshot') : t('charts.dojoTemporaryMetricsTrend')}
                         </CardTitle>
                         <CardDescription>
-                            {t('charts.dojoTemporaryMetricsTrendDesc')}
+                            {chartMode === 'snapshot' ? t('charts.dojoStageGenderSnapshotDesc') : t('charts.dojoTemporaryMetricsTrendDesc')}
                         </CardDescription>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                        <Button
+                            variant={chartMode === 'trend' ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => setChartMode('trend')}
+                        >
+                            <IconCalendar className="h-3.5 w-3.5 mr-1" />
+                            {t('charts.trendMode')}
+                        </Button>
+                        <Button
+                            variant={chartMode === 'snapshot' ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => setChartMode('snapshot')}
+                        >
+                            <IconChartBar className="h-3.5 w-3.5 mr-1" />
+                            {t('charts.snapshotMode')}
+                        </Button>
                     </div>
                 </div>
 
                 {/* Filter bar */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
 
+                    {chartMode === 'snapshot' ? (
+                        <div className="flex flex-col gap-1.5">
+                            <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                                {t('charts.selectedDate')}
+                            </Label>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => shiftSnapshotDate(-1)}
+                                    aria-label={t('charts.prevDay')}
+                                >
+                                    <IconChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <Input
+                                    type="date"
+                                    value={effectiveSnapshotDate}
+                                    max={todayStr}
+                                    onChange={e => setSnapshotDate(e.target.value)}
+                                    className="h-8 text-xs w-36"
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => shiftSnapshotDate(1)}
+                                    disabled={effectiveSnapshotDate >= todayStr}
+                                    aria-label={t('charts.nextDay')}
+                                >
+                                    <IconChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
                             {t('charts.timeframe')}
@@ -420,7 +583,9 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                             ))}
                         </div>
                     </div>
+                    )}
 
+                    {chartMode === 'trend' && (
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
                             {t('charts.viewMode')}
@@ -443,7 +608,10 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                             ))}
                         </div>
                     </div>
+                    )}
 
+                    {chartMode === 'trend' && (
+                    <>
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
                         <Input
@@ -471,6 +639,8 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                             className="h-8 text-xs w-36"
                         />
                     </div>
+                    </>
+                    )}
 
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
@@ -524,7 +694,8 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
             </CardHeader>
 
             <CardContent>
-                {isLoading ? (
+                {chartMode === 'trend' ? (
+                isLoading ? (
                     <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
@@ -588,6 +759,66 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                             </div>
                         </div>
                     </>
+                )
+                ) : (
+                snapshotLoading ? (
+                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center gap-4">
+                        <img
+                            src="/fme_transparent.png"
+                            alt="FME"
+                            className="w-20 h-20 object-contain animate-pulse"
+                        />
+                        <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
+                            {t('charts.loading')}
+                        </p>
+                    </div>
+                ) : snapshotError ? (
+                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
+                        <p className="text-sm font-semibold">{t('charts.failedToLoadTemporaryMetrics')}</p>
+                    </div>
+                ) : !snapshotHasData ? (
+                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                        <IconCalendar className="h-10 w-10 opacity-20" />
+                        <p className="text-sm font-medium">{t('charts.noTemporaryMetricsData')}</p>
+                        <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
+                    </div>
+                ) : (
+                    <>
+                        <HighchartsReact
+                            key={`snapshot-${effectiveSnapshotDate}-${selectedDepts.join(',')}`}
+                            highcharts={Highcharts}
+                            options={snapshotChartOptions}
+                        />
+
+                        {/* KPI Summary strip */}
+                        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
+                                <span className="text-xs font-bold text-blue-700">{t('charts.theoretical')}</span>
+                                <span className="text-sm font-black text-blue-900">{snapshot.theoreticalCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50">
+                                <span className="text-xs font-bold text-amber-700">{t('charts.practical')}</span>
+                                <span className="text-sm font-black text-amber-900">{snapshot.practicalCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
+                                <span className="text-xs font-bold text-green-700">{t('charts.handover')}</span>
+                                <span className="text-sm font-black text-green-900">{snapshot.handoverCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
+                                <span className="text-xs font-bold text-red-700">{t('charts.left')}</span>
+                                <span className="text-sm font-black text-red-900">{snapshot.leftCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-indigo-50">
+                                <span className="text-xs font-bold text-indigo-700">{t('charts.male')}</span>
+                                <span className="text-sm font-black text-indigo-900">{snapshot.maleCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-pink-50">
+                                <span className="text-xs font-bold text-pink-700">{t('charts.female')}</span>
+                                <span className="text-sm font-black text-pink-900">{snapshot.femaleCount}</span>
+                            </div>
+                        </div>
+                    </>
+                )
                 )}
             </CardContent>
         </Card>

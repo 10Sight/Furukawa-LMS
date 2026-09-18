@@ -83,6 +83,8 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const [page, setPage] = useState(1);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
 
   const { data, isLoading, isFetching, refetch } = useGetAllLeftRequestsQuery({
     status: statusTab,
@@ -98,11 +100,12 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const totalPages = data?.data?.totalPages || 1;
   const total = data?.data?.total || 0;
 
-  const handleApprove = async (request) => {
-    if (!window.confirm(`Approve the left request for ${request.fullName}? Their status will be changed to LEFT.`)) return;
+  const handleApprove = async () => {
+    if (!approveTarget) return;
     try {
-      await approveLeftRequest(request.id).unwrap();
-      toast.success(`${request.fullName} marked as left`);
+      await approveLeftRequest(approveTarget.id).unwrap();
+      toast.success(`${approveTarget.fullName} marked as left`);
+      setApproveTarget(null);
       refetch();
       onChanged?.();
     } catch (error) {
@@ -130,11 +133,12 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
     }
   };
 
-  const handleCancel = async (request) => {
-    if (!window.confirm("Withdraw this left request?")) return;
+  const handleCancel = async () => {
+    if (!cancelTarget) return;
     try {
-      await cancelLeftRequest(request.id).unwrap();
+      await cancelLeftRequest(cancelTarget.id).unwrap();
       toast.success("Left request withdrawn");
+      setCancelTarget(null);
       refetch();
     } catch (error) {
       toast.error(error?.data?.message || "Failed to withdraw left request");
@@ -240,7 +244,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                           <>
                             <Button
                               size="sm"
-                              onClick={() => handleApprove(request)}
+                              onClick={() => setApproveTarget(request)}
                               disabled={isApproving}
                               className="bg-green-600 hover:bg-green-700 text-white h-7 px-2 text-xs"
                             >
@@ -261,7 +265,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleCancel(request)}
+                            onClick={() => setCancelTarget(request)}
                             disabled={isCancelling}
                             className="h-7 px-2 text-xs"
                           >
@@ -324,6 +328,65 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
             >
               {isRejecting && <IconLoader className="h-4 w-4 animate-spin" />}
               Confirm Rejection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve Confirmation Dialog */}
+      <Dialog open={!!approveTarget} onOpenChange={(open) => { if (!open) setApproveTarget(null); }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-700">
+              <IconCheck className="h-5 w-5" />
+              Approve Left Request
+            </DialogTitle>
+            <DialogDescription>
+              Approve the left request for <strong>{approveTarget?.fullName}</strong>? Their status will be
+              changed to LEFT with a leaving date of{" "}
+              <strong>{approveTarget?.leavingDate ? safeDateFormat(approveTarget.leavingDate, "dd/MM/yyyy") : "-"}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApprove}
+              disabled={isApproving}
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isApproving && <IconLoader className="h-4 w-4 animate-spin" />}
+              Confirm Approval
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Withdraw Confirmation Dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) setCancelTarget(null); }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconUserX className="h-5 w-5" />
+              Withdraw Left Request
+            </DialogTitle>
+            <DialogDescription>
+              Withdraw the left request for <strong>{cancelTarget?.fullName}</strong>? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="gap-2"
+            >
+              {isCancelling && <IconLoader className="h-4 w-4 animate-spin" />}
+              Confirm Withdraw
             </Button>
           </DialogFooter>
         </DialogContent>

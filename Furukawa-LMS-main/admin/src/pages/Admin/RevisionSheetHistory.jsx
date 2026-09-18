@@ -12,10 +12,12 @@ import RevisionHistoryList from '@/components/admin/revision/RevisionHistoryList
 import RevisionEditModal from '@/components/admin/revision/RevisionEditModal';
 import RevisionHistoryModal from '@/components/admin/revision/RevisionHistoryModal';
 
-// The 10-Cycle Check Sheet's revisions are tied to structural layout changes
-// (questions, instruments, columns), so Edit/Add Override for this sheet deep-link
-// into the dedicated Cycle10LayoutEditor page instead of the plain text modal.
+// Sheets whose revisions are tied to structural layout changes (questions/instruments/
+// columns for 10-Cycle, categories/checkpoints/weightages for 16-Day) deep-link Edit/Add
+// Override into their own dedicated layout editor page instead of the plain text modal.
 const TEN_CYCLE_SHEET_KEY = 'ten-cycle-sheet';
+const SIXTEEN_DAY_SHEET_KEY = 'sixteen-day-monitoring';
+const LAYOUT_EDITOR_SHEET_KEYS = [TEN_CYCLE_SHEET_KEY, SIXTEEN_DAY_SHEET_KEY];
 
 // Per-sheet detail page: the global default plus every department/section
 // override for this sheetKey, and the sheet's full audit log history.
@@ -78,7 +80,7 @@ const RevisionSheetHistory = () => {
     }, [fetchRecords, fetchHistory]);
 
     const handleEdit = (record) => {
-        if (sheetKey === TEN_CYCLE_SHEET_KEY) {
+        if (LAYOUT_EDITOR_SHEET_KEYS.includes(sheetKey)) {
             const params = new URLSearchParams();
             if (record.departmentId) {
                 params.set('departmentId', String(record.departmentId));
@@ -95,7 +97,7 @@ const RevisionSheetHistory = () => {
     };
 
     const handleAddOverride = () => {
-        if (sheetKey === TEN_CYCLE_SHEET_KEY) {
+        if (LAYOUT_EDITOR_SHEET_KEYS.includes(sheetKey)) {
             navigate(`/admin/revision-table/${sheetKey}/layout`);
             return;
         }

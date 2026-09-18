@@ -1706,6 +1706,200 @@ export const generateSixteenDayMonitoringEligibleEmail = ({ operatorName, employ
 </html>`;
 };
 
+export const generateLeftRequestSubmittedEmail = ({
+    fullName,
+    empId,
+    departmentName,
+    sectionName,
+    leavingDate,
+    reasonOfLeaving,
+    remarks,
+    requestedByName,
+    requestedByRole,
+    portalUrl
+}) => {
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Left Request Submitted</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:#b45309;padding:24px 32px;">
+            <div style="font-size:13px;color:#fde68a;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">Action Required: Left Request Submitted</div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Reviewer,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                A Left Request has been submitted for <strong>${fullName}</strong> and is awaiting your verification and approval.
+                The operator's status remains active until this request is reviewed.
+            </p>
+
+            <!-- Details Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:170px;">Operator</td>
+                        <td style="padding:7px 0;color:#111827;font-weight:700;font-size:15px;">${fullName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Emp. Code</td>
+                        <td style="padding:7px 0;color:#111827;">${empId || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Department</td>
+                        <td style="padding:7px 0;color:#111827;">${departmentName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Section</td>
+                        <td style="padding:7px 0;color:#111827;">${sectionName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Requested Leaving Date</td>
+                        <td style="padding:7px 0;color:#111827;">${leavingDate || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeaving || '-'}</td>
+                    </tr>
+                    ${remarks ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Remarks</td>
+                        <td style="padding:7px 0;color:#111827;">${remarks}</td>
+                    </tr>` : ''}
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Requested By</td>
+                        <td style="padding:7px 0;color:#111827;">${requestedByName || '-'}${requestedByRole ? ` (${requestedByRole})` : ''}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:#b45309;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    Review Left Request
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString()}
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
+export const generateLeftRequestResolutionEmail = ({
+    fullName,
+    empId,
+    departmentName,
+    sectionName,
+    leavingDate,
+    reasonOfLeaving,
+    status,
+    reviewedByName,
+    rejectionReason,
+    portalUrl
+}) => {
+    const isApproved = status === "APPROVED";
+    const accentColor = isApproved ? "#059669" : "#dc2626";
+    const lightAccent = isApproved ? "#d1fae5" : "#fee2e2";
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Left Request ${isApproved ? 'Approved' : 'Rejected'}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:${accentColor};padding:24px 32px;">
+            <div style="font-size:13px;color:${lightAccent};font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">Left Request ${isApproved ? 'Approved' : 'Rejected'}</div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Team,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                The Left Request for <strong>${fullName}</strong> has been <strong style="color:${accentColor};">${isApproved ? 'approved' : 'rejected'}</strong>
+                by <strong>${reviewedByName || 'the reviewer'}</strong>.
+                ${isApproved ? "The operator's status has been updated to LEFT." : "The operator's status remains unchanged."}
+            </p>
+
+            <!-- Details Card -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;width:170px;">Operator</td>
+                        <td style="padding:7px 0;color:#111827;font-weight:700;font-size:15px;">${fullName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Emp. Code</td>
+                        <td style="padding:7px 0;color:#111827;">${empId || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Department</td>
+                        <td style="padding:7px 0;color:#111827;">${departmentName || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Section</td>
+                        <td style="padding:7px 0;color:#111827;">${sectionName || '-'}</td>
+                    </tr>
+                    ${isApproved ? `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Effective Leaving Date</td>
+                        <td style="padding:7px 0;color:#111827;">${leavingDate || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeaving || '-'}</td>
+                    </tr>` : `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Rejection Reason</td>
+                        <td style="padding:7px 0;color:#111827;">${rejectionReason || '-'}</td>
+                    </tr>`}
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reviewed By</td>
+                        <td style="padding:7px 0;color:#111827;">${reviewedByName || '-'}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    View in Portal
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated notification from the FME Digital Portal. &nbsp;|&nbsp; ${new Date().toLocaleString()}
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -1724,4 +1918,6 @@ export default {
     generatePlanUpdateEmail,
     generateObservanceStatusEmail,
     generateSixteenDayMonitoringEligibleEmail,
+    generateLeftRequestSubmittedEmail,
+    generateLeftRequestResolutionEmail,
 };

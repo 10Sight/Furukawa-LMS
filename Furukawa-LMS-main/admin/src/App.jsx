@@ -94,6 +94,7 @@ const RevisionTable = lazy(() => import("./pages/Admin/RevisionTable.jsx"));
 const RevisionSheetHistory = lazy(() => import("./pages/Admin/RevisionSheetHistory.jsx"));
 const DPRManage = lazy(() => import("./pages/Admin/DPRManage"));
 const SixteenDayMonitoring = lazy(() => import("./pages/Admin/SixteenDayMonitoring"));
+const SixteenDayMonitoringLayoutEditor = lazy(() => import("./pages/Admin/SixteenDayMonitoringLayoutEditor"));
 const ThreeDayMonitoring = lazy(() => import("./pages/Admin/ThreeDayMonitoring"));
 const HandoverSheetPage = lazy(() => import("./pages/Admin/HandoverSheetPage"));
 const AbnormalCondition = lazy(() => import("./pages/Admin/AbnormalCondition"));
@@ -292,6 +293,7 @@ const App = () => {
             <Route path="dpr-manage" element={<DPRManage />} />
             <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="16-day-monitoring/:studentId?" element={<SixteenDayMonitoring />} />
+            <Route path="16-day-monitoring/layout" element={<SixteenDayMonitoringLayoutEditor />} />
             <Route path="3-day-monitoring/:studentId?" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="multi-skilling" element={<MultiSkilling />} />
@@ -318,6 +320,11 @@ const App = () => {
             <Route path="revision-table/:sheetKey/layout" element={
               <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "ten_cycle:edit_layout", "ten_cycle:manage"]}>
                 <Cycle10LayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/sixteen-day-monitoring/layout" element={
+              <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "sixteen_day:edit_layout", "sixteen_day:manage"]}>
+                <SixteenDayMonitoringLayoutEditor />
               </RequireAccess>
             } />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
@@ -559,6 +566,7 @@ const App = () => {
             <Route path="line-requirements" element={<LineRequirementManager />} />
             <Route path="dpr-manage" element={<DPRManage />} />
             <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />
+            <Route path="16-day-monitoring/layout" element={<SixteenDayMonitoringLayoutEditor />} />
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import {
     Printer,
     Edit2,
-    History,
     Save,
     Download,
     Loader2,
@@ -44,110 +43,13 @@ import { toast } from "sonner";
 import axiosInstance from "@/Helper/axiosInstance";
 import { exportToExcel } from "@/utils/exportHelper";
 import { useLogActionMutation } from "@/Redux/AllApi/AuditApi";
-
-const DEFAULT_MONITORING_CONFIG_16 = [
-    {
-        id: "cat1",
-        category: "10 Cycle Check :\n1st time - 4 Part\n2nd time- 3 Part\n3rd time- 3 Part",
-        rows: [
-            { id: "row1_1", label: "Follow the work sequence according to the Work Instructions & Check the all check point as per WI\n(including finish condition confirmation)", weight: 2, type: "cycle" },
-            { id: "row1_2", label: "Inspector should complete the Job in given cycle time", weight: 2, type: "cycle_detailed" },
-            { id: "row1_3", label: "Adherence of 4'S (Sort, arrangement, clean, adherence)", weight: 2, type: "cycle" }
-        ],
-        totalMark: 6,
-        target: "100%"
-    },
-    {
-        id: "cat2",
-        category: "Quality / System",
-        rows: [
-            { id: "row2_1", label: "Does he/she know the purpose of his/her work & impact at customer end", weight: 2 },
-            { id: "row2_2", label: "Check an awareness of Inspector about defect in product & past defect in product", weight: 2 },
-            { id: "row2_3", label: "Does he/she know OK & NG part judgment", weight: 2 },
-            { id: "row2_4", label: "Does he/she know about NG part handling & adhere the rule STOP > CALL > WAIT", weight: 2 },
-            { id: "row2_5", label: "Is there any mistake in using Andon?", weight: 2 }
-        ],
-        totalMark: 10,
-        target: "100%"
-    },
-    {
-        id: "cat3",
-        category: "Defects captured (Defect must be captured 100% during the 16 day monitoring performance)",
-        rows: [
-            { id: "row3_1", label: "Actual defects", weight: "-" },
-            { id: "row3_2", label: "Defects captured", weight: "-" }
-        ],
-        target: "100%",
-        hasTargetInGrid: true
-    },
-    {
-        id: "cat4",
-        category: "Discipline",
-        rows: [
-            { id: "row4_1", label: "Attends the daily meeting with good level of listening and understanding .", weight: 2 },
-            { id: "row4_2", label: "Inspector should aware about daily machine check point and do 5S on their station on daily basis before production start.", weight: 2 },
-            { id: "row4_3", label: "Whenever if any defect or work related problem is their , he immediately contacts with line leader or his senior person with doing any delay or sitting idle.", weight: 2 },
-            { id: "row4_4", label: "During any break operator clear the WIP Assy. Part from his / her station and move to next process, leave work station after completing the job.\nIs he/she adhare working hours and break timings?", weight: 2 }
-        ],
-        totalMark: 8,
-        target: "(EXCELLENT - 100 %)"
-    },
-    {
-        id: "cat5",
-        category: "Safety",
-        rows: [
-            { id: "row5_1", label: "Does he/she adhere rules of 5 Principle of Safety and Gen. Safety", weight: 2 },
-            { id: "row5_2", label: "Does he/she wear required PPEs as per PPE matrix", weight: 2 }
-        ],
-        totalMark: 4,
-        target: "100%",
-        actualLabel: "Actual % age followed"
-    }
-];
-
-const DEFAULT_SCORE_RANGES = [
-    { id: 'score1', catId: 'cat1', label: '10 Cycle Check', weight: 0.4, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100' },
-    { id: 'score2', catId: 'cat2', label: 'Quality / System', weight: 0.2, poor: '70-80', avg: '81-90', good: '91-95', excel: '96-100' },
-    { id: 'score3', catId: 'cat3', label: 'Defect Captured', weight: 0.1, poor: '40-50', avg: '51-65', good: '66-80', excel: '100' },
-    { id: 'score4', catId: 'cat4', label: 'Discipline', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100' },
-    { id: 'score5', catId: 'cat5', label: 'Safety', weight: 0.1, poor: '30-35', avg: '36-47', good: '48-55', excel: '100' },
-    { id: 'score6', catId: null, label: 'Attendance', weight: 0.1, poor: '50-75', avg: '76-85', good: '86-95', excel: '96-100' },
-];
-
-const DEFAULT_EVALUATION_LEGENDS = {
-    cycleTime: [
-        { score: 0, label: 'Is > 20% of standard time' },
-        { score: 1, label: '11% - 20% of standard time' },
-        { score: 2, label: 'Fit & above of standard time' }
-    ],
-    otherCriteria: [
-        { score: 0, label: 'Not known / Not adhere the rule' },
-        { score: 1, label: 'Partially known / Partially adhere the rule' },
-        { score: 2, label: 'Known / completely adhere the rule' }
-    ]
-};
-
-const normalizeConfig = (raw) => {
-    if (Array.isArray(raw)) {
-        return {
-            categories: raw,
-            scoreRanges: DEFAULT_SCORE_RANGES,
-            evaluationLegends: DEFAULT_EVALUATION_LEGENDS
-        };
-    }
-    if (raw && typeof raw === 'object') {
-        return {
-            categories: raw.categories || DEFAULT_MONITORING_CONFIG_16,
-            scoreRanges: raw.scoreRanges || DEFAULT_SCORE_RANGES,
-            evaluationLegends: raw.evaluationLegends || DEFAULT_EVALUATION_LEGENDS
-        };
-    }
-    return {
-        categories: DEFAULT_MONITORING_CONFIG_16,
-        scoreRanges: DEFAULT_SCORE_RANGES,
-        evaluationLegends: DEFAULT_EVALUATION_LEGENDS
-    };
-};
+import { useNavigate } from "react-router-dom";
+import {
+    DEFAULT_MONITORING_CONFIG_16,
+    DEFAULT_SCORE_RANGES,
+    DEFAULT_EVALUATION_LEGENDS,
+    normalizeConfig,
+} from "@/utils/sixteenDayMonitoringConfig";
 
 const SixteenDayMonitoringSheet = ({
     studentId,
@@ -191,8 +93,10 @@ const SixteenDayMonitoringSheet = ({
         isEligible: true,
     });
 
+    const navigate = useNavigate();
     const authUser = useSelector(state => state.auth.user);
     const loggedInName = authUser?.fullName || authUser?.name || authUser?.userName || "";
+    const canCheck = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:check') || authUser?.customRole?.permissions?.includes('sixteen_day:manage');
     const canVerify = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify');
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
     const canVerifyEduCell = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify_education');
@@ -209,13 +113,8 @@ const SixteenDayMonitoringSheet = ({
         scoreRanges: DEFAULT_SCORE_RANGES,
         evaluationLegends: DEFAULT_EVALUATION_LEGENDS
     });
-    const [isEditingLayout, setIsEditingLayout] = useState(false);
-    const [configJson, setConfigJson] = useState('');
     const [lineLeaderOptions, setLineLeaderOptions] = useState([]);
     const [lineNamePart, setLineNamePart] = useState("");
-    const [configRemark, setConfigRemark] = useState('');
-    const [history, setHistory] = useState([]);
-    const [showHistory, setShowHistory] = useState(false);
     const [sendingEmail, setSendingEmail] = useState(false);
 
     // Admin Remark Dialog States
@@ -240,6 +139,7 @@ const SixteenDayMonitoringSheet = ({
     const isLocked = (headerInfo.status === 'Submitted' &&
         !authUser?.isAdmin &&
         !authUser?.isTrainer &&
+        !canCheck &&
         !canVerify &&
         !canApprove &&
         !canVerifyEduCell &&
@@ -582,43 +482,6 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
-    const handleSaveConfig = async () => {
-        try {
-            setSaving(true);
-            const newConfig = normalizeConfig(JSON.parse(configJson));
-            await axiosInstance.post(`/api/sixteen-day-monitoring/config/save`, {
-                departmentId,
-                sectionId: sectionId || 0,
-                config: newConfig,
-                remark: configRemark
-            });
-            setConfig(newConfig);
-            setIsEditingLayout(false);
-            toast.success("Configuration saved successfully");
-        } catch (error) {
-            console.error("Error saving config:", error);
-            toast.error("Invalid JSON or server error");
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const fetchHistory = async () => {
-        if (!departmentId || departmentId === 'undefined') return;
-        try {
-            const response = await axiosInstance.get(`/api/sixteen-day-monitoring/history/${departmentId}?sectionId=${sectionId || 0}`);
-            if (response.data.success) {
-                setHistory(response.data.data);
-                setShowHistory(true);
-                logAction({
-                    action: 'VIEW_SIXTEEN_DAY_MONITORING_LAYOUT_HISTORY',
-                    details: { departmentId, sectionId: sectionId || 0 }
-                }).unwrap().catch((err) => console.error("Failed to log layout history view:", err));
-            }
-        } catch (error) {
-            toast.error("Failed to fetch history");
-        }
-    };
 
     const categories = config?.categories || DEFAULT_MONITORING_CONFIG_16;
     const scoreRanges = config?.scoreRanges || DEFAULT_SCORE_RANGES;
@@ -1165,29 +1028,24 @@ const SixteenDayMonitoringSheet = ({
                 <div className="flex gap-2">
                     <div className="flex gap-2">
                         {canEditConfig && (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={fetchHistory}
-                                    className="gap-2"
-                                >
-                                    <History className="h-4 w-4" />
-                                    History
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                        setConfigJson(JSON.stringify(config, null, 2));
-                                        setIsEditingLayout(true);
-                                    }}
-                                    className="gap-2"
-                                >
-                                    <Edit2 className="h-4 w-4" />
-                                    Edit Layout
-                                </Button>
-                            </>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    const params = new URLSearchParams();
+                                    if (departmentId) {
+                                        params.set('departmentId', String(departmentId));
+                                        if (sectionId) params.set('sectionId', String(sectionId));
+                                    } else {
+                                        params.set('global', '1');
+                                    }
+                                    navigate(`/admin/revision-table/sixteen-day-monitoring/layout?${params.toString()}`);
+                                }}
+                                className="gap-2"
+                            >
+                                <Edit2 className="h-4 w-4" />
+                                Edit Layout & Revision
+                            </Button>
                         )}
                         <Button
                             variant="outline"
@@ -2017,15 +1875,52 @@ const SixteenDayMonitoringSheet = ({
                                     <div className="border border-black p-3 h-max bg-white">
                                         <div className="flex justify-between font-extrabold text-[12px] h-full items-end gap-4 px-3 pb-2">
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
-                                                <span className="mb-auto text-[13px]">Checked By:-</span>
-                                                <div className="relative">
-                                                    <input
-                                                        className="w-full text-center border-b border-black outline-none bg-transparent font-bold text-blue-900 placeholder:text-gray-300 h-8 text-[14px]"
-                                                        placeholder="Auto-filled on Submit"
-                                                        value={headerInfo.checkedBy || ""}
-                                                        readOnly
-                                                    />
+                                                <div className="flex items-center justify-between mb-auto h-8 px-2">
+                                                    <span className="text-[13px]">Checked By:-</span>
+                                                    {canCheck && !isLocked && !isCellLocked('checkedBy', 'header') && (
+                                                        <div className="flex gap-2 items-center">
+                                                            {!headerInfo.checkedBy ? (
+                                                                <>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleSignature('checkedBy', 'approve')}
+                                                                        className="h-7 px-2 text-[10px] text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200 uppercase font-bold"
+                                                                    >
+                                                                        Approve
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleSignature('checkedBy', 'reject')}
+                                                                        className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 uppercase font-bold"
+                                                                    >
+                                                                        Reject
+                                                                    </Button>
+                                                                </>
+                                                            ) : (
+                                                                (authUser?.isAdmin || headerInfo.checkedBy.includes(loggedInName)) && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleClearSignature('checkedBy')}
+                                                                        className="h-7 w-7 p-0 text-gray-400 hover:text-red-600"
+                                                                        title="Clear Signature"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </Button>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
+                                                <input
+                                                    className={`w-full text-center border-b border-black outline-none bg-transparent font-bold text-[14px] h-8 uppercase ${headerInfo.checkedBy?.includes('Rejected') ? 'text-red-600' : 'text-blue-900'}`}
+                                                    placeholder="Auto-filled on Submit"
+                                                    value={headerInfo.checkedBy || ""}
+                                                    readOnly
+                                                />
+                                                <span className="text-[11px] font-semibold italic text-gray-500">(Line Leader / Incharge)</span>
                                             </div>
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
                                                 <div className="flex items-center justify-between mb-auto h-8 px-2">
@@ -2200,75 +2095,6 @@ const SixteenDayMonitoringSheet = ({
                     </div>
                 </CardContent>
             </Card>
-
-            {/* Edit Layout Dialog */}
-            <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>
-                <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Edit 16-Day Monitoring Setup</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto space-y-4 p-4 text-sm">
-                        <div className="space-y-2">
-                            <Label>Layout Configuration (JSON)</Label>
-                            <Textarea
-                                value={configJson}
-                                onChange={(e) => setConfigJson(e.target.value)}
-                                className="font-mono h-[400px] text-xs"
-                                placeholder="Enter configuration JSON"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Change Remark</Label>
-                            <Input
-                                value={configRemark}
-                                onChange={(e) => setConfigRemark(e.target.value)}
-                                placeholder="e.g., Added new quality parameter"
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter className="p-4 border-t">
-                        <Button variant="outline" onClick={() => setIsEditingLayout(false)}>Cancel</Button>
-                        <Button onClick={handleSaveConfig} disabled={saving}>
-                            {saving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Configuration
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* History Dialog */}
-            <Dialog open={showHistory} onOpenChange={setShowHistory}>
-                <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Layout Change History</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                        <div className="space-y-4 p-1">
-                            {history.length > 0 ? history.map((h, i) => (
-                                <div key={i} className="p-4 border rounded-md space-y-2 hover:bg-gray-50">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-bold text-blue-600">{h.updatedBy || 'System'}</span>
-                                        <span className="text-gray-500">{new Date(h.updatedAt).toLocaleString()}</span>
-                                    </div>
-                                    <p className="text-sm font-medium">Remark: {h.remark || 'No remark'}</p>
-                                    <Button
-                                        variant="link"
-                                        size="sm"
-                                        className="h-auto p-0"
-                                        onClick={() => {
-                                            setConfig(normalizeConfig(h.config));
-                                            setShowHistory(false);
-                                            toast.info("Restored configuration from history (unsaved)");
-                                        }}
-                                    >
-                                        Apply this version
-                                    </Button>
-                                </div>
-                            )) : <div className="text-center py-8 text-gray-400">No history found</div>}
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
 
             {/* Admin Remark Dialog — required when editing a saved session */}
             <Dialog open={isAdminRemarkDialogOpen} onOpenChange={(open) => {

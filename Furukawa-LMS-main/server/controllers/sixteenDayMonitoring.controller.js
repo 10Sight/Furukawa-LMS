@@ -139,6 +139,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
                                  (req.user.role === 'CUSTOM' && (
                                      req.user.customRole?.permissions?.includes('sixteen_day:manage') ||
+                                     req.user.customRole?.permissions?.includes('sixteen_day:check') ||
                                      req.user.customRole?.permissions?.includes('sixteen_day:verify') ||
                                      req.user.customRole?.permissions?.includes('sixteen_day:approve') ||
                                      req.user.customRole?.permissions?.includes('sixteen_day:verify_education')
@@ -268,6 +269,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const hasManagePermission = req.user.isAdmin || req.user.isTrainer ||
                                 (req.user.role === 'CUSTOM' && (
                                     req.user.customRole?.permissions?.includes('sixteen_day:manage') ||
+                                    req.user.customRole?.permissions?.includes('sixteen_day:check') ||
                                     req.user.customRole?.permissions?.includes('sixteen_day:verify') ||
                                     req.user.customRole?.permissions?.includes('sixteen_day:approve') ||
                                     req.user.customRole?.permissions?.includes('sixteen_day:verify_education') ||
@@ -350,6 +352,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     }
 
     let updatedHistory = [];
+    const oldCheckedBy = (sheet && !isNewAttempt) ? sheet.checkedBy : null;
     const oldVerifiedBy = (sheet && !isNewAttempt) ? sheet.verifiedBy : null;
     const oldApprovedBy = (sheet && !isNewAttempt) ? sheet.approvedBy : null;
     const oldVerifiedByEduCell = (sheet && !isNewAttempt) ? sheet.verifiedByEduCell : null;
@@ -449,6 +452,13 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     logAudit(req.user?.id, saveAction, auditDetails, auditMeta).catch(err =>
         console.error(`logAudit(${saveAction}) failed:`, err.message)
     );
+
+    if (checkedBy && checkedBy !== oldCheckedBy) {
+        const outcome = checkedBy.includes("Rejected") ? "Rejected" : "Approved";
+        logAudit(req.user?.id, "CHECK_SIXTEEN_DAY_MONITORING", { ...auditDetails, outcome, checkedBy }, auditMeta).catch(err =>
+            console.error("logAudit(CHECK_SIXTEEN_DAY_MONITORING) failed:", err.message)
+        );
+    }
 
     if (verifiedBy && verifiedBy !== oldVerifiedBy) {
         const outcome = verifiedBy.includes("Rejected") ? "Rejected" : "Approved";
@@ -564,12 +574,22 @@ export const sendSixteenDayMonitoringEmail = asyncHandler(async (req, res) => {
     );
 });
 
+// The literal path segment "global" stands in for a NULL departmentId (the
+// global template that applies when no more specific config exists).
+const resolveDeptParam = (departmentId) => (departmentId === 'global' ? null : departmentId);
+
 export const getSixteenDayMonitoringConfig = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
+    const departmentId = resolveDeptParam(req.params.departmentId);
     const sectionId = req.query.sectionId || 0;
-    const config = await MonitoringConfig.findByTypeAndDepartment('16DAY', departmentId, sectionId);
+    const resolved = await MonitoringConfig.findByFilters('16DAY', departmentId, sectionId, 0, 0);
+    // Tells the client which scope actually matched (hierarchical fallback can resolve to a
+    // broader scope than requested), so the UI can make clear when a config is inherited.
+    const resolvedScope = resolved ? {
+        departmentId: resolved.departmentId,
+        sectionId: resolved.sectionId,
+    } : null;
     return res.status(200).json(
-        new ApiResponse(200, { config: config?.config || null }, "16 Day Monitoring config fetched")
+        new ApiResponse(200, { config: resolved?.config || null, resolvedScope }, "16 Day Monitoring config fetched")
     );
 });
 
@@ -577,15 +597,15 @@ export const saveSixteenDayMonitoringConfig = asyncHandler(async (req, res) => {
     const { departmentId, sectionId = 0, config, remark } = req.body;
     await MonitoringConfig.upsert({
         type: '16DAY',
-        departmentId,
+        departmentId: departmentId || null,
         sectionId,
         config,
         remark,
         updatedBy: req.user?.fullName || req.user?.name
     });
 
-    logAudit(req.user?.id, "SAVE_SIXTEEN_DAY_MONITORING_CONFIG", { departmentId, sectionId, remark }, {
-        resourceType: "MonitoringConfig", resourceId: departmentId, req
+    logAudit(req.user?.id, "SAVE_SIXTEEN_DAY_MONITORING_CONFIG", { departmentId: departmentId || null, sectionId, remark }, {
+        resourceType: "MonitoringConfig", resourceId: departmentId || 'global', req
     }).catch(err => console.error("logAudit(SAVE_SIXTEEN_DAY_MONITORING_CONFIG) failed:", err.message));
 
     return res.status(200).json(
@@ -593,8 +613,69 @@ export const saveSixteenDayMonitoringConfig = asyncHandler(async (req, res) => {
     );
 });
 
+// RevisionRecord only scopes by (sheetKey, departmentId, sectionId) — no lineId/subSectionId
+// concept, which matches 16-Day Monitoring's own scope model (department + section only).
+// MonitoringConfig also uses departmentId=VARCHAR with the literal string 'global' as its
+// "no department" sentinel and sectionId=0 for "not section-scoped", while RevisionRecord
+// uses real SQL NULLs for both — these helpers translate between them.
+const toRevisionDepartmentId = (departmentId) => {
+    if (!departmentId || departmentId === 'global') return null;
+    const parsed = parseInt(departmentId, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+};
+const toRevisionSectionId = (sectionId) => {
+    const parsed = parseInt(sectionId, 10);
+    return Number.isNaN(parsed) || parsed === 0 ? null : parsed;
+};
+
+// Atomically saves a 16-Day Monitoring layout config for a scope AND records the
+// doc-control revision (docNo/revNo/revDate/changeDetails) that the layout change
+// corresponds to, so a structural edit can never be saved without also updating
+// the Revision Table entry operators/instructors see on the printed sheet.
+export const saveSixteenDayMonitoringConfigWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId = 0, config, remark, revision } = req.body || {};
+
+    if (!config) throw new ApiError("Config is required", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+
+    await MonitoringConfig.upsert({
+        type: '16DAY',
+        departmentId: departmentId || null,
+        sectionId,
+        config,
+        remark,
+        updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+    });
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        'sixteen-day-monitoring',
+        toRevisionDepartmentId(departmentId),
+        toRevisionSectionId(sectionId),
+        {
+            sheetName: "16 Day Monitoring",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_SIXTEEN_DAY_MONITORING_CONFIG_WITH_REVISION",
+        { departmentId: departmentId || null, sectionId, remark, revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "MonitoringConfig", resourceId: departmentId || 'global', req }
+    ).catch(err => console.error("logAudit(SAVE_SIXTEEN_DAY_MONITORING_CONFIG_WITH_REVISION) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, { revision: savedRevision }, "16 Day Monitoring layout and revision saved"));
+});
+
 export const getSixteenDayMonitoringHistory = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
+    const departmentId = resolveDeptParam(req.params.departmentId);
     const sectionId = req.query.sectionId || 0;
     const history = await MonitoringConfig.getHistory('16DAY', departmentId, sectionId);
     return res.status(200).json(

@@ -26,7 +26,8 @@ const AVAILABLE_FORMS = [
     "Daily Production Report Sheet",
     "Daily 5M Recording Sheet",
     "Abnormal Condition Sheet",
-    "Dojo Evaluation Sheet"
+    "Dojo Evaluation Sheet",
+    "Left Request Email"
 ];
 
 export default function EmailConfiguration() {

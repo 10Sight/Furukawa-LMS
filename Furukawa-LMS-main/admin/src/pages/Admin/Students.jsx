@@ -130,6 +130,9 @@ import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils";
 import { getExcelRows } from "@/utils/excelUtils";
 import StudentLevelManager from "@/components/admin/StudentLevelManager";
 import ShiftScheduler from "@/components/admin/ShiftScheduler";
+import { useGetPendingLeftRequestCountQuery } from "@/Redux/AllApi/LeftRequestApi";
+import ApplyLeftDialog from "./components/ApplyLeftDialog";
+import LeftRequestsTab from "./components/LeftRequestsTab";
 
 
 const LEAVING_REASONS = [
@@ -209,6 +212,10 @@ const Students = () => {
   };
   const canDelete = hasPermission("user:delete");
   const canUpdate = hasPermission("user:update");
+  const canChangeStatus = hasPermission("user:change_status");
+  const canApplyLeft = hasPermission("user:apply_left");
+  const canApproveLeft = hasPermission("user:approve_left");
+  const canSeeLeftRequestTab = canApplyLeft || canApproveLeft;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -228,6 +235,9 @@ const Students = () => {
   const [leftConfirmReason, setLeftConfirmReason] = useState("");
   const [leftConfirmCustomReason, setLeftConfirmCustomReason] = useState("");
   const [isLeftConfirmSubmitting, setIsLeftConfirmSubmitting] = useState(false);
+  // "Apply for Left" dialog (used by users who only have user:apply_left, not user:change_status)
+  const [isApplyLeftOpen, setIsApplyLeftOpen] = useState(false);
+  const [applyLeftTargets, setApplyLeftTargets] = useState([]);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkShiftDialogOpen, setIsBulkShiftDialogOpen] = useState(false);
   const [bulkShiftScheduleDraft, setBulkShiftScheduleDraft] = useState({});
@@ -487,6 +497,11 @@ const Students = () => {
   const [bulkDeleteUsers] = useBulkDeleteUsersMutation();
   const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
   const [bulkUpdateStatusLeft] = useBulkUpdateStatusLeftMutation();
+  const { data: pendingLeftRequestData } = useGetPendingLeftRequestCountQuery(undefined, {
+    skip: !canSeeLeftRequestTab,
+    pollingInterval: 60000,
+  });
+  const pendingLeftRequestCount = pendingLeftRequestData?.data?.count || 0;
   const [assignStudent] = useAddStudentToDepartmentMutation();
   const [startImportEmployees] = useStartImportEmployeesMutation();
   const [processEmployeesChunk] = useProcessEmployeesChunkMutation();
@@ -1711,13 +1726,32 @@ const Students = () => {
     }
   };
 
-  const handleQuickStatusChange = async (studentId, newStatus, oldStatus) => {
+  const handleQuickStatusChange = async (student, newStatus) => {
+    const studentId = student._id;
+    const oldStatus = student.status;
+
     if (newStatus === "LEFT") {
-      setLeftConfirmTarget({ id: studentId, oldStatus });
-      setLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
-      setLeftConfirmReason("");
-      setLeftConfirmCustomReason("");
-      setIsLeftConfirmOpen(true);
+      if (canChangeStatus) {
+        setLeftConfirmTarget({ id: studentId, oldStatus });
+        setLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
+        setLeftConfirmReason("");
+        setLeftConfirmCustomReason("");
+        setIsLeftConfirmOpen(true);
+        return;
+      }
+      if (canApplyLeft) {
+        setApplyLeftTargets([{ id: studentId, fullName: student.fullName, empId: student.empId }]);
+        setIsApplyLeftOpen(true);
+        return;
+      }
+      showToast("error", "You do not have permission to change user status");
+      return;
+    }
+
+    // Non-LEFT status changes (Present/On Leave) always require the direct permission --
+    // the Select itself stays enabled for apply-only users solely so they can pick "LEFT".
+    if (!canChangeStatus) {
+      showToast("error", "You do not have permission to change user status");
       return;
     }
 
@@ -2075,6 +2109,16 @@ const Students = () => {
         <TabsTrigger value="operatorLevels" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
           Operator Levels
         </TabsTrigger>
+        {canSeeLeftRequestTab && (
+          <TabsTrigger value="leftRequests" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Left Request
+            {pendingLeftRequestCount > 0 && (
+              <Badge className="ml-1.5 bg-amber-500 hover:bg-amber-500 text-white h-5 min-w-5 px-1.5 rounded-full">
+                {pendingLeftRequestCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        )}
       </TabsList>
 
       <TabsContent value="operators">
@@ -2379,7 +2423,6 @@ const Students = () => {
         </div>
       </Tabs>
 
-      {/* Collapsible Filters */}
       {showFilters && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-in fade-in duration-200">
@@ -2789,20 +2832,35 @@ const Students = () => {
                       Bulk Shift Schedule
                     </Button>
                   )}
-                  {canUpdate && (
+                  {(canUpdate || canApplyLeft) && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setBulkLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
-                        setBulkLeftConfirmReason("");
-                        setBulkLeftConfirmCustomReason("");
-                        setIsBulkLeftConfirmOpen(true);
+                        if (canChangeStatus) {
+                          setBulkLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
+                          setBulkLeftConfirmReason("");
+                          setBulkLeftConfirmCustomReason("");
+                          setIsBulkLeftConfirmOpen(true);
+                          return;
+                        }
+                        if (canApplyLeft) {
+                          if (isAllSelectedAcrossPages) {
+                            showToast("error", "Bulk Apply for Left only supports individually selected operators. Please select rows instead of 'select all'.");
+                            return;
+                          }
+                          setApplyLeftTargets(
+                            students
+                              .filter((s) => selectedIds.includes(s._id))
+                              .map((s) => ({ id: s._id, fullName: s.fullName, empId: s.empId }))
+                          );
+                          setIsApplyLeftOpen(true);
+                        }
                       }}
                       className="bg-white hover:bg-red-50 text-red-700 border-red-200"
                     >
                       <IconUserMinus className="h-4 w-4 mr-2" />
-                      Bulk Mark as Left
+                      {canChangeStatus ? "Bulk Mark as Left" : "Bulk Apply for Left"}
                     </Button>
                   )}
                   {canDelete && (
@@ -2942,13 +3000,9 @@ const Students = () => {
                       <Select
                         value={normalizeStatus(student.status) || ""}
                         onValueChange={(newStatus) =>
-                          handleQuickStatusChange(
-                            student._id,
-                            newStatus,
-                            student.status
-                          )
+                          handleQuickStatusChange(student, newStatus)
                         }
-                        disabled={!hasPermission("user:change_status")}
+                        disabled={!canChangeStatus && !(canApplyLeft && student.status !== "LEFT")}
                       >
                         <SelectTrigger className="w-[140px]">
                           {getStatusBadge(student.status)}
@@ -4465,6 +4519,22 @@ const Students = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Apply for Left Dialog (apply-only users, single or bulk) */}
+      <ApplyLeftDialog
+        open={isApplyLeftOpen}
+        onOpenChange={(open) => {
+          setIsApplyLeftOpen(open);
+          if (!open) setApplyLeftTargets([]);
+        }}
+        targets={applyLeftTargets}
+        onSuccess={() => {
+          setApplyLeftTargets([]);
+          setSelectedIds([]);
+          setIsAllSelectedAcrossPages(false);
+          refetch();
+        }}
+      />
+
       {/* Left Status Confirmation Dialog */}
       <Dialog
         open={isLeftConfirmOpen}
@@ -4792,6 +4862,16 @@ const Students = () => {
       <TabsContent value="operatorLevels">
         <StudentLevelManager />
       </TabsContent>
+
+      {canSeeLeftRequestTab && (
+        <TabsContent value="leftRequests">
+          <LeftRequestsTab
+            canApproveLeft={canApproveLeft}
+            currentUserId={currentUser?.id ?? currentUser?._id}
+            onChanged={refetch}
+          />
+        </TabsContent>
+      )}
     </Tabs>
 
     <ExportColumnSelectorModal

@@ -42,6 +42,7 @@ import { adminHomeApi } from "./AllApi/AdminHomeApi";
 import { AbnormalConditionApi } from "./AllApi/AbnormalConditionApi";
 import { EvaluationTestApi } from "./AllApi/EvaluationTestApi";
 import { contractorApi } from "./AllApi/ContractorApi";
+import { leftRequestApi } from "./AllApi/LeftRequestApi";
 
 
 const store = configureStore({
@@ -88,6 +89,7 @@ const store = configureStore({
         [AbnormalConditionApi.reducerPath]: AbnormalConditionApi.reducer,
         [EvaluationTestApi.reducerPath]: EvaluationTestApi.reducer,
         [contractorApi.reducerPath]: contractorApi.reducer,
+        [leftRequestApi.reducerPath]: leftRequestApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
@@ -125,6 +127,7 @@ const store = configureStore({
             AbnormalConditionApi.middleware,
             EvaluationTestApi.middleware,
             contractorApi.middleware,
+            leftRequestApi.middleware,
         ),
 });
 

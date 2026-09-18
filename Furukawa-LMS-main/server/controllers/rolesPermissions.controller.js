@@ -17,6 +17,8 @@ const SYSTEM_PERMISSIONS = {
   USER_IMPORT_LOGS: "user:import_logs",
   USER_CHANGE_STATUS: "user:change_status",
   USER_ACCESS_ALL: "user:access_all",
+  USER_APPLY_LEFT: "user:apply_left",
+  USER_APPROVE_LEFT: "user:approve_left",
 
   // Course Management
   COURSE_CREATE: "course:create",
@@ -120,6 +122,7 @@ const SYSTEM_PERMISSIONS = {
   // 16-Day Monitoring Management
   SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
   SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
+  SIXTEEN_DAY_CHECK: "sixteen_day:check",
   SIXTEEN_DAY_VERIFY: "sixteen_day:verify",
   SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
   SIXTEEN_DAY_VERIFY_EDUCATION: "sixteen_day:verify_education",
@@ -463,7 +466,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_EXCEL, name: "Import Excel Data", description: "Import users from Excel files" },
         { id: SYSTEM_PERMISSIONS.USER_IMPORT_LOGS, name: "View Import Logs", description: "View history and details of user imports" },
         { id: SYSTEM_PERMISSIONS.USER_CHANGE_STATUS, name: "Change User Status", description: "Change status of user accounts (Present, On Leave, Left)" },
-        { id: SYSTEM_PERMISSIONS.USER_ACCESS_ALL, name: "Access All Users (Cross Department)", description: "Allows unrestricted access to view all users and operators across all departments, sections, and lines, bypassing assigned department restrictions." }
+        { id: SYSTEM_PERMISSIONS.USER_ACCESS_ALL, name: "Access All Users (Cross Department)", description: "Allows unrestricted access to view all users and operators across all departments, sections, and lines, bypassing assigned department restrictions." },
+        { id: SYSTEM_PERMISSIONS.USER_APPLY_LEFT, name: "Apply for Left Request", description: "Submit a Left Request with leaving date, reason, and remarks. The operator's status is not changed until the request is approved." },
+        { id: SYSTEM_PERMISSIONS.USER_APPROVE_LEFT, name: "Approve / Reject Left Request", description: "Review, verify, and approve or reject pending Left Requests, which marks the operator's status as LEFT on approval." }
       ],
       "Course Management": [
         { id: SYSTEM_PERMISSIONS.COURSE_CREATE, name: "Create Courses", description: "Create new courses" },
@@ -565,6 +570,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       "16-Day Monitoring": [
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_MANAGE, name: "Manage 16-Day Monitoring", description: "Manage 16-day monitoring records" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_CHECK, name: "Check 16-Day Monitoring", description: "Check 16-day monitoring records (Sign-off Checked By as Approved or Rejected)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY, name: "Verify 16-Day Monitoring", description: "Verify 16-day monitoring records (Area Incharge sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY_EDUCATION, name: "Verify 16-Day Monitoring (Education Cell)", description: "Verify 16-day monitoring records as Education Cell" },

@@ -159,7 +159,10 @@ const SixteenDayMonitoringSheet = ({
     const eligibilityStillLocked = eligibilityStillWaiting && !canOverrideEligibility;
 
     const isCellLocked = (key, type = 'grid') => {
-        if (isLeftUser) return key !== 'comment';
+        if (isLeftUser) {
+            const workflowFields = ['comment', 'checkedBy', 'verifiedBy', 'approvedBy', 'verifiedByEduCell'];
+            return !workflowFields.includes(key);
+        }
         if (readOnly) return true;
         if (isLocked) return true;
         if (eligibilityStillLocked) return true;
@@ -553,7 +556,7 @@ const SixteenDayMonitoringSheet = ({
             return;
         }
 
-        if (isSubmit && !isDay16Filled()) {
+        if (isSubmit && !isLeftUser && !isDay16Filled()) {
             toast.error("Day-16 performance column must be completely filled before submitting.");
             return;
         }
@@ -611,7 +614,7 @@ const SixteenDayMonitoringSheet = ({
     };
 
     const handleEmail = async () => {
-        if (!isDay16Filled()) {
+        if (!isLeftUser && !isDay16Filled()) {
             toast.error("Day-16 performance column must be completely filled before sending the email report.");
             return;
         }
@@ -974,7 +977,7 @@ const SixteenDayMonitoringSheet = ({
             {isLeftUser && (
                 <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 print:hidden">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Associate has LEFT: This sheet is locked. Only the Comment field can be edited and saved.
+                    Associate has LEFT: Performance grid is locked. Comments and verification/approval signatures can be updated and submitted.
                 </div>
             )}
             {eligibilityStillWaiting && (
@@ -992,7 +995,7 @@ const SixteenDayMonitoringSheet = ({
                             {headerInfo.status || 'Draft'}
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
-                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Associate Left — Comment Only</Badge>}
+                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Associate Left — Comments & Signatures Only</Badge>}
                         {eligibilityStillWaiting && (
                             <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
                                 ⏳ Eligible in {eligibilityCountdown}
@@ -1104,7 +1107,7 @@ const SixteenDayMonitoringSheet = ({
                             <Button
                                 variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
                                 onClick={() => handleSave("Submitted", true)}
-                                disabled={saving || !studentId || !isDay16ColFilled || isLocked || readOnly || isLeftUser || eligibilityStillLocked}
+                                disabled={saving || !studentId || (!isLeftUser && !isDay16ColFilled) || isLocked || readOnly || eligibilityStillLocked}
                                 className="h-9 gap-2"
                             >
                                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -1116,7 +1119,7 @@ const SixteenDayMonitoringSheet = ({
                                     variant="outline"
                                     className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 gap-2"
                                     onClick={() => handleEmail()}
-                                    disabled={sendingEmail || !isDay16ColFilled}
+                                    disabled={sendingEmail || (!isLeftUser && !isDay16ColFilled)}
                                 >
                                     {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                                     Email Report

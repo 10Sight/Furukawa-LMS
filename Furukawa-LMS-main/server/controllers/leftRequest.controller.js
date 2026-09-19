@@ -22,6 +22,23 @@ const resolveRequesterRole = (user) => {
     return user.role;
 };
 
+// left_requests.leavingDate is a native SQL DATE column, so the mssql driver hands it back as a
+// JS Date -- but users.leavingDate is NVARCHAR, not DATE. Binding a Date object straight into an
+// NVARCHAR parameter makes the driver fall back to SQL Server's default Date.toString() format
+// ("Sep 19 2026 12:00AM") instead of a plain "YYYY-MM-DD" string. Normalize with local calendar
+// components (not toISOString(), which would shift the date across a UTC day boundary) before
+// writing it anywhere that expects the "YYYY-MM-DD" string the rest of the app uses.
+const toDateOnlyString = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) {
+        const year = val.getFullYear();
+        const month = String(val.getMonth() + 1).padStart(2, '0');
+        const day = String(val.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    return String(val).split('T')[0];
+};
+
 const canReviewLeftRequests = (user) => (
     user.isAdmin || user.role === 'SUPERADMIN' || hasPermission(user, SYSTEM_PERMISSIONS.USER_APPROVE_LEFT)
 );
@@ -233,15 +250,24 @@ export const approveLeftRequest = asyncHandler(async (req, res) => {
     if (userRows.length === 0) throw new ApiError("The associate for this request no longer exists", 404);
     const targetUser = userRows[0];
 
+    // request.leavingDate comes back from left_requests (a native DATE column) as a JS Date, but
+    // users.leavingDate is NVARCHAR -- normalize to "YYYY-MM-DD" before it touches that column or
+    // statusHistory, see toDateOnlyString's comment for why.
+    const leavingDateStr = toDateOnlyString(request.leavingDate);
+
+    // The approver may override the reason submitted at apply time (defaults to it on the
+    // frontend); an empty override falls back to the original rather than clearing it.
+    const finalReasonOfLeaving = (req.body?.reasonOfLeaving?.trim()) || request.reasonOfLeaving;
+
     const updatedHistory = getUpdatedStatusHistory(
         targetUser.statusHistory,
         { status: targetUser.status, joiningDate: targetUser.joiningDate, leavingDate: undefined },
-        { status: "LEFT", leavingDate: request.leavingDate },
+        { status: "LEFT", leavingDate: leavingDateStr },
         { changedBy: req.user.id, changedByName: req.user.fullName }
     );
 
     const updateFields = ["status = 'LEFT'", "leavingDate = ?", "reasonOfLeaving = ?", "updatedAt = GETDATE()"];
-    const updateParams = [request.leavingDate, request.reasonOfLeaving];
+    const updateParams = [leavingDateStr, finalReasonOfLeaving];
     if (updatedHistory) {
         updateFields.push("statusHistory = ?");
         updateParams.push(JSON.stringify(updatedHistory));
@@ -252,12 +278,12 @@ export const approveLeftRequest = asyncHandler(async (req, res) => {
     const updatedRequest = await LeftRequest.approve(id, {
         reviewedBy: req.user.id,
         reviewedByName: req.user.fullName || req.user.userName,
+        reasonOfLeaving: finalReasonOfLeaving,
     });
 
     // Keep dojo_stage_history current for temporary hires, mirroring updateUser's own sync.
     if (targetUser.isTemporary) {
         const today = new Date().toISOString().split('T')[0];
-        const leavingDateStr = typeof request.leavingDate === 'string' ? request.leavingDate.split('T')[0] : new Date(request.leavingDate).toISOString().split('T')[0];
         for (const d of new Set([today, leavingDateStr])) {
             DojoStageHistory.syncDate(d, { syncedBy: 'approveLeftRequest' }).catch(err =>
                 console.error(`[LeftRequest] DojoStageHistory.syncDate(${d}) failed:`, err.message)
@@ -266,7 +292,7 @@ export const approveLeftRequest = asyncHandler(async (req, res) => {
     }
 
     logAudit(req.user.id, "APPROVE_LEFT_REQUEST", {
-        leftRequestId: id, userId: request.userId, leavingDate: request.leavingDate
+        leftRequestId: id, userId: request.userId, leavingDate: leavingDateStr, reasonOfLeaving: finalReasonOfLeaving
     }, { resourceType: "LeftRequest", resourceId: id, req }).catch(err =>
         console.error("logAudit(APPROVE_LEFT_REQUEST) failed:", err.message)
     );

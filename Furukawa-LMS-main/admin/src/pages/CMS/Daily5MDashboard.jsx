@@ -163,10 +163,9 @@ const Daily5MDashboard = () => {
     const chartScrollRef = useRef(null);
 
     // Fetch sections if department is selected
-    const { data: sectionsData } = useGetSectionsByDepartmentQuery(selectedDepartment, {
+    const { data: sectionsData, isFetching: sectionsFetching } = useGetSectionsByDepartmentQuery(selectedDepartment, {
         skip: !selectedDepartment || selectedDepartment === 'all'
     });
-    const sections = sectionsData?.data || [];
 
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
@@ -174,29 +173,45 @@ const Daily5MDashboard = () => {
     const canEdit5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:update');
     const canDelete5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:delete');
 
-    // Filter departments based on user assignment
+    // Non-admin users are scoped to the departments/sections they are assigned to
+    // (the server enforces the same scope; this keeps the UI consistent with it).
+    const isRestricted = !!authUser && !isAdmin;
+
     const assignableDepartments = React.useMemo(() => {
         const allDepts = departmentsData?.data?.departments || [];
+        if (!authUser) return [];
+        if (isAdmin) return allDepts;
 
         // Handle both multiple assigned departments AND the primary departmentId
-        const rawAssigned = Array.isArray(authUser?.departments) ? [...authUser.departments] : [];
-        if (authUser?.departmentId) rawAssigned.push(authUser.departmentId);
+        const rawAssigned = Array.isArray(authUser.departments) ? [...authUser.departments] : [];
+        if (authUser.departmentId) rawAssigned.push(authUser.departmentId);
         const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
 
-        if (!authUser || assignedIds.length === 0) {
-            return allDepts;
-        }
+        return allDepts.filter(dept => assignedIds.includes(String(dept.id || dept._id)));
+    }, [departmentsData, authUser, isAdmin]);
 
-        // User has specific department assignments
-        return allDepts.filter(dept =>
-            assignedIds.includes(String(dept.id || dept._id))
-        );
-    }, [departmentsData, authUser]);
+    const assignableSections = React.useMemo(() => {
+        // While a new department's sections load, RTK still holds the previous department's data.
+        const deptSections = sectionsFetching ? [] : (sectionsData?.data || []);
+        if (!isRestricted) return deptSections;
 
-    const isRestricted = authUser && (
-        (authUser.departments && authUser.departments.length > 0) ||
-        authUser.departmentId
-    );
+        const rawAssigned = Array.isArray(authUser.sections) ? [...authUser.sections] : [];
+        if (authUser.sectionId) rawAssigned.push(authUser.sectionId);
+        const assignedIds = rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean);
+
+        // No section assignment means the user covers every section of their departments.
+        if (assignedIds.length === 0) return deptSections;
+        return deptSections.filter(sec => assignedIds.includes(String(sec.id)));
+    }, [sectionsData, sectionsFetching, authUser, isRestricted]);
+
+    const lockedDepartment = isRestricted && assignableDepartments.length === 1;
+    const lockedSection = isRestricted && selectedDepartment !== 'all' && assignableSections.length === 1;
+
+    // Hold off fetching until the scope is known, so an unscoped "all" request
+    // can't race the auto-selected department request and overwrite it.
+    const scopeReady = !!authUser
+        && (isAdmin || !!departmentsData)
+        && !(lockedDepartment && selectedDepartment === 'all');
 
     // Reset page when filters change
     useEffect(() => {
@@ -205,13 +220,21 @@ const Daily5MDashboard = () => {
 
     // Auto-select department if ONLY one is available for restricted users
     useEffect(() => {
-        if (isRestricted && assignableDepartments.length === 1 && (!selectedDepartment || selectedDepartment === 'all')) {
+        if (lockedDepartment && (!selectedDepartment || selectedDepartment === 'all')) {
             setSelectedDepartment(assignableDepartments[0]._id || assignableDepartments[0].id);
         }
-    }, [isRestricted, assignableDepartments, selectedDepartment]);
+    }, [lockedDepartment, assignableDepartments, selectedDepartment]);
+
+    // Auto-select section if ONLY one is available for restricted users
+    useEffect(() => {
+        if (lockedSection && (!selectedSection || selectedSection === 'all')) {
+            setSelectedSection(assignableSections[0].id);
+        }
+    }, [lockedSection, assignableSections, selectedSection]);
 
     // Fetch records when filters change
     useEffect(() => {
+        if (!scopeReady) return;
         if (selectedDepartment) {
             fetchRecords();
             fetchChartData();
@@ -219,21 +242,22 @@ const Daily5MDashboard = () => {
             setRecords([]);
             setChartData([]);
         }
-    }, [selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize, selectedChartDepts, chartStartDate, chartEndDate]);
+    }, [scopeReady, selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize, selectedChartDepts, chartStartDate, chartEndDate]);
 
     // Fetch Row Stats (Pie Charts) - Independent triggers
     useEffect(() => {
+        if (!scopeReady) return;
         if (selectedDepartment) {
             fetchRowStats();
         } else {
             setRowStats(null);
         }
-    }, [selectedDepartment, selectedSection, chartStartDate, chartEndDate, startDate, endDate, selectedChartDepts, chartViewType]);
+    }, [scopeReady, selectedDepartment, selectedSection, chartStartDate, chartEndDate, startDate, endDate, selectedChartDepts, chartViewType]);
 
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (selectedDepartment) fetchRecords();
+            if (scopeReady && selectedDepartment) fetchRecords();
         }, 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
@@ -539,12 +563,14 @@ const Daily5MDashboard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase">Department</Label>
-                            <Select value={selectedDepartment} onValueChange={(val) => { setSelectedDepartment(val); setSelectedSection("all"); }} disabled={isRestricted && assignableDepartments.length === 1}>
-                                <SelectTrigger className={isRestricted && assignableDepartments.length === 1 ? "bg-slate-50 cursor-not-allowed" : ""}>
+                            <Select value={selectedDepartment} onValueChange={(val) => { setSelectedDepartment(val); setSelectedSection("all"); }} disabled={lockedDepartment}>
+                                <SelectTrigger className={lockedDepartment ? "bg-slate-50 cursor-not-allowed" : ""}>
                                     <SelectValue placeholder="Select Department" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {(isAdmin || selectedDepartment === 'all') && <SelectItem value="all">All Departments</SelectItem>}
+                                    {!lockedDepartment && (
+                                        <SelectItem value="all">{isAdmin ? "All Departments" : "All My Departments"}</SelectItem>
+                                    )}
                                     {assignableDepartments.map((dept) => (
                                         <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
                                             {dept.name}
@@ -556,13 +582,13 @@ const Daily5MDashboard = () => {
 
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase">Section</Label>
-                            <Select value={selectedSection} onValueChange={setSelectedSection} disabled={selectedDepartment === 'all' || !selectedDepartment}>
-                                <SelectTrigger>
+                            <Select value={selectedSection} onValueChange={setSelectedSection} disabled={selectedDepartment === 'all' || !selectedDepartment || lockedSection}>
+                                <SelectTrigger className={lockedSection ? "bg-slate-50 cursor-not-allowed" : ""}>
                                     <SelectValue placeholder="All Sections" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All Sections</SelectItem>
-                                    {sections.map((sec) => (
+                                    {!lockedSection && <SelectItem value="all">All Sections</SelectItem>}
+                                    {assignableSections.map((sec) => (
                                         <SelectItem key={sec.id} value={sec.id}>
                                             {sec.name} {sec.category && `(${sec.category})`}
                                         </SelectItem>

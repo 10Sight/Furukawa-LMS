@@ -223,12 +223,17 @@ class LeftRequest {
         return rows[0]?.cnt || 0;
     }
 
-    static async approve(id, { reviewedBy, reviewedByName }) {
-        await executeQuery(`
-            UPDATE left_requests
-            SET status = 'APPROVED', reviewedBy = ?, reviewedByName = ?, reviewedAt = GETDATE(), updatedAt = GETDATE()
-            WHERE id = ?
-        `, [reviewedBy, reviewedByName || null, id]);
+    static async approve(id, { reviewedBy, reviewedByName, reasonOfLeaving }) {
+        const fields = ["status = 'APPROVED'", "reviewedBy = ?", "reviewedByName = ?", "reviewedAt = GETDATE()", "updatedAt = GETDATE()"];
+        const params = [reviewedBy, reviewedByName || null];
+        // The approver may override the reason at approval time -- keep the request's own
+        // record of the reason in sync with whatever actually got applied to the user.
+        if (reasonOfLeaving !== undefined) {
+            fields.push("reasonOfLeaving = ?");
+            params.push(reasonOfLeaving);
+        }
+        params.push(id);
+        await executeQuery(`UPDATE left_requests SET ${fields.join(", ")} WHERE id = ?`, params);
         return LeftRequest.findById(id);
     }
 

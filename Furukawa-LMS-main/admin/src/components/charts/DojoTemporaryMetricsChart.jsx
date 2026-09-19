@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useGetDojoTemporaryMetricsTrendQuery, useGetDojoTemporaryStageSnapshotQuery } from '@/Redux/AllApi/AdminHomeApi';
+import { useGetDojoTemporaryMetricsTrendQuery } from '@/Redux/AllApi/AdminHomeApi';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { IconUsers, IconCalendar, IconRefresh, IconChevronDown, IconChevronLeft, IconChevronRight, IconChartBar } from "@tabler/icons-react";
+import { IconUsers, IconCalendar, IconRefresh, IconChevronDown, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import useTranslate from "@/hooks/useTranslate";
@@ -22,155 +22,165 @@ const formatDate = (date) => {
     return `${y}-${m}-${d}`;
 };
 
-const _now        = new Date();
-const CURRENT_YEAR = _now.getFullYear();
-const MONTH_END    = formatDate(new Date(_now.getFullYear(), _now.getMonth() + 1, 0));
+const formatMonthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-// Default under-the-hood date range per timeframe, used when the visible inputs are left blank.
-const getDefaultDates = (timeframe) => {
-    const now = new Date();
-    if (timeframe === 'daily') {
-        // Last 29 days ending today — never reaches into the future. dojo_stage_history only
-        // ever holds snapshots up to today, so a "this calendar month" range (which can run past
-        // today mid-month) would ask for days that don't have — and can never get — real data.
-        const past = new Date(now);
-        past.setDate(past.getDate() - 29);
-        return {
-            rawStart: formatDate(past),
-            rawEnd:   formatDate(now),
-        };
-    }
-    if (timeframe === 'monthly') {
-        const past = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-        return {
-            rawStart: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`,
-            rawEnd:   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
-        };
-    }
-    return {
-        rawStart: String(now.getFullYear() - 4),
-        rawEnd:   String(now.getFullYear()),
-    };
+const CURRENT_MONTH = formatMonthKey(new Date());
+const MIN_MONTH     = '2020-01';
+
+// 'YYYY-MM' shifted by `delta` months, clamped to [MIN_MONTH, CURRENT_MONTH] — no future months.
+const shiftMonth = (monthKey, delta) => {
+    const [y, m] = monthKey.split('-').map(Number);
+    const next = formatMonthKey(new Date(y, m - 1 + delta, 1));
+    if (next > CURRENT_MONTH) return CURRENT_MONTH;
+    if (next < MIN_MONTH) return MIN_MONTH;
+    return next;
 };
 
-// Falls back to the timeframe's default range when the visible inputs are left blank.
-const toApiDates = (timeframe, rawStart, rawEnd) => {
-    if (!rawStart || !rawEnd) {
-        const defaults = getDefaultDates(timeframe);
-        rawStart = rawStart || defaults.rawStart;
-        rawEnd   = rawEnd   || defaults.rawEnd;
-    }
-    if (timeframe === 'monthly') {
-        const [ey, em] = rawEnd.split('-').map(Number);
-        const lastDay = new Date(ey, em, 0).getDate();
-        return { startDate: `${rawStart}-01`, endDate: `${rawEnd}-${String(lastDay).padStart(2, '0')}` };
-    }
-    if (timeframe === 'yearly') {
-        return { startDate: `${rawStart}-01-01`, endDate: `${rawEnd}-12-31` };
-    }
-    return { startDate: rawStart, endDate: rawEnd };
+const monthBounds = (monthKey) => {
+    const [y, m] = monthKey.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    return { startDate: `${monthKey}-01`, endDate: `${monthKey}-${String(lastDay).padStart(2, '0')}` };
 };
 
 const localeMap = { en: 'en-US', hi: 'hi-IN', ja: 'ja-JP', zh: 'zh-CN', ru: 'ru-RU' };
 
-const formatPeriodLabel = (period, groupBy, language = 'en') => {
+// dd.MM.yy — the date format printed under each group (e.g. 15.09.26).
+const formatDayLabel = (period) => {
     if (!period) return '';
-    if (groupBy === 'yearly') return period;
-    const locale = localeMap[language] || 'en-US';
-    if (groupBy === 'daily') {
-        return new Date(`${period}T00:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' });
-    }
-    const [year, month] = period.split('-');
-    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
+    const [y, m, d] = period.split('-');
+    return `${d}.${m}.${y.slice(2)}`;
 };
 
-const EMPTY_ROW = { theoreticalCount: 0, practicalCount: 0, leftCount: 0, maleCount: 0, femaleCount: 0 };
+const formatFullDate = (period, language = 'en') => {
+    if (!period) return '';
+    const locale = localeMap[language] || 'en-US';
+    return new Date(`${period}T00:00:00`).toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+};
 
-const buildFullSeries = (groupBy, start, end, trend) => {
+const EMPTY_ROW = {
+    theoreticalCount: 0, practicalCount: 0, handoverCount: 0, leftCount: 0,
+    theoreticalMale: 0, theoreticalFemale: 0, practicalMale: 0, practicalFemale: 0,
+    handoverMale: 0, handoverFemale: 0, leftMale: 0, leftFemale: 0,
+    maleCount: 0, femaleCount: 0, totalActive: 0,
+};
+
+// Every day from `start` to `end` inclusive, zero-filled where the API returned no row.
+const buildFullDays = (start, end, trend) => {
     if (!start || !end) return trend;
     const dataMap = {};
     trend.forEach(r => { dataMap[r.period] = r; });
     const full = [];
-    if (groupBy === 'daily') {
-        const cur = new Date(`${start}T00:00:00`);
-        const last = new Date(`${end}T00:00:00`);
-        while (cur <= last) {
-            const key = formatDate(cur);
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
-            cur.setDate(cur.getDate() + 1);
-        }
-    } else if (groupBy === 'monthly') {
-        let [sy, sm] = start.split('-').map(Number);
-        const [ey, em] = end.split('-').map(Number);
-        while (sy < ey || (sy === ey && sm <= em)) {
-            const key = `${sy}-${String(sm).padStart(2, '0')}`;
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
-            sm++;
-            if (sm > 12) { sm = 1; sy++; }
-        }
-    } else {
-        const sy = Number(start.split('-')[0]);
-        const ey = Number(end.split('-')[0]);
-        for (let y = sy; y <= ey; y++) {
-            const key = String(y);
-            full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
-        }
+    const cur = new Date(`${start}T00:00:00`);
+    const last = new Date(`${end}T00:00:00`);
+    while (cur <= last) {
+        const key = formatDate(cur);
+        full.push(dataMap[key] ?? { ...EMPTY_ROW, period: key });
+        cur.setDate(cur.getDate() + 1);
     }
     return full;
 };
 
-const INPUT_CONFIG = {
-    daily:   { type: 'date',   min: '2020-01-01', max: MONTH_END,            placeholder: 'YYYY-MM-DD' },
-    monthly: { type: 'month',  min: '2020-01',    max: `${CURRENT_YEAR}-12`, placeholder: 'YYYY-MM' },
-    yearly:  { type: 'number', min: 2020,         max: CURRENT_YEAR, step: 1, placeholder: 'YYYY' },
+// Male is always blue and Female always pink, in every stage.
+const MALE_COLOR   = '#2563eb';
+const FEMALE_COLOR = '#ec4899';
+const STAGE_LABEL_COLOR = '#334155';
+
+const STAGES = [
+    { key: 'theoretical', labelKey: 'charts.theoretical' },
+    { key: 'practical',   labelKey: 'charts.practical' },
+    { key: 'handover',    labelKey: 'charts.handover' },
+    { key: 'left',        labelKey: 'charts.left' },
+];
+const STAGE_COUNT = STAGES.length;
+
+// Horizontal room per date: 4 stages x (Male + Female) = 8 bars, kept wide enough that every bar
+// stays clearly visible instead of being squeezed as the month grows.
+const DATE_SLOT_WIDTH  = 440;
+const MIN_SCROLL_WIDTH = 800;
+// Approximate visible plot width used to centre "today" in the scrolled viewport.
+const VIEWPORT_WIDTH   = 800;
+
+// Pixel rows (below the plot's bottom edge) for the 3-level axis: Male/Female, stage, date.
+const GENDER_ROW_Y = 20;
+const STAGE_ROW_Y  = 44;
+const DATE_ROW_Y   = 74;
+const LABEL_AREA   = 90;
+const CHART_MARGIN_BOTTOM = LABEL_AREA + 26;
+
+// Draws the multi-level x-axis (Male/Female under every bar, stage under each pair, date under
+// each 4-stage group) plus the separators, straight onto the chart's renderer. Highcharts' core
+// axis is flat, and these elements live in the scrolling SVG, so they move with the bars.
+const drawGroupLabels = (chart, { trend, stageNames, maleLabel, femaleLabel, todayKey }) => {
+    (chart.dojoLabelEls || []).forEach(el => el.destroy());
+    const els = (chart.dojoLabelEls = []);
+    const r = chart.renderer;
+    const axis = chart.xAxis[0];
+    const bottom = chart.plotTop + chart.plotHeight;
+    const quarterSlot = axis.transA * 0.25;
+
+    const text = (str, x, y, css) =>
+        els.push(r.text(str, x, y).attr({ align: 'center', zIndex: 4 }).css(css).add());
+    const line = (x, y1, y2, color, dash) =>
+        els.push(r.path(['M', x, y1, 'L', x, y2]).attr({ stroke: color, 'stroke-width': 1, dashstyle: dash, zIndex: 3 }).add());
+
+    const [maleSeries, femaleSeries] = chart.series;
+    const barCenter = (series, idx, fallbackOffset) => {
+        const sa = series?.points?.[idx]?.shapeArgs;
+        return sa ? chart.plotLeft + sa.x + sa.width / 2 : axis.toPixels(idx) + fallbackOffset;
+    };
+
+    trend.forEach((row, d) => {
+        const first = d * STAGE_COUNT;
+        const isToday = row.period === todayKey;
+
+        if (d > 0) line(axis.toPixels(first - 0.5), chart.plotTop, bottom + LABEL_AREA, '#cbd5e1', 'DashDot');
+
+        STAGES.forEach((stage, s) => {
+            const idx = first + s;
+            if (s > 0) line(axis.toPixels(idx - 0.5), bottom, bottom + STAGE_ROW_Y + 10, '#e2e8f0', 'Dot');
+            text(maleLabel,   barCenter(maleSeries,   idx, -quarterSlot), bottom + GENDER_ROW_Y, { fontSize: '12px', fontWeight: '600', color: '#64748b' });
+            text(femaleLabel, barCenter(femaleSeries, idx,  quarterSlot), bottom + GENDER_ROW_Y, { fontSize: '12px', fontWeight: '600', color: '#64748b' });
+            text(stageNames[s], axis.toPixels(idx), bottom + STAGE_ROW_Y, { fontSize: '14px', fontWeight: '800', color: STAGE_LABEL_COLOR });
+        });
+
+        text(formatDayLabel(row.period), axis.toPixels(first + (STAGE_COUNT - 1) / 2), bottom + DATE_ROW_Y, {
+            fontSize: '15px',
+            fontWeight: '900',
+            color: isToday ? '#2563eb' : '#475569',
+            textDecoration: isToday ? 'underline' : 'none',
+        });
+    });
 };
 
-const aboveBarLabels = {
-    enabled: true,
-    formatter() { return this.y > 0 ? this.y : ''; },
-    rotation: 0,
-    allowOverlap: true,
-    style: { fontSize: '15px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
-    verticalAlign: 'top',
-    align: 'center',
-    y: -22,
+// Full class names (not `bg-${tone}-50`) so Tailwind's JIT can see and emit them.
+const KPI_TONES = {
+    blue:   { box: 'bg-blue-50',   label: 'text-blue-700',   sub: 'text-blue-600',   value: 'text-blue-900' },
+    amber:  { box: 'bg-amber-50',  label: 'text-amber-700',  sub: 'text-amber-600',  value: 'text-amber-900' },
+    green:  { box: 'bg-green-50',  label: 'text-green-700',  sub: 'text-green-600',  value: 'text-green-900' },
+    red:    { box: 'bg-red-50',    label: 'text-red-700',    sub: 'text-red-600',    value: 'text-red-900' },
+    indigo: { box: 'bg-indigo-50', label: 'text-indigo-700', sub: 'text-indigo-600', value: 'text-indigo-900' },
+    pink:   { box: 'bg-pink-50',   label: 'text-pink-700',   sub: 'text-pink-600',   value: 'text-pink-900' },
 };
 
-const basePlotOptions = {
-    column: {
-        borderRadius: 4,
-        borderWidth: 0,
-        groupPadding: 0.16,
-        pointPadding: 0.06,
-        maxPointWidth: 46,
-    },
-};
-
-// Validated (CVD-safe) — see scripts/validate_palette.js in the dataviz skill.
-const THEORETICAL_COLOR = '#2563eb';
-const PRACTICAL_COLOR   = '#f59e0b';
-const LEFT_COLOR        = '#ef4444';
-const MALE_COLOR        = '#6366f1';
-const FEMALE_COLOR      = '#ec4899';
-
-const SNAPSHOT_ZERO = {
-    theoreticalCount: 0, practicalCount: 0, handoverCount: 0, leftCount: 0,
-    theoreticalMale: 0, theoreticalFemale: 0, practicalMale: 0, practicalFemale: 0,
-    handoverMale: 0, handoverFemale: 0, leftMale: 0, leftFemale: 0,
-    maleCount: 0, femaleCount: 0,
+const KpiTile = ({ label, value, sub, tone }) => {
+    const c = KPI_TONES[tone];
+    return (
+        <div className={`flex items-center justify-between gap-2 p-2.5 rounded-lg ${c.box}`}>
+            <div className="min-w-0">
+                <span className={`block text-xs font-bold truncate ${c.label}`}>{label}</span>
+                {sub && <span className={`block text-[10px] font-semibold opacity-80 ${c.sub}`}>{sub}</span>}
+            </div>
+            <span className={`text-sm font-black ${c.value}`}>{value}</span>
+        </div>
+    );
 };
 
 const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
     const { t, language } = useTranslate();
     const isTablet = useIsTablet();
     const isMobile = useIsMobile();
-    const [chartMode, setChartMode] = useState('trend'); // 'trend' | 'snapshot'
-    const [timeframe, setTimeframe] = useState('daily');
-    const [rawStart, setRawStart] = useState('');
-    const [rawEnd, setRawEnd] = useState('');
+    const [month, setMonth] = useState(CURRENT_MONTH);
     const [selectedDepts, setSelectedDepts] = useState([]);
-    const [viewMode, setViewMode] = useState('all');
-    const [snapshotDate, setSnapshotDate] = useState('');
 
     // Home.jsx already fetches the department list once and passes it down; only fall back
     // to a local (RTK-Query-cached) fetch when this chart is used standalone.
@@ -189,143 +199,157 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
         return map;
     }, [departments]);
 
-    const { startDate, endDate } = useMemo(
-        () => toApiDates(timeframe, rawStart, rawEnd),
-        [timeframe, rawStart, rawEnd]
-    );
+    const { startDate, endDate } = useMemo(() => monthBounds(month), [month]);
+    const isCurrentMonth = month === CURRENT_MONTH;
+    const deptParam = selectedDepts.length > 0 ? selectedDepts.join(',') : '';
 
     const { data, isLoading, error } = useGetDojoTemporaryMetricsTrendQuery({
-        groupBy: timeframe,
+        groupBy: 'daily',
         startDate,
         endDate,
-        departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
+        departmentId: deptParam,
     });
 
     const rawTrend = useMemo(() => data?.data?.trend || [], [data]);
     const summary  = data?.data?.summary || null;
-    const groupBy  = data?.data?.groupBy || timeframe;
     const apiStart = data?.data?.start   || '';
     const apiEnd   = data?.data?.end     || '';
 
-    const currentPeriodKey = useMemo(() => {
-        const now = new Date();
-        if (groupBy === 'daily') return formatDate(now);
-        if (groupBy === 'monthly') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        return String(now.getFullYear());
-    }, [groupBy]);
+    // The API clamps the range to today, so for the current month this ends today rather than
+    // padding future days that can never hold real snapshot data.
+    const trend = useMemo(() => buildFullDays(apiStart, apiEnd, rawTrend), [apiStart, apiEnd, rawTrend]);
 
-    const trend = useMemo(
-        () => buildFullSeries(groupBy, apiStart, apiEnd, rawTrend),
-        [groupBy, apiStart, apiEnd, rawTrend]
+    const todayKey = useMemo(() => formatDate(new Date()), []);
+    const todaySlotIdx = useMemo(() => trend.findIndex(r => r.period === todayKey), [trend, todayKey]);
+
+    // One category per (date, stage) — 4 per date — with a Male and a Female column in each.
+    const categories = useMemo(
+        () => trend.flatMap(() => STAGES.map(s => t(s.labelKey))),
+        [trend, t]
     );
 
-    const todaySlotIdx = useMemo(
-        () => trend.findIndex(r => r.period === currentPeriodKey),
-        [trend, currentPeriodKey]
-    );
+    const series = useMemo(() => {
+        const build = (gender) => trend.flatMap(row =>
+            STAGES.map(s => Number(row[`${s.key}${gender}`]) || 0)
+        );
+        return [
+            { type: 'column', name: t('charts.male'),   data: build('Male'),   color: MALE_COLOR },
+            { type: 'column', name: t('charts.female'), data: build('Female'), color: FEMALE_COLOR },
+        ];
+    }, [trend, t]);
 
-    const categories = useMemo(() => trend.map(r => {
-        const label = formatPeriodLabel(r.period, groupBy, language);
-        const isToday = r.period === currentPeriodKey;
-        return isToday
-            ? `<span style="color:#2563eb;font-size:16px;font-weight:900;text-decoration:underline">${label}</span>`
-            : `<span style="color:#64748b;font-size:16px;font-weight:800">${label}</span>`;
-    }), [trend, groupBy, language, currentPeriodKey]);
+    const scrollMinWidth = Math.max(MIN_SCROLL_WIDTH, trend.length * DATE_SLOT_WIDTH);
+    const needsScroll = trend.length * DATE_SLOT_WIDTH > MIN_SCROLL_WIDTH;
 
-    // Dashed/dotted vertical separators between every date/month/year group so adjacent
-    // periods' bar clusters read as visually distinct groups instead of blending together.
-    const groupSeparators = useMemo(() => {
-        if (categories.length <= 1) return [];
-        const lines = [];
-        for (let i = 0; i < categories.length - 1; i++) {
-            lines.push({
-                value: i + 0.5,
-                width: 1,
-                dashStyle: 'DashDot',
-                color: '#cbd5e1',
-                zIndex: 3,
-            });
-        }
-        return lines;
-    }, [categories.length]);
+    // Auto-scroll so today sits mid-viewport in the current month; other months open at day 1.
+    const scrollPositionX = useMemo(() => {
+        if (!needsScroll || !isCurrentMonth || todaySlotIdx === -1) return 0;
+        const maxScrollPx = scrollMinWidth - VIEWPORT_WIDTH;
+        if (maxScrollPx <= 0) return 0;
+        const centeredPx = (todaySlotIdx + 0.5) * DATE_SLOT_WIDTH - VIEWPORT_WIDTH / 2;
+        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
+    }, [needsScroll, isCurrentMonth, todaySlotIdx, scrollMinWidth]);
 
-    const { theoreticalSeries, practicalSeries, leftSeries, maleSeries, femaleSeries } = useMemo(() => {
-        const theoretical = [];
-        const practical = [];
-        const left = [];
-        const male = [];
-        const female = [];
-        for (const r of trend) {
-            theoretical.push(Number(r.theoreticalCount) || 0);
-            practical.push(Number(r.practicalCount) || 0);
-            left.push(Number(r.leftCount) || 0);
-            male.push(Number(r.maleCount) || 0);
-            female.push(Number(r.femaleCount) || 0);
-        }
-        return { theoreticalSeries: theoretical, practicalSeries: practical, leftSeries: left, maleSeries: male, femaleSeries: female };
-    }, [trend]);
+    const totalTheoretical = summary?.totalTheoretical ?? 0;
+    const totalHandover    = summary?.totalHandover ?? 0;
+    const totalLeft        = summary?.totalLeft ?? 0;
+    const currentPractical = summary?.currentPractical ?? 0;
+    const currentMale      = summary?.currentMale ?? 0;
+    const currentFemale    = summary?.currentFemale ?? 0;
+    const attritionRate    = summary?.attritionRate ?? 0;
 
-    const totalTheoretical = summary?.totalTheoretical ?? theoreticalSeries.reduce((a, b) => a + b, 0);
-    const totalLeft        = summary?.totalLeft ?? leftSeries.reduce((a, b) => a + b, 0);
-    const currentPractical = summary?.currentPractical ?? (practicalSeries[practicalSeries.length - 1] || 0);
-    const currentMale      = summary?.currentMale ?? (maleSeries[maleSeries.length - 1] || 0);
-    const currentFemale    = summary?.currentFemale ?? (femaleSeries[femaleSeries.length - 1] || 0);
-    const currentActive    = summary?.currentActive ?? (currentMale + currentFemale);
-    const attritionRate    = summary?.attritionRate ?? (totalTheoretical > 0 ? Math.round((totalLeft / totalTheoretical) * 1000) / 10 : 0);
+    const chartOptions = useMemo(() => {
+        const stageNames = STAGES.map(s => t(s.labelKey));
+        const labelCtx = { trend, stageNames, maleLabel: t('charts.male'), femaleLabel: t('charts.female'), todayKey };
 
-    // --- Snapshot mode: one date's Theoretical/Practical/Handover/Left x Male/Female breakdown ---
-    const todayStr = useMemo(() => formatDate(new Date()), []);
-    const effectiveSnapshotDate = snapshotDate || todayStr;
-
-    const { data: snapshotData, isLoading: snapshotLoading, error: snapshotError } = useGetDojoTemporaryStageSnapshotQuery(
-        { date: effectiveSnapshotDate, departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '' },
-        { skip: chartMode !== 'snapshot' }
-    );
-
-    const snapshot = snapshotData?.data?.snapshot || SNAPSHOT_ZERO;
-
-    const snapshotCategories = useMemo(() => [
-        t('charts.theoretical'), t('charts.practical'), t('charts.handover'), t('charts.left'),
-    ], [t]);
-
-    const snapshotSeries = useMemo(() => [
-        {
-            type: 'column', name: t('charts.male'), color: MALE_COLOR,
-            data: [snapshot.theoreticalMale, snapshot.practicalMale, snapshot.handoverMale, snapshot.leftMale],
-        },
-        {
-            type: 'column', name: t('charts.female'), color: FEMALE_COLOR,
-            data: [snapshot.theoreticalFemale, snapshot.practicalFemale, snapshot.handoverFemale, snapshot.leftFemale],
-        },
-    ], [snapshot, t]);
-
-    const snapshotHasData = snapshot.theoreticalCount > 0 || snapshot.practicalCount > 0
-        || snapshot.handoverCount > 0 || snapshot.leftCount > 0;
-
-    const shiftSnapshotDate = (deltaDays) => {
-        const d = new Date(`${effectiveSnapshotDate}T00:00:00`);
-        d.setDate(d.getDate() + deltaDays);
-        const next = formatDate(d);
-        setSnapshotDate(next > todayStr ? todayStr : next);
-    };
-
-    const handleTimeframeChange = (tf) => {
-        setTimeframe(tf);
-        setRawStart('');
-        setRawEnd('');
-    };
-
-    const handleReset = () => {
-        setTimeframe('daily');
-        setRawStart('');
-        setRawEnd('');
-        setSelectedDepts([]);
-        setViewMode('all');
-        setSnapshotDate('');
-    };
+        return {
+            chart: {
+                backgroundColor: 'transparent',
+                height: 480,
+                style: { fontFamily: 'inherit' },
+                animation: { duration: 400 },
+                marginBottom: CHART_MARGIN_BOTTOM,
+                events: {
+                    render() { drawGroupLabels(this, labelCtx); },
+                },
+                ...(needsScroll && {
+                    scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX, opacity: 1 },
+                }),
+            },
+            title: { text: '' },
+            credits: { enabled: false },
+            legend: { enabled: false },
+            xAxis: {
+                categories,
+                crosshair: true,
+                // The Male/Female, stage and date labels are drawn by drawGroupLabels.
+                labels: { enabled: false },
+                tickLength: 0,
+                lineColor: '#cbd5e1',
+            },
+            yAxis: {
+                min: 0,
+                allowDecimals: false,
+                title: { text: t('charts.candidates'), style: { color: '#94a3b8', fontSize: '15px', fontWeight: 'bold' } },
+                labels: { style: { fontSize: '14px', fontWeight: 'bold' } },
+                gridLineColor: '#f1f5f9',
+            },
+            responsive: {
+                rules: [
+                    { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 520 } } },
+                    { condition: { maxWidth: 767 }, chartOptions: { chart: { height: 460 } } },
+                ],
+            },
+            plotOptions: {
+                column: {
+                    borderRadius: 4,
+                    borderWidth: 0,
+                    groupPadding: 0.06,
+                    pointPadding: 0.03,
+                    maxPointWidth: 48,
+                    dataLabels: {
+                        enabled: true,
+                        formatter() { return this.y > 0 ? this.y : ''; },
+                        rotation: 0,
+                        allowOverlap: true,
+                        style: { fontSize: '13px', fontWeight: '900', color: '#1e293b', textOutline: '2px white' },
+                        verticalAlign: 'top',
+                        align: 'center',
+                        y: -20,
+                    },
+                },
+            },
+            tooltip: {
+                shared: true,
+                useHTML: true,
+                formatter() {
+                    const idx = this.points?.[0]?.point?.index;
+                    const row = trend[Math.floor(idx / STAGE_COUNT)];
+                    if (!row) return false;
+                    const line = (color, label, total, m, f) =>
+                        `<span style="color:${color}">●</span> ${label}: <b>${total}</b> <span style="color:#64748b">(${t('charts.male')} ${m} · ${t('charts.female')} ${f})</span><br/>`;
+                    return `<b>${formatFullDate(row.period, language)}</b><br/>`
+                        + STAGES.map(s => line(STAGE_LABEL_COLOR, t(s.labelKey), row[`${s.key}Count`], row[`${s.key}Male`], row[`${s.key}Female`])).join('')
+                        + `<span style="color:#64748b">${t('charts.activeRoster')}: ${t('charts.male')} <b>${row.maleCount}</b> · ${t('charts.female')} <b>${row.femaleCount}</b></span>`;
+                },
+            },
+            series,
+        };
+    }, [categories, series, needsScroll, scrollMinWidth, scrollPositionX, trend, todayKey, t, language]);
 
     const toggleDept = (id, checked) =>
         setSelectedDepts(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
+
+    const handleReset = () => {
+        setMonth(CURRENT_MONTH);
+        setSelectedDepts([]);
+    };
+
+    const handleMonthInput = (value) => {
+        // A cleared/partial <input type="month"> emits ''; keep the current month instead of querying garbage.
+        if (!/^\d{4}-\d{2}$/.test(value)) return;
+        setMonth(value > CURRENT_MONTH ? CURRENT_MONTH : value < MIN_MONTH ? MIN_MONTH : value);
+    };
 
     const deptLabel = selectedDepts.length === 0
         ? t('charts.allDepartments')
@@ -333,314 +357,59 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
             ? (deptMap.get(String(selectedDepts[0])) ?? '1 Dept')
             : `${selectedDepts.length} ${t('nav.departments')}`;
 
-    const SLOT_WIDTH    = 150;
-    const needsScroll   = categories.length * SLOT_WIDTH > 800;
-    const scrollMinWidth = needsScroll ? categories.length * SLOT_WIDTH : undefined;
+    const hasAnyData = totalTheoretical > 0 || totalHandover > 0 || totalLeft > 0
+        || currentPractical > 0 || currentMale > 0 || currentFemale > 0;
 
-    const scrollPositionX = useMemo(() => {
-        if (!needsScroll || todaySlotIdx === -1) return 1;
-        const viewportWidth = 800;
-        const targetPx = todaySlotIdx * SLOT_WIDTH;
-        const maxScrollPx = (categories.length * SLOT_WIDTH) - viewportWidth;
-        if (maxScrollPx <= 0) return 1;
-        const centeredPx = targetPx - (viewportWidth / 2);
-        return Math.max(0, Math.min(1, centeredPx / maxScrollPx));
-    }, [needsScroll, todaySlotIdx, categories.length]);
-
-    const metricsSeries = useMemo(() => {
-        const stage = [
-            { type: 'column', name: t('charts.theoretical'), data: theoreticalSeries, color: THEORETICAL_COLOR },
-            { type: 'column', name: t('charts.practical'),   data: practicalSeries,   color: PRACTICAL_COLOR },
-            { type: 'column', name: t('charts.left'),        data: leftSeries,        color: LEFT_COLOR },
-        ];
-        const gender = [
-            { type: 'column', name: t('charts.male'),   data: maleSeries,   color: MALE_COLOR },
-            { type: 'column', name: t('charts.female'), data: femaleSeries, color: FEMALE_COLOR },
-        ];
-        if (viewMode === 'stage') return stage;
-        if (viewMode === 'gender') return gender;
-        return [...stage, ...gender];
-    }, [viewMode, theoreticalSeries, practicalSeries, leftSeries, maleSeries, femaleSeries, t]);
-
-    const chartOptions = useMemo(() => ({
-        chart: {
-            backgroundColor: 'transparent',
-            height: 420,
-            style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            marginBottom: needsScroll ? 100 : 65,
-            ...(needsScroll && {
-                scrollablePlotArea: { minWidth: scrollMinWidth, scrollPositionX, opacity: 1 },
-            }),
-        },
-        title: { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories,
-            crosshair: true,
-            plotLines: groupSeparators,
-            labels: {
-                useHTML: true,
-                style: { fontSize: '16px', fontWeight: 'bold', textAlign: 'center' },
-                rotation: 0,
-                align: 'center',
-                y: 26,
-            },
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '15px', fontWeight: 'bold' } },
-            labels: { style: { fontSize: '14px', fontWeight: 'bold' } },
-            gridLineColor: '#f1f5f9',
-        },
-        legend: {
-            enabled: true,
-            margin: 34,
-            itemStyle: { fontSize: '14px', fontWeight: 'bold', color: '#475569' },
-        },
-        responsive: {
-            rules: [
-                { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 500 } } },
-                { condition: { maxWidth: 767 }, chartOptions: { chart: { height: 380 } } },
-            ],
-        },
-        plotOptions: {
-            column: {
-                ...basePlotOptions.column,
-                dataLabels: aboveBarLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            formatter() {
-                const points = this.points || [];
-                let html = `<b>${this.x}</b><br/>`;
-                points.forEach(p => {
-                    html += `<span style="color:${p.series.color}">●</span> ${p.series.name}: <b>${p.y}</b><br/>`;
-                });
-                return html;
-            },
-        },
-        series: metricsSeries,
-    }), [categories, groupSeparators, metricsSeries, needsScroll, scrollMinWidth, scrollPositionX]);
-
-    const snapshotChartOptions = useMemo(() => ({
-        chart: {
-            backgroundColor: 'transparent',
-            height: 420,
-            style: { fontFamily: 'inherit' },
-            animation: { duration: 400 },
-            marginBottom: 75,
-        },
-        title: { text: '' },
-        credits: { enabled: false },
-        xAxis: {
-            categories: snapshotCategories,
-            crosshair: true,
-            labels: {
-                style: { fontSize: '16px', fontWeight: 'bold', textAlign: 'center' },
-                rotation: 0,
-                align: 'center',
-                y: 26,
-            },
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Candidates', style: { color: '#94a3b8', fontSize: '15px', fontWeight: 'bold' } },
-            labels: { style: { fontSize: '14px', fontWeight: 'bold' } },
-            gridLineColor: '#f1f5f9',
-        },
-        legend: {
-            enabled: true,
-            margin: 34,
-            itemStyle: { fontSize: '14px', fontWeight: 'bold', color: '#475569' },
-        },
-        responsive: {
-            rules: [
-                { condition: { minWidth: 768, maxWidth: 1024 }, chartOptions: { chart: { height: 500 } } },
-                { condition: { maxWidth: 767 }, chartOptions: { chart: { height: 380 } } },
-            ],
-        },
-        plotOptions: {
-            column: {
-                ...basePlotOptions.column,
-                dataLabels: aboveBarLabels,
-            },
-        },
-        tooltip: {
-            shared: true,
-            useHTML: true,
-            formatter() {
-                const points = this.points || [];
-                let html = `<b>${this.x}</b><br/>`;
-                points.forEach(p => {
-                    html += `<span style="color:${p.series.color}">●</span> ${p.series.name}: <b>${p.y}</b><br/>`;
-                });
-                return html;
-            },
-        },
-        series: snapshotSeries,
-    }), [snapshotCategories, snapshotSeries]);
-
-    const cfg = INPUT_CONFIG[timeframe];
-    const hasAnyData = totalTheoretical > 0 || currentPractical > 0 || totalLeft > 0 || currentMale > 0 || currentFemale > 0;
+    const placeholderHeight = isTablet ? 520 : isMobile ? 460 : 480;
 
     return (
         <Card className="col-span-2">
             <CardHeader className="pb-4">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    <div className="space-y-1">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                            <IconUsers className="h-5 w-5 text-blue-600" />
-                            {chartMode === 'snapshot' ? t('charts.dojoStageGenderSnapshot') : t('charts.dojoTemporaryMetricsTrend')}
-                        </CardTitle>
-                        <CardDescription>
-                            {chartMode === 'snapshot' ? t('charts.dojoStageGenderSnapshotDesc') : t('charts.dojoTemporaryMetricsTrendDesc')}
-                        </CardDescription>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                        <Button
-                            variant={chartMode === 'trend' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setChartMode('trend')}
-                        >
-                            <IconCalendar className="h-3.5 w-3.5 mr-1" />
-                            {t('charts.trendMode')}
-                        </Button>
-                        <Button
-                            variant={chartMode === 'snapshot' ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setChartMode('snapshot')}
-                        >
-                            <IconChartBar className="h-3.5 w-3.5 mr-1" />
-                            {t('charts.snapshotMode')}
-                        </Button>
-                    </div>
+                <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                        <IconUsers className="h-5 w-5 text-blue-600" />
+                        {t('charts.dojoMonthlySnapshot')}
+                    </CardTitle>
+                    <CardDescription>{t('charts.dojoMonthlySnapshotDesc')}</CardDescription>
                 </div>
 
                 {/* Filter bar */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
-
-                    {chartMode === 'snapshot' ? (
-                        <div className="flex flex-col gap-1.5">
-                            <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                                {t('charts.selectedDate')}
-                            </Label>
-                            <div className="flex items-center gap-1">
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => shiftSnapshotDate(-1)}
-                                    aria-label={t('charts.prevDay')}
-                                >
-                                    <IconChevronLeft className="h-4 w-4" />
-                                </Button>
-                                <Input
-                                    type="date"
-                                    value={effectiveSnapshotDate}
-                                    max={todayStr}
-                                    onChange={e => setSnapshotDate(e.target.value)}
-                                    className="h-8 text-xs w-36"
-                                />
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => shiftSnapshotDate(1)}
-                                    disabled={effectiveSnapshotDate >= todayStr}
-                                    aria-label={t('charts.nextDay')}
-                                >
-                                    <IconChevronRight className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    ) : (
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            {t('charts.timeframe')}
+                            {t('charts.selectedMonth')}
                         </Label>
-                        <div className="flex gap-1">
-                            {[
-                                { key: 'daily',   label: t('charts.daily30d') },
-                                { key: 'monthly', label: t('charts.monthly12m') },
-                                { key: 'yearly',  label: t('charts.yearly5y') },
-                            ].map(({ key, label }) => (
-                                <Button
-                                    key={key}
-                                    variant={timeframe === key ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="h-8 px-3 text-xs"
-                                    onClick={() => handleTimeframeChange(key)}
-                                >
-                                    {label}
-                                </Button>
-                            ))}
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setMonth(m => shiftMonth(m, -1))}
+                                disabled={month <= MIN_MONTH}
+                                aria-label={t('charts.prevMonth')}
+                            >
+                                <IconChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <Input
+                                type="month"
+                                value={month}
+                                min={MIN_MONTH}
+                                max={CURRENT_MONTH}
+                                onChange={e => handleMonthInput(e.target.value)}
+                                className="h-8 text-xs w-36"
+                            />
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setMonth(m => shiftMonth(m, 1))}
+                                disabled={isCurrentMonth}
+                                aria-label={t('charts.nextMonth')}
+                            >
+                                <IconChevronRight className="h-4 w-4" />
+                            </Button>
                         </div>
                     </div>
-                    )}
-
-                    {chartMode === 'trend' && (
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                            {t('charts.viewMode')}
-                        </Label>
-                        <div className="flex gap-1">
-                            {[
-                                { key: 'all',    label: t('charts.allMetrics') },
-                                { key: 'stage',  label: t('charts.byStage') },
-                                { key: 'gender', label: t('charts.byGender') },
-                            ].map(({ key, label }) => (
-                                <Button
-                                    key={key}
-                                    variant={viewMode === key ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="h-8 px-3 text-xs"
-                                    onClick={() => setViewMode(key)}
-                                >
-                                    {label}
-                                </Button>
-                            ))}
-                        </div>
-                    </div>
-                    )}
-
-                    {chartMode === 'trend' && (
-                    <>
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.from')}</Label>
-                        <Input
-                            type={cfg.type}
-                            value={rawStart}
-                            onChange={e => setRawStart(e.target.value)}
-                            min={String(cfg.min)}
-                            max={rawEnd || String(cfg.max)}
-                            step={cfg.step}
-                            placeholder={cfg.placeholder}
-                            className="h-8 text-xs w-36"
-                        />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{t('charts.to')}</Label>
-                        <Input
-                            type={cfg.type}
-                            value={rawEnd}
-                            onChange={e => setRawEnd(e.target.value)}
-                            min={rawStart || String(cfg.min)}
-                            max={String(cfg.max)}
-                            step={cfg.step}
-                            placeholder={cfg.placeholder}
-                            className="h-8 text-xs w-36"
-                        />
-                    </div>
-                    </>
-                    )}
 
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
@@ -694,9 +463,8 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
             </CardHeader>
 
             <CardContent>
-                {chartMode === 'trend' ? (
-                isLoading ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center gap-4">
+                {isLoading ? (
+                    <div style={{ height: placeholderHeight }} className="flex flex-col items-center justify-center gap-4">
                         <img
                             src="/fme_transparent.png"
                             alt="FME"
@@ -707,11 +475,11 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                         </p>
                     </div>
                 ) : error ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
+                    <div style={{ height: placeholderHeight }} className="flex flex-col items-center justify-center text-red-500 gap-2">
                         <p className="text-sm font-semibold">{t('charts.failedToLoadTemporaryMetrics')}</p>
                     </div>
                 ) : !hasAnyData ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
+                    <div style={{ height: placeholderHeight }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
                         <IconCalendar className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">{t('charts.noTemporaryMetricsData')}</p>
                         <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
@@ -730,95 +498,21 @@ const DojoTemporaryMetricsChart = ({ departments: departmentsProp } = {}) => {
                             }
                         `}</style>
                         <HighchartsReact
-                            key={`${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}-${viewMode}`}
+                            key={`${month}-${deptParam}`}
                             highcharts={Highcharts}
                             options={chartOptions}
                         />
 
-                        {/* KPI Summary strip */}
-                        <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-3">
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">{t('charts.newJoiners')}</span>
-                                <span className="text-sm font-black text-blue-900">{totalTheoretical}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50">
-                                <span className="text-xs font-bold text-amber-700">{t('charts.currentlyActive')}</span>
-                                <span className="text-sm font-black text-amber-900">{currentActive}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
-                                <span className="text-xs font-bold text-red-700">{t('charts.attritionRate')}</span>
-                                <span className="text-sm font-black text-red-900">{attritionRate}%</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-indigo-50">
-                                <span className="text-xs font-bold text-indigo-700">{t('charts.male')}</span>
-                                <span className="text-sm font-black text-indigo-900">{currentMale}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-pink-50">
-                                <span className="text-xs font-bold text-pink-700">{t('charts.female')}</span>
-                                <span className="text-sm font-black text-pink-900">{currentFemale}</span>
-                            </div>
-                        </div>
-                    </>
-                )
-                ) : (
-                snapshotLoading ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center gap-4">
-                        <img
-                            src="/fme_transparent.png"
-                            alt="FME"
-                            className="w-20 h-20 object-contain animate-pulse"
-                        />
-                        <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
-                            {t('charts.loading')}
-                        </p>
-                    </div>
-                ) : snapshotError ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-red-500 gap-2">
-                        <p className="text-sm font-semibold">{t('charts.failedToLoadTemporaryMetrics')}</p>
-                    </div>
-                ) : !snapshotHasData ? (
-                    <div style={{ height: isTablet ? 500 : isMobile ? 380 : 420 }} className="flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed gap-2">
-                        <IconCalendar className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">{t('charts.noTemporaryMetricsData')}</p>
-                        <p className="text-xs opacity-60">{t('charts.adjustFilters')}</p>
-                    </div>
-                ) : (
-                    <>
-                        <HighchartsReact
-                            key={`snapshot-${effectiveSnapshotDate}-${selectedDepts.join(',')}`}
-                            highcharts={Highcharts}
-                            options={snapshotChartOptions}
-                        />
-
-                        {/* KPI Summary strip */}
+                        {/* KPI Summary strip — flows (joiners/handover/left) sum the month; Practical/Male/Female are the month's latest stock. */}
                         <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50">
-                                <span className="text-xs font-bold text-blue-700">{t('charts.theoretical')}</span>
-                                <span className="text-sm font-black text-blue-900">{snapshot.theoreticalCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50">
-                                <span className="text-xs font-bold text-amber-700">{t('charts.practical')}</span>
-                                <span className="text-sm font-black text-amber-900">{snapshot.practicalCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-green-50">
-                                <span className="text-xs font-bold text-green-700">{t('charts.handover')}</span>
-                                <span className="text-sm font-black text-green-900">{snapshot.handoverCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-50">
-                                <span className="text-xs font-bold text-red-700">{t('charts.left')}</span>
-                                <span className="text-sm font-black text-red-900">{snapshot.leftCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-indigo-50">
-                                <span className="text-xs font-bold text-indigo-700">{t('charts.male')}</span>
-                                <span className="text-sm font-black text-indigo-900">{snapshot.maleCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-pink-50">
-                                <span className="text-xs font-bold text-pink-700">{t('charts.female')}</span>
-                                <span className="text-sm font-black text-pink-900">{snapshot.femaleCount}</span>
-                            </div>
+                            <KpiTile tone="blue"   label={t('charts.newJoiners')}       value={totalTheoretical} />
+                            <KpiTile tone="amber"  label={t('charts.practicalActive')}  value={currentPractical} />
+                            <KpiTile tone="green"  label={t('charts.handoverApproved')} value={totalHandover} />
+                            <KpiTile tone="red"    label={t('charts.left')}             value={totalLeft} sub={`${attritionRate}% ${t('charts.attritionRate')}`} />
+                            <KpiTile tone="indigo" label={t('charts.male')}             value={currentMale} />
+                            <KpiTile tone="pink"   label={t('charts.female')}           value={currentFemale} />
                         </div>
                     </>
-                )
                 )}
             </CardContent>
         </Card>

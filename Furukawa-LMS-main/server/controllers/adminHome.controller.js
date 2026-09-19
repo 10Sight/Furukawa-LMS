@@ -1898,7 +1898,20 @@ const periodDateBounds = (groupBy, period, overallStart, overallEnd) => {
     return { period, periodStart, periodEnd };
 };
 
-const ZERO_STAGE_ROW = { theoreticalCount: 0, practicalCount: 0, leftCount: 0, maleCount: 0, femaleCount: 0 };
+const ZERO_STAGE_ROW = {
+    theoreticalCount: 0, practicalCount: 0, handoverCount: 0, leftCount: 0,
+    theoreticalMale: 0, theoreticalFemale: 0, practicalMale: 0, practicalFemale: 0,
+    handoverMale: 0, handoverFemale: 0, leftMale: 0, leftFemale: 0,
+    maleCount: 0, femaleCount: 0,
+};
+
+// Flow metrics accumulate across the days in a period; the rest are stock snapshots (last day).
+const FLOW_KEYS = [
+    'theoreticalCount', 'theoreticalMale', 'theoreticalFemale',
+    'handoverCount', 'handoverMale', 'handoverFemale',
+    'leftCount', 'leftMale', 'leftFemale',
+];
+const STOCK_KEYS = ['practicalCount', 'practicalMale', 'practicalFemale', 'maleCount', 'femaleCount'];
 
 /**
  * Get DOJO Temporary candidate metrics trend (Theoretical / Practical / Left / Male / Female)
@@ -1971,29 +1984,27 @@ export const getDojoTemporaryMetricsTrend = asyncHandler(async (req, res) => {
     // stock snapshots (the period's last day) — mirrors the same distinction the frontend expects.
     const trend = periods.map(({ period, periodStart, periodEnd }) => {
         const daysInPeriod = buildFullPeriods('daily', periodStart, periodEnd);
-        let theoreticalCount = 0, leftCount = 0, lastRow = ZERO_STAGE_ROW;
+        const acc = { period };
+        FLOW_KEYS.forEach(k => { acc[k] = 0; });
+        let lastRow = ZERO_STAGE_ROW;
         for (const d of daysInPeriod) {
             const row = dailyMap[d] || ZERO_STAGE_ROW;
-            theoreticalCount += row.theoreticalCount;
-            leftCount += row.leftCount;
+            FLOW_KEYS.forEach(k => { acc[k] += row[k] || 0; });
             lastRow = row;
         }
-        return {
-            period,
-            theoreticalCount,
-            practicalCount: lastRow.practicalCount,
-            leftCount,
-            maleCount: lastRow.maleCount,
-            femaleCount: lastRow.femaleCount,
-        };
+        STOCK_KEYS.forEach(k => { acc[k] = lastRow[k] || 0; });
+        acc.totalActive = acc.maleCount + acc.femaleCount;
+        return acc;
     });
 
     const totalTheoretical = trend.reduce((sum, r) => sum + r.theoreticalCount, 0);
+    const totalHandover = trend.reduce((sum, r) => sum + r.handoverCount, 0);
     const totalLeft = trend.reduce((sum, r) => sum + r.leftCount, 0);
     const lastRow = trend[trend.length - 1];
 
     const summary = {
         totalTheoretical,
+        totalHandover,
         totalLeft,
         currentPractical: lastRow.practicalCount,
         currentMale: lastRow.maleCount,

@@ -51,9 +51,10 @@ export const leftRequestApi = createApi({
     }),
 
     approveLeftRequest: builder.mutation({
-      query: (id) => ({
+      query: ({ id, reasonOfLeaving }) => ({
         url: `/api/left-requests/${id}/approve`,
         method: "PATCH",
+        data: { reasonOfLeaving },
       }),
       invalidatesTags: ["LeftRequest", "LeftRequestCount"],
     }),

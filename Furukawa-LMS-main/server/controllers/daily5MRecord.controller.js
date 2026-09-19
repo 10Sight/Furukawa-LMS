@@ -6,6 +6,7 @@ import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow } from "../../shared/daily5mRouting.js";
+import { scope5MRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
 
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
@@ -118,23 +119,27 @@ export const get5MRecords = async (req, res, next) => {
         const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search } = req.query;
         const { id: userId, role } = req.user;
 
+        const limitInt = parseInt(limit) || 50;
+        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        if (scoped.forbidden) {
+            return next(new ApiError(scoped.forbidden, 403));
+        }
+
         const filters = {
-            departmentId: departmentId === 'all' ? null : departmentId,
-            sectionId,
+            departmentId: scoped.departmentId === 'all' ? null : scoped.departmentId,
+            sectionId: scoped.sectionId,
             startDate,
             endDate,
             search,
             formType,
             groupBySession: groupBySession === 'true',
-            limit: parseInt(limit) || 50,
-            offset: parseInt(offset) || 0
+            limit: limitInt,
+            offset: parseInt(offset) || 0,
+            allowedDepartmentIds: scoped.empty ? [] : scoped.allowedDepartmentIds,
+            allowedSectionIds: scoped.allowedSectionIds
         };
 
-        // Visibility restriction removed: All users can now see history for their departments
-        // Previously: filters.submittedBy = userId; for regular users
-
         const { records, totalCount } = await Daily5MRecord.findAll(filters);
-        const limitInt = parseInt(limit) || 50;
 
         logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType }, { resourceType: "DAILY_5M_RECORD", req })
             .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORDS_LIST) failed:", err.message));
@@ -163,6 +168,10 @@ export const get5MRecordById = async (req, res, next) => {
 
         if (!record) {
             return next(new ApiError("Record not found", 404));
+        }
+
+        if (!canView5MRecord(req.user, record)) {
+            return next(new ApiError("You do not have access to this record", 403));
         }
 
         logAudit(req.user?.id, "VIEW_DAILY_5M_RECORD_DETAILS", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
@@ -367,12 +376,19 @@ export const getDaily5MStats = async (req, res, next) => {
         const { departmentId } = req.params;
         const { sectionId, startDate, endDate, formType } = req.query;
 
+        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        if (scoped.forbidden) {
+            return next(new ApiError(scoped.forbidden, 403));
+        }
+
         const stats = await Daily5MRecord.getStats({
-            departmentId,
-            sectionId,
+            departmentId: scoped.departmentId,
+            sectionId: scoped.sectionId,
             startDate,
             endDate,
-            formType
+            formType,
+            allowedDepartmentIds: scoped.empty ? [] : scoped.allowedDepartmentIds,
+            allowedSectionIds: scoped.allowedSectionIds
         });
 
         res.status(200).json({
@@ -390,11 +406,18 @@ export const getDaily5MRowStats = async (req, res, next) => {
         const { departmentId } = req.params;
         const { sectionId, startDate, endDate } = req.query;
 
+        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        if (scoped.forbidden) {
+            return next(new ApiError(scoped.forbidden, 403));
+        }
+
         const rowStats = await Daily5MRecord.getRowStats({
-            departmentId,
-            sectionId,
+            departmentId: scoped.departmentId,
+            sectionId: scoped.sectionId,
             startDate,
-            endDate
+            endDate,
+            allowedDepartmentIds: scoped.empty ? [] : scoped.allowedDepartmentIds,
+            allowedSectionIds: scoped.allowedSectionIds
         });
 
         res.status(200).json({

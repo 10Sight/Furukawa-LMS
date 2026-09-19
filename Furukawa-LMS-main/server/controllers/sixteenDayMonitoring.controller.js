@@ -325,8 +325,9 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet = await SixteenDayMonitoring.findByStudentId(sid);
     }
 
-    // LEFT associates: pin every field to its persisted value server-side and allow
-    // only the comment to change, regardless of what the client sends. This can't be
+    // LEFT associates: pin the performance data and header fields to their persisted
+    // values server-side, regardless of what the client sends. Only the comment, the
+    // signature/approval fields and the submission status may change. This can't be
     // enforced by the frontend UI lock alone since this endpoint is a real trust boundary.
     if (isLeftUser) {
         if (!sheet || isNewAttempt) {
@@ -341,13 +342,11 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         trgResult = sheet.trgResult;
         workingWith = sheet.workingWith;
         lineLeaderName = sheet.lineLeaderName;
-        checkedBy = sheet.checkedBy;
-        verifiedBy = sheet.verifiedBy;
-        approvedBy = sheet.approvedBy;
-        verifiedByEduCell = sheet.verifiedByEduCell;
-        status = sheet.status;
+        checkedBy = checkedBy !== undefined ? checkedBy : sheet.checkedBy;
+        verifiedBy = verifiedBy !== undefined ? verifiedBy : sheet.verifiedBy;
+        approvedBy = approvedBy !== undefined ? approvedBy : sheet.approvedBy;
+        verifiedByEduCell = verifiedByEduCell !== undefined ? verifiedByEduCell : sheet.verifiedByEduCell;
         startDate = sheet.startDate;
-        adminRemark = null;
         gridData = { ...sheet.gridData, comment: incomingComment };
     }
 

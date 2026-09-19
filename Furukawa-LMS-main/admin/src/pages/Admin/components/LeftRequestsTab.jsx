@@ -10,8 +10,16 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +49,18 @@ const STATUS_TABS = [
   { value: "APPROVED", label: "Approved" },
   { value: "REJECTED", label: "Rejected" },
   { value: "ALL", label: "All" },
+];
+
+const LEAVING_REASONS = [
+  "Employee not response",
+  "Exam",
+  "Family Function",
+  "Marriage",
+  "Family Problem",
+  "Festival",
+  "Health Problem",
+  "Join other company",
+  "Indiscipline case",
 ];
 
 const statusBadge = (status) => {
@@ -84,6 +104,8 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [approveTarget, setApproveTarget] = useState(null);
+  const [approveReason, setApproveReason] = useState("");
+  const [approveCustomReason, setApproveCustomReason] = useState("");
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const { data, isLoading, isFetching, refetch } = useGetAllLeftRequestsQuery({
@@ -100,10 +122,31 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const totalPages = data?.data?.totalPages || 1;
   const total = data?.data?.total || 0;
 
+  const openApprove = (request) => {
+    setApproveTarget(request);
+    const existingReason = request.reasonOfLeaving || "";
+    if (existingReason && !LEAVING_REASONS.includes(existingReason)) {
+      setApproveReason("Other");
+      setApproveCustomReason(existingReason);
+    } else {
+      setApproveReason(existingReason);
+      setApproveCustomReason("");
+    }
+  };
+
   const handleApprove = async () => {
     if (!approveTarget) return;
+    if (!approveReason) {
+      toast.error("Please select a reason of leaving");
+      return;
+    }
+    if (approveReason === "Other" && !approveCustomReason.trim()) {
+      toast.error("Please specify the reason of leaving");
+      return;
+    }
+    const reasonOfLeaving = (approveReason === "Other" ? approveCustomReason : approveReason).trim();
     try {
-      await approveLeftRequest(approveTarget.id).unwrap();
+      await approveLeftRequest({ id: approveTarget.id, reasonOfLeaving }).unwrap();
       toast.success(`${approveTarget.fullName} marked as left`);
       setApproveTarget(null);
       refetch();
@@ -244,7 +287,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                           <>
                             <Button
                               size="sm"
-                              onClick={() => setApproveTarget(request)}
+                              onClick={() => openApprove(request)}
                               disabled={isApproving}
                               className="bg-green-600 hover:bg-green-700 text-white h-7 px-2 text-xs"
                             >
@@ -334,7 +377,16 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
       </Dialog>
 
       {/* Approve Confirmation Dialog */}
-      <Dialog open={!!approveTarget} onOpenChange={(open) => { if (!open) setApproveTarget(null); }}>
+      <Dialog
+        open={!!approveTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setApproveTarget(null);
+            setApproveReason("");
+            setApproveCustomReason("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-700">
@@ -347,13 +399,37 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
               <strong>{approveTarget?.leavingDate ? safeDateFormat(approveTarget.leavingDate, "dd/MM/yyyy") : "-"}</strong>.
             </DialogDescription>
           </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Label htmlFor="approveReason">Reason of Leaving</Label>
+            <Select value={approveReason} onValueChange={setApproveReason}>
+              <SelectTrigger id="approveReason">
+                <SelectValue placeholder="Select Reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAVING_REASONS.map((reason) => (
+                  <SelectItem key={reason} value={reason}>
+                    {reason}
+                  </SelectItem>
+                ))}
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {approveReason === "Other" && (
+              <Textarea
+                value={approveCustomReason}
+                onChange={(e) => setApproveCustomReason(e.target.value)}
+                placeholder="Please specify the reason"
+                rows={2}
+              />
+            )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveTarget(null)}>
               Cancel
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={isApproving}
+              disabled={isApproving || !approveReason || (approveReason === "Other" && !approveCustomReason.trim())}
               className="gap-2 bg-green-600 hover:bg-green-700 text-white"
             >
               {isApproving && <IconLoader className="h-4 w-4 animate-spin" />}

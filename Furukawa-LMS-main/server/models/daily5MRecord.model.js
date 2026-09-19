@@ -227,10 +227,32 @@ class Daily5MRecord {
         return this.findById(newId);
     }
 
-    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false, search = "" }) {
+    // Builds the parameterized " AND alias.departmentId IN (?,?) AND alias.sectionId IN (?,?)" fragment
+    // for a restricted user. `undefined` means "not scoped" (global admin); an empty
+    // allowedDepartmentIds array means "scoped to nothing" and is short-circuited by callers.
+    static buildScopeClause(alias, allowedDepartmentIds, allowedSectionIds) {
+        let sql = "";
+        const params = [];
+        if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length > 0) {
+            sql += ` AND ${alias}departmentId IN (${allowedDepartmentIds.map(() => '?').join(',')})`;
+            params.push(...allowedDepartmentIds);
+        }
+        if (Array.isArray(allowedSectionIds) && allowedSectionIds.length > 0) {
+            sql += ` AND ${alias}sectionId IN (${allowedSectionIds.map(() => '?').join(',')})`;
+            params.push(...allowedSectionIds);
+        }
+        return { sql, params };
+    }
+
+    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false, search = "", allowedDepartmentIds, allowedSectionIds }) {
+        if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length === 0) {
+            return { records: [], totalCount: 0 };
+        }
+
         let sql = "";
         let params = [];
- 
+        const scopeClause = this.buildScopeClause("r.", allowedDepartmentIds, allowedSectionIds);
+
         if (groupBySession) {
             // Pick only the latest record for each sessionId
             sql = `
@@ -246,6 +268,8 @@ class Daily5MRecord {
                     WHERE (r.departmentId = ? OR ? = 'all')
             `;
             params.push(departmentId || 'all', departmentId || 'all');
+            sql += scopeClause.sql;
+            params.push(...scopeClause.params);
 
             if (sectionId && sectionId !== 'all') {
                 sql += " AND r.sectionId = ?";
@@ -300,6 +324,8 @@ class Daily5MRecord {
                 WHERE (r.departmentId = ? OR ? = 'all')
             `;
             params.push(departmentId || 'all', departmentId || 'all');
+            sql += scopeClause.sql;
+            params.push(...scopeClause.params);
 
             if (sectionId && sectionId !== 'all') {
                 sql += " AND r.sectionId = ?";
@@ -430,11 +456,17 @@ class Daily5MRecord {
         return metadata.affectedRows > 0;
     }
 
-    static async getStats({ departmentId, sectionId, startDate, endDate, formType }) {
+    static async getStats({ departmentId, sectionId, startDate, endDate, formType, allowedDepartmentIds, allowedSectionIds }) {
+        if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length === 0) return [];
+
         // Use CTE to pick only the latest row per session so repeated saves/edits
         // don't inflate the count — each unique sheet is counted exactly once.
         let whereClauses = "WHERE 1=1";
         let params = [];
+
+        const scopeClause = this.buildScopeClause("", allowedDepartmentIds, allowedSectionIds);
+        whereClauses += scopeClause.sql;
+        params.push(...scopeClause.params);
 
         if (departmentId && departmentId !== 'all') {
             if (departmentId.includes(',')) {
@@ -540,11 +572,19 @@ class Daily5MRecord {
         return Object.values(dailyStatsMap).sort((a, b) => new Date(a.date) - new Date(b.date));
     }
 
-    static async getRowStats({ departmentId, sectionId, startDate, endDate }) {
+    static async getRowStats({ departmentId, sectionId, startDate, endDate, allowedDepartmentIds, allowedSectionIds }) {
+        if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length === 0) {
+            return { overallStats: { approved: 0, pending: 0, rejected: 0, total: 0 }, departmentStats: [] };
+        }
+
         // Use CTE to pick only the latest row per session before counting row statuses
         // so reopening/editing a sheet doesn't double-count its filled rows.
         let whereClauses = "WHERE 1=1";
         let params = [];
+
+        const scopeClause = this.buildScopeClause("r.", allowedDepartmentIds, allowedSectionIds);
+        whereClauses += scopeClause.sql;
+        params.push(...scopeClause.params);
 
         if (departmentId && departmentId !== 'all') {
             if (departmentId.includes(',')) {

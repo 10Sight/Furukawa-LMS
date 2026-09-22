@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Loader2, Save, History, ArrowLeft } from "lucide-react";
+import { Plus, Loader2, Save, History, ArrowLeft } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from "sonner";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
@@ -32,6 +32,7 @@ import {
     computeTotalWeightage,
     ROW_SCORING_TYPES,
 } from "@/utils/sixteenDayMonitoringConfig";
+import { EditableCell, EditableSelect } from "@/components/admin/LayoutEditorCells";
 
 const SHEET_KEY = 'sixteen-day-monitoring';
 const DAY_NUMBERS = Array.from({ length: 16 }, (_, i) => i + 1);
@@ -79,6 +80,11 @@ const SixteenDayMonitoringLayoutEditor = () => {
     const [sectionId, setSectionId] = useState(searchParams.get('sectionId') || "");
 
     const [config, setConfig] = useState(null);
+    // Snapshot of config as last loaded/saved from the server — compared against
+    // the live config to show an "unsaved changes" indicator and to know what
+    // "Reset to Saved" should revert to.
+    const [savedSnapshot, setSavedSnapshot] = useState(null);
+    const isDirty = !!config && JSON.stringify(config) !== savedSnapshot;
     const [resolvedScope, setResolvedScope] = useState(null);
     const [loadingConfig, setLoadingConfig] = useState(false);
     const [history, setHistory] = useState([]);
@@ -113,7 +119,9 @@ const SixteenDayMonitoringLayoutEditor = () => {
 
     const fetchConfig = async () => {
         if (!isGlobal && !deptId) {
-            setConfig(buildDefaultConfig());
+            const defaults = buildDefaultConfig();
+            setConfig(defaults);
+            setSavedSnapshot(JSON.stringify(defaults));
             setResolvedScope(null);
             return;
         }
@@ -121,7 +129,9 @@ const SixteenDayMonitoringLayoutEditor = () => {
             setLoadingConfig(true);
             const qs = !isGlobal && sectionId ? `?sectionId=${sectionId}` : "";
             const response = await axiosInstance.get(`/api/sixteen-day-monitoring/config/${deptParam()}${qs}`);
-            setConfig(normalizeConfig(response.data?.data?.config));
+            const loaded = normalizeConfig(response.data?.data?.config);
+            setConfig(loaded);
+            setSavedSnapshot(JSON.stringify(loaded));
             setResolvedScope(response.data?.data?.resolvedScope || null);
         } catch {
             toast.error("Failed to load layout configuration");
@@ -195,11 +205,11 @@ const SixteenDayMonitoringLayoutEditor = () => {
             if (!prev) return prev;
             const next = JSON.parse(JSON.stringify(prev));
             const n = next.categories.length + 1;
-            const newId = `cat_${Date.now()}`;
+            const rand = () => Math.random().toString(36).slice(2, 8);
             next.categories.push({
-                id: newId,
+                id: `cat_${Date.now()}_${rand()}`,
                 category: `New Category ${n}`,
-                rows: [{ id: `row_${Date.now()}`, label: 'New check item', weight: 2 }],
+                rows: [{ id: `row_${Date.now()}_${rand()}`, label: 'New check item', weight: 2 }],
                 totalMark: 2,
                 target: '100%',
             });
@@ -239,7 +249,7 @@ const SixteenDayMonitoringLayoutEditor = () => {
             const next = JSON.parse(JSON.stringify(prev));
             const cat = next.categories.find(c => c.id === catId);
             if (!cat) return prev;
-            cat.rows.push({ id: `row_${Date.now()}`, label: 'New check item', weight: 2 });
+            cat.rows.push({ id: `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, label: 'New check item', weight: 2 });
             return next;
         });
     };
@@ -273,7 +283,7 @@ const SixteenDayMonitoringLayoutEditor = () => {
         setConfig(prev => {
             if (!prev) return prev;
             const next = JSON.parse(JSON.stringify(prev));
-            next.scoreRanges.push({ id: `score_${Date.now()}`, catId: null, label: 'New Parameter', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100' });
+            next.scoreRanges.push({ id: `score_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, catId: null, label: 'New Parameter', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100' });
             return next;
         });
     };
@@ -378,6 +388,7 @@ const SixteenDayMonitoringLayoutEditor = () => {
                 },
             });
             setConfig(newConfig);
+            setSavedSnapshot(JSON.stringify(newConfig));
             setSaveModalOpen(false);
             setRemarkText("");
             toast.success("Layout and revision updated successfully");
@@ -429,8 +440,9 @@ const SixteenDayMonitoringLayoutEditor = () => {
                     </Button>
                     <h1 className="text-xl font-bold">16-Day Monitoring Layout Editor</h1>
                     <p className="text-sm text-slate-500">
-                        Customize categories, inspection checkpoints, scoring types, weightages, score ranges, and evaluation legends —
-                        along with the sheet&apos;s document-control revision fields. Changes apply to whichever scope you select below.
+                        Click any label, mark, or description directly on the sheet below to edit it in place. Use the + buttons above
+                        the sheet to add a category, check item, score range, or legend row, and hover a cell to delete it.
+                        Changes apply to whichever scope you select below.
                     </p>
                 </div>
 
@@ -527,152 +539,28 @@ const SixteenDayMonitoringLayoutEditor = () => {
                             </div>
                         )}
 
-                        {/* Categories & Checkpoints */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-xs font-bold uppercase tracking-wide">Categories & Inspection Checkpoints</Label>
-                                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCategory}>
-                                    <Plus size={12} /> Add Category
-                                </Button>
-                            </div>
-                            {config.categories.map((cat) => (
-                                <div key={cat.id} className="border rounded p-3 space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_100px_120px_150px_32px] gap-2 items-start">
-                                        <div>
-                                            <Label className="text-[10px] mb-1 block">Category Name</Label>
-                                            <Textarea className="text-xs h-16" value={cat.category} onChange={(e) => updateCategoryField(cat.id, 'category', e.target.value)} />
-                                        </div>
-                                        <div>
-                                            <Label className="text-[10px] mb-1 block">Total Mark</Label>
-                                            <Input className="h-8 text-xs" value={cat.totalMark ?? ''} onChange={(e) => updateCategoryField(cat.id, 'totalMark', e.target.value)} placeholder="e.g. 6" />
-                                        </div>
-                                        <div>
-                                            <Label className="text-[10px] mb-1 block">Target %</Label>
-                                            <Input className="h-8 text-xs" value={cat.target ?? ''} onChange={(e) => updateCategoryField(cat.id, 'target', e.target.value)} placeholder="e.g. 100%" />
-                                        </div>
-                                        <div>
-                                            <Label className="text-[10px] mb-1 block">Actual Label (optional)</Label>
-                                            <Input className="h-8 text-xs" value={cat.actualLabel ?? ''} onChange={(e) => updateCategoryField(cat.id, 'actualLabel', e.target.value)} placeholder="Actual %:" />
-                                        </div>
-                                        <Button size="icon" variant="outline" className="h-8 w-8 mt-4 text-red-500 hover:bg-red-50" onClick={() => removeCategory(cat.id)}>
-                                            <Trash2 size={12} />
-                                        </Button>
-                                    </div>
-
-                                    <div className="space-y-2 pl-2 border-l-2 border-slate-200">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-[10px] font-bold uppercase text-slate-500">Check Items</Label>
-                                            <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1" onClick={() => addRow(cat.id)}>
-                                                <Plus size={10} /> Add Item
-                                            </Button>
-                                        </div>
-                                        {cat.rows.map((row) => (
-                                            <div key={row.id} className="grid grid-cols-1 md:grid-cols-[1fr_90px_220px_28px] gap-2 items-start">
-                                                <Textarea className="text-xs h-10" value={row.label} onChange={(e) => updateRowField(cat.id, row.id, 'label', e.target.value)} placeholder="Check item description" />
-                                                <Input className="h-8 text-xs" value={row.weight ?? ''} onChange={(e) => updateRowField(cat.id, row.id, 'weight', e.target.value)} placeholder="Mark or -" />
-                                                <Select value={row.type || ''} onValueChange={(v) => updateRowField(cat.id, row.id, 'type', v)}>
-                                                    <SelectTrigger className="h-8 text-xs">
-                                                        <SelectValue placeholder="Scoring type" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {ROW_SCORING_TYPES.map(t => (
-                                                            <SelectItem key={t.id || 'standard'} value={t.id || 'standard'}>{t.label}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeRow(cat.id, row.id)}>
-                                                    <Trash2 size={12} />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Score Ranges */}
-                        <div className="border rounded p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-xs font-bold uppercase tracking-wide">Weightage & Score Ranges</Label>
-                                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addScoreRange}>
-                                    <Plus size={12} /> Add Row
-                                </Button>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-xs border-collapse min-w-[700px]">
-                                    <thead>
-                                        <tr className="bg-slate-50 text-left">
-                                            <th className="p-1 border">Parameter</th>
-                                            <th className="p-1 border w-20">Category Link</th>
-                                            <th className="p-1 border w-20">Weight</th>
-                                            <th className="p-1 border w-24">Poor</th>
-                                            <th className="p-1 border w-24">Average</th>
-                                            <th className="p-1 border w-24">V. Good</th>
-                                            <th className="p-1 border w-24">Excellent</th>
-                                            <th className="p-1 border w-8"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {config.scoreRanges.map((row, idx) => (
-                                            <tr key={row.id}>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.label} onChange={(e) => updateScoreRange(idx, 'label', e.target.value)} /></td>
-                                                <td className="p-1 border">
-                                                    <Select value={row.catId || 'none'} onValueChange={(v) => updateScoreRange(idx, 'catId', v === 'none' ? null : v)}>
-                                                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="none">None (e.g. Attendance)</SelectItem>
-                                                            {config.categories.map(c => (
-                                                                <SelectItem key={c.id} value={c.id}>{c.category.split('\n')[0].slice(0, 30)}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </td>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.weight} onChange={(e) => updateScoreRange(idx, 'weight', e.target.value)} /></td>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.poor} onChange={(e) => updateScoreRange(idx, 'poor', e.target.value)} /></td>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.avg} onChange={(e) => updateScoreRange(idx, 'avg', e.target.value)} /></td>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.good} onChange={(e) => updateScoreRange(idx, 'good', e.target.value)} /></td>
-                                                <td className="p-1 border"><Input className="h-7 text-xs" value={row.excel} onChange={(e) => updateScoreRange(idx, 'excel', e.target.value)} /></td>
-                                                <td className="p-1 border text-center">
-                                                    <Button size="icon" variant="outline" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => removeScoreRange(idx)}>
-                                                        <Trash2 size={12} />
-                                                    </Button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <p className={`text-[10px] ${totalWeightage === 1 ? 'text-slate-400' : 'text-amber-600 font-medium'}`}>
-                                Total weightage: {totalWeightage} {totalWeightage === 1 ? '' : '(should typically add up to 1.0 / 100%)'}
-                            </p>
-                        </div>
-
-                        {/* Evaluation Legends */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {[{ key: 'cycleTime', title: 'Evaluation Criteria: Cycle Time' }, { key: 'otherCriteria', title: 'Evaluation Criteria: Quality/Discipline/Safety/10-Cycle' }].map(({ key, title }) => (
-                                <div key={key} className="border rounded p-3 space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <Label className="text-xs font-bold uppercase tracking-wide">{title}</Label>
-                                        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1" onClick={() => addLegendItem(key)}>
-                                            <Plus size={10} /> Add
-                                        </Button>
-                                    </div>
-                                    {config.evaluationLegends[key].map((item, idx) => (
-                                        <div key={idx} className="grid grid-cols-[60px_1fr_28px] gap-2 items-start">
-                                            <Input className="h-8 text-xs" value={item.score} onChange={(e) => updateLegendItem(key, idx, 'score', e.target.value)} placeholder="Score" />
-                                            <Input className="h-8 text-xs" value={item.label} onChange={(e) => updateLegendItem(key, idx, 'label', e.target.value)} placeholder="Description" />
-                                            <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeLegendItem(key, idx)}>
-                                                <Trash2 size={12} />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* ── Live Sheet Preview ─────────────────────────────────── */}
+                        {/* ── Live Sheet Preview (Excel-like in-place editor) ───────── */}
                         <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wide">Live Sheet Preview</Label>
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <Label className="text-xs font-bold uppercase tracking-wide">Live Sheet Preview</Label>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCategory}>
+                                        <Plus size={12} /> Category
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addScoreRange}>
+                                        <Plus size={12} /> Score Range
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLegendItem('cycleTime')}>
+                                        <Plus size={12} /> Cycle Time Legend
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLegendItem('otherCriteria')}>
+                                        <Plus size={12} /> Other Criteria Legend
+                                    </Button>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400">
+                                Click a label, mark, or description on the sheet to edit it. Hover a cell to reveal a delete button.
+                            </p>
                             <div className="border-2 border-black overflow-x-auto bg-white">
                                 <div className="min-w-[2200px] p-3 text-black">
                                     <div className="border border-black">
@@ -717,15 +605,48 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                                                 {rowIdx === 0 && (
                                                                     <>
                                                                         <td rowSpan={cat.rows.length} className="border-r border-black text-center font-bold align-middle bg-gray-50/40">{catIdx + 1}</td>
-                                                                        <td rowSpan={cat.rows.length} className="border-r border-black p-1 font-bold align-middle bg-gray-50/40 whitespace-pre-line">{cat.category}</td>
+                                                                        <td rowSpan={cat.rows.length} className="relative group border-r border-black p-1 font-bold align-middle bg-gray-50/40">
+                                                                            <EditableCell
+                                                                                multiline
+                                                                                value={cat.category}
+                                                                                onCommit={(v) => updateCategoryField(cat.id, 'category', v)}
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                title="Delete category"
+                                                                                onClick={() => removeCategory(cat.id)}
+                                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                            >✕</button>
+                                                                        </td>
                                                                     </>
                                                                 )}
-                                                                <td className="border-r border-black p-1 text-left">
-                                                                    {row.label}
-                                                                    {row.type === 'cycle' && <span className="ml-1 text-[8px] text-indigo-600 font-bold">[10 readings + avg/day]</span>}
-                                                                    {row.type === 'cycle_detailed' && <span className="ml-1 text-[8px] text-indigo-600 font-bold">[Target/Actual/Achv/Score per day]</span>}
+                                                                <td className="relative group border-r border-black p-1 text-left">
+                                                                    <EditableCell
+                                                                        multiline
+                                                                        value={row.label}
+                                                                        onCommit={(v) => updateRowField(cat.id, row.id, 'label', v)}
+                                                                    />
+                                                                    <div className="mt-0.5">
+                                                                        <EditableSelect
+                                                                            value={row.type || 'standard'}
+                                                                            options={ROW_SCORING_TYPES.map(t => ({ value: t.id || 'standard', label: t.label }))}
+                                                                            onCommit={(v) => updateRowField(cat.id, row.id, 'type', v === 'standard' ? '' : v)}
+                                                                            className="text-[8px] text-indigo-600 font-bold"
+                                                                        />
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Delete check item"
+                                                                        onClick={() => removeRow(cat.id, row.id)}
+                                                                        className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                    >✕</button>
                                                                 </td>
-                                                                <td className="border-r border-black text-center font-bold">{row.weight}</td>
+                                                                <td className="border-r border-black text-center font-bold">
+                                                                    <EditableCell
+                                                                        value={String(row.weight ?? '')}
+                                                                        onCommit={(v) => updateRowField(cat.id, row.id, 'weight', v)}
+                                                                    />
+                                                                </td>
                                                                 {DAY_NUMBERS.map(d => (
                                                                     <td key={d} className={`border-r border-black text-center ${d === 6 ? 'bg-amber-50 text-amber-700 font-bold' : 'text-blue-700'}`}>
                                                                         {sampleDayValue(row, d)}
@@ -738,10 +659,29 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                                                 )}
                                                             </tr>
                                                         ))}
+                                                        <tr className="border-b border-black">
+                                                            <td colSpan={3} className="p-0.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => addRow(cat.id)}
+                                                                    className="text-[9px] text-blue-600 hover:underline flex items-center gap-0.5 px-1"
+                                                                >
+                                                                    <Plus size={9} /> Add Check Item
+                                                                </button>
+                                                            </td>
+                                                            <td className="border-r border-black" />
+                                                            {DAY_NUMBERS.map(d => <td key={d} className="border-r border-black" />)}
+                                                            <td />
+                                                        </tr>
                                                         {cat.totalMark ? (
                                                             <tr className="border-b border-black bg-yellow-200 font-bold">
                                                                 <td colSpan={3} className="text-right p-1">Total Mark:</td>
-                                                                <td className="border-r border-black text-center">{cat.totalMark}</td>
+                                                                <td className="border-r border-black text-center">
+                                                                    <EditableCell
+                                                                        value={String(cat.totalMark ?? '')}
+                                                                        onCommit={(v) => updateCategoryField(cat.id, 'totalMark', v)}
+                                                                    />
+                                                                </td>
                                                                 {DAY_NUMBERS.map(d => <td key={d} className="border-r border-black" />)}
                                                                 <td />
                                                             </tr>
@@ -750,12 +690,23 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                                             <>
                                                                 <tr className="border-b border-black bg-yellow-100 font-bold">
                                                                     <td colSpan={3} className="text-right p-1">Target % :</td>
-                                                                    <td className="border-r border-black text-center">{cat.target}</td>
+                                                                    <td className="border-r border-black text-center">
+                                                                        <EditableCell
+                                                                            value={String(cat.target ?? '')}
+                                                                            onCommit={(v) => updateCategoryField(cat.id, 'target', v)}
+                                                                        />
+                                                                    </td>
                                                                     {DAY_NUMBERS.map(d => <td key={d} className="border-r border-black text-center">100%</td>)}
                                                                     <td />
                                                                 </tr>
                                                                 <tr className="border-b border-black bg-yellow-50 font-bold">
-                                                                    <td colSpan={3} className="text-right p-1">{cat.actualLabel || "Actual %:"}</td>
+                                                                    <td colSpan={3} className="text-right p-1">
+                                                                        <EditableCell
+                                                                            value={cat.actualLabel || ''}
+                                                                            placeholder="Actual %:"
+                                                                            onCommit={(v) => updateCategoryField(cat.id, 'actualLabel', v)}
+                                                                        />
+                                                                    </td>
                                                                     <td className="border-r border-black text-center italic">-</td>
                                                                     {DAY_NUMBERS.map(d => <td key={d} className="border-r border-black" />)}
                                                                     <td />
@@ -773,36 +724,57 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                     </p>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
-                                        <div className="border border-black overflow-hidden">
-                                            <table className="w-full border-collapse text-[10px]">
-                                                <thead>
-                                                    <tr className="bg-gray-50 border-b border-black font-bold">
-                                                        <th className="border-r border-black p-1 text-left">Parameters</th>
-                                                        <th className="border-r border-black p-1">Weight</th>
-                                                        <th className="border-r border-black p-1">Poor</th>
-                                                        <th className="border-r border-black p-1">Average</th>
-                                                        <th className="border-r border-black p-1">V.Good</th>
-                                                        <th className="p-1">Excellent</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {config.scoreRanges.map(row => (
-                                                        <tr key={row.id} className="border-b border-black">
-                                                            <td className="border-r border-black p-1 font-bold">{row.label}</td>
-                                                            <td className="border-r border-black text-center font-bold">{row.weight}</td>
-                                                            <td className="border-r border-black text-center text-gray-500 italic">{row.poor}</td>
-                                                            <td className="border-r border-black text-center text-gray-500 italic">{row.avg}</td>
-                                                            <td className="border-r border-black text-center text-gray-500 italic">{row.good}</td>
-                                                            <td className="text-center text-gray-500 italic">{row.excel}</td>
+                                        <div>
+                                            <div className="border border-black overflow-hidden">
+                                                <table className="w-full border-collapse text-[10px]">
+                                                    <thead>
+                                                        <tr className="bg-gray-50 border-b border-black font-bold">
+                                                            <th className="border-r border-black p-1 text-left">Parameters</th>
+                                                            <th className="border-r border-black p-1 w-20">Category Link</th>
+                                                            <th className="border-r border-black p-1">Weight</th>
+                                                            <th className="border-r border-black p-1">Poor</th>
+                                                            <th className="border-r border-black p-1">Average</th>
+                                                            <th className="border-r border-black p-1">V.Good</th>
+                                                            <th className="p-1">Excellent</th>
                                                         </tr>
-                                                    ))}
-                                                    <tr className="font-bold bg-gray-100">
-                                                        <td className="border-r border-black p-1">Total</td>
-                                                        <td className="border-r border-black text-center">{totalWeightage}</td>
-                                                        <td colSpan={4} />
-                                                    </tr>
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {config.scoreRanges.map((row, idx) => (
+                                                            <tr key={row.id} className="border-b border-black">
+                                                                <td className="relative group border-r border-black p-1 font-bold">
+                                                                    <EditableCell value={row.label} onCommit={(v) => updateScoreRange(idx, 'label', v)} />
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Delete score range"
+                                                                        onClick={() => removeScoreRange(idx)}
+                                                                        className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                    >✕</button>
+                                                                </td>
+                                                                <td className="border-r border-black text-center text-[9px]">
+                                                                    <EditableSelect
+                                                                        value={row.catId || 'none'}
+                                                                        options={[{ value: 'none', label: 'None' }, ...config.categories.map(c => ({ value: c.id, label: c.category.split('\n')[0].slice(0, 30) }))]}
+                                                                        onCommit={(v) => updateScoreRange(idx, 'catId', v === 'none' ? null : v)}
+                                                                    />
+                                                                </td>
+                                                                <td className="border-r border-black text-center font-bold"><EditableCell value={String(row.weight ?? '')} onCommit={(v) => updateScoreRange(idx, 'weight', v)} /></td>
+                                                                <td className="border-r border-black text-center text-gray-500 italic"><EditableCell value={row.poor} onCommit={(v) => updateScoreRange(idx, 'poor', v)} /></td>
+                                                                <td className="border-r border-black text-center text-gray-500 italic"><EditableCell value={row.avg} onCommit={(v) => updateScoreRange(idx, 'avg', v)} /></td>
+                                                                <td className="border-r border-black text-center text-gray-500 italic"><EditableCell value={row.good} onCommit={(v) => updateScoreRange(idx, 'good', v)} /></td>
+                                                                <td className="text-center text-gray-500 italic"><EditableCell value={row.excel} onCommit={(v) => updateScoreRange(idx, 'excel', v)} /></td>
+                                                            </tr>
+                                                        ))}
+                                                        <tr className="font-bold bg-gray-100">
+                                                            <td className="border-r border-black p-1">Total</td>
+                                                            <td className="border-r border-black text-center">{totalWeightage}</td>
+                                                            <td colSpan={4} />
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <p className={`text-[10px] mt-1 ${totalWeightage === 1 ? 'text-slate-400' : 'text-amber-600 font-medium'}`}>
+                                                Total weightage: {totalWeightage} {totalWeightage === 1 ? '' : '(should typically add up to 1.0 / 100%)'}
+                                            </p>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
                                             {[{ key: 'cycleTime', title: 'Cycle Time' }, { key: 'otherCriteria', title: 'Quality/Discipline/Safety' }].map(({ key, title }) => (
@@ -816,8 +788,18 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                                         <tbody>
                                                             {config.evaluationLegends[key].map((item, idx) => (
                                                                 <tr key={idx} className="border-b border-black">
-                                                                    <td className="w-8 border-r border-black text-center font-bold bg-gray-50">{item.score}</td>
-                                                                    <td className="p-1 italic">{item.label}</td>
+                                                                    <td className="w-8 border-r border-black text-center font-bold bg-gray-50">
+                                                                        <EditableCell value={String(item.score ?? '')} onCommit={(v) => updateLegendItem(key, idx, 'score', v)} />
+                                                                    </td>
+                                                                    <td className="relative group p-1 italic">
+                                                                        <EditableCell value={item.label} onCommit={(v) => updateLegendItem(key, idx, 'label', v)} />
+                                                                        <button
+                                                                            type="button"
+                                                                            title="Delete legend row"
+                                                                            onClick={() => removeLegendItem(key, idx)}
+                                                                            className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                        >✕</button>
+                                                                    </td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>
@@ -838,10 +820,20 @@ const SixteenDayMonitoringLayoutEditor = () => {
                         </div>
 
                         {/* Save */}
-                        <div className="border rounded p-4 flex justify-between items-center">
-                            <Button variant="outline" className="gap-2" onClick={fetchHistory}>
-                                <History size={14} /> History
-                            </Button>
+                        <div className="sticky bottom-0 bg-white border rounded p-4 flex justify-between items-center gap-3 flex-wrap shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+                            <div className="flex items-center gap-3">
+                                <Button variant="outline" className="gap-2" onClick={fetchHistory}>
+                                    <History size={14} /> History
+                                </Button>
+                                {isDirty && (
+                                    <>
+                                        <span className="text-xs text-amber-600 font-medium">You have unsaved changes</span>
+                                        <Button variant="outline" size="sm" className="text-xs" onClick={fetchConfig}>
+                                            Reset to Saved
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
                             <Button onClick={handleOpenSaveModal} className="gap-2 bg-blue-600 hover:bg-blue-700">
                                 <Save size={16} /> Save Layout & Update Revision
                             </Button>

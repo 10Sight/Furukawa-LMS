@@ -242,6 +242,11 @@ const LearningComparisonDetail = () => {
                     </Button>
                     <div className="flex items-center gap-3">
                         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Learning Comparison</Badge>
+                        {content.groupName && (
+                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                                📁 Group: {content.groupName}
+                            </Badge>
+                        )}
                     </div>
                 </div>
 

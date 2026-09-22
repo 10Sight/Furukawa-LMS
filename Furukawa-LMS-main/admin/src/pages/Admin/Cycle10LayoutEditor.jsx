@@ -33,6 +33,7 @@ import {
     normalizeConfig,
     getLayoutGroupArray,
 } from "@/utils/tenCycleSheetConfig";
+import { EditableCell } from "@/components/admin/LayoutEditorCells";
 
 const SHEET_KEY = 'ten-cycle-sheet';
 
@@ -76,57 +77,6 @@ const buildSampleRows = (draft, formType) => {
 const Mark = ({ value }) => (
     <span className={value === 'X' ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>{value}</span>
 );
-
-// Click-to-edit text: renders as plain text until clicked, then swaps to an
-// autofocused input. Enter/blur commits (only if the value actually changed),
-// Escape reverts. Keystrokes stay in local `draft` state so typing never
-// triggers a fullConfig re-render — only the commit does.
-const EditableCell = ({ value, onCommit, placeholder = '', className = '', inputClassName = '' }) => {
-    const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState(value ?? '');
-
-    useEffect(() => {
-        if (!editing) setDraft(value ?? '');
-    }, [value, editing]);
-
-    const commit = () => {
-        setEditing(false);
-        if (draft !== value) onCommit(draft);
-    };
-    const cancel = () => {
-        setDraft(value ?? '');
-        setEditing(false);
-    };
-
-    if (editing) {
-        return (
-            <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={commit}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-                    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-                }}
-                className={`w-full bg-yellow-50 outline-none border border-blue-400 rounded-sm px-0.5 ${inputClassName}`}
-            />
-        );
-    }
-    return (
-        <span
-            role="button"
-            tabIndex={0}
-            onClick={() => setEditing(true)}
-            onKeyDown={(e) => { if (e.key === 'Enter') setEditing(true); }}
-            title="Click to edit"
-            className={`cursor-text hover:bg-yellow-50 hover:outline hover:outline-1 hover:outline-blue-300 rounded-sm px-0.5 ${className}`}
-        >
-            {value || placeholder}
-        </span>
-    );
-};
 
 // Dedicated 10-Cycle Check Sheet layout editor: scope/form-type picker, direct
 // document-control fields, Section A/B/C editors, a live high-fidelity sheet

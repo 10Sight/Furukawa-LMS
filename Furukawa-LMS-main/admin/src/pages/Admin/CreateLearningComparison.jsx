@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Video,
@@ -210,12 +210,26 @@ const SidePanel = ({
 const CreateLearningComparison = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({ title: '', beforeDescription: '', afterDescription: '' });
+    const [formData, setFormData] = useState({ title: '', groupName: '', beforeDescription: '', afterDescription: '' });
     const [files, setFiles] = useState(emptyFiles());
     const [selectedTypeBefore, setSelectedTypeBefore] = useState('beforeVideo');
     const [selectedTypeAfter, setSelectedTypeAfter] = useState('afterVideo');
     const [transfer, setTransfer] = useState({ open: false, fileName: '', percent: 0, loaded: 0, total: 0 });
+    const [groups, setGroups] = useState([]);
+    const [isNewGroup, setIsNewGroup] = useState(false);
     const abortControllerRef = useRef(null);
+
+    useEffect(() => {
+        const fetchGroups = async () => {
+            try {
+                const res = await axiosInstance.get('/api/learning-comparisons/groups');
+                setGroups(res.data.data || []);
+            } catch {
+                // Non-critical: group suggestions are optional
+            }
+        };
+        fetchGroups();
+    }, []);
 
     const handleFileChange = (e, field) => {
         const newFiles = Array.from(e.target.files);
@@ -255,6 +269,7 @@ const CreateLearningComparison = () => {
         try {
             const data = new FormData();
             data.append('title', formData.title);
+            data.append('groupName', formData.groupName || '');
             data.append('beforeDescription', formData.beforeDescription);
             data.append('afterDescription', formData.afterDescription);
 
@@ -337,6 +352,47 @@ const CreateLearningComparison = () => {
                                     value={formData.title}
                                     onChange={(e) => setFormData(p => ({ ...p, title: e.target.value }))}
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="group">Group</Label>
+                                {isNewGroup ? (
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            id="group"
+                                            autoFocus
+                                            placeholder="Enter new group name"
+                                            value={formData.groupName}
+                                            onChange={(e) => setFormData(p => ({ ...p, groupName: e.target.value }))}
+                                        />
+                                        {groups.length > 0 && (
+                                            <Button type="button" variant="outline" size="sm" onClick={() => { setIsNewGroup(false); setFormData(p => ({ ...p, groupName: '' })); }}>
+                                                Cancel
+                                            </Button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <Select
+                                        value={formData.groupName}
+                                        onValueChange={(val) => {
+                                            if (val === '__new__') { setIsNewGroup(true); setFormData(p => ({ ...p, groupName: '' })); }
+                                            else setFormData(p => ({ ...p, groupName: val }));
+                                        }}
+                                    >
+                                        <SelectTrigger id="group" className="w-full">
+                                            <SelectValue placeholder="Select or create a group" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {groups.map(g => (
+                                                <SelectItem key={g.groupName} value={g.groupName}>
+                                                    {g.groupName} <span className="text-gray-400">({g.count})</span>
+                                                </SelectItem>
+                                            ))}
+                                            <SelectItem value="__new__">
+                                                <span className="flex items-center gap-1 text-blue-600 font-medium"><Plus className="w-3.5 h-3.5" /> New Group</span>
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                )}
                             </div>
                         </CardContent>
                     </Card>

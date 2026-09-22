@@ -9,10 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
-    Edit2,
     History,
     Loader2,
     Save,
@@ -26,73 +23,20 @@ import {
     XCircle as RejectIcon,
     Trash2,
     Printer,
-    Lock
+    Lock,
+    Plus
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parse } from "date-fns";
-
-const DEFAULT_MONITORING_CONFIG = [
-    {
-        id: "cat1",
-        category: "10 Cycle Check :\n1st time - 4 Part\n2nd time- 3 Part\n3rd time- 3 Part",
-        rows: [
-            { id: "row1_1", label: "Follow the work sequence as per WI & Check the all check point as per WI", weight: 2, type: "cycle_detailed" },
-            { id: "row1_2", label: "Operator should complete the Job in given cycle time", weight: 2, type: "cycle_detailed", hasCT: true, ctLabel: "C/T" },
-            { id: "row1_3", label: "Adherence of 4'S (Sort. arrangement. clean. adherence)", weight: 2, type: "cycle_detailed" }
-        ],
-        totalMark: 6,
-        target: "100%"
-    },
-    {
-        id: "cat2",
-        category: "Quality / System",
-        rows: [
-            { id: "row2_1", label: "Operator should know about purpose of work & impact at customer end", weight: 2 },
-            { id: "row2_2", label: "Check an awareness of operator about defect in product & past defect in product", weight: 2 },
-            { id: "row2_3", label: "Operator should know about OK & NG part judgment", weight: 2 },
-            { id: "row2_4", label: "Operator should about NC part handling & follow during process", weight: 2 }
-        ],
-        totalMark: 8,
-        target: "100%"
-    },
-    {
-        id: "cat3",
-        category: "Non defective products Produced",
-        rows: [
-            { id: "prodPlan", label: "Total Prod. plan", weight: "-" },
-            { id: "defectFree", label: "Defect free product", weight: "-" }
-        ],
-        totalMark: 100,
-        target: "100%",
-        hasTargetInGrid: true,
-        actualLabel: "Actual %"
-    },
-    {
-        id: "cat4",
-        category: "Discipline",
-        rows: [
-            { id: "row4_1", label: "Attends the daily meeting with good level of listening and understanding", weight: 2 },
-            { id: "row4_2", label: "Operator should aware about daily machine check point and clean machine on daily basis before production start", weight: 2 },
-            { id: "row4_3", label: "Whenever if any defect or work related problem is there , he immediately contacts with line leader or his senior person with doing any delay or sitting idle.", weight: 2 },
-            { id: "row4_4", label: "During any break operator clear the WIP / Insp. Part from his / her station and move to next process, leave work station after completing the job.", weight: 2 }
-        ],
-        totalMark: 8,
-        target: "100 %"
-    },
-    {
-        id: "cat5",
-        category: "Safety",
-        rows: [
-            { id: "row5_1", label: "Operator should aware about Safety principles", weight: 2 },
-            { id: "row5_2", label: "Operator should wear PPE as per PPE matrix", weight: 2 }
-        ],
-        totalMark: 4,
-        target: "100%",
-        actualLabel: "% age followed"
-    },
-];
+import { EditableCell, EditableSelect } from "@/components/admin/LayoutEditorCells";
+import {
+    normalizeConfig,
+    buildDefaultConfig,
+    computeTotalWeightage,
+    ROW_TYPES,
+} from "@/utils/threeDayMonitoringConfig";
 
 
 const ThreeDayMonitoringSheet = ({
@@ -136,9 +80,11 @@ const ThreeDayMonitoringSheet = ({
     const isOwner = !!studentId && String(authUser?.id || authUser?._id) === String(studentId);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [config, setConfig] = useState(DEFAULT_MONITORING_CONFIG);
-    const [isEditingLayout, setIsEditingLayout] = useState(false);
-    const [configJson, setConfigJson] = useState('');
+    const [config, setConfig] = useState(buildDefaultConfig());
+    // Snapshot of config as last loaded/saved from the server — drives the
+    // "unsaved changes" indicator in the Design Mode toolbar.
+    const [savedSnapshot, setSavedSnapshot] = useState(null);
+    const isConfigDirty = !!config && JSON.stringify(config) !== savedSnapshot;
     const [configRemark, setConfigRemark] = useState('');
     const [history, setHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
@@ -388,7 +334,11 @@ const ThreeDayMonitoringSheet = ({
         try {
             const response = await axiosInstance.get(`/api/progress/three-day-monitoring/config/${departmentId}`);
             if (response.data.success && response.data.data.config) {
-                setConfig(response.data.data.config);
+                const loaded = normalizeConfig(response.data.data.config);
+                setConfig(loaded);
+                setSavedSnapshot(JSON.stringify(loaded));
+            } else {
+                setSavedSnapshot(JSON.stringify(config));
             }
         } catch (error) {
             console.error("Error fetching config:", error);
@@ -399,21 +349,177 @@ const ThreeDayMonitoringSheet = ({
     const handleSaveConfig = async () => {
         try {
             setSaving(true);
-            const newConfig = JSON.parse(configJson);
+            const newConfig = normalizeConfig(config);
             await axiosInstance.post(`/api/progress/three-day-monitoring/config/save`, {
                 departmentId,
                 config: newConfig,
                 remark: configRemark
             });
             setConfig(newConfig);
-            setIsEditingLayout(false);
+            setSavedSnapshot(JSON.stringify(newConfig));
+            setConfigRemark('');
             toast.success("Configuration saved successfully");
         } catch (error) {
             console.error("Error saving config:", error);
-            toast.error("Invalid JSON or server error");
+            toast.error("Failed to save configuration");
         } finally {
             setSaving(false);
         }
+    };
+
+    // ── Category / Row editors (Design Mode only) ───────────────────────────
+    const updateCategoryField = (catId, field, value) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            const cat = next.categories.find(c => c.id === catId);
+            if (cat) cat[field] = value;
+            return next;
+        });
+    };
+
+    const addCategory = () => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            const n = next.categories.length + 1;
+            const rand = () => Math.random().toString(36).slice(2, 8);
+            next.categories.push({
+                id: `cat_${Date.now()}_${rand()}`,
+                category: `New Category ${n}`,
+                rows: [{ id: `row_${Date.now()}_${rand()}`, label: 'New check item', weight: 2 }],
+                totalMark: 2,
+                target: '100%',
+            });
+            return next;
+        });
+    };
+
+    const removeCategory = (catId) => {
+        if (catId === 'cat3') {
+            toast.error("The Production category's structure can't be removed here");
+            return;
+        }
+        setConfig(prev => {
+            if (!prev) return prev;
+            if (prev.categories.length <= 1) {
+                toast.error("At least one category is required");
+                return prev;
+            }
+            const next = JSON.parse(JSON.stringify(prev));
+            next.categories = next.categories.filter(c => c.id !== catId);
+            next.scoreRanges.forEach(r => { if (r.catId === catId) r.catId = null; });
+            return next;
+        });
+    };
+
+    const updateRowField = (catId, rowId, field, value) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            const cat = next.categories.find(c => c.id === catId);
+            const row = cat?.rows.find(r => r.id === rowId);
+            if (row) row[field] = value;
+            return next;
+        });
+    };
+
+    const addRow = (catId) => {
+        if (catId === 'cat3') {
+            toast.error("The Production category's rows can't be added here");
+            return;
+        }
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            const cat = next.categories.find(c => c.id === catId);
+            if (!cat) return prev;
+            cat.rows.push({ id: `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, label: 'New check item', weight: 2 });
+            return next;
+        });
+    };
+
+    const removeRow = (catId, rowId) => {
+        if (catId === 'cat3') {
+            toast.error("The Production category's rows can't be removed here");
+            return;
+        }
+        setConfig(prev => {
+            if (!prev) return prev;
+            const cat = prev.categories.find(c => c.id === catId);
+            if (!cat || cat.rows.length <= 1) {
+                toast.error("Each category needs at least one check item");
+                return prev;
+            }
+            const next = JSON.parse(JSON.stringify(prev));
+            const nextCat = next.categories.find(c => c.id === catId);
+            nextCat.rows = nextCat.rows.filter(r => r.id !== rowId);
+            return next;
+        });
+    };
+
+    // ── Score range editors ─────────────────────────────────────────────────
+    const updateScoreRange = (idx, field, value) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            next.scoreRanges[idx][field] = value;
+            return next;
+        });
+    };
+
+    const addScoreRange = () => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            next.scoreRanges.push({ id: `score_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, catId: null, label: 'New Parameter', weight: 0.1, poor: '0-70', avg: '71-80', good: '81-90', excel: '91-100' });
+            return next;
+        });
+    };
+
+    const removeScoreRange = (idx) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            if (prev.scoreRanges.length <= 1) {
+                toast.error("At least one score range is required");
+                return prev;
+            }
+            const next = JSON.parse(JSON.stringify(prev));
+            next.scoreRanges.splice(idx, 1);
+            return next;
+        });
+    };
+
+    // ── Evaluation legend editors ───────────────────────────────────────────
+    const updateLegendItem = (group, idx, field, value) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            next.evaluationLegends[group][idx][field] = value;
+            return next;
+        });
+    };
+
+    const addLegendItem = (group) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            next.evaluationLegends[group].push({ score: next.evaluationLegends[group].length, label: 'New criteria' });
+            return next;
+        });
+    };
+
+    const removeLegendItem = (group, idx) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            if (prev.evaluationLegends[group].length <= 1) {
+                toast.error("At least one legend row is required");
+                return prev;
+            }
+            const next = JSON.parse(JSON.stringify(prev));
+            next.evaluationLegends[group].splice(idx, 1);
+            return next;
+        });
     };
 
     const fetchHistory = async () => {
@@ -568,7 +674,7 @@ const ThreeDayMonitoringSheet = ({
             }
         };
 
-        config.forEach((cat, catIdx) => {
+        config.categories.forEach((cat, catIdx) => {
             const catId = cat.id || `cat${catIdx + 1}`;
             const catTotalMark = typeof cat.totalMark === 'number' ? cat.totalMark : parseFloat(cat.totalMark) || 0;
 
@@ -677,7 +783,7 @@ const ThreeDayMonitoringSheet = ({
         updateKey('attendance_total_score', attendanceAvgPerc > 0 ? `${attendanceAvgPerc}%` : "");
 
         // Individual Evaluation (Col 17) Column Calculations
-        config.forEach((cat, catIdx) => {
+        config.categories.forEach((cat, catIdx) => {
             const catId = cat.id || `cat${catIdx + 1}`;
             const catTotalMark = typeof cat.totalMark === 'number' ? cat.totalMark : parseFloat(cat.totalMark) || 0;
             let catEvalSum = 0;
@@ -719,22 +825,16 @@ const ThreeDayMonitoringSheet = ({
             }
         });
 
-        // Summary Table Automation
-        const summaryRows = [
-            { id: 'score1', catId: 'cat1', weight: 0.4 },
-            { id: 'score2', catId: 'cat2', weight: 0.2 },
-            { id: 'score3', catId: 'cat3', weight: 0.1 },
-            { id: 'score4', catId: 'cat4', weight: 0.1 },
-            { id: 'score5', catId: 'cat5', weight: 0.1 },
-            { id: 'score6', catId: null, weight: 0.1, customVal: attendanceAvgPerc }
-        ];
-
+        // Summary Table Automation — weight comes from config.scoreRanges (the same
+        // data the Overall Score Assessment table displays and admins edit), not a
+        // separate hardcoded copy, so an edited weight actually changes the score.
         let grandTotalScore = 0;
-        summaryRows.forEach(row => {
-            const avgPercStr = row.catId ? (newGridData[`${row.catId}_eval_actual`] || "0%") : `${row.customVal}%`;
+        config.scoreRanges.forEach(row => {
+            const weight = parseFloat(row.weight) || 0;
+            const avgPercStr = row.catId ? (newGridData[`${row.catId}_eval_actual`] || "0%") : `${attendanceAvgPerc}%`;
             const avgPercVal = parseInt(avgPercStr) || 0;
             updateKey(`summary_avg_${row.id}`, avgPercStr !== "0%" ? avgPercStr : "");
-            const weightedScore = (avgPercVal / 100) * row.weight;
+            const weightedScore = (avgPercVal / 100) * weight;
             updateKey(`summary_weight_${row.id}`, weightedScore > 0 ? weightedScore.toFixed(2) : "");
             grandTotalScore += weightedScore;
         });
@@ -780,7 +880,7 @@ const ThreeDayMonitoringSheet = ({
         const day = `day${dayIdx}`;
         if (!gridData[`day_date_${dayIdx}`]) return false;
 
-        for (const cat of config) {
+        for (const cat of config.categories) {
             for (const row of cat.rows) {
                 if (row.id === 'defectFree') continue;
 
@@ -871,29 +971,15 @@ const ThreeDayMonitoringSheet = ({
                         )}
                         <div className="flex gap-1.5">
                             {canEditConfig && (
-                                <>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={fetchHistory}
-                                        className="gap-1.5 h-8 text-[11px]"
-                                    >
-                                        <History className="h-3.5 w-3.5" />
-                                        History
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            setConfigJson(JSON.stringify(config, null, 2));
-                                            setIsEditingLayout(true);
-                                        }}
-                                        className="gap-1.5 h-8 text-[11px]"
-                                    >
-                                        <Edit2 className="h-3.5 w-3.5" />
-                                        Edit Layout
-                                    </Button>
-                                </>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={fetchHistory}
+                                    className="gap-1.5 h-8 text-[11px]"
+                                >
+                                    <History className="h-3.5 w-3.5" />
+                                    History
+                                </Button>
                             )}
                             <Button
                                 variant="outline"
@@ -1029,6 +1115,41 @@ const ThreeDayMonitoringSheet = ({
                         ))}
                     </div>
 
+                    {isDesignMode && canEditConfig && (
+                        <div className="mx-4 mb-3 border rounded p-3 bg-slate-50 space-y-2 not-prose">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <span className="text-xs font-bold uppercase tracking-wide text-slate-600">Layout Editor — click any label, mark, or description on the sheet to edit it</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCategory}>
+                                        <Plus size={12} /> Category
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addScoreRange}>
+                                        <Plus size={12} /> Score Range
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLegendItem('cycleTime')}>
+                                        <Plus size={12} /> Cycle Time Legend
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addLegendItem('otherCriteria')}>
+                                        <Plus size={12} /> Other Criteria Legend
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Input
+                                    className="h-8 text-xs max-w-md"
+                                    value={configRemark}
+                                    onChange={(e) => setConfigRemark(e.target.value)}
+                                    placeholder="Remark / change details (e.g. Added a new Quality/System checkpoint)"
+                                />
+                                {isConfigDirty && <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>}
+                                <Button size="sm" onClick={handleSaveConfig} disabled={saving || !configRemark.trim()} className="h-8 gap-1.5 text-xs bg-blue-600 hover:bg-blue-700">
+                                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                    Save Configuration
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Main Monitoring Table */}
                     <div className="border-l border-t border-black min-w-max">
                         <table className="w-full border-collapse text-[12px]">
@@ -1099,26 +1220,47 @@ const ThreeDayMonitoringSheet = ({
                                 </tr>
                             </thead>
                             <tbody>
-                                {config.map((cat, catIdx) => {
+                                {config.categories.map((cat, catIdx) => {
                                     const catId = cat.id || `cat${catIdx + 1}`;
                                     const catTotalMark = parseFloat(cat.totalMark) || 0;
                                     const catRowsCount = cat.rows.length;
-                                    const totalRowsInCat = cat.rows.reduce((acc, r) => acc + (r.id === 'prodPlan' ? 4 : (r.hasCT ? 2 : 1)), 0) + (cat.rows.some(r => r.id === 'prodPlan') ? 0 : 3);
+                                    const isProdCat = cat.rows.some(r => r.id === 'prodPlan');
+                                    // The extra +1 (only when the "+ Add Check Item" control row is actually
+                                    // rendered, i.e. Design Mode + canEditConfig, and never for the Production
+                                    // category) reserves a row for it — it relies on the isFirstRow
+                                    // S.No/Parameters/Evaluation cells' rowSpan to cover it, so the count must
+                                    // match the number of rows actually rendered exactly, in every mode.
+                                    const totalRowsInCat = cat.rows.reduce((acc, r) => acc + (r.id === 'prodPlan' ? 4 : (r.hasCT ? 2 : 1)), 0)
+                                        + (isProdCat ? 0 : (isDesignMode && canEditConfig ? 4 : 3));
 
                                     return cat.rows.map((row, rowIdx) => {
                                         const isFirstRow = rowIdx === 0;
                                         const isLastRow = rowIdx === cat.rows.length - 1;
 
                                         if (row.id === 'prodPlan') {
-                                            // Handle special Production Plan category
+                                            // Handle special Production Plan category — structure (row count,
+                                            // ids) is fixed and not editable here, but its text/numbers are.
+                                            const defectFreeRow = cat.rows.find(r => r.id === 'defectFree');
                                             return (
                                                 <React.Fragment key={row.id}>
                                                     {/* Plan Row */}
                                                     <tr>
                                                         <td className="border-r border-b border-black p-1 text-center font-bold" rowSpan={4}>{catIdx + 1}</td>
-                                                        <td className="border-r border-b border-black p-1 font-bold" rowSpan={4}>{cat.category}</td>
-                                                        <td className="border-r border-b border-black p-1">{row.label}</td>
-                                                        <td className="border-r border-b border-black p-1 text-center font-bold" rowSpan={4}>{cat.totalMark || "-"}</td>
+                                                        <td className="border-r border-b border-black p-1 font-bold" rowSpan={4}>
+                                                            {isDesignMode && canEditConfig ? (
+                                                                <EditableCell multiline value={cat.category} onCommit={(v) => updateCategoryField(cat.id, 'category', v)} />
+                                                            ) : cat.category}
+                                                        </td>
+                                                        <td className="border-r border-b border-black p-1">
+                                                            {isDesignMode && canEditConfig ? (
+                                                                <EditableCell multiline value={row.label} onCommit={(v) => updateRowField(cat.id, row.id, 'label', v)} />
+                                                            ) : row.label}
+                                                        </td>
+                                                        <td className="border-r border-b border-black p-1 text-center font-bold" rowSpan={4}>
+                                                            {isDesignMode && canEditConfig ? (
+                                                                <EditableCell value={String(cat.totalMark ?? '')} placeholder="-" onCommit={(v) => updateCategoryField(cat.id, 'totalMark', v)} />
+                                                            ) : (cat.totalMark || "-")}
+                                                        </td>
                                                         {[1, 2, 3].map(d => (
                                                             <td key={d} className="border-r border-b border-black p-0 h-10" colSpan={11}>
                                                                 <input
@@ -1140,7 +1282,11 @@ const ThreeDayMonitoringSheet = ({
                                                                 </div>
                                                                 <div className="flex border-b border-black">
                                                                     <div className="w-1/2 border-r border-black p-2 font-bold">Target %</div>
-                                                                    <div className="w-1/2 p-2 text-center font-bold text-[12px]">{cat.target || "100%"}</div>
+                                                                    <div className="w-1/2 p-2 text-center font-bold text-[12px]">
+                                                                        {isDesignMode && canEditConfig ? (
+                                                                            <EditableCell value={String(cat.target ?? '')} placeholder="100%" onCommit={(v) => updateCategoryField(cat.id, 'target', v)} />
+                                                                        ) : (cat.target || "100%")}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex border-b border-black">
                                                                     <div className="w-1/2 border-r border-black p-2 font-bold">Actual %</div>
@@ -1157,7 +1303,11 @@ const ThreeDayMonitoringSheet = ({
                                                     </tr>
                                                     {/* Actual Row */}
                                                     <tr>
-                                                        <td className="border-r border-b border-black p-2 font-semibold">Defect free product</td>
+                                                        <td className="border-r border-b border-black p-2 font-semibold">
+                                                            {isDesignMode && canEditConfig ? (
+                                                                <EditableCell multiline value={defectFreeRow?.label || ''} placeholder="Defect free product" onCommit={(v) => updateRowField(cat.id, 'defectFree', 'label', v)} />
+                                                            ) : (defectFreeRow?.label || "Defect free product")}
+                                                        </td>
                                                         {[1, 2, 3].map(d => {
                                                             const val = gridData[`defectFree_day${d}`] || "";
                                                             return (
@@ -1196,15 +1346,54 @@ const ThreeDayMonitoringSheet = ({
 
                                         if (row.id === 'defectFree') return null;
 
+                                        const showEditor = isDesignMode && canEditConfig;
                                         return (
                                             <React.Fragment key={row.id}>
                                                 <tr>
-                                                    {isFirstRow && <td className="border-r border-b border-black p-2 text-center font-bold bg-gray-50/20 text-[13px]" rowSpan={totalRowsInCat}>{catIdx + 1}</td>}
-                                                    {isFirstRow && <td className="border-r border-b border-black p-2 font-bold whitespace-pre-line text-[12px] align-top bg-gray-50/20" rowSpan={totalRowsInCat}>{cat.category}</td>}
-                                                    <td className="border-r border-b border-black p-2 whitespace-pre-line text-[12px] font-medium" rowSpan={row.hasCT ? 2 : 1}>
-                                                        {row.label}
+                                                    {isFirstRow && (
+                                                        <td className="border-r border-b border-black p-2 text-center font-bold bg-gray-50/20 text-[13px]" rowSpan={totalRowsInCat}>{catIdx + 1}</td>
+                                                    )}
+                                                    {isFirstRow && (
+                                                        <td className="relative group border-r border-b border-black p-2 font-bold whitespace-pre-line text-[12px] align-top bg-gray-50/20" rowSpan={totalRowsInCat}>
+                                                            {showEditor ? (
+                                                                <>
+                                                                    <EditableCell multiline value={cat.category} onCommit={(v) => updateCategoryField(cat.id, 'category', v)} />
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Delete category"
+                                                                        onClick={() => removeCategory(cat.id)}
+                                                                        className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                    >✕</button>
+                                                                </>
+                                                            ) : cat.category}
+                                                        </td>
+                                                    )}
+                                                    <td className="relative group border-r border-b border-black p-2 whitespace-pre-line text-[12px] font-medium" rowSpan={row.hasCT ? 2 : 1}>
+                                                        {showEditor ? (
+                                                            <>
+                                                                <EditableCell multiline value={row.label} onCommit={(v) => updateRowField(cat.id, row.id, 'label', v)} />
+                                                                <div className="mt-0.5">
+                                                                    <EditableSelect
+                                                                        value={row.type || 'standard'}
+                                                                        options={ROW_TYPES.map(t => ({ value: t.id || 'standard', label: t.label }))}
+                                                                        onCommit={(v) => updateRowField(cat.id, row.id, 'type', v === 'standard' ? '' : v)}
+                                                                        className="text-[8px] text-indigo-600 font-bold"
+                                                                    />
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    title="Delete check item"
+                                                                    onClick={() => removeRow(cat.id, row.id)}
+                                                                    className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                >✕</button>
+                                                            </>
+                                                        ) : row.label}
                                                     </td>
-                                                    <td className="border-r border-b border-black p-2 text-center font-bold text-[13px]">{row.hasCT ? "C/T" : (row.weight || "-")}</td>
+                                                    <td className="border-r border-b border-black p-2 text-center font-bold text-[13px]">
+                                                        {row.hasCT ? "C/T" : showEditor ? (
+                                                            <EditableCell value={String(row.weight ?? '')} placeholder="-" onCommit={(v) => updateRowField(cat.id, row.id, 'weight', v)} />
+                                                        ) : (row.weight || "-")}
+                                                    </td>
                                                     {[1, 2, 3].map(d => {
                                                         const day = `day${d}`;
                                                         if (row.type === 'cycle_detailed') {
@@ -1276,7 +1465,11 @@ const ThreeDayMonitoringSheet = ({
 
                                                 {row.hasCT && (
                                                     <tr className="bg-yellow-100/20">
-                                                        <td className="border-r border-b border-black p-1 text-center font-bold">{row.weight || "2"}</td>
+                                                        <td className="border-r border-b border-black p-1 text-center font-bold">
+                                                            {showEditor ? (
+                                                                <EditableCell value={String(row.weight ?? '')} placeholder="2" onCommit={(v) => updateRowField(cat.id, row.id, 'weight', v)} />
+                                                            ) : (row.weight || "2")}
+                                                        </td>
                                                         {[1, 2, 3].map(d => {
                                                             const day = `day${d}`;
                                                             return (
@@ -1311,11 +1504,15 @@ const ThreeDayMonitoringSheet = ({
                                                 )}
 
                                                 {/* Summary rows for each category */}
-                                                {isLastRow && !cat.rows.some(r => r.id === 'prodPlan') && (
+                                                {isLastRow && !isProdCat && (
                                                     <React.Fragment>
                                                         <tr className="bg-gray-50/50">
                                                             <td className="border-r border-b border-black p-1 font-bold" colSpan={1}>Total Mark:</td>
-                                                            <td className="border-r border-b border-black p-1 text-center font-bold">{cat.totalMark || "-"}</td>
+                                                            <td className="border-r border-b border-black p-1 text-center font-bold">
+                                                                {showEditor ? (
+                                                                    <EditableCell value={String(cat.totalMark ?? '')} placeholder="-" onCommit={(v) => updateCategoryField(cat.id, 'totalMark', v)} />
+                                                                ) : (cat.totalMark || "-")}
+                                                            </td>
                                                             {[1, 2, 3].map(d => (
                                                                 <td key={d} className="border-r border-b border-black p-1 text-center font-bold bg-yellow-300/80 text-black" colSpan={11}>
                                                                     {gridData[`${catId}_day${d}_total`] || ""}
@@ -1326,7 +1523,11 @@ const ThreeDayMonitoringSheet = ({
                                                             <td className="border-r border-b border-black p-1 font-bold" colSpan={1}>{catId === 'cat4' ? 'Target (Excellent -100%)' : 'Target %'}</td>
                                                             <td className="border-r border-b border-black p-1 text-center font-bold">-</td>
                                                             {[1, 2, 3].map(d => (
-                                                                <td key={d} className="border-r border-b border-black p-1 text-center font-bold" colSpan={11}>{cat.target || "100%"}</td>
+                                                                <td key={d} className="border-r border-b border-black p-1 text-center font-bold" colSpan={11}>
+                                                                    {showEditor && d === 1 ? (
+                                                                        <EditableCell value={String(cat.target ?? '')} placeholder="100%" onCommit={(v) => updateCategoryField(cat.id, 'target', v)} />
+                                                                    ) : (cat.target || "100%")}
+                                                                </td>
                                                             ))}
                                                         </tr>
                                                         <tr>
@@ -1344,6 +1545,20 @@ const ThreeDayMonitoringSheet = ({
                                                                 );
                                                             })}
                                                         </tr>
+                                                        {showEditor && (
+                                                            <tr>
+                                                                <td colSpan={2} className="border-r border-b border-black p-0.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => addRow(cat.id)}
+                                                                        className="text-[9px] text-blue-600 hover:underline flex items-center gap-0.5 px-1"
+                                                                    >
+                                                                        <Plus size={9} /> Add Check Item
+                                                                    </button>
+                                                                </td>
+                                                                {[1, 2, 3].map(d => <td key={d} className="border-r border-b border-black" colSpan={11} />)}
+                                                            </tr>
+                                                        )}
                                                     </React.Fragment>
                                                 )}
                                             </React.Fragment>
@@ -1362,9 +1577,28 @@ const ThreeDayMonitoringSheet = ({
                                                 <p className="text-center font-bold border-b border-black p-1 text-[11px]">Evaluation Criteria: Cycle time</p>
                                                 <table className="w-full text-[11px]">
                                                     <tbody>
-                                                        <tr><td className="border-r border-b border-black text-center font-bold w-8">0</td><td className="border-b border-black px-2">1% -30% of standard time</td></tr>
-                                                        <tr><td className="border-r border-b border-black text-center font-bold">1</td><td className="border-b border-black px-2">31%-50% of standard time</td></tr>
-                                                        <tr><td className="border-r border-black text-center font-bold">2</td><td className="px-2">51%-100% of standard time</td></tr>
+                                                        {config.evaluationLegends.cycleTime.map((item, idx) => (
+                                                            <tr key={idx} className={idx < config.evaluationLegends.cycleTime.length - 1 ? "border-b border-black" : ""}>
+                                                                <td className="relative group border-r border-black text-center font-bold w-8">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <EditableCell value={String(item.score ?? '')} onCommit={(v) => updateLegendItem('cycleTime', idx, 'score', v)} />
+                                                                    ) : item.score}
+                                                                </td>
+                                                                <td className="relative group px-2">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <>
+                                                                            <EditableCell value={item.label} onCommit={(v) => updateLegendItem('cycleTime', idx, 'label', v)} />
+                                                                            <button
+                                                                                type="button"
+                                                                                title="Delete legend row"
+                                                                                onClick={() => removeLegendItem('cycleTime', idx)}
+                                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                            >✕</button>
+                                                                        </>
+                                                                    ) : item.label}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1372,9 +1606,28 @@ const ThreeDayMonitoringSheet = ({
                                                 <p className="text-center font-bold border-b border-black p-1 text-[11px]">Evaluation Criteria: Quality / System, Discipline ,5S & Safety</p>
                                                 <table className="w-full text-[11px]">
                                                     <tbody>
-                                                        <tr><td className="border-r border-b border-black text-center font-bold w-8">0</td><td className="border-b border-black px-2">Not known/ Not adhere the rule</td></tr>
-                                                        <tr><td className="border-r border-b border-black text-center font-bold">1</td><td className="border-b border-black px-2">Partially known / Partially adhere the rule</td></tr>
-                                                        <tr><td className="border-r border-black text-center font-bold">2</td><td className="px-2">Known / Adhere the rule</td></tr>
+                                                        {config.evaluationLegends.otherCriteria.map((item, idx) => (
+                                                            <tr key={idx} className={idx < config.evaluationLegends.otherCriteria.length - 1 ? "border-b border-black" : ""}>
+                                                                <td className="relative group border-r border-black text-center font-bold w-8">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <EditableCell value={String(item.score ?? '')} onCommit={(v) => updateLegendItem('otherCriteria', idx, 'score', v)} />
+                                                                    ) : item.score}
+                                                                </td>
+                                                                <td className="relative group px-2">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <>
+                                                                            <EditableCell value={item.label} onCommit={(v) => updateLegendItem('otherCriteria', idx, 'label', v)} />
+                                                                            <button
+                                                                                type="button"
+                                                                                title="Delete legend row"
+                                                                                onClick={() => removeLegendItem('otherCriteria', idx)}
+                                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                            >✕</button>
+                                                                        </>
+                                                                    ) : item.label}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1435,19 +1688,44 @@ const ThreeDayMonitoringSheet = ({
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {[
-                                                            { label: "10 Cycle Check", weight: 0.4, id: "score1", ranges: ["70-80", "81-90", "91-95", "96-100"] },
-                                                            { label: "Quality / System", weight: 0.2, id: "score2", ranges: ["70-80", "81-90", "91-95", "96-100"] },
-                                                            { label: "Non defective products Produced", weight: 0.1, id: "score3", ranges: ["80-90", "91-95", "96-99", "100"] },
-                                                            { label: "Discipline", weight: 0.1, id: "score4", ranges: ["0-70", "71-80", "81-90", "91-100"] },
-                                                            { label: "Safety", weight: 0.1, id: "score5", ranges: ["90-95", "96-97", "98-99", "100"] },
-                                                            { label: "Attendance", weight: 0.1, id: "score6", ranges: ["50-75", "76-85", "86-90", "91-100"] },
-                                                        ].map((row, idx) => (
-                                                            <tr key={idx} className="h-10">
-                                                                <td className="border-r border-b border-black p-2 text-left font-bold bg-gray-50 text-[13px]">{row.label}</td>
-                                                                <td className="border-r border-b border-black p-2 font-bold text-[13px]">{row.weight}</td>
-                                                                {row.ranges.map((r, i) => (
-                                                                    <td key={i} className="border-r border-b border-black p-1 bg-gray-50/20">{r}</td>
+                                                        {config.scoreRanges.map((row, idx) => (
+                                                            <tr key={row.id} className="h-10">
+                                                                <td className="relative group border-r border-b border-black p-2 text-left font-bold bg-gray-50 text-[13px]">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <>
+                                                                            <EditableCell value={row.label} onCommit={(v) => updateScoreRange(idx, 'label', v)} />
+                                                                            <div className="mt-0.5">
+                                                                                {row.catId === null && row.id === 'score6' ? (
+                                                                                    <span className="text-[9px] font-normal text-slate-400 italic">(Attendance — fixed)</span>
+                                                                                ) : (
+                                                                                    <EditableSelect
+                                                                                        value={row.catId || 'none'}
+                                                                                        options={[{ value: 'none', label: 'None' }, ...config.categories.map(c => ({ value: c.id, label: c.category.split('\n')[0].slice(0, 30) }))]}
+                                                                                        onCommit={(v) => updateScoreRange(idx, 'catId', v === 'none' ? null : v)}
+                                                                                        className="text-[9px] font-normal"
+                                                                                    />
+                                                                                )}
+                                                                            </div>
+                                                                            <button
+                                                                                type="button"
+                                                                                title="Delete score range"
+                                                                                onClick={() => removeScoreRange(idx)}
+                                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                                            >✕</button>
+                                                                        </>
+                                                                    ) : row.label}
+                                                                </td>
+                                                                <td className="border-r border-b border-black p-2 font-bold text-[13px]">
+                                                                    {isDesignMode && canEditConfig ? (
+                                                                        <EditableCell value={String(row.weight ?? '')} onCommit={(v) => updateScoreRange(idx, 'weight', v)} />
+                                                                    ) : row.weight}
+                                                                </td>
+                                                                {['poor', 'avg', 'good', 'excel'].map((field) => (
+                                                                    <td key={field} className="border-r border-b border-black p-1 bg-gray-50/20">
+                                                                        {isDesignMode && canEditConfig ? (
+                                                                            <EditableCell value={row[field]} onCommit={(v) => updateScoreRange(idx, field, v)} />
+                                                                        ) : row[field]}
+                                                                    </td>
                                                                 ))}
                                                                 <td className="border-r border-b border-black p-0">
                                                                     <input
@@ -1467,7 +1745,7 @@ const ThreeDayMonitoringSheet = ({
                                                         ))}
                                                         <tr className="h-12 text-[12px]">
                                                             <td className="border-r border-b border-black p-2 font-bold text-left bg-gray-100" colSpan={1}>Total</td>
-                                                            <td className="border-r border-b border-black p-2 font-bold uppercase bg-gray-100 text-[13px]">1</td>
+                                                            <td className="border-r border-b border-black p-2 font-bold uppercase bg-gray-100 text-[13px]">{computeTotalWeightage(config.scoreRanges)}</td>
                                                             <td className="border-r border-b border-black p-2 text-left italic text-[11px] bg-gray-50 leading-tight" colSpan={4}>** Poor criteria is minimum passing marks for associates.</td>
                                                             <td className="border-r border-b border-black p-2 font-bold bg-gray-100 uppercase">100%</td>
                                                             <td className="border-r border-b border-black p-0">
@@ -1574,41 +1852,6 @@ const ThreeDayMonitoringSheet = ({
                 </CardContent>
             </Card>
 
-            {/* Edit Layout Dialog */}
-            <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>
-                <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Edit 3-Day Monitoring Setup</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto space-y-4 p-4">
-                        <div className="space-y-2">
-                            <Label>Layout Configuration (JSON)</Label>
-                            <Textarea
-                                value={configJson}
-                                onChange={(e) => setConfigJson(e.target.value)}
-                                className="font-mono h-[400px] text-xs"
-                                placeholder="Enter configuration JSON"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Change Remark</Label>
-                            <Input
-                                value={configRemark}
-                                onChange={(e) => setConfigRemark(e.target.value)}
-                                placeholder="e.g., Added new quality parameter"
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter className="p-4 border-t">
-                        <Button variant="outline" onClick={() => setIsEditingLayout(false)}>Cancel</Button>
-                        <Button onClick={handleSaveConfig} disabled={saving}>
-                            {saving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Configuration
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
             {/* History Dialog */}
             <Dialog open={showHistory} onOpenChange={setShowHistory}>
                 <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
@@ -1629,7 +1872,7 @@ const ThreeDayMonitoringSheet = ({
                                         size="sm"
                                         className="h-auto p-0"
                                         onClick={() => {
-                                            setConfig(h.config);
+                                            setConfig(normalizeConfig(h.config));
                                             setShowHistory(false);
                                             toast.info("Restored configuration from history (unsaved)");
                                         }}

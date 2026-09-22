@@ -116,7 +116,6 @@ const SixteenDayMonitoringSheet = ({
     const [lineLeaderOptions, setLineLeaderOptions] = useState([]);
     const [lineNamePart, setLineNamePart] = useState("");
     const [sendingEmail, setSendingEmail] = useState(false);
-    const [sendingTrainingCellEmail, setSendingTrainingCellEmail] = useState(false);
 
     // Admin Remark Dialog States
     const [isAdminRemarkDialogOpen, setIsAdminRemarkDialogOpen] = useState(false);
@@ -634,29 +633,6 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
-    const handleSendTrainingCellEmail = async () => {
-        if (!studentId) {
-            toast.error("Student selection is required");
-            return;
-        }
-        if (!isLeftUser && !isDay16Filled()) {
-            toast.error("Day-16 performance column must be completely filled before sending to Training Cell.");
-            return;
-        }
-
-        try {
-            setSendingTrainingCellEmail(true);
-            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/training-cell-email`);
-            if (response.data.success) {
-                toast.success("Monitoring sheet sent to Training Cell successfully");
-            }
-        } catch (error) {
-            console.error("Error sending email to Training Cell:", error);
-            toast.error(error.response?.data?.message || "Failed to send email to Training Cell");
-        } finally {
-            setSendingTrainingCellEmail(false);
-        }
-    };
 
     const handleHeaderChange = (field, value) => {
         if (readOnly || isLocked || isCellLocked(field, 'header') || !studentId) return;
@@ -2157,24 +2133,6 @@ const SixteenDayMonitoringSheet = ({
                                                     readOnly
                                                 />
                                                 <span className="font-bold text-[12px] italic text-blue-900">(Education Cell)</span>
-                                                {(canVerifyEduCell || canCheck || isAdmin || authUser?.isTrainer) && studentId && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={handleSendTrainingCellEmail}
-                                                        disabled={sendingTrainingCellEmail || (!isLeftUser && !isDay16ColFilled)}
-                                                        className="h-6 px-2 mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 uppercase flex items-center gap-1 print:hidden"
-                                                        title="Send 16-Day Monitoring report to Training Cell"
-                                                    >
-                                                        {sendingTrainingCellEmail ? (
-                                                            <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-                                                        ) : (
-                                                            <Send className="h-3 w-3 text-blue-600" />
-                                                        )}
-                                                        Send to Training Cell
-                                                    </Button>
-                                                )}
                                             </div>
                                         </div>
                                     </div>

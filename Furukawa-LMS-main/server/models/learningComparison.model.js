@@ -20,6 +20,7 @@ class LearningComparison {
         this.id = data.id;
         this.title = data.title;
         this.description = data.description;
+        this.groupName = data.groupName;
         this.beforeDescription = data.beforeDescription;
         this.afterDescription = data.afterDescription;
 
@@ -64,6 +65,7 @@ class LearningComparison {
                         id INT IDENTITY(1,1) PRIMARY KEY,
                         title NVARCHAR(255) NOT NULL,
                         description NVARCHAR(MAX),
+                        groupName NVARCHAR(255),
 
                         beforeVideo NVARCHAR(MAX),
                         beforePdf NVARCHAR(MAX),
@@ -86,6 +88,7 @@ class LearningComparison {
                 `);
             } else {
                 const columnsToEnsure = [
+                    ["groupName", "NVARCHAR(255)"],
                     ["beforeDescription", "NVARCHAR(MAX)"],
                     ["afterDescription", "NVARCHAR(MAX)"],
                     ["beforeImage", "NVARCHAR(MAX)"],
@@ -114,7 +117,7 @@ class LearningComparison {
 
     static async create(data) {
         const fields = [
-            "title", "description", "beforeDescription", "afterDescription",
+            "title", "description", "groupName", "beforeDescription", "afterDescription",
             "beforeVideo", "beforePdf", "beforeExcel", "beforeWord", "beforePpt", "beforeImage",
             "afterVideo", "afterPdf", "afterExcel", "afterWord", "afterPpt", "afterImage",
             "beforeVideoDescriptions", "beforePdfDescriptions", "beforeExcelDescriptions",
@@ -142,9 +145,23 @@ class LearningComparison {
         return new LearningComparison(rows[0]);
     }
 
-    static async findAll() {
+    static async findAll(groupName) {
+        if (groupName) {
+            const [rows] = await executeQuery(
+                "SELECT * FROM learning_comparisons WHERE groupName = ? ORDER BY createdAt DESC",
+                [groupName]
+            );
+            return rows.map(row => new LearningComparison(row));
+        }
         const [rows] = await executeQuery("SELECT * FROM learning_comparisons ORDER BY createdAt DESC");
         return rows.map(row => new LearningComparison(row));
+    }
+
+    static async getDistinctGroups() {
+        const [rows] = await executeQuery(
+            "SELECT groupName, COUNT(*) as count FROM learning_comparisons WHERE groupName IS NOT NULL AND groupName <> '' GROUP BY groupName ORDER BY groupName ASC"
+        );
+        return rows;
     }
 
     static async update(id, data) {

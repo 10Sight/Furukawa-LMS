@@ -5,7 +5,8 @@ import {
     getComparisonById,
     updateComparison,
     deleteComparison,
-    downloadFile
+    downloadFile,
+    getGroups
 } from "../controllers/learningComparison.controller.js";
 import upload from "../middlewares/multer.middleware.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
@@ -32,6 +33,7 @@ const uploadFields = [
 
 router.post("/", upload.fields(uploadFields), createComparison);
 router.get("/", getAllComparisons);
+router.get("/groups", getGroups);
 router.get("/download", downloadFile);
 router.get("/:id", getComparisonById);
 router.put("/:id", upload.fields(uploadFields), updateComparison);

@@ -495,6 +495,13 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         logAudit(req.user?.id, "APPROVE_SIXTEEN_DAY_MONITORING", { ...auditDetails, outcome, approvedBy }, auditMeta).catch(err =>
             console.error("logAudit(APPROVE_SIXTEEN_DAY_MONITORING) failed:", err.message)
         );
+
+        // Notify the Training Cell automatically the moment "Approved By" is signed
+        // (Approved or Rejected) — replaces the old manual "Send to Training Cell"
+        // button. Fire-and-forget so a missing email config can't fail the save itself.
+        dispatchTrainingCellEmail(sid, sheet, req.user, req).catch(err =>
+            console.error("[SixteenDayMonitoring] Failed to dispatch Training Cell email:", err.message)
+        );
     }
 
     if (verifiedByEduCell && verifiedByEduCell !== oldVerifiedByEduCell) {
@@ -832,17 +839,14 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
     );
 });
 
-export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => {
-    const { studentId } = req.params;
-    const sid = await resolveStudentId(studentId);
-    if (!sid) throw new ApiError("Invalid student ID", 400);
-
-    const [sheet, feedback] = await Promise.all([
-        SixteenDayMonitoring.findByStudentId(sid),
-        MenteeFeedback.findByStudentId(sid),
-    ]);
-
-    if (!sheet) throw new ApiError("16-Day monitoring record not found", 404);
+// Builds and sends the combined 16-Day Monitoring + Mentee Feedback report to the
+// "16 Day for Training Cell" recipient list. Shared by the manual endpoint and by
+// saveSixteenDayMonitoring's automatic trigger on Approved By sign-off, so both paths
+// stay in sync instead of drifting into two copies of the same email-building logic.
+// `req` is optional — pass it (from a real HTTP request) to get ip/userAgent on the
+// audit log; the automatic save-triggered path has no request of its own to attach.
+export async function dispatchTrainingCellEmail(sid, sheet, triggeringUser, req = null) {
+    const feedback = await MenteeFeedback.findByStudentId(sid);
 
     const [users] = await executeQuery(`
         SELECT u.id, u.fullName, u.empId, u.departmentId, u.sectionId, d.name as departmentName
@@ -853,8 +857,8 @@ export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => 
     const student = users[0];
 
     // "16 Day for Training Cell" is its own recipient list; if nobody has configured
-    // it yet, fall back to the primary "16-Day Monitoring Sheet" config so this button
-    // isn't dead on arrival for teams that only set up the original form.
+    // it yet, fall back to the primary "16-Day Monitoring Sheet" config so this
+    // notification isn't dead on arrival for teams that only set up the original form.
     let config = await EmailConfiguration.findByFormDeptAndSection(
         "16 Day for Training Cell",
         student?.departmentId,
@@ -896,7 +900,7 @@ export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => 
     const cc = [...ccSet].join(", ");
 
     const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
-    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${studentId}`;
+    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${sid}`;
 
     const operatorName = student?.fullName || sheet.employeeName;
     const employeeCode = student?.empId || sheet.employeeCode;
@@ -956,11 +960,22 @@ export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => 
         cc
     );
 
-    logAudit(req.user?.id, "EMAIL_SIXTEEN_DAY_TRAINING_CELL", {
+    logAudit(triggeringUser?.id, "EMAIL_SIXTEEN_DAY_TRAINING_CELL", {
         studentId: sid, employeeName: operatorName, to, cc
     }, { resourceType: "SixteenDayMonitoring", resourceId: sheet.id, req }).catch(err =>
         console.error("logAudit(EMAIL_SIXTEEN_DAY_TRAINING_CELL) failed:", err.message)
     );
+}
+
+export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const sid = await resolveStudentId(studentId);
+    if (!sid) throw new ApiError("Invalid student ID", 400);
+
+    const sheet = await SixteenDayMonitoring.findByStudentId(sid);
+    if (!sheet) throw new ApiError("16-Day monitoring record not found", 404);
+
+    await dispatchTrainingCellEmail(sid, sheet, req.user, req);
 
     return res.status(200).json(
         new ApiResponse(200, null, "Monitoring sheet sent to Training Cell successfully")

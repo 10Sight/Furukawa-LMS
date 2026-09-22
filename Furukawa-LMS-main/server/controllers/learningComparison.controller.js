@@ -11,12 +11,12 @@ const fileFields = [
 ];
 
 export const createComparison = asyncHandler(async (req, res) => {
-    const { title, beforeDescription, afterDescription } = req.body;
+    const { title, groupName, beforeDescription, afterDescription } = req.body;
     const createdBy = req.user.id;
 
     if (!title) throw new ApiError("Title is required", 400);
 
-    const fileData = { title, beforeDescription, afterDescription, createdBy };
+    const fileData = { title, groupName: groupName || null, beforeDescription, afterDescription, createdBy };
 
     if (req.files) {
         for (const field of fileFields) {
@@ -40,9 +40,15 @@ export const createComparison = asyncHandler(async (req, res) => {
     res.status(201).json(new ApiResponse(201, comparison, "Learning comparison created successfully"));
 });
 
-export const getAllComparisons = asyncHandler(async (_req, res) => {
-    const comparisons = await LearningComparison.findAll();
+export const getAllComparisons = asyncHandler(async (req, res) => {
+    const { group } = req.query;
+    const comparisons = await LearningComparison.findAll(group);
     res.json(new ApiResponse(200, comparisons, "Comparisons fetched successfully"));
+});
+
+export const getGroups = asyncHandler(async (_req, res) => {
+    const groups = await LearningComparison.getDistinctGroups();
+    res.json(new ApiResponse(200, groups, "Groups fetched successfully"));
 });
 
 export const getComparisonById = asyncHandler(async (req, res) => {
@@ -54,13 +60,14 @@ export const getComparisonById = asyncHandler(async (req, res) => {
 
 export const updateComparison = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, beforeDescription, afterDescription } = req.body;
+    const { title, groupName, beforeDescription, afterDescription } = req.body;
 
     const existing = await LearningComparison.findById(id);
     if (!existing) throw new ApiError("Comparison not found", 404);
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
+    if (groupName !== undefined) updateData.groupName = groupName || null;
     if (beforeDescription !== undefined) updateData.beforeDescription = beforeDescription;
     if (afterDescription !== undefined) updateData.afterDescription = afterDescription;
 

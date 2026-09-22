@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Loader2, Save, History, ArrowLeft } from "lucide-react";
+import { Plus, Loader2, Save, History, ArrowLeft } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from "sonner";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
@@ -77,6 +77,57 @@ const Mark = ({ value }) => (
     <span className={value === 'X' ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>{value}</span>
 );
 
+// Click-to-edit text: renders as plain text until clicked, then swaps to an
+// autofocused input. Enter/blur commits (only if the value actually changed),
+// Escape reverts. Keystrokes stay in local `draft` state so typing never
+// triggers a fullConfig re-render — only the commit does.
+const EditableCell = ({ value, onCommit, placeholder = '', className = '', inputClassName = '' }) => {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(value ?? '');
+
+    useEffect(() => {
+        if (!editing) setDraft(value ?? '');
+    }, [value, editing]);
+
+    const commit = () => {
+        setEditing(false);
+        if (draft !== value) onCommit(draft);
+    };
+    const cancel = () => {
+        setDraft(value ?? '');
+        setEditing(false);
+    };
+
+    if (editing) {
+        return (
+            <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+                }}
+                className={`w-full bg-yellow-50 outline-none border border-blue-400 rounded-sm px-0.5 ${inputClassName}`}
+            />
+        );
+    }
+    return (
+        <span
+            role="button"
+            tabIndex={0}
+            onClick={() => setEditing(true)}
+            onKeyDown={(e) => { if (e.key === 'Enter') setEditing(true); }}
+            title="Click to edit"
+            className={`cursor-text hover:bg-yellow-50 hover:outline hover:outline-1 hover:outline-blue-300 rounded-sm px-0.5 ${className}`}
+        >
+            {value || placeholder}
+        </span>
+    );
+};
+
 // Dedicated 10-Cycle Check Sheet layout editor: scope/form-type picker, direct
 // document-control fields, Section A/B/C editors, a live high-fidelity sheet
 // preview, and a single-remark atomic save (layout + revision record together).
@@ -114,6 +165,11 @@ const Cycle10LayoutEditor = () => {
     // Full { form1, form2, form3 } blob for the selected scope.
     const [fullConfig, setFullConfig] = useState(null);
     const draft = fullConfig ? fullConfig[formType] : null;
+    // Snapshot of fullConfig as last loaded/saved from the server — compared
+    // against the live fullConfig to show an "unsaved changes" indicator and
+    // to know what "Reset to Saved" should revert to.
+    const [savedSnapshot, setSavedSnapshot] = useState(null);
+    const isDirty = !!fullConfig && JSON.stringify(fullConfig) !== savedSnapshot;
     // Which scope the loaded config actually came from (hierarchical fallback can
     // resolve broader than what's selected) — null if nothing saved anywhere at all.
     const [resolvedScope, setResolvedScope] = useState(null);
@@ -161,7 +217,9 @@ const Cycle10LayoutEditor = () => {
 
     const fetchFullConfig = async () => {
         if (!isGlobal && !deptId) {
-            setFullConfig({ form1: buildDefaultFormConfig(), form2: buildDefaultFormConfig(), form3: buildDefaultFormConfig() });
+            const defaults = { form1: buildDefaultFormConfig(), form2: buildDefaultFormConfig(), form3: buildDefaultFormConfig() };
+            setFullConfig(defaults);
+            setSavedSnapshot(JSON.stringify(defaults));
             setResolvedScope(null);
             return;
         }
@@ -169,7 +227,9 @@ const Cycle10LayoutEditor = () => {
             setLoadingConfig(true);
             const qs = scopeQuery();
             const response = await axiosInstance.get(`/api/ten-cycle-sheets/config/${deptParam()}${qs ? `?${qs}` : ""}`);
-            setFullConfig(normalizeConfig(response.data?.data?.config));
+            const loaded = normalizeConfig(response.data?.data?.config);
+            setFullConfig(loaded);
+            setSavedSnapshot(JSON.stringify(loaded));
             setResolvedScope(response.data?.data?.resolvedScope || null);
         } catch {
             toast.error("Failed to load layout configuration");
@@ -247,7 +307,7 @@ const Cycle10LayoutEditor = () => {
             if (!prev) return prev;
             const next = JSON.parse(JSON.stringify(prev));
             const arr = getLayoutGroupArray(next[formType], group);
-            const newId = `custom_${Date.now()}`;
+            const newId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const n = arr.length + 1;
             if (group === 'columns') arr.push({ id: newId, label: String(n) });
             else if (group === 'instruments') arr.push({ id: newId, label: `New Instrument ${n}` });
@@ -330,6 +390,7 @@ const Cycle10LayoutEditor = () => {
                 },
             });
             setFullConfig(newConfig);
+            setSavedSnapshot(JSON.stringify(newConfig));
             setSaveModalOpen(false);
             setRemarkText("");
             toast.success("Layout and revision updated successfully");
@@ -388,8 +449,9 @@ const Cycle10LayoutEditor = () => {
                     </Button>
                     <h1 className="text-xl font-bold">10-Cycle Sheet Layout Editor</h1>
                     <p className="text-sm text-slate-500">
-                        Customize Section A questions &amp; general points, Section B measuring instruments, Section C inspection columns,
-                        and the sheet&apos;s document-control revision fields. Changes apply to whichever scope you select below.
+                        Click any label or description directly on the sheet below to edit it in place. Use the + buttons above the
+                        sheet to add a question, general point, instrument, or column, and hover a header cell to delete it.
+                        Changes apply to whichever scope you select below.
                     </p>
                 </div>
 
@@ -530,82 +592,30 @@ const Cycle10LayoutEditor = () => {
                             </div>
                         )}
 
-                        {/* Editors */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <div className="border rounded p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-bold text-sm">Section A — Ask Four Questions</h3>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('questions')}>
-                                        <Plus size={12} /> Add
-                                    </Button>
-                                </div>
-                                {draft.secA.questions.map((q, idx) => (
-                                    <div key={q.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
-                                        <Input className="h-8 text-xs" value={q.label} onChange={(e) => updateItem('questions', idx, 'label', e.target.value)} placeholder="Label" />
-                                        <Input className="h-8 text-xs" value={q.desc} onChange={(e) => updateItem('questions', idx, 'desc', e.target.value)} placeholder="Description" />
-                                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeItem('questions', idx)}>
-                                            <Trash2 size={12} />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="border rounded p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-bold text-sm">Section A — General Points</h3>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('generalPoints')}>
-                                        <Plus size={12} /> Add
-                                    </Button>
-                                </div>
-                                {draft.secA.generalPoints.map((g, idx) => (
-                                    <div key={g.id} className="grid grid-cols-[70px_1fr_28px] gap-2 items-start">
-                                        <Input className="h-8 text-xs" value={g.label} onChange={(e) => updateItem('generalPoints', idx, 'label', e.target.value)} placeholder="Label" />
-                                        <Input className="h-8 text-xs" value={g.desc} onChange={(e) => updateItem('generalPoints', idx, 'desc', e.target.value)} placeholder="Description" />
-                                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeItem('generalPoints', idx)}>
-                                            <Trash2 size={12} />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="border rounded p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-bold text-sm">
-                                        Section B — Measuring Instruments
-                                        {isForm3 && <span className="text-[10px] text-slate-400 font-normal ml-2">(not shown on Form 3)</span>}
-                                    </h3>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('instruments')}>
-                                        <Plus size={12} /> Add
-                                    </Button>
-                                </div>
-                                {draft.secB.instruments.map((i, idx) => (
-                                    <div key={i.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
-                                        <Input className="h-8 text-xs" value={i.label} onChange={(e) => updateItem('instruments', idx, 'label', e.target.value)} placeholder="Label" />
-                                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeItem('instruments', idx)}>
-                                            <Trash2 size={12} />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="border rounded p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-bold text-sm">Section C — Cross Inspection Columns</h3>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('columns')}>
-                                        <Plus size={12} /> Add
-                                    </Button>
-                                </div>
-                                {draft.secC.columns.map((c, idx) => (
-                                    <div key={c.id} className="grid grid-cols-[1fr_28px] gap-2 items-start">
-                                        <Input className="h-8 text-xs" value={c.label} onChange={(e) => updateItem('columns', idx, 'label', e.target.value)} placeholder="Label" />
-                                        <Button size="icon" variant="outline" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeItem('columns', idx)}>
-                                            <Trash2 size={12} />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* ── Live Sheet Preview ─────────────────────────────────── */}
+                        {/* ── Live Sheet Preview (Excel-like in-place editor) ───────── */}
                         <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wide">Live Sheet Preview — {ALL_FORM_TYPES.find(t => t.id === formType)?.label}</Label>
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <Label className="text-xs font-bold uppercase tracking-wide">Live Sheet Preview — {ALL_FORM_TYPES.find(t => t.id === formType)?.label}</Label>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('questions')}>
+                                        <Plus size={12} /> Question
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('generalPoints')}>
+                                        <Plus size={12} /> General Point
+                                    </Button>
+                                    {!isForm3 && (
+                                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('instruments')}>
+                                            <Plus size={12} /> Instrument
+                                        </Button>
+                                    )}
+                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem('columns')}>
+                                        <Plus size={12} /> Column
+                                    </Button>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400">
+                                Click a label or description on the sheet to edit it. Hover a header cell to reveal a delete button.
+                            </p>
                             <div className="border-2 border-black overflow-x-auto bg-white">
                                 <div className="min-w-[1700px] p-2">
                                     <div className="flex justify-between items-center border-b-2 border-black pb-1 relative mb-2">
@@ -666,11 +676,35 @@ const Cycle10LayoutEditor = () => {
                                                 <th colSpan={draft.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
                                             </tr>
                                             <tr className="bg-gray-100 text-center font-bold text-[8px]">
-                                                {draft.secA.questions.map(q => (
-                                                    <th key={`pq_${q.id}`} className="border border-black w-[32px] bg-white">{q.label || '(empty)'}</th>
+                                                {draft.secA.questions.map((q, idx) => (
+                                                    <th key={`pq_${q.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                        <EditableCell
+                                                            value={q.label}
+                                                            placeholder="(empty)"
+                                                            onCommit={(v) => updateItem('questions', idx, 'label', v)}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            title="Delete question"
+                                                            onClick={() => removeItem('questions', idx)}
+                                                            className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                        >✕</button>
+                                                    </th>
                                                 ))}
-                                                {draft.secA.generalPoints.map(g => (
-                                                    <th key={`pg_${g.id}`} className="border border-black w-[32px] bg-white">{g.label || '(empty)'}</th>
+                                                {draft.secA.generalPoints.map((g, idx) => (
+                                                    <th key={`pg_${g.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                        <EditableCell
+                                                            value={g.label}
+                                                            placeholder="(empty)"
+                                                            onCommit={(v) => updateItem('generalPoints', idx, 'label', v)}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            title="Delete general point"
+                                                            onClick={() => removeItem('generalPoints', idx)}
+                                                            className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                        >✕</button>
+                                                    </th>
                                                 ))}
                                                 {isForm3 ? (
                                                     <>
@@ -681,14 +715,38 @@ const Cycle10LayoutEditor = () => {
                                                         <th className="border border-black w-[40px] bg-yellow-50 text-blue-600">Max.</th>
                                                     </>
                                                 ) : (
-                                                    draft.secB.instruments.map(i => (
-                                                        <th key={`pi_${i.id}`} className="border border-black w-[45px] bg-white">
-                                                            <div className="flex items-center justify-center h-24 w-full whitespace-nowrap px-1">{i.label || '(empty)'}</div>
+                                                    draft.secB.instruments.map((i, idx) => (
+                                                        <th key={`pi_${i.id}`} className="relative group border border-black w-[45px] bg-white">
+                                                            <div className="flex items-center justify-center h-24 w-full whitespace-nowrap px-1">
+                                                                <EditableCell
+                                                                    value={i.label}
+                                                                    placeholder="(empty)"
+                                                                    onCommit={(v) => updateItem('instruments', idx, 'label', v)}
+                                                                />
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                title="Delete instrument"
+                                                                onClick={() => removeItem('instruments', idx)}
+                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                            >✕</button>
                                                         </th>
                                                     ))
                                                 )}
-                                                {draft.secC.columns.map(c => (
-                                                    <th key={`pc_${c.id}`} className="border border-black w-[32px] bg-white">{c.label || '(empty)'}</th>
+                                                {draft.secC.columns.map((c, idx) => (
+                                                    <th key={`pc_${c.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                        <EditableCell
+                                                            value={c.label}
+                                                            placeholder="(empty)"
+                                                            onCommit={(v) => updateItem('columns', idx, 'label', v)}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            title="Delete column"
+                                                            onClick={() => removeItem('columns', idx)}
+                                                            className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-3.5 h-3.5 leading-none text-[8px] flex items-center justify-center"
+                                                        >✕</button>
+                                                    </th>
                                                 ))}
                                             </tr>
                                         </thead>
@@ -754,16 +812,44 @@ const Cycle10LayoutEditor = () => {
                                         <div className="border border-gray-300 p-2 rounded col-span-1">
                                             <h3 className="font-bold border-b border-black mb-1">Section - A Four Question Details:-</h3>
                                             <ul className="list-none space-y-0.5">
-                                                {draft.secA.questions.map(q => (
-                                                    <li key={q.id}>{q.label} :- {q.desc}</li>
+                                                {draft.secA.questions.map((q, idx) => (
+                                                    <li key={q.id} className="flex gap-1">
+                                                        <EditableCell
+                                                            value={q.label}
+                                                            placeholder="(label)"
+                                                            className="shrink-0"
+                                                            onCommit={(v) => updateItem('questions', idx, 'label', v)}
+                                                        />
+                                                        <span>:-</span>
+                                                        <EditableCell
+                                                            value={q.desc}
+                                                            placeholder="(click to add a description)"
+                                                            className="flex-1"
+                                                            onCommit={(v) => updateItem('questions', idx, 'desc', v)}
+                                                        />
+                                                    </li>
                                                 ))}
                                             </ul>
                                         </div>
                                         <div className="border border-gray-300 p-2 rounded col-span-1">
                                             <h3 className="font-bold border-b border-black mb-1">Section - A General Point Details:-</h3>
                                             <ul className="list-none space-y-0.5">
-                                                {draft.secA.generalPoints.map(g => (
-                                                    <li key={g.id}>{g.label} :- {g.desc}</li>
+                                                {draft.secA.generalPoints.map((g, idx) => (
+                                                    <li key={g.id} className="flex gap-1">
+                                                        <EditableCell
+                                                            value={g.label}
+                                                            placeholder="(label)"
+                                                            className="shrink-0"
+                                                            onCommit={(v) => updateItem('generalPoints', idx, 'label', v)}
+                                                        />
+                                                        <span>:-</span>
+                                                        <EditableCell
+                                                            value={g.desc}
+                                                            placeholder="(click to add a description)"
+                                                            className="flex-1"
+                                                            onCommit={(v) => updateItem('generalPoints', idx, 'desc', v)}
+                                                        />
+                                                    </li>
                                                 ))}
                                             </ul>
                                         </div>
@@ -783,10 +869,20 @@ const Cycle10LayoutEditor = () => {
                         </div>
 
                         {/* Save */}
-                        <div className="border rounded p-4 flex justify-between items-center">
-                            <Button variant="outline" className="gap-2" onClick={fetchHistory}>
-                                <History size={14} /> History
-                            </Button>
+                        <div className="sticky bottom-0 bg-white border rounded p-4 flex justify-between items-center gap-3 flex-wrap shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+                            <div className="flex items-center gap-3">
+                                <Button variant="outline" className="gap-2" onClick={fetchHistory}>
+                                    <History size={14} /> History
+                                </Button>
+                                {isDirty && (
+                                    <>
+                                        <span className="text-xs text-amber-600 font-medium">You have unsaved changes</span>
+                                        <Button variant="outline" size="sm" className="text-xs" onClick={fetchFullConfig}>
+                                            Reset to Saved
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
                             <Button onClick={handleOpenSaveModal} className="gap-2 bg-blue-600 hover:bg-blue-700">
                                 <Save size={16} /> Save Layout & Update Revision
                             </Button>

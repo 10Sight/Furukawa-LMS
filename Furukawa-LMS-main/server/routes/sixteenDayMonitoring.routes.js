@@ -9,6 +9,7 @@ import {
     getStudentSixteenDayMonitoringHistory,
     sendSixteenDayMonitoringEmail,
     sendCombinedMonitoringEmail,
+    sendTrainingCellMonitoringEmail,
     listSixteenDayMonitoring
 } from "../controllers/sixteenDayMonitoring.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
@@ -23,6 +24,7 @@ router.get("/:studentId/history", verifyJWT, authorizeRoles("isTrainer", "isAdmi
 router.post("/:studentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage", "sixteen_day:check"), saveSixteenDayMonitoring);
 router.post("/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage"), sendSixteenDayMonitoringEmail);
 router.post("/:studentId/combined-email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage"), sendCombinedMonitoringEmail);
+router.post("/:studentId/training-cell-email", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "sixteen_day:manage", "sixteen_day:verify_education", "sixteen_day:check"), sendTrainingCellMonitoringEmail);
 
 // 16 Day Monitoring Config
 router.get("/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "sixteen_day:edit_layout", "sixteen_day:manage"), getSixteenDayMonitoringConfig);

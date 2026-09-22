@@ -18,6 +18,28 @@ import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
 
+// A signature is "validly signed" when it's filled and wasn't a rejection —
+// this is the same notion of validity the client gates its sign-off buttons on.
+const isApprovedSig = (sig) => Boolean(sig && typeof sig === 'string' && sig.trim() !== '' && !sig.toLowerCase().includes('rejected'));
+
+// Trust-boundary re-check of the 4-tier sign-off order (Checked -> Verified -> Approved
+// -> Verified by Edu Cell). The frontend already gates this in the UI, but a direct API
+// call could otherwise write a later-stage signature without its prerequisites ever
+// having been approved. Admins may override, matching their override of other locks
+// on this sheet (isCellLocked, isSheetSaved edits, etc).
+function validateSignatureProgression({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell }, isAdmin = false) {
+    if (isAdmin) return;
+    if (verifiedBy && !isApprovedSig(checkedBy)) {
+        throw new ApiError("Cannot verify sheet: 'Checked By' must be completed and approved first.", 400);
+    }
+    if (approvedBy && (!isApprovedSig(checkedBy) || !isApprovedSig(verifiedBy))) {
+        throw new ApiError("Cannot approve sheet: 'Checked By' and 'Verified By' must be approved first.", 400);
+    }
+    if (verifiedByEduCell && (!isApprovedSig(checkedBy) || !isApprovedSig(verifiedBy) || !isApprovedSig(approvedBy))) {
+        throw new ApiError("Cannot verify by Education/Training Cell: 'Checked By', 'Verified By', and 'Approved By' must be completed first.", 400);
+    }
+}
+
 // Helper to resolve studentId (from ID, userName, empId or slug)
 const resolveStudentId = async (studentId) => {
     if (!studentId) return null;
@@ -349,6 +371,8 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         startDate = sheet.startDate;
         gridData = { ...sheet.gridData, comment: incomingComment };
     }
+
+    validateSignatureProgression({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell }, req.user?.isAdmin);
 
     let updatedHistory = [];
     const oldCheckedBy = (sheet && !isNewAttempt) ? sheet.checkedBy : null;
@@ -805,5 +829,140 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
 
     return res.status(200).json(
         new ApiResponse(200, null, "Combined monitoring report emailed successfully")
+    );
+});
+
+export const sendTrainingCellMonitoringEmail = asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const sid = await resolveStudentId(studentId);
+    if (!sid) throw new ApiError("Invalid student ID", 400);
+
+    const [sheet, feedback] = await Promise.all([
+        SixteenDayMonitoring.findByStudentId(sid),
+        MenteeFeedback.findByStudentId(sid),
+    ]);
+
+    if (!sheet) throw new ApiError("16-Day monitoring record not found", 404);
+
+    const [users] = await executeQuery(`
+        SELECT u.id, u.fullName, u.empId, u.departmentId, u.sectionId, d.name as departmentName
+        FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        WHERE u.id = ?
+    `, [sid]);
+    const student = users[0];
+
+    // "16 Day for Training Cell" is its own recipient list; if nobody has configured
+    // it yet, fall back to the primary "16-Day Monitoring Sheet" config so this button
+    // isn't dead on arrival for teams that only set up the original form.
+    let config = await EmailConfiguration.findByFormDeptAndSection(
+        "16 Day for Training Cell",
+        student?.departmentId,
+        student?.sectionId
+    );
+
+    if (!config) {
+        config = await EmailConfiguration.findByFormDeptAndSection(
+            "16-Day Monitoring Sheet",
+            student?.departmentId,
+            student?.sectionId
+        );
+    }
+
+    if (!config) {
+        throw new ApiError("No email configuration found for Training Cell. Please set up recipients in Settings -> Email Notifications Settings.", 400);
+    }
+
+    const toSet = new Set();
+    const ccSet = new Set();
+
+    const addEmails = (str, target) => {
+        (str || "").split(',').map(e => e.trim()).filter(Boolean).forEach(e => target.add(e));
+    };
+
+    addEmails(config.toEmails, toSet);
+    addEmails(config.ccEmails, ccSet);
+
+    if (config.includeTrainer && student?.departmentId) {
+        const [trainers] = await executeQuery(
+            "SELECT email FROM users WHERE departmentId = ? AND (isTrainer = 1 OR role = 'INSTRUCTOR' OR role = 'ADMIN')",
+            [student.departmentId]
+        );
+        trainers.forEach(t => { if (t.email) toSet.add(t.email); });
+    }
+
+    const to = [...toSet].join(", ");
+    if (!to) throw new ApiError("No recipient emails found in configuration.", 400);
+    const cc = [...ccSet].join(", ");
+
+    const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
+    const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${studentId}`;
+
+    const operatorName = student?.fullName || sheet.employeeName;
+    const employeeCode = student?.empId || sheet.employeeCode;
+    const departmentName = student?.departmentName || sheet.dept || "N/A";
+    const processName = sheet.processName || "N/A";
+    const topTableData = feedback?.topTableData || {};
+    const dailyLogs = feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' });
+
+    const html = emailTemplates.generateCombinedMonitoringEmail({
+        operatorName,
+        employeeCode,
+        departmentName,
+        processName,
+        headerInfo: {
+            handoverDate: sheet.handoverDate,
+            checkedBy: sheet.checkedBy,
+            verifiedBy: sheet.verifiedBy,
+            approvedBy: sheet.approvedBy,
+            verifiedByEduCell: sheet.verifiedByEduCell,
+        },
+        portalUrl,
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const monitoringSheet = workbook.addWorksheet('16-Day Monitoring');
+    await NotificationService._fillSixteenDaySheet(monitoringSheet, {
+        gridData: sheet.gridData || {},
+        employeeName: sheet.employeeName,
+        employeeCode: sheet.employeeCode,
+        dept: sheet.dept,
+        processName: sheet.processName,
+        handoverDate: sheet.handoverDate,
+        trgResult: sheet.trgResult,
+        workingWith: sheet.workingWith,
+        lineLeaderName: sheet.lineLeaderName,
+        config: monitoringConfig?.config || [],
+    });
+
+    const feedbackSheet = workbook.addWorksheet('Mentee Feedback');
+    await NotificationService._fillMenteeFeedbackSheet(feedbackSheet, {
+        operatorName,
+        employeeCode,
+        departmentName,
+        processName,
+        topTableData,
+        dailyLogs,
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `16-Day_Monitoring_Report_TrainingCell_${(operatorName || 'associate').replace(/\s+/g, '_')}.xlsx`;
+
+    await sendMail(
+        to,
+        `16-Day Monitoring Report (Training Cell): ${operatorName}`,
+        html,
+        [{ filename, content: buffer }],
+        cc
+    );
+
+    logAudit(req.user?.id, "EMAIL_SIXTEEN_DAY_TRAINING_CELL", {
+        studentId: sid, employeeName: operatorName, to, cc
+    }, { resourceType: "SixteenDayMonitoring", resourceId: sheet.id, req }).catch(err =>
+        console.error("logAudit(EMAIL_SIXTEEN_DAY_TRAINING_CELL) failed:", err.message)
+    );
+
+    return res.status(200).json(
+        new ApiResponse(200, null, "Monitoring sheet sent to Training Cell successfully")
     );
 });

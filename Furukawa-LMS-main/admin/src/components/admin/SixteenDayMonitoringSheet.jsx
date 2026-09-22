@@ -116,6 +116,7 @@ const SixteenDayMonitoringSheet = ({
     const [lineLeaderOptions, setLineLeaderOptions] = useState([]);
     const [lineNamePart, setLineNamePart] = useState("");
     const [sendingEmail, setSendingEmail] = useState(false);
+    const [sendingTrainingCellEmail, setSendingTrainingCellEmail] = useState(false);
 
     // Admin Remark Dialog States
     const [isAdminRemarkDialogOpen, setIsAdminRemarkDialogOpen] = useState(false);
@@ -633,6 +634,30 @@ const SixteenDayMonitoringSheet = ({
         }
     };
 
+    const handleSendTrainingCellEmail = async () => {
+        if (!studentId) {
+            toast.error("Student selection is required");
+            return;
+        }
+        if (!isLeftUser && !isDay16Filled()) {
+            toast.error("Day-16 performance column must be completely filled before sending to Training Cell.");
+            return;
+        }
+
+        try {
+            setSendingTrainingCellEmail(true);
+            const response = await axiosInstance.post(`/api/sixteen-day-monitoring/${studentId}/training-cell-email`);
+            if (response.data.success) {
+                toast.success("Monitoring sheet sent to Training Cell successfully");
+            }
+        } catch (error) {
+            console.error("Error sending email to Training Cell:", error);
+            toast.error(error.response?.data?.message || "Failed to send email to Training Cell");
+        } finally {
+            setSendingTrainingCellEmail(false);
+        }
+    };
+
     const handleHeaderChange = (field, value) => {
         if (readOnly || isLocked || isCellLocked(field, 'header') || !studentId) return;
         setHeaderInfo(prev => ({ ...prev, [field]: value }));
@@ -924,13 +949,53 @@ const SixteenDayMonitoringSheet = ({
         }
     }, [gridData, config, categories, scoreRanges, readOnly]);
 
+    // A signature is "validly signed" when it's filled and was not a rejection —
+    // downstream sign-off stages are gated on this, not just on presence.
+    const isSignatureApproved = (val) => Boolean(val && typeof val === 'string' && val.trim() !== '' && !val.includes('Rejected'));
+
+    const isCheckedByValid = isSignatureApproved(headerInfo.checkedBy);
+    const isVerifiedByValid = isCheckedByValid && isSignatureApproved(headerInfo.verifiedBy);
+    const isApprovedByValid = isVerifiedByValid && isSignatureApproved(headerInfo.approvedBy);
+
     const handleSignature = (field, type) => {
         const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
-        setHeaderInfo(prev => ({ ...prev, [field]: `${prefix}${loggedInName}` }));
+        setHeaderInfo(prev => {
+            const updated = { ...prev, [field]: `${prefix}${loggedInName}` };
+            // A rejection invalidates everything downstream of this stage, so those
+            // signatures can't linger and look valid once this one is rejected.
+            if (type === 'reject') {
+                if (field === 'checkedBy') {
+                    updated.verifiedBy = "";
+                    updated.approvedBy = "";
+                    updated.verifiedByEduCell = "";
+                } else if (field === 'verifiedBy') {
+                    updated.approvedBy = "";
+                    updated.verifiedByEduCell = "";
+                } else if (field === 'approvedBy') {
+                    updated.verifiedByEduCell = "";
+                }
+            }
+            return updated;
+        });
     };
 
     const handleClearSignature = (field) => {
-        setHeaderInfo(prev => ({ ...prev, [field]: "" }));
+        setHeaderInfo(prev => {
+            const updated = { ...prev, [field]: "" };
+            // Clearing a stage clears everything downstream too, so the chain never
+            // has an approval that outlives the signature it depended on.
+            if (field === 'checkedBy') {
+                updated.verifiedBy = "";
+                updated.approvedBy = "";
+                updated.verifiedByEduCell = "";
+            } else if (field === 'verifiedBy') {
+                updated.approvedBy = "";
+                updated.verifiedByEduCell = "";
+            } else if (field === 'approvedBy') {
+                updated.verifiedByEduCell = "";
+            }
+            return updated;
+        });
     };
 
     const daysDetailed = ['d1', 'd2', 'd3'];
@@ -1928,7 +1993,7 @@ const SixteenDayMonitoringSheet = ({
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
                                                 <div className="flex items-center justify-between mb-auto h-8 px-2">
                                                     <span className="text-[13px]">Verified By:-</span>
-                                                    {canVerify && !isLocked && !isCellLocked('verifiedBy', 'header') && (
+                                                    {canVerify && !isLocked && !isCellLocked('verifiedBy', 'header') && (isCheckedByValid || isAdmin) && (
                                                         <div className="flex gap-2 items-center">
                                                             {!headerInfo.verifiedBy ? (
                                                                 <>
@@ -1964,6 +2029,9 @@ const SixteenDayMonitoringSheet = ({
                                                             )}
                                                         </div>
                                                     )}
+                                                    {canVerify && !isLocked && !isCellLocked('verifiedBy', 'header') && !isCheckedByValid && !isAdmin && !headerInfo.verifiedBy && (
+                                                        <span className="text-[9px] font-semibold italic text-amber-600 normal-case">Awaiting Checked By</span>
+                                                    )}
                                                 </div>
                                                 <input
                                                     className={`w-full text-center border-b border-black outline-none bg-transparent font-bold text-[14px] h-8 uppercase ${headerInfo.verifiedBy?.includes('Rejected') ? 'text-red-600' : 'text-blue-900'}`}
@@ -1976,7 +2044,7 @@ const SixteenDayMonitoringSheet = ({
                                             <div className="text-center w-1/3 flex flex-col justify-between py-2 gap-2">
                                                 <div className="flex items-center justify-between mb-auto h-8 px-2">
                                                     <span className="text-[13px]">Approved By:-</span>
-                                                    {canApprove && !isLocked && !isCellLocked('approvedBy', 'header') && (
+                                                    {canApprove && !isLocked && !isCellLocked('approvedBy', 'header') && (isVerifiedByValid || isAdmin) && (
                                                         <div className="flex gap-2 items-center">
                                                             {!headerInfo.approvedBy ? (
                                                                 <>
@@ -2012,6 +2080,9 @@ const SixteenDayMonitoringSheet = ({
                                                             )}
                                                         </div>
                                                     )}
+                                                    {canApprove && !isLocked && !isCellLocked('approvedBy', 'header') && !isVerifiedByValid && !isAdmin && !headerInfo.approvedBy && (
+                                                        <span className="text-[9px] font-semibold italic text-amber-600 normal-case">Awaiting Verified By</span>
+                                                    )}
                                                 </div>
                                                 <input
                                                     className={`w-full text-center border-b border-black outline-none bg-transparent font-bold text-[14px] h-8 uppercase ${headerInfo.approvedBy?.includes('Rejected') ? 'text-red-600' : 'text-blue-900'}`}
@@ -2039,7 +2110,7 @@ const SixteenDayMonitoringSheet = ({
                                             <div className="w-1/4 h-full flex flex-col items-center justify-between text-center border-l border-black bg-gray-50/30 p-2 gap-1">
                                                 <div className="flex items-center justify-between w-full px-2">
                                                     <span className="font-extrabold text-[12px] uppercase">Verified By:</span>
-                                                    {canVerifyEduCell && !isLocked && !isCellLocked('verifiedByEduCell', 'header') && (
+                                                    {canVerifyEduCell && !isLocked && !isCellLocked('verifiedByEduCell', 'header') && (isApprovedByValid || isAdmin) && (
                                                         <div className="flex gap-1 items-center">
                                                             {!headerInfo.verifiedByEduCell ? (
                                                                 <>
@@ -2075,6 +2146,9 @@ const SixteenDayMonitoringSheet = ({
                                                             )}
                                                         </div>
                                                     )}
+                                                    {canVerifyEduCell && !isLocked && !isCellLocked('verifiedByEduCell', 'header') && !isApprovedByValid && !isAdmin && !headerInfo.verifiedByEduCell && (
+                                                        <span className="text-[8px] font-semibold italic text-amber-600 normal-case">Awaiting Approved By</span>
+                                                    )}
                                                 </div>
                                                 <input
                                                     className={`w-full text-center border-b border-black outline-none bg-transparent font-bold text-[12px] h-7 uppercase ${headerInfo.verifiedByEduCell?.includes('Rejected') ? 'text-red-600' : 'text-blue-900'}`}
@@ -2083,6 +2157,24 @@ const SixteenDayMonitoringSheet = ({
                                                     readOnly
                                                 />
                                                 <span className="font-bold text-[12px] italic text-blue-900">(Education Cell)</span>
+                                                {(canVerifyEduCell || canCheck || isAdmin || authUser?.isTrainer) && studentId && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={handleSendTrainingCellEmail}
+                                                        disabled={sendingTrainingCellEmail || (!isLeftUser && !isDay16ColFilled)}
+                                                        className="h-6 px-2 mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 uppercase flex items-center gap-1 print:hidden"
+                                                        title="Send 16-Day Monitoring report to Training Cell"
+                                                    >
+                                                        {sendingTrainingCellEmail ? (
+                                                            <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                                                        ) : (
+                                                            <Send className="h-3 w-3 text-blue-600" />
+                                                        )}
+                                                        Send to Training Cell
+                                                    </Button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

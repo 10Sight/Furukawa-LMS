@@ -196,21 +196,24 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const [handoverRows] = await executeQuery(`
         SELECT TOP 1
             JSON_VALUE(entry.value, '$.marks') as marks,
-            JSON_VALUE(entry.value, '$.statusActionAt') as handoverDate
-        FROM handover_sheets
+            CONVERT(VARCHAR, hs.date, 23) as handoverSheetDate,
+            JSON_VALUE(entry.value, '$.statusActionAt') as handoverApprovedAt
+        FROM handover_sheets hs
         CROSS APPLY OPENJSON(entries) as entry
-        WHERE departmentId = ?
+        WHERE hs.departmentId = ?
         AND JSON_VALUE(entry.value, '$.studentId') = ?
         AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
-        ORDER BY createdAt DESC
+        ORDER BY hs.createdAt DESC
     `, [student?.departmentId ?? null, sid]);
 
     const handoverInfo = handoverRows.length > 0 ? handoverRows[0] : null;
+    const resolvedHandoverDate = handoverInfo?.handoverSheetDate
+        || (handoverInfo?.handoverApprovedAt ? handoverInfo.handoverApprovedAt.split('T')[0] : null);
 
     let eligibleAt = null;
     let isEligible = true;
-    if (handoverInfo?.handoverDate) {
-        const eligibleAtMs = getNextCalendarDayMidnightIST(handoverInfo.handoverDate).getTime();
+    if (handoverInfo?.handoverApprovedAt) {
+        const eligibleAtMs = getNextCalendarDayMidnightIST(handoverInfo.handoverApprovedAt).getTime();
         eligibleAt = new Date(eligibleAtMs).toISOString();
         isEligible = Date.now() >= eligibleAtMs;
     }
@@ -225,7 +228,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
             new ApiResponse(200, {
                 isNew: true,
                 userStatus,
-                handoverApprovedAt: handoverInfo?.handoverDate || null,
+                handoverApprovedAt: handoverInfo?.handoverApprovedAt || null,
                 eligibleAt,
                 isEligible,
                 canOverrideEligibility,
@@ -234,7 +237,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
                     employeeCode: student?.empId || "",
                     dept: resolvedDept,
                     trgResult: handoverInfo?.marks || "",
-                    handoverDate: handoverInfo?.handoverDate ? handoverInfo.handoverDate.split('T')[0] : ""
+                    handoverDate: resolvedHandoverDate || ""
                 }
             }, "No record found")
         );
@@ -244,8 +247,8 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
     if (!data.trgResult && handoverInfo?.marks) {
         data.trgResult = handoverInfo.marks;
     }
-    if (!data.handoverDate && handoverInfo?.handoverDate) {
-        data.handoverDate = handoverInfo.handoverDate.split('T')[0];
+    if (!data.handoverDate && resolvedHandoverDate) {
+        data.handoverDate = resolvedHandoverDate;
     }
     if (!data.employeeName && student?.fullName) {
         data.employeeName = student.fullName;
@@ -262,7 +265,7 @@ export const getSixteenDayMonitoring = asyncHandler(async (req, res) => {
             ...data,
             isNew: false,
             userStatus,
-            handoverApprovedAt: handoverInfo?.handoverDate || null,
+            handoverApprovedAt: handoverInfo?.handoverApprovedAt || null,
             eligibleAt,
             isEligible,
             canOverrideEligibility,

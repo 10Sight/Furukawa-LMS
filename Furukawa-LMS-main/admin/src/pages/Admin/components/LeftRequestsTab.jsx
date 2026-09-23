@@ -40,6 +40,7 @@ import {
 import { safeDateFormat } from "@/utils/dateUtils";
 import {
   useGetAllLeftRequestsQuery,
+  useLazyGetAllLeftRequestsQuery,
   useApproveLeftRequestMutation,
   useRejectLeftRequestMutation,
   useBulkApproveLeftRequestMutation,
@@ -128,6 +129,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const [bulkApproveLeftRequest, { isLoading: isBulkApproving }] = useBulkApproveLeftRequestMutation();
   const [bulkRejectLeftRequest, { isLoading: isBulkRejecting }] = useBulkRejectLeftRequestMutation();
   const [cancelLeftRequest, { isLoading: isCancelling }] = useCancelLeftRequestMutation();
+  const [fetchAllPending, { isFetching: isFetchingAllPending }] = useLazyGetAllLeftRequestsQuery();
 
   const requests = data?.data?.rows || [];
   const totalPages = data?.data?.totalPages || 1;
@@ -135,6 +137,11 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const selectablePendingIds = requests.filter((r) => r.status === "PENDING").map((r) => r.id);
   const allPendingSelected = selectablePendingIds.length > 0 &&
     selectablePendingIds.every((id) => selectedIds.includes(id));
+  // "PENDING" tab's `total` is already scoped to pending requests, so it doubles as the
+  // cross-page pending count without a separate lookup.
+  const isPendingTab = statusTab === "PENDING";
+  const allPendingAcrossPagesSelected = isPendingTab && total > 0 && selectedIds.length === total;
+  const canSelectAllAcrossPages = isPendingTab && allPendingSelected && total > selectablePendingIds.length;
 
   const changeStatusTab = (tab) => {
     setStatusTab(tab);
@@ -153,6 +160,16 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
 
   const handleSelectRow = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAllAcrossPages = async () => {
+    try {
+      const res = await fetchAllPending({ status: "PENDING", page: 1, limit: total }).unwrap();
+      const ids = (res?.data?.rows || []).map((r) => r.id);
+      setSelectedIds(ids);
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to select all pending requests");
+    }
   };
 
   const selectedRequests = requests.filter((r) => selectedIds.includes(r.id));
@@ -296,8 +313,21 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
       </div>
 
       {selectedIds.length > 0 && canApproveLeft && (
-        <div className="flex items-center gap-3 rounded-md border bg-amber-50 px-3 py-2">
-          <Badge className="bg-amber-600 text-white">{selectedIds.length} selected</Badge>
+        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-amber-50 px-3 py-2">
+          <Badge className="bg-amber-600 text-white">
+            {allPendingAcrossPagesSelected ? `All ${total} selected` : `${selectedIds.length} selected`}
+          </Badge>
+          {canSelectAllAcrossPages && (
+            <Button
+              size="sm"
+              variant="link"
+              className="h-7 px-0 text-xs"
+              onClick={handleSelectAllAcrossPages}
+              disabled={isFetchingAllPending}
+            >
+              {isFetchingAllPending ? "Selecting all..." : `Select all ${total} pending requests`}
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={openBulkApprove}
@@ -610,6 +640,11 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                 </span>
               </div>
             ))}
+            {selectedIds.length > selectedRequests.length && (
+              <div className="text-xs text-muted-foreground italic">
+                + {selectedIds.length - selectedRequests.length} more not shown on this page
+              </div>
+            )}
           </div>
           <div className="py-2 space-y-2">
             <Label htmlFor="bulkApproveReason">Unified Reason of Leaving (optional)</Label>

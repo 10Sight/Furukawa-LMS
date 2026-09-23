@@ -98,6 +98,7 @@ export const leftRequestApi = createApi({
 
 export const {
   useGetAllLeftRequestsQuery,
+  useLazyGetAllLeftRequestsQuery,
   useGetLeftRequestByIdQuery,
   useGetPendingLeftRequestCountQuery,
   useApplyLeftRequestMutation,

@@ -323,6 +323,13 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
         return Boolean(value && value.includes('Approved') && !value.includes('Rejected'));
     };
 
+    // Renders a signature column's value only once it's a genuine approval (never a rejection
+    // or an empty/awaiting-signature field), stripping the "Approved By: " prefix for display.
+    const getApprovalName = (value) => {
+        if (!value || !value.includes('Approved') || value.includes('Rejected')) return null;
+        return value.replace(/^Approved By:\s*/i, '');
+    };
+
     const { pendingCount, approvedCount, totalCount } = useMemo(() => {
         const approved = monitoringList.filter(isSheetApproved).length;
         return {
@@ -545,6 +552,8 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
                                     <TableRow className="border-slate-200 h-12">
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pl-6 w-[300px]">Operator Details</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approval Status</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approved by HOD</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approved by Training Cell</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Monitoring Status</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Actions By</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Start Date</TableHead>
@@ -557,7 +566,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
                                 <TableBody>
                                     {loadingList ? (
                                         <TableRow>
-                                            <TableCell colSpan={9} className="h-40 text-center text-slate-400">
+                                            <TableCell colSpan={11} className="h-40 text-center text-slate-400">
                                                 <div className="flex flex-col items-center gap-2">
                                                     <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                                                     <span className="text-xs font-medium">Loading operators...</span>
@@ -610,6 +619,12 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
                                                                 </div>
                                                             )}
                                                         </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-medium text-slate-600">
+                                                        {getApprovalName(item.approvedBy) || <span className="text-slate-300 italic">-</span>}
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-medium text-slate-600">
+                                                        {getApprovalName(item.verifiedBy) || <span className="text-slate-300 italic">-</span>}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-semibold text-slate-700">
                                                         {getLatestFilledDay(item.gridData)}
@@ -710,7 +725,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
                                         })
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={9} className="h-40 text-center">
+                                            <TableCell colSpan={11} className="h-40 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <IconUsersGroup className="w-12 h-12 text-slate-200" />
                                                     <span className="text-sm text-slate-400 font-medium">

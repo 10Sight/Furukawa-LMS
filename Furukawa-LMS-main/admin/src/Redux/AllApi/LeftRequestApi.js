@@ -68,6 +68,24 @@ export const leftRequestApi = createApi({
       invalidatesTags: ["LeftRequest", "LeftRequestCount"],
     }),
 
+    bulkApproveLeftRequest: builder.mutation({
+      query: ({ ids, reasonOfLeaving }) => ({
+        url: "/api/left-requests/bulk-approve",
+        method: "PATCH",
+        data: { ids, reasonOfLeaving },
+      }),
+      invalidatesTags: ["LeftRequest", "LeftRequestCount"],
+    }),
+
+    bulkRejectLeftRequest: builder.mutation({
+      query: ({ ids, rejectionReason }) => ({
+        url: "/api/left-requests/bulk-reject",
+        method: "PATCH",
+        data: { ids, rejectionReason },
+      }),
+      invalidatesTags: ["LeftRequest", "LeftRequestCount"],
+    }),
+
     cancelLeftRequest: builder.mutation({
       query: (id) => ({
         url: `/api/left-requests/${id}/cancel`,
@@ -86,6 +104,8 @@ export const {
   useBulkApplyLeftRequestMutation,
   useApproveLeftRequestMutation,
   useRejectLeftRequestMutation,
+  useBulkApproveLeftRequestMutation,
+  useBulkRejectLeftRequestMutation,
   useCancelLeftRequestMutation,
 } = leftRequestApi;
 

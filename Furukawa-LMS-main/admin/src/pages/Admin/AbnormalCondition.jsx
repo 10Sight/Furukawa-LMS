@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,46 +32,7 @@ import {
     useApproveAbnormalConditionEntryMutation,
     useDeleteAbnormalConditionSheetMutation
 } from "@/Redux/AllApi/AbnormalConditionApi";
-
-// Responsive auto-growing editor component for spreadsheet text columns
-const AutoGrowingTextarea = ({ value, onChange, disabled, className }) => {
-    const ref = useRef(null);
-
-    // Keep innerText in sync with the value prop, but only if they differ
-    // to avoid resetting caret position during typing.
-    useEffect(() => {
-        if (ref.current && ref.current.innerText !== value) {
-            ref.current.innerText = value || "";
-        }
-    }, [value]);
-
-    const handleInput = (e) => {
-        if (onChange) {
-            onChange({ target: { value: e.target.innerText } });
-        }
-    };
-
-    const handleBlur = (e) => {
-        if (onChange) {
-            onChange({ target: { value: e.target.innerText } });
-        }
-    };
-
-    return (
-        <div
-            ref={ref}
-            contentEditable={!disabled}
-            onInput={handleInput}
-            onBlur={handleBlur}
-            className={`min-h-[1.5rem] w-full min-w-[150px] max-w-[400px] outline-none bg-transparent whitespace-pre-wrap break-words focus:ring-1 focus:ring-blue-500 rounded p-1 text-xs border border-transparent hover:border-gray-200 transition-all ${disabled ? "cursor-not-allowed opacity-80" : "cursor-text hover:bg-slate-50/50 focus:bg-white focus:border-slate-300"
-                } ${className}`}
-            style={{
-                display: "block",
-                wordBreak: "break-word",
-            }}
-        />
-    );
-};
+import { EditableCell } from "@/components/admin/LayoutEditorCells";
 
 export default function AbnormalCondition() {
     const authUser = useSelector((state) => state.auth.user);
@@ -469,19 +430,21 @@ export default function AbnormalCondition() {
 
                                                 {/* Line */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.lineText || ""}
-                                                        onChange={(ev) => handleCellChange(idx, "lineText", ev.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "lineText", v)}
                                                     />
                                                 </td>
 
                                                 {/* Process */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.processText || ""}
-                                                        onChange={(ev) => handleCellChange(idx, "processText", ev.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "processText", v)}
                                                     />
                                                 </td>
 
@@ -523,60 +486,63 @@ export default function AbnormalCondition() {
 
                                                 {/* Abnormal Condition */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.abnormalCondition || ""}
-                                                        onChange={(event) => handleCellChange(idx, "abnormalCondition", event.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "abnormalCondition", v)}
                                                         className="font-medium"
                                                     />
                                                 </td>
 
                                                 {/* Cause */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.cause || ""}
-                                                        onChange={(event) => handleCellChange(idx, "cause", event.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "cause", v)}
                                                     />
                                                 </td>
 
                                                 {/* Action */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.action || ""}
-                                                        onChange={(event) => handleCellChange(idx, "action", event.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "action", v)}
                                                     />
                                                 </td>
 
                                                 {/* Resp */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.respUserText || ""}
-                                                        onChange={(ev) => handleCellChange(idx, "respUserText", ev.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "respUserText", v)}
                                                     />
                                                 </td>
 
                                                 {/* Target */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <input
-                                                        type="text"
+                                                    <EditableCell
                                                         disabled={!canEdit}
                                                         placeholder="Target Date/Days"
                                                         value={e.target || ""}
-                                                        onChange={(event) => handleCellChange(idx, "target", event.target.value)}
-                                                        className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center"
-                                                        style={{ width: `${Math.max((e.target || "").length || 12, 12) + 2}ch`, minWidth: "100px" }}
+                                                        onCommit={(v) => handleCellChange(idx, "target", v)}
+                                                        className="text-center"
                                                     />
                                                 </td>
 
                                                 {/* Setup Confirmation */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <AutoGrowingTextarea
+                                                    <EditableCell
+                                                        multiline
                                                         disabled={!canEdit}
                                                         value={e.setupConfirmation || ""}
-                                                        onChange={(event) => handleCellChange(idx, "setupConfirmation", event.target.value)}
+                                                        onCommit={(v) => handleCellChange(idx, "setupConfirmation", v)}
                                                     />
                                                 </td>
 

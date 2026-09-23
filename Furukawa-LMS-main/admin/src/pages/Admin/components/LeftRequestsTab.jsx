@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Select,
@@ -41,6 +42,8 @@ import {
   useGetAllLeftRequestsQuery,
   useApproveLeftRequestMutation,
   useRejectLeftRequestMutation,
+  useBulkApproveLeftRequestMutation,
+  useBulkRejectLeftRequestMutation,
   useCancelLeftRequestMutation,
 } from "@/Redux/AllApi/LeftRequestApi";
 
@@ -107,6 +110,12 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const [approveReason, setApproveReason] = useState("");
   const [approveCustomReason, setApproveCustomReason] = useState("");
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showBulkApprove, setShowBulkApprove] = useState(false);
+  const [bulkApproveReason, setBulkApproveReason] = useState("");
+  const [bulkApproveCustomReason, setBulkApproveCustomReason] = useState("");
+  const [showBulkReject, setShowBulkReject] = useState(false);
+  const [bulkRejectionReason, setBulkRejectionReason] = useState("");
 
   const { data, isLoading, isFetching, refetch } = useGetAllLeftRequestsQuery({
     status: statusTab,
@@ -116,11 +125,92 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
 
   const [approveLeftRequest, { isLoading: isApproving }] = useApproveLeftRequestMutation();
   const [rejectLeftRequest, { isLoading: isRejecting }] = useRejectLeftRequestMutation();
+  const [bulkApproveLeftRequest, { isLoading: isBulkApproving }] = useBulkApproveLeftRequestMutation();
+  const [bulkRejectLeftRequest, { isLoading: isBulkRejecting }] = useBulkRejectLeftRequestMutation();
   const [cancelLeftRequest, { isLoading: isCancelling }] = useCancelLeftRequestMutation();
 
   const requests = data?.data?.rows || [];
   const totalPages = data?.data?.totalPages || 1;
   const total = data?.data?.total || 0;
+  const selectablePendingIds = requests.filter((r) => r.status === "PENDING").map((r) => r.id);
+  const allPendingSelected = selectablePendingIds.length > 0 &&
+    selectablePendingIds.every((id) => selectedIds.includes(id));
+
+  const changeStatusTab = (tab) => {
+    setStatusTab(tab);
+    setPage(1);
+    setSelectedIds([]);
+  };
+
+  const changePage = (p) => {
+    setPage(p);
+    setSelectedIds([]);
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds(allPendingSelected ? [] : selectablePendingIds);
+  };
+
+  const handleSelectRow = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const selectedRequests = requests.filter((r) => selectedIds.includes(r.id));
+
+  const openBulkApprove = () => {
+    setBulkApproveReason("");
+    setBulkApproveCustomReason("");
+    setShowBulkApprove(true);
+  };
+
+  const handleBulkApprove = async () => {
+    if (bulkApproveReason === "Other" && !bulkApproveCustomReason.trim()) {
+      toast.error("Please specify the reason of leaving");
+      return;
+    }
+    const reasonOfLeaving = bulkApproveReason === "Other"
+      ? bulkApproveCustomReason.trim()
+      : bulkApproveReason.trim();
+    try {
+      const res = await bulkApproveLeftRequest({
+        ids: selectedIds,
+        ...(reasonOfLeaving ? { reasonOfLeaving } : {}),
+      }).unwrap();
+      const { approved = [], skipped = [] } = res?.data || {};
+      toast.success(`${approved.length} left request(s) approved${skipped.length ? `, ${skipped.length} skipped` : ""}`);
+      setShowBulkApprove(false);
+      setSelectedIds([]);
+      refetch();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to approve left requests");
+    }
+  };
+
+  const openBulkReject = () => {
+    setBulkRejectionReason("");
+    setShowBulkReject(true);
+  };
+
+  const handleBulkReject = async () => {
+    if (!bulkRejectionReason.trim()) {
+      toast.error("Please provide a rejection reason");
+      return;
+    }
+    try {
+      const res = await bulkRejectLeftRequest({
+        ids: selectedIds,
+        rejectionReason: bulkRejectionReason.trim(),
+      }).unwrap();
+      const { rejected = [], skipped = [] } = res?.data || {};
+      toast.success(`${rejected.length} left request(s) rejected${skipped.length ? `, ${skipped.length} skipped` : ""}`);
+      setShowBulkReject(false);
+      setSelectedIds([]);
+      refetch();
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to reject left requests");
+    }
+  };
 
   const openApprove = (request) => {
     setApproveTarget(request);
@@ -196,7 +286,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
             key={tab.value}
             size="sm"
             variant={statusTab === tab.value ? "default" : "outline"}
-            onClick={() => { setStatusTab(tab.value); setPage(1); }}
+            onClick={() => changeStatusTab(tab.value)}
             className={statusTab === tab.value ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
           >
             {tab.label}
@@ -205,10 +295,49 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
         {isFetching && <IconLoader className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
       </div>
 
+      {selectedIds.length > 0 && canApproveLeft && (
+        <div className="flex items-center gap-3 rounded-md border bg-amber-50 px-3 py-2">
+          <Badge className="bg-amber-600 text-white">{selectedIds.length} selected</Badge>
+          <Button
+            size="sm"
+            onClick={openBulkApprove}
+            className="bg-green-600 hover:bg-green-700 text-white h-7 px-2 text-xs"
+          >
+            <IconCheck className="h-3.5 w-3.5 mr-1" /> Approve Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={openBulkReject}
+            className="h-7 px-2 text-xs"
+          >
+            <IconX className="h-3.5 w-3.5 mr-1" /> Reject Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSelectedIds([])}
+            className="h-7 px-2 text-xs ml-auto"
+          >
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              {canApproveLeft && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allPendingSelected}
+                    onCheckedChange={handleSelectAll}
+                    disabled={selectablePendingIds.length === 0}
+                    aria-label="Select all pending"
+                  />
+                </TableHead>
+              )}
               <TableHead>Operator</TableHead>
               <TableHead>Department / Section</TableHead>
               <TableHead>Leaving Details</TableHead>
@@ -220,14 +349,14 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={canApproveLeft ? 7 : 6} className="text-center py-10 text-muted-foreground">
                   <IconLoader className="h-5 w-5 animate-spin mx-auto mb-2" />
                   Loading left requests...
                 </TableCell>
               </TableRow>
             ) : requests.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={canApproveLeft ? 7 : 6} className="text-center py-10 text-muted-foreground">
                   <IconInfoCircle className="h-5 w-5 mx-auto mb-2" />
                   No {statusTab !== "ALL" ? statusTab.toLowerCase() : ""} left requests found
                 </TableCell>
@@ -238,6 +367,16 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                   (canApproveLeft || String(request.requestedBy) === String(currentUserId));
                 return (
                   <TableRow key={request.id}>
+                    {canApproveLeft && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.includes(request.id)}
+                          onCheckedChange={() => handleSelectRow(request.id)}
+                          disabled={request.status !== "PENDING"}
+                          aria-label={`Select ${request.fullName}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Avatar className="h-8 w-8">
@@ -327,13 +466,13 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => changePage(page - 1)}>
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
             Page {page} of {totalPages} ({total} total)
           </span>
-          <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
+          <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => changePage(page + 1)}>
             Next
           </Button>
         </div>
@@ -434,6 +573,117 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
             >
               {isApproving && <IconLoader className="h-4 w-4 animate-spin" />}
               Confirm Approval
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Approve Dialog */}
+      <Dialog
+        open={showBulkApprove}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowBulkApprove(false);
+            setBulkApproveReason("");
+            setBulkApproveCustomReason("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-700">
+              <IconCheck className="h-5 w-5" />
+              Approve {selectedIds.length} Left Request{selectedIds.length !== 1 ? "s" : ""}
+            </DialogTitle>
+            <DialogDescription>
+              The selected operators will be marked as LEFT using their requested leaving dates.
+              Optionally apply a unified reason of leaving to all of them, or leave this blank to
+              keep each request's original reason.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2 max-h-40 overflow-y-auto">
+            {selectedRequests.map((r) => (
+              <div key={r.id} className="text-sm flex items-center justify-between">
+                <span>{r.fullName} ({r.empId || "-"})</span>
+                <span className="text-xs text-muted-foreground">
+                  {r.leavingDate ? safeDateFormat(r.leavingDate, "dd/MM/yyyy") : "-"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="py-2 space-y-2">
+            <Label htmlFor="bulkApproveReason">Unified Reason of Leaving (optional)</Label>
+            <Select value={bulkApproveReason} onValueChange={setBulkApproveReason}>
+              <SelectTrigger id="bulkApproveReason">
+                <SelectValue placeholder="Keep each request's original reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAVING_REASONS.map((reason) => (
+                  <SelectItem key={reason} value={reason}>
+                    {reason}
+                  </SelectItem>
+                ))}
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {bulkApproveReason === "Other" && (
+              <Textarea
+                value={bulkApproveCustomReason}
+                onChange={(e) => setBulkApproveCustomReason(e.target.value)}
+                placeholder="Please specify the reason"
+                rows={2}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkApprove(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkApprove}
+              disabled={isBulkApproving || (bulkApproveReason === "Other" && !bulkApproveCustomReason.trim())}
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isBulkApproving && <IconLoader className="h-4 w-4 animate-spin" />}
+              Confirm Approval
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Reject Dialog */}
+      <Dialog open={showBulkReject} onOpenChange={(open) => { if (!open) setShowBulkReject(false); }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <IconX className="h-5 w-5" />
+              Reject {selectedIds.length} Left Request{selectedIds.length !== 1 ? "s" : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejecting all {selectedIds.length} selected left request
+              {selectedIds.length !== 1 ? "s" : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Textarea
+              value={bulkRejectionReason}
+              onChange={(e) => setBulkRejectionReason(e.target.value)}
+              placeholder="Reason for rejection"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkReject(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBulkReject}
+              disabled={isBulkRejecting || !bulkRejectionReason.trim()}
+              className="gap-2"
+            >
+              {isBulkRejecting && <IconLoader className="h-4 w-4 animate-spin" />}
+              Confirm Rejection
             </Button>
           </DialogFooter>
         </DialogContent>

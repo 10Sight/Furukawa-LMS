@@ -332,6 +332,108 @@ export const rejectLeftRequest = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, updatedRequest, "Left request rejected"));
 });
 
+export const bulkApproveLeftRequests = asyncHandler(async (req, res) => {
+    const { ids, reasonOfLeaving } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("No IDs provided", 400);
+
+    const uniqueIds = [...new Set(ids)];
+    const approved = [];
+    const skipped = [];
+
+    for (const id of uniqueIds) {
+        const request = await LeftRequest.findById(id);
+        if (!request) { skipped.push({ id, reason: "Not found" }); continue; }
+        if (request.status !== "PENDING") { skipped.push({ id, reason: `Already ${request.status.toLowerCase()}` }); continue; }
+
+        const [userRows] = await executeQuery(
+            "SELECT id, status, joiningDate, statusHistory, isTemporary FROM users WHERE id = ?",
+            [request.userId]
+        );
+        if (userRows.length === 0) { skipped.push({ id, reason: "Associate no longer exists" }); continue; }
+        const targetUser = userRows[0];
+
+        const leavingDateStr = toDateOnlyString(request.leavingDate);
+        const finalReasonOfLeaving = (reasonOfLeaving?.trim()) || request.reasonOfLeaving;
+
+        const updatedHistory = getUpdatedStatusHistory(
+            targetUser.statusHistory,
+            { status: targetUser.status, joiningDate: targetUser.joiningDate, leavingDate: undefined },
+            { status: "LEFT", leavingDate: leavingDateStr },
+            { changedBy: req.user.id, changedByName: req.user.fullName }
+        );
+
+        const updateFields = ["status = 'LEFT'", "leavingDate = ?", "reasonOfLeaving = ?", "updatedAt = GETDATE()"];
+        const updateParams = [leavingDateStr, finalReasonOfLeaving];
+        if (updatedHistory) {
+            updateFields.push("statusHistory = ?");
+            updateParams.push(JSON.stringify(updatedHistory));
+        }
+        updateParams.push(request.userId);
+        await executeQuery(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`, updateParams);
+
+        const updatedRequest = await LeftRequest.approve(id, {
+            reviewedBy: req.user.id,
+            reviewedByName: req.user.fullName || req.user.userName,
+            reasonOfLeaving: finalReasonOfLeaving,
+        });
+
+        if (targetUser.isTemporary) {
+            const today = new Date().toISOString().split('T')[0];
+            for (const d of new Set([today, leavingDateStr])) {
+                DojoStageHistory.syncDate(d, { syncedBy: 'bulkApproveLeftRequests' }).catch(err =>
+                    console.error(`[LeftRequest] DojoStageHistory.syncDate(${d}) failed:`, err.message)
+                );
+            }
+        }
+
+        sendLeftRequestResolutionEmail(updatedRequest).catch(err =>
+            console.error("[LeftRequest] Failed to send approval notification:", err.message)
+        );
+
+        approved.push(updatedRequest);
+    }
+
+    logAudit(req.user.id, "BULK_APPROVE_LEFT_REQUEST", {
+        ids: uniqueIds, approved: approved.length, skipped: skipped.length
+    }, { req }).catch(err => console.error("logAudit(BULK_APPROVE_LEFT_REQUEST) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, { approved, skipped }, `${approved.length} left request(s) approved, ${skipped.length} skipped`));
+});
+
+export const bulkRejectLeftRequests = asyncHandler(async (req, res) => {
+    const { ids, rejectionReason } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("No IDs provided", 400);
+    if (!rejectionReason?.trim()) throw new ApiError("Rejection reason is required", 400);
+
+    const uniqueIds = [...new Set(ids)];
+    const rejected = [];
+    const skipped = [];
+
+    for (const id of uniqueIds) {
+        const request = await LeftRequest.findById(id);
+        if (!request) { skipped.push({ id, reason: "Not found" }); continue; }
+        if (request.status !== "PENDING") { skipped.push({ id, reason: `Already ${request.status.toLowerCase()}` }); continue; }
+
+        const updatedRequest = await LeftRequest.reject(id, {
+            reviewedBy: req.user.id,
+            reviewedByName: req.user.fullName || req.user.userName,
+            rejectionReason: rejectionReason.trim(),
+        });
+
+        sendLeftRequestResolutionEmail(updatedRequest).catch(err =>
+            console.error("[LeftRequest] Failed to send rejection notification:", err.message)
+        );
+
+        rejected.push(updatedRequest);
+    }
+
+    logAudit(req.user.id, "BULK_REJECT_LEFT_REQUEST", {
+        ids: uniqueIds, rejected: rejected.length, skipped: skipped.length, rejectionReason: rejectionReason.trim()
+    }, { req }).catch(err => console.error("logAudit(BULK_REJECT_LEFT_REQUEST) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, { rejected, skipped }, `${rejected.length} left request(s) rejected, ${skipped.length} skipped`));
+});
+
 export const cancelLeftRequest = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const request = await LeftRequest.findById(id);

@@ -7,6 +7,8 @@ import {
     getLeftRequestById,
     approveLeftRequest,
     rejectLeftRequest,
+    bulkApproveLeftRequests,
+    bulkRejectLeftRequests,
     cancelLeftRequest,
 } from "../controllers/leftRequest.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
@@ -20,6 +22,9 @@ router.get("/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:appl
 
 router.post("/", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:apply_left"), applyLeftRequest);
 router.post("/bulk", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:apply_left"), bulkApplyLeftRequest);
+
+router.patch("/bulk-approve", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:approve_left"), bulkApproveLeftRequests);
+router.patch("/bulk-reject", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:approve_left"), bulkRejectLeftRequests);
 
 router.patch("/:id/approve", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:approve_left"), approveLeftRequest);
 router.patch("/:id/reject", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", "user:approve_left"), rejectLeftRequest);

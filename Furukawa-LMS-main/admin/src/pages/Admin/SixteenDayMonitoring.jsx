@@ -33,9 +33,10 @@ import {
     IconArrowLeft,
     IconEdit,
     IconPlus,
-    IconDatabase,
-    IconLayoutDashboard,
-    IconMessage
+    IconMessage,
+    IconClockHour4,
+    IconCircleCheck,
+    IconListDetails
 } from "@tabler/icons-react";
 import SixteenDayMonitoringSheet from '@/components/admin/SixteenDayMonitoringSheet';
 import MenteeFeedbackMonitoringSheet from '@/components/admin/MenteeFeedbackMonitoringSheet';
@@ -44,7 +45,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
-import { toast } from 'sonner';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import useCountdown from '@/hooks/useCountdown';
 
@@ -79,7 +79,10 @@ const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
         </div>
     );
 };
-const SixteenDayMonitoring = ({ readOnly = false }) => {
+// approvalField picks which signature column classifies a sheet as Approved/Pending in the
+// Monitoring Stack sub-tabs — 'approvedBy' (Dept. Head) by default, or 'verifiedBy' (Area
+// Incharge / Training Cell) when a caller (e.g. Dojo Hiring) wants that earlier sign-off instead.
+const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasSixteenDayBypass = authUser?.customRole?.permissions?.includes('dojo:sixteenday_monitoring');
@@ -111,9 +114,6 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
 
     const feedbackRef = useRef(null);
 
-    // Mode selection: 'stack' or 'layout'
-    const [activeTab, setActiveTab] = useState('stack');
-
     // Freeze hierarchy if the user is a staff member restricted to their own area
     const isSelectionLocked = useMemo(() => {
         if (canAccessAll) return false;
@@ -130,6 +130,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
     const [activeDept, setActiveDept] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [forceNewAttempt, setForceNewAttempt] = useState(false);
+    const [approvalTab, setApprovalTab] = useState('pending');
 
     // Monitoring Status List
     const [monitoringList, setMonitoringList] = useState([]);
@@ -184,7 +185,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
 
     // Fetch Monitoring Status List
     const fetchMonitoringList = async () => {
-        if (activeTab !== 'stack' || studentId) return;
+        if (studentId) return;
         try {
             setLoadingList(true);
 
@@ -225,27 +226,21 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
     };
 
     useEffect(() => {
-        if (!studentId && activeTab === 'stack') {
+        if (!studentId) {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, activeTab, assignableDepartments]);
+    }, [dept, section, line, studentId, assignableDepartments]);
 
     const [logAction] = useLogActionMutation();
 
-    // Log once per tab/department transition — not on every filter tweak
+    // Log once per department transition — not on every filter tweak
     useEffect(() => {
         if (!dept) return;
-        if (activeTab === 'stack') {
-            logAction({ action: 'VIEW_SIXTEEN_DAY_MONITORING_STACK', details: { dept } })
-                .unwrap()
-                .catch((err) => console.error("Failed to log stack view:", err));
-        } else if (activeTab === 'layout') {
-            logAction({ action: 'VIEW_SIXTEEN_DAY_MONITORING_LAYOUT', details: { departmentId: dept, sectionId: section } })
-                .unwrap()
-                .catch((err) => console.error("Failed to log layout view:", err));
-        }
+        logAction({ action: 'VIEW_SIXTEEN_DAY_MONITORING_STACK', details: { dept } })
+            .unwrap()
+            .catch((err) => console.error("Failed to log stack view:", err));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, dept]);
+    }, [dept]);
 
     // Role-based Initialization & Auto-select
     useEffect(() => {
@@ -320,14 +315,35 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
         return "Not Started";
     };
 
+    // A sheet counts as Approved only once `approvalField` (Approved By / Dept. Head by default,
+    // or Verified By / Area Incharge-Training Cell when the caller overrides it) carries a valid,
+    // non-rejected signature.
+    const isSheetApproved = (item) => {
+        const value = item[approvalField];
+        return Boolean(value && value.includes('Approved') && !value.includes('Rejected'));
+    };
+
+    const { pendingCount, approvedCount, totalCount } = useMemo(() => {
+        const approved = monitoringList.filter(isSheetApproved).length;
+        return {
+            pendingCount: monitoringList.length - approved,
+            approvedCount: approved,
+            totalCount: monitoringList.length
+        };
+    }, [monitoringList, approvalField]);
+
     const filteredMonitoringList = useMemo(() => {
-        if (!searchTerm) return monitoringList;
+        let list = monitoringList;
+        if (approvalTab === 'approved') list = list.filter(isSheetApproved);
+        else if (approvalTab === 'pending') list = list.filter(s => !isSheetApproved(s));
+
+        if (!searchTerm) return list;
         const lowSearch = searchTerm.toLowerCase();
-        return monitoringList.filter(s =>
+        return list.filter(s =>
             s.fullName?.toLowerCase().includes(lowSearch) ||
             s.empId?.toLowerCase().includes(lowSearch)
         );
-    }, [monitoringList, searchTerm]);
+    }, [monitoringList, searchTerm, approvalTab, approvalField]);
 
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
@@ -339,41 +355,8 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-slate-900 leading-tight">16-Day Monitoring</h1>
-                        <p className="text-sm text-slate-500 font-medium">Monitoring workflow and layout management</p>
+                        <p className="text-sm text-slate-500 font-medium">Monitoring workflow</p>
                     </div>
-                </div>
-
-                <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200 shadow-inner">
-                    <button
-                        onClick={() => { setActiveTab('stack'); setStudentId(""); }}
-                        className={cn(
-                            "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
-                            activeTab === 'stack' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        )}
-                    >
-                        <IconDatabase size={18} />
-                        Monitoring Stack
-                    </button>
-                    {(isAdmin || hasManagePermission) && !readOnly && (
-                        <button
-                            onClick={() => {
-                                if (dept === "ALL") {
-                                    toast.info("Select a specific department to manage its layout.");
-                                    return;
-                                }
-                                setActiveTab('layout');
-                                setStudentId("");
-                            }}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
-                                activeTab === 'layout' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                                dept === "ALL" && "opacity-50 cursor-not-allowed"
-                            )}
-                        >
-                            <IconLayoutDashboard size={18} />
-                            Layout Management
-                        </button>
-                    )}
                 </div>
             </div>
 
@@ -441,19 +424,17 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                 </Select>
                             </div>
 
-                            {activeTab === 'stack' && (
-                                <div className="space-y-1.5 flex items-end">
-                                    <div className="relative w-full">
-                                        <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                        <Input
-                                            className="pl-10 h-10 border-slate-200"
-                                            placeholder="Search Operator..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                    </div>
+                            <div className="space-y-1.5 flex items-end">
+                                <div className="relative w-full">
+                                    <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <Input
+                                        className="pl-10 h-10 border-slate-200"
+                                        placeholder="Search Operator..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
                                 </div>
-                            )}
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -477,13 +458,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
             {/* Content Area */}
             {dept ? (
                 <div className="space-y-6">
-                    {activeTab === 'layout' ? (
-                        <SixteenDayMonitoringSheet
-                            departmentId={dept}
-                            sectionId={section || 0}
-                            canEditConfig={true}
-                        />
-                    ) : studentId ? (
+                    {studentId ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
                             {!isEmployee && (
                                 <Button
@@ -522,6 +497,48 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                             )}
                         </div>
                     ) : (
+                        <div className="space-y-4">
+                            <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200 shadow-inner w-fit">
+                                <button
+                                    onClick={() => setApprovalTab('pending')}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
+                                        approvalTab === 'pending' ? "bg-white text-amber-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    <IconClockHour4 size={16} />
+                                    Pending
+                                    <Badge variant="outline" className="ml-0.5 bg-amber-100 text-amber-700 border-amber-200 text-[10px] font-bold px-1.5 py-0">
+                                        {pendingCount}
+                                    </Badge>
+                                </button>
+                                <button
+                                    onClick={() => setApprovalTab('approved')}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
+                                        approvalTab === 'approved' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    <IconCircleCheck size={16} />
+                                    Approved
+                                    <Badge variant="outline" className="ml-0.5 bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-bold px-1.5 py-0">
+                                        {approvedCount}
+                                    </Badge>
+                                </button>
+                                <button
+                                    onClick={() => setApprovalTab('all')}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
+                                        approvalTab === 'all' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    <IconListDetails size={16} />
+                                    All
+                                    <Badge variant="outline" className="ml-0.5 bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-bold px-1.5 py-0">
+                                        {totalCount}
+                                    </Badge>
+                                </button>
+                            </div>
                         <Card className="border-slate-200 shadow-sm overflow-hidden">
                             <Table>
                                 <TableHeader className="bg-slate-50/50">
@@ -696,7 +713,13 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                             <TableCell colSpan={9} className="h-40 text-center">
                                                 <div className="flex flex-col items-center gap-3">
                                                     <IconUsersGroup className="w-12 h-12 text-slate-200" />
-                                                    <span className="text-sm text-slate-400 font-medium">No operators found for selection</span>
+                                                    <span className="text-sm text-slate-400 font-medium">
+                                                        {approvalTab === 'approved'
+                                                            ? "No approved monitoring sheets found for this selection"
+                                                            : approvalTab === 'pending'
+                                                                ? "No pending monitoring sheets found for this selection"
+                                                                : "No operators found for selection"}
+                                                    </span>
                                                 </div>
                                             </TableCell>
                                         </TableRow>
@@ -704,6 +727,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                                 </TableBody>
                             </Table>
                         </Card>
+                        </div>
                     )}
                 </div>
             ) : (
@@ -713,7 +737,7 @@ const SixteenDayMonitoring = ({ readOnly = false }) => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700">Select Department</h3>
                     <p className="text-sm text-slate-500 max-w-xs text-center mt-2 leading-relaxed">
-                        Choose a department to view and manage its monitoring {activeTab === 'layout' ? 'configuration' : 'stack'}.
+                        Choose a department to view and manage its monitoring stack.
                     </p>
                 </div>
             )}

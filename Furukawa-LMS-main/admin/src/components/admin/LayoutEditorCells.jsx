@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Select,
     SelectContent,
@@ -10,16 +10,26 @@ import {
 // Click-to-edit text: renders as plain text until clicked, then swaps to an
 // autofocused input (or textarea when `multiline`). Enter/blur commits (only if
 // the value actually changed), Escape reverts. In multiline mode Enter inserts a
-// newline instead of committing — only blur/Escape end editing there. Keystrokes
-// stay in local `draft` state so typing never triggers a parent re-render — only
-// the commit does.
-export const EditableCell = ({ value, onCommit, placeholder = '', className = '', inputClassName = '', multiline = false }) => {
+// newline instead of committing — only blur/Escape end editing there, and the
+// textarea auto-grows to fit its content instead of staying a cramped fixed
+// height. Keystrokes stay in local `draft` state so typing never triggers a
+// parent re-render — only the commit does. `disabled` renders the plain
+// read-only span unconditionally, ignoring clicks.
+export const EditableCell = ({ value, onCommit, placeholder = '', className = '', inputClassName = '', multiline = false, disabled = false }) => {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value ?? '');
+    const textareaRef = useRef(null);
 
     useEffect(() => {
         if (!editing) setDraft(value ?? '');
     }, [value, editing]);
+
+    useEffect(() => {
+        if (multiline && editing && textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    }, [multiline, editing, draft]);
 
     const commit = () => {
         setEditing(false);
@@ -30,17 +40,18 @@ export const EditableCell = ({ value, onCommit, placeholder = '', className = ''
         setEditing(false);
     };
 
-    if (editing) {
+    if (editing && !disabled) {
         if (multiline) {
             return (
                 <textarea
+                    ref={textareaRef}
                     autoFocus
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onBlur={commit}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } }}
-                    className={`w-full bg-yellow-50 outline-none border border-blue-400 rounded-sm px-0.5 resize-y ${inputClassName}`}
+                    className={`w-full bg-yellow-50 outline-none border border-blue-400 rounded-sm px-0.5 resize-y overflow-hidden ${inputClassName}`}
                 />
             );
         }
@@ -61,12 +72,12 @@ export const EditableCell = ({ value, onCommit, placeholder = '', className = ''
     }
     return (
         <span
-            role="button"
-            tabIndex={0}
-            onClick={() => setEditing(true)}
-            onKeyDown={(e) => { if (e.key === 'Enter') setEditing(true); }}
-            title="Click to edit"
-            className={`cursor-text hover:bg-yellow-50 hover:outline hover:outline-1 hover:outline-blue-300 rounded-sm px-0.5 whitespace-pre-line ${className}`}
+            role={disabled ? undefined : "button"}
+            tabIndex={disabled ? undefined : 0}
+            onClick={disabled ? undefined : () => setEditing(true)}
+            onKeyDown={disabled ? undefined : (e) => { if (e.key === 'Enter') setEditing(true); }}
+            title={disabled ? undefined : "Click to edit"}
+            className={`${disabled ? '' : 'cursor-text hover:bg-yellow-50 hover:outline hover:outline-1 hover:outline-blue-300'} rounded-sm px-0.5 whitespace-pre-line ${className}`}
         >
             {value || placeholder}
         </span>

@@ -297,14 +297,15 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         return student;
     }, [monitoringList, studentId, isEmployee, authUser]);
 
-    const getStatusBadge = (status, verifiedBy, approvedBy) => {
-        if (!status || status === 'Draft') return { label: 'Draft', color: 'bg-slate-100 text-slate-600 border-slate-200' };
-        if (verifiedBy?.includes('Rejected') || approvedBy?.includes('Rejected')) {
+    const getStatusBadge = (item) => {
+        if (!item.status || item.status === 'Draft') return { label: 'Draft', color: 'bg-slate-100 text-slate-600 border-slate-200' };
+        const hasRejection = ['checkedBy', 'verifiedBy', 'approvedBy', 'verifiedByEduCell'].some(f => item[f]?.includes('Rejected'));
+        if (hasRejection) {
             return { label: 'Rejected', color: 'bg-red-100 text-red-600 border-red-200' };
         }
-        if (approvedBy?.includes('Approved')) return { label: 'Approved', color: 'bg-emerald-100 text-emerald-600 border-emerald-200' };
-        if (status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-600 border-blue-200' };
-        return { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
+        if (isFieldApproved(item, approvalField)) return { label: 'Approved', color: 'bg-emerald-100 text-emerald-600 border-emerald-200' };
+        if (item.status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-600 border-blue-200' };
+        return { label: item.status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
     };
 
     const getLatestFilledDay = (gridData) => {
@@ -584,7 +585,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                                         </TableRow>
                                     ) : filteredMonitoringList.length > 0 ? (
                                         filteredMonitoringList.map((item) => {
-                                            const badge = getStatusBadge(item.status, item.verifiedBy, item.approvedBy);
+                                            const badge = getStatusBadge(item);
                                             const lastActionBy = item.approvedBy || item.verifiedBy || item.checkedBy || "-";
 
                                             return (

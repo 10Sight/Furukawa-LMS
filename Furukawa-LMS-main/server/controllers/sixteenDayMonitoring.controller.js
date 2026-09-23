@@ -91,7 +91,7 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
         ) m ON u.id = m.studentId AND m.rn = 1
         LEFT JOIN (
             SELECT studentId, COUNT(*) as totalAttempts,
-                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
+                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' OR verifiedByEduCell LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
             FROM sixteen_day_monitorings
             GROUP BY studentId
         ) stats ON u.id = stats.studentId

@@ -82,7 +82,10 @@ const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
 // approvalField picks which signature column classifies a sheet as Approved/Pending in the
 // Monitoring Stack sub-tabs — 'approvedBy' (Dept. Head) by default, or 'verifiedBy' (Area
 // Incharge / Training Cell) when a caller (e.g. Dojo Hiring) wants that earlier sign-off instead.
-const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }) => {
+// pendingGateField, when set, additionally requires that column to already be approved for a
+// sheet to count as Pending — e.g. Dojo Hiring only wants sheets HOD has already approved
+// (approvedBy) and that are now awaiting Training Cell (verifiedBy) sign-off.
+const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', pendingGateField = null }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasSixteenDayBypass = authUser?.customRole?.permissions?.includes('dojo:sixteenday_monitoring');
@@ -315,13 +318,20 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
         return "Not Started";
     };
 
+    // A signature column counts as a genuine approval once it's filled and isn't a rejection.
+    const isFieldApproved = (item, field) => {
+        const value = item[field];
+        return Boolean(value && value.includes('Approved') && !value.includes('Rejected'));
+    };
+
     // A sheet counts as Approved only once `approvalField` (Approved By / Dept. Head by default,
     // or Verified By / Area Incharge-Training Cell when the caller overrides it) carries a valid,
     // non-rejected signature.
-    const isSheetApproved = (item) => {
-        const value = item[approvalField];
-        return Boolean(value && value.includes('Approved') && !value.includes('Rejected'));
-    };
+    const isSheetApproved = (item) => isFieldApproved(item, approvalField);
+
+    // A sheet counts as Pending once it's not yet Approved and — when `pendingGateField` is set
+    // (Dojo Hiring gates Pending on HOD's approvedBy) — has already cleared that earlier stage.
+    const isSheetPending = (item) => !isSheetApproved(item) && (!pendingGateField || isFieldApproved(item, pendingGateField));
 
     // Renders a signature column's value only once it's a genuine approval (never a rejection
     // or an empty/awaiting-signature field), stripping the "Approved By: " prefix for display.
@@ -331,18 +341,17 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
     };
 
     const { pendingCount, approvedCount, totalCount } = useMemo(() => {
-        const approved = monitoringList.filter(isSheetApproved).length;
         return {
-            pendingCount: monitoringList.length - approved,
-            approvedCount: approved,
+            pendingCount: monitoringList.filter(isSheetPending).length,
+            approvedCount: monitoringList.filter(isSheetApproved).length,
             totalCount: monitoringList.length
         };
-    }, [monitoringList, approvalField]);
+    }, [monitoringList, approvalField, pendingGateField]);
 
     const filteredMonitoringList = useMemo(() => {
         let list = monitoringList;
         if (approvalTab === 'approved') list = list.filter(isSheetApproved);
-        else if (approvalTab === 'pending') list = list.filter(s => !isSheetApproved(s));
+        else if (approvalTab === 'pending') list = list.filter(isSheetPending);
 
         if (!searchTerm) return list;
         const lowSearch = searchTerm.toLowerCase();
@@ -350,7 +359,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy' }
             s.fullName?.toLowerCase().includes(lowSearch) ||
             s.empId?.toLowerCase().includes(lowSearch)
         );
-    }, [monitoringList, searchTerm, approvalTab, approvalField]);
+    }, [monitoringList, searchTerm, approvalTab, approvalField, pendingGateField]);
 
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">

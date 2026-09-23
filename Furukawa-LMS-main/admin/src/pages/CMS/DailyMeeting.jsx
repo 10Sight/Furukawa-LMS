@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
-    IconCalendar, IconFolder, IconFolderOpen, IconChevronDown, IconChevronUp, IconSettings, IconLoader2, IconAlertCircle, IconEye,
+    IconCalendar, IconFolder, IconChevronDown, IconChevronUp, IconSettings, IconLoader2, IconAlertCircle, IconEye,
     IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy,
     IconFileSpreadsheet, IconRefresh, IconCloud
 } from "@tabler/icons-react";
@@ -944,22 +944,17 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 }}
                 className="w-full"
             >
-                <TabsList className="flex flex-wrap gap-2 justify-start bg-transparent p-2 rounded-xl mb-4 h-auto w-fit">
+                <TabsList className="flex flex-wrap gap-1.5 justify-start bg-slate-100/80 p-1.5 rounded-lg mb-4 h-auto w-fit">
                     {visibleSections.map((sec) => {
                         const secId = String(sec.id || sec._id);
-                        const isActive = activeSectionId === secId;
-                        const FolderIcon = isActive ? IconFolderOpen : IconFolder;
                         return (
                             <TabsTrigger
                                 key={secId}
                                 value={secId}
                                 title={sec.name}
-                                className="flex flex-none flex-col items-center gap-1 w-20 h-auto rounded-lg px-2 py-2 whitespace-normal cursor-pointer transition-all hover:bg-slate-100 hover:scale-[1.04] hover:shadow-sm data-[state=active]:bg-indigo-50 data-[state=active]:ring-1 data-[state=active]:ring-indigo-200 data-[state=active]:shadow-none data-[state=active]:hover:bg-indigo-100"
+                                className="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-600 cursor-pointer transition-all data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm"
                             >
-                                <FolderIcon className={cn("size-8 shrink-0", isActive ? "text-indigo-500" : "text-slate-400")} stroke={1.5} />
-                                <span className={cn("text-[11px] font-medium text-center leading-tight line-clamp-2 break-words", isActive ? "text-indigo-700" : "text-slate-600")}>
-                                    {sec.name}
-                                </span>
+                                {sec.name}
                             </TabsTrigger>
                         );
                     })}
@@ -1070,58 +1065,56 @@ export default function DailyMeeting() {
                         next.delete("mode");
                         setSearchParams(next);
                     }}
-                    className="w-full"
+                    orientation="vertical"
+                    className="w-full flex flex-col md:flex-row items-start gap-4"
                 >
-                    <TabsList className="flex flex-wrap gap-3 justify-start bg-transparent p-2 rounded-xl mb-6 h-auto w-fit">
+                    <TabsList className="flex flex-col items-stretch gap-1 justify-start bg-slate-100/70 p-1.5 rounded-xl w-full md:w-56 shrink-0 h-auto">
                         {departments.map((d) => {
                             const deptId = String(d.id || d._id);
-                            const isActive = activeDeptId === deptId;
-                            const FolderIcon = isActive ? IconFolderOpen : IconFolder;
                             return (
                                 <TabsTrigger
                                     key={deptId}
                                     value={deptId}
                                     title={d.name}
-                                    className="flex flex-none flex-col items-center gap-1 w-24 h-auto rounded-lg px-3 py-3 whitespace-normal cursor-pointer transition-all hover:bg-slate-100 hover:scale-[1.04] hover:shadow-sm data-[state=active]:bg-indigo-50 data-[state=active]:ring-1 data-[state=active]:ring-indigo-200 data-[state=active]:shadow-none data-[state=active]:hover:bg-indigo-100"
+                                    className="flex-none w-full justify-start text-left px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 whitespace-normal cursor-pointer transition-all hover:bg-white/70 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm"
                                 >
-                                    <FolderIcon className={cn("size-10 shrink-0", isActive ? "text-indigo-500" : "text-slate-400")} stroke={1.5} />
-                                    <span className={cn("text-xs font-medium text-center leading-tight line-clamp-2 break-words", isActive ? "text-indigo-700" : "text-slate-600")}>
-                                        {d.name}
-                                    </span>
+                                    {d.name}
                                 </TabsTrigger>
                             );
                         })}
                     </TabsList>
 
-                    {departments.map((d) => {
-                        const deptId = String(d.id || d._id);
-                        return (
-                            <TabsContent key={deptId} value={deptId} className="space-y-6">
-                                {isAdmin ? (
-                                    <>
-                                        <AdminConfigPanel
-                                            departmentId={deptId}
-                                            sections={sections}
-                                            allSectionsLoading={sectionsLoading && activeDeptId === deptId}
-                                        />
+                    <div className="flex-1 min-w-0 w-full">
+                        {departments.map((d) => {
+                            const deptId = String(d.id || d._id);
+                            return (
+                                <TabsContent key={deptId} value={deptId} className="space-y-6 mt-0">
+                                    {isAdmin ? (
+                                        <>
+                                            <AdminConfigPanel
+                                                departmentId={deptId}
+                                                sections={sections}
+                                                allSectionsLoading={sectionsLoading && activeDeptId === deptId}
+                                            />
+                                            <SectionTabsView
+                                                departmentId={deptId}
+                                                sections={sections}
+                                                allSectionsLoading={sectionsLoading && activeDeptId === deptId}
+                                                isPreview={true}
+                                            />
+                                        </>
+                                    ) : (
                                         <SectionTabsView
                                             departmentId={deptId}
                                             sections={sections}
                                             allSectionsLoading={sectionsLoading && activeDeptId === deptId}
-                                            isPreview={true}
+                                            isPreview={false}
                                         />
-                                    </>
-                                ) : (
-                                    <SectionTabsView
-                                        departmentId={deptId}
-                                        sections={sections}
-                                        allSectionsLoading={sectionsLoading && activeDeptId === deptId}
-                                        isPreview={false}
-                                    />
-                                )}
-                            </TabsContent>
-                        );
-                    })}
+                                    )}
+                                </TabsContent>
+                            );
+                        })}
+                    </div>
                 </Tabs>
             )}
         </div>

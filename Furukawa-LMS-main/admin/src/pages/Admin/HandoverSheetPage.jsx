@@ -38,7 +38,7 @@ import { toast } from "sonner";
 import { useGetMachinesByDepartmentQuery } from '@/Redux/AllApi/MachineApi';
 import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import HandoverSheet from '@/components/departments/HandoverSheet';
-import { displayDate } from '@/utils/dateUtils';
+import { displayDate, safeDateFormat } from '@/utils/dateUtils';
 
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -58,6 +58,11 @@ const SHIFTS = [
 const formatDate = (dateStr) => {
     if (!dateStr) return '—';
     return displayDate(dateStr);
+};
+
+const formatDateTime = (dateStr) => {
+    if (!dateStr) return '';
+    return safeDateFormat(dateStr, "dd MMM yyyy, hh:mm a");
 };
 
 const HandoverSheetsTable = ({ rows, loading, selectedIds, onToggleSelect, onToggleSelectAll, onRowClick, onEdit, onDelete, canManage, canDelete }) => {
@@ -122,7 +127,12 @@ const HandoverSheetsTable = ({ rows, loading, selectedIds, onToggleSelect, onTog
                             )}
                             <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">#{row.id}</td>
                             <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">
-                                {formatDate(row.date)}
+                                <div>{formatDate(row.date)}</div>
+                                {row.isSubmitted && row.submittedAt && (
+                                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                                        Submitted: {formatDateTime(row.submittedAt)}
+                                    </div>
+                                )}
                             </td>
                             <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                                 {row.departmentName || '—'}
@@ -144,9 +154,16 @@ const HandoverSheetsTable = ({ rows, loading, selectedIds, onToggleSelect, onTog
                             </td>
                             <td className="px-4 py-3 text-center">
                                 {row.isSubmitted ? (
-                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 text-xs font-medium">
-                                        Submitted
-                                    </Badge>
+                                    <div className="flex flex-col items-center gap-1">
+                                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 text-xs font-medium">
+                                            Submitted
+                                        </Badge>
+                                        {row.submittedAt && (
+                                            <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                                                {formatDateTime(row.submittedAt)}
+                                            </span>
+                                        )}
+                                    </div>
                                 ) : (
                                     <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200 text-xs font-medium">
                                         Draft

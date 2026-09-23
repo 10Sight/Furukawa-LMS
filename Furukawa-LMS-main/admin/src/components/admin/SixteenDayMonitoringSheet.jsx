@@ -57,6 +57,7 @@ const SixteenDayMonitoringSheet = ({
     employeeCode = "",
     departmentName = "",
     readOnly = false,
+    allowEduCellApproval = false,
     departmentId,
     sectionId = 0,
     sectionName = "",
@@ -163,7 +164,10 @@ const SixteenDayMonitoringSheet = ({
             const workflowFields = ['comment', 'checkedBy', 'verifiedBy', 'approvedBy', 'verifiedByEduCell'];
             return !workflowFields.includes(key);
         }
-        if (readOnly) return true;
+        // Dojo Hiring renders this sheet fully read-only except for the Education Cell
+        // sign-off, which authorized reviewers must still be able to act on there.
+        const eduCellOverride = allowEduCellApproval && canVerifyEduCell && key === 'verifiedByEduCell';
+        if (readOnly && !eduCellOverride) return true;
         if (isLocked) return true;
         if (eligibilityStillLocked) return true;
         if (isAdmin || canEditSubmitted) return false;
@@ -934,7 +938,24 @@ const SixteenDayMonitoringSheet = ({
     const isApprovedByValid = isVerifiedByValid && isSignatureApproved(headerInfo.approvedBy);
 
     const handleSignature = (field, type) => {
-        const prefix = type === 'approve' ? "Approved By: " : "Rejected By: ";
+        let prefix;
+        if (type === 'reject') {
+            prefix = "Rejected By: ";
+        } else {
+            switch (field) {
+                case 'verifiedBy':
+                case 'verifiedByEduCell':
+                    prefix = "Verified By: ";
+                    break;
+                case 'checkedBy':
+                    prefix = "Checked By: ";
+                    break;
+                case 'approvedBy':
+                default:
+                    prefix = "Approved By: ";
+                    break;
+            }
+        }
         setHeaderInfo(prev => {
             const updated = { ...prev, [field]: `${prefix}${loggedInName}` };
             // A rejection invalidates everything downstream of this stage, so those
@@ -1137,7 +1158,7 @@ const SixteenDayMonitoringSheet = ({
                                 <Button
                                     variant="secondary"
                                     onClick={() => handleSave("Submitted", false)}
-                                    disabled={saving || !studentId || isLocked || readOnly}
+                                    disabled={saving || !studentId || isLocked || (readOnly && !(allowEduCellApproval && canVerifyEduCell))}
                                     className="h-9 gap-2"
                                 >
                                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

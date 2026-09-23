@@ -390,6 +390,9 @@ const HandoverRow = React.memo(function HandoverRow({
                                 </div>
                                 <div className="text-[9px] text-gray-500 leading-tight text-center">
                                     by: {entry.statusActionBy}
+                                    {entry.statusActionAt && (
+                                        <div>{format(new Date(entry.statusActionAt), "dd MMM yyyy, hh:mm a")}</div>
+                                    )}
                                 </div>
                                 {canApprove && (
                                     <button
@@ -1150,7 +1153,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                     {isSubmitted && (
                                         <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold border border-green-200 animate-in fade-in zoom-in duration-300">
                                             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                                            SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "PP")}`}
+                                            SUBMITTED {submittedAt && `ON ${format(new Date(submittedAt), "dd MMM yyyy, hh:mm a")}`}
                                         </div>
                                     )}
                                     {canEditLayout && (

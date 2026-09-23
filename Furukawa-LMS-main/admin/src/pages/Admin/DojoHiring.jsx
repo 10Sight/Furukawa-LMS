@@ -1695,7 +1695,7 @@ const DojoHiring = () => {
                     </TabsContent>
 
                     <TabsContent value="sixteenDays" className="space-y-6">
-                        <SixteenDayMonitoring readOnly={true} approvalField="verifiedByEduCell" pendingGateField="approvedBy" />
+                        <SixteenDayMonitoring readOnly={true} allowEduCellApproval={true} approvalField="verifiedByEduCell" pendingGateField="approvedBy" />
                     </TabsContent>
 
                     <TabsContent value="course" className="space-y-6">

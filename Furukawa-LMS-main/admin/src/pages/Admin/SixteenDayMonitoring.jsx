@@ -85,7 +85,7 @@ const StartMonitoringCell = ({ item, readOnly, canOverride, onStart }) => {
 // pendingGateField, when set, additionally requires that column to already be approved for a
 // sheet to count as Pending — e.g. Dojo Hiring only wants sheets HOD has already approved
 // (approvedBy) and that are now awaiting Training Cell (verifiedBy) sign-off.
-const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', pendingGateField = null }) => {
+const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', pendingGateField = null, allowEduCellApproval = false }) => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const hasSixteenDayBypass = authUser?.customRole?.permissions?.includes('dojo:sixteenday_monitoring');
@@ -320,9 +320,11 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
     };
 
     // A signature column counts as a genuine approval once it's filled and isn't a rejection.
+    // Not all columns use an "Approved By: " prefix (e.g. verifiedBy/verifiedByEduCell now
+    // save as "Verified By: "), so presence + non-rejection is what actually signals sign-off.
     const isFieldApproved = (item, field) => {
         const value = item[field];
-        return Boolean(value && value.includes('Approved') && !value.includes('Rejected'));
+        return Boolean(value && value.trim() !== '' && !value.includes('Rejected'));
     };
 
     // A sheet counts as Approved only once `approvalField` (Approved By / Dept. Head by default,
@@ -335,10 +337,10 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
     const isSheetPending = (item) => !isSheetApproved(item) && (!pendingGateField || isFieldApproved(item, pendingGateField));
 
     // Renders a signature column's value only once it's a genuine approval (never a rejection
-    // or an empty/awaiting-signature field), stripping the "Approved By: " prefix for display.
+    // or an empty/awaiting-signature field), stripping the "Approved/Verified/Checked By: " prefix.
     const getApprovalName = (value) => {
-        if (!value || !value.includes('Approved') || value.includes('Rejected')) return null;
-        return value.replace(/^Approved By:\s*/i, '');
+        if (!value || value.includes('Rejected')) return null;
+        return value.replace(/^(Approved|Verified|Checked) By:\s*/i, '');
     };
 
     const { pendingCount, approvedCount, totalCount } = useMemo(() => {
@@ -498,6 +500,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                                 departmentId={activeDept || (dept !== "ALL" ? dept : "")}
                                 sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
                                 readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
+                                allowEduCellApproval={allowEduCellApproval}
                                 initialForceNewAttempt={forceNewAttempt}
                                 onAfterSave={handleAfterMonitoringSave}
                                 feedbackRef={feedbackRef}

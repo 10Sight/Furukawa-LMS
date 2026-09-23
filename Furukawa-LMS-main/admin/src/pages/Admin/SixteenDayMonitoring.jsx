@@ -562,7 +562,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pl-6 w-[300px]">Operator Details</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approval Status</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approved by HOD</TableHead>
-                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approved by Training Cell</TableHead>
+                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approved by Education Cell</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Monitoring Status</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Actions By</TableHead>
                                         <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Start Date</TableHead>
@@ -633,7 +633,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                                                         {getApprovalName(item.approvedBy) || <span className="text-slate-300 italic">-</span>}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-medium text-slate-600">
-                                                        {getApprovalName(item.verifiedBy) || <span className="text-slate-300 italic">-</span>}
+                                                        {getApprovalName(item.verifiedByEduCell) || <span className="text-slate-300 italic">-</span>}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-semibold text-slate-700">
                                                         {getLatestFilledDay(item.gridData)}

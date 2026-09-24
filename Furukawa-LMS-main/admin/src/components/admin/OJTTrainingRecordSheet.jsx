@@ -107,39 +107,11 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
 
     const handleInputChange = (field, value) => {
         if (readOnly) return;
-        if (field === 'date' && value) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const enteredDate = new Date(value);
-            enteredDate.setHours(0, 0, 0, 0);
-            if (enteredDate < today) {
-                toast.error("You cannot select a past date");
-                return;
-            }
-            if (enteredDate > today) {
-                toast.error("You cannot select a future date");
-                return;
-            }
-        }
         setTrainingData(prev => ({ ...prev, [field]: value }));
     };
 
     const handleAttendanceChange = (index, field, value) => {
         if (readOnly) return;
-        if (field === 'date' && value) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const enteredDate = new Date(value);
-            enteredDate.setHours(0, 0, 0, 0);
-            if (enteredDate < today) {
-                toast.error("You cannot select a past date");
-                return;
-            }
-            if (enteredDate > today) {
-                toast.error("You cannot select a future date");
-                return;
-            }
-        }
         setTrainingData(prev => {
             const newRecords = [...prev.attendanceRecords];
             newRecords[index] = { ...newRecords[index], [field]: value };
@@ -419,8 +391,6 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                         className="inline w-32 border-none h-auto p-0 focus-visible:ring-0 text-blue-600 font-semibold text-right disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                         value={trainingData.date}
                                         onChange={e => handleInputChange('date', e.target.value)}
-                                        min={new Date().toLocaleDateString('en-CA')}
-                                        max={new Date().toLocaleDateString('en-CA')}
                                     />
                                 </div>
                             </div>
@@ -677,9 +647,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                         <td className="border-r border-black p-0">
                                                             <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                 value={trainingData.attendanceRecords[leftIndex]?.date || ""}
-                                                                onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)}
-                                                                min={new Date().toLocaleDateString('en-CA')}
-                                                                max={new Date().toLocaleDateString('en-CA')} />
+                                                                onChange={e => handleAttendanceChange(leftIndex, 'date', e.target.value)} />
                                                         </td>
                                                         <td className="border-r border-black p-0 overflow-visible relative">
                                                             <UserAutocomplete
@@ -714,9 +682,7 @@ const OJTTrainingRecordSheet = ({ ojtId, shareToken, studentName = "Associate Na
                                                                 <td className="border-r border-black p-0">
                                                                     <Input disabled={readOnly} type="date" className="w-full h-full border-none p-0 text-[10px] text-center text-blue-600 focus-visible:ring-0 bg-transparent disabled:opacity-100 disabled:text-blue-900 disabled:font-bold"
                                                                         value={trainingData.attendanceRecords[rightIndex]?.date || ""}
-                                                                        onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)}
-                                                                        min={new Date().toLocaleDateString('en-CA')}
-                                                                        max={new Date().toLocaleDateString('en-CA')} />
+                                                                        onChange={e => handleAttendanceChange(rightIndex, 'date', e.target.value)} />
                                                                 </td>
                                                                 <td className="border-r border-black p-0 overflow-visible relative">
                                                                     <UserAutocomplete

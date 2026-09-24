@@ -778,8 +778,9 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
         if (isCheckField && initialFormData[`rec_${recIndex}_${field}`] && !canEditSubmitted5M) return true;
         return false;
     };
-    // Retroactive Inspection fields follow the same editability rules as Containment Action fields
     const isRetroLocked = isFieldLocked();
+    // Containment Action fields stay editable after the row is approved
+    const isContainmentLocked = isReview || !hasEditPermission;
 
     return (
         <>
@@ -1012,37 +1013,37 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         onChange={({ fullName }) => handleInputChange(recIndex, 'Cont_SupportPerson', fullName)}
                         placeholder="Support Person"
                         compact={true}
-                        disabled={isLocked}
+                        disabled={isContainmentLocked}
                     />
                 </td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} disabled={isFieldLocked('Cont_ProdQty')} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} disabled={isFieldLocked('Cont_NGQty')} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} disabled={isContainmentLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} disabled={isContainmentLocked} /></td>
 
                 {/* Dimension Check 1st */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std1', e.target.value)} disabled={isFieldLocked('Cont_CH_Std1', true)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs1', e.target.value)} disabled={isFieldLocked('Cont_CH_Obs1', true)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std1', e.target.value)} disabled={isContainmentLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs1', e.target.value)} disabled={isContainmentLocked} /></label>
                     </div>
                 </td>
                 {/* Dimension Check 2nd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std2', e.target.value)} disabled={isFieldLocked('Cont_CH_Std2', true)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs2', e.target.value)} disabled={isFieldLocked('Cont_CH_Obs2', true)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std2', e.target.value)} disabled={isContainmentLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs2', e.target.value)} disabled={isContainmentLocked} /></label>
                     </div>
                 </td>
                 {/* Dimension Check 3rd */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
                     <div className="flex flex-col text-[16px] p-0.5 h-full">
                         <div className="font-semibold mb-1">C/H:</div>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std3', e.target.value)} disabled={isFieldLocked('Cont_CH_Std3', true)} /></label>
-                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} disabled={isFieldLocked('Cont_CH_Obs3', true)} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Std3', e.target.value)} disabled={isContainmentLocked} /></label>
+                        <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} disabled={isContainmentLocked} /></label>
                     </div>
                 </td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} disabled={isFieldLocked('Remarks')} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} disabled={isContainmentLocked} /></td>
 
                 <td rowSpan="5" className="border border-black py-0.5 px-0">
                     <div className="flex flex-col gap-1">
@@ -1192,22 +1193,22 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
                                 <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std1', e.target.value)} /></label>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs1', e.target.value)} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std1', e.target.value)} disabled={isContainmentLocked} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs1', e.target.value)} disabled={isContainmentLocked} /></label>
                                 </div>
                             </td>
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
                                 <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std2', e.target.value)} /></label>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs2', e.target.value)} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std2', e.target.value)} disabled={isContainmentLocked} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs2', e.target.value)} disabled={isContainmentLocked} /></label>
                                 </div>
                             </td>
                             <td rowSpan="2" className="border border-black p-0.5 align-top">
                                 <div className="flex flex-col text-[16px] p-0.5 h-full">
                                     <div className="font-semibold mb-1">Length:</div>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std3', e.target.value)} /></label>
-                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs3', e.target.value)} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full mb-0.5"><span className="mr-0.5">Std.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Std3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Std3', e.target.value)} disabled={isContainmentLocked} /></label>
+                                    <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_Len_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Len_Obs3', e.target.value)} disabled={isContainmentLocked} /></label>
                                 </div>
                             </td>
                         </>
@@ -1216,7 +1217,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         <td colSpan="3" className="border border-black p-0.5 align-top">
                             <div className="flex items-center text-[16px] p-0.5 w-full">
                                 <span className="whitespace-nowrap mr-1">Detail if NG:</span>
-                                <input className="w-full min-w-0 bg-transparent outline-none text-black" value={formData[`rec_${recIndex}_Cont_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGDetail', e.target.value)} />
+                                <input className="w-full min-w-0 bg-transparent outline-none text-black" value={formData[`rec_${recIndex}_Cont_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGDetail', e.target.value)} disabled={isContainmentLocked} />
                             </div>
                         </td>
                     )}
@@ -2422,6 +2423,8 @@ const Daily5MRecording = () => {
                                             const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
                                             const isLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
                                             const isRetroLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M);
+                                            // Containment Action fields stay editable after the row is approved
+                                            const isContainmentLocked = isReview || !hasEditPermission;
                                             return (
                                                 <>
                                                     {/* Row 1 of Record */}
@@ -2657,34 +2660,34 @@ const Daily5MRecording = () => {
                                                                 onChange={({ fullName }) => handleInputChange(recIndex, 'Cont1_Shift', fullName)}
                                                                 placeholder="Support Person"
                                                                 compact={true}
-                                                                disabled={isLocked}
+                                                                disabled={isContainmentLocked}
                                                             />
                                                         </td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} /></td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isContainmentLocked} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isContainmentLocked} /></td>
 
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_1`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_1`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_1', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_2`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_2`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_2', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
                                                                 <div className="font-semibold mb-1 text-center border-b border-gray-300 pb-0.5 border-dashed text-black">Dim.</div>
-                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M) || (initialFormData[`rec_${recIndex}_Cont_Dim_3`] && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center leading-tight whitespace-pre-wrap mt-0.5 bg-transparent" value={formData[`rec_${recIndex}_Cont_Dim_3`] !== undefined ? formData[`rec_${recIndex}_Cont_Dim_3`] : ""} onChange={(e) => handleInputChange(recIndex, 'Cont_Dim_3', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
 
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1">
-                                                                <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M)} />
+                                                                <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
 
@@ -2797,7 +2800,7 @@ const Daily5MRecording = () => {
                                                         <td colSpan="6" className="border border-black py-0.5 px-0">
                                                             <div className="flex flex-row items-center justify-end text-[16px] w-full pr-2 text-right">
                                                                 <span className="mr-1 text-gray-700">Detail if NG:</span>
-                                                                <input className="bg-transparent outline-none flex-1 text-blue-600 max-w-[50px] text-center mb-0 border-b border-black" value={formData[`rec_${recIndex}_Cont3_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont3_NGDetail', e.target.value)} disabled={isLocked} />
+                                                                <input className="bg-transparent outline-none flex-1 text-blue-600 max-w-[50px] text-center mb-0 border-b border-black" value={formData[`rec_${recIndex}_Cont3_NGDetail`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont3_NGDetail', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
                                                     </tr>

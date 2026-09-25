@@ -307,10 +307,6 @@ const applyApproval = async (request, reviewer, hrReason, syncedBy) => {
         }
     }
 
-    sendLeftRequestResolutionEmail(updatedRequest).catch(err =>
-        console.error("[LeftRequest] Failed to send approval notification:", err.message)
-    );
-
     return { updatedRequest, leavingDateStr, deptReason, deptName };
 };
 

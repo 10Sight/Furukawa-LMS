@@ -138,10 +138,10 @@ export const adminHomeApi = createApi({
             keepUnusedDataFor: 60,
         }),
         getLeftUsersReasonTrend: builder.query({
-            query: ({ startDate = "", endDate = "", groupBy = "monthly", candidateType = "dojo", departmentId = "", sectionId = "", lineId = "" } = {}) => ({
+            query: ({ startDate = "", endDate = "", groupBy = "monthly", candidateType = "dojo", departmentId = "", sectionId = "", lineId = "", reasonSource = "hr" } = {}) => ({
                 url: "/api/admin-home/left-users-reason-trend",
                 method: "GET",
-                params: { startDate, endDate, groupBy, candidateType, departmentId, sectionId, lineId }
+                params: { startDate, endDate, groupBy, candidateType, departmentId, sectionId, lineId, reasonSource }
             }),
             keepUnusedDataFor: 60,
         }),

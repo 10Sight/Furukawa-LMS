@@ -173,6 +173,11 @@ const StudentDetail = () => {
   const allDepts = deptListData?.data?.departments || [];
 
   const student = studentData?.data;
+  // Department reason (with the department it was raised from) vs. the HR-confirmed reason.
+  // Users who left before the split -- or were marked LEFT directly -- only have reasonOfLeaving.
+  const leftDeptReason = student?.reasonOfLeavingByDept || student?.reasonOfLeaving || "";
+  const leftHrReason = student?.reasonOfLeavingByHr || student?.reasonOfLeaving || "";
+  const leftDeptName = student?.leftDepartmentName || student?.deptName || "";
 
   const studentDepartmentId = typeof student?.department === 'object'
     ? (student.department?._id || student.department?.id)
@@ -771,10 +776,23 @@ const StudentDetail = () => {
               </div>
             )}
             {(student.leavingDate || student.status === "LEFT") && (
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving</label>
-                <p className="text-sm text-red-600 font-medium">{student.reasonOfLeaving || "—"}</p>
-              </div>
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving (Department)</label>
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                    {leftDeptName && (
+                      <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 font-normal">
+                        {leftDeptName}
+                      </Badge>
+                    )}
+                    <span className="text-red-600 font-medium">{leftDeptReason || "—"}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason of Leaving (HR Confirmed)</label>
+                  <p className="text-sm text-red-600 font-medium">{leftHrReason || "—"}</p>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -936,10 +954,18 @@ const StudentDetail = () => {
                     </div>
                   )}
                   {(student.leavingDate || student.status === "LEFT") && (
-                    <div className="group">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Reason of Leaving</p>
-                      <p className="text-sm font-medium text-red-600">{student.reasonOfLeaving || "—"}</p>
-                    </div>
+                    <>
+                      <div className="group">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">
+                          Reason of Leaving (Department{leftDeptName ? `: ${leftDeptName}` : ""})
+                        </p>
+                        <p className="text-sm font-medium text-red-600">{leftDeptReason || "—"}</p>
+                      </div>
+                      <div className="group">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Reason of Leaving (HR Confirmed)</p>
+                        <p className="text-sm font-medium text-red-600">{leftHrReason || "—"}</p>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

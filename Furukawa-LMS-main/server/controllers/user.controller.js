@@ -1249,7 +1249,8 @@ export const updateUser = asyncHandler(async (req, res) => {
     "empId", "isEmployee", "isAdmin", "isTrainer", "shift", "idCard", "privileges", "joiningDate", "leavingDate",
     "sectionId", "subSectionId", "lineId", "stationId", "departmentId",
     "fatherHusbandName", "gender", "dob", "education", "district", "state", "pin", "busRoute",
-    "reasonOfLeaving", "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge", "mentorLimit",
+    "reasonOfLeaving", "reasonOfLeavingByHr", "reasonOfLeavingByDept", "leftDepartmentName",
+    "mentor", "designation", "supervisor", "incharge", "isMentor", "isSupervisor", "isIncharge", "mentorLimit",
     "contractor", "contractorId", "expectedHandover",
     "customRoleId", "currentLevel", "currentSkill", "isTemporary",
     "targetDeptId", "targetSectionId", "targetLineId", "targetSubSectionId", "targetStationId",
@@ -1315,10 +1316,20 @@ export const updateUser = asyncHandler(async (req, res) => {
   // The rejoining date is always recorded in statusHistory (via rejoiningDate below), but the
   // main joiningDate column is frozen once it has a value -- only backfilled if it was empty --
   // so it keeps reading as the user's original hire date across rejoin cycles.
+  // A direct admin edit of the leaving reason (outside the Left Request flow) is effectively the
+  // HR-confirmed reason -- mirror it so reasonOfLeavingByHr doesn't go stale against reasonOfLeaving.
+  if (data.reasonOfLeaving !== undefined && data.reasonOfLeavingByHr === undefined
+      && (data.reasonOfLeaving || null) !== (oldUser.reasonOfLeaving || null)) {
+    data.reasonOfLeavingByHr = data.reasonOfLeaving || null;
+  }
+
   let rejoiningDate = null;
   if (data.status !== undefined && data.status !== "LEFT" && oldUser.status === "LEFT") {
     data.leavingDate = null;
     data.reasonOfLeaving = null;
+    data.reasonOfLeavingByHr = null;
+    data.reasonOfLeavingByDept = null;
+    data.leftDepartmentName = null;
 
     rejoiningDate = (data.joiningDate !== undefined && data.joiningDate)
       ? data.joiningDate
@@ -3567,11 +3578,11 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
   });
 
   await executeQuery(
-    `UPDATE u SET u.status = 'LEFT', u.leavingDate = ?, u.reasonOfLeaving = ?, u.updatedAt = GETDATE(),
+    `UPDATE u SET u.status = 'LEFT', u.leavingDate = ?, u.reasonOfLeaving = ?, u.reasonOfLeavingByHr = ?, u.updatedAt = GETDATE(),
        u.statusHistory = v.entry
      FROM users u
      JOIN (VALUES ${historyValuesSql}) AS v(id, entry) ON u.id = v.id`,
-    [leavingDate, reasonOfLeaving, ...historyValuesParams]
+    [leavingDate, reasonOfLeaving, reasonOfLeaving, ...historyValuesParams]
   );
 
   await logAudit(req.user.id, "BULK_UPDATE_STATUS_LEFT", {

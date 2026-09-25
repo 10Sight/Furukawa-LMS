@@ -15,6 +15,10 @@ class LeftRequest {
         this.currentStatus = data.currentStatus || "PRESENT";
         this.leavingDate = data.leavingDate;
         this.reasonOfLeaving = data.reasonOfLeaving || "";
+        // Reason submitted by the department at apply time vs. the one HR confirmed on approval.
+        // Rows created before the split only have reasonOfLeaving, so fall back to it.
+        this.reasonOfLeavingByDept = data.reasonOfLeavingByDept || data.reasonOfLeaving || "";
+        this.reasonOfLeavingByHr = data.reasonOfLeavingByHr || "";
         this.remarks = data.remarks || "";
         this.status = data.status || "PENDING";
         this.requestedBy = data.requestedBy;
@@ -53,6 +57,8 @@ class LeftRequest {
                     currentStatus NVARCHAR(50) DEFAULT 'PRESENT',
                     leavingDate DATE NOT NULL,
                     reasonOfLeaving NVARCHAR(500) NOT NULL,
+                    reasonOfLeavingByDept NVARCHAR(500) NULL,
+                    reasonOfLeavingByHr NVARCHAR(500) NULL,
                     remarks NVARCHAR(MAX) NULL,
                     status NVARCHAR(50) DEFAULT 'PENDING',
                     requestedBy INT NOT NULL,
@@ -75,6 +81,15 @@ class LeftRequest {
             await migrationHelper.ensureColumnExists('left_requests', 'rejectionReason', 'NVARCHAR(MAX) NULL');
             await migrationHelper.ensureColumnExists('left_requests', 'isBulkRequest', 'BIT DEFAULT 0');
             await migrationHelper.ensureColumnExists('left_requests', 'bulkBatchId', 'NVARCHAR(100) NULL');
+
+            // Dual reason split: backfill from the legacy single reason the first time the
+            // columns appear. Only approved rows have an HR-confirmed reason.
+            if (await migrationHelper.ensureColumnExists('left_requests', 'reasonOfLeavingByDept', 'NVARCHAR(500) NULL')) {
+                await executeQuery("UPDATE left_requests SET reasonOfLeavingByDept = reasonOfLeaving WHERE reasonOfLeavingByDept IS NULL");
+            }
+            if (await migrationHelper.ensureColumnExists('left_requests', 'reasonOfLeavingByHr', 'NVARCHAR(500) NULL')) {
+                await executeQuery("UPDATE left_requests SET reasonOfLeavingByHr = reasonOfLeaving WHERE status = 'APPROVED' AND reasonOfLeavingByHr IS NULL");
+            }
         }
 
         try {
@@ -95,6 +110,11 @@ class LeftRequest {
             );
             await migrationHelper.ensureIndexExists(
                 'left_requests',
+                'idx_left_requests_dept_sect_line',
+                'CREATE INDEX idx_left_requests_dept_sect_line ON left_requests(departmentId, sectionId, lineId, status)'
+            );
+            await migrationHelper.ensureIndexExists(
+                'left_requests',
                 'idx_left_requests_created',
                 'CREATE INDEX idx_left_requests_created ON left_requests(createdAt DESC)'
             );
@@ -106,7 +126,7 @@ class LeftRequest {
     static async create(data) {
         const {
             userId, empId, fullName, departmentId, sectionId, lineId, subSectionId, stationId,
-            currentStatus, leavingDate, reasonOfLeaving, remarks,
+            currentStatus, leavingDate, reasonOfLeaving, reasonOfLeavingByDept, remarks,
             requestedBy, requestedByName, requestedByRole,
             isBulkRequest, bulkBatchId
         } = data;
@@ -114,16 +134,16 @@ class LeftRequest {
         const query = `
             INSERT INTO left_requests
             (userId, empId, fullName, departmentId, sectionId, lineId, subSectionId, stationId, currentStatus,
-             leavingDate, reasonOfLeaving, remarks, status, requestedBy, requestedByName, requestedByRole,
+             leavingDate, reasonOfLeaving, reasonOfLeavingByDept, remarks, status, requestedBy, requestedByName, requestedByRole,
              isBulkRequest, bulkBatchId)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
         `;
 
         const values = [
             userId, empId || null, fullName || null,
             departmentId || null, sectionId || null, lineId || null, subSectionId || null, stationId || null,
-            currentStatus || "PRESENT", leavingDate, reasonOfLeaving, remarks || null,
+            currentStatus || "PRESENT", leavingDate, reasonOfLeaving, reasonOfLeavingByDept || reasonOfLeaving, remarks || null,
             requestedBy, requestedByName || null, requestedByRole || null,
             isBulkRequest ? 1 : 0, bulkBatchId || null
         ];
@@ -156,7 +176,7 @@ class LeftRequest {
         return new LeftRequest(rows[0]);
     }
 
-    static async findAll({ status, departmentId, sectionId, search, page = 1, limit = 25 } = {}) {
+    static async findAll({ status, departmentId, sectionId, lineId, search, page = 1, limit = 25 } = {}) {
         let where = ["1=1"];
         let params = [];
 
@@ -164,14 +184,17 @@ class LeftRequest {
             where.push("lr.status = ?");
             params.push(status);
         }
-        if (departmentId) {
-            where.push("lr.departmentId = ?");
-            params.push(departmentId);
-        }
-        if (sectionId) {
-            where.push("lr.sectionId = ?");
-            params.push(sectionId);
-        }
+        // Hierarchy filters accept comma-separated IDs so the multi-select filter bar can pass
+        // several departments/sections/lines at once.
+        const addInFilter = (raw, column) => {
+            const ids = raw ? String(raw).split(",").map(v => v.trim()).filter(Boolean) : [];
+            if (ids.length === 0) return;
+            where.push(`${column} IN (${ids.map(() => "?").join(",")})`);
+            params.push(...ids);
+        };
+        addInFilter(departmentId, "lr.departmentId");
+        addInFilter(sectionId, "lr.sectionId");
+        addInFilter(lineId, "lr.lineId");
         if (search) {
             const t = `%${search}%`;
             where.push("(lr.fullName LIKE ? OR lr.empId LIKE ?)");
@@ -223,14 +246,15 @@ class LeftRequest {
         return rows[0]?.cnt || 0;
     }
 
-    static async approve(id, { reviewedBy, reviewedByName, reasonOfLeaving }) {
+    static async approve(id, { reviewedBy, reviewedByName, reasonOfLeavingByHr }) {
         const fields = ["status = 'APPROVED'", "reviewedBy = ?", "reviewedByName = ?", "reviewedAt = GETDATE()", "updatedAt = GETDATE()"];
         const params = [reviewedBy, reviewedByName || null];
-        // The approver may override the reason at approval time -- keep the request's own
-        // record of the reason in sync with whatever actually got applied to the user.
-        if (reasonOfLeaving !== undefined) {
-            fields.push("reasonOfLeaving = ?");
-            params.push(reasonOfLeaving);
+        // HR confirms (or overrides) the department's reason at approval time. reasonOfLeaving
+        // mirrors the HR reason so it keeps matching what actually got applied to the user;
+        // reasonOfLeavingByDept is left untouched as the department's original submission.
+        if (reasonOfLeavingByHr !== undefined) {
+            fields.push("reasonOfLeavingByHr = ?", "reasonOfLeaving = ?");
+            params.push(reasonOfLeavingByHr, reasonOfLeavingByHr);
         }
         params.push(id);
         await executeQuery(`UPDATE left_requests SET ${fields.join(", ")} WHERE id = ?`, params);

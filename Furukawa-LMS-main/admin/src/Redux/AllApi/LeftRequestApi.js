@@ -7,10 +7,10 @@ export const leftRequestApi = createApi({
   tagTypes: ["LeftRequest", "LeftRequestCount"],
   endpoints: (builder) => ({
     getAllLeftRequests: builder.query({
-      query: ({ status = "", departmentId = "", sectionId = "", search = "", page = 1, limit = 25 } = {}) => ({
+      query: ({ status = "", departmentId = "", sectionId = "", lineId = "", search = "", page = 1, limit = 25 } = {}) => ({
         url: "/api/left-requests",
         method: "GET",
-        params: { status, departmentId, sectionId, search, page, limit },
+        params: { status, departmentId, sectionId, lineId, search, page, limit },
       }),
       providesTags: ["LeftRequest"],
     }),
@@ -51,10 +51,10 @@ export const leftRequestApi = createApi({
     }),
 
     approveLeftRequest: builder.mutation({
-      query: ({ id, reasonOfLeaving }) => ({
+      query: ({ id, reasonOfLeavingByHr }) => ({
         url: `/api/left-requests/${id}/approve`,
         method: "PATCH",
-        data: { reasonOfLeaving },
+        data: { reasonOfLeavingByHr },
       }),
       invalidatesTags: ["LeftRequest", "LeftRequestCount"],
     }),
@@ -69,10 +69,10 @@ export const leftRequestApi = createApi({
     }),
 
     bulkApproveLeftRequest: builder.mutation({
-      query: ({ ids, reasonOfLeaving }) => ({
+      query: ({ ids, reasonOfLeavingByHr }) => ({
         url: "/api/left-requests/bulk-approve",
         method: "PATCH",
-        data: { ids, reasonOfLeaving },
+        data: { ids, reasonOfLeavingByHr },
       }),
       invalidatesTags: ["LeftRequest", "LeftRequestCount"],
     }),

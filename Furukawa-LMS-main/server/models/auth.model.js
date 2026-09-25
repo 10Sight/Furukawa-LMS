@@ -114,6 +114,9 @@ class User {
         this.pin = data.pin || null;
         this.busRoute = data.busRoute || null;
         this.reasonOfLeaving = data.reasonOfLeaving || null;
+        this.reasonOfLeavingByDept = data.reasonOfLeavingByDept || null;
+        this.reasonOfLeavingByHr = data.reasonOfLeavingByHr || null;
+        this.leftDepartmentName = data.leftDepartmentName || null;
         this.contractor = data.contractor || null;
         this.contractorId = data.contractorId || null;
         this.mentor = data.mentor || null;
@@ -301,6 +304,17 @@ class User {
             for (const col of columnsToAdd) {
                 await migrationHelper.ensureColumnExists('users', col.name, col.type);
             }
+
+            // Dual leaving reason (department-submitted vs. HR-confirmed) plus a snapshot of the
+            // department the user left from. Backfill from the legacy single reason the first time
+            // the columns appear so existing LEFT users show up under both chart perspectives.
+            if (await migrationHelper.ensureColumnExists('users', 'reasonOfLeavingByDept', 'NVARCHAR(MAX) NULL')) {
+                await executeQuery("UPDATE users SET reasonOfLeavingByDept = reasonOfLeaving WHERE reasonOfLeavingByDept IS NULL AND status = 'LEFT'");
+            }
+            if (await migrationHelper.ensureColumnExists('users', 'reasonOfLeavingByHr', 'NVARCHAR(MAX) NULL')) {
+                await executeQuery("UPDATE users SET reasonOfLeavingByHr = reasonOfLeaving WHERE reasonOfLeavingByHr IS NULL AND status = 'LEFT'");
+            }
+            await migrationHelper.ensureColumnExists('users', 'leftDepartmentName', 'NVARCHAR(255) NULL');
 
             // Create index for departmentId to optimize lookups
             try {

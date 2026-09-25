@@ -4869,6 +4869,8 @@ const Students = () => {
             canApproveLeft={canApproveLeft}
             currentUserId={currentUser?.id ?? currentUser?._id}
             onChanged={refetch}
+            departmentOptions={availableDepartments}
+            allowedSectionIds={allowedSectionsList}
           />
         </TabsContent>
       )}

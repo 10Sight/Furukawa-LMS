@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Table,
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -36,8 +37,13 @@ import {
   IconLoader,
   IconUserX,
   IconInfoCircle,
+  IconSearch,
+  IconFilterOff,
 } from "@tabler/icons-react";
 import { safeDateFormat } from "@/utils/dateUtils";
+import MultiSelectFilter from "@/components/common/MultiSelectFilter";
+import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
+import { useGetLinesBySectionQuery } from "@/Redux/AllApi/LineApi";
 import {
   useGetAllLeftRequestsQuery,
   useLazyGetAllLeftRequestsQuery,
@@ -98,12 +104,32 @@ const statusBadge = (status) => {
   }
 };
 
+const EMPTY_FILTERS = { departmentId: "", sectionId: "", lineId: "" };
+
+const splitIds = (csv) => (csv ? csv.split(",").filter(Boolean) : []);
+
+// Pre-legacy rows only carry reasonOfLeaving; the server backfills the split columns, but fall
+// back here too so the UI never renders an empty reason.
+const deptReasonOf = (r) => r?.reasonOfLeavingByDept || r?.reasonOfLeaving || "";
+const hrReasonOf = (r) => r?.reasonOfLeavingByHr || r?.reasonOfLeaving || "";
+
+// Splits a stored reason into the dropdown value + custom text the approve dialogs work with.
+const toReasonSelection = (reason) => {
+  if (!reason) return { reason: "", custom: "" };
+  return LEAVING_REASONS.includes(reason) ? { reason, custom: "" } : { reason: "Other", custom: reason };
+};
+
 // currentUserId: the logged-in reviewer/requester's id, used to allow a requester to withdraw
 // their own pending request even without approve permission.
 // onChanged: called after an approve/reject/cancel so the parent Students list (whose status
 // badge for that operator just changed) can refetch.
-const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
+// departmentOptions / allowedSectionIds: the departments and sections the viewer may filter by,
+// already scoped by the parent page's access rules (empty allowedSectionIds = no restriction).
+const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged, departmentOptions = [], allowedSectionIds = [] }) => {
   const [statusTab, setStatusTab] = useState("PENDING");
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -118,8 +144,54 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
   const [showBulkReject, setShowBulkReject] = useState(false);
   const [bulkRejectionReason, setBulkRejectionReason] = useState("");
 
+  // Debounce the employee search so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Any filter change invalidates the current page and selection.
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds([]);
+  }, [filters, search]);
+
+  const { data: sectionData } = useGetSectionsByDepartmentQuery(filters.departmentId, { skip: !filters.departmentId });
+  const { data: lineData } = useGetLinesBySectionQuery(filters.sectionId, { skip: !filters.sectionId });
+
+  const sectionOptions = useMemo(() => {
+    const raw = sectionData?.data || [];
+    const scoped = allowedSectionIds.length > 0
+      ? raw.filter((s) => allowedSectionIds.includes(String(s.id || s._id)))
+      : raw;
+    return scoped.map((s) => ({ id: String(s.id || s._id), name: s.name }));
+  }, [sectionData, allowedSectionIds]);
+  const lineOptions = useMemo(
+    () => (lineData?.data || []).map((l) => ({ id: String(l.id || l._id), name: l.name })),
+    [lineData]
+  );
+  const deptOptions = useMemo(
+    () => departmentOptions.map((d) => ({ id: String(d._id || d.id), name: d.name })),
+    [departmentOptions]
+  );
+
+  const hasActiveFilters = !!(filters.departmentId || filters.sectionId || filters.lineId || searchInput);
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setSearchInput("");
+    setSearch("");
+  };
+
+  const queryFilters = {
+    departmentId: filters.departmentId,
+    sectionId: filters.sectionId,
+    lineId: filters.lineId,
+    search,
+  };
+
   const { data, isLoading, isFetching, refetch } = useGetAllLeftRequestsQuery({
     status: statusTab,
+    ...queryFilters,
     page,
     limit: 20,
   });
@@ -164,7 +236,7 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
 
   const handleSelectAllAcrossPages = async () => {
     try {
-      const res = await fetchAllPending({ status: "PENDING", page: 1, limit: total }).unwrap();
+      const res = await fetchAllPending({ ...queryFilters, status: "PENDING", page: 1, limit: total }).unwrap();
       const ids = (res?.data?.rows || []).map((r) => r.id);
       setSelectedIds(ids);
     } catch (error) {
@@ -182,16 +254,17 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
 
   const handleBulkApprove = async () => {
     if (bulkApproveReason === "Other" && !bulkApproveCustomReason.trim()) {
-      toast.error("Please specify the reason of leaving");
+      toast.error("Please specify the HR reason of leaving");
       return;
     }
-    const reasonOfLeaving = bulkApproveReason === "Other"
+    const reasonOfLeavingByHr = bulkApproveReason === "Other"
       ? bulkApproveCustomReason.trim()
       : bulkApproveReason.trim();
     try {
+      // Omitting the HR reason makes the server confirm each request's own department reason.
       const res = await bulkApproveLeftRequest({
         ids: selectedIds,
-        ...(reasonOfLeaving ? { reasonOfLeaving } : {}),
+        ...(reasonOfLeavingByHr ? { reasonOfLeavingByHr } : {}),
       }).unwrap();
       const { approved = [], skipped = [] } = res?.data || {};
       toast.success(`${approved.length} left request(s) approved${skipped.length ? `, ${skipped.length} skipped` : ""}`);
@@ -229,31 +302,28 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
     }
   };
 
+  // HR reason defaults to the department's reason so agreeing is one click; HR can change it
+  // if their exit finding differs.
   const openApprove = (request) => {
     setApproveTarget(request);
-    const existingReason = request.reasonOfLeaving || "";
-    if (existingReason && !LEAVING_REASONS.includes(existingReason)) {
-      setApproveReason("Other");
-      setApproveCustomReason(existingReason);
-    } else {
-      setApproveReason(existingReason);
-      setApproveCustomReason("");
-    }
+    const { reason, custom } = toReasonSelection(deptReasonOf(request));
+    setApproveReason(reason);
+    setApproveCustomReason(custom);
   };
 
   const handleApprove = async () => {
     if (!approveTarget) return;
     if (!approveReason) {
-      toast.error("Please select a reason of leaving");
+      toast.error("Please select the HR reason of leaving");
       return;
     }
     if (approveReason === "Other" && !approveCustomReason.trim()) {
-      toast.error("Please specify the reason of leaving");
+      toast.error("Please specify the HR reason of leaving");
       return;
     }
-    const reasonOfLeaving = (approveReason === "Other" ? approveCustomReason : approveReason).trim();
+    const reasonOfLeavingByHr = (approveReason === "Other" ? approveCustomReason : approveReason).trim();
     try {
-      await approveLeftRequest({ id: approveTarget.id, reasonOfLeaving }).unwrap();
+      await approveLeftRequest({ id: approveTarget.id, reasonOfLeavingByHr }).unwrap();
       toast.success(`${approveTarget.fullName} marked as left`);
       setApproveTarget(null);
       refetch();
@@ -312,6 +382,65 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
         {isFetching && <IconLoader className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 rounded-md border bg-white p-3">
+        <div className="lg:col-span-2">
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Employee</label>
+          <div className="relative">
+            <IconSearch className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by name or employee ID"
+              className="pl-9 h-9"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Department</label>
+          <MultiSelectFilter
+            placeholder="All Departments"
+            options={deptOptions}
+            selectedValues={splitIds(filters.departmentId)}
+            onChange={(vals) => setFilters({ departmentId: vals.join(","), sectionId: "", lineId: "" })}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Section</label>
+          <MultiSelectFilter
+            placeholder="All Sections"
+            options={sectionOptions}
+            selectedValues={splitIds(filters.sectionId)}
+            onChange={(vals) => setFilters((prev) => ({ ...prev, sectionId: vals.join(","), lineId: "" }))}
+            disabled={!filters.departmentId}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Line</label>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <MultiSelectFilter
+                placeholder="All Lines"
+                options={lineOptions}
+                selectedValues={splitIds(filters.lineId)}
+                onChange={(vals) => setFilters((prev) => ({ ...prev, lineId: vals.join(",") }))}
+                disabled={!filters.sectionId}
+              />
+            </div>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-9 w-9 shrink-0"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              title="Clear filters"
+              aria-label="Clear filters"
+            >
+              <IconFilterOff className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {selectedIds.length > 0 && canApproveLeft && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border bg-amber-50 px-3 py-2">
           <Badge className="bg-amber-600 text-white">
@@ -368,10 +497,10 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                   />
                 </TableHead>
               )}
-              <TableHead>Operator</TableHead>
-              <TableHead>Department / Section</TableHead>
-              <TableHead>Leaving Details</TableHead>
-              <TableHead>Requested By</TableHead>
+              <TableHead>Associate</TableHead>
+              <TableHead>Department / Section / Line</TableHead>
+              <TableHead>Leaving Details (Dept)</TableHead>
+              <TableHead>HR Review</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -421,32 +550,73 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">
-                      <div>{request.departmentName || "-"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {[request.sectionName, request.lineName].filter(Boolean).join(" / ") || "-"}
+                      <div className="flex flex-wrap gap-1 max-w-[220px]">
+                        {request.departmentName && (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-normal">
+                            {request.departmentName}
+                          </Badge>
+                        )}
+                        {request.sectionName && (
+                          <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200 font-normal">
+                            {request.sectionName}
+                          </Badge>
+                        )}
+                        {request.lineName && (
+                          <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-normal">
+                            {request.lineName}
+                          </Badge>
+                        )}
+                        {!request.departmentName && !request.sectionName && !request.lineName && (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm max-w-[260px]">
                       <div className="font-medium">
                         {request.leavingDate ? safeDateFormat(request.leavingDate, "dd/MM/yyyy") : "-"}
                       </div>
-                      <div className="text-xs text-muted-foreground">{request.reasonOfLeaving}</div>
-                      {request.remarks && (
-                        <div className="text-xs text-muted-foreground italic mt-0.5">"{request.remarks}"</div>
-                      )}
-                      {request.status === "REJECTED" && request.rejectionReason && (
-                        <div className="text-xs text-red-600 mt-0.5">Reason: {request.rejectionReason}</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <div>{request.requestedByName || "-"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {request.requestedByRole} · {request.createdAt ? safeDateFormat(request.createdAt, "dd/MM/yyyy") : ""}
+                      <div className="text-xs mt-0.5">
+                        <span className="font-semibold text-amber-800">
+                          Dept{request.departmentName ? ` (${request.departmentName})` : ""}:
+                        </span>{" "}
+                        {deptReasonOf(request) || "-"}
                       </div>
-                      {request.reviewedByName && (
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          Reviewed by {request.reviewedByName}
+                      {request.remarks && (
+                        <div className="text-xs text-muted-foreground italic mt-0.5" title={request.remarks}>
+                          "{request.remarks}"
                         </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        By {request.requestedByName || "-"}
+                        {request.requestedByRole ? ` (${request.requestedByRole})` : ""}
+                        {request.createdAt ? ` · ${safeDateFormat(request.createdAt, "dd/MM/yyyy")}` : ""}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[240px]">
+                      {request.status === "APPROVED" ? (
+                        <>
+                          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-normal whitespace-normal text-left">
+                            HR: {hrReasonOf(request) || "-"}
+                          </Badge>
+                          {request.reviewedByName && (
+                            <div className="text-xs text-muted-foreground mt-1">Approved by {request.reviewedByName}</div>
+                          )}
+                        </>
+                      ) : request.status === "PENDING" ? (
+                        <Badge variant="outline" className="text-amber-600 border-amber-200 font-normal">
+                          Pending Review
+                        </Badge>
+                      ) : request.status === "REJECTED" ? (
+                        <>
+                          <Badge className="bg-red-100 text-red-800 border border-red-200 font-normal whitespace-normal text-left">
+                            Rejected{request.rejectionReason ? `: ${request.rejectionReason}` : ""}
+                          </Badge>
+                          {request.reviewedByName && (
+                            <div className="text-xs text-muted-foreground mt-1">By {request.reviewedByName}</div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell>{statusBadge(request.status)}</TableCell>
@@ -563,16 +733,29 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
               Approve Left Request
             </DialogTitle>
             <DialogDescription>
-              Approve the left request for <strong>{approveTarget?.fullName}</strong>? Their status will be
-              changed to LEFT with a leaving date of{" "}
+              Their status will be changed to LEFT with a leaving date of{" "}
               <strong>{approveTarget?.leavingDate ? safeDateFormat(approveTarget.leavingDate, "dd/MM/yyyy") : "-"}</strong>.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border bg-amber-50/60 p-3 text-sm space-y-1">
+            <div>
+              <span className="text-muted-foreground">Operator:</span>{" "}
+              <strong>{approveTarget?.fullName}</strong>
+              {approveTarget?.empId ? ` (${approveTarget.empId})` : ""}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Department:</span> {approveTarget?.departmentName || "-"}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Department Reason:</span>{" "}
+              <span className="font-medium text-amber-800">{deptReasonOf(approveTarget) || "-"}</span>
+            </div>
+          </div>
           <div className="py-2 space-y-2">
-            <Label htmlFor="approveReason">Reason of Leaving</Label>
+            <Label htmlFor="approveReason">HR Reason of Leaving</Label>
             <Select value={approveReason} onValueChange={setApproveReason}>
               <SelectTrigger id="approveReason">
-                <SelectValue placeholder="Select Reason" />
+                <SelectValue placeholder="Select HR Reason" />
               </SelectTrigger>
               <SelectContent>
                 {LEAVING_REASONS.map((reason) => (
@@ -627,15 +810,20 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
             </DialogTitle>
             <DialogDescription>
               The selected operators will be marked as LEFT using their requested leaving dates.
-              Optionally apply a unified reason of leaving to all of them, or leave this blank to
-              keep each request's original reason.
+              Optionally set one HR reason of leaving for all of them, or leave this blank to
+              confirm each request's department reason as the HR reason.
             </DialogDescription>
           </DialogHeader>
           <div className="py-2 space-y-2 max-h-40 overflow-y-auto">
             {selectedRequests.map((r) => (
-              <div key={r.id} className="text-sm flex items-center justify-between">
-                <span>{r.fullName} ({r.empId || "-"})</span>
-                <span className="text-xs text-muted-foreground">
+              <div key={r.id} className="text-sm flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div>{r.fullName} ({r.empId || "-"})</div>
+                  <div className="text-xs text-amber-800 truncate">
+                    Dept{r.departmentName ? ` (${r.departmentName})` : ""}: {deptReasonOf(r) || "-"}
+                  </div>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">
                   {r.leavingDate ? safeDateFormat(r.leavingDate, "dd/MM/yyyy") : "-"}
                 </span>
               </div>
@@ -647,10 +835,10 @@ const LeftRequestsTab = ({ canApproveLeft, currentUserId, onChanged }) => {
             )}
           </div>
           <div className="py-2 space-y-2">
-            <Label htmlFor="bulkApproveReason">Unified Reason of Leaving (optional)</Label>
+            <Label htmlFor="bulkApproveReason">HR Reason of Leaving (optional)</Label>
             <Select value={bulkApproveReason} onValueChange={setBulkApproveReason}>
               <SelectTrigger id="bulkApproveReason">
-                <SelectValue placeholder="Keep each request's original reason" />
+                <SelectValue placeholder="Use each request's department reason" />
               </SelectTrigger>
               <SelectContent>
                 {LEAVING_REASONS.map((reason) => (

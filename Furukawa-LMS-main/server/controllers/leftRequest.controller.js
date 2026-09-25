@@ -76,7 +76,7 @@ const sendLeftRequestSubmittedEmail = async (request) => {
         departmentName: request.departmentName,
         sectionName: request.sectionName,
         leavingDate: request.leavingDate,
-        reasonOfLeaving: request.reasonOfLeaving,
+        reasonOfLeavingByDept: request.reasonOfLeavingByDept,
         remarks: request.remarks,
         requestedByName: request.requestedByName,
         requestedByRole: request.requestedByRole,
@@ -96,7 +96,8 @@ const sendLeftRequestResolutionEmail = async (request) => {
         departmentName: request.departmentName,
         sectionName: request.sectionName,
         leavingDate: request.leavingDate,
-        reasonOfLeaving: request.reasonOfLeaving,
+        reasonOfLeavingByDept: request.reasonOfLeavingByDept,
+        reasonOfLeavingByHr: request.reasonOfLeavingByHr,
         status: request.status,
         reviewedByName: request.reviewedByName,
         rejectionReason: request.rejectionReason,
@@ -118,8 +119,13 @@ const loadTargetUser = async (userId) => {
     return rows.length > 0 ? rows[0] : null;
 };
 
+// The apply dialog is filled by the department, so whatever reason it sends is the department's.
+// Accept either field name so older clients posting `reasonOfLeaving` keep working.
+const resolveDeptReason = (body) => String(body?.reasonOfLeavingByDept ?? body?.reasonOfLeaving ?? "").trim();
+
 export const applyLeftRequest = asyncHandler(async (req, res) => {
-    const { userId, leavingDate, reasonOfLeaving, remarks } = req.body;
+    const { userId, leavingDate, remarks } = req.body;
+    const reasonOfLeaving = resolveDeptReason(req.body);
 
     if (!userId) throw new ApiError("userId is required", 400);
     if (!leavingDate) throw new ApiError("Date of leaving is required", 400);
@@ -144,6 +150,7 @@ export const applyLeftRequest = asyncHandler(async (req, res) => {
         currentStatus: targetUser.status || "PRESENT",
         leavingDate,
         reasonOfLeaving,
+        reasonOfLeavingByDept: reasonOfLeaving,
         remarks,
         requestedBy: req.user.id,
         requestedByName: req.user.fullName || req.user.userName,
@@ -151,7 +158,8 @@ export const applyLeftRequest = asyncHandler(async (req, res) => {
     });
 
     logAudit(req.user.id, "APPLY_LEFT_REQUEST", {
-        leftRequestId: created.id, userId, leavingDate, reasonOfLeaving
+        leftRequestId: created.id, userId, leavingDate,
+        reasonOfLeavingByDept: reasonOfLeaving, departmentName: created.departmentName || null
     }, { resourceType: "LeftRequest", resourceId: created.id, req }).catch(err =>
         console.error("logAudit(APPLY_LEFT_REQUEST) failed:", err.message)
     );
@@ -164,7 +172,8 @@ export const applyLeftRequest = asyncHandler(async (req, res) => {
 });
 
 export const bulkApplyLeftRequest = asyncHandler(async (req, res) => {
-    const { ids, leavingDate, reasonOfLeaving, remarks } = req.body;
+    const { ids, leavingDate, remarks } = req.body;
+    const reasonOfLeaving = resolveDeptReason(req.body);
 
     if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("No IDs provided", 400);
     if (!leavingDate) throw new ApiError("Date of leaving is required", 400);
@@ -198,6 +207,7 @@ export const bulkApplyLeftRequest = asyncHandler(async (req, res) => {
             currentStatus: targetUser.status || "PRESENT",
             leavingDate,
             reasonOfLeaving,
+            reasonOfLeavingByDept: reasonOfLeaving,
             remarks,
             requestedBy: req.user.id,
             requestedByName,
@@ -212,15 +222,15 @@ export const bulkApplyLeftRequest = asyncHandler(async (req, res) => {
     }
 
     logAudit(req.user.id, "BULK_APPLY_LEFT_REQUEST", {
-        bulkBatchId, created: created.length, skipped: skipped.length, leavingDate, reasonOfLeaving
+        bulkBatchId, created: created.length, skipped: skipped.length, leavingDate, reasonOfLeavingByDept: reasonOfLeaving
     }, { req }).catch(err => console.error("logAudit(BULK_APPLY_LEFT_REQUEST) failed:", err.message));
 
     return res.status(201).json(new ApiResponse(201, { created, skipped }, `${created.length} left request(s) submitted, ${skipped.length} skipped`));
 });
 
 export const getAllLeftRequests = asyncHandler(async (req, res) => {
-    const { status, departmentId, sectionId, search, page, limit } = req.query;
-    const result = await LeftRequest.findAll({ status, departmentId, sectionId, search, page, limit });
+    const { status, departmentId, sectionId, lineId, search, page, limit } = req.query;
+    const result = await LeftRequest.findAll({ status, departmentId, sectionId, lineId, search, page, limit });
     return res.status(200).json(new ApiResponse(200, result, "Left requests fetched successfully"));
 });
 
@@ -237,37 +247,50 @@ export const getLeftRequestById = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, request, "Left request fetched successfully"));
 });
 
-export const approveLeftRequest = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const request = await LeftRequest.findById(id);
-    if (!request) throw new ApiError("Left request not found", 404);
-    if (request.status !== "PENDING") throw new ApiError(`This request has already been ${request.status.toLowerCase()}`, 400);
+// HR's reason from the approve dialog (either field name). Empty means "agree with the
+// department" and falls back to the reason the department submitted rather than clearing it.
+const resolveHrReason = (body, request) => (
+    String(body?.reasonOfLeavingByHr ?? body?.reasonOfLeaving ?? "").trim()
+    || request.reasonOfLeavingByDept
+    || request.reasonOfLeaving
+);
 
-    const [userRows] = await executeQuery(
-        "SELECT id, status, joiningDate, statusHistory, isTemporary FROM users WHERE id = ?",
-        [request.userId]
-    );
-    if (userRows.length === 0) throw new ApiError("The associate for this request no longer exists", 404);
+// Marks the request's associate as LEFT with both reasons plus a snapshot of the department
+// they left from, then flips the request to APPROVED. Shared by single and bulk approve.
+// Returns null (and changes nothing) if the associate no longer exists.
+const applyApproval = async (request, reviewer, hrReason, syncedBy) => {
+    const [userRows] = await executeQuery(`
+        SELECT u.id, u.status, u.joiningDate, u.statusHistory, u.isTemporary, d.name AS deptName
+        FROM users u
+        LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
+        WHERE u.id = ?
+    `, [request.userId]);
+    if (userRows.length === 0) return null;
     const targetUser = userRows[0];
 
     // request.leavingDate comes back from left_requests (a native DATE column) as a JS Date, but
     // users.leavingDate is NVARCHAR -- normalize to "YYYY-MM-DD" before it touches that column or
     // statusHistory, see toDateOnlyString's comment for why.
     const leavingDateStr = toDateOnlyString(request.leavingDate);
-
-    // The approver may override the reason submitted at apply time (defaults to it on the
-    // frontend); an empty override falls back to the original rather than clearing it.
-    const finalReasonOfLeaving = (req.body?.reasonOfLeaving?.trim()) || request.reasonOfLeaving;
+    const deptReason = request.reasonOfLeavingByDept || request.reasonOfLeaving;
+    // Prefer the department snapshotted on the request (where it was raised from), falling
+    // back to the associate's current department.
+    const deptName = request.departmentName || targetUser.deptName || null;
 
     const updatedHistory = getUpdatedStatusHistory(
         targetUser.statusHistory,
         { status: targetUser.status, joiningDate: targetUser.joiningDate, leavingDate: undefined },
         { status: "LEFT", leavingDate: leavingDateStr },
-        { changedBy: req.user.id, changedByName: req.user.fullName }
+        { changedBy: reviewer.id, changedByName: reviewer.fullName }
     );
 
-    const updateFields = ["status = 'LEFT'", "leavingDate = ?", "reasonOfLeaving = ?", "updatedAt = GETDATE()"];
-    const updateParams = [leavingDateStr, finalReasonOfLeaving];
+    // reasonOfLeaving mirrors the HR reason so every existing reader (filters, exports) keeps
+    // reporting the confirmed reason.
+    const updateFields = [
+        "status = 'LEFT'", "leavingDate = ?", "reasonOfLeaving = ?", "reasonOfLeavingByHr = ?",
+        "reasonOfLeavingByDept = ?", "leftDepartmentName = ?", "updatedAt = GETDATE()"
+    ];
+    const updateParams = [leavingDateStr, hrReason, hrReason, deptReason, deptName];
     if (updatedHistory) {
         updateFields.push("statusHistory = ?");
         updateParams.push(JSON.stringify(updatedHistory));
@@ -275,33 +298,47 @@ export const approveLeftRequest = asyncHandler(async (req, res) => {
     updateParams.push(request.userId);
     await executeQuery(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`, updateParams);
 
-    const updatedRequest = await LeftRequest.approve(id, {
-        reviewedBy: req.user.id,
-        reviewedByName: req.user.fullName || req.user.userName,
-        reasonOfLeaving: finalReasonOfLeaving,
+    const updatedRequest = await LeftRequest.approve(request.id, {
+        reviewedBy: reviewer.id,
+        reviewedByName: reviewer.fullName || reviewer.userName,
+        reasonOfLeavingByHr: hrReason,
     });
 
     // Keep dojo_stage_history current for temporary hires, mirroring updateUser's own sync.
     if (targetUser.isTemporary) {
         const today = new Date().toISOString().split('T')[0];
         for (const d of new Set([today, leavingDateStr])) {
-            DojoStageHistory.syncDate(d, { syncedBy: 'approveLeftRequest' }).catch(err =>
+            DojoStageHistory.syncDate(d, { syncedBy }).catch(err =>
                 console.error(`[LeftRequest] DojoStageHistory.syncDate(${d}) failed:`, err.message)
             );
         }
     }
 
-    logAudit(req.user.id, "APPROVE_LEFT_REQUEST", {
-        leftRequestId: id, userId: request.userId, leavingDate: leavingDateStr, reasonOfLeaving: finalReasonOfLeaving
-    }, { resourceType: "LeftRequest", resourceId: id, req }).catch(err =>
-        console.error("logAudit(APPROVE_LEFT_REQUEST) failed:", err.message)
-    );
-
     sendLeftRequestResolutionEmail(updatedRequest).catch(err =>
         console.error("[LeftRequest] Failed to send approval notification:", err.message)
     );
 
-    return res.status(200).json(new ApiResponse(200, updatedRequest, "Left request approved; associate marked as LEFT"));
+    return { updatedRequest, leavingDateStr, deptReason, deptName };
+};
+
+export const approveLeftRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const request = await LeftRequest.findById(id);
+    if (!request) throw new ApiError("Left request not found", 404);
+    if (request.status !== "PENDING") throw new ApiError(`This request has already been ${request.status.toLowerCase()}`, 400);
+
+    const hrReason = resolveHrReason(req.body, request);
+    const result = await applyApproval(request, req.user, hrReason, 'approveLeftRequest');
+    if (!result) throw new ApiError("The associate for this request no longer exists", 404);
+
+    logAudit(req.user.id, "APPROVE_LEFT_REQUEST", {
+        leftRequestId: id, userId: request.userId, leavingDate: result.leavingDateStr,
+        reasonOfLeavingByDept: result.deptReason, reasonOfLeavingByHr: hrReason, departmentName: result.deptName
+    }, { resourceType: "LeftRequest", resourceId: id, req }).catch(err =>
+        console.error("logAudit(APPROVE_LEFT_REQUEST) failed:", err.message)
+    );
+
+    return res.status(200).json(new ApiResponse(200, result.updatedRequest, "Left request approved; associate marked as LEFT"));
 });
 
 export const rejectLeftRequest = asyncHandler(async (req, res) => {
@@ -333,7 +370,7 @@ export const rejectLeftRequest = asyncHandler(async (req, res) => {
 });
 
 export const bulkApproveLeftRequests = asyncHandler(async (req, res) => {
-    const { ids, reasonOfLeaving } = req.body;
+    const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("No IDs provided", 400);
 
     const uniqueIds = [...new Set(ids)];
@@ -345,56 +382,16 @@ export const bulkApproveLeftRequests = asyncHandler(async (req, res) => {
         if (!request) { skipped.push({ id, reason: "Not found" }); continue; }
         if (request.status !== "PENDING") { skipped.push({ id, reason: `Already ${request.status.toLowerCase()}` }); continue; }
 
-        const [userRows] = await executeQuery(
-            "SELECT id, status, joiningDate, statusHistory, isTemporary FROM users WHERE id = ?",
-            [request.userId]
-        );
-        if (userRows.length === 0) { skipped.push({ id, reason: "Associate no longer exists" }); continue; }
-        const targetUser = userRows[0];
+        // A blank HR reason keeps each request's own department reason.
+        const result = await applyApproval(request, req.user, resolveHrReason(req.body, request), 'bulkApproveLeftRequests');
+        if (!result) { skipped.push({ id, reason: "Associate no longer exists" }); continue; }
 
-        const leavingDateStr = toDateOnlyString(request.leavingDate);
-        const finalReasonOfLeaving = (reasonOfLeaving?.trim()) || request.reasonOfLeaving;
-
-        const updatedHistory = getUpdatedStatusHistory(
-            targetUser.statusHistory,
-            { status: targetUser.status, joiningDate: targetUser.joiningDate, leavingDate: undefined },
-            { status: "LEFT", leavingDate: leavingDateStr },
-            { changedBy: req.user.id, changedByName: req.user.fullName }
-        );
-
-        const updateFields = ["status = 'LEFT'", "leavingDate = ?", "reasonOfLeaving = ?", "updatedAt = GETDATE()"];
-        const updateParams = [leavingDateStr, finalReasonOfLeaving];
-        if (updatedHistory) {
-            updateFields.push("statusHistory = ?");
-            updateParams.push(JSON.stringify(updatedHistory));
-        }
-        updateParams.push(request.userId);
-        await executeQuery(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`, updateParams);
-
-        const updatedRequest = await LeftRequest.approve(id, {
-            reviewedBy: req.user.id,
-            reviewedByName: req.user.fullName || req.user.userName,
-            reasonOfLeaving: finalReasonOfLeaving,
-        });
-
-        if (targetUser.isTemporary) {
-            const today = new Date().toISOString().split('T')[0];
-            for (const d of new Set([today, leavingDateStr])) {
-                DojoStageHistory.syncDate(d, { syncedBy: 'bulkApproveLeftRequests' }).catch(err =>
-                    console.error(`[LeftRequest] DojoStageHistory.syncDate(${d}) failed:`, err.message)
-                );
-            }
-        }
-
-        sendLeftRequestResolutionEmail(updatedRequest).catch(err =>
-            console.error("[LeftRequest] Failed to send approval notification:", err.message)
-        );
-
-        approved.push(updatedRequest);
+        approved.push(result.updatedRequest);
     }
 
     logAudit(req.user.id, "BULK_APPROVE_LEFT_REQUEST", {
-        ids: uniqueIds, approved: approved.length, skipped: skipped.length
+        ids: uniqueIds, approved: approved.length, skipped: skipped.length,
+        reasonOfLeavingByHr: String(req.body?.reasonOfLeavingByHr ?? req.body?.reasonOfLeaving ?? "").trim() || null
     }, { req }).catch(err => console.error("logAudit(BULK_APPROVE_LEFT_REQUEST) failed:", err.message));
 
     return res.status(200).json(new ApiResponse(200, { approved, skipped }, `${approved.length} left request(s) approved, ${skipped.length} skipped`));

@@ -167,6 +167,8 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
 
     const [candidateType, setCandidateType] = useState('operator');
     const [viewMode,      setViewMode]      = useState('reason');
+    // 'hr' = reason HR confirmed on approval, 'dept' = reason the department submitted.
+    const [reasonPerspective, setReasonPerspective] = useState('hr');
     const [timeframe,     setTimeframe]     = useState('daily');
     const [rawStart,      setRawStart]      = useState('');
     const [rawEnd,        setRawEnd]        = useState('');
@@ -224,7 +226,12 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         departmentId: selectedDepts.length > 0 ? selectedDepts.join(',') : '',
         sectionId: selectedSections.length > 0 ? selectedSections.join(',') : '',
         lineId: selectedLines.length > 0 ? selectedLines.join(',') : '',
+        reasonSource: reasonPerspective,
     });
+
+    const perspectiveTitle = reasonPerspective === 'dept'
+        ? t('charts.leftByDeptReason')
+        : t('charts.leftByHrReason');
 
     const rawTrend   = useMemo(() => data?.data?.trend || [], [data]);
     const groupBy    = data?.data?.groupBy     || timeframe;
@@ -414,10 +421,10 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
 
     const reasonSeries = useMemo(() => [{
         type: 'column',
-        name: t('charts.leftEmployees'),
+        name: perspectiveTitle,
         data: flatData,
         color: '#ef4444',
-    }], [flatData, t]);
+    }], [flatData, perspectiveTitle]);
 
     const reasonOptions = useMemo(() => ({
         chart: {
@@ -456,7 +463,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: t('charts.leftEmployees'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            title: { text: perspectiveTitle, style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
             labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
@@ -508,7 +515,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
             ],
         },
         series: reasonSeries,
-    }), [flatCategories, reasonSeries, groupPlotLines, reasonNeedsScroll, reasonScrollMinWidth, reasonScrollPositionX, t]);
+    }), [flatCategories, reasonSeries, groupPlotLines, reasonNeedsScroll, reasonScrollMinWidth, reasonScrollPositionX, perspectiveTitle, t]);
 
     // ── Highcharts options: Total ─────────────────────────────────────────────
     const TOTAL_SLOT_WIDTH = 72;
@@ -563,7 +570,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         yAxis: {
             min: 0,
             allowDecimals: false,
-            title: { text: t('charts.leftEmployees'), style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+            title: { text: perspectiveTitle, style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
             labels: { style: { fontSize: '13px', fontWeight: 'bold' } },
             gridLineColor: '#f1f5f9',
         },
@@ -593,11 +600,11 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
         },
         series: [{
             type: 'column',
-            name: t('charts.leftEmployees'),
+            name: perspectiveTitle,
             data: totalSeries,
             color: '#ef4444',
         }],
-    }), [categories, totalSeries, totalPlotLines, totalNeedsScroll, totalScrollMinWidth, totalScrollPositionX, t]);
+    }), [categories, totalSeries, totalPlotLines, totalNeedsScroll, totalScrollMinWidth, totalScrollPositionX, perspectiveTitle]);
 
     const cfg = INPUT_CONFIG[timeframe];
     const chartHeight = isTablet ? 500 : isMobile ? 360 : 440;
@@ -634,6 +641,25 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                                 onClick={() => setCandidateType('operator')}
                             >
                                 {t('charts.operators')}
+                            </Button>
+                        </div>
+                        {/* Reason perspective: HR-confirmed vs. department-submitted */}
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant={reasonPerspective === 'hr' ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setReasonPerspective('hr')}
+                            >
+                                {t('charts.hrReason')}
+                            </Button>
+                            <Button
+                                variant={reasonPerspective === 'dept' ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setReasonPerspective('dept')}
+                            >
+                                {t('charts.deptReason')}
                             </Button>
                         </div>
                         {/* By Reason / Total toggle */}
@@ -878,7 +904,7 @@ const LeftUsersLeavingReasonChart = ({ departments: departmentsProp } = {}) => {
                 ) : (
                     <>
                         <HighchartsReact
-                            key={`${viewMode}-${candidateType}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}-${selectedSections.join(',')}-${selectedLines.join(',')}`}
+                            key={`${viewMode}-${reasonPerspective}-${candidateType}-${timeframe}-${startDate}-${endDate}-${selectedDepts.join(',')}-${selectedSections.join(',')}-${selectedLines.join(',')}`}
                             highcharts={Highcharts}
                             options={viewMode === 'total' ? totalOptions : reasonOptions}
                         />

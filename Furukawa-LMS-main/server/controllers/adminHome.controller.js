@@ -1631,8 +1631,9 @@ const NOT_SPECIFIED_REASON = "Not Specified";
  * timeline instead of being dropped.
  */
 export const getLeftUsersReasonTrend = asyncHandler(async (req, res) => {
-    const { startDate, endDate, groupBy = 'monthly', candidateType = 'dojo', departmentId, sectionId, lineId } = req.query;
+    const { startDate, endDate, groupBy = 'monthly', candidateType = 'dojo', departmentId, sectionId, lineId, reasonSource = 'hr' } = req.query;
 
+    const safeReasonSource = reasonSource === 'dept' ? 'dept' : 'hr';
     const safeGroupBy = ['daily', 'monthly', 'yearly'].includes(groupBy) ? groupBy : 'monthly';
     const isTemporaryValue = candidateType === 'operator' ? 0 : 1;
 
@@ -1664,7 +1665,11 @@ export const getLeftUsersReasonTrend = asyncHandler(async (req, res) => {
         yearly:  `FORMAT(${dateExpr}, 'yyyy')`,
     };
     const periodExpr = periodFormatMap[safeGroupBy];
-    const reasonExpr = "CASE WHEN reasonOfLeaving IS NULL OR LTRIM(RTRIM(reasonOfLeaving)) = '' THEN 'Not Specified' ELSE LTRIM(RTRIM(reasonOfLeaving)) END";
+    // HR perspective = reason confirmed on approval; Dept perspective = reason the department
+    // submitted. Both fall back to the legacy single reason for users who left before the split
+    // (or were marked LEFT directly, which only records one reason).
+    const reasonColumn = safeReasonSource === 'dept' ? 'reasonOfLeavingByDept' : 'reasonOfLeavingByHr';
+    const reasonExpr = `COALESCE(NULLIF(LTRIM(RTRIM(${reasonColumn})), ''), NULLIF(LTRIM(RTRIM(reasonOfLeaving)), ''), '${NOT_SPECIFIED_REASON}')`;
 
     // Hierarchical filters accept comma-separated IDs for multi-select. Temp users store their
     // department/section/line in target*Id until handover, after which it moves to the plain
@@ -1747,6 +1752,7 @@ export const getLeftUsersReasonTrend = asyncHandler(async (req, res) => {
             trend,
             reasonsList,
             groupBy: safeGroupBy,
+            reasonSource: safeReasonSource,
             start,
             end,
             summary: {

@@ -1713,6 +1713,7 @@ export const generateLeftRequestSubmittedEmail = ({
     sectionName,
     leavingDate,
     reasonOfLeaving,
+    reasonOfLeavingByDept,
     remarks,
     requestedByName,
     requestedByRole,
@@ -1767,8 +1768,8 @@ export const generateLeftRequestSubmittedEmail = ({
                         <td style="padding:7px 0;color:#111827;">${leavingDate || '-'}</td>
                     </tr>
                     <tr>
-                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving</td>
-                        <td style="padding:7px 0;color:#111827;">${reasonOfLeaving || '-'}</td>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving (Dept)</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeavingByDept || reasonOfLeaving || '-'}</td>
                     </tr>
                     ${remarks ? `<tr>
                         <td style="padding:7px 0;color:#6b7280;font-weight:600;">Remarks</td>
@@ -1808,6 +1809,8 @@ export const generateLeftRequestResolutionEmail = ({
     sectionName,
     leavingDate,
     reasonOfLeaving,
+    reasonOfLeavingByDept,
+    reasonOfLeavingByHr,
     status,
     reviewedByName,
     rejectionReason,
@@ -1867,9 +1870,17 @@ export const generateLeftRequestResolutionEmail = ({
                         <td style="padding:7px 0;color:#111827;">${leavingDate || '-'}</td>
                     </tr>
                     <tr>
-                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving</td>
-                        <td style="padding:7px 0;color:#111827;">${reasonOfLeaving || '-'}</td>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving (Dept)</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeavingByDept || reasonOfLeaving || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving (HR)</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeavingByHr || reasonOfLeaving || '-'}</td>
                     </tr>` : `<tr>
+                        <td style="padding:7px 0;color:#6b7280;font-weight:600;">Reason of Leaving (Dept)</td>
+                        <td style="padding:7px 0;color:#111827;">${reasonOfLeavingByDept || reasonOfLeaving || '-'}</td>
+                    </tr>
+                    <tr>
                         <td style="padding:7px 0;color:#6b7280;font-weight:600;">Rejection Reason</td>
                         <td style="padding:7px 0;color:#111827;">${rejectionReason || '-'}</td>
                     </tr>`}

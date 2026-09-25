@@ -65,14 +65,14 @@ const ApplyLeftDialog = ({ open, onOpenChange, targets = [], onSuccess }) => {
     if (reason === "Other" && !customReason.trim()) { toast.error("Please specify the reason of leaving"); return; }
     if (targets.length === 0) { toast.error("No operator selected"); return; }
 
-    const reasonOfLeaving = (reason === "Other" ? customReason : reason).trim();
+    const reasonOfLeavingByDept = (reason === "Other" ? customReason : reason).trim();
 
     try {
       if (isBulk) {
         const result = await bulkApplyLeftRequest({
           ids: targets.map((t) => t.id),
           leavingDate: date,
-          reasonOfLeaving,
+          reasonOfLeavingByDept,
           remarks: remarks.trim() || undefined,
         }).unwrap();
         const created = result?.data?.created?.length ?? 0;
@@ -82,7 +82,7 @@ const ApplyLeftDialog = ({ open, onOpenChange, targets = [], onSuccess }) => {
         await applyLeftRequest({
           userId: targets[0]?.id,
           leavingDate: date,
-          reasonOfLeaving,
+          reasonOfLeavingByDept,
           remarks: remarks.trim() || undefined,
         }).unwrap();
         toast.success("Left request submitted for approval");
@@ -119,7 +119,7 @@ const ApplyLeftDialog = ({ open, onOpenChange, targets = [], onSuccess }) => {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="applyLeftReason">Reason of Leaving</Label>
+            <Label htmlFor="applyLeftReason">Reason of Leaving (Department)</Label>
             <Select value={reason} onValueChange={setReason}>
               <SelectTrigger id="applyLeftReason">
                 <SelectValue placeholder="Select Reason" />

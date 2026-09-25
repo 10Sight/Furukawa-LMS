@@ -1911,6 +1911,145 @@ export const generateLeftRequestResolutionEmail = ({
 </html>`;
 };
 
+// Escapes user-entered text (reasons, remarks, names) before it lands in digest HTML.
+const escapeHtml = (val) => String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+// Left request dates come back from a SQL DATE column as JS Dates; render as DD/MM/YYYY using
+// local calendar components so the day never shifts across a UTC boundary.
+const formatDigestDate = (val) => {
+    if (!val) return '-';
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return '-';
+        return `${String(val.getDate()).padStart(2, '0')}/${String(val.getMonth() + 1).padStart(2, '0')}/${val.getFullYear()}`;
+    }
+    const [y, m, d] = String(val).split('T')[0].split('-');
+    return y && m && d ? `${d}/${m}/${y}` : String(val);
+};
+
+export const generateConsolidatedLeftRequestEmail = ({
+    requests = [],
+    departmentName,
+    sectionName,
+    portalUrl,
+    reportDate
+}) => {
+    const count = requests.length;
+    const th = 'padding:9px 8px;text-align:left;font-size:11px;font-weight:700;color:#78350f;text-transform:uppercase;letter-spacing:0.4px;border-bottom:2px solid #fcd34d;white-space:nowrap;';
+    const td = 'padding:9px 8px;font-size:12px;color:#111827;border-bottom:1px solid #e5e7eb;vertical-align:top;';
+
+    const rowsHtml = requests.map((r, i) => {
+        const hierarchy = [r.departmentName, r.sectionName, r.lineName].filter(Boolean).map(escapeHtml).join(' / ') || '-';
+        const requestedBy = r.requestedByName
+            ? `${escapeHtml(r.requestedByName)}${r.requestedByRole ? `<br/><span style="color:#6b7280;font-size:11px;">${escapeHtml(r.requestedByRole)}</span>` : ''}`
+            : '-';
+        return `
+                    <tr style="background:${i % 2 === 0 ? '#ffffff' : '#fffbeb'};">
+                        <td style="${td}color:#6b7280;">${i + 1}</td>
+                        <td style="${td}white-space:nowrap;">${escapeHtml(r.empId) || '-'}</td>
+                        <td style="${td}font-weight:700;">${escapeHtml(r.fullName) || '-'}</td>
+                        <td style="${td}">${hierarchy}</td>
+                        <td style="${td}white-space:nowrap;">${formatDigestDate(r.leavingDate)}</td>
+                        <td style="${td}">${escapeHtml(r.reasonOfLeavingByDept || r.reasonOfLeaving) || '-'}</td>
+                        <td style="${td}color:#4b5563;font-style:italic;">${escapeHtml(r.remarks) || '-'}</td>
+                        <td style="${td}">${requestedBy}</td>
+                    </tr>`;
+    }).join('');
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pending Left Requests Digest</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+    <div style="max-width:960px;margin:30px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);">
+
+        <!-- Header -->
+        <div style="background:#b45309;padding:24px 32px;">
+            <div style="font-size:13px;color:#fde68a;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Furukawa Minda Electric Pvt. Ltd.</div>
+            <div style="font-size:20px;color:#ffffff;font-weight:700;margin-top:6px;">Action Required: Pending Left Requests</div>
+            <div style="display:inline-block;margin-top:10px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;">
+                Pending Left Requests Digest &bull; ${count} Associate${count === 1 ? '' : 's'}
+            </div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:28px 32px;">
+            <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Reviewer,</p>
+            <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
+                The following left request${count === 1 ? ' has' : 's have'} been submitted since the last digest and
+                ${count === 1 ? 'is' : 'are'} awaiting your verification and approval. Operators remain active until their request is reviewed.
+            </p>
+
+            <!-- Summary -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <tr>
+                        <td style="padding:5px 0;color:#6b7280;font-weight:600;width:150px;">Department</td>
+                        <td style="padding:5px 0;color:#111827;">${escapeHtml(departmentName) || 'All Departments'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:5px 0;color:#6b7280;font-weight:600;">Section</td>
+                        <td style="padding:5px 0;color:#111827;">${escapeHtml(sectionName) || 'All Sections'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:5px 0;color:#6b7280;font-weight:600;">Total Requests</td>
+                        <td style="padding:5px 0;color:#111827;font-weight:700;">${count}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:5px 0;color:#6b7280;font-weight:600;">Generated</td>
+                        <td style="padding:5px 0;color:#111827;">${escapeHtml(reportDate) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Requests Table -->
+            <div style="overflow-x:auto;border:1px solid #fde68a;border-radius:8px;margin-bottom:24px;">
+                <table style="width:100%;border-collapse:collapse;min-width:760px;">
+                    <thead>
+                        <tr style="background:#fef3c7;">
+                            <th style="${th}">#</th>
+                            <th style="${th}">Emp ID</th>
+                            <th style="${th}">Employee Name</th>
+                            <th style="${th}">Department / Section / Line</th>
+                            <th style="${th}">Date of Leaving</th>
+                            <th style="${th}">Reason of Leaving (Dept)</th>
+                            <th style="${th}">Remarks</th>
+                            <th style="${th}">Requested By</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:28px 0 8px;">
+                <a href="${portalUrl}"
+                   style="display:inline-block;background:#b45309;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                    Review Left Requests
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:11px;">
+                This is an automated daily digest from the FME Digital Portal.
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
 export default {
     generateWelcomeEmail,
     generateInstructorWelcomeEmail,
@@ -1931,4 +2070,5 @@ export default {
     generateSixteenDayMonitoringEligibleEmail,
     generateLeftRequestSubmittedEmail,
     generateLeftRequestResolutionEmail,
+    generateConsolidatedLeftRequestEmail,
 };

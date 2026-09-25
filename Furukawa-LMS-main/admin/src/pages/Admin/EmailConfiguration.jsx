@@ -341,6 +341,7 @@ export default function EmailConfiguration() {
                                              formName === "16-Day Monitoring Sheet" ? "For 16-Day Monitoring Sheet: sends email report for each pending (unapproved/unverified) monitoring sheet at this time daily." :
                                              (formName === "Skill Upgradation Sheet" || formName === "Multi Skill Sheet") ? `For ${formName}: sends an email warning for associates whose Plan Date is due today at this time daily.` :
                                              formName === "16 Day for Training Cell" ? "Not auto-scheduled — these recipients receive an automated report when a 16-Day Monitoring Sheet is Approved or Rejected in the 'Approved By' column. Leave the time blank." :
+                                             formName === "Left Request Email" ? "For Left Request Email: At the selected time daily, a single consolidated email with a table of all pending left requests is sent to recipients instead of sending separate emails per request. Leave blank to send one email immediately per request." :
                                              "No scheduler action defined for this form yet."}
                                         </p>
                                     </div>

@@ -9,13 +9,13 @@ import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
 import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import logAudit from "../utils/auditLogger.js";
-import ENV from "../configs/env.config.js";
+import {
+    LEFT_REQUEST_FORM_NAME,
+    leftRequestPortalUrl,
+    buildLeftRequestRecipients,
+} from "../services/leftRequestNotificationScheduler.js";
 import { hasPermission } from "../middlewares/roleAuth.middleware.js";
 import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
-
-const LEFT_REQUEST_FORM_NAME = "Left Request Email";
-
-const portalUrlForLeftRequests = () => `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/students?tab=left-request`;
 
 const resolveRequesterRole = (user) => {
     if (user.role === 'CUSTOM') return user.customRole?.name || 'Custom Role';
@@ -49,25 +49,17 @@ const canReviewLeftRequests = (user) => (
 const resolveLeftRequestRecipients = async (departmentId, sectionId) => {
     const config = await EmailConfiguration.findByFormDeptAndSection(LEFT_REQUEST_FORM_NAME, departmentId, sectionId);
     if (!config) return null;
-
-    let to = config.toEmails || "";
-    const cc = config.ccEmails || "";
-
-    if (config.includeTrainer && departmentId) {
-        const [trainers] = await executeQuery(
-            "SELECT email FROM users WHERE departmentId = ? AND (isTrainer = 1 OR role = 'INSTRUCTOR')",
-            [departmentId]
-        );
-        const trainerEmails = trainers.map(t => t.email).filter(Boolean).join(", ");
-        if (trainerEmails) to = to ? `${to}, ${trainerEmails}` : trainerEmails;
-    }
-
-    if (!to) return null;
-    return { to, cc };
+    return buildLeftRequestRecipients(config, [departmentId]);
 };
 
-const sendLeftRequestSubmittedEmail = async (request) => {
-    const recipients = await resolveLeftRequestRecipients(request.departmentId, request.sectionId);
+// Submission notice. When the config that owns this request has a scheduledTime, skip the
+// immediate email and leave the request unnotified -- leftRequestNotificationScheduler rolls it
+// into that config's daily digest. Otherwise send one email now and mark it notified.
+const notifyLeftRequestSubmitted = async (request) => {
+    const config = await EmailConfiguration.findByFormDeptAndSection(LEFT_REQUEST_FORM_NAME, request.departmentId, request.sectionId);
+    if (!config || config.scheduledTime) return;
+
+    const recipients = await buildLeftRequestRecipients(config, [request.departmentId]);
     if (!recipients) return;
 
     const html = emailTemplates.generateLeftRequestSubmittedEmail({
@@ -80,10 +72,11 @@ const sendLeftRequestSubmittedEmail = async (request) => {
         remarks: request.remarks,
         requestedByName: request.requestedByName,
         requestedByRole: request.requestedByRole,
-        portalUrl: portalUrlForLeftRequests(),
+        portalUrl: leftRequestPortalUrl(),
     });
 
     await sendMail(recipients.to, `[Action Required] Left Request Submitted for Operator: ${request.fullName} (${request.empId || '-'})`, html, [], recipients.cc);
+    await LeftRequest.markAsNotified([request.id]);
 };
 
 const sendLeftRequestResolutionEmail = async (request) => {
@@ -101,7 +94,7 @@ const sendLeftRequestResolutionEmail = async (request) => {
         status: request.status,
         reviewedByName: request.reviewedByName,
         rejectionReason: request.rejectionReason,
-        portalUrl: portalUrlForLeftRequests(),
+        portalUrl: leftRequestPortalUrl(),
     });
 
     const subjectPrefix = request.status === 'APPROVED' ? '[Notification] Left Request Approved' : '[Notification] Left Request Rejected';
@@ -164,7 +157,7 @@ export const applyLeftRequest = asyncHandler(async (req, res) => {
         console.error("logAudit(APPLY_LEFT_REQUEST) failed:", err.message)
     );
 
-    sendLeftRequestSubmittedEmail(created).catch(err =>
+    notifyLeftRequestSubmitted(created).catch(err =>
         console.error("[LeftRequest] Failed to send submitted notification:", err.message)
     );
 
@@ -216,7 +209,7 @@ export const bulkApplyLeftRequest = asyncHandler(async (req, res) => {
             bulkBatchId,
         });
         created.push(request);
-        sendLeftRequestSubmittedEmail(request).catch(err =>
+        notifyLeftRequestSubmitted(request).catch(err =>
             console.error("[LeftRequest] Failed to send submitted notification:", err.message)
         );
     }

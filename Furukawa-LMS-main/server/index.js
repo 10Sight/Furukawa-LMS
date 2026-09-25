@@ -61,6 +61,7 @@ import departmentStatusScheduler from "./services/departmentStatusScheduler.js";
 import reportScheduler from "./services/reportScheduler.js";
 import handoverNotificationScheduler from "./services/handoverNotificationScheduler.js";
 import sixteenDayMonitoringScheduler from "./services/sixteenDayMonitoringScheduler.js";
+import leftRequestNotificationScheduler from "./services/leftRequestNotificationScheduler.js";
 import sixteenDayEligibilityScheduler from "./services/sixteenDayEligibilityScheduler.js";
 import planNotificationScheduler from "./services/planNotificationScheduler.js";
 import headcountReportScheduler from "./services/headcountReportScheduler.js";
@@ -538,6 +539,7 @@ const startServer = async () => {
                 reportScheduler.init();
                 handoverNotificationScheduler.init();
                 sixteenDayMonitoringScheduler.init();
+                leftRequestNotificationScheduler.init();
                 sixteenDayEligibilityScheduler.init();
                 planNotificationScheduler.init();
                 headcountReportScheduler.init();
@@ -561,6 +563,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            leftRequestNotificationScheduler.stop();
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();
@@ -572,6 +575,7 @@ const startServer = async () => {
             departmentStatusScheduler.stop();
             handoverNotificationScheduler.stop();
             sixteenDayMonitoringScheduler.stop();
+            leftRequestNotificationScheduler.stop();
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();

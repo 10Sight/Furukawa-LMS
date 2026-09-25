@@ -2,6 +2,7 @@ import EmailConfiguration from "../models/emailConfiguration.model.js";
 import handoverNotificationScheduler from "../services/handoverNotificationScheduler.js";
 import sixteenDayMonitoringScheduler from "../services/sixteenDayMonitoringScheduler.js";
 import sixteenDayEligibilityScheduler from "../services/sixteenDayEligibilityScheduler.js";
+import leftRequestNotificationScheduler from "../services/leftRequestNotificationScheduler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -72,6 +73,11 @@ const testSixteenDayEligibilityScheduler = asyncHandler(async (_req, res) => {
     return res.status(200).json(new ApiResponse(200, result, "16-Day eligibility scheduler test complete"));
 });
 
+const testLeftRequestScheduler = asyncHandler(async (_req, res) => {
+    const result = await leftRequestNotificationScheduler.runNow();
+    return res.status(200).json(new ApiResponse(200, result, "Left request digest scheduler test complete"));
+});
+
 export {
     getAllConfigurations,
     getConfigurationById,
@@ -80,5 +86,6 @@ export {
     deleteConfiguration,
     testHandoverScheduler,
     testSixteenDayScheduler,
-    testSixteenDayEligibilityScheduler
+    testSixteenDayEligibilityScheduler,
+    testLeftRequestScheduler
 };

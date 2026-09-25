@@ -30,6 +30,8 @@ class LeftRequest {
         this.rejectionReason = data.rejectionReason || "";
         this.isBulkRequest = !!data.isBulkRequest;
         this.bulkBatchId = data.bulkBatchId || null;
+        this.isNotificationSent = !!data.isNotificationSent;
+        this.notifiedAt = data.notifiedAt || null;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
 
@@ -70,6 +72,8 @@ class LeftRequest {
                     rejectionReason NVARCHAR(MAX) NULL,
                     isBulkRequest BIT DEFAULT 0,
                     bulkBatchId NVARCHAR(100) NULL,
+                    isNotificationSent BIT NOT NULL DEFAULT 0,
+                    notifiedAt DATETIME NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_left_requests_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
@@ -90,6 +94,14 @@ class LeftRequest {
             if (await migrationHelper.ensureColumnExists('left_requests', 'reasonOfLeavingByHr', 'NVARCHAR(500) NULL')) {
                 await executeQuery("UPDATE left_requests SET reasonOfLeavingByHr = reasonOfLeaving WHERE status = 'APPROVED' AND reasonOfLeavingByHr IS NULL");
             }
+
+            // Scheduled digest tracking. Requests that existed before this column were already
+            // notified the old way (one email each), so mark them sent -- otherwise the first
+            // digest would re-announce every historical pending request.
+            if (await migrationHelper.ensureColumnExists('left_requests', 'isNotificationSent', 'BIT NOT NULL DEFAULT 0')) {
+                await executeQuery("UPDATE left_requests SET isNotificationSent = 1");
+            }
+            await migrationHelper.ensureColumnExists('left_requests', 'notifiedAt', 'DATETIME NULL');
         }
 
         try {
@@ -112,6 +124,11 @@ class LeftRequest {
                 'left_requests',
                 'idx_left_requests_dept_sect_line',
                 'CREATE INDEX idx_left_requests_dept_sect_line ON left_requests(departmentId, sectionId, lineId, status)'
+            );
+            await migrationHelper.ensureIndexExists(
+                'left_requests',
+                'idx_left_requests_notif',
+                'CREATE INDEX idx_left_requests_notif ON left_requests(status, isNotificationSent)'
             );
             await migrationHelper.ensureIndexExists(
                 'left_requests',
@@ -244,6 +261,33 @@ class LeftRequest {
         }
         const [rows] = await executeQuery(query, params);
         return rows[0]?.cnt || 0;
+    }
+
+    // Pending requests nobody has been emailed about yet -- the scheduled digest's input.
+    // Oldest first so the digest table reads in submission order.
+    static async findPendingForNotification() {
+        const [rows] = await executeQuery(`
+            SELECT lr.*, d.name as departmentName, s.name as sectionName, l.name as lineName,
+                   u.avatar as avatar, u.status as userStatus
+            FROM left_requests lr
+            LEFT JOIN departments d ON lr.departmentId = d.id
+            LEFT JOIN sections s ON lr.sectionId = s.id
+            LEFT JOIN [lines] l ON lr.lineId = l.id
+            LEFT JOIN users u ON lr.userId = u.id
+            WHERE lr.status = 'PENDING' AND lr.isNotificationSent = 0
+            ORDER BY lr.createdAt ASC
+        `);
+        return rows.map(r => new LeftRequest(r));
+    }
+
+    static async markAsNotified(ids) {
+        const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+        if (uniqueIds.length === 0) return 0;
+        await executeQuery(
+            `UPDATE left_requests SET isNotificationSent = 1, notifiedAt = GETDATE() WHERE id IN (${uniqueIds.map(() => "?").join(",")})`,
+            uniqueIds
+        );
+        return uniqueIds.length;
     }
 
     static async approve(id, { reviewedBy, reviewedByName, reasonOfLeavingByHr }) {

@@ -53,8 +53,8 @@ const resolveLeftRequestRecipients = async (departmentId, sectionId) => {
 };
 
 // Submission notice. When the config that owns this request has a scheduledTime, skip the
-// immediate email and leave the request unnotified -- leftRequestNotificationScheduler rolls it
-// into that config's daily digest. Otherwise send one email now and mark it notified.
+// immediate email -- leftRequestNotificationScheduler includes it in that config's daily digest
+// every day until it is reviewed. Otherwise send one email now and mark it notified.
 const notifyLeftRequestSubmitted = async (request) => {
     const config = await EmailConfiguration.findByFormDeptAndSection(LEFT_REQUEST_FORM_NAME, request.departmentId, request.sectionId);
     if (!config || config.scheduledTime) return;

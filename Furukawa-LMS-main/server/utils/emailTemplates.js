@@ -1984,7 +1984,7 @@ export const generateConsolidatedLeftRequestEmail = ({
         <div style="padding:28px 32px;">
             <p style="margin:0 0 16px;color:#374151;font-size:14px;">Dear Reviewer,</p>
             <p style="margin:0 0 20px;color:#374151;font-size:14px;line-height:1.6;">
-                The following left request${count === 1 ? ' has' : 's have'} been submitted since the last digest and
+                The following left request${count === 1 ? ' is' : 's are'} still pending and
                 ${count === 1 ? 'is' : 'are'} awaiting your verification and approval. Operators remain active until their request is reviewed.
             </p>
 

@@ -95,12 +95,9 @@ class LeftRequest {
                 await executeQuery("UPDATE left_requests SET reasonOfLeavingByHr = reasonOfLeaving WHERE status = 'APPROVED' AND reasonOfLeavingByHr IS NULL");
             }
 
-            // Scheduled digest tracking. Requests that existed before this column were already
-            // notified the old way (one email each), so mark them sent -- otherwise the first
-            // digest would re-announce every historical pending request.
-            if (await migrationHelper.ensureColumnExists('left_requests', 'isNotificationSent', 'BIT NOT NULL DEFAULT 0')) {
-                await executeQuery("UPDATE left_requests SET isNotificationSent = 1");
-            }
+            // Notification tracking: whether a request has ever been emailed and when it last was.
+            // Informational only -- the daily digest re-sends every pending request regardless.
+            await migrationHelper.ensureColumnExists('left_requests', 'isNotificationSent', 'BIT NOT NULL DEFAULT 0');
             await migrationHelper.ensureColumnExists('left_requests', 'notifiedAt', 'DATETIME NULL');
         }
 
@@ -263,8 +260,9 @@ class LeftRequest {
         return rows[0]?.cnt || 0;
     }
 
-    // Pending requests nobody has been emailed about yet -- the scheduled digest's input.
-    // Oldest first so the digest table reads in submission order.
+    // Every still-pending request -- the scheduled digest's input. Deliberately not filtered on
+    // isNotificationSent: the digest is a daily reminder, so a request keeps appearing every day
+    // until it is approved, rejected or withdrawn. Oldest first so the table reads in submission order.
     static async findPendingForNotification() {
         const [rows] = await executeQuery(`
             SELECT lr.*, d.name as departmentName, s.name as sectionName, l.name as lineName,
@@ -274,7 +272,7 @@ class LeftRequest {
             LEFT JOIN sections s ON lr.sectionId = s.id
             LEFT JOIN [lines] l ON lr.lineId = l.id
             LEFT JOIN users u ON lr.userId = u.id
-            WHERE lr.status = 'PENDING' AND lr.isNotificationSent = 0
+            WHERE lr.status = 'PENDING'
             ORDER BY lr.createdAt ASC
         `);
         return rows.map(r => new LeftRequest(r));

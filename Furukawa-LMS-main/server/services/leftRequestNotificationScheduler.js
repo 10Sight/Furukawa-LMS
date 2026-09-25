@@ -114,8 +114,7 @@ class LeftRequestNotificationScheduler {
     }
 
     // Called from the API to immediately send the digest for every scheduled Left Request Email
-    // config, ignoring the time of day. Requests are still marked notified, so the next scheduled
-    // run won't repeat them.
+    // config, ignoring the time of day. The scheduled run still sends its own digest later.
     async runNow() {
         if (this.isBusy) {
             return { ok: false, message: 'A left request digest run is already in progress. Try again shortly.', results: [] };
@@ -137,8 +136,8 @@ class LeftRequestNotificationScheduler {
         }
     }
 
-    // Groups every unnotified pending request under the config that owns it, then sends one
-    // digest per due config.
+    // Groups every pending request under the config that owns it, then sends one digest per due
+    // config. Pending requests are re-sent every day until they are reviewed.
     async _processConfigs(configs, dueConfigIds) {
         const pending = await LeftRequest.findPendingForNotification();
         const byConfig = new Map();
@@ -173,7 +172,7 @@ class LeftRequestNotificationScheduler {
         try {
             const recipients = await buildLeftRequestRecipients(config, requests.map(r => r.departmentId));
             if (!recipients) {
-                logger.error(`[LeftRequestNotificationScheduler] No recipients resolved for ${scope}; ${requests.length} request(s) left unnotified.`);
+                logger.error(`[LeftRequestNotificationScheduler] No recipients resolved for ${scope}; ${requests.length} pending request(s) not sent.`);
                 return { requestsFound: requests.length, sent: false, message: 'No recipients resolved' };
             }
 
@@ -194,7 +193,7 @@ class LeftRequestNotificationScheduler {
                 recipients.cc
             );
 
-            // Only mark after a successful send, so a mail failure is retried at the next run.
+            // Records that (and when) these requests were last included in a sent digest.
             await LeftRequest.markAsNotified(requests.map(r => r.id));
             logger.info(`[LeftRequestNotificationScheduler] Digest with ${requests.length} request(s) sent for ${scope} → ${recipients.to}`);
             return { requestsFound: requests.length, sent: true, to: recipients.to };

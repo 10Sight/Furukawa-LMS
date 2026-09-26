@@ -16,13 +16,18 @@ import {
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
     IconSum, IconChevronDown, IconChevronUp, IconLayoutAlignTop, IconLayoutAlignMiddle,
     IconLayoutAlignBottom, IconTextWrap, IconCheck, IconBorderBottom, IconBorderNone, IconBorderRight, IconBorderLeft,
-    IconFilter, IconFilterFilled, IconPhoto, IconVideo, IconCrop, IconPencil
+    IconFilter, IconFilterFilled, IconPhoto, IconVideo, IconCrop, IconPencil,
+    IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconArrowsHorizontal
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
     useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation
 } from "@/Redux/AllApi/DepartmentApi";
-import { getCellId, parseCellRef, indexToCol, expandRange, buildDisplayGrid, buildRawValueGrid, adjustFormula, extrapolateSeries } from "./formulaEngine";
+import {
+    getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
+    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula
+} from "./formulaEngine";
+import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +53,11 @@ const NUMBER_FORMATS = [
     { value: "accounting", label: "Accounting" },
     { value: "percentage", label: "Percentage" },
     { value: "comma", label: "Comma" },
+    { value: "scientific", label: "Scientific" },
+    { value: "date", label: "Date" },
+    { value: "time", label: "Time" },
+    { value: "datetime", label: "Date & Time" },
+    { value: "text", label: "Text" },
 ];
 const BORDER_SIDE_OPTIONS = [
     { key: "all", label: "All Borders", icon: IconBorderAll, sides: ["top", "bottom", "left", "right"] },
@@ -93,6 +103,24 @@ const TableStyleSwatch = ({ preset }) => (
 );
 
 const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
+const EMPTY_LIST = Object.freeze([]); // stable fallback for optional per-sheet arrays, so memo deps don't churn
+
+// Excel caps sheet names at 31 chars, forbids : \ / ? * [ ] and compares
+// names case-insensitively. Used on both import (so a workbook's tab names
+// become valid, unique `sheets` keys) and export (since in-app renames aren't
+// held to Excel's rules and ExcelJS throws on an invalid/duplicate name).
+// `usedNames` holds lowercased names already taken and is updated in place.
+const EXCEL_SHEET_NAME_MAX = 31;
+const toUniqueExcelSheetName = (name, usedNames) => {
+    const cleanName = String(name || "").replace(/[:\\/?*[\]]/g, "_").trim().slice(0, EXCEL_SHEET_NAME_MAX) || "Sheet";
+    let uniqueName = cleanName;
+    for (let n = 1; usedNames.has(uniqueName.toLowerCase()); n++) {
+        const suffix = ` (${n})`;
+        uniqueName = `${cleanName.slice(0, EXCEL_SHEET_NAME_MAX - suffix.length)}${suffix}`;
+    }
+    usedNames.add(uniqueName.toLowerCase());
+    return uniqueName;
+};
 
 // Prompts for the source sheet + range before a new PivotTable sheet is
 // created — re-seeded from `defaultSourceSheet`/`defaultSourceRange` (the
@@ -295,29 +323,24 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // highlight and its colored text in the editor. Cycled, not derived from the
 // dataviz categorical palette — this is transient editing chrome, not a chart.
 const FORMULA_REF_COLORS = ["#4f46e5", "#059669", "#d97706", "#db2777", "#0891b2", "#7c3aed", "#dc2626", "#65a30d"];
-const FORMULA_REF_TOKEN_RE = /\$?[A-Za-z]+\$?[0-9]+(?::\$?[A-Za-z]+\$?[0-9]+)?/g;
 
 // Splits a formula string into colored/uncolored segments for the read-only
 // backdrop behind the (text-transparent) edit input, and returns the color
 // assigned to each unique reference so the grid overlay can reuse the same
-// colors. Position-preserving (unlike formulaEngine's tokenize, which
-// uppercases/strips whitespace) so the segments line up character-for-character
-// with what the user actually typed.
+// colors. Uses the engine's own position-preserving lexer, so text inside
+// quotes and function names like LOG10 are never mistaken for references,
+// and segments line up character-for-character with what was typed.
 const tokenizeFormulaForDisplay = (text) => {
     if (!text || !text.trim().startsWith("=")) return { segments: [{ text, color: null }], refColorMap: {} };
     const segments = [];
     const refColorMap = {};
     let colorIdx = 0;
     let lastIndex = 0;
-    let match;
-    FORMULA_REF_TOKEN_RE.lastIndex = 0;
-    while ((match = FORMULA_REF_TOKEN_RE.exec(text)) !== null) {
-        const raw = match[0];
-        if (match.index > lastIndex) segments.push({ text: text.slice(lastIndex, match.index), color: null });
-        const key = raw.toUpperCase().replace(/\$/g, "");
-        if (!refColorMap[key]) refColorMap[key] = FORMULA_REF_COLORS[colorIdx++ % FORMULA_REF_COLORS.length];
-        segments.push({ text: raw, color: refColorMap[key] });
-        lastIndex = match.index + raw.length;
+    for (const ref of extractFormulaReferences(text)) {
+        if (ref.start > lastIndex) segments.push({ text: text.slice(lastIndex, ref.start), color: null });
+        if (!refColorMap[ref.key]) refColorMap[ref.key] = FORMULA_REF_COLORS[colorIdx++ % FORMULA_REF_COLORS.length];
+        segments.push({ text: ref.text, color: refColorMap[ref.key] });
+        lastIndex = ref.end;
     }
     if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), color: null });
     return { segments, refColorMap };
@@ -680,6 +703,14 @@ const mapBorderStyle = (excelStyle) => {
 // format codes, so this only needs to catch the common shapes.
 const mapNumberFormat = (numFmt) => {
     if (!numFmt || numFmt === "General") return undefined;
+    if (numFmt === "@") return "text";
+    if (/E[+-]0/i.test(numFmt)) return "scientific";
+    const unquoted = numFmt.replace(/"[^"]*"|\\./g, ""); // drop quoted/escaped literals before looking for date letters
+    const hasDate = /[yd]/i.test(unquoted) || /m{3,}/i.test(unquoted);
+    const hasTime = /[hs]/i.test(unquoted);
+    if (hasDate && hasTime) return "datetime";
+    if (hasDate) return "date";
+    if (hasTime) return "time";
     if (numFmt.includes("%")) return "percentage";
     if (/[$€£¥]/.test(numFmt)) return "currency";
     if (numFmt.includes(",")) return "comma";
@@ -762,6 +793,150 @@ const extractExcelCellStyle = (cell) => {
     return style;
 };
 
+// --- Floating images <-> Excel pictures ---
+// Excel anchors a picture to a cell plus an offset in EMUs (English Metric
+// Units, 9525 per 96-dpi pixel); this app anchors media to a cell plus a
+// pixel offset, so conversion is just unit scaling around the same cell.
+
+const EMU_PER_PX = 9525;
+const MEDIA_MAX_BYTES = 8 * 1024 * 1024; // sheets are stored as JSON, so embedded media rides along as base64 — keep it bounded
+// Formats a browser can render in an <img>; EMF/WMF/TIFF pictures (common
+// for pasted Office clip art) are skipped on import since they'd show broken.
+const IMPORTABLE_IMAGE_MIME = { png: "image/png", jpeg: "image/jpeg", jpg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", webp: "image/webp", svg: "image/svg+xml" };
+
+const newMediaId = () => `media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const bytesToDataUrl = (bytes, mime) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([bytes], { type: mime }));
+});
+
+// Pixel distance from the sheet's top/left edge to the start of band `index`.
+const bandStartPx = (index, sizeFor) => {
+    let px = 0;
+    for (let i = 0; i < index; i++) px += sizeFor(i);
+    return px;
+};
+
+// Inverse of bandStartPx: which band a pixel position falls in, and how far
+// into it — clamped to the last band so an overhang stays anchored in-sheet.
+const pxToBandAnchor = (px, sizeFor, count) => {
+    let index = 0, start = 0;
+    while (index < count - 1 && start + sizeFor(index) <= px) {
+        start += sizeFor(index);
+        index++;
+    }
+    return { index, offsetPx: Math.max(0, px - start) };
+};
+
+// Reads a worksheet's floating pictures into this app's media items.
+// `colWidthPx`/`rowHeightPx` are the imported sheet's own sizes, used to turn
+// a two-cell anchor (tl + br, no explicit size) into a pixel width/height.
+const extractWorksheetImages = async (workbook, worksheet, colWidthPx, rowHeightPx) => {
+    const media = [];
+    let skippedUnsupported = 0, skippedTooLarge = 0, maxRow = 0, maxCol = 0;
+    const srcCache = new Map(); // one picture can be placed several times
+
+    for (const image of worksheet.getImages()) {
+        const tl = image.range?.tl;
+        const medium = workbook.getImage(image.imageId);
+        if (!tl || !medium) continue;
+
+        let src = srcCache.get(image.imageId);
+        if (src === undefined) {
+            src = null;
+            const mime = IMPORTABLE_IMAGE_MIME[String(medium.extension || "").toLowerCase()];
+            const byteLength = medium.buffer ? medium.buffer.length : Math.floor(((medium.base64 || "").length * 3) / 4);
+            if (!mime || (!medium.buffer && !medium.base64)) skippedUnsupported++;
+            else if (byteLength > MEDIA_MAX_BYTES) skippedTooLarge++;
+            else if (medium.buffer) src = await bytesToDataUrl(medium.buffer, mime);
+            else src = medium.base64.startsWith("data:") ? medium.base64 : `data:${mime};base64,${medium.base64}`;
+            srcCache.set(image.imageId, src);
+        }
+        if (!src) continue;
+
+        const offsetX = (tl.nativeColOff || 0) / EMU_PER_PX;
+        const offsetY = (tl.nativeRowOff || 0) / EMU_PER_PX;
+        let width, height;
+        if (image.range.ext?.width && image.range.ext?.height) {
+            ({ width, height } = image.range.ext);
+        } else if (image.range.br) {
+            const br = image.range.br;
+            width = bandStartPx(br.nativeCol, colWidthPx) + (br.nativeColOff || 0) / EMU_PER_PX - bandStartPx(tl.nativeCol, colWidthPx) - offsetX;
+            height = bandStartPx(br.nativeRow, rowHeightPx) + (br.nativeRowOff || 0) / EMU_PER_PX - bandStartPx(tl.nativeRow, rowHeightPx) - offsetY;
+        }
+
+        media.push({
+            id: newMediaId(),
+            type: "image",
+            src,
+            row: tl.nativeRow,
+            col: tl.nativeCol,
+            offsetX: Math.round(offsetX),
+            offsetY: Math.round(offsetY),
+            width: Math.max(MEDIA_MIN_SIZE, Math.round(width || 280)),
+            height: Math.max(MEDIA_MIN_SIZE, Math.round(height || 200)),
+        });
+        maxRow = Math.max(maxRow, tl.nativeRow + 1);
+        maxCol = Math.max(maxCol, tl.nativeCol + 1);
+    }
+    return { media, skippedUnsupported, skippedTooLarge, maxRow, maxCol };
+};
+
+const loadImageElement = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    // Remote URLs need CORS approval or the canvas below is tainted and
+    // toDataURL throws; data: URLs are same-origin and don't need it.
+    if (!src.startsWith("data:")) img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image failed to load"));
+    img.src = src;
+});
+
+const canvasPng = (img, sx, sy, sw, sh) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw));
+    canvas.height = Math.max(1, Math.round(sh));
+    canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+};
+
+// Turns an image media item into something ExcelJS can embed, matching how
+// the grid draws it: Excel stretches a picture to its box, so a cropped item
+// (which the grid stretches to fill the box) is cut down to its crop region
+// first, and an uncropped one (drawn object-contain) is shrunk to its
+// letterboxed size and shifted by (dx, dy) to where it actually shows.
+// ExcelJS only embeds PNG/JPEG/GIF, so anything else is re-encoded as PNG.
+// Returns null for items that can't be exported (video, a remote image
+// without CORS, a broken src).
+const prepareImageForExport = async (item) => {
+    if (item.type !== "image" || !item.src) return null;
+    try {
+        const img = await loadImageElement(item.src);
+        const boxW = item.width || 280;
+        const boxH = item.height || 200;
+        const naturalW = img.naturalWidth || boxW;
+        const naturalH = img.naturalHeight || boxH;
+        const crop = item.crop;
+
+        if (crop && (crop.x !== 0 || crop.y !== 0 || crop.w !== 1 || crop.h !== 1)) {
+            const base64 = canvasPng(img, crop.x * naturalW, crop.y * naturalH, crop.w * naturalW, crop.h * naturalH);
+            return { base64, extension: "png", width: boxW, height: boxH, dx: 0, dy: 0 };
+        }
+
+        const scale = Math.min(boxW / naturalW, boxH / naturalH);
+        const width = naturalW * scale, height = naturalH * scale;
+        const directFormat = /^data:image\/(png|jpe?g|gif);base64,/i.exec(item.src);
+        const base64 = directFormat ? item.src : canvasPng(img, 0, 0, naturalW, naturalH);
+        const extension = directFormat ? directFormat[1].toLowerCase().replace("jpg", "jpeg") : "png";
+        return { base64, extension, width, height, dx: (boxW - width) / 2, dy: (boxH - height) / 2 };
+    } catch {
+        return null;
+    }
+};
+
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
     const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
@@ -816,6 +991,22 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [createPivotDialogOpen, setCreatePivotDialogOpen] = useState(false);
     const [pivotPanelOpen, setPivotPanelOpen] = useState(true);
 
+    // Keyboard-driven dialogs & view toggles.
+    const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+    const [goToOpen, setGoToOpen] = useState(false);
+    const [pasteSpecialOpen, setPasteSpecialOpen] = useState(false);
+    const [formatCellsOpen, setFormatCellsOpen] = useState(false);
+    const [insertDeleteMode, setInsertDeleteMode] = useState(null); // "insert" | "delete" | null
+    const [unhideSheetOpen, setUnhideSheetOpen] = useState(false);
+    const [showFormulas, setShowFormulas] = useState(false); // Ctrl+`
+    const [recalcSeed, setRecalcSeed] = useState(0); // F9 bumps this to re-roll RAND and refresh NOW/TODAY
+    const [findOptions, setFindOptions] = useState({ matchCase: false, entireCell: false, allSheets: false });
+    const findInputRef = useRef(null);
+    const replaceInputRef = useRef(null);
+    // Alt-key "key tip" sequences (Alt+H, W …): the letters typed so far and
+    // when the sequence started, so a stale half-typed sequence expires.
+    const keyTipRef = useRef(null); // { keys: string, at: number } | null
+
     // Grid zoom, applied via CSS `zoom` directly on gridContainerRef (the
     // scroll container itself, not a child wrapper). Because the scaled
     // element and the scrollable element are one and the same, its own
@@ -853,11 +1044,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const mediaVideoInputRef = useRef(null);
 
     const isSelecting = useRef(false);
+    const isSelectingRowHeader = useRef(false);
+    const isSelectingColHeader = useRef(false);
+    const headerSelectAnchor = useRef(null);
     const isFilling = useRef(false);
     const fileInputRef = useRef(null);
     const fillSourceRange = useRef(null);
     const resizeRef = useRef(null); // { type, index, startPos, startSize, currentSize }
     const gridContainerRef = useRef(null);
+    const rootRef = useRef(null);
 
     // Formula "point mode" — clicking/dragging cells while typing a formula
     // inserts their reference instead of committing the edit and navigating away.
@@ -868,6 +1063,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const isPointingFormula = useRef(false);
     const pointModeAnchor = useRef(null); // cellId the point-mode drag started from
     const formulaInsertRange = useRef(null); // { start, end } in editValue currently occupied by the last-inserted reference
+    const editSessionRef = useRef(null); // cell id of the edit in progress; cleared the moment it's committed or cancelled
+    const editOriginRef = useRef("cell"); // where the current edit started: "cell" or the formula "bar"
 
     const historyPast = useRef([]);
     const historyFuture = useRef([]);
@@ -919,6 +1116,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
     }, [sectionId, meetingId, bumpHistory]);
 
+    // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
+    // import, rename, or new sheet can leave the active name pointing at a
+    // sheet that no longer exists — fall back to the first tab instead of
+    // rendering a blank, unsaveable placeholder grid.
+    useEffect(() => {
+        if (!sheets[activeSheetName]) {
+            const firstSheetName = Object.keys(sheets)[0];
+            if (firstSheetName) setActiveSheetName(firstSheetName);
+        }
+    }, [sheets, activeSheetName]);
+
     const activeSheet = sheets[activeSheetName] || emptySheet();
     const cells = activeSheet.cells;
     const rowCount = activeSheet.rowCount;
@@ -929,6 +1137,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const rowHeights = activeSheet.rowHeights || {};
     const tables = activeSheet.tables || [];
     const media = activeSheet.media || [];
+    const hiddenRows = activeSheet.hiddenRows || EMPTY_LIST; // manually hidden (Ctrl+9), unlike filter-hidden rows
+    const hiddenCols = activeSheet.hiddenCols || EMPTY_LIST;
     const pivotConfig = activeSheet.pivotConfig || null;
     // Pivot sheets are fully computed from their source — direct cell edits,
     // ribbon formatting, merges, sorting, and structural row/col changes are
@@ -937,7 +1147,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const columns = useMemo(() => Array.from({ length: columnCount }, (_, i) => indexToCol(i)), [columnCount]);
     const rows = useMemo(() => Array.from({ length: rowCount }, (_, i) => i), [rowCount]);
-    const displayGrid = useMemo(() => buildDisplayGrid(cells), [cells]);
+    // One evaluation feeds both the formatted grid text and the raw values
+    // (status-bar totals, Paste Values). `recalcSeed` changes only on F9.
+    const evaluation = useMemo(() => evaluateSheet(cells, { seed: recalcSeed }), [cells, recalcSeed]);
+    const displayGrid = evaluation.display;
+    const rawGrid = evaluation.raw;
+    const hiddenColSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+    const manualHiddenRowSet = useMemo(() => new Set(hiddenRows), [hiddenRows]);
 
     // Broadcasts the live sheet + evaluated values to the parent (e.g. ExcelGraph)
     // on every change, so a chart above the grid can re-render as the user types.
@@ -994,7 +1210,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // numbers aren't renumbered — the row is simply skipped when rendering,
     // same as Excel's filtered view.
     const hiddenRowSet = useMemo(() => {
-        const hidden = new Set();
+        const hidden = new Set(hiddenRows);
         for (const table of tables) {
             if (!table.filtersEnabled || !table.filters) continue;
             const activeFilters = Object.entries(table.filters).filter(([, vals]) => Array.isArray(vals));
@@ -1011,7 +1227,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
         }
         return hidden;
-    }, [tables, displayGrid]);
+    }, [tables, displayGrid, hiddenRows]);
 
     const isEditingFormula = !!editingCell && editValue.trim().startsWith("=");
 
@@ -1146,13 +1362,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- Column/row resize (drag handles on the headers) ---
 
-    const widthForCol = useCallback((colIdx) => (
-        resizePreview?.type === "col" && resizePreview.index === colIdx ? resizePreview.size : (columnWidths[colIdx] || DEFAULT_COLUMN_WIDTH)
-    ), [resizePreview, columnWidths]);
+    // Hidden rows/columns (manual or filtered) take no space, so the cumulative
+    // offsets below — and everything positioned from them — skip over them.
+    const widthForCol = useCallback((colIdx) => {
+        if (hiddenColSet.has(colIdx)) return 0;
+        return resizePreview?.type === "col" && resizePreview.index === colIdx ? resizePreview.size : (columnWidths[colIdx] || DEFAULT_COLUMN_WIDTH);
+    }, [resizePreview, columnWidths, hiddenColSet]);
 
-    const heightForRow = useCallback((rowIdx) => (
-        resizePreview?.type === "row" && resizePreview.index === rowIdx ? resizePreview.size : (rowHeights[rowIdx] || DEFAULT_ROW_HEIGHT)
-    ), [resizePreview, rowHeights]);
+    const heightForRow = useCallback((rowIdx) => {
+        if (hiddenRowSet.has(rowIdx)) return 0;
+        return resizePreview?.type === "row" && resizePreview.index === rowIdx ? resizePreview.size : (rowHeights[rowIdx] || DEFAULT_ROW_HEIGHT);
+    }, [resizePreview, rowHeights, hiddenRowSet]);
 
     // Cumulative pixel offsets per column/row (including the fixed header
     // width/height), used to place floating media at its anchor cell and to
@@ -1221,11 +1441,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Guarded on activeCell itself (not just present in the deps array) so a
     // resize drag — which also changes rowOffsets/colOffsets — never jumps the
     // scroll position on its own.
-    useEffect(() => {
-        if (lastScrolledCellRef.current === activeCell) return;
-        lastScrolledCellRef.current = activeCell;
+    const scrollCellIntoView = useCallback((cellId) => {
         const el = gridContainerRef.current;
-        const ref = parseCellRef(activeCell);
+        const ref = parseCellRef(cellId);
         if (!el || !ref) return;
 
         const viewTop = el.scrollTop;
@@ -1247,7 +1465,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         } else if (colEnd > viewLeft + el.clientWidth) {
             el.scrollLeft = colEnd - el.clientWidth;
         }
-    }, [activeCell, rowOffsets, colOffsets]);
+    }, [rowOffsets, colOffsets]);
+
+    useEffect(() => {
+        if (lastScrolledCellRef.current === activeCell) return;
+        lastScrolledCellRef.current = activeCell;
+        scrollCellIntoView(activeCell);
+    }, [activeCell, scrollCellIntoView]);
 
     const startColumnResize = useCallback((e, colIdx) => {
         e.preventDefault();
@@ -1311,7 +1535,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!src) return;
         const anchor = parseCellRef(activeCell) || { row: 0, col: 0 };
         const newItem = {
-            id: `media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            id: newMediaId(),
             type,
             src,
             row: anchor.row,
@@ -1331,8 +1555,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const handleInsertMediaFile = useCallback((type, file) => {
         if (!file) return;
-        const maxBytes = 8 * 1024 * 1024; // sheets are stored as JSON, so embedded media rides along as base64 — keep it bounded
-        if (file.size > maxBytes) {
+        if (file.size > MEDIA_MAX_BYTES) {
             toast.error("File is too large to embed (max 8MB).");
             return;
         }
@@ -1381,11 +1604,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [sheets, bumpHistory]);
 
     const commitEdit = useCallback(() => {
-        if (!editingCell) return;
+        // editSessionRef guards against the editor's onBlur re-committing (or
+        // committing after Escape): Enter/Tab/Esc end the session and move
+        // focus to the grid in the same tick, and that blur still sees the
+        // pre-update `editingCell` in its closure.
+        if (!editingCell || editSessionRef.current !== editingCell) return;
+        editSessionRef.current = null;
         const cellId = editingCell;
         const value = editValue;
         mutateActiveCells((next) => {
             const merged = { ...(next[cellId] || {}), value };
+            // An Alt+Enter line break turns on Wrap Text, as in Excel, so the
+            // second line is actually visible.
+            if (typeof value === "string" && value.includes("\n") && !isFormula(value)) merged.wrap = true;
             if (isBlankCell(merged)) delete next[cellId];
             else next[cellId] = merged;
         });
@@ -1394,19 +1625,41 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         formulaInsertRange.current = null;
     }, [editingCell, editValue, mutateActiveCells]);
 
-    const startEditing = useCallback((cellId, initialValue) => {
+    // `origin` "bar" = started by focusing the formula bar, which must keep
+    // focus (the in-cell editor skips its autoFocus in that case).
+    const startEditing = useCallback((cellId, initialValue, origin = "cell") => {
+        editOriginRef.current = origin;
         setActiveCell(cellId);
-        setSelection({ start: cellId, end: cellId });
+        // Typing into a multi-cell selection keeps it (for Ctrl+Enter);
+        // editing a cell outside it collapses the selection to that cell.
+        const ref = parseCellRef(cellId);
+        const insideSelection = selectionBounds && ref
+            && ref.row >= selectionBounds.minRow && ref.row <= selectionBounds.maxRow
+            && ref.col >= selectionBounds.minCol && ref.col <= selectionBounds.maxCol;
+        if (!insideSelection) setSelection({ start: cellId, end: cellId });
         if (isSheetReadOnly) {
             toast.info("This is a PivotTable — edit the source data instead.");
             return;
         }
+        editSessionRef.current = cellId;
         setEditingCell(cellId);
         setEditValue(initialValue !== undefined ? initialValue : (cells[cellId]?.value ?? ""));
         formulaInsertRange.current = null;
-    }, [cells, isSheetReadOnly]);
+    }, [cells, isSheetReadOnly, selectionBounds]);
+
+    // A freshly opened in-cell editor puts the caret after the existing text
+    // (or the character that was typed to open it), like Excel.
+    useEffect(() => {
+        if (!editingCell || editOriginRef.current === "bar") return;
+        const el = cellEditInputRef.current;
+        if (!el) return;
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+        cursorPosRef.current = { start: end, end };
+    }, [editingCell]);
 
     const cancelEdit = useCallback(() => {
+        editSessionRef.current = null;
         setEditingCell(null);
         setEditValue("");
         formulaInsertRange.current = null;
@@ -1440,14 +1693,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!selectionBounds) return;
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const cellsByRelPos = {};
+        // Evaluated values as of the copy, for Paste Special > Values —
+        // including spilled cells, which have no entry in `cells` at all.
+        const valuesByRelPos = {};
         for (let r = minRow; r <= maxRow; r++) {
             for (let c = minCol; c <= maxCol; c++) {
                 const id = getCellId(r, c);
                 if (cells[id]) cellsByRelPos[`${r - minRow},${c - minCol}`] = cells[id];
+                const hasValue = cells[id]?.value !== undefined && cells[id].value !== "";
+                if (rawGrid[id] !== undefined && (hasValue || evaluation.spillAnchors.has(id))) {
+                    valuesByRelPos[`${r - minRow},${c - minCol}`] = rawGrid[id];
+                }
             }
         }
-        setClipboard({ cellsByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
-    }, [selectionBounds, cells]);
+        setClipboard({ cellsByRelPos, valuesByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
+    }, [selectionBounds, cells, rawGrid, evaluation]);
 
     const handlePaste = useCallback(() => {
         if (!clipboard || !selectionBounds) return;
@@ -1487,22 +1747,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const { value, ...styles } = cells[activeCell] || {};
         setFormatPainterStyle(styles);
     }, [cells, activeCell]);
-
-    useEffect(() => {
-        const onKeyDown = (e) => {
-            const tag = document.activeElement?.tagName;
-            if (tag === "INPUT" || tag === "TEXTAREA") return;
-            if (!(e.ctrlKey || e.metaKey)) return;
-            const key = e.key.toLowerCase();
-            if (key === "c") { e.preventDefault(); copySelection("copy"); return; }
-            if (readOnly) return;
-            if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
-            else if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
-            else if (key === "x") { e.preventDefault(); copySelection("cut"); }
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [undo, redo, copySelection, readOnly]);
 
     useEffect(() => {
         if (readOnly) return;
@@ -1696,6 +1940,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     useEffect(() => {
         const onMouseUp = () => {
             isSelecting.current = false;
+            isSelectingRowHeader.current = false;
+            isSelectingColHeader.current = false;
+            headerSelectAnchor.current = null;
             isPointingFormula.current = false;
             pointModeAnchor.current = null;
             if (isFilling.current) {
@@ -1707,21 +1954,67 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => window.removeEventListener("mouseup", onMouseUp);
     }, []);
 
-    const selectRow = useCallback((rowIdx) => {
+    // Header selections explicitly take keyboard focus (header mousedown is
+    // preventDefault-ed so a drag doesn't start a text selection, which also
+    // skips the browser's own focus move) so Delete/Backspace reach
+    // handleKeyDown. They also drop any selected media item, which that
+    // handler would otherwise delete instead of the selected cells' contents.
+    // `extend` spans from headerSelectAnchor for a drag across headers.
+    const selectRow = useCallback((rowIdx, extend = false) => {
         if (editingCell) commitEdit();
-        const start = getCellId(rowIdx, 0);
-        const end = getCellId(rowIdx, columnCount - 1);
+        const anchorRow = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : rowIdx;
+        const start = getCellId(Math.min(anchorRow, rowIdx), 0);
+        const end = getCellId(Math.max(anchorRow, rowIdx), columnCount - 1);
+        setSelectedMediaId(null);
         setActiveCell(start);
         setSelection({ start, end });
+        gridContainerRef.current?.focus();
     }, [columnCount, editingCell, commitEdit]);
 
-    const selectColumn = useCallback((colIdx) => {
+    const selectColumn = useCallback((colIdx, extend = false) => {
         if (editingCell) commitEdit();
-        const start = getCellId(0, colIdx);
-        const end = getCellId(rowCount - 1, colIdx);
+        const anchorCol = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : colIdx;
+        const start = getCellId(0, Math.min(anchorCol, colIdx));
+        const end = getCellId(rowCount - 1, Math.max(anchorCol, colIdx));
+        setSelectedMediaId(null);
         setActiveCell(start);
         setSelection({ start, end });
+        gridContainerRef.current?.focus();
     }, [rowCount, editingCell, commitEdit]);
+
+    const selectAllCells = useCallback(() => {
+        if (editingCell) commitEdit();
+        const start = getCellId(0, 0);
+        const end = getCellId(rowCount - 1, columnCount - 1);
+        setSelectedMediaId(null);
+        setActiveCell(start);
+        setSelection({ start, end });
+        gridContainerRef.current?.focus();
+    }, [rowCount, columnCount, editingCell, commitEdit]);
+
+    const handleRowHeaderMouseDown = useCallback((rowIdx, e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        headerSelectAnchor.current = rowIdx;
+        isSelectingRowHeader.current = true;
+        selectRow(rowIdx);
+    }, [selectRow]);
+
+    const handleRowHeaderMouseEnter = useCallback((rowIdx) => {
+        if (isSelectingRowHeader.current) selectRow(rowIdx, true);
+    }, [selectRow]);
+
+    const handleColHeaderMouseDown = useCallback((colIdx, e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        headerSelectAnchor.current = colIdx;
+        isSelectingColHeader.current = true;
+        selectColumn(colIdx);
+    }, [selectColumn]);
+
+    const handleColHeaderMouseEnter = useCallback((colIdx) => {
+        if (isSelectingColHeader.current) selectColumn(colIdx, true);
+    }, [selectColumn]);
 
     const applyToSelection = useCallback((mutator) => {
         const ids = expandRange(selection.start, selection.end);
@@ -1741,62 +2034,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const clearSelectedCells = useCallback(() => {
         applyToSelection((cell) => ({ ...cell, value: undefined }));
     }, [applyToSelection]);
-
-    // Keyboard navigation over the grid: arrows move/extend selection, Enter/F2
-    // or a printable keypress opens the cell editor, matching common
-    // spreadsheet muscle memory without pulling in a grid library. Delete and
-    // Backspace clear the selected media item if one is active, otherwise the
-    // selected cells' contents — mirroring Excel, where either key clears
-    // contents/removes the object without touching formatting.
-    const handleGridKeyDown = useCallback((e) => {
-        if (editingCell) return;
-        if (e.key === "Delete" || e.key === "Backspace") {
-            if (selectedMediaId) {
-                if (!readOnly) handleDeleteMedia(selectedMediaId);
-                e.preventDefault();
-                return;
-            }
-            if (!isSheetReadOnly) clearSelectedCells();
-            e.preventDefault();
-            return;
-        }
-        const ref = /^([A-Z]+)(\d+)$/.exec(activeCell);
-        if (!ref) return;
-        const colLetters = ref[1];
-        const rowIdx = parseInt(ref[2], 10) - 1;
-        const colIdx = columns.indexOf(colLetters);
-
-        const clamp = (v, max) => Math.max(0, Math.min(max - 1, v));
-        let nextRow = rowIdx, nextCol = colIdx, handled = false;
-
-        if (e.key === "ArrowUp") { nextRow = clamp(rowIdx - 1, rowCount); handled = true; }
-        else if (e.key === "ArrowDown") { nextRow = clamp(rowIdx + 1, rowCount); handled = true; }
-        else if (e.key === "ArrowLeft") { nextCol = clamp(colIdx - 1, columnCount); handled = true; }
-        else if (e.key === "ArrowRight") { nextCol = clamp(colIdx + 1, columnCount); handled = true; }
-        else if (e.key === "Tab") { nextCol = clamp(colIdx + (e.shiftKey ? -1 : 1), columnCount); handled = true; }
-        else if (!readOnly && (e.key === "Enter" || e.key === "F2")) {
-            startEditing(activeCell);
-            e.preventDefault();
-            return;
-        } else if (!readOnly && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            startEditing(activeCell, e.key);
-            e.preventDefault();
-            return;
-        }
-
-        if (!handled) return;
-        e.preventDefault();
-        // A merge only renders one <td>, at its anchor — redirect off any
-        // covered cell arrow-key navigation would otherwise land on, since
-        // there's nothing there to select or show an active outline on.
-        const nextId = resolveToAnchor(getCellId(nextRow, nextCol));
-        setActiveCell(nextId);
-        if (e.shiftKey && e.key !== "Tab") {
-            setSelection((prev) => ({ start: prev.start, end: nextId }));
-        } else {
-            setSelection({ start: nextId, end: nextId });
-        }
-    }, [activeCell, columns, rowCount, columnCount, editingCell, startEditing, resolveToAnchor, readOnly, selectedMediaId, isSheetReadOnly, handleDeleteMedia, clearSelectedCells]);
 
     const activeCellData = cells[activeCell];
 
@@ -1909,11 +2146,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // row can offer AutoFilter dropdowns when `filtersEnabled` is on. Re-applying
     // over the same exact range updates that table in place instead of stacking
     // a duplicate.
-    const applyTable = (presetKey, filtersEnabled) => {
+    const applyTable = (presetKey, filtersEnabled, bounds = selectionBounds) => {
         if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
-        if (!selectionBounds) return;
+        if (!bounds) return;
         const preset = TABLE_STYLE_PRESETS.find((p) => p.key === presetKey) || TABLE_STYLE_PRESETS[0];
-        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        const { minRow, maxRow, minCol, maxCol } = bounds;
         const rangeStart = getCellId(minRow, minCol);
         const rangeEnd = getCellId(maxRow, maxCol);
 
@@ -2007,68 +2244,60 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     };
 
     // --- Insert / delete rows & columns ---
-    // Note: shifts cell values and formatting correctly, but does not rewrite
-    // formulas elsewhere on the sheet that reference the shifted cells —
-    // matching a plain insert/delete, not Excel's full reference-repair.
+    // Note: shifts cell values, formatting, sizes and hidden flags correctly,
+    // but does not rewrite formulas elsewhere on the sheet that reference the
+    // shifted cells — matching a plain insert/delete, not Excel's full
+    // reference-repair.
 
-    const insertRowAt = (rowIdx) => {
-        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
+    // Re-keys a sparse { index: value } map / index list after inserting
+    // (count > 0) or deleting (count < 0) bands at `at`.
+    const shiftIndexMap = (map, at, count) => {
+        const out = {};
+        for (const [k, v] of Object.entries(map || {})) {
+            const i = Number(k);
+            if (count < 0 && i >= at && i < at - count) continue;
+            out[i >= at ? i + count : i] = v;
+        }
+        return out;
+    };
+    const shiftIndexList = (list, at, count) => {
+        if (!list) return list;
+        const out = list.filter((i) => !(count < 0 && i >= at && i < at - count)).map((i) => (i >= at ? i + count : i));
+        return out.length ? out : undefined;
+    };
+
+    const shiftBands = (axis, at, count) => {
+        if (!guardEditable()) return;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
             for (const id of Object.keys(sheet.cells)) {
                 const ref = parseCellRef(id);
-                const newRow = ref.row >= rowIdx ? ref.row + 1 : ref.row;
-                newCells[getCellId(newRow, ref.col)] = sheet.cells[id];
+                const pos = axis === "row" ? ref.row : ref.col;
+                if (count < 0 && pos >= at && pos < at - count) continue;
+                const shifted = pos >= at ? pos + count : pos;
+                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = sheet.cells[id];
             }
             sheet.cells = newCells;
-            sheet.rowCount += 1;
-        });
-    };
-    const deleteRowAt = (rowIdx) => {
-        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
-        updateSheets((next) => {
-            const sheet = next[activeSheetName];
-            const newCells = {};
-            for (const id of Object.keys(sheet.cells)) {
-                const ref = parseCellRef(id);
-                if (ref.row === rowIdx) continue;
-                const newRow = ref.row > rowIdx ? ref.row - 1 : ref.row;
-                newCells[getCellId(newRow, ref.col)] = sheet.cells[id];
+            if (axis === "row") {
+                sheet.rowCount = Math.max(1, sheet.rowCount + count);
+                sheet.rowHeights = shiftIndexMap(sheet.rowHeights, at, count);
+                sheet.hiddenRows = shiftIndexList(sheet.hiddenRows, at, count);
+            } else {
+                sheet.columnCount = Math.max(1, sheet.columnCount + count);
+                sheet.columnWidths = shiftIndexMap(sheet.columnWidths, at, count);
+                sheet.hiddenCols = shiftIndexList(sheet.hiddenCols, at, count);
             }
-            sheet.cells = newCells;
-            sheet.rowCount = Math.max(1, sheet.rowCount - 1);
         });
     };
-    const insertColumnAt = (colIdx) => {
-        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
-        updateSheets((next) => {
-            const sheet = next[activeSheetName];
-            const newCells = {};
-            for (const id of Object.keys(sheet.cells)) {
-                const ref = parseCellRef(id);
-                const newCol = ref.col >= colIdx ? ref.col + 1 : ref.col;
-                newCells[getCellId(ref.row, newCol)] = sheet.cells[id];
-            }
-            sheet.cells = newCells;
-            sheet.columnCount += 1;
-        });
-    };
-    const deleteColumnAt = (colIdx) => {
-        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
-        updateSheets((next) => {
-            const sheet = next[activeSheetName];
-            const newCells = {};
-            for (const id of Object.keys(sheet.cells)) {
-                const ref = parseCellRef(id);
-                if (ref.col === colIdx) continue;
-                const newCol = ref.col > colIdx ? ref.col - 1 : ref.col;
-                newCells[getCellId(ref.row, newCol)] = sheet.cells[id];
-            }
-            sheet.cells = newCells;
-            sheet.columnCount = Math.max(1, sheet.columnCount - 1);
-        });
-    };
+    const insertRows = (at, count = 1) => shiftBands("row", at, count);
+    const deleteRows = (at, count = 1) => shiftBands("row", at, -Math.min(count, rowCount - 1));
+    const insertColumns = (at, count = 1) => shiftBands("col", at, count);
+    const deleteColumns = (at, count = 1) => shiftBands("col", at, -Math.min(count, columnCount - 1));
+    const insertRowAt = (rowIdx) => insertRows(rowIdx, 1);
+    const deleteRowAt = (rowIdx) => deleteRows(rowIdx, 1);
+    const insertColumnAt = (colIdx) => insertColumns(colIdx, 1);
+    const deleteColumnAt = (colIdx) => deleteColumns(colIdx, 1);
 
     // --- AutoSum & Sort ---
 
@@ -2196,49 +2425,82 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
     };
 
-    // --- Find & replace (active sheet only) ---
+    // --- Find & replace ---
+    // Searches what was typed (formula text, not results), like Excel's
+    // default "Look in: Formulas". Options: match case, match the entire
+    // cell, and search every visible sheet instead of just the active one.
+
+    const findMatcher = useMemo(() => {
+        if (!findText) return null;
+        const { matchCase, entireCell } = findOptions;
+        const needle = matchCase ? findText : findText.toLowerCase();
+        return (text) => {
+            const hay = matchCase ? text : text.toLowerCase();
+            return entireCell ? hay === needle : hay.includes(needle);
+        };
+    }, [findText, findOptions]);
 
     const matches = useMemo(() => {
-        if (!findText) return [];
-        const needle = findText.toLowerCase();
-        return Object.keys(cells).filter((id) => String(cells[id]?.value ?? "").toLowerCase().includes(needle)).sort();
-    }, [cells, findText]);
+        if (!findMatcher) return [];
+        const sheetNames = findOptions.allSheets ? Object.keys(sheets).filter((n) => !sheets[n].hidden) : [activeSheetName];
+        const out = [];
+        for (const name of sheetNames) {
+            const sheetCells = sheets[name]?.cells || {};
+            const ids = Object.keys(sheetCells).filter((id) => {
+                const v = sheetCells[id]?.value;
+                return v !== undefined && v !== null && v !== "" && findMatcher(String(v));
+            });
+            ids.sort((a, b) => {
+                const ra = parseCellRef(a), rb = parseCellRef(b);
+                return ra.row - rb.row || ra.col - rb.col;
+            });
+            for (const id of ids) out.push({ sheet: name, id });
+        }
+        return out;
+    }, [sheets, activeSheetName, findMatcher, findOptions.allSheets]);
 
-    useEffect(() => { setMatchIndex(0); }, [findText, activeSheetName]);
+    useEffect(() => { setMatchIndex(0); }, [findText, findOptions]);
 
     const goToMatch = (idx) => {
         if (matches.length === 0) return;
         const wrapped = ((idx % matches.length) + matches.length) % matches.length;
         setMatchIndex(wrapped);
-        const id = matches[wrapped];
+        const { sheet, id } = matches[wrapped];
+        if (sheet !== activeSheetName) switchSheet(sheet);
         setActiveCell(id);
         setSelection({ start: id, end: id });
     };
     const findNext = () => goToMatch(matchIndex + 1);
+    const findPrevious = () => goToMatch(matchIndex - 1);
+
+    const replaceInText = (current, global) => {
+        if (findOptions.entireCell) return replaceText;
+        const re = new RegExp(escapeRegex(findText), `${global ? "g" : ""}${findOptions.matchCase ? "" : "i"}`);
+        return current.replace(re, () => replaceText);
+    };
+
+    const replaceMatches = (targets) => {
+        updateSheets((next) => {
+            for (const { sheet, id } of targets) {
+                const sheetObj = next[sheet];
+                if (!sheetObj || sheetObj.pivotConfig) continue;
+                const current = String(sheetObj.cells[id]?.value ?? "");
+                const merged = { ...(sheetObj.cells[id] || {}), value: replaceInText(current, true) };
+                if (isBlankCell(merged)) delete sheetObj.cells[id]; else sheetObj.cells[id] = merged;
+            }
+        });
+    };
 
     const replaceOne = () => {
-        if (matches.length === 0) return;
-        const id = matches[matchIndex];
-        const re = new RegExp(escapeRegex(findText), "i");
-        mutateActiveCells((next) => {
-            const current = String(next[id]?.value ?? "");
-            const merged = { ...(next[id] || {}), value: current.replace(re, replaceText) };
-            if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
-        });
+        if (readOnly || matches.length === 0) return;
+        replaceMatches([matches[matchIndex]]);
         findNext();
     };
 
     const replaceAll = () => {
-        if (matches.length === 0) return;
-        const re = new RegExp(escapeRegex(findText), "gi");
+        if (readOnly || matches.length === 0) return;
         const count = matches.length;
-        mutateActiveCells((next) => {
-            for (const id of matches) {
-                const current = String(next[id]?.value ?? "");
-                const merged = { ...(next[id] || {}), value: current.replace(re, replaceText) };
-                if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
-            }
-        });
+        replaceMatches(matches);
         toast.success(`Replaced ${count} match${count === 1 ? "" : "es"}.`);
     };
 
@@ -2297,85 +2559,133 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const excelHeightToPx = (points) => Math.round((points * 4) / 3);
     const pxToExcelHeight = (px) => Math.round((px * 3) / 4);
 
+    // Writes every sheet in the workbook to its own worksheet, in tab order.
     const handleExport = async () => {
         setIoProgress({ title: "Exporting Spreadsheet", label: "Preparing workbook…", current: 0, total: 0 });
         try {
             const ExcelJS = (await import("exceljs")).default;
             const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet(activeSheetName.slice(0, 31) || "Sheet 1");
+            const sheetEntries = Object.entries(sheets);
+            const totalRows = sheetEntries.reduce((sum, [, s]) => sum + (s.rowCount || 0), 0);
+            const usedNames = new Set();
+            let processedRows = 0;
+            let skippedMedia = 0;
 
-            setIoProgress({ title: "Exporting Spreadsheet", label: "Writing cells…", current: 0, total: rowCount });
-            for (let r = 0; r < rowCount; r++) {
-                for (let c = 0; c < columnCount; c++) {
-                    const id = getCellId(r, c);
-                    const cellData = cells[id];
-                    if (!cellData) continue;
-                    const excelCell = worksheet.getCell(r + 1, c + 1);
-                    const raw = cellData.value;
+            for (let sheetIdx = 0; sheetIdx < sheetEntries.length; sheetIdx++) {
+                const [sheetName, sheet] = sheetEntries[sheetIdx];
+                const worksheet = workbook.addWorksheet(toUniqueExcelSheetName(sheetName, usedNames));
+                const sheetCells = sheet.cells || {};
+                const progressLabel = `Writing sheet ${sheetIdx + 1} of ${sheetEntries.length} ("${sheetName}")…`;
 
-                    if (typeof raw === "string" && raw.trim().startsWith("=")) {
-                        excelCell.value = { formula: raw.trim().slice(1) };
-                    } else if (raw !== undefined && raw !== "" && String(raw).trim() !== "" && !isNaN(Number(raw))) {
-                        excelCell.value = Number(raw);
-                    } else if (raw !== undefined && raw !== "") {
-                        excelCell.value = raw;
-                    }
+                for (let r = 0; r < sheet.rowCount; r++) {
+                    for (let c = 0; c < sheet.columnCount; c++) {
+                        const cellData = sheetCells[getCellId(r, c)];
+                        if (!cellData) continue;
+                        const excelCell = worksheet.getCell(r + 1, c + 1);
+                        const raw = cellData.value;
 
-                    const font = {};
-                    if (cellData.bold) font.bold = true;
-                    if (cellData.italic) font.italic = true;
-                    if (cellData.underline) font.underline = true;
-                    if (cellData.strike) font.strike = true;
-                    if (cellData.fontSize) font.size = cellData.fontSize;
-                    if (cellData.fontFamily) font.name = cellData.fontFamily;
-                    if (cellData.color) font.color = { argb: `FF${cellData.color.replace("#", "").toUpperCase()}` };
-                    if (Object.keys(font).length > 0) excelCell.font = font;
-
-                    if (cellData.bg) {
-                        excelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${cellData.bg.replace("#", "").toUpperCase()}` } };
-                    }
-
-                    if (cellData.align || cellData.valign || cellData.wrap) {
-                        excelCell.alignment = { horizontal: cellData.align, vertical: cellData.valign, wrapText: !!cellData.wrap };
-                    }
-
-                    if (cellData.border) {
-                        const excelBorderStyle = (weight) => (weight === "thick" ? "medium" : weight === "double" ? "double" : "thin");
-                        const b = {};
-                        for (const side of ["top", "bottom", "left", "right"]) {
-                            if (cellData.border[side]) b[side] = { style: excelBorderStyle(cellData.border[side]) };
+                        if (typeof raw === "string" && raw.trim().startsWith("=")) {
+                            excelCell.value = { formula: raw.trim().slice(1) };
+                        } else if (raw !== undefined && raw !== "" && String(raw).trim() !== "" && !isNaN(Number(raw))) {
+                            excelCell.value = Number(raw);
+                        } else if (raw !== undefined && raw !== "") {
+                            excelCell.value = raw;
                         }
-                        excelCell.border = b;
-                    }
 
-                    if (cellData.numberFormat) {
-                        const decimals = cellData.decimalPlaces !== undefined ? cellData.decimalPlaces : 2;
-                        const decimalStr = decimals > 0 ? `.${"0".repeat(decimals)}` : "";
-                        const fmtMap = {
-                            number: `0${decimalStr}`,
-                            comma: `#,##0${decimalStr}`,
-                            currency: `"$"#,##0${decimalStr}`,
-                            accounting: `"$"#,##0${decimalStr}`,
-                            percentage: `0${decimalStr}%`
-                        };
-                        excelCell.numFmt = fmtMap[cellData.numberFormat] || "General";
+                        const font = {};
+                        if (cellData.bold) font.bold = true;
+                        if (cellData.italic) font.italic = true;
+                        if (cellData.underline) font.underline = true;
+                        if (cellData.strike) font.strike = true;
+                        if (cellData.fontSize) font.size = cellData.fontSize;
+                        if (cellData.fontFamily) font.name = cellData.fontFamily;
+                        if (cellData.color) font.color = { argb: `FF${cellData.color.replace("#", "").toUpperCase()}` };
+                        if (Object.keys(font).length > 0) excelCell.font = font;
+
+                        if (cellData.bg) {
+                            excelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${cellData.bg.replace("#", "").toUpperCase()}` } };
+                        }
+
+                        if (cellData.align || cellData.valign || cellData.wrap) {
+                            excelCell.alignment = { horizontal: cellData.align, vertical: cellData.valign, wrapText: !!cellData.wrap };
+                        }
+
+                        if (cellData.border) {
+                            const excelBorderStyle = (weight) => (weight === "thick" ? "medium" : weight === "double" ? "double" : "thin");
+                            const b = {};
+                            for (const side of ["top", "bottom", "left", "right"]) {
+                                if (cellData.border[side]) b[side] = { style: excelBorderStyle(cellData.border[side]) };
+                            }
+                            excelCell.border = b;
+                        }
+
+                        if (cellData.numberFormat) {
+                            const decimals = cellData.decimalPlaces !== undefined ? cellData.decimalPlaces : 2;
+                            const decimalStr = decimals > 0 ? `.${"0".repeat(decimals)}` : "";
+                            const fmtMap = {
+                                number: `0${decimalStr}`,
+                                comma: `#,##0${decimalStr}`,
+                                currency: `"$"#,##0${decimalStr}`,
+                                accounting: `"$"#,##0${decimalStr}`,
+                                percentage: `0${decimalStr}%`,
+                                scientific: `0${decimalStr}E+00`,
+                                date: "yyyy-mm-dd",
+                                time: "hh:mm:ss",
+                                datetime: "yyyy-mm-dd hh:mm",
+                                text: "@",
+                            };
+                            excelCell.numFmt = fmtMap[cellData.numberFormat] || "General";
+                        }
+                    }
+                    processedRows++;
+                    if ((r + 1) % IO_CHUNK_SIZE === 0 || r === sheet.rowCount - 1) {
+                        setIoProgress({ title: "Exporting Spreadsheet", label: progressLabel, current: processedRows, total: totalRows });
+                        await yieldToUI();
                     }
                 }
-                if ((r + 1) % IO_CHUNK_SIZE === 0 || r === rowCount - 1) {
-                    setIoProgress({ title: "Exporting Spreadsheet", label: "Writing cells…", current: r + 1, total: rowCount });
-                    await yieldToUI();
+
+                for (const [colIdxStr, width] of Object.entries(sheet.columnWidths || {})) {
+                    worksheet.getColumn(Number(colIdxStr) + 1).width = pxToExcelWidth(width);
+                }
+                for (const [rowIdxStr, height] of Object.entries(sheet.rowHeights || {})) {
+                    worksheet.getRow(Number(rowIdxStr) + 1).height = pxToExcelHeight(height);
+                }
+                for (const m of sheet.merges || []) {
+                    try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
+                }
+                for (const r of sheet.hiddenRows || []) worksheet.getRow(r + 1).hidden = true;
+                for (const c of sheet.hiddenCols || []) worksheet.getColumn(c + 1).hidden = true;
+                if (sheet.hidden) worksheet.state = "hidden";
+
+                // Media is placed by absolute pixel position re-anchored against
+                // this sheet's own sizes, since a drag can leave an item's offset
+                // spanning past its anchor cell and Excel expects it within.
+                const colWidthPx = (i) => sheet.columnWidths?.[i] || DEFAULT_COLUMN_WIDTH;
+                const rowHeightPx = (i) => sheet.rowHeights?.[i] || DEFAULT_ROW_HEIGHT;
+                for (const item of sheet.media || []) {
+                    const prepared = await prepareImageForExport(item);
+                    if (!prepared) { skippedMedia++; continue; }
+                    const x = bandStartPx(item.col || 0, colWidthPx) + (item.offsetX || 0) + prepared.dx;
+                    const y = bandStartPx(item.row || 0, rowHeightPx) + (item.offsetY || 0) + prepared.dy;
+                    const colAnchor = pxToBandAnchor(x, colWidthPx, Math.max(sheet.columnCount, (item.col || 0) + 1));
+                    const rowAnchor = pxToBandAnchor(y, rowHeightPx, Math.max(sheet.rowCount, (item.row || 0) + 1));
+                    const imageId = workbook.addImage({ base64: prepared.base64, extension: prepared.extension });
+                    worksheet.addImage(imageId, {
+                        tl: {
+                            nativeCol: colAnchor.index,
+                            nativeColOff: Math.round(colAnchor.offsetPx * EMU_PER_PX),
+                            nativeRow: rowAnchor.index,
+                            nativeRowOff: Math.round(rowAnchor.offsetPx * EMU_PER_PX)
+                        },
+                        ext: { width: prepared.width, height: prepared.height },
+                        editAs: "oneCell"
+                    });
                 }
             }
 
-            for (const [colIdxStr, width] of Object.entries(columnWidths)) {
-                worksheet.getColumn(Number(colIdxStr) + 1).width = pxToExcelWidth(width);
-            }
-            for (const [rowIdxStr, height] of Object.entries(rowHeights)) {
-                worksheet.getRow(Number(rowIdxStr) + 1).height = pxToExcelHeight(height);
-            }
-            for (const m of merges) {
-                try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
-            }
+            // Open the exported file on the same tab the user was looking at.
+            const activeTab = Math.max(0, sheetEntries.findIndex(([name]) => name === activeSheetName));
+            workbook.views = [{ activeTab, firstSheet: 0, visibility: "visible" }];
 
             setIoProgress({ title: "Exporting Spreadsheet", label: "Generating file…", current: 0, total: 0 });
             const buffer = await workbook.xlsx.writeBuffer();
@@ -2383,12 +2693,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `daily-meeting-section-${sectionId}-${activeSheetName}.xlsx`;
+            a.download = meetingId ? `daily-meeting-${meetingId}.xlsx` : `daily-meeting-section-${sectionId}.xlsx`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            if (skippedMedia > 0) {
+                toast.warning(`${skippedMedia} item${skippedMedia === 1 ? "" : "s"} (videos, or images that couldn't be loaded) ${skippedMedia === 1 ? "was" : "were"} left out of the Excel file.`);
+            }
         } catch (err) {
+            console.error("Excel export failed:", err);
             toast.error("Failed to export the spreadsheet.");
         } finally {
             setIoProgress(null);
@@ -2397,6 +2711,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const handleImportClick = () => fileInputRef.current?.click();
 
+    // Reads every worksheet into its own sheet and replaces the whole workbook
+    // with them in a single updateSheets call, so one Ctrl+Z undoes the import.
     const handleImportFile = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -2408,62 +2724,114 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const workbook = new ExcelJS.Workbook();
                 setIoProgress({ title: "Importing Spreadsheet", label: "Parsing workbook…", current: 0, total: 0 });
                 await workbook.xlsx.load(evt.target.result);
-                const worksheet = workbook.worksheets[0];
-                if (!worksheet) throw new Error("No worksheet found in file");
+                const worksheets = workbook.worksheets || [];
+                if (worksheets.length === 0) throw new Error("No worksheet found in file");
 
-                const importedCells = {};
-                const importedColumnWidths = {};
-                const importedRowHeights = {};
-                let maxRow = 0, maxCol = 0;
+                const totalRows = worksheets.reduce((sum, ws) => sum + (ws.rowCount || 0), 0);
+                const importedSheets = {};
+                const usedNames = new Set();
+                let processedRows = 0;
+                let importedImageCount = 0, skippedUnsupportedImages = 0, skippedLargeImages = 0;
 
-                const totalRows = worksheet.rowCount || 0;
-                setIoProgress({ title: "Importing Spreadsheet", label: "Reading rows…", current: 0, total: totalRows });
-                for (let rowNumber = 1; rowNumber <= totalRows; rowNumber++) {
-                    const row = worksheet.getRow(rowNumber);
-                    const rIdx = rowNumber - 1;
-                    if (row.height) importedRowHeights[rIdx] = excelHeightToPx(row.height);
-                    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                        const cIdx = colNumber - 1;
-                        const value = extractExcelCellValue(cell);
-                        const style = extractExcelCellStyle(cell);
-                        if (value === "" && Object.keys(style).length === 0) return;
-                        importedCells[getCellId(rIdx, cIdx)] = { value, ...style };
-                        maxRow = Math.max(maxRow, rIdx + 1);
-                        maxCol = Math.max(maxCol, cIdx + 1);
-                    });
-                    if (rowNumber % IO_CHUNK_SIZE === 0 || rowNumber === totalRows) {
-                        setIoProgress({ title: "Importing Spreadsheet", label: "Reading rows…", current: rowNumber, total: totalRows });
-                        await yieldToUI();
+                for (let wsIdx = 0; wsIdx < worksheets.length; wsIdx++) {
+                    const worksheet = worksheets[wsIdx];
+                    const sheetName = toUniqueExcelSheetName(worksheet.name || `Sheet ${wsIdx + 1}`, usedNames);
+                    const progressLabel = `Reading sheet ${wsIdx + 1} of ${worksheets.length} ("${sheetName}")…`;
+                    const importedCells = {};
+                    const importedColumnWidths = {};
+                    const importedRowHeights = {};
+                    const importedHiddenRows = [];
+                    const importedHiddenCols = [];
+                    let maxRow = 0, maxCol = 0;
+
+                    const sheetRows = worksheet.rowCount || 0;
+                    setIoProgress({ title: "Importing Spreadsheet", label: progressLabel, current: processedRows, total: totalRows });
+                    for (let rowNumber = 1; rowNumber <= sheetRows; rowNumber++) {
+                        const row = worksheet.getRow(rowNumber);
+                        const rIdx = rowNumber - 1;
+                        if (row.height) importedRowHeights[rIdx] = excelHeightToPx(row.height);
+                        if (row.hidden) importedHiddenRows.push(rIdx);
+                        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                            const cIdx = colNumber - 1;
+                            const value = extractExcelCellValue(cell);
+                            const style = extractExcelCellStyle(cell);
+                            if (value === "" && Object.keys(style).length === 0) return;
+                            importedCells[getCellId(rIdx, cIdx)] = { value, ...style };
+                            maxRow = Math.max(maxRow, rIdx + 1);
+                            maxCol = Math.max(maxCol, cIdx + 1);
+                        });
+                        processedRows++;
+                        if (rowNumber % IO_CHUNK_SIZE === 0 || rowNumber === sheetRows) {
+                            setIoProgress({ title: "Importing Spreadsheet", label: progressLabel, current: processedRows, total: totalRows });
+                            await yieldToUI();
+                        }
                     }
-                }
 
-                const totalCols = Math.max(worksheet.columnCount || 0, maxCol);
-                for (let i = 0; i < totalCols; i++) {
-                    const col = worksheet.getColumn(i + 1);
-                    if (col?.width) importedColumnWidths[i] = excelWidthToPx(col.width);
-                }
+                    const totalCols = Math.max(worksheet.columnCount || 0, maxCol);
+                    for (let i = 0; i < totalCols; i++) {
+                        const col = worksheet.getColumn(i + 1);
+                        if (col?.width) importedColumnWidths[i] = excelWidthToPx(col.width);
+                        if (col?.hidden) importedHiddenCols.push(i);
+                    }
 
-                const importedMerges = [];
-                for (const range of worksheet.model?.merges || []) {
-                    const [start, end] = range.split(":");
-                    if (parseCellRef(start) && parseCellRef(end)) importedMerges.push({ start, end });
-                }
+                    const importedMerges = [];
+                    for (const range of worksheet.model?.merges || []) {
+                        const [start, end] = range.split(":");
+                        if (parseCellRef(start) && parseCellRef(end)) importedMerges.push({ start, end });
+                    }
 
-                updateSheets((next) => {
-                    next[activeSheetName] = {
+                    setIoProgress({ title: "Importing Spreadsheet", label: `Reading images in "${sheetName}"…`, current: processedRows, total: totalRows });
+                    const images = await extractWorksheetImages(
+                        workbook,
+                        worksheet,
+                        (i) => importedColumnWidths[i] || DEFAULT_COLUMN_WIDTH,
+                        (i) => importedRowHeights[i] || DEFAULT_ROW_HEIGHT
+                    );
+                    skippedUnsupportedImages += images.skippedUnsupported;
+                    skippedLargeImages += images.skippedTooLarge;
+                    importedImageCount += images.media.length;
+
+                    importedSheets[sheetName] = {
+                        ...emptySheet(),
                         cells: importedCells,
-                        rowCount: Math.max(DEFAULT_ROW_COUNT, maxRow),
-                        columnCount: Math.max(DEFAULT_COLUMN_COUNT, maxCol),
-                        conditionalRules: [],
+                        // Grown to cover picture anchors too, since media is
+                        // positioned off the grid's row/column offsets.
+                        rowCount: Math.max(DEFAULT_ROW_COUNT, maxRow, images.maxRow),
+                        columnCount: Math.max(DEFAULT_COLUMN_COUNT, maxCol, images.maxCol),
                         merges: importedMerges,
                         columnWidths: importedColumnWidths,
                         rowHeights: importedRowHeights,
-                        tables: [],
-                        media: next[activeSheetName]?.media || []
+                        media: images.media,
+                        ...(importedHiddenRows.length && { hiddenRows: importedHiddenRows }),
+                        ...(importedHiddenCols.length && { hiddenCols: importedHiddenCols }),
+                        ...(worksheet.state && worksheet.state !== "visible" && { hidden: true }),
                     };
+                }
+
+                setEditingCell(null);
+                updateSheets((next) => {
+                    for (const name of Object.keys(next)) delete next[name];
+                    Object.assign(next, importedSheets);
                 });
-                toast.success("Spreadsheet imported. Click Save to persist it.");
+                // A workbook always keeps at least one visible sheet.
+                const importedNames = Object.keys(importedSheets);
+                if (importedNames.every((name) => importedSheets[name].hidden)) delete importedSheets[importedNames[0]].hidden;
+                setActiveSheetName(importedNames.find((name) => !importedSheets[name].hidden));
+                setActiveCell("A1");
+                setSelection({ start: "A1", end: "A1" });
+                setSelectedMediaId(null);
+
+                const count = worksheets.length;
+                const imageNote = importedImageCount > 0 ? ` and ${importedImageCount} image${importedImageCount === 1 ? "" : "s"}` : "";
+                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}. Click Save to persist ${count === 1 && !imageNote ? "it" : "them"}.`);
+                if (skippedUnsupportedImages > 0) {
+                    toast.warning(`${skippedUnsupportedImages} image${skippedUnsupportedImages === 1 ? " was" : "s were"} skipped — format not supported in the browser (e.g. EMF/WMF/TIFF).`);
+                }
+                if (skippedLargeImages > 0) {
+                    toast.warning(`${skippedLargeImages} image${skippedLargeImages === 1 ? " was" : "s were"} skipped — larger than 8MB.`);
+                }
             } catch (err) {
+                console.error("Excel import failed:", err);
                 toast.error("Failed to read the Excel file.");
             } finally {
                 setIoProgress(null);
@@ -2472,6 +2840,835 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         reader.readAsArrayBuffer(file);
         e.target.value = "";
     };
+
+    // =====================================================================
+    // Keyboard commands — Excel's shortcut set.
+    //
+    // One dispatcher (handleKeyDown) sits on the component root, so it sees
+    // keys from the grid, the two cell editors and the ribbon alike; dialogs
+    // stop their own keystrokes from bubbling up to it. Commands are plain
+    // functions (not useCallback) because the dispatcher calls them at event
+    // time, after every helper they depend on exists.
+    // =====================================================================
+
+    const focusGrid = () => requestAnimationFrame(() => gridContainerRef.current?.focus());
+
+    const guardEditable = () => {
+        if (readOnly) return false;
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return false; }
+        return true;
+    };
+
+    const hasContentAt = (row, col) => {
+        const v = displayGrid[getCellId(row, col)];
+        return v !== undefined && v !== "";
+    };
+    const inSheet = (row, col) => row >= 0 && row < rowCount && col >= 0 && col < columnCount;
+    const isBandVisible = (row, col) => !hiddenRowSet.has(row) && !hiddenColSet.has(col);
+
+    // Next visible cell in a direction (hidden rows/columns are skipped).
+    const nextVisible = (row, col, dRow, dCol) => {
+        let r = row + dRow, c = col + dCol;
+        while (inSheet(r, c) && !isBandVisible(r, c)) { r += dRow; c += dCol; }
+        return inSheet(r, c) ? { row: r, col: c } : null;
+    };
+    const stepFrom = (row, col, dRow, dCol, steps = 1) => {
+        let pos = { row, col };
+        for (let i = 0; i < steps; i++) {
+            const next = nextVisible(pos.row, pos.col, dRow, dCol);
+            if (!next) break;
+            pos = next;
+        }
+        return pos;
+    };
+
+    // Ctrl+Arrow: from inside a block of data, jump to its last filled cell;
+    // otherwise jump to the next filled cell, or the sheet edge if none.
+    const edgeFrom = (row, col, dRow, dCol) => {
+        const first = nextVisible(row, col, dRow, dCol);
+        if (!first) return { row, col };
+        if (hasContentAt(row, col) && hasContentAt(first.row, first.col)) {
+            let pos = first;
+            for (;;) {
+                const next = nextVisible(pos.row, pos.col, dRow, dCol);
+                if (!next || !hasContentAt(next.row, next.col)) return pos;
+                pos = next;
+            }
+        }
+        let pos = first;
+        for (;;) {
+            if (hasContentAt(pos.row, pos.col)) return pos;
+            const next = nextVisible(pos.row, pos.col, dRow, dCol);
+            if (!next) return pos;
+            pos = next;
+        }
+    };
+
+    const lastUsedCell = () => {
+        let maxRow = 0, maxCol = 0;
+        for (const [id, v] of Object.entries(displayGrid)) {
+            if (v === "" || v === undefined) continue;
+            const ref = parseCellRef(id);
+            if (!ref) continue;
+            if (ref.row > maxRow) maxRow = ref.row;
+            if (ref.col > maxCol) maxCol = ref.col;
+        }
+        return { row: Math.min(maxRow, rowCount - 1), col: Math.min(maxCol, columnCount - 1) };
+    };
+
+    // Excel's "current region": the block around a cell bounded by empty
+    // rows and columns (Ctrl+A, Ctrl+L and Ctrl+Shift+L all start from it).
+    const currentRegion = (row, col) => {
+        let top = row, bottom = row, left = col, right = col;
+        const anyContent = (r1, r2, c1, c2) => {
+            for (let r = Math.max(0, r1); r <= Math.min(rowCount - 1, r2); r++) {
+                for (let c = Math.max(0, c1); c <= Math.min(columnCount - 1, c2); c++) if (hasContentAt(r, c)) return true;
+            }
+            return false;
+        };
+        for (let changed = true; changed;) {
+            changed = false;
+            if (top > 0 && anyContent(top - 1, top - 1, left - 1, right + 1)) { top--; changed = true; }
+            if (bottom < rowCount - 1 && anyContent(bottom + 1, bottom + 1, left - 1, right + 1)) { bottom++; changed = true; }
+            if (left > 0 && anyContent(top - 1, bottom + 1, left - 1, left - 1)) { left--; changed = true; }
+            if (right < columnCount - 1 && anyContent(top - 1, bottom + 1, right + 1, right + 1)) { right++; changed = true; }
+        }
+        return { minRow: top, maxRow: bottom, minCol: left, maxCol: right };
+    };
+
+    // Selects a rectangle; the active cell can sit anywhere inside it (Ctrl+A
+    // keeps it where it was, like Excel).
+    const selectBounds = ({ minRow, maxRow, minCol, maxCol }, activeId = getCellId(minRow, minCol)) => {
+        setSelectedMediaId(null);
+        setActiveCell(activeId);
+        setSelection({ start: getCellId(minRow, minCol), end: getCellId(maxRow, maxCol) });
+    };
+    const isMultiSelection = !!selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
+
+    // Moves the active cell, or with `extend` moves the selection's far corner
+    // while the active cell stays put (Shift+Arrow semantics).
+    const moveTo = (pos, extend) => {
+        const id = resolveToAnchor(getCellId(pos.row, pos.col));
+        if (extend) {
+            setSelection((prev) => ({ start: prev.start, end: id }));
+            scrollCellIntoView(id);
+            return;
+        }
+        setSelectedMediaId(null);
+        setActiveCell(id);
+        setSelection({ start: id, end: id });
+    };
+
+    const pageRows = () => Math.max(1, Math.floor((gridContainerRef.current?.clientHeight || 400) / DEFAULT_ROW_HEIGHT) - 1);
+    const pageCols = () => Math.max(1, Math.floor(((gridContainerRef.current?.clientWidth || 800) - ROW_HEADER_WIDTH) / DEFAULT_COLUMN_WIDTH) - 1);
+
+    // Ctrl+D / Ctrl+R: copy the top row (or left column) across the rest of
+    // the selection — or from the row above / column left of a single-row
+    // (single-column) selection. Relative references shift like the fill handle.
+    const fillFromEdge = (direction) => {
+        if (!guardEditable() || !selectionBounds) return;
+        let { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        const down = direction === "down";
+        if (down ? minRow === maxRow : minCol === maxCol) {
+            if (down ? minRow === 0 : minCol === 0) return;
+            if (down) minRow -= 1; else minCol -= 1;
+        }
+        mutateActiveCells((next) => {
+            for (let r = minRow; r <= maxRow; r++) {
+                if (hiddenRowSet.has(r)) continue;
+                for (let c = minCol; c <= maxCol; c++) {
+                    const srcRow = down ? minRow : r, srcCol = down ? c : minCol;
+                    if (r === srcRow && c === srcCol) continue;
+                    const targetId = getCellId(r, c);
+                    const source = next[getCellId(srcRow, srcCol)];
+                    if (!source) { delete next[targetId]; continue; }
+                    next[targetId] = { ...source, value: isFormula(source.value) ? adjustFormula(source.value, r - srcRow, c - srcCol) : source.value };
+                }
+            }
+        });
+    };
+
+    // Ctrl+Enter: the entry goes into every selected cell, formulas adjusted
+    // relative to the cell being edited.
+    const commitEditToSelection = () => {
+        if (!editingCell) return;
+        if (!selectionBounds || !isMultiSelection) { commitEdit(); focusGrid(); return; }
+        const origin = parseCellRef(editingCell);
+        const value = editValue;
+        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        editSessionRef.current = null;
+        mutateActiveCells((next) => {
+            for (let r = minRow; r <= maxRow; r++) {
+                for (let c = minCol; c <= maxCol; c++) {
+                    if (hiddenRowSet.has(r) || hiddenColSet.has(c)) continue;
+                    const id = getCellId(r, c);
+                    const v = isFormula(value) ? adjustFormula(value, r - origin.row, c - origin.col) : value;
+                    const merged = { ...(next[id] || {}), value: v };
+                    if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
+                }
+            }
+        });
+        setEditingCell(null);
+        setEditValue("");
+        formulaInsertRange.current = null;
+        focusGrid();
+    };
+
+    // Enter / Shift+Enter / Tab / Shift+Tab while editing.
+    const commitAndMove = (dRow, dCol) => {
+        const origin = parseCellRef(editingCell || activeCell);
+        commitEdit();
+        if (origin) moveTo(stepFrom(origin.row, origin.col, dRow, dCol), false);
+        focusGrid();
+    };
+
+    const insertIntoEditor = (el, text) => {
+        const start = el.selectionStart ?? editValue.length;
+        const end = el.selectionEnd ?? start;
+        setEditValue(editValue.slice(0, start) + text + editValue.slice(end));
+        formulaInsertRange.current = null;
+        requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + text.length, start + text.length); });
+    };
+
+    // --- Hide / unhide rows & columns ---
+
+    const setHiddenBands = (key, indexes, hide) => {
+        if (readOnly) return;
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            const set = new Set(sheet[key] || []);
+            indexes.forEach((i) => (hide ? set.add(i) : set.delete(i)));
+            if (set.size) sheet[key] = [...set].sort((a, b) => a - b);
+            else delete sheet[key];
+        });
+    };
+    const bandRange = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+    const hideSelectedRows = () => {
+        if (readOnly || !selectionBounds) return;
+        const { minRow, maxRow } = selectionBounds;
+        const remaining = bandRange(0, rowCount - 1).filter((r) => (r < minRow || r > maxRow) && !hiddenRowSet.has(r));
+        if (!remaining.length) { toast.error("You can't hide every row."); return; }
+        setHiddenBands("hiddenRows", bandRange(minRow, maxRow), true);
+        const landing = remaining.find((r) => r > maxRow) ?? remaining[remaining.length - 1];
+        moveTo({ row: landing, col: parseCellRef(activeCell).col }, false);
+    };
+    const hideSelectedColumns = () => {
+        if (readOnly || !selectionBounds) return;
+        const { minCol, maxCol } = selectionBounds;
+        const remaining = bandRange(0, columnCount - 1).filter((c) => (c < minCol || c > maxCol) && !hiddenColSet.has(c));
+        if (!remaining.length) { toast.error("You can't hide every column."); return; }
+        setHiddenBands("hiddenCols", bandRange(minCol, maxCol), true);
+        const landing = remaining.find((c) => c > maxCol) ?? remaining[remaining.length - 1];
+        moveTo({ row: parseCellRef(activeCell).row, col: landing }, false);
+    };
+    // Unhides any hidden rows/columns inside the selection — select across
+    // the double-line marker (or the whole sheet) first, like Excel.
+    const unhideSelectedRows = () => {
+        if (!selectionBounds) return;
+        const inside = hiddenRows.filter((r) => r >= selectionBounds.minRow - 1 && r <= selectionBounds.maxRow + 1);
+        if (!inside.length) { toast.info("Select the rows on both sides of the hidden ones, then unhide."); return; }
+        setHiddenBands("hiddenRows", inside, false);
+    };
+    const unhideSelectedColumns = () => {
+        if (!selectionBounds) return;
+        const inside = hiddenCols.filter((c) => c >= selectionBounds.minCol - 1 && c <= selectionBounds.maxCol + 1);
+        if (!inside.length) { toast.info("Select the columns on both sides of the hidden ones, then unhide."); return; }
+        setHiddenBands("hiddenCols", inside, false);
+    };
+
+    // --- AutoFit ---
+
+    const measureCanvasRef = useRef(null);
+    const measureTextWidth = (text, cell) => {
+        if (!measureCanvasRef.current) measureCanvasRef.current = document.createElement("canvas").getContext("2d");
+        const ctx = measureCanvasRef.current;
+        ctx.font = `${cell?.italic ? "italic " : ""}${cell?.bold ? "bold " : ""}${cell?.fontSize || 12}px ${cell?.fontFamily ? `"${cell.fontFamily}", ` : ""}ui-sans-serif, system-ui, sans-serif`;
+        return Math.max(0, ...String(text).split("\n").map((line) => ctx.measureText(line).width));
+    };
+
+    const autoFitColumns = () => {
+        if (readOnly || !selectionBounds) return;
+        const { minCol, maxCol } = selectionBounds;
+        const widest = {};
+        for (const [id, text] of Object.entries(displayGrid)) {
+            if (text === "" || mergeMap[id]) continue;
+            const ref = parseCellRef(id);
+            if (!ref || ref.col < minCol || ref.col > maxCol || hiddenRowSet.has(ref.row)) continue;
+            widest[ref.col] = Math.max(widest[ref.col] || 0, measureTextWidth(text, cells[id]));
+        }
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            sheet.columnWidths = { ...(sheet.columnWidths || {}) };
+            for (let c = minCol; c <= maxCol; c++) {
+                if (widest[c] === undefined) delete sheet.columnWidths[c];
+                else sheet.columnWidths[c] = clamp(Math.ceil(widest[c]) + 16, MIN_COLUMN_WIDTH, 600);
+            }
+        });
+    };
+
+    const autoFitRows = () => {
+        if (readOnly || !selectionBounds) return;
+        const { minRow, maxRow } = selectionBounds;
+        const tallest = {};
+        for (const [id, text] of Object.entries(displayGrid)) {
+            if (text === "" || mergeMap[id]) continue;
+            const ref = parseCellRef(id);
+            if (!ref || ref.row < minRow || ref.row > maxRow) continue;
+            const cell = cells[id];
+            const fontSize = cell?.fontSize || 12;
+            let lines = 1;
+            if (cell?.wrap) {
+                const available = Math.max(20, (columnWidths[ref.col] || DEFAULT_COLUMN_WIDTH) - 12);
+                lines = String(text).split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(measureTextWidth(line, cell) / available)), 0);
+            }
+            tallest[ref.row] = Math.max(tallest[ref.row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
+        }
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            sheet.rowHeights = { ...(sheet.rowHeights || {}) };
+            for (let r = minRow; r <= maxRow; r++) {
+                if (!tallest[r] || tallest[r] <= DEFAULT_ROW_HEIGHT) delete sheet.rowHeights[r];
+                else sheet.rowHeights[r] = Math.max(MIN_ROW_HEIGHT, tallest[r]);
+            }
+        });
+    };
+
+    // --- Sheets: navigation, hide / unhide ---
+
+    const visibleSheetNames = Object.keys(sheets).filter((name) => !sheets[name]?.hidden);
+    const hiddenSheetNames = Object.keys(sheets).filter((name) => sheets[name]?.hidden);
+
+    const switchSheetBy = (delta) => {
+        if (visibleSheetNames.length < 2) return;
+        const idx = visibleSheetNames.indexOf(activeSheetName);
+        switchSheet(visibleSheetNames[(idx + delta + visibleSheetNames.length) % visibleSheetNames.length]);
+        focusGrid();
+    };
+
+    const hideSheet = (name) => {
+        if (readOnly) return;
+        if (visibleSheetNames.length <= 1) { toast.error("A workbook needs at least one visible sheet."); return; }
+        updateSheets((next) => { next[name].hidden = true; });
+        if (name === activeSheetName) switchSheet(visibleSheetNames.find((n) => n !== name));
+    };
+    const unhideSheet = (name) => {
+        if (readOnly) return;
+        updateSheets((next) => { delete next[name].hidden; });
+        switchSheet(name);
+    };
+
+    // --- Tables & AutoFilter ---
+
+    const tableAt = (row, col) => tables.find((t) => {
+        const s = parseCellRef(t.range.start), e = parseCellRef(t.range.end);
+        return s && e && row >= Math.min(s.row, e.row) && row <= Math.max(s.row, e.row) && col >= Math.min(s.col, e.col) && col <= Math.max(s.col, e.col);
+    });
+    const regionForCommand = () => {
+        const ref = parseCellRef(activeCell);
+        return isMultiSelection ? selectionBounds : currentRegion(ref.row, ref.col);
+    };
+
+    // Ctrl+L / Ctrl+T: format the selection (or the data region around the
+    // active cell) as a table with filter buttons.
+    const formatAsTableShortcut = () => {
+        if (!guardEditable()) return;
+        const bounds = regionForCommand();
+        if (bounds.minRow === bounds.maxRow) { toast.info("Select a range with a header row to format as a table."); return; }
+        applyTable(selectedTableStyleKey, true, bounds);
+        selectBounds(bounds);
+    };
+
+    // Ctrl+Shift+L: turn filter buttons on/off for the table under the
+    // cursor, or add plain (unstyled) AutoFilter to the current region.
+    const toggleAutoFilter = () => {
+        if (!guardEditable()) return;
+        const ref = parseCellRef(activeCell);
+        const table = tableAt(ref.row, ref.col);
+        if (table) {
+            updateSheets((next) => {
+                const t = (next[activeSheetName].tables || []).find((x) => x.id === table.id);
+                if (!t) return;
+                t.filtersEnabled = !t.filtersEnabled;
+                if (!t.filtersEnabled) t.filters = {};
+            });
+            return;
+        }
+        const bounds = regionForCommand();
+        if (bounds.minRow === bounds.maxRow) { toast.info("Select a range with a header row to add filters."); return; }
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (!sheet.tables) sheet.tables = [];
+            sheet.tables.push({
+                id: `table-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                range: { start: getCellId(bounds.minRow, bounds.minCol), end: getCellId(bounds.maxRow, bounds.maxCol) },
+                styleKey: null,
+                filtersEnabled: true,
+                filters: {},
+            });
+        });
+    };
+
+    // --- Insert / delete from the keyboard (Ctrl++ / Ctrl+-) ---
+
+    const isFullRows = () => selectionBounds && selectionBounds.minCol === 0 && selectionBounds.maxCol === columnCount - 1;
+    const isFullColumns = () => selectionBounds && selectionBounds.minRow === 0 && selectionBounds.maxRow === rowCount - 1;
+    const runInsertDelete = (mode, kind) => {
+        if (!selectionBounds) return;
+        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        if (kind === "rows") (mode === "insert" ? insertRows : deleteRows)(minRow, maxRow - minRow + 1);
+        else (mode === "insert" ? insertColumns : deleteColumns)(minCol, maxCol - minCol + 1);
+    };
+    const insertDeleteShortcut = (mode) => {
+        if (!guardEditable() || !selectionBounds) return;
+        if (isFullRows()) runInsertDelete(mode, "rows");
+        else if (isFullColumns()) runInsertDelete(mode, "cols");
+        else setInsertDeleteMode(mode);
+    };
+
+    // --- Formatting shortcuts ---
+
+    const applyFormatShortcut = (numberFormat, decimalPlaces) => {
+        if (!guardEditable()) return;
+        applyToSelection((cell) => ({
+            ...cell,
+            numberFormat: numberFormat === "general" ? undefined : numberFormat,
+            decimalPlaces: decimalPlaces ?? cell.decimalPlaces,
+        }));
+    };
+
+    const applyFormatCellsPatch = (patch) => {
+        if (!guardEditable()) return;
+        applyToSelection((cell) => {
+            const next = { ...cell, ...patch };
+            for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+            return next;
+        });
+        focusGrid();
+    };
+
+    // --- Paste Special ---
+
+    const applyPasteSpecial = ({ paste, operation, skipBlanks, transpose }) => {
+        focusGrid();
+        if (!clipboard) { toast.info("Copy some cells first (Ctrl+C)."); return; }
+        if (clipboard.type === "cut") { toast.error("Paste Special works with copied cells, not cut ones."); return; }
+        if (!guardEditable() || !selectionBounds) return;
+        const { height, width, cellsByRelPos, valuesByRelPos = {}, sourceBounds } = clipboard;
+        const outHeight = transpose ? width : height, outWidth = transpose ? height : width;
+        const targetRow = selectionBounds.minRow, targetCol = selectionBounds.minCol;
+        const OPS = {
+            add: [(a, b) => a + b, "+"],
+            subtract: [(a, b) => a - b, "-"],
+            multiply: [(a, b) => a * b, "*"],
+            divide: [(a, b) => (b === 0 ? null : a / b), "/"],
+        };
+        const asText = (v) => (v === true ? "TRUE" : v === false ? "FALSE" : v === null || v === undefined ? undefined : String(v));
+
+        mutateActiveCells((next) => {
+            for (let r = 0; r < outHeight; r++) {
+                for (let c = 0; c < outWidth; c++) {
+                    const [sr, sc] = transpose ? [c, r] : [r, c];
+                    const key = `${sr},${sc}`;
+                    const src = cellsByRelPos[key];
+                    const srcValue = valuesByRelPos[key];
+                    const srcIsBlank = (src?.value === undefined || src?.value === "") && srcValue === undefined;
+                    if (skipBlanks && srcIsBlank) continue;
+
+                    const tRow = targetRow + r, tCol = targetCol + c;
+                    const id = getCellId(tRow, tCol);
+                    const existing = next[id] || {};
+                    const { value: _unused, ...srcFormat } = src || {};
+                    let result;
+
+                    if (paste === "formats") {
+                        result = { ...srcFormat, value: existing.value };
+                    } else {
+                        let newValue;
+                        if (paste === "values") newValue = asText(srcValue);
+                        else if (src?.value !== undefined && src.value !== "") {
+                            newValue = isFormula(src.value)
+                                ? adjustFormula(src.value, tRow - (sourceBounds.minRow + sr), tCol - (sourceBounds.minCol + sc))
+                                : src.value;
+                        } else newValue = asText(srcValue); // spilled result: paste as a value
+
+                        if (operation !== "none") {
+                            if (typeof srcValue !== "number") continue; // text/blank sources leave the target alone
+                            const [fn, symbol] = OPS[operation];
+                            const targetRaw = existing.value;
+                            if (isFormula(targetRaw)) {
+                                newValue = `=(${String(targetRaw).trim().slice(1)})${symbol}${srcValue}`;
+                            } else {
+                                const current = targetRaw === undefined || targetRaw === "" ? 0 : Number(rawGrid[id]);
+                                if (!Number.isFinite(current)) continue;
+                                const combined = fn(current, srcValue);
+                                if (combined === null) { newValue = "#DIV/0!"; }
+                                else newValue = String(parseFloat(combined.toPrecision(15)));
+                            }
+                            result = { ...existing, value: newValue };
+                        } else {
+                            // "All" brings the source formatting along; formulas/values keep the target's.
+                            result = paste === "all" ? { ...srcFormat, value: newValue } : { ...existing, value: newValue };
+                        }
+                    }
+                    if (isBlankCell(result)) delete next[id]; else next[id] = result;
+                }
+            }
+        });
+        setSelection({ start: getCellId(targetRow, targetCol), end: getCellId(targetRow + outHeight - 1, targetCol + outWidth - 1) });
+    };
+
+    // --- Go To (Ctrl+G / F5) ---
+
+    const goToReference = (text) => {
+        const cleaned = String(text).trim().toUpperCase().replace(/\$/g, "");
+        const [a, b = a] = cleaned.split(":");
+        const s = parseCellRef(a || ""), e = parseCellRef(b || "");
+        if (!s || !e) return "Enter a cell like B12 or a range like A1:D20.";
+        const maxRow = Math.max(s.row, e.row), maxCol = Math.max(s.col, e.col);
+        if (maxRow >= rowCount || maxCol >= columnCount) {
+            if (readOnly || isSheetReadOnly) return `That's outside this sheet (last cell ${indexToCol(columnCount - 1)}${rowCount}).`;
+            // Excel's grid is effectively unbounded — grow the sheet to reach it.
+            updateSheets((next) => {
+                const sheet = next[activeSheetName];
+                sheet.rowCount = Math.max(sheet.rowCount, maxRow + 1);
+                sheet.columnCount = Math.max(sheet.columnCount, maxCol + 1);
+            });
+        }
+        const bounds = { minRow: Math.min(s.row, e.row), maxRow, minCol: Math.min(s.col, e.col), maxCol };
+        selectBounds(bounds);
+        requestAnimationFrame(() => scrollCellIntoView(getCellId(bounds.minRow, bounds.minCol)));
+        focusGrid();
+        return null;
+    };
+
+    // --- Print (Ctrl+P): just the used range of the active sheet ---
+
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const printActiveSheet = () => {
+        const { row: lastRow, col: lastCol } = lastUsedCell();
+        const borderCss = (side, weight) => (weight ? `border-${side}:${weight === "thick" ? 2 : 1}px ${weight === "double" ? "double" : "solid"} #334155;` : "");
+        let html = "<table><colgroup>";
+        for (let c = 0; c <= lastCol; c++) if (!hiddenColSet.has(c)) html += `<col style="width:${widthForCol(c)}px">`;
+        html += "</colgroup><tbody>";
+        for (let r = 0; r <= lastRow; r++) {
+            if (hiddenRowSet.has(r)) continue;
+            html += `<tr style="height:${heightForRow(r)}px">`;
+            for (let c = 0; c <= lastCol; c++) {
+                if (hiddenColSet.has(c)) continue;
+                const id = getCellId(r, c);
+                const merge = mergeMap[id];
+                if (merge && merge.start !== id) continue;
+                const cell = cells[id];
+                let spanAttrs = "";
+                if (merge) {
+                    const ms = parseCellRef(merge.start), me = parseCellRef(merge.end);
+                    spanAttrs = ` rowspan="${me.row - ms.row + 1}" colspan="${me.col - ms.col + 1}"`;
+                }
+                const style = [
+                    cell?.bold && "font-weight:bold;", cell?.italic && "font-style:italic;",
+                    (cell?.underline || cell?.strike) && `text-decoration:${[cell.underline && "underline", cell.strike && "line-through"].filter(Boolean).join(" ")};`,
+                    cell?.color && `color:${cell.color};`, cell?.bg && `background:${cell.bg};`,
+                    cell?.fontSize && `font-size:${cell.fontSize}px;`, cell?.fontFamily && `font-family:${cell.fontFamily};`,
+                    `text-align:${cell?.align || (typeof rawGrid[id] === "number" ? "right" : "left")};`,
+                    `vertical-align:${cell?.valign || "middle"};`,
+                    cell?.wrap ? "white-space:pre-wrap;" : "white-space:nowrap;",
+                    ...["top", "bottom", "left", "right"].map((side) => borderCss(side, cell?.border?.[side])),
+                ].filter(Boolean).join("");
+                const text = showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[id] ?? "");
+                html += `<td${spanAttrs} style="${style}">${escapeHtml(text)}</td>`;
+            }
+            html += "</tr>";
+        }
+        html += "</tbody></table>";
+
+        const iframe = document.createElement("iframe");
+        iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+        document.body.appendChild(iframe);
+        const doc = iframe.contentDocument;
+        doc.open();
+        doc.write(`<!doctype html><html><head><title>${escapeHtml(activeSheetName)}</title><style>
+            body{font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;margin:16px;color:#0f172a}
+            h1{font-size:14px;margin:0 0 8px}
+            table{border-collapse:collapse;table-layout:fixed}
+            td{padding:2px 6px;overflow:hidden;${gridlinesVisible ? "outline:1px solid #e2e8f0;" : ""}}
+        </style></head><body><h1>${escapeHtml(activeSheetName)}</h1>${html}</body></html>`);
+        doc.close();
+        const cleanup = () => setTimeout(() => iframe.remove(), 500);
+        iframe.contentWindow.addEventListener("afterprint", cleanup);
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(cleanup, 60000);
+    };
+
+    // --- Find panel openers ---
+
+    const openFind = (focusReplace) => {
+        setShowFindReplace(true);
+        requestAnimationFrame(() => {
+            const el = focusReplace && !readOnly ? replaceInputRef.current : findInputRef.current;
+            el?.focus();
+            el?.select();
+        });
+    };
+
+    // --- Alt key tips (Alt+H, W · Alt+H, M, C · Alt+H, O, I/A · Alt+O, H, R/H/U) ---
+
+    const KEY_TIP_TIMEOUT_MS = 3000;
+    const [keyTipKeys, setKeyTipKeys] = useState(null);
+    const KEY_TIP_COMMANDS = {
+        HW: () => { if (guardEditable()) toggleWrap(); },
+        HMC: () => { if (guardEditable()) mergeCenter(); },
+        HOI: autoFitColumns,
+        HOA: autoFitRows,
+        OHR: () => { if (!readOnly) startRenameSheet(activeSheetName); },
+        OHH: () => hideSheet(activeSheetName),
+        OHU: () => { if (!readOnly) setUnhideSheetOpen(true); },
+    };
+    const endKeyTips = () => { keyTipRef.current = null; setKeyTipKeys(null); };
+    const feedKeyTip = (letter) => {
+        const keys = (keyTipRef.current?.keys || "") + letter;
+        const command = KEY_TIP_COMMANDS[keys];
+        if (command) { endKeyTips(); command(); return; }
+        if (Object.keys(KEY_TIP_COMMANDS).some((k) => k.startsWith(keys))) {
+            keyTipRef.current = { keys, at: Date.now() };
+            setKeyTipKeys(keys);
+            return;
+        }
+        endKeyTips();
+    };
+
+    const todayText = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const timeText = () => {
+        const d = new Date();
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+
+    // --- The dispatcher ---
+
+    const handleKeyDown = (e) => {
+        if (e.defaultPrevented || e.nativeEvent?.isComposing) return;
+        const target = e.target;
+        // Dialogs, open menus and dropdowns keep their own keyboard handling.
+        if (target?.closest?.('[data-excel-dialog], [role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+
+        const ctrl = e.ctrlKey || e.metaKey;
+        const { shiftKey: shift, altKey: alt, key, code } = e;
+        const handled = () => { e.preventDefault(); e.stopPropagation(); };
+        const isEditor = target === cellEditInputRef.current || target === formulaBarInputRef.current;
+        const isOtherField = !isEditor && (["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
+        const onGrid = !!gridContainerRef.current && (target === gridContainerRef.current || gridContainerRef.current.contains(target)) && !isEditor;
+
+        // Key-tip sequence in progress: plain letters continue it.
+        if (keyTipRef.current && !ctrl) {
+            if (Date.now() - keyTipRef.current.at > KEY_TIP_TIMEOUT_MS || key === "Escape") { endKeyTips(); if (key === "Escape") { handled(); return; } }
+            else if (/^Key[A-Z]$/.test(code)) { handled(); feedKeyTip(code.slice(3)); return; }
+            else if (!["Alt", "Shift", "Control", "Meta"].includes(key)) endKeyTips();
+        }
+
+        // ---- Workbook-level shortcuts: work from anywhere in the sheet ----
+        if (key === "F1" && !ctrl && !shift) { handled(); setCheatSheetOpen(true); return; }
+        if (key === "F1" && ctrl) { handled(); if (!readOnly) setIsToolbarExpanded((v) => !v); return; }
+        if (ctrl && !alt && code === "KeyS") {
+            handled();
+            if (readOnly) return;
+            if (editingCell) commitEdit();
+            if (shift) handleExport(); else handleSave();
+            return;
+        }
+        if (ctrl && !shift && !alt && code === "KeyP") { handled(); if (editingCell) commitEdit(); printActiveSheet(); return; }
+
+        if (isOtherField) {
+            // Other text fields (Name box, find inputs, sheet rename, ...) keep
+            // their normal typing; only Ctrl+F/H jumps between find inputs.
+            if (ctrl && !shift && (code === "KeyF" || code === "KeyH")) { handled(); openFind(code === "KeyH"); }
+            return;
+        }
+
+        // ---- While editing a cell ----
+        if (isEditor) {
+            if (key === "Enter" && alt) { handled(); insertIntoEditor(target, "\n"); return; }
+            if (key === "Enter" && ctrl) { handled(); commitEditToSelection(); return; }
+            if (key === "Enter") { handled(); commitAndMove(shift ? -1 : 1, 0); return; }
+            if (key === "Tab") { handled(); commitAndMove(0, shift ? -1 : 1); return; }
+            if (key === "Escape") { handled(); cancelEdit(); focusGrid(); return; }
+            if (key === "F4" && isFormula(editValue)) {
+                handled();
+                const result = cycleReferenceAt(editValue, target.selectionStart ?? editValue.length);
+                if (result) {
+                    setEditValue(result.text);
+                    formulaInsertRange.current = null;
+                    requestAnimationFrame(() => { target.focus(); target.setSelectionRange(result.start, result.end); });
+                }
+                return;
+            }
+            if (ctrl && code === "Semicolon") { handled(); insertIntoEditor(target, shift ? timeText() : todayText()); return; }
+            return; // everything else is ordinary typing
+        }
+
+        const ref = parseCellRef(activeCell);
+        if (!ref) return;
+        const edit = !readOnly; // mutating commands are skipped entirely in view mode
+
+        // ---- Shortcuts that work with focus on the grid or on a ribbon control ----
+        if (ctrl && alt && !shift && code === "KeyV") { handled(); if (edit) setPasteSpecialOpen(true); return; }
+        if (ctrl && !alt) {
+            switch (code) {
+                case "KeyC": if (!shift) { handled(); copySelection("copy"); return; } break;
+                case "KeyX": if (!shift && edit) { handled(); copySelection("cut"); return; } break;
+                case "KeyZ": if (edit) { handled(); if (shift) redo(); else undo(); return; } break;
+                case "KeyY": if (!shift && edit) { handled(); redo(); return; } break;
+                case "KeyF": handled(); if (shift) { if (edit) setFormatCellsOpen(true); } else openFind(false); return;
+                case "KeyH": if (!shift) { handled(); openFind(true); return; } break;
+                case "KeyG": if (!shift) { handled(); setGoToOpen(true); return; } break;
+                case "KeyO": if (!shift) { handled(); if (edit) handleImportClick(); return; } break;
+                case "KeyB": if (!shift) { handled(); if (guardEditable()) toggleStyle("bold"); return; } break;
+                case "KeyI": if (!shift) { handled(); if (guardEditable()) toggleStyle("italic"); return; } break;
+                case "KeyU": if (!shift) { handled(); if (guardEditable()) toggleStyle("underline"); return; } break;
+                case "KeyD": if (!shift) { handled(); fillFromEdge("down"); return; } break;
+                case "KeyR": if (!shift) { handled(); fillFromEdge("right"); return; } break;
+                case "KeyL": handled(); if (shift) toggleAutoFilter(); else formatAsTableShortcut(); return;
+                case "KeyT": if (!shift) { handled(); formatAsTableShortcut(); return; } break;
+                case "KeyA": if (!shift) {
+                    handled();
+                    const region = currentRegion(ref.row, ref.col);
+                    const regionIsCurrent = selectionBounds && region.minRow === selectionBounds.minRow && region.maxRow === selectionBounds.maxRow
+                        && region.minCol === selectionBounds.minCol && region.maxCol === selectionBounds.maxCol;
+                    const regionIsSingle = region.minRow === region.maxRow && region.minCol === region.maxCol;
+                    if (regionIsCurrent || regionIsSingle) selectAllCells(); else selectBounds(region, activeCell);
+                    return;
+                } break;
+                case "Backquote": handled(); if (shift) applyFormatShortcut("general"); else setShowFormulas((v) => !v); return;
+                case "Digit1": handled(); if (shift) applyFormatShortcut("comma", 2); else if (edit) setFormatCellsOpen(true); return;
+                case "Digit2": if (shift) { handled(); applyFormatShortcut("time"); return; } break;
+                case "Digit3": if (shift) { handled(); applyFormatShortcut("date"); return; } break;
+                case "Digit4": if (shift) { handled(); applyFormatShortcut("currency", 2); return; } break;
+                case "Digit5": handled(); if (shift) applyFormatShortcut("percentage", 2); else if (guardEditable()) toggleStyle("strike"); return;
+                case "Digit6": if (shift) { handled(); applyFormatShortcut("scientific", 2); return; } break;
+                case "Digit9": handled(); if (shift) unhideSelectedRows(); else hideSelectedRows(); return;
+                case "Digit0": handled(); if (shift) unhideSelectedColumns(); else hideSelectedColumns(); return;
+                case "Equal": if (shift) { handled(); insertDeleteShortcut("insert"); return; } break;
+                case "NumpadAdd": handled(); insertDeleteShortcut("insert"); return;
+                case "Minus":
+                case "NumpadSubtract": if (!shift) { handled(); insertDeleteShortcut("delete"); return; } break;
+                case "Semicolon": handled(); if (guardEditable()) startEditing(activeCell, shift ? timeText() : todayText()); return;
+                case "Space": handled(); if (shift) selectAllCells(); else selectColumn(ref.col); return;
+                case "PageUp": handled(); switchSheetBy(-1); return;
+                case "PageDown": handled(); switchSheetBy(1); return;
+                default: break;
+            }
+        }
+        if (ctrl && alt) {
+            if (code === "PageUp") { handled(); switchSheetBy(-1); return; }
+            if (code === "PageDown") { handled(); switchSheetBy(1); return; }
+            if (code === "Digit9") { handled(); hideSelectedRows(); return; }
+        }
+        if (alt && !ctrl) {
+            if (shift && code === "Digit5") { handled(); if (guardEditable()) toggleStyle("strike"); return; }
+            if (shift && key === "F1") { handled(); if (edit) addSheet(); return; }
+            if (!shift && code === "Equal") { handled(); if (guardEditable()) insertAutoSum("SUM"); return; }
+            if (!shift && (code === "KeyH" || code === "KeyO")) {
+                handled();
+                keyTipRef.current = { keys: code.slice(3), at: Date.now() };
+                setKeyTipKeys(code.slice(3));
+                return;
+            }
+        }
+        if (key === "F11" && shift) { handled(); if (edit) addSheet(); return; }
+        if (key === "F9") { handled(); setRecalcSeed((s) => s + 1); return; }
+        if (key === "F5" && !ctrl) { handled(); setGoToOpen(true); return; }
+
+        // ---- Grid-only keys (arrows, typing, Enter, Delete…) ----
+        if (!onGrid) return;
+
+        const cursor = shift ? (parseCellRef(selection.end) || ref) : ref;
+        const arrow = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[key];
+        if (arrow && !alt) {
+            handled();
+            const pos = ctrl ? edgeFrom(cursor.row, cursor.col, arrow[0], arrow[1]) : stepFrom(cursor.row, cursor.col, arrow[0], arrow[1]);
+            moveTo(pos, shift);
+            return;
+        }
+        switch (key) {
+            case "Home":
+                handled();
+                moveTo(ctrl ? { row: 0, col: 0 } : { row: cursor.row, col: 0 }, shift);
+                return;
+            case "End":
+                if (ctrl) { handled(); moveTo(lastUsedCell(), shift); }
+                return;
+            case "PageDown":
+            case "PageUp": {
+                handled();
+                const dir = key === "PageDown" ? 1 : -1;
+                const pos = alt ? stepFrom(cursor.row, cursor.col, 0, dir, pageCols()) : stepFrom(cursor.row, cursor.col, dir, 0, pageRows());
+                moveTo(pos, shift);
+                if (shift) scrollCellIntoView(getCellId(pos.row, pos.col));
+                return;
+            }
+            case "Tab":
+                handled();
+                moveTo(stepFrom(ref.row, ref.col, 0, shift ? -1 : 1), false);
+                return;
+            case "Enter":
+                handled();
+                if (alt || ctrl) return;
+                moveTo(stepFrom(ref.row, ref.col, shift ? -1 : 1, 0), false);
+                return;
+            case "F2":
+                handled();
+                if (edit) startEditing(activeCell);
+                return;
+            case "Escape":
+                handled();
+                setSelection({ start: activeCell, end: activeCell });
+                setClipboard((c) => (c?.type === "cut" ? null : c));
+                setFormatPainterStyle(null);
+                setSelectedMediaId(null);
+                return;
+            case "Delete":
+            case "Backspace":
+                handled();
+                if (selectedMediaId) { if (edit) handleDeleteMedia(selectedMediaId); return; }
+                if (edit && !isSheetReadOnly) clearSelectedCells();
+                else if (edit) guardEditable();
+                return;
+            default: break;
+        }
+        if (key === " " && shift && !ctrl && !alt) { handled(); selectRow(ref.row); return; }
+        if (edit && key.length === 1 && !ctrl && !alt) {
+            handled();
+            startEditing(activeCell, key);
+        }
+    };
+
+    // Status bar: quick totals for a multi-cell selection (visible cells only).
+    const selectionStats = useMemo(() => {
+        if (!selectionBounds) return null;
+        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        if (minRow === maxRow && minCol === maxCol) return null;
+        let count = 0, numericCount = 0, sum = 0, min = Infinity, max = -Infinity;
+        for (const [id, v] of Object.entries(rawGrid)) {
+            const ref = parseCellRef(id);
+            if (!ref || ref.row < minRow || ref.row > maxRow || ref.col < minCol || ref.col > maxCol) continue;
+            if (hiddenRowSet.has(ref.row) || hiddenColSet.has(ref.col)) continue;
+            const typed = cells[id]?.value;
+            if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) continue;
+            count++;
+            if (typeof v === "number" && Number.isFinite(v)) {
+                numericCount++;
+                sum += v;
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        }
+        if (!count) return null;
+        return { count, numericCount, sum, min, max, average: numericCount ? sum / numericCount : null };
+    }, [selectionBounds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
+    const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
     const ribbonBtnClass = (active) => cn("h-7 w-7 cursor-pointer", active && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100");
 
@@ -2488,7 +3685,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }
 
     return (
-        <div className="w-full">
+        <div className="w-full" ref={rootRef} onKeyDown={handleKeyDown}>
             {!readOnly && (
             <>
             {/* Quick access row */}
@@ -2504,6 +3701,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <IconArrowForwardUp className="w-4 h-4" />
                 </Button>
                 <div className="flex-1" />
+                {keyTipKeys && (
+                    <span className="text-[11px] font-mono px-2 py-1 rounded bg-slate-800 text-white" title="Keep typing the key-tip letters (Esc cancels)">
+                        Alt+{keyTipKeys.split("").join(", ")} …
+                    </span>
+                )}
+                <Button
+                    variant="ghost" size="sm" className={cn("h-8 cursor-pointer", showFormulas && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
+                    onClick={() => setShowFormulas((v) => !v)} title="Show formulas instead of results (Ctrl+`)"
+                >
+                    <IconMathFunction className="w-4 h-4" /> Formulas
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 cursor-pointer" onClick={printActiveSheet} title="Print this sheet (Ctrl+P)">
+                    <IconPrinter className="w-4 h-4" /> Print
+                </Button>
                 <Button
                     variant="ghost" size="sm" className={cn("h-8 cursor-pointer", !gridlinesVisible && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
                     onClick={() => setGridlinesVisible((v) => !v)} title="Toggle gridlines"
@@ -2524,12 +3735,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <IconDownload className="w-4 h-4" /> Export
                 </Button>
                 <div className="w-[1px] h-6 bg-slate-200 mx-1 shrink-0" />
+                <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer text-slate-500 hover:bg-slate-100 shrink-0" onClick={() => setCheatSheetOpen(true)} title="Shortcuts & functions cheat sheet (F1)">
+                    <IconHelpCircle className="w-4 h-4" />
+                </Button>
                 <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 cursor-pointer text-slate-500 hover:bg-slate-100 shrink-0"
                     onClick={() => setIsToolbarExpanded((v) => !v)}
-                    title={isToolbarExpanded ? "Collapse ribbon" : "Expand ribbon"}
+                    title={isToolbarExpanded ? "Collapse ribbon (Ctrl+F1)" : "Expand ribbon (Ctrl+F1)"}
                 >
                     {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
                 </Button>
@@ -2545,6 +3759,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("copy")} title="Copy (Ctrl+C)"><IconCopy className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("cut")} title="Cut (Ctrl+X)"><IconCut className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={handlePaste} disabled={!clipboard} title="Paste (Ctrl+V)"><IconClipboard className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => setPasteSpecialOpen(true)} disabled={!clipboard} title="Paste Special (Ctrl+Alt+V)"><IconClipboardList className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className={ribbonBtnClass(!!formatPainterStyle)} onClick={activateFormatPainter} title="Format Painter — click a cell to apply"><IconBrush className="w-4 h-4" /></Button>
                 </RibbonGroup>
 
@@ -2802,6 +4017,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => deleteColumnAt(parseCellRef(activeCell).col)}><IconColumnRemove className="w-3.5 h-3.5" /> Delete Column</button>
                         </PopoverContent>
                     </Popover>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Format, hide & unhide"><IconArrowsHorizontal className="w-4 h-4" /> Format</Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
+                            {[
+                                ["Format Cells…", "Ctrl+Shift+F", () => setFormatCellsOpen(true)],
+                                ["AutoFit Column Width", "Alt+H, O, I", autoFitColumns],
+                                ["AutoFit Row Height", "Alt+H, O, A", autoFitRows],
+                                null,
+                                ["Hide Rows", "Ctrl+9", hideSelectedRows],
+                                ["Unhide Rows", "Ctrl+Shift+9", unhideSelectedRows],
+                                ["Hide Columns", "Ctrl+0", hideSelectedColumns],
+                                ["Unhide Columns", "Ctrl+Shift+0", unhideSelectedColumns],
+                                null,
+                                ["Rename Sheet", "Alt+O, H, R", () => startRenameSheet(activeSheetName)],
+                                ["Hide Sheet", "Alt+O, H, H", () => hideSheet(activeSheetName)],
+                                ["Unhide Sheet…", "Alt+O, H, U", () => setUnhideSheetOpen(true)],
+                            ].map((item, i) => item ? (
+                                <button
+                                    key={item[0]}
+                                    className="w-full flex items-center justify-between gap-2 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer disabled:opacity-40 disabled:hover:bg-transparent"
+                                    onClick={item[2]}
+                                    disabled={item[0] === "Unhide Sheet…" && hiddenSheetNames.length === 0}
+                                >
+                                    {item[0]}
+                                    <span className="text-[10px] text-slate-400 font-mono">{item[1]}</span>
+                                </button>
+                            ) : <div key={`sep-${i}`} className="my-1 border-t border-slate-100" />)}
+                        </PopoverContent>
+                    </Popover>
                     <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} title="Add column at end"><IconPlus className="w-3.5 h-3.5" /> Col</Button>
                     <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} title="Add row at end"><IconPlus className="w-3.5 h-3.5" /> Row</Button>
                 </RibbonGroup>
@@ -2844,21 +4090,44 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 <div className="flex flex-wrap items-center gap-2 px-2 py-2 border-b border-slate-200 bg-amber-50/60">
                     <IconSearch className="w-4 h-4 text-slate-500 shrink-0" />
                     <input
+                        ref={findInputRef}
                         className="h-7 text-xs border border-slate-200 rounded px-2 w-40"
-                        placeholder="Find"
+                        placeholder="Find (Ctrl+F)"
                         value={findText}
                         onChange={(e) => setFindText(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); if (e.shiftKey) findPrevious(); else findNext(); }
+                            else if (e.key === "Escape") { setShowFindReplace(false); gridContainerRef.current?.focus(); }
+                        }}
                     />
-                    <input
-                        className="h-7 text-xs border border-slate-200 rounded px-2 w-40"
-                        placeholder="Replace with"
-                        value={replaceText}
-                        onChange={(e) => setReplaceText(e.target.value)}
-                    />
+                    {!readOnly && (
+                        <input
+                            ref={replaceInputRef}
+                            className="h-7 text-xs border border-slate-200 rounded px-2 w-40"
+                            placeholder="Replace with (Ctrl+H)"
+                            value={replaceText}
+                            onChange={(e) => setReplaceText(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); replaceOne(); }
+                                else if (e.key === "Escape") { setShowFindReplace(false); gridContainerRef.current?.focus(); }
+                            }}
+                        />
+                    )}
                     <span className="text-[11px] text-slate-500 w-16">{matches.length ? `${matchIndex + 1}/${matches.length}` : "0 matches"}</span>
-                    <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={findNext} disabled={!matches.length}>Find Next</Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={replaceOne} disabled={!matches.length}>Replace</Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={replaceAll} disabled={!matches.length}>Replace All</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={findPrevious} disabled={!matches.length} title="Find previous (Shift+Enter)">Previous</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={findNext} disabled={!matches.length} title="Find next (Enter)">Find Next</Button>
+                    {!readOnly && (
+                        <>
+                            <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={replaceOne} disabled={!matches.length}>Replace</Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={replaceAll} disabled={!matches.length}>Replace All</Button>
+                        </>
+                    )}
+                    {[["matchCase", "Match case"], ["entireCell", "Entire cell"], ["allSheets", "All sheets"]].map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                            <Checkbox checked={findOptions[key]} onCheckedChange={(v) => setFindOptions((o) => ({ ...o, [key]: !!v }))} />
+                            {label}
+                        </label>
+                    ))}
                     <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto cursor-pointer" onClick={() => setShowFindReplace(false)}>
                         <IconX className="w-4 h-4" />
                     </Button>
@@ -2893,34 +4162,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         rows={3}
                         readOnly={readOnly}
                         value={editingCell === activeCell ? editValue : (cells[activeCell]?.value ?? "")}
-                        onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell); }}
+                        onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
                         onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                         onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) { commitEdit(); e.preventDefault(); }
-                            else if (e.key === "Escape") cancelEdit();
-                        }}
                         onBlur={commitEdit}
                         placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                     />
                 ) : (
                     <div className="relative flex-1">
-                        {editingCell === activeCell && isEditingFormula && <FormulaTextOverlay text={editValue} mono className="px-1 py-1" />}
-                        <input
+                        {editingCell === activeCell && isEditingFormula && <FormulaTextOverlay text={editValue} mono className="px-1 py-1 leading-4" />}
+                        {/* One-line textarea rather than an input, so Alt+Enter can add a
+                            line break here too; Enter/Tab/Esc/F4 go through handleKeyDown. */}
+                        <textarea
                             ref={formulaBarInputRef}
+                            rows={1}
+                            wrap="off"
                             className={cn(
-                                "w-full text-xs font-mono outline-none px-1 py-1",
+                                "block w-full text-xs leading-4 font-mono outline-none px-1 py-1 resize-none overflow-hidden",
                                 editingCell === activeCell && isEditingFormula && "bg-transparent text-transparent caret-slate-900"
                             )}
                             readOnly={readOnly}
                             value={editingCell === activeCell ? editValue : (cells[activeCell]?.value ?? "")}
-                            onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell); }}
+                            onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
                             onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                             onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") { commitEdit(); e.preventDefault(); }
-                                else if (e.key === "Escape") cancelEdit();
-                            }}
                             onBlur={commitEdit}
                             placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                         />
@@ -2939,7 +4204,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     className="overflow-auto outline-none select-none"
                     style={{ maxHeight: 560 / zoom, zoom }}
                     tabIndex={0}
-                    onKeyDown={handleGridKeyDown}
                     onMouseLeave={() => setHoveredCell(null)}
                 >
                 <div className="relative">
@@ -2956,7 +4220,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         isSelected={selectedMediaId === item.id}
                         onSelect={() => {
                             setSelectedMediaId(item.id);
-                            // Route Delete/Backspace through handleGridKeyDown, which
+                            // Route Delete/Backspace through handleKeyDown, which
                             // requires the grid container to hold focus — clicking a
                             // media item (a non-focusable div) wouldn't move focus there
                             // on its own.
@@ -2972,18 +4236,27 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 >
                     <thead>
                         <tr>
-                            <th className="sticky top-0 left-0 z-30 bg-slate-100 border border-slate-200 h-7" style={{ width: ROW_HEADER_WIDTH }} />
-                            {columns.map((c, colIdx) => (
+                            <th
+                                onClick={selectAllCells}
+                                className="sticky top-0 left-0 z-30 bg-slate-100 border border-slate-200 h-7 cursor-pointer hover:bg-slate-200 select-none"
+                                style={{ width: ROW_HEADER_WIDTH }}
+                                title="Select all cells"
+                            />
+                            {columns.map((c, colIdx) => hiddenColSet.has(colIdx) ? null : (
                                 <th
                                     key={c}
-                                    onClick={() => selectColumn(colIdx)}
+                                    onMouseDown={(e) => handleColHeaderMouseDown(colIdx, e)}
+                                    onMouseEnter={() => handleColHeaderMouseEnter(colIdx)}
                                     className={cn(
-                                        "sticky top-0 z-20 border border-slate-200 text-[11px] font-semibold h-7 cursor-pointer hover:bg-slate-200",
+                                        "sticky top-0 z-20 border border-slate-200 text-[11px] font-semibold h-7 cursor-pointer hover:bg-slate-200 select-none",
                                         (hoveredCell?.col === colIdx || (selectionBounds && colIdx >= selectionBounds.minCol && colIdx <= selectionBounds.maxCol))
                                             ? "bg-indigo-100 text-indigo-700"
-                                            : "bg-slate-100 text-slate-600"
+                                            : "bg-slate-100 text-slate-600",
+                                        // Marks where hidden columns sit, like Excel's double line.
+                                        hiddenColSet.has(colIdx - 1) && "border-l-2 border-l-indigo-400"
                                     )}
                                     style={{ width: widthForCol(colIdx) }}
+                                    title={hiddenColSet.has(colIdx - 1) ? "Hidden column(s) to the left — select across them and press Ctrl+Shift+0 to unhide" : undefined}
                                 >
                                     {c}
                                     <div
@@ -3007,14 +4280,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             return (
                             <tr key={rowIdx}>
                                 <td
-                                    onClick={() => selectRow(rowIdx)}
+                                    onMouseDown={(e) => handleRowHeaderMouseDown(rowIdx, e)}
+                                    onMouseEnter={() => handleRowHeaderMouseEnter(rowIdx)}
                                     className={cn(
-                                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200",
+                                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
                                         (hoveredCell?.row === rowIdx || (selectionBounds && rowIdx >= selectionBounds.minRow && rowIdx <= selectionBounds.maxRow))
                                             ? "bg-indigo-100 text-indigo-700"
-                                            : "bg-slate-100 text-slate-500"
+                                            : "bg-slate-100 text-slate-500",
+                                        manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
                                     )}
                                     style={{ width: ROW_HEADER_WIDTH, height: heightForRow(rowIdx) }}
+                                    title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
                                 >
                                     {rowIdx + 1}
                                     <div
@@ -3025,6 +4301,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     />
                                 </td>
                                 {columns.map((_, colIdx) => {
+                                    if (hiddenColSet.has(colIdx)) return null;
                                     const cellId = getCellId(rowIdx, colIdx);
                                     const merge = mergeMap[cellId];
                                     // Cells covered by a merge but not its anchor render nothing —
@@ -3038,16 +4315,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
                                     const isFillPreviewCell = fillPreviewCellIds.has(cellId);
                                     const conditionalBg = conditionalBgMap[cellId];
+                                    // Spans count only rendered rows/columns, so a merge that
+                                    // covers hidden ones doesn't push the rest of the row over.
                                     const mergeSpan = merge ? (() => {
                                         const s = parseCellRef(merge.start), e = parseCellRef(merge.end);
-                                        return { rowSpan: e.row - s.row + 1, colSpan: e.col - s.col + 1 };
+                                        let rowSpan = 0, colSpan = 0;
+                                        for (let r = s.row; r <= e.row; r++) if (!hiddenRowSet.has(r)) rowSpan++;
+                                        for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
+                                        return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
                                     })() : null;
                                     // Perimeter border for a multi-cell selection: only true on the
                                     // outer-facing sides of the selection rectangle, accounting for
                                     // this cell's merge span if it has one.
                                     const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
-                                    const spanRowEnd = rowIdx + (mergeSpan?.rowSpan || 1) - 1;
-                                    const spanColEnd = colIdx + (mergeSpan?.colSpan || 1) - 1;
+                                    const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
+                                    const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
                                     const selectionEdges = isMultiSelection && isInRange ? {
                                         top: rowIdx === selectionBounds.minRow,
                                         bottom: spanRowEnd === selectionBounds.maxRow,
@@ -3100,7 +4382,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                         <button
                                                             onMouseDown={(e) => e.stopPropagation()}
                                                             onClick={(e) => { e.stopPropagation(); openColumnFilter(filterTable, colIdx); }}
-                                                            className="absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 z-10 text-white/90 cursor-pointer"
+                                                            className={cn(
+                                                                "absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 z-10 cursor-pointer",
+                                                                // Plain AutoFilter ranges (Ctrl+Shift+L) keep the cell's own
+                                                                // header styling, so the icon can't assume a dark header.
+                                                                filterTable.styleKey ? "text-white/90" : "text-slate-500"
+                                                            )}
                                                             title="Filter this column"
                                                         >
                                                             {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" />}
@@ -3143,12 +4430,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                             )}
                                             {isEditing ? (
                                                 <div className="relative w-full h-full">
-                                                    {isEditingFormula && <FormulaTextOverlay text={editValue} className="px-1.5 text-xs" />}
-                                                    <input
+                                                    {isEditingFormula && <FormulaTextOverlay text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
+                                                    {/* A textarea (not an input) so Alt+Enter can add a line
+                                                        break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
+                                                        sheet-level key handler (handleKeyDown). */}
+                                                    <textarea
                                                     ref={cellEditInputRef}
-                                                    autoFocus
+                                                    autoFocus={editOriginRef.current !== "bar"}
+                                                    rows={1}
+                                                    wrap="off"
                                                     className={cn(
-                                                        "w-full h-full px-1.5 text-xs outline-none border-none relative",
+                                                        "block w-full h-full px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden",
                                                         // A solid background here would paint over the colored-reference
                                                         // overlay sitting behind this (otherwise text-transparent) input —
                                                         // the <td> beneath already supplies the white backdrop.
@@ -3158,41 +4450,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                     onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                                                     onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
                                                     onFocus={(e) => { activeEditInputRef.current = e.target; }}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
-                                                            commitEdit();
-                                                            const nextRow = Math.min(rowCount - 1, rowIdx + 1);
-                                                            const nextId = resolveToAnchor(getCellId(nextRow, colIdx));
-                                                            setActiveCell(nextId);
-                                                            setSelection({ start: nextId, end: nextId });
-                                                            // This input is about to unmount now that editing has ended, and
-                                                            // nothing else claims focus — without this, focus falls off the
-                                                            // page entirely and neither typing nor arrow-key navigation does
-                                                            // anything until the user manually clicks a cell again.
-                                                            gridContainerRef.current?.focus();
-                                                            e.preventDefault();
-                                                        } else if (e.key === "Tab") {
-                                                            commitEdit();
-                                                            const nextCol = Math.min(columnCount - 1, colIdx + 1);
-                                                            const nextId = resolveToAnchor(getCellId(rowIdx, nextCol));
-                                                            setActiveCell(nextId);
-                                                            setSelection({ start: nextId, end: nextId });
-                                                            gridContainerRef.current?.focus();
-                                                            e.preventDefault();
-                                                        } else if (e.key === "Escape") {
-                                                            cancelEdit();
-                                                            gridContainerRef.current?.focus();
-                                                        }
-                                                    }}
                                                     onBlur={commitEdit}
                                                     />
                                                 </div>
                                             ) : (
                                                 <div
-                                                    className={cn("px-1.5 text-xs", cell?.wrap ? "whitespace-normal break-words overflow-hidden" : "truncate")}
+                                                    className={cn("px-1.5 text-xs", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
                                                     style={cellStyleFor(cell)}
                                                 >
-                                                    {displayGrid[cellId] ?? ""}
+                                                    {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
                                                 </div>
                                             )}
                                             {isFillCorner && !isEditing && !readOnly && (
@@ -3232,7 +4498,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             {/* Sheet tabs + zoom controls */}
             <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none">
             <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
-                {Object.keys(sheets).map((name) => {
+                {visibleSheetNames.map((name) => {
                     const tabBadge = (
                         <div
                             className={cn(
@@ -3260,7 +4526,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             ) : (
                                 <span>{name}</span>
                             )}
-                            {!readOnly && Object.keys(sheets).length > 1 && renamingSheet !== name && (
+                            {!readOnly && visibleSheetNames.length > 1 && renamingSheet !== name && (
                                 <button
                                     className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
                                     onClick={(e) => { e.stopPropagation(); deleteSheet(name); }}
@@ -3284,6 +4550,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 <ContextMenuItem onClick={() => startRenameSheet(name)} className="cursor-pointer">
                                     <IconPencil className="w-3.5 h-3.5" /> Rename Sheet
                                 </ContextMenuItem>
+                                {visibleSheetNames.length > 1 && (
+                                    <ContextMenuItem onClick={() => hideSheet(name)} className="cursor-pointer">
+                                        <IconEyeOff className="w-3.5 h-3.5" /> Hide Sheet
+                                    </ContextMenuItem>
+                                )}
+                                {hiddenSheetNames.length > 0 && (
+                                    <ContextMenuItem onClick={() => setUnhideSheetOpen(true)} className="cursor-pointer">
+                                        <IconEye className="w-3.5 h-3.5" /> Unhide Sheet…
+                                    </ContextMenuItem>
+                                )}
                                 {Object.keys(sheets).length > 1 && (
                                     <>
                                         <ContextMenuSeparator />
@@ -3297,11 +4573,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     );
                 })}
                 {!readOnly && (
-                <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={addSheet} title="Add sheet">
+                <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={addSheet} title="Add sheet (Shift+F11)">
                     <IconPlus className="w-4 h-4" />
                 </button>
                 )}
             </div>
+
+            {/* Status bar: quick totals for a multi-cell selection */}
+            {selectionStats && (
+                <div className="hidden md:flex items-center gap-3 shrink-0 text-[11px] text-slate-600 tabular-nums">
+                    {selectionStats.average !== null && <span>Average: <b className="font-semibold">{formatStat(selectionStats.average)}</b></span>}
+                    <span>Count: <b className="font-semibold">{selectionStats.count}</b></span>
+                    {selectionStats.numericCount > 0 && selectionStats.numericCount !== selectionStats.count && <span>Numerical Count: <b className="font-semibold">{selectionStats.numericCount}</b></span>}
+                    {selectionStats.numericCount > 0 && <span>Min: <b className="font-semibold">{formatStat(selectionStats.min)}</b></span>}
+                    {selectionStats.numericCount > 0 && <span>Max: <b className="font-semibold">{formatStat(selectionStats.max)}</b></span>}
+                    {selectionStats.numericCount > 0 && <span>Sum: <b className="font-semibold">{formatStat(selectionStats.sum)}</b></span>}
+                </div>
+            )}
 
             {/* Zoom controls */}
             <div className="flex items-center gap-2 shrink-0 border-l border-slate-200 pl-3 text-slate-500 text-xs">
@@ -3375,6 +4663,43 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 defaultSourceSheet={activeSheetName}
                 defaultSourceRange={defaultPivotSourceRange}
                 onCreate={createPivotTable}
+            />
+
+            <CheatSheetDialog
+                open={cheatSheetOpen}
+                onOpenChange={(open) => { setCheatSheetOpen(open); if (!open) focusGrid(); }}
+                canInsert={!readOnly && !isSheetReadOnly}
+                onInsertFormula={(formula) => { setCheatSheetOpen(false); startEditing(activeCell, formula); }}
+            />
+            <GoToDialog
+                open={goToOpen}
+                onOpenChange={(open) => { setGoToOpen(open); if (!open) focusGrid(); }}
+                defaultValue={selection.start === selection.end ? activeCell : `${selection.start}:${selection.end}`}
+                onGo={goToReference}
+            />
+            <PasteSpecialDialog open={pasteSpecialOpen} onOpenChange={(open) => { setPasteSpecialOpen(open); if (!open) focusGrid(); }} onApply={applyPasteSpecial} />
+            <FormatCellsDialog
+                open={formatCellsOpen}
+                onOpenChange={(open) => { setFormatCellsOpen(open); if (!open) focusGrid(); }}
+                cell={activeCellData}
+                sampleValue={rawGrid[activeCell]}
+                numberFormats={NUMBER_FORMATS}
+                fontFamilies={FONT_FAMILIES}
+                fontSizes={FONT_SIZES}
+                borderWeights={BORDER_WEIGHTS}
+                onApply={applyFormatCellsPatch}
+            />
+            <InsertDeleteDialog
+                open={!!insertDeleteMode}
+                mode={insertDeleteMode}
+                onOpenChange={(open) => { if (!open) { setInsertDeleteMode(null); focusGrid(); } }}
+                onChoose={(kind) => runInsertDelete(insertDeleteMode, kind)}
+            />
+            <UnhideSheetDialog
+                open={unhideSheetOpen}
+                onOpenChange={setUnhideSheetOpen}
+                hiddenSheets={hiddenSheetNames}
+                onUnhide={unhideSheet}
             />
         </div>
     );

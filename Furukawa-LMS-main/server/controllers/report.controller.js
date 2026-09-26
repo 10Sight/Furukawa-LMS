@@ -102,25 +102,92 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             ).catch(err => console.error("logAudit(EXPORT_OPERATOR_OBSERVANCE_SHEET) failed:", err.message));
             break;
 
-        case "3-Day Monitoring Sheet":
-            const [tdRows] = await executeQuery(`SELECT * FROM three_day_monitoring WHERE studentId = ?`, [studentId]);
+        case "3-Day Monitoring Sheet": {
+            let targetStudentId = studentId || id;
+            if (targetStudentId) {
+                if (isNaN(targetStudentId) || isNaN(parseFloat(targetStudentId))) {
+                    const [uRows] = await executeQuery("SELECT id FROM users WHERE userName = ? OR slug = ? OR empId = ?", [targetStudentId, targetStudentId, targetStudentId]);
+                    if (uRows.length > 0) targetStudentId = uRows[0].id;
+                }
+            }
+            const [tdRows] = await executeQuery(
+                `SELECT TOP 1 * FROM three_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC`,
+                [targetStudentId]
+            );
             if (tdRows.length > 0) {
+                const parsedEntries = typeof tdRows[0].entries === 'string' ? JSON.parse(tdRows[0].entries || "{}") : (tdRows[0].entries || {});
                 formData = {
                     ...tdRows[0],
-                    entries: JSON.parse(tdRows[0].entries || "{}")
+                    entries: parsedEntries,
+                    gridData: parsedEntries,
+                    evaluation: typeof tdRows[0].evaluation === 'string' ? JSON.parse(tdRows[0].evaluation || "{}") : (tdRows[0].evaluation || {}),
+                    studentId: targetStudentId
                 };
+            } else {
+                const [uRows] = await executeQuery(`
+                    SELECT u.id, u.fullName, u.empId, u.departmentId, d.name as departmentName
+                    FROM users u
+                    LEFT JOIN departments d ON u.departmentId = d.id
+                    WHERE u.id = ?
+                `, [targetStudentId]);
+                const u = uRows[0];
+                formData = {
+                    studentId: targetStudentId,
+                    employeeName: u?.fullName || "",
+                    employeeCode: u?.empId || "",
+                    dept: u?.departmentName || "",
+                    gridData: {}
+                };
+                if (u?.departmentId) resolvedDeptId = u.departmentId;
             }
+            logAudit(req.user?.id, "EXPORT_THREE_DAY_MONITORING_SHEET",
+                { studentId: targetStudentId },
+                { resourceType: "ThreeDayMonitoring", resourceId: targetStudentId, req }
+            ).catch(err => console.error("logAudit(EXPORT_THREE_DAY_MONITORING_SHEET) failed:", err.message));
             break;
+        }
 
-        case "16-Day Monitoring Sheet":
-            const [sdRows] = await executeQuery(`SELECT * FROM sixteen_day_monitoring WHERE studentId = ?`, [studentId]);
+        case "16-Day Monitoring Sheet": {
+            let targetStudentId = studentId || id;
+            if (targetStudentId) {
+                if (isNaN(targetStudentId) || isNaN(parseFloat(targetStudentId))) {
+                    const [uRows] = await executeQuery("SELECT id FROM users WHERE userName = ? OR slug = ? OR empId = ?", [targetStudentId, targetStudentId, targetStudentId]);
+                    if (uRows.length > 0) targetStudentId = uRows[0].id;
+                }
+            }
+            const [sdRows] = await executeQuery(
+                `SELECT TOP 1 * FROM sixteen_day_monitorings WHERE studentId = ? ORDER BY attemptNumber DESC, createdAt DESC`,
+                [targetStudentId]
+            );
             if (sdRows.length > 0) {
                 formData = {
                     ...sdRows[0],
-                    monitoringData: JSON.parse(sdRows[0].monitoringData || "{}")
+                    gridData: typeof sdRows[0].gridData === 'string' ? JSON.parse(sdRows[0].gridData || "{}") : (sdRows[0].gridData || {}),
+                    studentId: targetStudentId
                 };
+            } else {
+                const [uRows] = await executeQuery(`
+                    SELECT u.id, u.fullName, u.empId, u.departmentId, d.name as departmentName
+                    FROM users u
+                    LEFT JOIN departments d ON u.departmentId = d.id
+                    WHERE u.id = ?
+                `, [targetStudentId]);
+                const u = uRows[0];
+                formData = {
+                    studentId: targetStudentId,
+                    employeeName: u?.fullName || "",
+                    employeeCode: u?.empId || "",
+                    dept: u?.departmentName || "",
+                    gridData: {}
+                };
+                if (u?.departmentId) resolvedDeptId = u.departmentId;
             }
+            logAudit(req.user?.id, "EXPORT_SIXTEEN_DAY_MONITORING_SHEET",
+                { studentId: targetStudentId },
+                { resourceType: "SixteenDayMonitoring", resourceId: targetStudentId, req }
+            ).catch(err => console.error("logAudit(EXPORT_SIXTEEN_DAY_MONITORING_SHEET) failed:", err.message));
             break;
+        }
 
         case "10-Cycle Check Sheet":
             const [tcRows] = await executeQuery(`SELECT * FROM ten_cycle_checks WHERE id = ?`, [id]);
@@ -133,11 +200,11 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             break;
 
         case "Skill Matrix Sheet":
-            const [smRows] = await executeQuery(`SELECT * FROM skill_matrix WHERE departmentId = ?`, [departmentId]);
+            const [smRows] = await executeQuery(`SELECT * FROM skill_matrices WHERE department = ? OR id = ?`, [departmentId, id]);
             if (smRows.length > 0) {
                 formData = {
                     ...smRows[0],
-                    matrixData: JSON.parse(smRows[0].matrixData || "{}")
+                    entries: typeof smRows[0].entries === 'string' ? JSON.parse(smRows[0].entries || "[]") : (smRows[0].entries || [])
                 };
             }
             break;

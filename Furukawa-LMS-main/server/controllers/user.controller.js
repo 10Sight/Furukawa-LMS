@@ -3092,9 +3092,20 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
       params.push(todayStr);
       break;
 
-    case 'handover-candidate':
+    case 'handover-candidate': {
       // Handover: isTemporary=0 (flipped by handover approval), NOT LEFT
-      // Must exist in handover_sheets with APPROVE status
+      // Must exist in handover_sheets with APPROVE status in the selected date range
+      let hsDateClause = "";
+      const hsDateParams = [];
+      if (req.query.startDate) {
+        hsDateClause += " AND hs.date >= ?";
+        hsDateParams.push(req.query.startDate);
+      }
+      if (req.query.endDate) {
+        hsDateClause += " AND hs.date <= ?";
+        hsDateParams.push(req.query.endDate);
+      }
+
       whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
       whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
       whereClauses.push(`EXISTS (
@@ -3103,8 +3114,11 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
         CROSS APPLY OPENJSON(hs.entries) as entry
         WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
           AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
+          ${hsDateClause}
       )`);
+      params.push(...hsDateParams);
       break;
+    }
 
     case 'left':
       // Left: isTemporary=1, status=LEFT
@@ -3151,14 +3165,17 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     params.push(departmentId);
   }
 
-  if (req.query.startDate) {
-    whereClauses.push("u.joiningDate >= ?");
-    params.push(req.query.startDate);
-  }
+  // Only apply joiningDate filter if NOT on the handover-candidate tab (which is filtered by hs.date)
+  if (activeTab !== 'handover-candidate') {
+    if (req.query.startDate) {
+      whereClauses.push("u.joiningDate >= ?");
+      params.push(req.query.startDate);
+    }
 
-  if (req.query.endDate) {
-    whereClauses.push("u.joiningDate <= ?");
-    params.push(req.query.endDate);
+    if (req.query.endDate) {
+      whereClauses.push("u.joiningDate <= ?");
+      params.push(req.query.endDate);
+    }
   }
 
   const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;

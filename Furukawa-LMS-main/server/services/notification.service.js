@@ -368,28 +368,28 @@ class NotificationService {
                 await this._fillOJTEvaluationSheet(worksheet, formData);
                 break;
             case "Skill Matrix Certificate Sheet":
-                this._fillCertificateSheet(worksheet, formData);
+                await this._fillCertificateSheet(worksheet, formData);
                 break;
             case "Operator Observance Check Sheet":
-                this._fillObservanceSheet(worksheet, formData);
+                await this._fillObservanceSheet(worksheet, formData);
                 break;
             case "3-Day Monitoring Sheet":
-                this._fillThreeDaySheet(worksheet, formData);
+                await this._fillThreeDaySheet(worksheet, formData);
                 break;
             case "16-Day Monitoring Sheet":
-                this._fillSixteenDaySheet(worksheet, formData);
+                await this._fillSixteenDaySheet(worksheet, formData);
                 break;
             case "10-Cycle Check Sheet":
-                this._fillTenCycleSheet(worksheet, formData);
+                await this._fillTenCycleSheet(worksheet, formData);
                 break;
             case "Skill Matrix Sheet":
-                this._fillSkillMatrixSheet(worksheet, formData);
+                await this._fillSkillMatrixSheet(worksheet, formData);
                 break;
             case "Daily Production Report Sheet":
-                this._fillDPRSheet(worksheet, formData);
+                await this._fillDPRSheet(worksheet, formData);
                 break;
             case "Daily 5M Recording Sheet":
-                this._fillDaily5MRecordingSheet(worksheet, formData);
+                await this._fillDaily5MRecordingSheet(worksheet, formData);
                 break;
             case "Associates Headcount Report":
                 await this._fillAssociatesHeadcountSheet(worksheet, departmentId, formData);

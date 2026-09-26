@@ -39,6 +39,18 @@ export const exportToExcel = async (formName, params = {}) => {
         toast.success(`${formName} exported successfully!`, { id: toastId });
     } catch (error) {
         console.error('Export Error:', error);
-        toast.error(`Failed to export ${formName}. Please try again.`, { id: toastId });
+        let errorMsg = `Failed to export ${formName}. Please try again.`;
+        if (error.response?.data instanceof Blob) {
+            try {
+                const text = await error.response.data.text();
+                const json = JSON.parse(text);
+                if (json?.message) errorMsg = json.message;
+            } catch (e) {
+                // Ignore blob parse errors
+            }
+        } else if (error.response?.data?.message) {
+            errorMsg = error.response.data.message;
+        }
+        toast.error(errorMsg, { id: toastId });
     }
 };

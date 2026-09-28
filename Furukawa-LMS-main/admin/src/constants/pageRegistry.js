@@ -362,6 +362,6 @@ export const PAGE_REGISTRY = [
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
-    { key: "daily-meeting", label: "Daily Meeting", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
+    { key: "daily-meeting", label: "Management Information System", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
     { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

@@ -101,7 +101,7 @@ function CreateMeetingDialog({ open, onOpenChange, onCreate, isCreating }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>New Daily Morning Meeting</DialogTitle>
+                    <DialogTitle>New Management Information System</DialogTitle>
                     <DialogDescription>Timestamped to right now — the date and time can't be changed.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -495,11 +495,11 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     return (
         <div className="space-y-3 p-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Daily Morning Meetings</div>
+                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Management Information System</div>
                 <div className="flex items-center gap-2">
                     {canCreate && (
                         <Button size="sm" onClick={() => setCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
-                            <IconPlus className="w-4 h-4" /> Daily Morning Meeting
+                            <IconPlus className="w-4 h-4" /> Management Information System
                         </Button>
                     )}
                 </div>
@@ -507,8 +507,8 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
 
             <Tabs value={activeTab} onValueChange={(val) => updateParams({ mtab: val === "all" ? "all" : null })} className="w-full">
                 <TabsList className="bg-slate-100/80 p-1 rounded-lg h-auto border border-slate-200/50 w-fit">
-                    <TabsTrigger value="month" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">This Month's Daily Meetings</TabsTrigger>
-                    <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Daily Meetings</TabsTrigger>
+                    <TabsTrigger value="month" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">This Month's Management Information System</TabsTrigger>
+                    <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Management Information System</TabsTrigger>
                 </TabsList>
                 <TabsContent value="month" className="mt-3">
                     <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
@@ -569,7 +569,7 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
                 shutter,
                 sections: selectedSections
             }).unwrap();
-            toast.success("Daily Meeting settings saved successfully!");
+            toast.success("Management Information System settings saved successfully!");
         } catch (err) {
             toast.error("Failed to save settings. Please try again.");
         }
@@ -734,7 +734,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 <p className="text-xs text-slate-500 max-w-xs text-center mt-1">
                     {isPreview
                         ? "Enable the shutter or select sections in the panel above to display them."
-                        : "Daily Meeting spaces are not currently configured for this department's sections. Please contact an Administrator."}
+                        : "Management Information System spaces are not currently configured for this department's sections. Please contact an Administrator."}
                 </p>
             </div>
         );
@@ -780,7 +780,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                         <Card className="border-slate-200/70 shadow-sm hover:shadow-md transition-shadow">
                             <CardHeader className="pb-3 border-b border-slate-100 bg-white">
                                 <CardTitle className="text-lg font-bold text-slate-800">{sec.name}</CardTitle>
-                                <CardDescription>Section ID: {sec.id || sec._id} • Daily Standup Meeting Sheet</CardDescription>
+                                <CardDescription>Section ID: {sec.id || sec._id} • Management Information System Sheet</CardDescription>
                             </CardHeader>
                             <CardContent className="p-0 bg-white">
                                 <SectionMeetingSpace sectionId={String(sec.id || sec._id)} departmentId={departmentId} />
@@ -834,7 +834,7 @@ export default function DailyMeeting() {
                         <IconCalendar className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900 leading-tight">Daily Meeting</h1>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900 leading-tight">Management Information System</h1>
                         <p className="text-sm text-slate-500 font-medium">Browse daily standup and metrics by department and section</p>
                     </div>
                 </div>
@@ -847,7 +847,7 @@ export default function DailyMeeting() {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700">Access Denied</h3>
                     <p className="text-sm text-slate-500 max-w-sm text-center mt-2 leading-relaxed">
-                        You do not have permission to view Daily Meetings. Contact an administrator if you believe this is a mistake.
+                        You do not have permission to view Management Information System. Contact an administrator if you believe this is a mistake.
                     </p>
                 </div>
             ) : isLoading ? (

@@ -178,6 +178,8 @@ const SYSTEM_PERMISSIONS = {
   TEN_CYCLE_DELETE: "ten_cycle:delete",
   TEN_CYCLE_EDIT_LAYOUT: "ten_cycle:edit_layout",
   TEN_CYCLE_EDIT_APPROVED: "ten_cycle:edit_approved",
+  TEN_CYCLE_SELECT_PAST_DATE: "ten_cycle:select_past_date",
+  TEN_CYCLE_SELECT_FUTURE_DATE: "ten_cycle:select_future_date",
 
   // DOJO Hiring Management
   DOJO_HIRING_CREATE: "dojo_hiring:create",
@@ -627,7 +629,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_VERIFY, name: "Verify 10-Cycle Sheet", description: "Verify 10-cycle sheets (Co-ordinator sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_LAYOUT, name: "Edit 10-Cycle Sheet Layout", description: "Customize 10-cycle sheet headers, questions, and checking items, and view layout change history" },
-        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_APPROVED, name: "Edit Approved 10-Cycle Sheet", description: "Edit a 10-cycle sheet after it has been verified or approved" }
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_APPROVED, name: "Edit Approved 10-Cycle Sheet", description: "Edit a 10-cycle sheet after it has been verified or approved" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in 10-cycle sheet row entries (backdating)" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_SELECT_FUTURE_DATE, name: "Select Future Date", description: "Allows selecting dates after today in 10-cycle sheet row entries (future planning)" }
       ],
       "DOJO Hiring": [
         { id: SYSTEM_PERMISSIONS.DOJO_HIRING_READ, name: "View DOJO Hiring", description: "View the list of temporary candidates and their status" },

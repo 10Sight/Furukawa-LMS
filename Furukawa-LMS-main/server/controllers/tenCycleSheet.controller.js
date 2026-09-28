@@ -14,6 +14,32 @@ import RevisionRecordService from "../services/revisionRecord.service.js";
 
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 
+// Row dates are restricted to today unless the user holds past/future date permissions.
+// Only rows whose date is new or changed are checked, so previously saved rows never block a re-save.
+const validateEntryDates = (entries, existingEntries, user) => {
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+    const canSelectPastDate = isAdmin || hasAnyPermission(user, ['ten_cycle:manage', 'ten_cycle:select_past_date']);
+    const canSelectFutureDate = isAdmin || hasAnyPermission(user, ['ten_cycle:manage', 'ten_cycle:select_future_date']);
+    if (canSelectPastDate && canSelectFutureDate) return;
+
+    const toDateStr = (value) => String(value || "").split('T')[0];
+    const existingDates = new Map((existingEntries || []).map(row => [row?.id, toDateStr(row?.date)]));
+    // Local date (matches the client's en-CA "today"), not UTC
+    const todayStr = new Date().toLocaleDateString('en-CA');
+
+    entries.forEach((row, i) => {
+        const entryDateStr = toDateStr(row?.date);
+        if (!entryDateStr || existingDates.get(row?.id) === entryDateStr) return;
+
+        if (!canSelectPastDate && entryDateStr < todayStr) {
+            throw new ApiError(`Row ${i + 1}: You do not have permission to select past dates (${entryDateStr}).`, 403);
+        }
+        if (!canSelectFutureDate && entryDateStr > todayStr) {
+            throw new ApiError(`Row ${i + 1}: You do not have permission to select future dates (${entryDateStr}).`, 403);
+        }
+    });
+};
+
 export const listTenCycleSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
@@ -146,6 +172,8 @@ export const updateTenCycleSheetById = asyncHandler(async (req, res) => {
     }
 
     const normalizedEntries = Array.isArray(entries) ? entries : [];
+
+    validateEntryDates(normalizedEntries, existing.entries, req.user);
 
     // Empty submission guard: every row must have its key fields filled
     if (isSubmit) {

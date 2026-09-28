@@ -2084,10 +2084,10 @@ export const getStudentHandoverHistory = asyncHandler(async (req, res) => {
         ORDER BY hs.date DESC, hs.createdAt DESC
     `, [studentId]);
 
-    const formattedRows = rows.map(row => ({
-        ...row,
-        date: row.date instanceof Date ? formatLocalDate(row.date) : row.date
-    }));
+    const formattedRows = rows.map(row => {
+        const date = row.date instanceof Date ? formatLocalDate(row.date) : row.date;
+        return { ...row, date, handoverDate: date };
+    });
 
     res.status(200).json(
         new ApiResponse(200, formattedRows, "Student handover history fetched successfully")

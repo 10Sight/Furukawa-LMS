@@ -321,6 +321,11 @@ export const formatUser = (u) => {
     expectedHandover: u.expectedHandover instanceof Date
       ? formatLocalDate(u.expectedHandover)
       : (u.expectedHandover || null),
+    ...(u.actualHandoverDate !== undefined ? {
+      handoverDate: u.actualHandoverDate instanceof Date
+        ? formatLocalDate(u.actualHandoverDate)
+        : (u.actualHandoverDate || null),
+    } : {}),
     ...(marksPercent !== undefined ? { marks: marksPercent } : {}),
     contractor: u.contractorName || u.contractor || "",
     avatar: parseJSON(u.avatar),
@@ -987,7 +992,14 @@ export const getUserById = asyncHandler(async (req, res) => {
            d.id as actualDeptId, d.deptName, d.deptInstructor,
            s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
            cr.name as customRoleName, cr.color as customRoleColor, cr.allowedPages as customRoleAllowedPages,
-           c_res.contractorName
+           c_res.contractorName,
+           (
+             SELECT MIN(hs.[date])
+             FROM handover_sheets hs
+             CROSS APPLY OPENJSON(hs.entries) AS entry
+             WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+               AND JSON_VALUE(entry.value, '$.interviewStatus') IN ('APPROVE', 'APPROVED')
+           ) AS actualHandoverDate
     FROM users u
     ${getHierarchyJoinSQL}
     LEFT JOIN custom_roles cr ON u.customRoleId = cr.id
@@ -3088,14 +3100,24 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = (page - 1) * limit;
 
-  let whereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
-  let params = [];
-
   const activeTab = req.query.activeTab || 'all';
+
+  // Handover is a historical event: users who were handed over stay listed even if
+  // they are later marked LEFT or soft-deleted, so skip the isDeleted filter there.
+  let whereClauses = activeTab === 'handover-candidate' ? [] : ["(u.isDeleted = 0 OR u.isDeleted IS NULL)"];
+  let params = [];
 
   // Current date in Asia/Kolkata, formatted as YYYY-MM-DD, so "today" matches
   // India local time regardless of the DB server's own timezone (e.g. UTC).
   const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  // Handover list and "Total Handover" card both default to the current month
+  // when no date filter is applied, so the tab rows always match the card count.
+  const formatISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const hasDateFilter = !!(req.query.startDate || req.query.endDate);
+  const now = new Date();
+  const monthStartStr = formatISO(new Date(now.getFullYear(), now.getMonth(), 1));
+  const monthEndStr = formatISO(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 
   switch (activeTab) {
     case 'today':
@@ -3115,8 +3137,8 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
       break;
 
     case 'handover-candidate': {
-      // Handover: isTemporary=0 (flipped by handover approval), NOT LEFT
-      // Must exist in handover_sheets with APPROVE status in the selected date range
+      // Handover: must exist in handover_sheets with APPROVE status in the selected date range.
+      // Current status (LEFT) / isTemporary / isDeleted are intentionally ignored.
       let hsDateClause = "";
       const hsDateParams = [];
       if (req.query.startDate) {
@@ -3127,9 +3149,11 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
         hsDateClause += " AND hs.date <= ?";
         hsDateParams.push(req.query.endDate);
       }
+      if (!hasDateFilter) {
+        hsDateClause += " AND hs.date >= ? AND hs.date <= ?";
+        hsDateParams.push(monthStartStr, monthEndStr);
+      }
 
-      whereClauses.push("(u.isTemporary = 0 OR u.isTemporary IS NULL)");
-      whereClauses.push("(u.status != 'LEFT' OR u.status IS NULL)");
       whereClauses.push(`EXISTS (
         SELECT 1
         FROM handover_sheets hs
@@ -3233,7 +3257,8 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
     ${statsWhereSQL}
   `, [todayStr, todayStr, ...statsParams]);
 
-  let handoverWhereClauses = ["(u.isDeleted = 0 OR u.isDeleted IS NULL)", "(u.status != 'LEFT' OR u.status IS NULL)"];
+  // No isDeleted / LEFT filter: the count must not drop when a handed-over user later leaves.
+  let handoverWhereClauses = ["1 = 1"];
   let handoverParams = [];
   if (departmentId) {
     handoverWhereClauses.push("d.id = ?");
@@ -3251,14 +3276,9 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
 
   // Default to the current month when no date filter is applied, so the
   // "Total Handover" card reflects this month's approvals instead of all-time.
-  if (!req.query.startDate && !req.query.endDate) {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const formatISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
+  if (!hasDateFilter) {
     handoverDateFilterClause += " AND hs.date >= ? AND hs.date <= ?";
-    handoverParams.push(formatISO(startOfMonth), formatISO(endOfMonth));
+    handoverParams.push(monthStartStr, monthEndStr);
   }
 
   const [handoverData] = await executeQuery(`

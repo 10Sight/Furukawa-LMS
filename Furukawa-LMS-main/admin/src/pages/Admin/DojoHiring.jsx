@@ -129,6 +129,9 @@ const normalizeStatus = (status) => {
     return s;
 };
 
+// Soft-deleted users only appear in the Handover tab (kept for history) and are read-only there.
+const isUserDeleted = (u) => u.isDeleted === 1 || u.isDeleted === true || String(u.isDeleted) === '1';
+
 const formatDuration = (totalSeconds) => {
     const seconds = Math.max(0, Math.round(totalSeconds || 0));
     const mins = Math.floor(seconds / 60);
@@ -446,7 +449,8 @@ const DojoHiring = () => {
 
     const allUsers = tempUsersData?.data?.users || [];
     const totalPages = tempUsersData?.data?.totalPages || 1;
-    const isAllSelected = allUsers.length > 0 && selectedRows.size === allUsers.length;
+    const selectableUsers = allUsers.filter(u => !isUserDeleted(u));
+    const isAllSelected = selectableUsers.length > 0 && selectedRows.size === selectableUsers.length;
 
     const [goToPageInput, setGoToPageInput] = useState("");
 
@@ -492,7 +496,7 @@ const DojoHiring = () => {
         if (isAllSelected) {
             setSelectedRows(new Set());
         } else {
-            setSelectedRows(new Set(allUsers.map(u => u.id)));
+            setSelectedRows(new Set(selectableUsers.map(u => u.id)));
         }
     };
 
@@ -1446,6 +1450,7 @@ const DojoHiring = () => {
                                                             <TableCell className="pl-4 w-12" onClick={(e) => e.stopPropagation()}>
                                                                 <Checkbox
                                                                     checked={selectedRows.has(user.id)}
+                                                                    disabled={isUserDeleted(user)}
                                                                     onCheckedChange={(checked) => {
                                                                         setSelectedRows(prev => {
                                                                             const next = new Set(prev);
@@ -1466,6 +1471,11 @@ const DojoHiring = () => {
                                                                     </Avatar>
                                                                     <div>
                                                                         <div className="font-bold text-slate-900 leading-tight">{user.fullName}</div>
+                                                                        {isUserDeleted(user) && (
+                                                                            <Badge variant="outline" className="mt-1 text-[10px] font-bold text-slate-500 border-slate-300 bg-slate-100 px-1.5 py-0">
+                                                                                DELETED
+                                                                            </Badge>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </TableCell>
@@ -1497,7 +1507,7 @@ const DojoHiring = () => {
                                                                 <Select
                                                                     value={normalizeStatus(user.status)}
                                                                     onValueChange={(newStatus) => handleQuickStatusChange(user, newStatus)}
-                                                                    disabled={!hasPermission("user:change_status") && !canUpdate}
+                                                                    disabled={isUserDeleted(user) || (!hasPermission("user:change_status") && !canUpdate)}
                                                                 >
                                                                     <SelectTrigger className="w-[130px] border-0 shadow-none p-0 h-auto focus:ring-0 [&>svg]:hidden">
                                                                         {getStatusBadge(user.status)}
@@ -1556,7 +1566,7 @@ const DojoHiring = () => {
                                                             </TableCell>
                                                             <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
                                                                 <div className="flex justify-end gap-1">
-                                                                    {canUpdate && (
+                                                                    {!isUserDeleted(user) && canUpdate && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
@@ -1567,7 +1577,7 @@ const DojoHiring = () => {
                                                                             <IconPencil className="w-4 h-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canUpdate && (user.isTemporary !== 1 && user.isTemporary !== true && String(user.isTemporary) !== '1') && (
+                                                                    {!isUserDeleted(user) && canUpdate && (user.isTemporary !== 1 && user.isTemporary !== true && String(user.isTemporary) !== '1') && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
@@ -1578,7 +1588,7 @@ const DojoHiring = () => {
                                                                             <IconCalendar className="w-4 h-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canDelete && (
+                                                                    {!isUserDeleted(user) && canDelete && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"

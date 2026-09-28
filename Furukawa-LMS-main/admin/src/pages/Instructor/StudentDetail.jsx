@@ -57,7 +57,9 @@ import {
     IconPhone,
     IconRefresh,
     IconClipboardCheck,
+    IconShieldCheck,
 } from "@tabler/icons-react";
+import { displayDate } from "@/utils/dateUtils";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -480,6 +482,26 @@ const StudentDetail = () => {
                                 </p>
                             </div>
                         </div>
+                        {(student.handoverDate || student.expectedHandover) && (
+                            <div className="flex items-center gap-2">
+                                <IconShieldCheck className={`h-4 w-4 ${student.handoverDate ? "text-emerald-600" : "text-muted-foreground"}`} />
+                                <div>
+                                    <p className="text-sm font-medium">Handover Date</p>
+                                    <p className={`text-sm ${student.handoverDate ? "text-emerald-700 font-medium" : "text-muted-foreground"}`}>
+                                        {student.handoverDate ? (displayDate(student.handoverDate) || "—") : "Pending"}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                        {student.expectedHandover && (
+                            <div className="flex items-center gap-2">
+                                <IconCalendar className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                    <p className="text-sm font-medium">Expected Handover</p>
+                                    <p className="text-sm text-indigo-600">{displayDate(student.expectedHandover) || "—"}</p>
+                                </div>
+                            </div>
+                        )}
                         {student.department && (
                             <div className="flex items-center gap-2">
                                 <IconSchool className="h-4 w-4 text-muted-foreground" />

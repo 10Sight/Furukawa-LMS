@@ -179,6 +179,14 @@ const StudentDetail = () => {
   const leftHrReason = student?.reasonOfLeavingByHr || student?.reasonOfLeaving || "";
   const leftDeptName = student?.leftDepartmentName || student?.deptName || "";
 
+  // Actual handover = earliest approved handover sheet entry. The server resolves it on the user;
+  // the history (loaded with the Handover tab, sorted newest first) is only a fallback.
+  const handoverDate = student?.handoverDate || handoverHistory
+    .filter((h) => ["APPROVE", "APPROVED"].includes(String(h.interviewStatus || "").toUpperCase()))
+    .map((h) => h.handoverDate || h.date)
+    .filter(Boolean)
+    .sort()[0] || null;
+
   const studentDepartmentId = typeof student?.department === 'object'
     ? (student.department?._id || student.department?.id)
     : student?.department;
@@ -775,6 +783,15 @@ const StudentDetail = () => {
                 </div>
               </div>
             )}
+            {handoverDate && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Handover Date</label>
+                <div className="flex items-center gap-2 text-sm">
+                  <IconShieldCheck className="h-4 w-4 text-emerald-600" />
+                  <span className="font-medium text-emerald-700">{safeLocaleDate(handoverDate)}</span>
+                </div>
+              </div>
+            )}
             {(student.leavingDate || student.status === "LEFT") && (
               <>
                 <div className="flex flex-col gap-1">
@@ -951,6 +968,14 @@ const StudentDetail = () => {
                     <div className="group">
                       <p className="text-[10px] text-muted-foreground mb-0.5">Expected Handover</p>
                       <p className="text-sm font-medium text-indigo-600">{safeLocaleDate(student.expectedHandover)}</p>
+                    </div>
+                  )}
+                  {(handoverDate || student.expectedHandover) && (
+                    <div className="group">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Handover Date</p>
+                      <p className={`text-sm font-medium ${handoverDate ? "text-emerald-700" : "text-muted-foreground"}`}>
+                        {handoverDate ? safeLocaleDate(handoverDate) : "Pending"}
+                      </p>
                     </div>
                   )}
                   {(student.leavingDate || student.status === "LEFT") && (
@@ -2007,7 +2032,7 @@ const StudentDetail = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-50/50">
-                      <TableHead className="text-xs font-bold">Date</TableHead>
+                      <TableHead className="text-xs font-bold">Handover Date</TableHead>
                       <TableHead className="text-xs font-bold">Department</TableHead>
                       <TableHead className="text-xs font-bold">Section</TableHead>
                       <TableHead className="text-xs font-bold">Marks</TableHead>
@@ -2022,7 +2047,7 @@ const StudentDetail = () => {
                     {handoverHistory.map((entry) => (
                       <TableRow key={`${entry.id}-${entry.date}`} className="hover:bg-slate-50/50">
                         <TableCell className="text-xs text-slate-600 whitespace-nowrap">
-                          {entry.date ? safeLocaleDate(entry.date) : "—"}
+                          {(entry.handoverDate || entry.date) ? safeLocaleDate(entry.handoverDate || entry.date) : "—"}
                         </TableCell>
                         <TableCell className="text-xs font-medium">{entry.departmentName || "—"}</TableCell>
                         <TableCell className="text-xs text-slate-500">{entry.sectionName || "—"}</TableCell>

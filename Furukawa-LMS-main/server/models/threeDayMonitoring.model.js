@@ -67,6 +67,32 @@ class ThreeDayMonitoring {
             await migrationHelper.ensureColumnExists('three_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('three_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
         }
+
+        // Indexes for the 3-Day stack list (listThreeDayMonitoring) and latest-attempt lookups.
+        // Failures are logged, not thrown, so a slow first-time build never blocks startup.
+        const indexes = [
+            // Latest attempt per student (ROW_NUMBER ... ORDER BY attemptNumber DESC, createdAt DESC)
+            // and findByStudentId's TOP 1 — covers the list's columns so no key lookups are needed.
+            {
+                table: 'three_day_monitorings',
+                name: 'idx_3day_student_attempt',
+                ddl: `CREATE INDEX idx_3day_student_attempt ON three_day_monitorings(studentId, attemptNumber DESC, createdAt DESC)
+                    INCLUDE (status, checkedBy, verifiedBy, approvedBy, updatedAt)`,
+            },
+            // The list's up-front department/section user filter.
+            {
+                table: 'users',
+                name: 'idx_users_dept_sec_active',
+                ddl: 'CREATE INDEX idx_users_dept_sec_active ON users(departmentId, sectionId, isDeleted, status)',
+            },
+        ];
+        for (const idx of indexes) {
+            try {
+                await migrationHelper.ensureIndexExists(idx.table, idx.name, idx.ddl, { longRunning: true });
+            } catch (err) {
+                console.error(`Failed to create index ${idx.name}:`, err.message);
+            }
+        }
     }
 
     static async findByStudentId(studentId) {

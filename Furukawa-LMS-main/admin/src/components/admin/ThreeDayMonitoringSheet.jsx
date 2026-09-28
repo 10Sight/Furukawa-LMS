@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
@@ -38,6 +39,9 @@ import {
     ROW_TYPES,
 } from "@/utils/threeDayMonitoringConfig";
 
+// "Department / Section" label for the sheet header, skipping whichever part is missing.
+const combinedDept = (departmentName, sectionName) =>
+    [departmentName, sectionName].filter(Boolean).join(' / ');
 
 const ThreeDayMonitoringSheet = ({
     studentId,
@@ -46,7 +50,8 @@ const ThreeDayMonitoringSheet = ({
     sectionName = "",
     readOnly = false,
     canEditConfig = false,
-    initialForceNewAttempt = false
+    initialForceNewAttempt = false,
+    headerActionsContainer = null,
 }) => {
     // No sectionId prop reaches this component today — department-level scoping
     // only; the backend still resolves the student's own section at freeze time.
@@ -59,7 +64,7 @@ const ThreeDayMonitoringSheet = ({
         employeeName: "",
         employeeCode: "",
         processName: "",
-        dept: sectionName || departmentName || "",
+        dept: combinedDept(departmentName, sectionName),
         handoverDate: "",
         trgResult: "",
         workingWith: "",
@@ -162,7 +167,9 @@ const ThreeDayMonitoringSheet = ({
                     employeeName: data.employeeName || prev.employeeName,
                     employeeCode: data.employeeCode || prev.employeeCode,
                     processName: data.processName || prev.processName,
-                    dept: sectionName || data.dept || departmentName || "",
+                    // The operator's own dept/section from the server wins over the props,
+                    // which reflect the viewer's filter selection.
+                    dept: data.dept || combinedDept(data.departmentName || departmentName, data.sectionName || sectionName),
                     lineName: data.lineName || prev.lineName,
                 }));
 
@@ -298,7 +305,7 @@ const ThreeDayMonitoringSheet = ({
                     employeeName: data.employeeName || prev.employeeName,
                     employeeCode: data.employeeCode || prev.employeeCode,
                     processName: data.processName || prev.processName,
-                    dept: data.dept || prev.dept,
+                    dept: data.dept || combinedDept(data.departmentName, data.sectionName) || prev.dept,
                     lineName: data.lineName || prev.lineName,
                     handoverDate: data.handoverDate || "",
                     trgResult: data.trgResult || "",
@@ -924,8 +931,113 @@ const ThreeDayMonitoringSheet = ({
     const days = ['day1', 'day2', 'day3'];
     const allDaysComplete = [1, 2, 3].every(isDayColumnComplete);
 
+    // Action controls — rendered inline, or portaled into `headerActionsContainer` when the
+    // parent provides one (full-screen view's sticky header).
+    const attemptHistoryControl = historyAttempts.length > 0 && (
+        <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
+            <select
+                className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
+                value={selectedAttemptId}
+                onChange={(e) => handleAttemptChange(e.target.value)}
+            >
+                {historyAttempts.map((att) => (
+                    <option key={att.id} value={att.id}>
+                        Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
+                    </option>
+                ))}
+                {isForceNewAttempt && (
+                    <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
+                )}
+            </select>
+        </div>
+    );
+
+    const daysStatusBadge = studentId && !isDesignMode && (
+        <div className="flex items-center">
+            {allDaysComplete ? (
+                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 flex items-center py-1.5 px-3">
+                    <CheckCircle2 className="h-3 w-3" /> All 3 Days Complete
+                </Badge>
+            ) : (
+                <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-50 gap-1 flex items-center py-1.5 px-3">
+                    <XCircle className="h-3 w-3 text-amber-500" /> 3 Days Incomplete
+                </Badge>
+            )}
+        </div>
+    );
+
+    const buttonSize = headerActionsContainer ? "h-9 gap-2" : "h-8 gap-1.5 text-[11px]";
+    const iconSize = headerActionsContainer ? "h-4 w-4" : "h-3.5 w-3.5";
+
+    const primaryActionButtons = (
+        <div className={headerActionsContainer ? "flex items-center gap-2" : "flex gap-1 border-l pl-2 border-gray-200"}>
+            {status !== 'Submitted' && (
+                <Button
+                    variant="secondary"
+                    size={headerActionsContainer ? "default" : "sm"}
+                    onClick={() => handleSave("Draft")}
+                    disabled={saving || isDesignMode}
+                    className={buttonSize}
+                >
+                    {saving ? <Loader2 className={cn(iconSize, "animate-spin")} /> : <Save className={iconSize} />}
+                    Save Draft
+                </Button>
+            )}
+
+            <Button
+                variant={status === 'Submitted' ? "outline" : "default"}
+                size={headerActionsContainer ? "default" : "sm"}
+                onClick={() => handleSave("Submitted")}
+                disabled={saving || isDesignMode || !allDaysComplete}
+                title={!allDaysComplete ? "Complete all 3 day columns (dates + every checkpoint) before submitting" : undefined}
+                className={buttonSize}
+            >
+                {saving ? <Loader2 className={cn(iconSize, "animate-spin")} /> : <Send className={iconSize} />}
+                {status === 'Submitted' ? 'Update & Re-Submit' : 'Submit Monitoring'}
+            </Button>
+
+            {(status === 'Submitted' || authUser?.isAdmin || authUser?.isTrainer) && !isDesignMode && (
+                <Button
+                    variant="outline"
+                    size={headerActionsContainer ? "default" : "sm"}
+                    className={cn("border-blue-600 text-blue-600 hover:bg-blue-50", buttonSize)}
+                    onClick={() => handleEmail()}
+                    disabled={sendingEmail}
+                >
+                    {sendingEmail ? <Loader2 className={cn(iconSize, "animate-spin")} /> : <Mail className={iconSize} />}
+                    {headerActionsContainer ? 'Email Report' : 'Email'}
+                </Button>
+            )}
+        </div>
+    );
+
+    const printButton = (
+        <Button variant="outline" size={headerActionsContainer ? "default" : "sm"} onClick={() => window.print()} className={buttonSize}>
+            <Printer className={iconSize} /> Print
+        </Button>
+    );
+
     return (
         <div className="space-y-6">
+            {/* Full-screen view: the key actions live in the page's sticky header instead */}
+            {headerActionsContainer && createPortal(
+                <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                    {/* Left: which attempt is shown and whether it's ready to submit */}
+                    <div className="flex flex-wrap items-center gap-3 min-w-0">
+                        {attemptHistoryControl}
+                        {daysStatusBadge}
+                    </div>
+                    {/* Right: save / submit / email, then print set apart */}
+                    <div className="flex flex-wrap items-center gap-3 ml-auto">
+                        {primaryActionButtons}
+                        <div className="h-7 w-px bg-slate-200" />
+                        {printButton}
+                    </div>
+                </div>,
+                headerActionsContainer
+            )}
+
             <Card className="w-max min-w-full print:shadow-none print:border-none">
                 <div className="flex flex-wrap justify-between items-center gap-3 print:hidden mb-4 px-4 pt-4">
                     <div className="flex items-center gap-4">
@@ -944,25 +1056,7 @@ const ThreeDayMonitoringSheet = ({
                             {isForceNewAttempt && <Badge className="bg-blue-500 animate-pulse text-white text-[10px]">NEW ATTEMPT MODE</Badge>}
                         </div>
 
-                        {historyAttempts.length > 0 && (
-                            <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
-                                <select 
-                                    className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
-                                    value={selectedAttemptId}
-                                    onChange={(e) => handleAttemptChange(e.target.value)}
-                                >
-                                    {historyAttempts.map((att) => (
-                                        <option key={att.id} value={att.id}>
-                                            Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
-                                        </option>
-                                    ))}
-                                    {isForceNewAttempt && (
-                                        <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
-                                    )}
-                                </select>
-                            </div>
-                        )}
+                        {!headerActionsContainer && attemptHistoryControl}
                     </div>
 
                     <div className="flex gap-2 items-center">
@@ -992,48 +1086,8 @@ const ThreeDayMonitoringSheet = ({
                                 Export
                             </Button>
 
-                            <div className="flex gap-1 border-l pl-2 border-gray-200">
-                                {status !== 'Submitted' && (
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => handleSave("Draft")}
-                                        disabled={saving || isDesignMode}
-                                        className="h-8 gap-1.5 text-[11px]"
-                                    >
-                                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                        Save Draft
-                                    </Button>
-                                )}
-
-                                <Button
-                                    variant={status === 'Submitted' ? "outline" : "default"}
-                                    size="sm"
-                                    onClick={() => handleSave("Submitted")}
-                                    disabled={saving || isDesignMode || !allDaysComplete}
-                                    title={!allDaysComplete ? "Complete all 3 day columns (dates + every checkpoint) before submitting" : undefined}
-                                    className="h-8 gap-1.5 text-[11px]"
-                                >
-                                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                    {status === 'Submitted' ? 'Update & Re-Submit' : 'Submit Monitoring'}
-                                </Button>
-
-                                {(status === 'Submitted' || authUser?.isAdmin || authUser?.isTrainer) && !isDesignMode && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="border-blue-600 text-blue-600 hover:bg-blue-50 h-8 gap-1.5 text-[11px]"
-                                        onClick={() => handleEmail()}
-                                        disabled={sendingEmail}
-                                    >
-                                        {sendingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                                        Email
-                                    </Button>
-                                )}
-                            </div>
-                            <Button variant="outline" size="sm" onClick={() => window.print()} className="h-8 gap-1.5 text-[11px]">
-                                <Printer className="w-3.5 h-3.5" /> Print
-                            </Button>
+                            {!headerActionsContainer && primaryActionButtons}
+                            {!headerActionsContainer && printButton}
                         </div>
                     </div>
                 </div>

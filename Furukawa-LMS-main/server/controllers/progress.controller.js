@@ -1103,8 +1103,20 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
     const assignmentInfo = await getStudentAssignedMachineLine(sid);
     
     // Fetch user details for the header
-    const [userRows] = await executeQuery("SELECT fullName, userName, departmentId FROM users WHERE id = ?", [sid]);
+    const [userRows] = await executeQuery(`
+        SELECT u.fullName, u.userName, u.departmentId, u.sectionId,
+               d.name AS departmentName, s.name AS sectionName
+        FROM users u
+        LEFT JOIN departments d ON d.id = u.departmentId
+        LEFT JOIN sections s ON s.id = u.sectionId
+        WHERE u.id = ?`, [sid]);
     const student = userRows[0];
+    // The operator's own department/section for the sheet's "Working in" header.
+    const operatorDeptInfo = {
+        departmentName: student?.departmentName || "",
+        sectionName: student?.sectionName || "",
+        dept: [student?.departmentName, student?.sectionName].filter(Boolean).join(' / '),
+    };
 
     if (!data) {
         const lineLeaderStr = assignmentInfo.lineLeader || "";
@@ -1115,6 +1127,7 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
                 employeeName: student?.fullName || "",
                 employeeCode: student?.userName || "",
                 departmentId: student?.departmentId || null,
+                ...operatorDeptInfo,
                 processName: assignmentInfo.processName || "",
                 lineName: assignmentInfo.lineName || "",
                 lineLeader: lineLeaderStr,
@@ -1134,6 +1147,7 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
             employeeName: student?.fullName || "",
             employeeCode: student?.userName || "",
             departmentId: student?.departmentId || null,
+            ...operatorDeptInfo,
             processName: resolvedProcessName,
             lineName: resolvedLineName,
             lineLeader: lineLeaderStr,

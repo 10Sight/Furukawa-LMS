@@ -61,24 +61,24 @@ const PortalCard = ({ accent, darkMode, icon, title, desc, onClick, ctaLabel }) 
     const Icon = icon;
     return (
         <Card
-            className={`group relative overflow-hidden hover:-translate-y-1 transition-all duration-300 cursor-pointer backdrop-blur-xl ${darkMode ? `border-slate-800 bg-slate-900/60 ${a.borderDark}` : `border-slate-100 bg-white/70 ${a.border}`}`}
-            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 12px 40px ${a.glow}`; }}
+            className={`group relative overflow-hidden active:scale-[0.98] sm:hover:-translate-y-1 transition-all duration-300 cursor-pointer backdrop-blur-xl ${darkMode ? `border-slate-800 bg-slate-900/60 ${a.borderDark}` : `border-slate-100 bg-white/70 ${a.border}`}`}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 10px 30px ${a.glow}`; }}
             onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ''; }}
             onClick={onClick}
         >
             <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 bg-gradient-to-br ${a.wash} to-transparent transition-opacity duration-300 pointer-events-none`} />
-            <CardContent className="relative p-6 sm:p-8 flex flex-col items-center text-center space-y-4 sm:space-y-6 pt-8 sm:pt-10">
-                <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 ${darkMode ? `${a.iconBgDark} ${a.iconFgDark}` : `${a.iconBg} ${a.iconFg}`}`}>
-                    <Icon className="w-6 h-6 sm:w-8 sm:h-8" />
+            <CardContent className="relative p-3 sm:p-4 md:p-5 flex flex-col items-center text-center space-y-1.5 sm:space-y-2.5 md:space-y-3 pt-3.5 sm:pt-5 md:pt-6">
+                <div className={`w-9 h-9 sm:w-11 sm:h-11 md:w-13 md:h-13 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform duration-300 shrink-0 ${darkMode ? `${a.iconBgDark} ${a.iconFgDark}` : `${a.iconBg} ${a.iconFg}`}`}>
+                    <Icon className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 md:w-6.5 md:h-6.5" />
                 </div>
-                <div className="space-y-2">
-                    <h3 className={`text-lg sm:text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h3>
-                    <p className={`text-xs sm:text-sm leading-relaxed px-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <div className="space-y-0.5 sm:space-y-1 w-full">
+                    <h3 className={`text-xs sm:text-sm md:text-base font-bold truncate ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h3>
+                    <p className={`text-[10px] sm:text-xs leading-snug line-clamp-2 px-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {desc}
                     </p>
                 </div>
-                <div className={`flex items-center gap-1 text-xs sm:text-sm font-medium opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 ${darkMode ? a.linkDark : a.link}`}>
-                    {ctaLabel} <ArrowRight className="w-4 h-4" />
+                <div className={`flex items-center gap-1 text-[10px] sm:text-xs font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 -translate-x-0 sm:-translate-x-1 sm:group-hover:translate-x-0 transition-all duration-200 pt-0.5 ${darkMode ? a.linkDark : a.link}`}>
+                    {ctaLabel} <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 </div>
             </CardContent>
         </Card>
@@ -207,47 +207,47 @@ const LandingPage = () => {
     const accessibleCount = [hasDashboardAccess, hasLMSAccess, hasCMSAccess, hasDailyMeetingAccess].filter(Boolean).length;
 
     const gridColsClass =
-        accessibleCount === 1 ? 'grid-cols-1 max-w-sm mx-auto' :
-            accessibleCount === 2 ? 'grid-cols-1 md:grid-cols-2 max-w-2xl' :
-                accessibleCount === 3 ? 'grid-cols-1 md:grid-cols-3' :
-                    'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+        accessibleCount === 1 ? 'grid-cols-1 max-w-xs sm:max-w-sm mx-auto w-full' :
+            accessibleCount === 2 ? 'grid-cols-2 max-w-sm sm:max-w-xl lg:max-w-2xl mx-auto w-full' :
+                accessibleCount === 3 ? 'grid-cols-1 sm:grid-cols-3 max-w-xs sm:max-w-3xl lg:max-w-4xl mx-auto w-full' :
+                    'grid-cols-2 lg:grid-cols-4 max-w-md sm:max-w-2xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full';
 
     return (
-        <div className={`min-h-screen flex flex-col items-center justify-start md:justify-center pt-28 pb-12 px-4 sm:px-6 transition-colors duration-300 bg-gradient-to-br ${darkMode ? 'bg-slate-950 from-slate-950 via-indigo-950/30 to-slate-900' : 'bg-slate-50 from-blue-100 via-indigo-50 to-slate-100'}`}>
+        <div className={`h-screen max-h-[100dvh] w-full flex flex-col justify-between pt-14 sm:pt-16 pb-2 sm:pb-3 px-3 sm:px-6 overflow-hidden select-none transition-colors duration-300 bg-gradient-to-br ${darkMode ? 'bg-slate-950 from-slate-950 via-indigo-950/30 to-slate-900' : 'bg-slate-50 from-blue-100 via-indigo-50 to-slate-100'}`}>
 
             {/* Top Header */}
-            <header className={`fixed top-0 left-0 right-0 z-50 h-20 backdrop-blur-lg shadow-sm border-b flex items-center justify-between px-4 sm:px-6 overflow-visible transition-colors duration-300 ${darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-slate-100'}`}>
+            <header className={`fixed top-0 left-0 right-0 z-50 h-14 sm:h-16 backdrop-blur-lg shadow-sm border-b flex items-center justify-between px-3 sm:px-6 overflow-visible transition-colors duration-300 ${darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-slate-100'}`}>
 
-                {/* Floating logo circle — flush left, bigger than header height */}
-                <div className={`hidden md:flex absolute left-[-37px] top-0 -translate-y-1/2 w-[264px] h-[244px] rounded-full border shadow-[0_12px_40px_rgba(0,0,0,0.18)] items-end justify-center pb-5 z-[60] transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                {/* Floating logo circle — desktop only (lg and up) to avoid breaking tablet & mobile viewports */}
+                <div className={`hidden lg:flex absolute left-[-24px] xl:left-[-30px] top-0 -translate-y-1/2 w-[180px] xl:w-[210px] h-[160px] xl:h-[190px] rounded-full border shadow-[0_10px_30px_rgba(0,0,0,0.15)] items-end justify-center pb-3 xl:pb-4 z-[60] transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <img
                         src="/fme_transparent.png"
                         alt="FURUKAWA Logo"
-                        className="w-36 h-20 object-contain"
+                        className="w-28 xl:w-32 h-12 xl:h-14 object-contain"
                     />
                 </div>
 
-                {/* Left: brand label — pushed right to clear the circle on desktop */}
-                <div className="flex items-center gap-3 md:ml-60">
+                {/* Left: brand label & mobile logo */}
+                <div className="flex items-center gap-2 sm:gap-2.5 lg:ml-44 xl:ml-52">
                     <img
                         src="/fme_transparent.png"
                         alt="FURUKAWA Logo"
-                        className="h-9 w-auto md:hidden object-contain"
+                        className="h-6 sm:h-7 w-auto lg:hidden object-contain"
                     />
-                    <div className={`h-6 w-px md:hidden ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
-                    <span className={`text-sm font-bold tracking-[0.1em] ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                    <div className={`h-4 sm:h-5 w-px lg:hidden ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                    <span className={`text-xs sm:text-sm font-bold tracking-[0.1em] ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         DOJO 2.0
                     </span>
                 </div>
 
                 {/* Right: Actions */}
-                <div className="flex items-center gap-1 sm:gap-2">
+                <div className="flex items-center gap-0.5 sm:gap-1.5">
                     <LanguageSelector />
 
                     <Button
                         variant="ghost"
                         size="icon"
-                        className={`cursor-pointer ${darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        className={`h-8 w-8 sm:h-8.5 sm:w-8.5 cursor-pointer ${darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
                         onClick={() => dispatch(toggleTheme())}
                         title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
                     >
@@ -257,7 +257,7 @@ const LandingPage = () => {
                     <Button
                         variant="ghost"
                         size="icon"
-                        className={`cursor-pointer ${darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        className={`h-8 w-8 sm:h-8.5 sm:w-8.5 cursor-pointer ${darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
                         onClick={() => navigate(settingsPath)}
                         title={t('nav.settings')}
                     >
@@ -271,51 +271,51 @@ const LandingPage = () => {
                         <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
-                                className={`relative h-10 w-10 rounded-full transition-all cursor-pointer ${darkMode ? 'hover:ring-2 hover:ring-blue-900' : 'hover:ring-2 hover:ring-blue-200'}`}
+                                className={`relative h-8 w-8 sm:h-9 sm:w-9 rounded-full transition-all cursor-pointer p-0 ${darkMode ? 'hover:ring-2 hover:ring-blue-900' : 'hover:ring-2 hover:ring-blue-200'}`}
                             >
-                                <Avatar className="h-9 w-9">
+                                <Avatar className="h-7.5 w-7.5 sm:h-8 sm:w-8">
                                     <AvatarImage
                                         src={user?.avatar?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || user?.userName || 'U')}&background=2563eb&color=fff`}
                                         alt={user?.fullName || user?.userName}
                                     />
-                                    <AvatarFallback className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm">
+                                    <AvatarFallback className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-[11px] sm:text-xs">
                                         {avatarInitials}
                                     </AvatarFallback>
                                 </Avatar>
-                                <div className={`absolute bg-green-500 rounded-full bottom-0 right-0 size-2.5 border-2 animate-pulse ${darkMode ? 'border-slate-900' : 'border-white'}`} />
+                                <div className={`absolute bg-green-500 rounded-full bottom-0 right-0 size-2 border-2 animate-pulse ${darkMode ? 'border-slate-900' : 'border-white'}`} />
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-64 p-2" align="end" forceMount>
-                            <DropdownMenuLabel className="font-normal">
-                                <div className="flex flex-col space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        <DropdownMenuContent className="w-56 sm:w-60 p-1.5" align="end" forceMount>
+                            <DropdownMenuLabel className="font-normal py-1">
+                                <div className="flex flex-col space-y-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                                             {user?.fullName || user?.userName || 'User'}
                                         </p>
-                                        <Badge variant="secondary" className="text-xs capitalize">
+                                        <Badge variant="secondary" className="text-[9px] sm:text-[10px] capitalize shrink-0 py-0 px-1.5">
                                             {roleLabel}
                                         </Badge>
                                     </div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{user?.email || ''}</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user?.email || ''}</p>
                                 </div>
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                                className="cursor-pointer hover:bg-blue-50"
+                                className="cursor-pointer hover:bg-blue-50 text-xs sm:text-sm py-1.5"
                                 onClick={() => navigate(settingsPath)}
                             >
-                                <IconSettings className="mr-2 h-4 w-4" />
+                                <IconSettings className="mr-2 h-3.5 w-3.5" />
                                 {t('settings.accountSettings')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                                className="cursor-pointer hover:bg-red-50 text-red-600 focus:text-red-600"
+                                className="cursor-pointer hover:bg-red-50 text-red-600 focus:text-red-600 text-xs sm:text-sm py-1.5"
                                 onClick={handleLogout}
                                 disabled={isLoading}
                             >
                                 {isLoading
-                                    ? <div className="mr-2 animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
-                                    : <IconLogout className="mr-2 h-4 w-4" />
+                                    ? <div className="mr-2 animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-red-600" />
+                                    : <IconLogout className="mr-2 h-3.5 w-3.5" />
                                 }
                                 {isLoading ? t('auth.signingOut') : t('auth.signOut')}
                             </DropdownMenuItem>
@@ -324,88 +324,92 @@ const LandingPage = () => {
                 </div>
             </header>
 
-            {/* Header Section */}
-            <div className="text-center space-y-5 mb-10 sm:mb-12 animate-fade-in mt-8 md:mt-12">
-                <div className={`w-56 h-24 sm:w-72 sm:h-28 rounded-2xl shadow-sm border flex items-center justify-center p-4 mx-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <img
-                        src="/fme_transparent.png"
-                        alt="FURUKAWA Logo"
-                        className="w-full h-full object-contain"
-                    />
+            {/* Main Content Area — flex auto center to guarantee full fit without scrolling */}
+            <main className="flex-1 min-h-0 flex flex-col items-center justify-center w-full max-w-6xl mx-auto px-2 sm:px-4 py-1 sm:py-2">
+
+                {/* Hero / Header Section */}
+                <div className="text-center space-y-1.5 sm:space-y-2 md:space-y-2.5 mb-2.5 sm:mb-4 md:mb-5 animate-fade-in w-full shrink-0">
+                    <div className={`w-32 h-14 sm:w-40 sm:h-16 md:w-48 md:h-18 rounded-xl shadow-sm border flex items-center justify-center p-2 sm:p-2.5 mx-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                        <img
+                            src="/fme_transparent.png"
+                            alt="FURUKAWA Logo"
+                            className="w-full h-full object-contain"
+                        />
+                    </div>
+
+                    <div className="space-y-0.5 sm:space-y-1 px-2">
+                        <h1 className={`text-base sm:text-xl md:text-2xl lg:text-3xl font-extrabold tracking-tight bg-gradient-to-r bg-clip-text text-transparent ${darkMode ? 'from-slate-100 via-blue-400 to-indigo-400' : 'from-slate-800 via-blue-700 to-indigo-700'}`}>
+                            {t('landing.title')}
+                        </h1>
+                        <p className={`text-[9px] sm:text-[10px] md:text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                            DOJO 2.0
+                        </p>
+                        <p className={`text-[11px] sm:text-xs md:text-sm max-w-md mx-auto px-2 line-clamp-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {t('landing.subtitle')}
+                        </p>
+                    </div>
                 </div>
 
-                <div className="space-y-2">
-                    <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r bg-clip-text text-transparent ${darkMode ? 'from-slate-100 via-blue-400 to-indigo-400' : 'from-slate-800 via-blue-700 to-indigo-700'}`}>
-                        {t('landing.title')}
-                    </h1>
-                    <p className={`text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.2em] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                        DOJO 2.0
-                    </p>
-                    <p className={`text-xs sm:text-sm pt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {t('landing.subtitle')}
-                    </p>
+                {/* Cards Container */}
+                <div className={`grid gap-2.5 sm:gap-3.5 md:gap-4 w-full px-1 sm:px-3 ${gridColsClass}`}>
+
+                    {hasDashboardAccess && (
+                        <PortalCard
+                            accent="blue"
+                            darkMode={darkMode}
+                            icon={LayoutGrid}
+                            title={t('landing.mpsTitle')}
+                            desc={t('landing.mpsDesc')}
+                            ctaLabel={t('landing.enterPortal')}
+                            onClick={handleDashboardClick}
+                        />
+                    )}
+
+                    {hasLMSAccess && (
+                        <PortalCard
+                            accent="green"
+                            darkMode={darkMode}
+                            icon={BookOpen}
+                            title={t('landing.sdpTitle')}
+                            desc={t('landing.sdpDesc')}
+                            ctaLabel={t('landing.enterPortal')}
+                            onClick={() => handlePortalClick('LMS')}
+                        />
+                    )}
+
+                    {hasCMSAccess && (
+                        <PortalCard
+                            accent="purple"
+                            darkMode={darkMode}
+                            icon={MonitorPlay}
+                            title={t('landing.cmsTitle')}
+                            desc={t('landing.cmsDesc')}
+                            ctaLabel={t('landing.enterPortal')}
+                            onClick={() => handlePortalClick('CMS')}
+                        />
+                    )}
+
+                    {hasDailyMeetingAccess && (
+                        <PortalCard
+                            accent="amber"
+                            darkMode={darkMode}
+                            icon={Calendar}
+                            title={t('landing.dailyMeetingTitle')}
+                            desc={t('landing.dailyMeetingDesc')}
+                            ctaLabel={t('landing.enterPortal')}
+                            onClick={() => handlePortalClick('DAILY_MEETING')}
+                        />
+                    )}
+
                 </div>
-            </div>
-
-            {/* Cards Container */}
-            <div className={`grid gap-6 max-w-6xl w-full px-4 ${gridColsClass}`}>
-
-                {hasDashboardAccess && (
-                    <PortalCard
-                        accent="blue"
-                        darkMode={darkMode}
-                        icon={LayoutGrid}
-                        title={t('landing.mpsTitle')}
-                        desc={t('landing.mpsDesc')}
-                        ctaLabel={t('landing.enterPortal')}
-                        onClick={handleDashboardClick}
-                    />
-                )}
-
-                {hasLMSAccess && (
-                    <PortalCard
-                        accent="green"
-                        darkMode={darkMode}
-                        icon={BookOpen}
-                        title={t('landing.sdpTitle')}
-                        desc={t('landing.sdpDesc')}
-                        ctaLabel={t('landing.enterPortal')}
-                        onClick={() => handlePortalClick('LMS')}
-                    />
-                )}
-
-                {hasCMSAccess && (
-                    <PortalCard
-                        accent="purple"
-                        darkMode={darkMode}
-                        icon={MonitorPlay}
-                        title={t('landing.cmsTitle')}
-                        desc={t('landing.cmsDesc')}
-                        ctaLabel={t('landing.enterPortal')}
-                        onClick={() => handlePortalClick('CMS')}
-                    />
-                )}
-
-                {hasDailyMeetingAccess && (
-                    <PortalCard
-                        accent="amber"
-                        darkMode={darkMode}
-                        icon={Calendar}
-                        title={t('landing.dailyMeetingTitle')}
-                        desc={t('landing.dailyMeetingDesc')}
-                        ctaLabel={t('landing.enterPortal')}
-                        onClick={() => handlePortalClick('DAILY_MEETING')}
-                    />
-                )}
-
-            </div>
+            </main>
 
             {/* Footer */}
-            <div className="mt-16 text-center">
-                <p className={`text-xs ${darkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+            <footer className="w-full shrink-0 py-1 sm:py-1.5 text-center">
+                <p className={`text-[10px] sm:text-[11px] ${darkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                     {t('landing.copyright')}
                 </p>
-            </div>
+            </footer>
 
         </div>
     );

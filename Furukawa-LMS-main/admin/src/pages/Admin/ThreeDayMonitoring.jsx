@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,9 +127,27 @@ const ThreeDayMonitoring = () => {
         );
     }, [departments, authUser, isAdmin]);
 
-    // Fetch Monitoring Status List
+    // Sections the user is assigned to (primary sectionId plus the `sections` list);
+    // admins and users with no section assignment see every section of the department.
+    const assignedSectionIds = useMemo(() => {
+        const rawAssigned = Array.isArray(authUser?.sections) ? [...authUser.sections] : [];
+        if (authUser?.sectionId) rawAssigned.push(authUser.sectionId);
+        return [...new Set(rawAssigned.map(id => String(id?.id ?? id?._id ?? id)).filter(Boolean))];
+    }, [authUser]);
+
+    const assignableSections = useMemo(() => {
+        if (!authUser || isAdmin || assignedSectionIds.length === 0) return sections;
+        return sections.filter(s => assignedSectionIds.includes(String(s.id || s._id)));
+    }, [sections, authUser, isAdmin, assignedSectionIds]);
+
+    // Fetch Monitoring Status List. Each call aborts the one still in flight, so switching
+    // filters or typing in search never lets a slower, stale response overwrite a newer one.
+    const listAbortRef = useRef(null);
     const fetchMonitoringList = async () => {
         if (!dept || activeTab !== 'stack' || studentId) return;
+        listAbortRef.current?.abort();
+        const controller = new AbortController();
+        listAbortRef.current = controller;
         try {
             setLoadingList(true);
             const res = await axiosInstance.get(`/api/three-day-monitoring`, {
@@ -139,16 +158,21 @@ const ThreeDayMonitoring = () => {
                     page: monitoringPage,
                     limit: monitoringPageSize,
                     search: debouncedSearchTerm || undefined
-                }
+                },
+                signal: controller.signal,
             });
             if (res.data.success) {
                 setMonitoringList(res.data.data.list || []);
                 setMonitoringTotalPages(res.data.data.totalPages || 1);
             }
         } catch (error) {
+            if (axios.isCancel(error)) return;
             console.error("Error fetching monitoring list:", error);
         } finally {
-            setLoadingList(false);
+            if (listAbortRef.current === controller) {
+                listAbortRef.current = null;
+                setLoadingList(false);
+            }
         }
     };
 
@@ -157,6 +181,9 @@ const ThreeDayMonitoring = () => {
             fetchMonitoringList();
         }
     }, [dept, section, line, studentId, activeTab, monitoringPage, debouncedSearchTerm]);
+
+    // Drop any in-flight list request when leaving the page.
+    useEffect(() => () => listAbortRef.current?.abort(), []);
 
     useEffect(() => {
         setMonitoringPage(1);
@@ -187,12 +214,18 @@ const ThreeDayMonitoring = () => {
 
         if (isSelectionLocked) {
             if (authUser.departmentId) setDept(authUser.departmentId);
-            if (authUser.sectionId) setSection(authUser.sectionId);
-            if (authUser.lineId) setLine(authUser.lineId);
+            // Only pin the section (and line) when the user has exactly one; with several
+            // assigned sections they start on "All Sections" and can pick among them.
+            if (assignedSectionIds.length === 1) {
+                setSection(assignedSectionIds[0]);
+                if (authUser.lineId) setLine(authUser.lineId);
+            } else if (assignedSectionIds.length > 1 && !section) {
+                setSection("0");
+            }
         } else if (assignableDepartments.length === 1 && !dept) {
             setDept(assignableDepartments[0].id || assignableDepartments[0]._id);
         }
-    }, [isEmployee, isSelectionLocked, authUser, assignableDepartments, paramStudentId, studentId, paramStudentData]);
+    }, [isEmployee, isSelectionLocked, authUser, assignableDepartments, assignedSectionIds, paramStudentId, studentId, paramStudentData]);
 
     const selectedStudent = useMemo(() => {
         const student = monitoringList.find(s => String(s._id || s.id) === String(studentId));
@@ -250,6 +283,7 @@ const ThreeDayMonitoring = () => {
 
     // Visible width of the full-screen scroll container, so the header's controls stay in
     // view while its bar stretches to the full (horizontally scrollable) sheet width.
+    const [headerActionsEl, setHeaderActionsEl] = useState(null);
     const [fullScreenScrollEl, setFullScreenScrollEl] = useState(null);
     const [fullScreenViewportWidth, setFullScreenViewportWidth] = useState(0);
     useEffect(() => {
@@ -271,15 +305,19 @@ const ThreeDayMonitoring = () => {
         return { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
     };
 
+    // The opened operator's own department/section — the filters only narrow the stack, and a
+    // user with several sections may be on "All Sections" or a different one. Falls back to
+    // the filter selection only while the operator's details haven't loaded.
+    const operatorDept = sheetOperator?.departmentName || sheetOperator?.deptName || sheetOperator?.department?.name
+        || assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name;
+    const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name
+        || sections.find(s => String(s.id) === String(section))?.name;
+
     // Portaled to <body> so the view escapes the layout's stacking contexts and covers the
     // sidebar and top navbar; Radix popovers/dialogs portal in after it and still sit on top.
     if (isFullScreenSheet) {
         const operatorName = sheetOperator?.fullName || sheetOperator?.name || "Operator";
         const operatorCode = sheetOperator?.empId;
-        const operatorDept = sheetOperator?.departmentName || sheetOperator?.deptName || sheetOperator?.department?.name
-            || assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name;
-        const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name
-            || sections.find(s => String(s.id) === String(section))?.name;
 
         return createPortal(
             <div ref={setFullScreenScrollEl} className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200">
@@ -330,6 +368,10 @@ const ThreeDayMonitoring = () => {
                                     Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
                                 </div>
                             </div>
+
+                            {/* Row 2: action toolbar — ThreeDayMonitoringSheet portals its attempt
+                                history, 3-day status, save/submit/email and print controls here */}
+                            <div ref={setHeaderActionsEl} className="border-t border-slate-200/80 bg-slate-50/80 empty:hidden" />
                         </div>
                     </div>
 
@@ -337,10 +379,11 @@ const ThreeDayMonitoring = () => {
                         <ThreeDayMonitoringSheet
                             studentId={studentId}
                             departmentId={dept}
-                            departmentName={assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name}
-                            sectionName={sections.find(s => String(s.id) === String(section))?.name}
+                            departmentName={operatorDept}
+                            sectionName={operatorSection}
                             readOnly={false}
                             initialForceNewAttempt={forceNewAttempt}
+                            headerActionsContainer={headerActionsEl}
                         />
                     </div>
                 </div>
@@ -421,12 +464,12 @@ const ThreeDayMonitoring = () => {
                                 <Select
                                     value={String(section)}
                                     onValueChange={(val) => { setSection(val); setLine(""); setStudentId(""); }}
-                                    disabled={(!dept && !isSelectionLocked)}
+                                    disabled={(!dept && !isSelectionLocked) || (!isAdmin && assignedSectionIds.length === 1 && !!section)}
                                 >
                                     <SelectTrigger className="h-10 bg-white border-slate-200"><SelectValue placeholder="Select Section" /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="0">All Sections</SelectItem>
-                                        {sections.map((s) => (
+                                        {assignableSections.map((s) => (
                                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -510,8 +553,8 @@ const ThreeDayMonitoring = () => {
                             <ThreeDayMonitoringSheet
                                 studentId={studentId}
                                 departmentId={dept}
-                                departmentName={assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name}
-                                sectionName={sections.find(s => String(s.id) === String(section))?.name}
+                                departmentName={operatorDept}
+                                sectionName={operatorSection}
                                 readOnly={isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId))}
                                 initialForceNewAttempt={forceNewAttempt}
                             />
@@ -530,14 +573,26 @@ const ThreeDayMonitoring = () => {
                                 </TableHeader>
                                 <TableBody>
                                     {loadingList ? (
-                                        <TableRow>
-                                            <TableCell colSpan={5} className="h-40 text-center text-slate-400">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-                                                    <span className="text-xs font-medium">Loading operators...</span>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
+                                        // Skeleton rows at the real row height so the table doesn't jump when data lands
+                                        Array.from({ length: 6 }, (_, i) => (
+                                            <TableRow key={`skeleton-${i}`} className="border-slate-100 h-16">
+                                                <TableCell className="pl-6">
+                                                    <div className="flex items-center gap-3 animate-pulse">
+                                                        <div className="h-9 w-9 rounded-full bg-slate-200" />
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="h-3 w-32 rounded bg-slate-200" />
+                                                            <div className="h-2.5 w-16 rounded bg-slate-100" />
+                                                        </div>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell><div className="h-5 w-20 rounded-full bg-slate-200 animate-pulse" /></TableCell>
+                                                <TableCell><div className="h-3 w-28 rounded bg-slate-200 animate-pulse" /></TableCell>
+                                                <TableCell><div className="h-3 w-20 rounded bg-slate-200 animate-pulse" /></TableCell>
+                                                <TableCell className="pr-6">
+                                                    <div className="ml-auto h-8 w-24 rounded-md bg-slate-200 animate-pulse" />
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
                                     ) : monitoringList.length > 0 ? (
                                         monitoringList.map((item) => {
                                             const badge = getStatusBadge(item.status, item.verifiedBy, item.approvedBy);

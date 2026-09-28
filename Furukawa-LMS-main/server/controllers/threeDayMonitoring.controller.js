@@ -87,91 +87,127 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 30, 500);
     const offset = (page - 1) * limit;
 
-    let whereSql = `
+    // Filters on the department's users, applied once up front.
+    let userFilterSql = `
         WHERE u.departmentId = ?
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
         AND (u.status IS NULL OR u.status != 'LEFT')
-        AND (
-            m.studentId IS NOT NULL
-            OR (
-                (
-                    EXISTS (
-                        SELECT 1 FROM on_job_trainings ojt
-                        WHERE ojt.student = CAST(u.id AS NVARCHAR(50))
-                          AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
-                          AND ojt.createdAt >= CAST(GETDATE() AS DATE) AND ojt.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
-                    )
-                    OR EXISTS (
-                        SELECT 1 FROM on_job_trainings ojt
-                        CROSS APPLY OPENJSON(ojt.attendanceRecords) WITH (
-                            ecode NVARCHAR(100) '$.ecode',
-                            result NVARCHAR(50) '$.result',
-                            recDate DATE '$.date'
-                        ) AS rec
-                        WHERE (rec.ecode = u.empId OR rec.ecode = u.userName)
-                          AND (rec.result = 'Pass' OR rec.result = 'Approved')
-                          AND rec.recDate = CAST(GETDATE() AS DATE)
-                    )
-                )
-                AND EXISTS (
-                    SELECT 1 FROM attempted_quizzes aq
-                    JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
-                    WHERE (aq.student = CAST(u.id AS NVARCHAR(255)) OR aq.student = u.userName)
-                      AND (aq.status = 'PASSED' OR aq.status = 'PASS')
-                      AND q.isMultiSkilling = 1
-                      AND aq.createdAt >= CAST(GETDATE() AS DATE) AND aq.createdAt < DATEADD(day, 1, CAST(GETDATE() AS DATE))
-                )
-            )
-        )
+        AND (u.role = 'STUDENT' OR u.isEmployee = 1)
     `;
     const params = [departmentId];
 
     if (sectionId && sectionId !== "0") {
-        whereSql += " AND u.sectionId = ?";
+        userFilterSql += " AND u.sectionId = ?";
         params.push(sectionId);
     }
     if (lineId && lineId !== "0" && lineId !== "all" && lineId !== "All" && lineId !== "undefined" && lineId !== "null") {
-        whereSql += " AND u.lineId = ?";
+        userFilterSql += " AND u.lineId = ?";
         params.push(lineId);
     }
-
-    whereSql += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
-
     if (search) {
-        whereSql += " AND (u.fullName LIKE ? OR u.empId LIKE ?)";
+        userFilterSql += " AND (u.fullName LIKE ? OR u.empId LIKE ?)";
         params.push(`%${search}%`, `%${search}%`);
     }
 
-    const fromSql = `
+    // One batch, staged through table variables so each expensive piece runs exactly once per
+    // request instead of once per candidate user (the previous correlated EXISTS clauses re-ran
+    // OPENJSON over every on_job_trainings row for each user, and the whole query ran twice for
+    // COUNT). An operator is listed if they already have a 3-day sheet, or if today they passed
+    // an OJT (row result or attendance-record entry) AND a multi-skilling quiz.
+    // Table variables are batch-scoped, so nothing leaks onto the pooled connection; COLLATE
+    // DATABASE_DEFAULT keeps their string columns comparable with the users table.
+    const [rows] = await executeQuery(`
+        SET NOCOUNT ON;
+        DECLARE @today DATE = CAST(GETDATE() AS DATE);
+        DECLARE @tomorrow DATE = DATEADD(day, 1, CAST(GETDATE() AS DATE));
+
+        DECLARE @users TABLE (
+            id INT PRIMARY KEY,
+            idStr NVARCHAR(50) COLLATE DATABASE_DEFAULT,
+            empId NVARCHAR(450) COLLATE DATABASE_DEFAULT,
+            userName NVARCHAR(450) COLLATE DATABASE_DEFAULT
+        );
+        INSERT INTO @users (id, idStr, empId, userName)
+        SELECT u.id, CAST(u.id AS NVARCHAR(50)), LEFT(u.empId, 450), LEFT(u.userName, 450)
         FROM users u
-        LEFT JOIN (
-            SELECT studentId, status, checkedBy, verifiedBy, approvedBy, updatedAt, attemptNumber,
-                   ROW_NUMBER() OVER(PARTITION BY studentId ORDER BY attemptNumber DESC, createdAt DESC) as rn
-            FROM three_day_monitorings
-        ) m ON u.id = m.studentId AND m.rn = 1
-        LEFT JOIN (
-            SELECT studentId, COUNT(*) as totalAttempts,
-                   SUM(CASE WHEN verifiedBy LIKE '%Rejected%' OR approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejectedCount
-            FROM three_day_monitorings
-            GROUP BY studentId
-        ) stats ON u.id = stats.studentId
-    `;
+        ${userFilterSql};
 
-    const [[rows], [cnt]] = await Promise.all([
-        executeQuery(`
-            SELECT
-                u.id, u.fullName, u.empId, u.avatar,
-                m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
-                stats.totalAttempts, stats.rejectedCount
-            ${fromSql}
-            ${whereSql}
-            ORDER BY u.fullName ASC
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        `, [...params, offset, limit]),
-        executeQuery(`SELECT COUNT(*) as total ${fromSql} ${whereSql}`, params),
-    ]);
+        DECLARE @monitored TABLE (studentId INT PRIMARY KEY);
+        INSERT INTO @monitored (studentId)
+        SELECT DISTINCT tdm.studentId FROM three_day_monitorings tdm
+        WHERE tdm.studentId IN (SELECT id FROM @users);
 
-    const totalCount = cnt[0]?.total || 0;
+        DECLARE @ojtStudents TABLE (student NVARCHAR(450) COLLATE DATABASE_DEFAULT);
+        INSERT INTO @ojtStudents (student)
+        SELECT DISTINCT LEFT(ojt.student, 450) FROM on_job_trainings ojt
+        WHERE ojt.student IS NOT NULL
+          AND (ojt.result = 'Pass' OR ojt.result = 'Approved')
+          AND ojt.createdAt >= @today AND ojt.createdAt < @tomorrow;
+
+        DECLARE @ojtEcodes TABLE (ecode NVARCHAR(100) COLLATE DATABASE_DEFAULT);
+        INSERT INTO @ojtEcodes (ecode)
+        SELECT DISTINCT rec.ecode FROM on_job_trainings ojt
+        CROSS APPLY OPENJSON(CASE WHEN ISJSON(ojt.attendanceRecords) = 1 THEN ojt.attendanceRecords END) WITH (
+            ecode NVARCHAR(100) '$.ecode',
+            result NVARCHAR(50) '$.result',
+            recDate DATE '$.date'
+        ) AS rec
+        WHERE rec.ecode IS NOT NULL
+          AND (rec.result = 'Pass' OR rec.result = 'Approved')
+          AND rec.recDate = @today;
+
+        DECLARE @quizStudents TABLE (student NVARCHAR(450) COLLATE DATABASE_DEFAULT);
+        INSERT INTO @quizStudents (student)
+        SELECT DISTINCT LEFT(aq.student, 450) FROM attempted_quizzes aq
+        JOIN quizzes q ON CAST(q.id AS NVARCHAR(255)) = aq.quiz
+        WHERE aq.student IS NOT NULL
+          AND (aq.status = 'PASSED' OR aq.status = 'PASS')
+          AND q.isMultiSkilling = 1
+          AND aq.createdAt >= @today AND aq.createdAt < @tomorrow;
+
+        DECLARE @eligible TABLE (id INT PRIMARY KEY);
+        INSERT INTO @eligible (id)
+        SELECT du.id FROM @users du
+        WHERE EXISTS (SELECT 1 FROM @monitored mm WHERE mm.studentId = du.id)
+           OR (
+                (
+                    EXISTS (SELECT 1 FROM @ojtStudents o WHERE o.student = du.idStr)
+                    OR EXISTS (SELECT 1 FROM @ojtEcodes e WHERE e.ecode = du.empId OR e.ecode = du.userName)
+                )
+                AND EXISTS (SELECT 1 FROM @quizStudents qs WHERE qs.student = du.idStr OR qs.student = du.userName)
+           );
+
+        DECLARE @total INT = (SELECT COUNT(*) FROM @eligible);
+
+        -- Latest attempt + per-student stats, computed only over the listed operators' sheets.
+        WITH ScopedMonitoring AS (
+            SELECT tdm.studentId, tdm.status, tdm.checkedBy, tdm.verifiedBy, tdm.approvedBy,
+                   tdm.updatedAt, tdm.attemptNumber,
+                   ROW_NUMBER() OVER (PARTITION BY tdm.studentId ORDER BY tdm.attemptNumber DESC, tdm.createdAt DESC) AS rn,
+                   COUNT(*) OVER (PARTITION BY tdm.studentId) AS totalAttempts,
+                   SUM(CASE WHEN tdm.verifiedBy LIKE '%Rejected%' OR tdm.approvedBy LIKE '%Rejected%' THEN 1 ELSE 0 END)
+                       OVER (PARTITION BY tdm.studentId) AS rejectedCount
+            FROM three_day_monitorings tdm
+            WHERE tdm.studentId IN (SELECT id FROM @eligible)
+        )
+        SELECT
+            u.id, u.fullName, u.empId, u.avatar,
+            u.departmentId, u.sectionId, d.name AS departmentName, s.name AS sectionName,
+            m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.updatedAt, m.attemptNumber,
+            m.totalAttempts, m.rejectedCount,
+            @total AS totalCount
+        FROM @eligible el
+        JOIN users u ON u.id = el.id
+        LEFT JOIN ScopedMonitoring m ON m.studentId = u.id AND m.rn = 1
+        LEFT JOIN departments d ON u.departmentId = d.id
+        LEFT JOIN sections s ON u.sectionId = s.id
+        ORDER BY u.fullName ASC
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY;
+    `, [...params, offset, limit], { label: "listThreeDayMonitoring" });
+
+    // The total rides along on every row; an out-of-range page (no rows) reports 0.
+    const totalCount = rows[0]?.totalCount || 0;
+    rows.forEach(r => { delete r.totalCount; });
 
     return res.status(200).json(
         new ApiResponse(200, {
@@ -213,15 +249,32 @@ export const getThreeDayMonitoring = asyncHandler(async (req, res) => {
         data = await ThreeDayMonitoring.findByStudentId(sid);
     }
 
+    // The operator's own department/section for the sheet's "Working in" header — never the
+    // viewer's filter selection, which can differ for staff assigned to several sections.
+    const [userRows] = await executeQuery(`
+        SELECT d.name AS departmentName, s.name AS sectionName
+        FROM users u
+        LEFT JOIN departments d ON u.departmentId = d.id
+        LEFT JOIN sections s ON u.sectionId = s.id
+        WHERE u.id = ?`, [sid]);
+    const departmentName = userRows[0]?.departmentName || "";
+    const sectionName = userRows[0]?.sectionName || "";
+    const operatorInfo = {
+        departmentName,
+        sectionName,
+        dept: [departmentName, sectionName].filter(Boolean).join(' / '),
+    };
+
     if (!data) {
         return res.status(200).json(
-            new ApiResponse(200, { isNew: true }, "No record found")
+            new ApiResponse(200, { isNew: true, ...operatorInfo }, "No record found")
         );
     }
 
     return res.status(200).json(
         new ApiResponse(200, {
             ...data,
+            ...operatorInfo,
             isNew: false,
         }, "3 Day Monitoring fetched successfully")
     );

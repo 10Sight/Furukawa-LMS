@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -6,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, ArrowLeft } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -675,6 +676,191 @@ const Cycle10 = () => {
         />
     );
 
+    // ─── Full-screen sheet view ───────────────────────────────────────────────
+    // An opened sheet is shown full screen (portaled to <body>, over the sidebar and navbar),
+    // like the 16-Day / 3-Day monitoring sheets. Leaving it returns to the Monitoring tab with
+    // the department/section/line filters untouched.
+    const isFullScreenSheet = activeTab === 'sheet' && !!selectedSheetId;
+    const handleBackToMonitoring = () => setActiveTab('monitoring');
+
+    // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
+    // (Escape is closing that instead) or while the user is typing in a cell.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            const target = e.target;
+            if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+            if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+            handleBackToMonitoring();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isFullScreenSheet]);
+
+    // Stop the page underneath from scrolling while the full-screen sheet is open.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, [isFullScreenSheet]);
+
+    // Visible width of the full-screen scroll container, so the header's controls stay in
+    // view while its bar stretches to the full (horizontally scrollable) sheet width.
+    const [fullScreenScrollEl, setFullScreenScrollEl] = useState(null);
+    const [fullScreenViewportWidth, setFullScreenViewportWidth] = useState(0);
+    useEffect(() => {
+        if (!fullScreenScrollEl) return;
+        const update = () => setFullScreenViewportWidth(fullScreenScrollEl.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenScrollEl);
+        return () => observer.disconnect();
+    }, [fullScreenScrollEl]);
+
+    const getSheetStatus = (sheet) => {
+        if (sheet.reviewedStatus === 'REJECT') return { label: 'REJECTED BY REVIEWER', color: 'bg-red-500', icon: <XCircle size={14} />, by: sheet.reviewedBy };
+        if (sheet.verifiedStatus === 'REJECT') return { label: 'REJECTED BY VERIFIER', color: 'bg-red-500', icon: <XCircle size={14} />, by: sheet.verifiedBy };
+        if (sheet.reviewedStatus === 'APPROVE') return { label: 'APPROVED', color: 'bg-green-600', icon: <CheckCircle size={14} />, by: sheet.reviewedBy };
+        if (sheet.status === 'Submitted') return { label: 'SUBMITTED (PENDING)', color: 'bg-blue-600', icon: <Loader2 size={14} className="animate-spin" />, by: null };
+        return { label: 'DRAFT', color: 'bg-slate-500', icon: null, by: null };
+    };
+
+    const renderFullScreenHeader = () => {
+        const status = currentSheet ? getSheetStatus(currentSheet) : null;
+        const sectionName = selectedSectionFilter && sections.find(s => String(s._id || s.id) === selectedSectionFilter)?.name;
+        const lineName = selectedLineFilter && lines.find(l => String(l._id || l.id) === selectedLineFilter)?.name;
+        const subSectionName = selectedSubSectionFilter && subSections.find(ss => String(ss._id || ss.id) === selectedSubSectionFilter)?.name;
+        const metaBadges = [
+            currentDepartmentName && `Dept: ${currentDepartmentName}`,
+            sectionName && `Sec: ${sectionName}`,
+            lineName && `Line: ${lineName}`,
+            subSectionName && `Sub-Sec: ${subSectionName}`,
+            createdDate && `Created: ${createdDate}`,
+        ].filter(Boolean);
+        const formTypeLabel = formType === "form3" ? "10 Cycle (Assembly)" : formType === "form2" ? "Form 2 (Text Observations)" : "Form 1 (Standard Checkbox)";
+
+        return (
+            <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                <div className="sticky left-0" style={{ width: fullScreenViewportWidth || '100vw' }}>
+                    {/* Row 1: navigation + sheet identity/status | shortcut hint */}
+                    <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                        <div className="flex flex-wrap items-center gap-4 min-w-0">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1.5 shrink-0 -ml-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                                onClick={handleBackToMonitoring}
+                            >
+                                <ArrowLeft size={16} />
+                                Back to Monitoring
+                            </Button>
+                            <div className="h-9 w-px bg-slate-200 shrink-0" />
+                            <div className="flex flex-col gap-1 min-w-0">
+                                <span className="text-sm font-bold text-slate-800 leading-none">10 Cycle Check Sheet</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5 py-0">
+                                        {formTypeLabel}
+                                    </Badge>
+                                    {metaBadges.map(label => (
+                                        <Badge key={label} variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0">
+                                            {label}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            </div>
+                            {status && (
+                                <div className="flex items-center gap-2">
+                                    <Badge className={`${status.color} text-white border-none px-3 py-1 flex items-center gap-1.5 font-bold`}>
+                                        {status.icon}
+                                        {status.label}
+                                    </Badge>
+                                    {status.by && (
+                                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                                            Action By: {status.by}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 font-medium whitespace-nowrap">
+                            Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
+                        </div>
+                    </div>
+
+                    {/* Row 2: action toolbar */}
+                    <div className="border-t border-slate-200/80 bg-slate-50/80 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                        {/* Left: edit state and row tools */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {!isEditMode && canUpdate && (
+                                isSheetLocked(currentSheet) && !canEditApproved ? (
+                                    <span
+                                        className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200"
+                                        title="Only Admin or authorized personnel can edit a verified or approved sheet"
+                                    >
+                                        Locked (Verified/Approved)
+                                    </span>
+                                ) : (
+                                    <Button variant="outline" className="h-9 gap-2" onClick={() => setIsEditMode(true)}>
+                                        <Pencil size={14} /> Edit Sheet
+                                    </Button>
+                                )
+                            )}
+                            {isEditMode && (
+                                <>
+                                    <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">EDIT MODE</span>
+                                    <Button onClick={addRow} className="h-9 gap-2" variant="outline">
+                                        <Plus size={16} /> Add 10 Cycle Row
+                                    </Button>
+                                    <Button
+                                        onClick={handleAutoSignAll}
+                                        className="h-9 gap-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+                                        variant="outline"
+                                    >
+                                        <PenLine size={16} /> Auto Sign All Rows
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                        {/* Right: export, then save / submit */}
+                        <div className="flex flex-wrap items-center gap-2 ml-auto">
+                            <Button
+                                variant="outline"
+                                className="h-9 border-green-600 text-green-600 hover:bg-green-50"
+                                onClick={() => {
+                                    logAction({
+                                        action: "EXPORT_TEN_CYCLE_SHEET_EXCEL",
+                                        details: { sheetId: selectedSheetId, formType }
+                                    }).catch(() => { });
+                                    exportToExcel("10-Cycle Check Sheet", { id: selectedSheetId });
+                                }}
+                            >
+                                <Download className="mr-2 h-4 w-4" />
+                                Export
+                            </Button>
+                            {isEditMode && (
+                                <>
+                                    <div className="h-7 w-px bg-slate-200" />
+                                    <Button onClick={() => handleSave(false)} disabled={saving || submitting} className="h-9 gap-2 bg-blue-600 hover:bg-blue-700">
+                                        {saving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Sheet
+                                    </Button>
+                                    <Button
+                                        onClick={() => handleSave(true)}
+                                        disabled={saving || submitting}
+                                        className="h-9 gap-2 bg-green-600 hover:bg-green-700"
+                                    >
+                                        {submitting ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Submit & Send Email
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // ─── Shared approval footer (used by all three form types) ────────────────
     const renderApprovalFooter = () => (
         <>
@@ -1018,80 +1204,37 @@ const Cycle10 = () => {
                 )}
 
                 {/* ── SHEET TAB ────────────────────────────────────────────── */}
-                {activeTab === 'sheet' && (
-                    <div className="space-y-4">
+                {activeTab === 'sheet' && !selectedSheetId && (
+                    <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 space-y-2">
+                        <div className="text-lg font-medium">No sheet selected</div>
+                        <div className="text-sm">Select a sheet from the Monitoring tab or click &quot;Add 10 Cycle Sheet&quot; to begin.</div>
+                        <Button variant="outline" onClick={() => setActiveTab('monitoring')} className="mt-2">
+                            Go to Monitoring
+                        </Button>
+                    </div>
+                )}
+
+                {/* Opened sheet: full-screen view portaled to <body> so it escapes the layout's
+                    stacking contexts and covers the sidebar and top navbar; Radix dialogs portal
+                    in after it and still sit on top. */}
+                {isFullScreenSheet && createPortal(
+                    <div
+                        ref={setFullScreenScrollEl}
+                        className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:overflow-visible print:bg-white"
+                    >
+                        {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
+                        <div className="min-w-full w-max min-h-full flex flex-col">
+                            {renderFullScreenHeader()}
+
+                            <div className="p-4 sm:p-6 pb-20 print:p-0">
+                                <div className="bg-white border border-slate-300 rounded-xl p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:rounded-none print:p-0">
                         {loading ? (
                             <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
-                        ) : !selectedSheetId ? (
-                            <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 space-y-2">
-                                <div className="text-lg font-medium">No sheet selected</div>
-                                <div className="text-sm">Select a sheet from the Monitoring tab or click &quot;Add 10 Cycle Sheet&quot; to begin.</div>
-                                <Button variant="outline" onClick={() => setActiveTab('monitoring')} className="mt-2">
-                                    Go to Monitoring
-                                </Button>
-                            </div>
                         ) : (
                             <>
                                 {/* Sheet header */}
                                 <div className="flex flex-col space-y-2 mb-4">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex items-center gap-4">
-                                            <Button variant="outline" size="sm" onClick={() => setActiveTab('monitoring')}>
-                                                Back to Monitoring
-                                            </Button>
-                                            {currentSheet && (
-                                                <div className="flex items-center gap-3">
-                                                    {(() => {
-                                                        const getStatus = () => {
-                                                            if (currentSheet.reviewedStatus === 'REJECT') return { label: 'REJECTED BY REVIEWER', color: 'bg-red-500', icon: <XCircle size={14} />, by: currentSheet.reviewedBy };
-                                                            if (currentSheet.verifiedStatus === 'REJECT') return { label: 'REJECTED BY VERIFIER', color: 'bg-red-500', icon: <XCircle size={14} />, by: currentSheet.verifiedBy };
-                                                            if (currentSheet.reviewedStatus === 'APPROVE') return { label: 'APPROVED', color: 'bg-green-600', icon: <CheckCircle size={14} />, by: currentSheet.reviewedBy };
-                                                            if (currentSheet.status === 'Submitted') return { label: 'SUBMITTED (PENDING)', color: 'bg-blue-600', icon: <Loader2 size={14} className="animate-spin" />, by: null };
-                                                            return { label: 'DRAFT', color: 'bg-slate-500', icon: null, by: null };
-                                                        };
-                                                        const status = getStatus();
-                                                        return (
-                                                            <div className="flex items-center gap-2">
-                                                                <Badge className={`${status.color} text-white border-none px-3 py-1 flex items-center gap-1.5 font-bold`}>
-                                                                    {status.icon}
-                                                                    {status.label}
-                                                                </Badge>
-                                                                {status.by && (
-                                                                    <span className="text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-md border border-slate-200">
-                                                                        Action By: {status.by}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            {!isEditMode && canUpdate && (
-                                                isSheetLocked(currentSheet) && !canEditApproved ? (
-                                                    <span
-                                                        className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200"
-                                                        title="Only Admin or authorized personnel can edit a verified or approved sheet"
-                                                    >
-                                                        Locked (Verified/Approved)
-                                                    </span>
-                                                ) : (
-                                                    <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditMode(true)}>
-                                                        <Pencil size={14} /> Edit Sheet
-                                                    </Button>
-                                                )
-                                            )}
-                                            {isEditMode && (
-                                                <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">EDIT MODE</span>
-                                            )}
-                                            <div className="text-sm font-semibold text-slate-500 uppercase tracking-tight">
-                                                {formType === "form3" ? "10 Cycle (Assembly)" : formType === "form2" ? "Form 2 (Text Observations)" : "Form 1 (Standard Checkbox)"}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-between items-center border-b-2 border-black pb-1 relative">
+                                    <div className="flex justify-between items-center border-b-2 border-black pb-1 relative mt-6">
                                         <h1 className="text-xl font-bold uppercase w-full text-center">
                                             10 CYCLE CHECK MONITORING SHEET ( Existing Operators )
                                         </h1>
@@ -1752,56 +1895,13 @@ const Cycle10 = () => {
                                     )}
                                 </div>
 
-                                {/* Footer Actions */}
-                                <div className="flex justify-between mt-4 print:hidden gap-2">
-                                    <div className="flex gap-2">
-                                        {isEditMode && (
-                                            <>
-                                                <Button onClick={addRow} className="gap-2" variant="outline">
-                                                    <Plus size={16} /> Add 10 Cycle Row
-                                                </Button>
-                                                <Button
-                                                    onClick={handleAutoSignAll}
-                                                    className="gap-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50"
-                                                    variant="outline"
-                                                >
-                                                    <PenLine size={16} /> Auto Sign All Rows
-                                                </Button>
-                                            </>
-                                        )}
-                                        <Button
-                                            variant="outline"
-                                            className="border-green-600 text-green-600 hover:bg-green-50"
-                                            onClick={() => {
-                                                logAction({
-                                                    action: "EXPORT_TEN_CYCLE_SHEET_EXCEL",
-                                                    details: { sheetId: selectedSheetId, formType }
-                                                }).catch(() => { });
-                                                exportToExcel("10-Cycle Check Sheet", { id: selectedSheetId });
-                                            }}
-                                        >
-                                            <Download className="mr-2 h-4 w-4" />
-                                            Export
-                                        </Button>
-                                    </div>
-                                    {isEditMode && (
-                                        <div className="flex gap-2">
-                                            <Button onClick={handleSave} disabled={saving || submitting} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                                                {saving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Save Sheet
-                                            </Button>
-                                            <Button
-                                                onClick={() => handleSave(true)}
-                                                disabled={saving || submitting}
-                                                className="gap-2 bg-green-600 hover:bg-green-700"
-                                            >
-                                                {submitting ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />} Submit & Send Email
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
                             </>
                         )}
-                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
                 )}
 
                 {/* EDIT LAYOUT TAB removed - now Cycle10LayoutEditor.jsx at /admin/10-cycle/layout */}

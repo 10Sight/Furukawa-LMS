@@ -3299,7 +3299,14 @@ export const getTemporaryUsers = asyncHandler(async (req, res) => {
 
   const [cnt] = await executeQuery(`SELECT COUNT(*) as total FROM users u ${hierarchyJoinSQL} ${whereSQL}`, params);
   const [users] = await executeQuery(`
-    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments
+    SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName, ss_res.subSectionName, st.stationName, ma.assignments,
+           (
+             SELECT MIN(COALESCE(TRY_CONVERT(DATE, JSON_VALUE(entry.value, '$.statusActionAt')), hs.[date]))
+             FROM handover_sheets hs
+             CROSS APPLY OPENJSON(hs.entries) AS entry
+             WHERE TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) = u.id
+               AND JSON_VALUE(entry.value, '$.interviewStatus') IN ('APPROVE', 'APPROVED')
+           ) AS actualHandoverDate
     FROM users u
     ${getHierarchyJoinSQL}
     ${whereSQL}

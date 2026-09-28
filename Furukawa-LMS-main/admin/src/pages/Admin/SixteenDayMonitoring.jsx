@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -124,6 +125,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
     }, [authUser, canAccessAll, hasManagePermission]);
 
     const { studentId: paramStudentId } = useParams();
+    const navigate = useNavigate();
 
     // Selections
     const [dept, setDept] = useState("ALL");
@@ -364,6 +366,140 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         );
     }, [monitoringList, searchTerm, approvalTab, approvalField, pendingGateField]);
 
+    // Staff open a sheet from the stack into a full-screen view; employees only ever see their
+    // own sheet (there's no stack to return to), so they keep the regular in-layout page.
+    const isFullScreenSheet = Boolean(studentId) && !isEmployee;
+
+    // Header context — selectedStudent comes from the stack list, which isn't fetched on a
+    // deep link, so fall back to the operator looked up from the URL param.
+    const sheetOperator = selectedStudent || paramStudentData?.data;
+
+    // Returns to the stack with department/section/line filters and the approval tab intact.
+    // On a deep link (/16-day-monitoring/:studentId) drop the id segment from the URL too,
+    // otherwise the init effect would immediately reopen the sheet.
+    const handleBackToStack = () => {
+        if (paramStudentId) navigate('..', { relative: 'path' });
+        setStudentId("");
+        setActiveDept("");
+        setForceNewAttempt(false);
+    };
+
+    // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
+    // (Escape is closing that instead) or while the user is typing in a cell.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            const target = e.target;
+            if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+            if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+            handleBackToStack();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFullScreenSheet, paramStudentId]);
+
+    // Stop the page underneath from scrolling while the full-screen sheet is open.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, [isFullScreenSheet]);
+
+    const sheetContent = studentId ? (
+        <>
+            <SixteenDayMonitoringSheet
+                studentId={studentId}
+                studentName={selectedStudent?.fullName}
+                employeeCode={selectedStudent?.empId}
+                departmentName={selectedStudent?.departmentName || selectedStudent?.deptName || ""}
+                sectionName={selectedStudent?.sectionName || ""}
+                departmentId={activeDept || (dept !== "ALL" ? dept : "")}
+                sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
+                readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
+                allowEduCellApproval={allowEduCellApproval}
+                initialForceNewAttempt={forceNewAttempt}
+                onAfterSave={handleAfterMonitoringSave}
+                feedbackRef={feedbackRef}
+            />
+
+            {(hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId))) && (
+                <div className="mt-12">
+                    <MenteeFeedbackMonitoringSheet
+                        ref={feedbackRef}
+                        studentId={studentId}
+                        readOnly={readOnly || !(canManageFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId)))}
+                    />
+                </div>
+            )}
+        </>
+    ) : null;
+
+    // Portaled to <body> so the view escapes the layout's stacking contexts and covers the
+    // sidebar and top navbar; Radix popovers/dialogs portal in after it and still sit on top.
+    if (isFullScreenSheet) {
+        const operatorName = sheetOperator?.fullName || "Operator";
+        const operatorCode = sheetOperator?.empId;
+        const operatorDept = sheetOperator?.departmentName || sheetOperator?.deptName || sheetOperator?.department?.name;
+        const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name;
+
+        return createPortal(
+            <div className="fixed inset-0 z-50 bg-slate-100 overflow-y-auto flex flex-col w-screen h-screen animate-in fade-in duration-200">
+                <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
+                    <div className="max-w-[1900px] w-full mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2 shrink-0 text-slate-700 hover:text-indigo-600"
+                                onClick={handleBackToStack}
+                            >
+                                <IconArrowLeft size={16} />
+                                Back to Stack
+                            </Button>
+                            <div className="h-8 w-px bg-slate-200 shrink-0" />
+                            <div className="flex items-center gap-3 min-w-0">
+                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm shrink-0">
+                                    <AvatarFallback className="bg-indigo-50 text-indigo-600 font-bold text-xs">
+                                        {operatorName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-sm font-bold text-slate-800 truncate">{operatorName}</span>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                        {operatorCode && (
+                                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-bold px-1.5 py-0">
+                                                #{operatorCode}
+                                            </Badge>
+                                        )}
+                                        {(operatorDept || operatorSection) && (
+                                            <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0">
+                                                {[operatorDept, operatorSection].filter(Boolean).join(' / ')}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 font-medium shrink-0">
+                            <IconCalendarCheck size={16} className="text-indigo-500" />
+                            <span>16-Day Monitoring</span>
+                            <span className="text-slate-300">·</span>
+                            <span>Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="max-w-[1900px] w-full mx-auto p-4 sm:p-6 space-y-6 pb-20">
+                    {sheetContent}
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
     return (
         <div className="space-y-6 w-full max-w-none mx-auto pb-20 p-4 min-h-screen">
             {/* Header */}
@@ -479,42 +615,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                 <div className="space-y-6">
                     {studentId ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-                            {!isEmployee && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="mb-2 gap-2 text-slate-600 hover:text-indigo-600"
-                                    onClick={() => { setStudentId(""); setActiveDept(""); }}
-                                >
-                                    <IconArrowLeft size={16} />
-                                    Back to Stack
-                                </Button>
-                            )}
-
-                            <SixteenDayMonitoringSheet
-                                studentId={studentId}
-                                studentName={selectedStudent?.fullName}
-                                employeeCode={selectedStudent?.empId}
-                                departmentName={selectedStudent?.departmentName || selectedStudent?.deptName || ""}
-                                sectionName={selectedStudent?.sectionName || ""}
-                                departmentId={activeDept || (dept !== "ALL" ? dept : "")}
-                                sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
-                                readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
-                                allowEduCellApproval={allowEduCellApproval}
-                                initialForceNewAttempt={forceNewAttempt}
-                                onAfterSave={handleAfterMonitoringSave}
-                                feedbackRef={feedbackRef}
-                            />
-
-                            {(hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId))) && (
-                                <div className="mt-12">
-                                    <MenteeFeedbackMonitoringSheet
-                                        ref={feedbackRef}
-                                        studentId={studentId}
-                                        readOnly={readOnly || !(canManageFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId)))}
-                                    />
-                                </div>
-                            )}
+                            {sheetContent}
                         </div>
                     ) : (
                         <div className="space-y-4">

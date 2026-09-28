@@ -210,6 +210,7 @@ const DojoHiring = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState("all");
+    const isHandoverTab = activeTab === "handover-candidate";
     const [genderFilter, setGenderFilter] = useState("ALL");
     const [deptFilter, setDeptFilter] = useState("ALL");
     const [reasonOfLeavingFilter, setReasonOfLeavingFilter] = useState("ALL");
@@ -734,6 +735,7 @@ const DojoHiring = () => {
         { header: "Reason of Leaving", key: "reasonOfLeaving", width: 25 },
         { header: "Contractor", key: "contractor", width: 20 },
         { header: "Expected Handover Date", key: "expectedHandover", width: 20 },
+        { header: "Handover Date", key: "handoverDate", width: 15 },
         { header: "Dojo Shift", key: "dojoShift", width: 15 },
     ], []);
 
@@ -805,6 +807,7 @@ const DojoHiring = () => {
                     reasonOfLeaving: candidate.reasonOfLeaving || "",
                     contractor: candidate.contractor || "",
                     expectedHandover: safeDateFormat(candidate.expectedHandover, "yyyy-MM-dd"),
+                    handoverDate: safeDateFormat(candidate.handoverDate || candidate.actualHandoverDate, "yyyy-MM-dd"),
                     dojoShift: candidate.dojoShift || "",
                 };
 
@@ -1435,11 +1438,17 @@ const DojoHiring = () => {
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.designation")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.department")}</TableHead>
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.section")}</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.status")}</TableHead>
+                                                    {!isHandoverTab && (
+                                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.status")}</TableHead>
+                                                    )}
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider text-center">{t("dojoHiring.table.scheduledShift")}</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.contactDetail")}</TableHead>
+                                                    {!isHandoverTab && (
+                                                        <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.contactDetail")}</TableHead>
+                                                    )}
                                                     <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.joiningDate")}</TableHead>
-                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">{t("dojoHiring.table.leavingDate")}</TableHead>
+                                                    <TableHead className="font-bold text-slate-500 text-xs uppercase tracking-wider">
+                                                        {isHandoverTab ? t("dojoHiring.table.handoverDate") : t("dojoHiring.table.leavingDate")}
+                                                    </TableHead>
                                                     <TableHead className="pr-6 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">{t("dojoHiring.table.actions")}</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -1503,22 +1512,24 @@ const DojoHiring = () => {
                                                             <TableCell>
                                                                 <div className="text-slate-600 text-sm">{user.sectionName || "—"}</div>
                                                             </TableCell>
-                                                            <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                                                                <Select
-                                                                    value={normalizeStatus(user.status)}
-                                                                    onValueChange={(newStatus) => handleQuickStatusChange(user, newStatus)}
-                                                                    disabled={isUserDeleted(user) || (!hasPermission("user:change_status") && !canUpdate)}
-                                                                >
-                                                                    <SelectTrigger className="w-[130px] border-0 shadow-none p-0 h-auto focus:ring-0 [&>svg]:hidden">
-                                                                        {getStatusBadge(user.status)}
-                                                                    </SelectTrigger>
-                                                                    <SelectContent>
-                                                                        <SelectItem value="PRESENT">{t("dojoHiring.status.present")}</SelectItem>
-                                                                        <SelectItem value="ON_LEAVE">{t("dojoHiring.status.onLeave")}</SelectItem>
-                                                                        <SelectItem value="LEFT">{t("dojoHiring.status.left")}</SelectItem>
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            </TableCell>
+                                                            {!isHandoverTab && (
+                                                                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                                                                    <Select
+                                                                        value={normalizeStatus(user.status)}
+                                                                        onValueChange={(newStatus) => handleQuickStatusChange(user, newStatus)}
+                                                                        disabled={isUserDeleted(user) || (!hasPermission("user:change_status") && !canUpdate)}
+                                                                    >
+                                                                        <SelectTrigger className="w-[130px] border-0 shadow-none p-0 h-auto focus:ring-0 [&>svg]:hidden">
+                                                                            {getStatusBadge(user.status)}
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            <SelectItem value="PRESENT">{t("dojoHiring.status.present")}</SelectItem>
+                                                                            <SelectItem value="ON_LEAVE">{t("dojoHiring.status.onLeave")}</SelectItem>
+                                                                            <SelectItem value="LEFT">{t("dojoHiring.status.left")}</SelectItem>
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </TableCell>
+                                                            )}
                                                             <TableCell className="text-center">
                                                                 {(() => {
                                                                     const styleMap = { A: "bg-blue-50 text-blue-700 border-blue-200", B: "bg-emerald-50 text-emerald-700 border-emerald-200", C: "bg-purple-50 text-purple-700 border-purple-200", G: "bg-amber-50 text-amber-700 border-amber-200" };
@@ -1534,18 +1545,20 @@ const DojoHiring = () => {
                                                                     return <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${styleMap[scheduledShift] || "bg-slate-50 text-slate-600 border-slate-200"}`}>{scheduledShift}</span>;
                                                                 })()}
                                                             </TableCell>
-                                                            <TableCell>
-                                                                <div className="space-y-1 text-xs">
-                                                                    <div className="flex items-center gap-2 text-slate-600 font-bold">
-                                                                        <IconPhone className="w-3.5 h-3.5 text-slate-300" />
-                                                                        {user.phoneNumber || "—"}
+                                                            {!isHandoverTab && (
+                                                                <TableCell>
+                                                                    <div className="space-y-1 text-xs">
+                                                                        <div className="flex items-center gap-2 text-slate-600 font-bold">
+                                                                            <IconPhone className="w-3.5 h-3.5 text-slate-300" />
+                                                                            {user.phoneNumber || "—"}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 text-slate-400 font-medium">
+                                                                            <IconMapPin className="w-3.5 h-3.5 text-slate-300" />
+                                                                            {user.district || user.state || "—"}
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="flex items-center gap-2 text-slate-400 font-medium">
-                                                                        <IconMapPin className="w-3.5 h-3.5 text-slate-300" />
-                                                                        {user.district || user.state || "—"}
-                                                                    </div>
-                                                                </div>
-                                                            </TableCell>
+                                                                </TableCell>
+                                                            )}
                                                             <TableCell>
                                                                 {user.joiningDate ? (
                                                                     <div className="text-slate-700 font-bold text-sm">
@@ -1556,13 +1569,15 @@ const DojoHiring = () => {
                                                                 )}
                                                             </TableCell>
                                                             <TableCell>
-                                                                {user.leavingDate ? (
-                                                                    <div className="text-rose-600 font-bold text-sm">
-                                                                        {new Date(user.leavingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-slate-400 text-xs">—</span>
-                                                                )}
+                                                                {(() => {
+                                                                    const dateValue = isHandoverTab ? (user.handoverDate || user.actualHandoverDate) : user.leavingDate;
+                                                                    if (!dateValue) return <span className="text-slate-400 text-xs">—</span>;
+                                                                    return (
+                                                                        <div className={`${isHandoverTab ? "text-emerald-600" : "text-rose-600"} font-bold text-sm`}>
+                                                                            {new Date(dateValue).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </TableCell>
                                                             <TableCell className="pr-6 text-right" onClick={(e) => e.stopPropagation()}>
                                                                 <div className="flex justify-end gap-1">
@@ -1608,7 +1623,7 @@ const DojoHiring = () => {
                                                     ))
                                                 ) : (
                                                     <TableRow>
-                                                        <TableCell colSpan={12} className="text-center py-32">
+                                                        <TableCell colSpan={isHandoverTab ? 10 : 12} className="text-center py-32">
                                                             <div className="flex flex-col items-center gap-3 opacity-30">
                                                                 <IconUsers className="w-16 h-16" />
                                                                 <div className="space-y-1">

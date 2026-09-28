@@ -289,7 +289,7 @@ const Cycle10 = () => {
                         lineId: selectedLineFilter || null,
                         subSectionId: selectedSubSectionFilter || null,
                     }
-                }).catch(() => {});
+                }).catch(() => { });
             }
         } catch (error) {
             toast.error("Failed to load 10 cycle sheets");
@@ -357,7 +357,7 @@ const Cycle10 = () => {
                         formType: data.formType,
                         status: data.status,
                     }
-                }).catch(() => {});
+                }).catch(() => { });
             }
         } catch (error) {
             toast.error("Failed to load selected sheet");
@@ -675,107 +675,107 @@ const Cycle10 = () => {
 
     // ─── Shared approval footer (used by all three form types) ────────────────
     const renderApprovalFooter = () => (
-      <>
-        <div className="mt-4 grid grid-cols-3 text-[10px] font-bold text-center border-t border-black pt-4 gap-4">
-            <div className="space-y-2">
-                <div className="uppercase">Checked By</div>
-                <div className="h-8 flex items-center justify-center border-b border-dashed border-gray-400">
-                    {currentSheet?.checkedBy || "-"}
+        <>
+            <div className="mt-4 grid grid-cols-3 text-[10px] font-bold text-center border-t border-black pt-4 gap-4">
+                <div className="space-y-2">
+                    <div className="uppercase">Checked By</div>
+                    <div className="h-8 flex items-center justify-center border-b border-dashed border-gray-400">
+                        {currentSheet?.checkedBy || "-"}
+                    </div>
+                    <div className="text-[8px] text-gray-500 font-normal">
+                        {currentSheet?.createdAt ? new Date(currentSheet.createdAt).toLocaleString() : ""}
+                    </div>
                 </div>
-                <div className="text-[8px] text-gray-500 font-normal">
-                    {currentSheet?.createdAt ? new Date(currentSheet.createdAt).toLocaleString() : ""}
+                <div className="space-y-2">
+                    <div className="uppercase">Verified By (Co-ordinator)</div>
+                    <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
+                        {currentSheet?.verifiedBy ? (
+                            <>
+                                <span className={currentSheet.verifiedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
+                                    {currentSheet.verifiedBy} ({currentSheet.verifiedStatus})
+                                </span>
+                                <span className="text-[8px] text-gray-500 font-normal">
+                                    {currentSheet.verifiedAt ? new Date(currentSheet.verifiedAt).toLocaleString() : ""}
+                                </span>
+                            </>
+                        ) : (
+                            <div className="flex gap-2 print:hidden">
+                                {(user?.customRole?.permissions?.includes('ten_cycle:verify') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[8px] gap-1 border-green-600 text-green-600 hover:bg-green-50"
+                                            onClick={() => handleApproval('VERIFY', 'APPROVE')}
+                                        >
+                                            <CheckCircle size={10} /> Approve
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[8px] gap-1 border-red-600 text-red-600 hover:bg-red-50"
+                                            onClick={() => handleApproval('VERIFY', 'REJECT')}
+                                        >
+                                            <XCircle size={10} /> Reject
+                                        </Button>
+                                    </>
+                                ) : <span className="text-gray-400 font-normal italic">Pending Verification</span>}
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <div className="uppercase">Reviewed By (HOD)</div>
+                    <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
+                        {currentSheet?.reviewedBy ? (
+                            <>
+                                <span className={currentSheet.reviewedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
+                                    {currentSheet.reviewedBy} ({currentSheet.reviewedStatus})
+                                </span>
+                                <span className="text-[8px] text-gray-500 font-normal">
+                                    {currentSheet.reviewedAt ? new Date(currentSheet.reviewedAt).toLocaleString() : ""}
+                                </span>
+                            </>
+                        ) : (
+                            <div className="flex gap-2 print:hidden">
+                                {(user?.customRole?.permissions?.includes('ten_cycle:approve') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[8px] gap-1 border-green-600 text-green-600 hover:bg-green-50"
+                                            onClick={() => handleApproval('APPROVE', 'APPROVE')}
+                                        >
+                                            <CheckCircle size={10} /> Approve
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[8px] gap-1 border-red-600 text-red-600 hover:bg-red-50"
+                                            onClick={() => handleApproval('APPROVE', 'REJECT')}
+                                        >
+                                            <XCircle size={10} /> Reject
+                                        </Button>
+                                    </>
+                                ) : <span className="text-gray-400 font-normal italic">Pending Review</span>}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
-            <div className="space-y-2">
-                <div className="uppercase">Verified By (Co-ordinator)</div>
-                <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
-                    {currentSheet?.verifiedBy ? (
-                        <>
-                            <span className={currentSheet.verifiedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
-                                {currentSheet.verifiedBy} ({currentSheet.verifiedStatus})
-                            </span>
-                            <span className="text-[8px] text-gray-500 font-normal">
-                                {currentSheet.verifiedAt ? new Date(currentSheet.verifiedAt).toLocaleString() : ""}
-                            </span>
-                        </>
-                    ) : (
-                        <div className="flex gap-2 print:hidden">
-                            {(user?.customRole?.permissions?.includes('ten_cycle:verify') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
-                                <>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 text-[8px] gap-1 border-green-600 text-green-600 hover:bg-green-50"
-                                        onClick={() => handleApproval('VERIFY', 'APPROVE')}
-                                    >
-                                        <CheckCircle size={10} /> Approve
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 text-[8px] gap-1 border-red-600 text-red-600 hover:bg-red-50"
-                                        onClick={() => handleApproval('VERIFY', 'REJECT')}
-                                    >
-                                        <XCircle size={10} /> Reject
-                                    </Button>
-                                </>
-                            ) : <span className="text-gray-400 font-normal italic">Pending Verification</span>}
-                        </div>
-                    )}
-                </div>
-            </div>
-            <div className="space-y-2">
-                <div className="uppercase">Reviewed By (HOD)</div>
-                <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
-                    {currentSheet?.reviewedBy ? (
-                        <>
-                            <span className={currentSheet.reviewedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
-                                {currentSheet.reviewedBy} ({currentSheet.reviewedStatus})
-                            </span>
-                            <span className="text-[8px] text-gray-500 font-normal">
-                                {currentSheet.reviewedAt ? new Date(currentSheet.reviewedAt).toLocaleString() : ""}
-                            </span>
-                        </>
-                    ) : (
-                        <div className="flex gap-2 print:hidden">
-                            {(user?.customRole?.permissions?.includes('ten_cycle:approve') || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') ? (
-                                <>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 text-[8px] gap-1 border-green-600 text-green-600 hover:bg-green-50"
-                                        onClick={() => handleApproval('APPROVE', 'APPROVE')}
-                                    >
-                                        <CheckCircle size={10} /> Approve
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 text-[8px] gap-1 border-red-600 text-red-600 hover:bg-red-50"
-                                        onClick={() => handleApproval('APPROVE', 'REJECT')}
-                                    >
-                                        <XCircle size={10} /> Reject
-                                    </Button>
-                                </>
-                            ) : <span className="text-gray-400 font-normal italic">Pending Review</span>}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-        {(() => {
-            // A saved sheet keeps whatever docNo/revNo/revDate was frozen into it at
-            // creation; only a brand-new (not-yet-created) sheet shows the live value.
-            const footerInfo = currentSheet?.docNo ? currentSheet : revisionInfo;
-            return footerInfo.docNo ? (
-                <div className="mt-2 flex justify-between items-center text-[9px] font-bold text-gray-500 px-1">
-                    <span>Doc. No: {footerInfo.docNo}</span>
-                    {footerInfo.revNo && <span>Rev. No: {footerInfo.revNo}</span>}
-                    {footerInfo.revDate && <span>Rev. Date: {footerInfo.revDate}</span>}
-                </div>
-            ) : null;
-        })()}
-      </>
+            {(() => {
+                // A saved sheet keeps whatever docNo/revNo/revDate was frozen into it at
+                // creation; only a brand-new (not-yet-created) sheet shows the live value.
+                const footerInfo = currentSheet?.docNo ? currentSheet : revisionInfo;
+                return footerInfo.docNo ? (
+                    <div className="mt-2 flex justify-between items-center text-[9px] font-bold text-gray-500 px-1">
+                        <span>Doc. No: {footerInfo.docNo}</span>
+                        {footerInfo.revNo && <span>Rev. No: {footerInfo.revNo}</span>}
+                        {footerInfo.revDate && <span>Rev. Date: {footerInfo.revDate}</span>}
+                    </div>
+                ) : null;
+            })()}
+        </>
     );
 
     return (
@@ -910,7 +910,7 @@ const Cycle10 = () => {
                             </div>
                         </div>
 
-        <div className="border rounded">
+                        <div className="border rounded">
                             {loadingSheets ? (
                                 <div className="p-4 flex items-center gap-2 text-sm text-muted-foreground">
                                     <Loader2 className="h-4 w-4 animate-spin" /> Loading sheets...
@@ -1084,7 +1084,7 @@ const Cycle10 = () => {
                                                 <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">EDIT MODE</span>
                                             )}
                                             <div className="text-sm font-semibold text-slate-500 uppercase tracking-tight">
-                                                {formType === "form3" ? "Form 3 (10 Cycle Numerical)" : formType === "form2" ? "Form 2 (Text Observations)" : "Form 1 (Standard Checkbox)"}
+                                                {formType === "form3" ? "10 Cycle (Assembly)" : formType === "form2" ? "Form 2 (Text Observations)" : "Form 1 (Standard Checkbox)"}
                                             </div>
                                         </div>
                                     </div>
@@ -1774,7 +1774,7 @@ const Cycle10 = () => {
                                                 logAction({
                                                     action: "EXPORT_TEN_CYCLE_SHEET_EXCEL",
                                                     details: { sheetId: selectedSheetId, formType }
-                                                }).catch(() => {});
+                                                }).catch(() => { });
                                                 exportToExcel("10-Cycle Check Sheet", { id: selectedSheetId });
                                             }}
                                         >

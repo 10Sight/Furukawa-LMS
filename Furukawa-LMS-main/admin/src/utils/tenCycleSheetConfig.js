@@ -5,7 +5,7 @@
 export const ALL_FORM_TYPES = [
     { id: 'form1', label: 'Form 1 (Standard)' },
     { id: 'form2', label: 'Form 2 (Complete)' },
-    { id: 'form3', label: 'Form 3 (10 Cycle Numerical)' }
+    { id: 'form3', label: '10 Cycle (Assembly)' }
 ];
 
 // Layout configuration: labels/descriptions for Section A questions & general

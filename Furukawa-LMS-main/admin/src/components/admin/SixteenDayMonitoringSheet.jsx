@@ -1383,9 +1383,9 @@ const SixteenDayMonitoringSheet = ({
                                 <thead>
                                     <tr className="border-b border-black font-bold">
                                         <th rowSpan="3" className="border-r border-black min-w-[60px] bg-gray-50 text-[14px]">S.No</th>
-                                        <th rowSpan="3" className="border-r border-black min-w-[200px] bg-gray-50 text-left px-3 text-[14px]">Parameters</th>
-                                        <th rowSpan="3" className="border-r border-black min-w-[400px] bg-gray-50 text-left px-3 text-[14px]">Check Items</th>
-                                        <th rowSpan="3" className="border-r border-black min-w-[150px] bg-gray-50 p-2 leading-tight text-[14px]">Mark<br />(Max.)</th>
+                                        <th rowSpan="3" className="border-r border-black w-[120px] min-w-[110px] max-w-[130px] bg-gray-50 text-center px-2 text-[14px] break-words whitespace-normal leading-tight">Parameters</th>
+                                        <th rowSpan="3" className="border-r border-black min-w-[300px] max-w-[380px] bg-gray-50 text-left px-3 text-[14px] break-words whitespace-normal">Check Items</th>
+                                        <th rowSpan="3" className="border-r border-black w-[95px] min-w-[90px] max-w-[110px] bg-gray-50 p-2 leading-tight text-[14px] break-words whitespace-normal">Mark<br />(Max.)</th>
                                         <th colSpan="46" className="border-r border-black text-center bg-gray-200 uppercase tracking-widest py-3 border-b border-black text-[15px] font-extrabold">DAY WISE PERFORMANCE MONITORING</th>
                                         <th rowSpan="3" className="min-w-[250px] bg-blue-50/50 leading-tight border-l border-black text-[14px] font-bold">Evaluation after monitoring of 16 days</th>
                                     </tr>
@@ -1504,15 +1504,15 @@ const SixteenDayMonitoringSheet = ({
                                                                 {rowIdx === 0 && sIdx === 0 && (
                                                                     <>
                                                                         <td rowSpan={totalRowsInCat} className="border-r border-black text-center font-bold align-middle bg-gray-50/20">{catIdx + 1}</td>
-                                                                        <td rowSpan={totalRowsInCat} className="border-r border-black p-1 font-bold align-middle bg-gray-50/20 whitespace-pre-line leading-tight">{cat.category}</td>
+                                                                        <td rowSpan={totalRowsInCat} className="border-r border-black p-2 font-bold align-middle bg-gray-50/20 text-center text-[13px] leading-snug break-words whitespace-pre-line w-[120px] max-w-[130px]">{cat.category}</td>
                                                                     </>
                                                                 )}
                                                                 {sIdx === 0 ? (
-                                                                    <td rowSpan={4} className="border-r border-black p-2 align-middle font-semibold min-w-[200px] text-left pr-2 text-[14px]">
+                                                                    <td rowSpan={4} className="border-r border-black p-2 align-middle font-semibold text-left text-[14px] leading-snug break-words whitespace-normal max-w-[380px]">
                                                                         {row.label}
                                                                     </td>
                                                                 ) : null}
-                                                                <td className="border-r border-black text-center align-middle font-bold min-w-[150px] text-[14px] bg-gray-50/30 leading-tight px-1">
+                                                                <td className="border-r border-black text-center align-middle font-bold w-[95px] min-w-[90px] max-w-[110px] text-[14px] bg-gray-50/30 leading-tight px-1 break-words whitespace-normal">
                                                                     {sub.hasMark ? row.weight : sub.label}
                                                                 </td>
                                                                 {daysDetailed.map(dayPrefix => (
@@ -1573,13 +1573,13 @@ const SixteenDayMonitoringSheet = ({
                                                             {rowIdx === 0 && (
                                                                 <>
                                                                     <td rowSpan={totalRowsInCat} className="border-r border-black text-center font-bold align-middle bg-gray-50/20">{catIdx + 1}</td>
-                                                                    <td rowSpan={totalRowsInCat} className="border-r border-black p-1 font-bold align-middle bg-gray-50/20 whitespace-pre-line leading-tight">{cat.category}</td>
+                                                                    <td rowSpan={totalRowsInCat} className="border-r border-black p-2 font-bold align-middle bg-gray-50/20 text-center text-[13px] leading-snug break-words whitespace-pre-line w-[120px] max-w-[130px]">{cat.category}</td>
                                                                 </>
                                                             )}
-                                                            <td className={`border-r border-black p-3 align-middle text-left text-[14px] min-w-[400px] ${row.type === 'cycle' ? 'font-bold' : 'font-semibold'}`}>
+                                                            <td className={`border-r border-black p-2.5 align-middle text-left text-[14px] leading-snug break-words whitespace-normal max-w-[380px] ${row.type === 'cycle' ? 'font-bold' : 'font-semibold'}`}>
                                                                 {row.label}
                                                             </td>
-                                                            <td className="border-r border-black text-center align-middle font-bold text-[14px] min-w-[150px] bg-gray-50/10">{row.weight}</td>
+                                                            <td className="border-r border-black text-center align-middle font-bold text-[14px] w-[95px] min-w-[90px] max-w-[110px] bg-gray-50/10 break-words whitespace-normal">{row.weight}</td>
                                                             {daysDetailed.map(dayPrefix => (
                                                                 <React.Fragment key={dayPrefix}>
                                                                     {row.type === 'cycle' ? (
@@ -1759,7 +1759,7 @@ const SixteenDayMonitoringSheet = ({
                                     <tbody>
                                         <tr className="border-b border-black h-12">
                                             <td rowSpan="3" className="border-r border-black font-bold text-center bg-blue-50/20 text-[14px]">6</td>
-                                            <td rowSpan="3" className="border-r border-black font-bold p-2 bg-blue-50/20 text-center align-middle text-[14px]">Attendance</td>
+                                            <td rowSpan="3" className="border-r border-black font-bold p-2 bg-blue-50/20 text-center align-middle text-[13px] leading-snug break-words whitespace-normal w-[120px] max-w-[130px]">Attendance</td>
                                             <td className="border-r border-black font-bold p-2 text-[14px]">Total no. of Monitoring day's :</td>
                                             <td className="min-w-[100px] border-r border-black font-bold text-center bg-gray-50 text-[14px]">Date</td>
                                             {Array.from({ length: 16 }, (_, i) => {
@@ -1866,7 +1866,7 @@ const SixteenDayMonitoringSheet = ({
                                     <table className="w-full border-collapse text-[12px]">
                                         <thead>
                                             <tr className="bg-gray-50 border-b border-black font-bold">
-                                                <th className="border-r border-black p-2 text-left">Parameters</th>
+                                                <th className="border-r border-black p-2 text-left w-[130px] break-words whitespace-normal">Parameters</th>
                                                 <th className="border-r border-black p-2">Total Weightage</th>
                                                 <th className="border-r border-black p-2">Poor</th>
                                                 <th className="border-r border-black p-2">Average**</th>
@@ -1879,7 +1879,7 @@ const SixteenDayMonitoringSheet = ({
                                         <tbody>
                                             {scoreRanges.map((row, idx) => (
                                                 <tr key={idx} className="border-b border-black h-10">
-                                                    <td className="border-r border-black p-2 font-bold bg-gray-50/30 text-[14px]">{row.label}</td>
+                                                    <td className="border-r border-black p-2 font-bold bg-gray-50/30 text-[13px] leading-snug break-words whitespace-normal">{row.label}</td>
                                                     <td className="border-r border-black text-center font-bold text-[14px]">{row.weight}</td>
                                                     <td className="border-r border-black text-center text-gray-500 italic bg-gray-50/10 text-[14px]">{row.poor}</td>
                                                     <td className="border-r border-black text-center text-gray-500 italic bg-gray-50/10 text-[14px]">{row.avg}</td>

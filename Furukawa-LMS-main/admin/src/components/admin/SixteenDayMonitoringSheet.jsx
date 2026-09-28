@@ -693,7 +693,7 @@ const SixteenDayMonitoringSheet = ({
                             actualAvgTotal += actualVal;
 
                             if (targetVal > 0 && actualVal > 0) {
-                                const ach = Number(((targetVal / actualVal) * 100).toFixed(2));
+                                const ach = Number(((targetVal / actualVal) * 100).toFixed(1));
                                 const achKey = `${row.id}_${d}_achievement_${i}`;
                                 const achStr = `${ach}%`;
                                 if (newGridData[achKey] !== achStr) {
@@ -715,7 +715,7 @@ const SixteenDayMonitoringSheet = ({
 
                         const targetAvg = Number((targetAvgTotal / 10).toFixed(2)) || "";
                         const actualAvg = Number((actualAvgTotal / 10).toFixed(2)) || "";
-                        const achAvg = achCount > 0 ? Number((achievementSum / achCount).toFixed(2)) : 0;
+                        const achAvg = achCount > 0 ? Number((achievementSum / achCount).toFixed(1)) : 0;
                         const scoreAvg = Number((scoreSum / 10).toFixed(2)) || 0;
 
 
@@ -767,7 +767,7 @@ const SixteenDayMonitoringSheet = ({
                         const score = parseFloat(gridData[`${row.id}_${d}_score`]) || 0;
 
                         if (target > 0 && actual > 0) {
-                            const ach = Number(((target / actual) * 100).toFixed(2));
+                            const ach = Number(((target / actual) * 100).toFixed(1));
                             updateKey(`${row.id}_${d}_achievement`, `${ach}%`);
                         } else if (newGridData[`${row.id}_${d}_achievement`]) {
                             updateKey(`${row.id}_${d}_achievement`, "");
@@ -840,7 +840,7 @@ const SixteenDayMonitoringSheet = ({
                                 count++;
                             }
                         });
-                        const evalAvg = count > 0 ? Number((sum / count).toFixed(2)) : 0;
+                        const evalAvg = count > 0 ? Number((sum / count).toFixed(subId === 'achievement' ? 1 : 2)) : 0;
                         const key = `${row.id}_eval_${subId}`;
                         const valStr = evalAvg > 0 ? (subId === 'achievement' ? `${evalAvg}%` : evalAvg.toString()) : "";
                         if (newGridData[key] !== valStr) {
@@ -1480,8 +1480,8 @@ const SixteenDayMonitoringSheet = ({
                                     <tr className="border-b border-black bg-gray-50/30">
                                         {[...Array(3)].map((_, dIdx) => (
                                             <React.Fragment key={dIdx}>
-                                                {[...Array(10)].map((_, i) => <th key={i} className={`border-r border-black min-w-[50px] text-[13px] h-10 ${dayBlurClass(dIdx + 1)}`}>{i + 1}</th>)}
-                                                <th className={`border-r border-black min-w-[85px] text-[13px] font-bold italic leading-tight ${dayBlurClass(dIdx + 1)}`}>Avg<br />Total</th>
+                                                {[...Array(10)].map((_, i) => <th key={i} className={`border-r border-black min-w-[36px] text-[13px] h-10 ${dayBlurClass(dIdx + 1)}`}>{i + 1}</th>)}
+                                                <th className={`border-r border-black min-w-[60px] text-[13px] font-bold italic leading-tight ${dayBlurClass(dIdx + 1)}`}>Avg<br />Total</th>
                                             </React.Fragment>
                                         ))}
                                     </tr>
@@ -1521,11 +1521,11 @@ const SixteenDayMonitoringSheet = ({
                                                                             const val = gridData[`${row.id}_${dayPrefix}_${sub.id}_${i}`] || "";
                                                                             return (
                                                                                 <td key={i} className={`p-0 border-r border-black align-middle h-full ${dayPrefixBlurClass(dayPrefix)}`}>
-                                                                                    <div className="relative flex items-center justify-center min-w-[50px] h-full">
-                                                                                        <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
+                                                                                    <div className="relative flex items-center justify-center min-w-[36px] h-full">
+                                                                                        <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{val || "00"}</span>
                                                                                         <input
                                                                                             disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${sub.id}_${i}`, 'grid')}
-                                                                                            className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold p-1 focus:bg-blue-50 outline-none ${sub.colorClass || 'text-black'}`}
+                                                                                            className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold p-0 focus:bg-blue-50 outline-none ${sub.colorClass || 'text-black'}`}
                                                                                             value={val}
                                                                                             onChange={(e) => handleGridChange(row.id, `${dayPrefix}_${sub.id}_${i}`, e.target.value)}
                                                                                         />
@@ -1534,8 +1534,8 @@ const SixteenDayMonitoringSheet = ({
                                                                             );
                                                                         })}
                                                                         <td className={`p-0 border-r border-black align-middle h-full font-bold bg-yellow-400 ${dayPrefixBlurClass(dayPrefix)}`}>
-                                                                            <div className="relative flex items-center justify-center min-w-[80px] h-full">
-                                                                                <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_${sub.id}_avg`] || "00"}</span>
+                                                                            <div className="relative flex items-center justify-center min-w-[60px] h-full">
+                                                                                <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_${sub.id}_avg`] || "00"}</span>
                                                                                 <input
                                                                                     disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${sub.id}_avg`, 'grid')}
                                                                                     className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] p-1 font-bold outline-none ${sub.colorClass || 'text-black'}`}
@@ -1588,11 +1588,11 @@ const SixteenDayMonitoringSheet = ({
                                                                                 const val = gridData[`${row.id}_${dayPrefix}_${i}`] || "";
                                                                                 return (
                                                                                     <td key={i} className={`p-0 border-r border-black align-middle h-full ${dayPrefixBlurClass(dayPrefix)}`}>
-                                                                                        <div className="relative flex items-center justify-center min-w-[50px] h-full">
-                                                                                            <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
+                                                                                        <div className="relative flex items-center justify-center min-w-[36px] h-full">
+                                                                                            <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{val || "00"}</span>
                                                                                             <input
                                                                                                 disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_${i}`, 'grid')}
-                                                                                                className="absolute inset-0 w-full h-full text-center bg-transparent border-none font-bold text-blue-700 text-[14px] p-1 focus:bg-blue-50 outline-none"
+                                                                                                className="absolute inset-0 w-full h-full text-center bg-transparent border-none font-bold text-blue-700 text-[14px] p-0 focus:bg-blue-50 outline-none"
                                                                                                 value={val}
                                                                                                 onChange={(e) => handleGridChange(row.id, `${dayPrefix}_${i}`, e.target.value)}
                                                                                             />
@@ -1601,8 +1601,8 @@ const SixteenDayMonitoringSheet = ({
                                                                                 );
                                                                             })}
                                                                             <td className={`p-0 border-r border-black align-middle h-full font-bold bg-yellow-400 ${dayPrefixBlurClass(dayPrefix)}`}>
-                                                                                <div className="relative flex items-center justify-center min-w-[80px] h-full text-blue-700">
-                                                                                    <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_avg`] || "00"}</span>
+                                                                                <div className="relative flex items-center justify-center min-w-[60px] h-full text-blue-700">
+                                                                                    <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{gridData[`${row.id}_${dayPrefix}_avg`] || "00"}</span>
                                                                                     <input
                                                                                         disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayPrefix}_avg`, 'grid')}
                                                                                         className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-blue-700 font-bold text-[14px] p-1 outline-none"
@@ -1651,11 +1651,11 @@ const SixteenDayMonitoringSheet = ({
                                                 })}
                                                 {cat.totalMark && (
                                                     <tr className="border-b border-black bg-yellow-200">
-                                                        <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Total Mark:</td>
+                                                        <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">Total Mark:</td>
                                                         <td className="border-r border-black text-center font-bold text-blue-600 text-[14px]">{cat.totalMark}</td>
                                                         {daysDetailed.map(d => (
                                                             <td key={d} colSpan="11" className={`border-r border-black p-0 ${dayPrefixBlurClass(d)}`}>
-                                                                <div className="relative flex items-center justify-center min-w-[100px] h-10">
+                                                                <div className="relative flex items-center justify-center min-w-[100px] h-[26px]">
                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
                                                                     <input
                                                                         disabled={true}
@@ -1668,7 +1668,7 @@ const SixteenDayMonitoringSheet = ({
                                                         ))}
                                                         {daysSummary.map(d => (
                                                             <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
-                                                                <div className="relative flex items-center justify-center min-w-[70px] h-10">
+                                                                <div className="relative flex items-center justify-center min-w-[70px] h-[26px]">
                                                                     <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
                                                                     <input
                                                                         disabled={true}
@@ -1680,34 +1680,34 @@ const SixteenDayMonitoringSheet = ({
                                                             </td>
                                                         ))}
                                                         <td className="bg-blue-100/50 p-0 h-full border-l border-black">
-                                                            <div className="relative flex items-center justify-center min-w-[250px] h-10" />
+                                                            <div className="relative flex items-center justify-center min-w-[250px] h-[26px]" />
                                                         </td>
                                                     </tr>
                                                 )}
                                                 {cat.target && (
                                                     <React.Fragment>
-                                                        <tr className="border-b border-black bg-yellow-100 min-h-[3rem]">
-                                                            <td colSpan="3" className="text-right p-2 font-bold text-[14px]">Target % :</td>
+                                                        <tr className="border-b border-black bg-yellow-100 min-h-[30px]">
+                                                            <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">Target % :</td>
                                                             <td className="border-r border-black text-center font-bold text-[14px]">{cat.target}</td>
                                                             {daysDetailed.map(d => (
-                                                                <td key={d} colSpan="11" className={`border-r border-black text-center font-bold text-[14px] h-12 ${dayPrefixBlurClass(d)}`}>100%</td>
+                                                                <td key={d} colSpan="11" className={`border-r border-black text-center font-bold text-[14px] h-[30px] ${dayPrefixBlurClass(d)}`}>100%</td>
                                                             ))}
                                                             {daysSummary.map(d => (
-                                                                <td key={d} className={`border-r border-black text-center font-bold text-[14px] h-12 ${dayKeyBlurClass(d)}`}>100%</td>
+                                                                <td key={d} className={`border-r border-black text-center font-bold text-[14px] h-[30px] ${dayKeyBlurClass(d)}`}>100%</td>
                                                             ))}
                                                             <td className="bg-white p-0 border-l border-black">
-                                                                <div className="flex w-full h-full divide-x divide-black min-h-[3rem]">
+                                                                <div className="flex w-full h-full divide-x divide-black min-h-[30px]">
                                                                     <div className="flex-1 px-3 flex items-center font-extrabold bg-white text-[14px]">Plan % :</div>
                                                                     <div className="min-w-[100px] px-3 flex items-center justify-end font-extrabold bg-white text-[15px]">{cat.target || '100%'}</div>
                                                                 </div>
                                                             </td>
                                                         </tr>
-                                                        <tr className="border-b border-black bg-yellow-200 min-h-[3rem]">
-                                                            <td colSpan="3" className="text-right p-2 font-bold text-[14px]">{cat.actualLabel || "Actual %:"}</td>
+                                                        <tr className="border-b border-black bg-yellow-200 min-h-[30px]">
+                                                            <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">{cat.actualLabel || "Actual %:"}</td>
                                                             <td className="border-r border-black text-center font-bold italic text-[14px]">-</td>
                                                             {daysDetailed.map(d => (
                                                                 <td key={d} colSpan="11" className={`border-r border-black p-0 h-full ${dayPrefixBlurClass(d)}`}>
-                                                                    <div className="relative flex items-center justify-center min-w-[100px] h-12">
+                                                                    <div className="relative flex items-center justify-center min-w-[100px] h-[30px]">
                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
                                                                         <input
                                                                             disabled={true}
@@ -1720,7 +1720,7 @@ const SixteenDayMonitoringSheet = ({
                                                             ))}
                                                             {daysSummary.map(d => (
                                                                 <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
-                                                                    <div className="relative flex items-center justify-center min-w-[70px] h-12">
+                                                                    <div className="relative flex items-center justify-center min-w-[70px] h-[30px]">
                                                                         <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
                                                                         <input
                                                                             disabled={true}
@@ -1732,7 +1732,7 @@ const SixteenDayMonitoringSheet = ({
                                                                 </td>
                                                             ))}
                                                             <td className="bg-yellow-400 p-0 border-l border-black">
-                                                                <div className="flex w-full h-full divide-x divide-black min-h-[3rem]">
+                                                                <div className="flex w-full h-full divide-x divide-black min-h-[30px]">
                                                                     <div className="flex-1 px-3 flex items-center font-extrabold text-[14px]">Actual (Avg %)</div>
                                                                     <div className="min-w-[100px] px-3 flex items-center justify-end font-extrabold text-[15px]">
                                                                         {gridData[`${cat.id}_eval_actual`] || ""}

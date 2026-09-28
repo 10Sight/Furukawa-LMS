@@ -1242,7 +1242,7 @@ const SixteenDayMonitoringSheet = ({
                                     Associate Performance Monitoring Check Sheet <br />
                                     <span className="text-sm font-normal">(WORKING IN {typeof headerInfo.dept === 'string' ? headerInfo.dept : (headerInfo.dept?.name || headerInfo.dept?._id || "DEPARTMENT")})</span>
                                 </div>
-                                <div className="w-48 border-l border-black text-[8px] font-bold">
+                                <div className="w-60 border-l border-black text-[12px] font-bold">
                                     <div className="border-b border-black p-1 flex justify-between">
                                         <span>Document No.</span>
                                         <span>{revisionInfo.docNo}</span>
@@ -1775,7 +1775,7 @@ const SixteenDayMonitoringSheet = ({
 
                                                 if (readOnly || isLocked || isCellLocked(`attendance_date_${i + 1}`, 'grid')) {
                                                     return (
-                                                        <td key={i} className={`border-r border-black min-w-[50px] p-0 h-full text-center font-bold text-[13px] text-blue-900 bg-slate-50/50 ${dayBlurClass(i + 1)}`}>
+                                                        <td key={i} className={`border-r border-black min-w-[50px] px-1 h-full text-center font-bold text-[12px] whitespace-nowrap text-blue-900 bg-slate-50/50 ${dayBlurClass(i + 1)}`}>
                                                             {val || "-"}
                                                         </td>
                                                     );
@@ -1786,8 +1786,8 @@ const SixteenDayMonitoringSheet = ({
                                                         <Popover>
                                                             <PopoverTrigger asChild>
                                                                 <div className="relative flex items-center justify-center min-w-[50px] h-12 cursor-pointer hover:bg-slate-50 transition-colors">
-                                                                    <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00-MMM-00"}</span>
-                                                                    <div className={`absolute inset-0 flex items-center justify-center text-[13px] font-bold ${!val ? 'text-slate-300 italic font-medium' : 'text-blue-900 underline decoration-dotted'}`}>
+                                                                    <span className="invisible whitespace-pre px-1 text-[12px] font-bold">{val || "00-MMM-00"}</span>
+                                                                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] font-bold ${!val ? 'text-slate-300 italic font-medium' : 'text-blue-900 underline decoration-dotted'}`}>
                                                                         {val || "DD-MMM-YY"}
                                                                     </div>
                                                                 </div>
@@ -1827,7 +1827,7 @@ const SixteenDayMonitoringSheet = ({
                                                 return (
                                                     <td key={i} className={`border-r border-black p-0 h-full ${dayBlurClass(i + 1)}`}>
                                                         <div className="relative flex items-center justify-center min-w-[50px] h-12">
-                                                            <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
+                                                            <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{val || "00"}</span>
                                                             <input
                                                                 disabled={readOnly || isLocked || isCellLocked(`attendance_actual_${i + 1}`, 'grid')}
                                                                 className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] h-full outline-none font-bold text-blue-900"
@@ -2197,7 +2197,7 @@ const SixteenDayMonitoringSheet = ({
                                 </div>
                             </div>
 
-                            <div className="mt-4 text-[7px] italic space-y-1">
+                            <div className="mt-4 text-[12px] italic space-y-1">
                                 <p>** Average criteria is minimum passing marks for associates.</p>
                                 <p>*** In case fail employee sheet verify the data by education cell.</p>
                             </div>

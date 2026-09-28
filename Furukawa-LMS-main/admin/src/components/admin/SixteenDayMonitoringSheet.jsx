@@ -1441,7 +1441,7 @@ const SixteenDayMonitoringSheet = ({
 
                                             if (readOnly || isLocked || isCellLocked(`attendance_date_${dayIdx}`, 'grid')) {
                                                 return (
-                                                    <th key={i} rowSpan="2" className={`border-r border-black min-w-[85px] text-[14px] font-bold p-0 bg-slate-50/50 ${dayBlurClass(dayIdx)}`}>
+                                                    <th key={i} rowSpan="2" className={`border-r border-black min-w-[60px] text-[14px] font-bold p-0 bg-slate-50/50 ${dayBlurClass(dayIdx)}`}>
                                                         <div className="flex flex-col items-center justify-center h-full w-full py-1">
                                                             <span>Day-{dayIdx}</span>
                                                             <span className="text-[10px] text-blue-900 font-semibold">
@@ -1453,7 +1453,7 @@ const SixteenDayMonitoringSheet = ({
                                             }
 
                                             return (
-                                                <th key={i} rowSpan="2" className="border-r border-black min-w-[85px] text-[14px] font-bold p-0">
+                                                <th key={i} rowSpan="2" className="border-r border-black min-w-[60px] text-[14px] font-bold p-0">
                                                     <Popover>
                                                         <PopoverTrigger asChild>
                                                             <div className="flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 h-full w-full py-1">
@@ -1550,8 +1550,8 @@ const SixteenDayMonitoringSheet = ({
                                                                     const val = gridData[`${row.id}_${dayKey}_${sub.id}`] || "";
                                                                     return (
                                                                         <td key={dayKey} className={`p-0 border-r border-black ${dayKeyBlurClass(dayKey)}`}>
-                                                                            <div className="relative flex items-center justify-center min-w-[70px] h-full">
-                                                                                <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
+                                                                            <div className="relative flex items-center justify-center min-w-[60px] h-full">
+                                                                                <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{val || "00"}</span>
                                                                                 <input
                                                                                     disabled={readOnly || sub.id === 'achievement' || isLocked || isCellLocked(`${row.id}_${dayKey}_${sub.id}`, 'grid')}
                                                                                     className={`absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold py-1 focus:bg-blue-50 outline-none ${sub.colorClass || 'text-blue-700'}`}
@@ -1631,8 +1631,8 @@ const SixteenDayMonitoringSheet = ({
                                                                 const val = gridData[`${row.id}_${dayKey}`] || "";
                                                                 return (
                                                                     <td key={dayKey} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(dayKey)}`}>
-                                                                        <div className="relative flex items-center justify-center min-w-[70px] h-full">
-                                                                            <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{val || "00"}</span>
+                                                                        <div className="relative flex items-center justify-center min-w-[60px] h-full">
+                                                                            <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{val || "00"}</span>
                                                                             <input
                                                                                 disabled={readOnly || isLocked || isCellLocked(`${row.id}_${dayKey}`, 'grid')}
                                                                                 className="absolute inset-0 w-full h-full text-center bg-transparent font-bold border-none text-blue-700 text-[14px] outline-none"
@@ -1668,8 +1668,8 @@ const SixteenDayMonitoringSheet = ({
                                                         ))}
                                                         {daysSummary.map(d => (
                                                             <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
-                                                                <div className="relative flex items-center justify-center min-w-[70px] h-[26px]">
-                                                                    <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
+                                                                <div className="relative flex items-center justify-center min-w-[60px] h-[26px]">
+                                                                    <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{gridData[`${cat.id}_${d}_total`] || "00"}</span>
                                                                     <input
                                                                         disabled={true}
                                                                         className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold text-black outline-none"
@@ -1720,8 +1720,8 @@ const SixteenDayMonitoringSheet = ({
                                                             ))}
                                                             {daysSummary.map(d => (
                                                                 <td key={d} className={`border-r border-black p-0 h-full ${dayKeyBlurClass(d)}`}>
-                                                                    <div className="relative flex items-center justify-center min-w-[70px] h-[30px]">
-                                                                        <span className="invisible whitespace-pre px-4 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
+                                                                    <div className="relative flex items-center justify-center min-w-[60px] h-[30px]">
+                                                                        <span className="invisible whitespace-pre px-1 text-[14px] font-bold">{gridData[`${cat.id}_${d}_actual`] || "00"}</span>
                                                                         <input
                                                                             disabled={true}
                                                                             className="absolute inset-0 w-full h-full text-center bg-transparent border-none text-[14px] font-bold h-full outline-none text-black"

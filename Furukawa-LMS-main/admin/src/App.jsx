@@ -22,6 +22,8 @@ const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
 const Daily5MDashboard = lazy(() => import("./pages/CMS/Daily5MDashboard.jsx"));
 const DailyMeeting = lazy(() => import("./pages/CMS/DailyMeeting.jsx"));
+const MisPortalHub = lazy(() => import("./pages/CMS/MisPortalHub.jsx"));
+const MonthlyMeetingReport = lazy(() => import("./pages/CMS/MonthlyMeetingReport.jsx"));
 const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome.jsx"));
 const Attendance = lazy(() => import("./pages/Dashboard/Attendance.jsx"));
 const UserManagement = lazy(() => import("./pages/Dashboard/UserManagement.jsx"));
@@ -397,7 +399,9 @@ const App = () => {
               </ProtectedRoute>
             }
           >
-            <Route index element={<DailyMeeting />} />
+            <Route index element={<MisPortalHub />} />
+            <Route path="morning-meeting" element={<DailyMeeting />} />
+            <Route path="monthly-report" element={<MonthlyMeetingReport />} />
           </Route>
 
           {/* Instructor routes */}
@@ -570,7 +574,9 @@ const App = () => {
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
-            <Route path="daily-meeting" element={<DailyMeeting />} />
+            <Route path="daily-meeting" element={<MisPortalHub />} />
+            <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
+            <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
             <Route path="learning" element={<Learning />} />
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />

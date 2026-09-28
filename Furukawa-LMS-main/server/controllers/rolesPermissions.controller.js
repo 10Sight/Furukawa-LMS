@@ -119,6 +119,12 @@ const SYSTEM_PERMISSIONS = {
   DAILY_MEETING_UPDATE: "daily_meeting:update",
   DAILY_MEETING_DELETE: "daily_meeting:delete",
 
+  // Monthly Meeting Report Management
+  MONTHLY_REPORT_READ: "monthly_report:read",
+  MONTHLY_REPORT_CREATE: "monthly_report:create",
+  MONTHLY_REPORT_UPDATE: "monthly_report:update",
+  MONTHLY_REPORT_DELETE: "monthly_report:delete",
+
   // 16-Day Monitoring Management
   SIXTEEN_DAY_EDIT_LAYOUT: "sixteen_day:edit_layout",
   SIXTEEN_DAY_MANAGE: "sixteen_day:manage",
@@ -302,7 +308,8 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.LEARNING_READ,
       SYSTEM_PERMISSIONS.ON_JOB_TRAINING_READ,
       SYSTEM_PERMISSIONS.OPERATOR_OBSERVANCE_READ,
-      SYSTEM_PERMISSIONS.DAILY_MEETING_READ
+      SYSTEM_PERMISSIONS.DAILY_MEETING_READ,
+      SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ
     ],
     isSystemRole: true,
     color: "#3B82F6"
@@ -419,6 +426,11 @@ const DEFAULT_ROLES = {
       SYSTEM_PERMISSIONS.DAILY_MEETING_CREATE,
       SYSTEM_PERMISSIONS.DAILY_MEETING_UPDATE,
       SYSTEM_PERMISSIONS.DAILY_MEETING_DELETE,
+      // Monthly Meeting Report Management
+      SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ,
+      SYSTEM_PERMISSIONS.MONTHLY_REPORT_CREATE,
+      SYSTEM_PERMISSIONS.MONTHLY_REPORT_UPDATE,
+      SYSTEM_PERMISSIONS.MONTHLY_REPORT_DELETE,
     ],
     isSystemRole: true,
     color: "#10B981"
@@ -569,6 +581,12 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_CREATE, name: "Create Daily Meetings", description: "Create new daily standup meetings for assigned departments and sections" },
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_UPDATE, name: "Edit Daily Meetings", description: "Edit daily standup meetings and spreadsheet contents for assigned departments and sections" },
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_DELETE, name: "Delete Daily Meetings", description: "Delete daily standup meetings for assigned departments and sections" }
+      ],
+      "Monthly Meeting Report": [
+        { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ, name: "View Monthly Meeting Reports", description: "View monthly report folders and PowerPoint presentations across all departments and sections" },
+        { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_CREATE, name: "Create Monthly Meeting Reports", description: "Create folders and upload presentations for assigned departments and sections" },
+        { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_UPDATE, name: "Edit Monthly Meeting Reports", description: "Edit monthly report folders and presentations for assigned departments and sections" },
+        { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_DELETE, name: "Delete Monthly Meeting Reports", description: "Delete monthly report folders and presentations for assigned departments and sections" }
       ],
       "16-Day Monitoring": [
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LAYOUT, name: "Edit 16-Day Monitoring Layout", description: "Modify the structure and categories of 16-day monitoring sheets" },

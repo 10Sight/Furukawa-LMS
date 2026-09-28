@@ -248,6 +248,12 @@ export default function SetRequirements() {
     canManageRequirements ||
     user?.customRole?.permissions?.includes('mps_requirement:add_emails');
 
+  const canApproveRequirements =
+    user?.isAdmin ||
+    user?.role === 'SUPERADMIN' ||
+    user?.role === 'ADMIN' ||
+    user?.customRole?.permissions?.includes('mps_requirement:approve');
+
   const isCustomSectionHead = String(user?.role || "").trim().toUpperCase() === "CUSTOM";
 
   const [loading, setLoading] = useState(false);
@@ -660,18 +666,34 @@ export default function SetRequirements() {
   const fetchApprovalTime = async () => {
     try {
       const res = await axiosInstance.get("/api/requirements/system-approval-time");
-      setApprovalMinutes(res.data?.data?.minutes || 24);
-      setApprovalUnit(res.data?.data?.unit || 'hours');
+
+      const value = Number(res.data?.data?.value ?? 24);
+      const unit = String(res.data?.data?.unit || "hours").toLowerCase();
+
+      if (unit === "minutes") {
+        setApprovalMinutes(value / 60);
+      } else if (unit === "days") {
+        setApprovalMinutes(value * 24);
+      } else {
+        setApprovalMinutes(value);
+      }
+
+      setApprovalUnit("hours");
     } catch (e) {
       console.error(e);
     }
   };
 
   const updateApprovalTime = async () => {
+    if (!Number.isInteger(Number(approvalMinutes)) || Number(approvalMinutes) < 1) {
+      toast.error("Please enter a valid approval time in whole hours.");
+      return;
+    }
+
     try {
       setApprovalTimeLoading(true);
       await axiosInstance.put("/api/requirements/system-approval-time", {
-        minutes: approvalMinutes,
+        minutes: Number(approvalMinutes),
         unit: approvalUnit,
       });
       toast.success("System approval timing updated");
@@ -837,12 +859,19 @@ export default function SetRequirements() {
       (typeof user?.sections === 'string' && (user.sections.includes('*') || user.sections.toLowerCase().includes('all'))) ||
       (Array.isArray(user?.sections) && (user.sections.includes('*') || user.sections.includes('all')));
 
-    const hasApprovePermission =
+    const isAdminApprover =
       user?.isAdmin ||
       user?.role === 'SUPERADMIN' ||
+      user?.role === 'ADMIN';
+
+    const hasSectionAccess =
       hasWildcard ||
       (row?.sectionId && userSections.includes(Number(row.sectionId))) ||
       row?.isAssigned === true;
+
+    const hasApprovePermission =
+      isAdminApprover ||
+      (canApproveRequirements && hasSectionAccess);
 
     return hasApprovePermission && ["pending", "rejected"].includes(status) && getRowRequirementIds(row).length > 0;
   };
@@ -1168,9 +1197,11 @@ export default function SetRequirements() {
 
           {(user?.isAdmin || String(user?.role || "").toUpperCase() === "SUPERADMIN") && (
   <div className="flex items-center gap-2 mb-3">
-    <Label>System Approval Time (Minutes)</Label>
+    <Label>System Approval Time (Hours)</Label>
     <Input
       type="number"
+      min="1"
+      step="1"
       className="w-28"
       value={approvalMinutes}
       onChange={(e)=>setApprovalMinutes(Number(e.target.value))}

@@ -2512,12 +2512,13 @@ const hasActionPermission = (user, action) => {
         return permissions.includes("mps_requirement:edit") || hasSetRequirementPrivilege;
     }
     if (action === "approve") {
-        return true; // Section-level permission check is enforced in checkSectionAccess
+        return permissions.includes("mps_requirement:approve");
     }
     if (action === "view") {
-        return permissions.includes("mps_requirement:view") ||
-            permissions.includes("mps_requirement:view_all_sections") ||
-            hasSetRequirementPrivilege;
+        // Any authenticated user may request requirement data. Actual visibility is
+        // enforced below by assigned-section filtering unless the role has
+        // mps_requirement:view_all_sections.
+        return true;
     }
     return false;
 };

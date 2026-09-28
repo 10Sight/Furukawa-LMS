@@ -2525,14 +2525,22 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // In Shift = ALL mode, employees with no attendance row are included in Absent.
         // In selected-shift mode, manpowerData retains the existing explicit absent rule.
         absenteeismData = manpowerData
-            .map((manpowerItem) => {
+            .map((manpowerItem, index) => {
                 if (manpowerItem?.current === null) return null;
 
                 const total = Number(manpowerItem?.current || 0);
-                const absent = Number(manpowerItem?.absent || 0);
+                const dateKey = loopDates[index] ? formatDateLocal(loopDates[index]) : null;
+                const attendanceUploadedForDate = dateKey
+                    ? dailyAttendance.some((attendanceRow) => attendanceRow.fullDate === dateKey)
+                    : false;
+                const absent = attendanceUploadedForDate
+                    ? Number(manpowerItem?.absent || 0)
+                    : 0;
 
                 const absenteeismPercentage =
-                    total > 0 ? Math.round((absent / total) * 1000) / 10 : 0;
+                    attendanceUploadedForDate && total > 0
+                        ? Math.round((absent / total) * 1000) / 10
+                        : 0;
 
                 return {
                     day: manpowerItem.month,

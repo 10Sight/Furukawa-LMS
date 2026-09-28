@@ -239,6 +239,7 @@ const SYSTEM_PERMISSIONS = {
   MPS_ATTENDANCE_UPLOAD: "mps_attendance:upload_excel",
   MPS_REQUIREMENT_ADD_EMAILS: "mps_requirement:add_emails",
   MPS_REQUIREMENT_UPLOAD: "mps_requirement:upload_excel",
+  MPS_REQUIREMENT_APPROVE: "mps_requirement:approve",
   MPS_EMAIL_REPORTS_TRIGGER: "mps_email_reports:trigger_mail",
   MPS_EMAIL_REPORTS_ADD: "mps_email_reports:add_mail",
   MPS_REQUIREMENT_VIEW_ALL_SECTIONS: "mps_requirement:view_all_sections",
@@ -688,6 +689,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MPS_ATTENDANCE_UPLOAD, name: "Upload Attendance Excel", description: "Upload and import attendance data from Excel files" },
         { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_ADD_EMAILS, name: "Add Emails to Requirements", description: "Add email configurations for line requirements notifications" },
         { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_UPLOAD, name: "Upload Requirements Excel", description: "Upload line requirements from Excel templates" },
+        { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_APPROVE, name: "Approve Requirements", description: "Approve requirements only for sections assigned to the user" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_TRIGGER, name: "Trigger Email Reports", description: "Manually trigger the sending of email reports" },
         { id: SYSTEM_PERMISSIONS.MPS_EMAIL_REPORTS_ADD, name: "Add Email to Reports", description: "Add new email recipients to report configurations" },
         { id: SYSTEM_PERMISSIONS.MPS_REQUIREMENT_VIEW_ALL_SECTIONS, name: "View All Sections Set Requirement", description: "Allows view-only access to all sections on Set Requirement page, even if not assigned" }

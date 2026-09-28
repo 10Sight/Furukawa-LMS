@@ -18,6 +18,8 @@ import {
     approveBatchRequirements,
     approveSingleRequirement,
     approveDashboardRequirements,
+    getSystemApprovalTime,
+    updateSystemApprovalTime,
 } from "../controllers/requirement.controller.js";
 
 const router = Router();
@@ -49,6 +51,20 @@ router.post(
     "/approve-dashboard",
     verifyJWT,
     approveDashboardRequirements
+);
+
+// System Approval Time
+// IMPORTANT: Keep these before "/:id" route.
+router.get(
+    "/system-approval-time",
+    verifyJWT,
+    getSystemApprovalTime
+);
+
+router.put(
+    "/system-approval-time",
+    verifyJWT,
+    updateSystemApprovalTime
 );
 
 // Create manually
@@ -115,10 +131,12 @@ router.get(
     "/:id",
     (req, res, next) => {
         const token = req.query.token || req.query["amp;token"];
+
         if (token) {
             req.query.id = req.params.id;
             return approveSingleRequirement(req, res, next);
         }
+
         return next();
     },
     verifyJWT,

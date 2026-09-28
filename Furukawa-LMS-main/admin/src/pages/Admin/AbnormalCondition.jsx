@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,12 +32,40 @@ import {
     useApproveAbnormalConditionEntryMutation,
     useDeleteAbnormalConditionSheetMutation
 } from "@/Redux/AllApi/AbnormalConditionApi";
-import { EditableCell } from "@/components/admin/LayoutEditorCells";
+
+// Local YYYY-MM-DD (toISOString is UTC and returns yesterday's date before 05:30 IST)
+const toLocalDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const cellInputClass =
+    "w-full h-full bg-transparent rounded border border-transparent px-1.5 py-1 text-xs placeholder:text-slate-300 hover:border-slate-200 focus:bg-blue-50/60 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:hover:border-transparent transition-colors";
+
+// Always-visible, full-cell textarea that grows with its content
+function SheetTextArea({ value, onChange, disabled, placeholder, className = "" }) {
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (ref.current) {
+            ref.current.style.height = "auto";
+            ref.current.style.height = `${ref.current.scrollHeight}px`;
+        }
+    }, [value]);
+
+    return (
+        <textarea
+            ref={ref}
+            rows={1}
+            value={value}
+            disabled={disabled}
+            placeholder={disabled ? "" : placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className={`${cellInputClass} block resize-none overflow-hidden leading-snug ${className}`}
+        />
+    );
+}
 
 export default function AbnormalCondition() {
     const authUser = useSelector((state) => state.auth.user);
-    const todayStr = new Date().toISOString().split("T")[0];
-
     // Permission evaluation
     const isMasterAdmin =
         authUser?.role === "SUPERADMIN" ||
@@ -60,6 +88,15 @@ export default function AbnormalCondition() {
         const m = String(d.getMonth() + 1).padStart(2, "0");
         return `${y}-${m}`; // YYYY-MM
     });
+
+    // Date bounds of the selected month, used for the row date pickers
+    const { monthStart, monthEnd } = useMemo(() => {
+        const [y, m] = selectedMonth.split("-").map(Number);
+        return {
+            monthStart: `${selectedMonth}-01`,
+            monthEnd: toLocalDateStr(new Date(y, m, 0))
+        };
+    }, [selectedMonth]);
 
     // Dynamic dropdown data
     const { data: deptsData } = useGetAllDepartmentsQuery({ limit: 500 });
@@ -151,12 +188,6 @@ export default function AbnormalCondition() {
 
     // Update row cell values locally
     const handleCellChange = (index, field, value) => {
-        if (field === "date" && value) {
-            if (value !== todayStr) {
-                toast.error("You can only select today's date.");
-                return;
-            }
-        }
         setLocalEntries((prev) => {
             const updated = [...prev];
             updated[index] = { ...updated[index], [field]: value };
@@ -221,12 +252,13 @@ export default function AbnormalCondition() {
     const handleAddRow = () => {
         setLocalEntries((prev) => {
             const nextSno = prev.length + 1;
-            const todayStr = new Date().toISOString().split("T")[0];
+            const todayStr = toLocalDateStr(new Date());
+            const defaultDate = todayStr >= monthStart && todayStr <= monthEnd ? todayStr : monthStart;
             return [
                 ...prev,
                 {
                     sNo: nextSno,
-                    date: prev.length === 0 ? todayStr : "",
+                    date: defaultDate,
                     lineText: "",
                     processText: "",
                     producedQty: "",
@@ -421,30 +453,29 @@ export default function AbnormalCondition() {
                                                         disabled={!canEdit}
                                                         value={e.date ? e.date.split("T")[0] : ""}
                                                         onChange={(event) => handleCellChange(idx, "date", event.target.value)}
-                                                        className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center"
-                                                        style={{ width: "120px" }}
-                                                        min={todayStr}
-                                                        max={todayStr}
+                                                        className={`${cellInputClass} text-center`}
+                                                        min={monthStart}
+                                                        max={monthEnd}
                                                     />
                                                 </td>
 
                                                 {/* Line */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Line..."
                                                         value={e.lineText || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "lineText", v)}
+                                                        onChange={(v) => handleCellChange(idx, "lineText", v)}
                                                     />
                                                 </td>
 
                                                 {/* Process */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Process..."
                                                         value={e.processText || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "processText", v)}
+                                                        onChange={(v) => handleCellChange(idx, "processText", v)}
                                                     />
                                                 </td>
 
@@ -453,10 +484,11 @@ export default function AbnormalCondition() {
                                                     <input
                                                         type="number"
                                                         disabled={!canEdit}
+                                                        min={0}
+                                                        placeholder={canEdit ? "0" : ""}
                                                         value={e.producedQty || ""}
                                                         onChange={(event) => handleQtyChange(idx, "producedQty", event.target.value)}
-                                                        className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center font-semibold"
-                                                        style={{ width: `${Math.max(String(e.producedQty || "").length || 1, 6) + 2}ch`, minWidth: "60px" }}
+                                                        className={`${cellInputClass} min-w-[70px] text-center font-semibold`}
                                                     />
                                                 </td>
 
@@ -465,10 +497,11 @@ export default function AbnormalCondition() {
                                                     <input
                                                         type="number"
                                                         disabled={!canEdit}
+                                                        min={0}
+                                                        placeholder={canEdit ? "0" : ""}
                                                         value={e.okQty || ""}
                                                         onChange={(event) => handleQtyChange(idx, "okQty", event.target.value)}
-                                                        className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center font-semibold text-green-600"
-                                                        style={{ width: `${Math.max(String(e.okQty || "").length || 1, 6) + 2}ch`, minWidth: "60px" }}
+                                                        className={`${cellInputClass} min-w-[70px] text-center font-semibold text-green-600`}
                                                     />
                                                 </td>
 
@@ -477,72 +510,74 @@ export default function AbnormalCondition() {
                                                     <input
                                                         type="number"
                                                         disabled={!canEdit}
+                                                        min={0}
+                                                        placeholder={canEdit ? "0" : ""}
                                                         value={e.ngQty || ""}
                                                         onChange={(event) => handleQtyChange(idx, "ngQty", event.target.value)}
-                                                        className="bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-1 text-center font-semibold text-red-500"
-                                                        style={{ width: `${Math.max(String(e.ngQty || "").length || 1, 6) + 2}ch`, minWidth: "60px" }}
+                                                        className={`${cellInputClass} min-w-[70px] text-center font-semibold text-red-500`}
                                                     />
                                                 </td>
 
                                                 {/* Abnormal Condition */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Describe abnormal condition..."
                                                         value={e.abnormalCondition || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "abnormalCondition", v)}
+                                                        onChange={(v) => handleCellChange(idx, "abnormalCondition", v)}
                                                         className="font-medium"
                                                     />
                                                 </td>
 
                                                 {/* Cause */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Enter cause..."
                                                         value={e.cause || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "cause", v)}
+                                                        onChange={(v) => handleCellChange(idx, "cause", v)}
                                                     />
                                                 </td>
 
                                                 {/* Action */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Countermeasure / action..."
                                                         value={e.action || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "action", v)}
+                                                        onChange={(v) => handleCellChange(idx, "action", v)}
                                                     />
                                                 </td>
 
                                                 {/* Resp */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Responsible person..."
                                                         value={e.respUserText || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "respUserText", v)}
+                                                        onChange={(v) => handleCellChange(idx, "respUserText", v)}
                                                     />
                                                 </td>
 
                                                 {/* Target */}
                                                 <td className="p-1 border border-slate-200 text-xs">
-                                                    <EditableCell
+                                                    <input
+                                                        type="text"
                                                         disabled={!canEdit}
-                                                        placeholder="Target Date/Days"
+                                                        placeholder={canEdit ? "Target date/days" : ""}
                                                         value={e.target || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "target", v)}
-                                                        className="text-center"
+                                                        onChange={(event) => handleCellChange(idx, "target", event.target.value)}
+                                                        className={`${cellInputClass} text-center`}
                                                     />
                                                 </td>
 
                                                 {/* Setup Confirmation */}
                                                 <td className="p-1 border border-slate-200">
-                                                    <EditableCell
-                                                        multiline
+                                                    <SheetTextArea
                                                         disabled={!canEdit}
+                                                        placeholder="Confirmation before restart..."
                                                         value={e.setupConfirmation || ""}
-                                                        onCommit={(v) => handleCellChange(idx, "setupConfirmation", v)}
+                                                        onChange={(v) => handleCellChange(idx, "setupConfirmation", v)}
                                                     />
                                                 </td>
 

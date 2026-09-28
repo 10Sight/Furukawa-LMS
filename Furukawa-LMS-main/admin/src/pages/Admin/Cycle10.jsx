@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Download, CheckCircle, XCircle, Pencil, PenLine, Edit2, ArrowLeft, CalendarDays, Minus } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { exportToExcel } from "@/utils/exportHelper";
 import { toast } from "sonner";
@@ -35,8 +35,168 @@ import {
 import { Label } from "@/components/ui/label";
 import { ALL_FORM_TYPES, DEFAULT_10CYCLE_CONFIG, normalizeConfig } from "@/utils/tenCycleSheetConfig";
 
+// Sheet zoom (CSS `zoom`, so scroll sizes stay correct), same control as the 16-Day sheet. Persisted per browser.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.05;
+const ZOOM_DEFAULT = 1;
+const ZOOM_STORAGE_KEY = "ten_cycle_sheet_zoom";
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+const readStoredZoom = () => {
+    try {
+        const stored = parseFloat(localStorage.getItem(ZOOM_STORAGE_KEY));
+        return Number.isFinite(stored) ? clampZoom(stored) : ZOOM_DEFAULT;
+    } catch {
+        return ZOOM_DEFAULT;
+    }
+};
+
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 const isRowComplete = (row) => TEN_CYCLE_KEY_FIELDS.every(field => String(row?.[field] || "").trim());
+
+// Fixed widths for the identification columns; long values wrap instead of widening the column.
+const FIXED_COL = {
+    date: 'w-[75px] min-w-[75px] max-w-[75px]',
+    lineMachine: 'w-[80px] min-w-[80px] max-w-[80px]',
+    modelName: 'w-[75px] min-w-[75px] max-w-[75px]',
+    partName: 'w-[85px] min-w-[85px] max-w-[85px]',
+    operationName: 'w-[85px] min-w-[85px] max-w-[85px]',
+    sopNo: 'w-[65px] min-w-[65px] max-w-[65px]',
+    srNo: 'w-[28px] min-w-[28px] max-w-[28px]',
+    inspectorName: 'w-[90px] min-w-[90px] max-w-[90px]',
+    empCode: 'w-[55px] min-w-[55px] max-w-[55px]',
+    skillLevel: 'w-[36px] min-w-[36px] max-w-[36px]',
+    observation: 'w-[130px] min-w-[130px] max-w-[130px]',
+    passScore: 'w-[45px] min-w-[45px] max-w-[45px]',
+    overallResult: 'w-[45px] min-w-[45px] max-w-[45px]',
+    sign: 'w-[70px] min-w-[70px] max-w-[70px]',
+    remark: 'w-[120px] min-w-[120px] max-w-[120px]',
+};
+// Section A / B / C sub-columns (tick marks, cycle readings).
+const TICK_COL = 'w-[28px] min-w-[28px] max-w-[28px]';
+const INSTRUMENT_COL = 'w-[60px] min-w-[60px] max-w-[60px]';
+const CYCLE_COL = 'w-[32px] min-w-[32px] max-w-[32px]';
+const CYCLE_SPEC_COL = 'w-[40px] min-w-[40px] max-w-[40px]';
+const CYCLE_MINMAX_COL = 'w-[36px] min-w-[36px] max-w-[36px]';
+const TICK_SELECT_CLASS = 'w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-700 text-[12px] py-1 disabled:cursor-default';
+
+// Pixel width of every sheet column, in order. Rendered as a <colgroup> on a table-fixed
+// table so the browser can't redistribute spare width into the fixed columns.
+const getSheetColumnWidths = (form, cfg) => {
+    const ticks = (n) => Array(n).fill(28);
+    const secB = form === 'form3'
+        ? [...Array(10).fill(32), 40, 36, 36]
+        : Array(cfg.secB.instruments.length).fill(60);
+    return [
+        28, 75, 80, 75, 85, 85, 65,
+        ...ticks(cfg.secA.questions.length + cfg.secA.generalPoints.length),
+        ...secB,
+        ...ticks(cfg.secC.columns.length),
+        90, 55, 36, 130, 130, 130, 45, 45, 70, 70, 120,
+    ];
+};
+const SheetColGroup = ({ widths }) => (
+    <colgroup>
+        {widths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
+    </colgroup>
+);
+const FIXED_HEADER_CLASS = 'border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold';
+const WRAP_TEXT_CLASS = 'block w-full resize-none overflow-hidden bg-transparent outline-none text-center px-0.5 py-1 text-[11px] font-bold leading-tight whitespace-normal break-words [overflow-wrap:anywhere] disabled:cursor-default';
+
+// Date shown as text (DD-MM-YYYY) with a calendar button underneath that opens the native picker.
+const DateField = ({ value, onChange, disabled, min, max }) => {
+    const ref = useRef(null);
+    const [y, m, d] = String(value || '').split('-');
+    const display = y && m && d ? `${d}-${m}-${y}` : '';
+    const openPicker = () => {
+        const el = ref.current;
+        if (!el) return;
+        try { el.showPicker(); } catch { el.focus(); el.click(); }
+    };
+    return (
+        <div className="relative flex flex-col items-center justify-center gap-0.5 py-1">
+            <span className="text-[11px] font-bold text-slate-800 leading-tight">{display || '-'}</span>
+            {!disabled && (
+                <button type="button" onClick={openPicker} title="Pick date" className="text-slate-600 hover:text-blue-700 print:hidden">
+                    <CalendarDays size={13} />
+                </button>
+            )}
+            <input
+                ref={ref}
+                type="date"
+                tabIndex={-1}
+                aria-hidden="true"
+                className="absolute bottom-0 left-1/2 w-0 h-0 opacity-0 pointer-events-none"
+                value={value || ''}
+                onChange={onChange}
+                disabled={disabled}
+                min={min}
+                max={max}
+            />
+        </div>
+    );
+};
+
+// Single-value textarea that grows vertically to fit its wrapped content.
+const WrapTextarea = ({ value, onChange, disabled, className = 'text-blue-700', ...rest }) => {
+    const ref = useRef(null);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        // scrollHeight is 0 while the table is hidden; keep the natural one-row height then.
+        if (el.scrollHeight) el.style.height = `${el.scrollHeight}px`;
+    }, [value]);
+    return (
+        <textarea
+            ref={ref}
+            rows={1}
+            value={value || ''}
+            onChange={onChange}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+            disabled={disabled}
+            className={`${WRAP_TEXT_CLASS} ${className}`}
+            {...rest}
+        />
+    );
+};
+
+// Station field: wrapped text when idle, switches to a datalist-backed input while being edited
+// (a <textarea> cannot use a datalist).
+const StationField = ({ listId, stations, value, onChange, disabled }) => {
+    const [editing, setEditing] = useState(false);
+    if (editing && !disabled) {
+        return (
+            <>
+                <input
+                    autoFocus
+                    list={listId}
+                    className="w-full text-center bg-transparent outline-none px-0.5 py-1 text-[11px] font-bold text-blue-700"
+                    placeholder="Search Station..."
+                    value={value || ''}
+                    onChange={onChange}
+                    onBlur={() => setEditing(false)}
+                />
+                <datalist id={listId}>
+                    {stations.map(st => (
+                        <option key={st.id} value={st.name}>
+                            {st.name} ({st.subSectionName || '-'})
+                        </option>
+                    ))}
+                </datalist>
+            </>
+        );
+    }
+    return (
+        <WrapTextarea
+            value={value}
+            onChange={onChange}
+            onFocus={() => setEditing(true)}
+            placeholder={disabled ? '' : 'Search Station...'}
+            disabled={disabled}
+        />
+    );
+};
 
 const Cycle10 = () => {
     const [searchParams] = useSearchParams();
@@ -99,6 +259,8 @@ const Cycle10 = () => {
     const secAGeneralPointFields = config.secA.generalPoints.map(g => `secA_${g.id}`);
     const secBInstrumentFields = config.secB.instruments.map(i => `secB_${i.id}`);
     const secCColumnFields = config.secC.columns.map(c => `secC_${c.id}`);
+    const sheetColumnWidths = getSheetColumnWidths(formType, config);
+    const sheetTableWidth = sheetColumnWidths.reduce((sum, w) => sum + w, 0);
 
     // Live preview for a not-yet-created sheet reflects whatever department/section
     // is currently selected (the page filter, or the "Add Sheet" dialog's own pick).
@@ -639,9 +801,9 @@ const Cycle10 = () => {
     const isAutoSign = (value, autoValue) => !!value && !!autoValue && value === autoValue;
 
     const renderInspectorSignCell = (row) => (
-        <td className="border border-black p-0">
-            <input
-                className={`w-full text-center bg-transparent outline-none p-1 italic disabled:cursor-default ${isAutoSign(row.inspectorSign, row.inspectorName) ? 'text-indigo-600 font-medium' : 'text-blue-600'}`}
+        <td className={`border border-black p-0 align-middle ${FIXED_COL.sign}`}>
+            <WrapTextarea
+                className={`italic ${isAutoSign(row.inspectorSign, row.inspectorName) ? 'text-indigo-600' : 'text-blue-700'}`}
                 style={isAutoSign(row.inspectorSign, row.inspectorName) ? { fontFamily: "'Segoe Script', 'Brush Script MT', cursive" } : undefined}
                 value={row.inspectorSign}
                 onChange={(e) => handleRowChange(row.id, 'inspectorSign', e.target.value)}
@@ -654,9 +816,9 @@ const Cycle10 = () => {
         const fallback = currentSheet?.verifiedBy || (currentSheet?.verifiedStatus === 'APPROVE' ? 'Signed' : '');
         const displayValue = row.tlSign || (!isEditMode ? fallback : '');
         return (
-            <td className="border border-black p-0">
-                <input
-                    className={`w-full text-center bg-transparent outline-none p-1 italic disabled:cursor-default ${isAutoSign(displayValue, currentSheet?.verifiedBy) || displayValue === 'Signed' ? 'text-indigo-600 font-medium' : 'text-blue-600'}`}
+            <td className={`border border-black p-0 align-middle ${FIXED_COL.sign}`}>
+                <WrapTextarea
+                    className={`italic ${isAutoSign(displayValue, currentSheet?.verifiedBy) || displayValue === 'Signed' ? 'text-indigo-600' : 'text-blue-700'}`}
                     style={(isAutoSign(displayValue, currentSheet?.verifiedBy) || displayValue === 'Signed') ? { fontFamily: "'Segoe Script', 'Brush Script MT', cursive" } : undefined}
                     value={displayValue}
                     onChange={(e) => handleRowChange(row.id, 'tlSign', e.target.value)}
@@ -719,6 +881,56 @@ const Cycle10 = () => {
         return () => observer.disconnect();
     }, [fullScreenScrollEl]);
 
+    const [zoom, setZoom] = useState(readStoredZoom);
+    const handleZoomChange = (value) => {
+        const next = clampZoom(value);
+        setZoom(next);
+        try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
+    };
+    const zoomPercent = Math.round(zoom * 100);
+    const zoomControl = (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 h-9 shadow-sm print:hidden">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom - ZOOM_STEP)}
+                disabled={zoom <= ZOOM_MIN}
+                aria-label="Zoom out"
+            >
+                <Minus className="h-4 w-4" />
+            </Button>
+            <input
+                type="range"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                value={zoom}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="w-28 cursor-pointer accent-indigo-600"
+                aria-label="Sheet zoom"
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom + ZOOM_STEP)}
+                disabled={zoom >= ZOOM_MAX}
+                aria-label="Zoom in"
+            >
+                <Plus className="h-4 w-4" />
+            </Button>
+            <button
+                type="button"
+                onClick={() => handleZoomChange(ZOOM_DEFAULT)}
+                title={`Reset zoom to ${Math.round(ZOOM_DEFAULT * 100)}%`}
+                className={`min-w-[3.25rem] rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums transition-colors ${zoomPercent === Math.round(ZOOM_DEFAULT * 100) ? 'text-slate-500 hover:bg-slate-100' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+            >
+                {zoomPercent}%
+            </button>
+        </div>
+    );
+
     const getSheetStatus = (sheet) => {
         if (sheet.reviewedStatus === 'REJECT') return { label: 'REJECTED BY REVIEWER', color: 'bg-red-500', icon: <XCircle size={14} />, by: sheet.reviewedBy };
         if (sheet.verifiedStatus === 'REJECT') return { label: 'REJECTED BY VERIFIER', color: 'bg-red-500', icon: <XCircle size={14} />, by: sheet.verifiedBy };
@@ -741,8 +953,9 @@ const Cycle10 = () => {
         ].filter(Boolean);
         const formTypeLabel = formType === "form3" ? "10 Cycle (Assembly)" : formType === "form2" ? "Form 2 (Text Observations)" : "Form 1 (Standard Checkbox)";
 
+        // Solid background, not backdrop-blur: blurring a sheet-wide sticky bar re-renders it on every scroll frame.
         return (
-            <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+            <div className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm print:hidden">
                 <div className="sticky left-0" style={{ width: fullScreenViewportWidth || '100vw' }}>
                     {/* Row 1: navigation + sheet identity/status | shortcut hint */}
                     <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -823,6 +1036,8 @@ const Cycle10 = () => {
                                 </>
                             )}
                         </div>
+                        {/* Middle: sheet zoom */}
+                        <div className="mx-auto">{zoomControl}</div>
                         {/* Right: export, then save / submit */}
                         <div className="flex flex-wrap items-center gap-2 ml-auto">
                             <Button
@@ -1220,14 +1435,17 @@ const Cycle10 = () => {
                 {isFullScreenSheet && createPortal(
                     <div
                         ref={setFullScreenScrollEl}
-                        className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:overflow-visible print:bg-white"
+                        className="fixed inset-0 z-50 bg-slate-100 overflow-auto overscroll-contain w-screen h-screen animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:overflow-visible print:bg-white"
                     >
                         {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
                         <div className="min-w-full w-max min-h-full flex flex-col">
                             {renderFullScreenHeader()}
 
                             <div className="p-4 sm:p-6 pb-20 print:p-0">
-                                <div className="bg-white border border-slate-300 rounded-xl p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:rounded-none print:p-0">
+                                <div
+                                    className="bg-white border border-slate-300 rounded-xl p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:rounded-none print:p-0 print:![zoom:1]"
+                                    style={{ zoom }}
+                                >
                         {loading ? (
                             <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
                         ) : (
@@ -1306,96 +1524,83 @@ const Cycle10 = () => {
                                 <div className="border-2 border-black">
                                     {formType === 'form1' ? (
                                         /* FORM 1: Checkbox Style with Dropdowns */
-                                        <div className="min-w-[3200px]">
-                                            <table className="w-full text-[10px] border-collapse">
+                                        <div style={{ minWidth: `${sheetTableWidth}px` }}>
+                                            <table className="table-fixed text-[10px] border-collapse" style={{ width: `${sheetTableWidth}px` }}>
+                                                <SheetColGroup widths={sheetColumnWidths} />
                                                 <thead>
                                                     <tr className="bg-gray-100 text-center font-bold">
-                                                        <th rowSpan="3" className="border border-black p-1 w-[40px]">Sr. No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[90px]">Date</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Line/ Machine No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Model Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
-                                                        <th colSpan={config.secB.instruments.length} className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Operator Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[180px]">Observation in Section - A</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[180px]">Observation in Section - B</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[180px]">Observation in Section - C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[70px] bg-yellow-100">Pass Score %</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Overall Result</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">Operator Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">TL Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.srNo}`}>Sr. No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.date}`}>Date</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.lineMachine}`}>Line/ Machine No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.modelName}`}>Model Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.partName}`}>Part Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.operationName}`}>Operation Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sopNo}`}>SOP No.</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section - A</th>
+                                                        <th colSpan={config.secB.instruments.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section - B</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section-C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.inspectorName}`}>Operator Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.empCode}`}>Emp. Code</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.skillLevel}`}>Skill Level</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - A</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - B</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} bg-yellow-100 ${FIXED_COL.passScore}`}>Pass Score %</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.overallResult}`}>Overall Result</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>Operator Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>TL Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.remark}`}>Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Measuring Instrument Using Method</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>General Points Check Marking</th>
+                                                        <th colSpan={config.secB.instruments.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Measuring Instrument Using Method</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
                                                         {config.secA.questions.map(q => (
-                                                            <th key={`f1qh_${q.id}`} className="border border-black w-[40px] bg-white">{q.label}</th>
+                                                            <th key={`f1qh_${q.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{q.label}</th>
                                                         ))}
                                                         {config.secA.generalPoints.map(g => (
-                                                            <th key={`f1gph_${g.id}`} className="border border-black w-[40px] bg-white">{g.label}</th>
+                                                            <th key={`f1gph_${g.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{g.label}</th>
                                                         ))}
                                                         {config.secB.instruments.map(i => (
-                                                            <th key={`f1ih_${i.id}`} className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full whitespace-nowrap px-1">{i.label}</div></th>
+                                                            <th key={`f1ih_${i.id}`} className={`${FIXED_HEADER_CLASS} bg-white align-middle ${INSTRUMENT_COL}`}>{i.label}</th>
                                                         ))}
                                                         {config.secC.columns.map(c => (
-                                                            <th key={`f1ch_${c.id}`} className="border border-black w-[40px] bg-white">{c.label}</th>
+                                                            <th key={`f1ch_${c.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{c.label}</th>
                                                         ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {rows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50 h-8">
-                                                            <td className="border border-black relative">
+                                                            <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
                                                                 {index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5 print:hidden"><Trash2 size={10} /></button>}
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input type="date" className="w-full text-center bg-transparent outline-none p-1 text-[9px] disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
+                                                                <DateField value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} />
                                                             </td>
-                                                            <td className="border border-black p-0 h-8 bg-yellow-50">
-                                                                <input
-                                                                    list={`stations-f1-${row.id}`}
-                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 font-bold disabled:cursor-default"
-                                                                    placeholder="Search Station..."
-                                                                    value={row.lineMachine || ''}
-                                                                    onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
-                                                                    disabled={!isEditMode}
-                                                                />
-                                                                <datalist id={`stations-f1-${row.id}`}>
-                                                                    {stations.map(st => (
-                                                                        <option key={st.id} value={st.name}>
-                                                                            {st.name} ({st.subSectionName || '-'})
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.lineMachine}`}>
+                                                                <StationField listId={`stations-f1-${row.id}`} stations={stations} value={row.lineMachine} onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.modelName}`}>
+                                                                <WrapTextarea value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.partName}`}>
+                                                                <WrapTextarea value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.operationName}`}>
+                                                                <WrapTextarea value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.sopNo}`}>
+                                                                <WrapTextarea value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} />
                                                             </td>
                                                             {[...secAQuestionFields, ...secAGeneralPointFields].map(field => (
-                                                                <td key={field} className="border border-black p-0 align-middle">
+                                                                <td key={field} className={`border border-black p-0 align-middle ${TICK_COL}`}>
                                                                     <select
-                                                                        className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
+                                                                        className={TICK_SELECT_CLASS}
                                                                         value={row[field] || ''}
                                                                         onChange={(e) => handleRowChange(row.id, field, e.target.value)}
                                                                         disabled={!isEditMode}
@@ -1407,9 +1612,9 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             {secBInstrumentFields.map(field => (
-                                                                <td key={field} className="border border-black p-0 align-middle">
+                                                                <td key={field} className={`border border-black p-0 align-middle ${INSTRUMENT_COL}`}>
                                                                     <select
-                                                                        className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
+                                                                        className={TICK_SELECT_CLASS}
                                                                         value={row[field] || ''}
                                                                         onChange={(e) => handleRowChange(row.id, field, e.target.value)}
                                                                         disabled={!isEditMode}
@@ -1421,9 +1626,9 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             {secCColumnFields.map(field => (
-                                                                <td key={field} className="border border-black p-0 align-middle">
+                                                                <td key={field} className={`border border-black p-0 align-middle ${TICK_COL}`}>
                                                                     <select
-                                                                        className="w-full h-full bg-transparent outline-none text-center appearance-none cursor-pointer font-bold text-blue-600 text-[12px] disabled:cursor-default"
+                                                                        className={TICK_SELECT_CLASS}
                                                                         value={row[field] || ''}
                                                                         onChange={(e) => handleRowChange(row.id, field, e.target.value)}
                                                                         disabled={!isEditMode}
@@ -1434,46 +1639,50 @@ const Cycle10 = () => {
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <UserAutocomplete
-                                                                    compact
-                                                                    departmentId={selectedDepartmentFilter}
-                                                                    sectionId={selectedSectionFilter}
-                                                                    passedDate={row.date}
-                                                                    passedTestPaperOnly="any"
-                                                                    value={row.inspectorName}
-                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
-                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
-                                                                    placeholder="Search Operator..."
-                                                                    inputClassName="text-blue-600 font-bold"
-                                                                    disabled={!isEditMode}
-                                                                />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.inspectorName}`}>
+                                                                {isEditMode ? (
+                                                                    <UserAutocomplete
+                                                                        compact
+                                                                        departmentId={selectedDepartmentFilter}
+                                                                        sectionId={selectedSectionFilter}
+                                                                        passedDate={row.date}
+                                                                        passedTestPaperOnly="any"
+                                                                        value={row.inspectorName}
+                                                                        onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                        onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                        placeholder="Search Operator..."
+                                                                        inputClassName="text-blue-700 font-bold text-[11px]"
+                                                                        disabled={!isEditMode}
+                                                                    />
+                                                                ) : (
+                                                                    <WrapTextarea value={row.inspectorName} disabled />
+                                                                )}
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle bg-yellow-50 ${FIXED_COL.empCode}`}>
+                                                                <WrapTextarea value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.skillLevel}`}>
+                                                                <WrapTextarea value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}>
+                                                                <WrapTextarea value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}>
+                                                                <WrapTextarea value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}>
+                                                                <WrapTextarea value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-100 font-bold text-green-600">
+                                                            <td className={`border border-black px-0.5 py-1 align-middle bg-yellow-100 text-[11px] font-bold text-green-600 leading-tight ${FIXED_COL.passScore}`}>
                                                                 {row.passScore}
                                                             </td>
-                                                            <td className="border border-black p-0 font-bold text-blue-600">
+                                                            <td className={`border border-black px-0.5 py-1 align-middle text-[11px] font-bold text-blue-700 leading-tight ${FIXED_COL.overallResult}`}>
                                                                 {row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}
                                                             </td>
                                                             {renderInspectorSignCell(row)}
                                                             {renderTLSignCell(row)}
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.remark}`}>
+                                                                <WrapTextarea value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} />
                                                             </td>
                                                         </tr>
                                                     ))}
@@ -1517,7 +1726,7 @@ const Cycle10 = () => {
                                         </div>
                                     ) : formType === 'form2' ? (
                                         /* FORM 2: Complete Monitoring Sheet (Markings + Observations) */
-                                        <div className="min-w-[3800px]">
+                                        <div style={{ minWidth: `${sheetTableWidth}px` }}>
                                             <div className="flex justify-between items-center border-b-2 border-black pb-1 relative mb-2">
                                                 <h1 className="text-xl font-bold uppercase w-full text-center">
                                                     10 CYCLE CHECK MONITORING SHEET ( Complete )
@@ -1533,84 +1742,81 @@ const Cycle10 = () => {
                                                 </div>
                                             </div>
 
-                                            <table className="w-full text-[10px] border-collapse">
+                                            <table className="table-fixed text-[10px] border-collapse" style={{ width: `${sheetTableWidth}px` }}>
+                                                <SheetColGroup widths={sheetColumnWidths} />
                                                 <thead>
                                                     <tr className="bg-gray-100 text-center font-bold">
-                                                        <th rowSpan="3" className="border border-black p-1 w-[40px]">Sr. No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[90px]">Date</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Line/ Machine No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Model Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
-                                                        <th colSpan={config.secB.instruments.length} className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Inspector Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - A</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - B</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[70px] bg-yellow-100">Pass Score %</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Overall Result</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">Inspector Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">TL Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.srNo}`}>Sr. No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.date}`}>Date</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.lineMachine}`}>Line/ Machine No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.modelName}`}>Model Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.partName}`}>Part Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.operationName}`}>Operation Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sopNo}`}>SOP No.</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section - A</th>
+                                                        <th colSpan={config.secB.instruments.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section - B</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section-C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.inspectorName}`}>Inspector Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.empCode}`}>Emp. Code</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.skillLevel}`}>Skill Level</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - A</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - B</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} bg-yellow-100 ${FIXED_COL.passScore}`}>Pass Score %</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.overallResult}`}>Overall Result</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>Inspector Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>TL Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.remark}`}>Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
-                                                        <th colSpan="5" className="border border-black p-1 bg-white">Measuring Instrument Using Method</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>General Points Check Marking</th>
+                                                        <th colSpan={config.secB.instruments.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Measuring Instrument Using Method</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
                                                         {config.secA.questions.map(q => (
-                                                            <th key={`f2qh_${q.id}`} className="border border-black w-[40px] bg-white">{q.label}</th>
+                                                            <th key={`f2qh_${q.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{q.label}</th>
                                                         ))}
                                                         {config.secA.generalPoints.map(g => (
-                                                            <th key={`f2gph_${g.id}`} className="border border-black w-[40px] bg-white">{g.label}</th>
+                                                            <th key={`f2gph_${g.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{g.label}</th>
                                                         ))}
                                                         {config.secB.instruments.map(i => (
-                                                            <th key={`f2ih_${i.id}`} className="border border-black w-[45px] bg-white"><div className="flex items-center justify-center h-32 w-full [writing-mode:vertical-rl] rotate-180 whitespace-nowrap px-1">{i.label}</div></th>
+                                                            <th key={`f2ih_${i.id}`} className={`${FIXED_HEADER_CLASS} bg-white align-middle ${INSTRUMENT_COL}`}>{i.label}</th>
                                                         ))}
                                                         {config.secC.columns.map(c => (
-                                                            <th key={`f2ch_${c.id}`} className="border border-black w-[40px] bg-white">{c.label}</th>
+                                                            <th key={`f2ch_${c.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{c.label}</th>
                                                         ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {rows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50">
-                                                            <td className="border border-black relative">
+                                                            <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
                                                                 {index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
-                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} /></td>
-                                                            <td className="border border-black p-0 h-8">
-                                                                <input
-                                                                    list={`stations-f2-${row.id}`}
-                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
-                                                                    placeholder="Search Station..."
-                                                                    value={row.lineMachine || ''}
-                                                                    onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
-                                                                    disabled={!isEditMode}
-                                                                />
-                                                                <datalist id={`stations-f2-${row.id}`}>
-                                                                    {stations.map(st => (
-                                                                        <option key={st.id} value={st.name}>
-                                                                            {st.name} ({st.subSectionName || '-'})
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
+                                                                <DateField value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} />
                                                             </td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.lineMachine}`}>
+                                                                <StationField listId={`stations-f2-${row.id}`} stations={stations} value={row.lineMachine} onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.modelName}`}>
+                                                                <WrapTextarea value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.partName}`}>
+                                                                <WrapTextarea value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.operationName}`}>
+                                                                <WrapTextarea value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.sopNo}`}>
+                                                                <WrapTextarea value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
                                                             {[...secAQuestionFields, ...secAGeneralPointFields].map(f => (
-                                                                <td key={f} className="border border-black p-0 h-full">
-                                                                    <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
+                                                                <td key={f} className={`border border-black p-0 h-full align-middle ${TICK_COL}`}>
+                                                                    <select className={TICK_SELECT_CLASS} value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
                                                                         <option value="✓" className="text-green-600 font-bold">✓</option>
                                                                         <option value="X" className="text-red-600 font-bold">X</option>
@@ -1618,8 +1824,8 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             {secBInstrumentFields.map(f => (
-                                                                <td key={f} className="border border-black p-0 h-full">
-                                                                    <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
+                                                                <td key={f} className={`border border-black p-0 h-full align-middle ${INSTRUMENT_COL}`}>
+                                                                    <select className={TICK_SELECT_CLASS} value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
                                                                         <option value="✓" className="text-green-600 font-bold">✓</option>
                                                                         <option value="X" className="text-red-600 font-bold">X</option>
@@ -1627,39 +1833,43 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             {secCColumnFields.map(f => (
-                                                                <td key={f} className="border border-black p-0 h-full">
-                                                                    <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
+                                                                <td key={f} className={`border border-black p-0 h-full align-middle ${TICK_COL}`}>
+                                                                    <select className={TICK_SELECT_CLASS} value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
                                                                         <option value="✓" className="text-green-600 font-bold">✓</option>
                                                                         <option value="X" className="text-red-600 font-bold">X</option>
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            <td className="border border-black p-0">
-                                                                <UserAutocomplete
-                                                                    compact
-                                                                    departmentId={selectedDepartmentFilter}
-                                                                    sectionId={selectedSectionFilter}
-                                                                    passedDate={row.date}
-                                                                    passedTestPaperOnly="any"
-                                                                    value={row.inspectorName}
-                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
-                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
-                                                                    placeholder="Search Operator..."
-                                                                    inputClassName="text-blue-600"
-                                                                    disabled={!isEditMode}
-                                                                />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.inspectorName}`}>
+                                                                {isEditMode ? (
+                                                                    <UserAutocomplete
+                                                                        compact
+                                                                        departmentId={selectedDepartmentFilter}
+                                                                        sectionId={selectedSectionFilter}
+                                                                        passedDate={row.date}
+                                                                        passedTestPaperOnly="any"
+                                                                        value={row.inspectorName}
+                                                                        onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                        onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                        placeholder="Search Operator..."
+                                                                        inputClassName="text-blue-700 font-bold text-[11px]"
+                                                                        disabled={!isEditMode}
+                                                                    />
+                                                                ) : (
+                                                                    <WrapTextarea value={row.inspectorName} disabled />
+                                                                )}
                                                             </td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0 bg-yellow-100 font-bold text-green-600">{row.passScore}</td>
-                                                            <td className="border border-black p-0 font-bold text-blue-600">{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.empCode}`}><WrapTextarea value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.skillLevel}`}><WrapTextarea value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle bg-yellow-100 text-[11px] font-bold text-green-600 leading-tight ${FIXED_COL.passScore}`}>{row.passScore}</td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle text-[11px] font-bold text-blue-700 leading-tight ${FIXED_COL.overallResult}`}>{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
                                                             {renderInspectorSignCell(row)}
                                                             {renderTLSignCell(row)}
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.remark}`}><WrapTextarea value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1702,7 +1912,7 @@ const Cycle10 = () => {
                                         </div>
                                     ) : (
                                         /* FORM 3: Numerical 10 Cycle Sheet */
-                                        <div className="min-w-[4200px]">
+                                        <div style={{ minWidth: `${sheetTableWidth}px` }}>
                                             <div className="flex justify-between items-center border-b-2 border-black pb-1 relative mb-2">
                                                 <h1 className="text-xl font-bold uppercase w-full text-center">
                                                     10 CYCLE CHECK MONITORING SHEET ( Numerical )
@@ -1718,88 +1928,85 @@ const Cycle10 = () => {
                                                 </div>
                                             </div>
 
-                                            <table className="w-full text-[10px] border-collapse">
+                                            <table className="table-fixed text-[10px] border-collapse" style={{ width: `${sheetTableWidth}px` }}>
+                                                <SheetColGroup widths={sheetColumnWidths} />
                                                 <thead>
                                                     <tr className="bg-gray-100 text-center font-bold">
-                                                        <th rowSpan="3" className="border border-black p-1 w-[40px]">Sr. No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[90px]">Date</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Line/ Machine No.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Model Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Part Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[150px]">Operation Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">SOP No.</th>
-                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
-                                                        <th colSpan="13" className="border border-black p-1 bg-white">Section - B</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[120px]">Inspector Name</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Emp. Code</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[60px]">Skill Level</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - A</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - B</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[350px]">Observation in Section - C</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[70px] bg-yellow-100">Pass Score %</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[80px]">Overall Result</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">Inspector Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[100px]">TL Sign.</th>
-                                                        <th rowSpan="3" className="border border-black p-1 w-[200px]">Remark if any</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.srNo}`}>Sr. No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.date}`}>Date</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.lineMachine}`}>Line/ Machine No.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.modelName}`}>Model Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.partName}`}>Part Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.operationName}`}>Operation Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sopNo}`}>SOP No.</th>
+                                                        <th colSpan={config.secA.questions.length + config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section - A</th>
+                                                        <th colSpan="13" className={`${FIXED_HEADER_CLASS} bg-white`}>Section - B</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Section-C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.inspectorName}`}>Inspector Name</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.empCode}`}>Emp. Code</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.skillLevel}`}>Skill Level</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - A</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - B</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.observation}`}>Observation in Section - C</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} bg-yellow-100 ${FIXED_COL.passScore}`}>Pass Score %</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.overallResult}`}>Overall Result</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>Inspector Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.sign}`}>TL Sign.</th>
+                                                        <th rowSpan="3" className={`${FIXED_HEADER_CLASS} ${FIXED_COL.remark}`}>Remark if any</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
-                                                        <th colSpan={config.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                        <th colSpan={config.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
-                                                        <th colSpan="10" className="border border-black p-1 bg-white text-red-600">10 Cycle Check</th>
-                                                        <th rowSpan="2" className="border border-black p-1 bg-white">Cycle Time Spec.</th>
-                                                        <th colSpan="2" className="border border-black p-1 bg-yellow-50 text-blue-600">Cycle Time Obs.</th>
-                                                        <th colSpan={config.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                        <th colSpan={config.secA.questions.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Ask Four Quest. Marking</th>
+                                                        <th colSpan={config.secA.generalPoints.length} className={`${FIXED_HEADER_CLASS} bg-white`}>General Points Check Marking</th>
+                                                        <th colSpan="10" className={`${FIXED_HEADER_CLASS} bg-white text-red-600`}>10 Cycle Check</th>
+                                                        <th rowSpan="2" className={`${FIXED_HEADER_CLASS} bg-white ${CYCLE_SPEC_COL}`}>Cycle Time Spec.</th>
+                                                        <th colSpan="2" className={`${FIXED_HEADER_CLASS} bg-yellow-50 text-blue-700`}>Cycle Time Obs.</th>
+                                                        <th colSpan={config.secC.columns.length} className={`${FIXED_HEADER_CLASS} bg-white`}>Cross Inspection Marking</th>
                                                     </tr>
                                                     <tr className="bg-gray-100 text-center font-bold text-[9px]">
                                                         {config.secA.questions.map(q => (
-                                                            <th key={`f3qh_${q.id}`} className="border border-black w-[35px] bg-white">{q.label}</th>
+                                                            <th key={`f3qh_${q.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{q.label}</th>
                                                         ))}
                                                         {config.secA.generalPoints.map(g => (
-                                                            <th key={`f3gph_${g.id}`} className="border border-black w-[35px] bg-white">{g.label}</th>
+                                                            <th key={`f3gph_${g.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{g.label}</th>
                                                         ))}
                                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                                                            <th key={n} className="border border-black w-[40px] bg-white">{n}</th>
+                                                            <th key={n} className={`${FIXED_HEADER_CLASS} bg-white ${CYCLE_COL}`}>{n}</th>
                                                         ))}
-                                                        <th className="border border-black w-[45px] bg-yellow-50 text-blue-600">Min.</th>
-                                                        <th className="border border-black w-[45px] bg-yellow-50 text-blue-600">Max.</th>
+                                                        <th className={`${FIXED_HEADER_CLASS} bg-yellow-50 text-blue-700 ${CYCLE_MINMAX_COL}`}>Min.</th>
+                                                        <th className={`${FIXED_HEADER_CLASS} bg-yellow-50 text-blue-700 ${CYCLE_MINMAX_COL}`}>Max.</th>
                                                         {config.secC.columns.map(c => (
-                                                            <th key={`f3ch_${c.id}`} className="border border-black w-[35px] bg-white">{c.label}</th>
+                                                            <th key={`f3ch_${c.id}`} className={`${FIXED_HEADER_CLASS} bg-white ${TICK_COL}`}>{c.label}</th>
                                                         ))}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {rows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50">
-                                                            <td className="border border-black relative">
+                                                            <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
                                                                 {index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
-                                                            <td className="border border-black p-0"><input type="date" className="w-full text-center bg-transparent outline-none p-1 disabled:cursor-default" value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} /></td>
-                                                            <td className="border border-black p-0 h-8">
-                                                                <input
-                                                                    list={`stations-f3-${row.id}`}
-                                                                    className="w-full h-full text-center bg-transparent outline-none text-[10px] py-1 text-blue-600 disabled:cursor-default"
-                                                                    placeholder="Search Station..."
-                                                                    value={row.lineMachine || ''}
-                                                                    onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)}
-                                                                    disabled={!isEditMode}
-                                                                />
-                                                                <datalist id={`stations-f3-${row.id}`}>
-                                                                    {stations.map(st => (
-                                                                        <option key={st.id} value={st.name}>
-                                                                            {st.name} ({st.subSectionName || '-'})
-                                                                        </option>
-                                                                    ))}
-                                                                </datalist>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
+                                                                <DateField value={row.date} onChange={(e) => handleRowChange(row.id, 'date', e.target.value)} disabled={!isEditMode} min={dateMinConstraint} max={dateMaxConstraint} />
                                                             </td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.lineMachine}`}>
+                                                                <StationField listId={`stations-f3-${row.id}`} stations={stations} value={row.lineMachine} onChange={(e) => handleRowChange(row.id, 'lineMachine', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.modelName}`}>
+                                                                <WrapTextarea value={row.modelName} onChange={(e) => handleRowChange(row.id, 'modelName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.partName}`}>
+                                                                <WrapTextarea value={row.partName} onChange={(e) => handleRowChange(row.id, 'partName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.operationName}`}>
+                                                                <WrapTextarea value={row.operationName} onChange={(e) => handleRowChange(row.id, 'operationName', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.sopNo}`}>
+                                                                <WrapTextarea value={row.sopNo} onChange={(e) => handleRowChange(row.id, 'sopNo', e.target.value)} disabled={!isEditMode} />
+                                                            </td>
                                                             {[...secAQuestionFields, ...secAGeneralPointFields].map(f => (
-                                                                <td key={f} className="border border-black p-0 h-full">
-                                                                    <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
+                                                                <td key={f} className={`border border-black p-0 h-full align-middle ${TICK_COL}`}>
+                                                                    <select className={TICK_SELECT_CLASS} value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
                                                                         <option value="✓" className="text-green-600 font-bold">✓</option>
                                                                         <option value="X" className="text-red-600 font-bold">X</option>
@@ -1807,49 +2014,53 @@ const Cycle10 = () => {
                                                                 </td>
                                                             ))}
                                                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                                                                <td key={n} className="border border-black p-0">
-                                                                    <input className="w-full text-center bg-transparent outline-none p-1 text-red-600 font-bold disabled:cursor-default" value={row[`secB_v${n}`]} onChange={(e) => handleRowChange(row.id, `secB_v${n}`, e.target.value)} disabled={!isEditMode} />
+                                                                <td key={n} className={`border border-black p-0 align-middle ${CYCLE_COL}`}>
+                                                                    <WrapTextarea className="text-red-600" value={row[`secB_v${n}`]} onChange={(e) => handleRowChange(row.id, `secB_v${n}`, e.target.value)} disabled={!isEditMode} />
                                                                 </td>
                                                             ))}
-                                                            <td className="border border-black p-0">
-                                                                <input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.secB_spec} onChange={(e) => handleRowChange(row.id, 'secB_spec', e.target.value)} disabled={!isEditMode} />
+                                                            <td className={`border border-black p-0 align-middle ${CYCLE_SPEC_COL}`}>
+                                                                <WrapTextarea value={row.secB_spec} onChange={(e) => handleRowChange(row.id, 'secB_spec', e.target.value)} disabled={!isEditMode} />
                                                             </td>
-                                                            <td className="border border-black p-0 bg-yellow-50 font-bold text-blue-600">{row.secB_min}</td>
-                                                            <td className="border border-black p-0 bg-yellow-50 font-bold text-blue-600">{row.secB_max}</td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle bg-yellow-50 text-[11px] font-bold text-blue-700 leading-tight [overflow-wrap:anywhere] ${CYCLE_MINMAX_COL}`}>{row.secB_min}</td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle bg-yellow-50 text-[11px] font-bold text-blue-700 leading-tight [overflow-wrap:anywhere] ${CYCLE_MINMAX_COL}`}>{row.secB_max}</td>
                                                             {secCColumnFields.map(f => (
-                                                                <td key={f} className="border border-black p-0 h-full">
-                                                                    <select className="w-full h-full text-center bg-transparent outline-none cursor-pointer appearance-none text-[10px] py-1 disabled:cursor-default" value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
+                                                                <td key={f} className={`border border-black p-0 h-full align-middle ${TICK_COL}`}>
+                                                                    <select className={TICK_SELECT_CLASS} value={row[f] || ''} onChange={(e) => handleRowChange(row.id, f, e.target.value)} disabled={!isEditMode}>
                                                                         <option value="">-</option>
                                                                         <option value="✓" className="text-green-600 font-bold">✓</option>
                                                                         <option value="X" className="text-red-600 font-bold">X</option>
                                                                     </select>
                                                                 </td>
                                                             ))}
-                                                            <td className="border border-black p-0">
-                                                                <UserAutocomplete
-                                                                    compact
-                                                                    departmentId={selectedDepartmentFilter}
-                                                                    sectionId={selectedSectionFilter}
-                                                                    passedDate={row.date}
-                                                                    passedTestPaperOnly="any"
-                                                                    value={row.inspectorName}
-                                                                    onChange={(user) => handleOperatorSelect(row.id, user)}
-                                                                    onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
-                                                                    placeholder="Search Operator..."
-                                                                    inputClassName="text-blue-600"
-                                                                    disabled={!isEditMode}
-                                                                />
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.inspectorName}`}>
+                                                                {isEditMode ? (
+                                                                    <UserAutocomplete
+                                                                        compact
+                                                                        departmentId={selectedDepartmentFilter}
+                                                                        sectionId={selectedSectionFilter}
+                                                                        passedDate={row.date}
+                                                                        passedTestPaperOnly="any"
+                                                                        value={row.inspectorName}
+                                                                        onChange={(user) => handleOperatorSelect(row.id, user)}
+                                                                        onTextChange={(val) => handleRowChange(row.id, 'inspectorName', val)}
+                                                                        placeholder="Search Operator..."
+                                                                        inputClassName="text-blue-700 font-bold text-[11px]"
+                                                                        disabled={!isEditMode}
+                                                                    />
+                                                                ) : (
+                                                                    <WrapTextarea value={row.inspectorName} disabled />
+                                                                )}
                                                             </td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 font-bold disabled:cursor-default" value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0"><textarea className="w-full h-12 p-1 bg-transparent outline-none resize-none text-[9px] text-blue-600 disabled:cursor-default" value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
-                                                            <td className="border border-black p-0 bg-yellow-100 font-bold text-green-600">{row.passScore}</td>
-                                                            <td className="border border-black p-0 font-bold text-blue-600">{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.empCode}`}><WrapTextarea value={row.empCode} onChange={(e) => handleRowChange(row.id, 'empCode', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.skillLevel}`}><WrapTextarea value={row.skillLevel} onChange={(e) => handleRowChange(row.id, 'skillLevel', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecA} onChange={(e) => handleRowChange(row.id, 'obsSecA', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecB} onChange={(e) => handleRowChange(row.id, 'obsSecB', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.observation}`}><WrapTextarea value={row.obsSecC} onChange={(e) => handleRowChange(row.id, 'obsSecC', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle bg-yellow-100 text-[11px] font-bold text-green-600 leading-tight ${FIXED_COL.passScore}`}>{row.passScore}</td>
+                                                            <td className={`border border-black px-0.5 py-1 align-middle text-[11px] font-bold text-blue-700 leading-tight ${FIXED_COL.overallResult}`}>{row.overallResult === '✓' ? 'Pass' : row.overallResult === 'X' ? 'Fail' : '-'}</td>
                                                             {renderInspectorSignCell(row)}
                                                             {renderTLSignCell(row)}
-                                                            <td className="border border-black p-0"><input className="w-full text-center bg-transparent outline-none p-1 text-blue-600 disabled:cursor-default" value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
+                                                            <td className={`border border-black p-0 align-middle ${FIXED_COL.remark}`}><WrapTextarea value={row.remark} onChange={(e) => handleRowChange(row.id, 'remark', e.target.value)} disabled={!isEditMode} /></td>
                                                         </tr>
                                                     ))}
                                                 </tbody>

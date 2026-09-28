@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Loader2, Save, History, ArrowLeft } from "lucide-react";
+import { Plus, Loader2, Save, History, ArrowLeft, CalendarDays } from "lucide-react";
 import axiosInstance from '@/Helper/axiosInstance';
 import { toast } from "sonner";
 import { useGetAllDepartmentsQuery } from "@/Redux/AllApi/DepartmentApi";
@@ -567,7 +567,7 @@ const Cycle10LayoutEditor = () => {
                                 Click a label or description on the sheet to edit it. Hover a header cell to reveal a delete button.
                             </p>
                             <div className="border-2 border-black overflow-x-auto bg-white">
-                                <div className="min-w-[1700px] p-2">
+                                <div className="min-w-[1200px] p-2">
                                     <div className="flex justify-between items-center border-b-2 border-black pb-1 relative mb-2">
                                         <h1 className="text-lg font-bold uppercase w-full text-center">
                                             10 CYCLE CHECK MONITORING SHEET {sheetTitleSuffix}
@@ -585,49 +585,49 @@ const Cycle10LayoutEditor = () => {
                                     <table className="w-full text-[9px] border-collapse">
                                         <thead>
                                             <tr className="bg-gray-100 text-center font-bold">
-                                                <th rowSpan="3" className="border border-black p-1 w-[35px]">Sr. No.</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[80px]">Date</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[110px]">Line/ Machine No.</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[100px]">Model Name</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[120px]">Part Name</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[120px]">Operation Name</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[90px]">SOP No.</th>
-                                                <th colSpan={draft.secA.questions.length + draft.secA.generalPoints.length} className="border border-black p-1 bg-white">Section - A</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[28px] min-w-[28px] max-w-[28px]">Sr. No.</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[75px] min-w-[75px] max-w-[75px]">Date</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[80px] min-w-[80px] max-w-[80px]">Line/ Machine No.</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[75px] min-w-[75px] max-w-[75px]">Model Name</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[85px] min-w-[85px] max-w-[85px]">Part Name</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[85px] min-w-[85px] max-w-[85px]">Operation Name</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight font-bold w-[65px] min-w-[65px] max-w-[65px]">SOP No.</th>
+                                                <th colSpan={draft.secA.questions.length + draft.secA.generalPoints.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Section - A</th>
                                                 {isForm3 ? (
-                                                    <th colSpan="13" className="border border-black p-1 bg-white">Section - B</th>
+                                                    <th colSpan="13" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Section - B</th>
                                                 ) : (
-                                                    <th colSpan={draft.secB.instruments.length} className="border border-black p-1 bg-white">Section - B</th>
+                                                    <th colSpan={draft.secB.instruments.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Section - B</th>
                                                 )}
-                                                <th colSpan={draft.secC.columns.length} className="border border-black p-1 bg-white">Section-C</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[110px]">{inspectorLabel} Name</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[70px]">Emp. Code</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[55px]">Skill Level</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[140px]">Observation in Section - A</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[140px]">Observation in Section - B</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[140px]">Observation in Section - C</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[60px] bg-yellow-100">Pass Score %</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[70px]">Overall Result</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[90px]">{inspectorLabel} Sign.</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[90px]">TL Sign.</th>
-                                                <th rowSpan="3" className="border border-black p-1 w-[160px]">Remark if any</th>
+                                                <th colSpan={draft.secC.columns.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Section-C</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[90px] min-w-[90px] max-w-[90px]">{inspectorLabel} Name</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[55px] min-w-[55px] max-w-[55px]">Emp. Code</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[36px] min-w-[36px] max-w-[36px]">Skill Level</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[130px] min-w-[130px] max-w-[130px]">Observation in Section - A</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[130px] min-w-[130px] max-w-[130px]">Observation in Section - B</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[130px] min-w-[130px] max-w-[130px]">Observation in Section - C</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-yellow-100 w-[45px] min-w-[45px] max-w-[45px]">Pass Score %</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[45px] min-w-[45px] max-w-[45px]">Overall Result</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[70px] min-w-[70px] max-w-[70px]">{inspectorLabel} Sign.</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[70px] min-w-[70px] max-w-[70px]">TL Sign.</th>
+                                                <th rowSpan="3" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold w-[120px] min-w-[120px] max-w-[120px]">Remark if any</th>
                                             </tr>
                                             <tr className="bg-gray-100 text-center font-bold text-[8px]">
-                                                <th colSpan={draft.secA.questions.length} className="border border-black p-1 bg-white">Ask Four Quest. Marking</th>
-                                                <th colSpan={draft.secA.generalPoints.length} className="border border-black p-1 bg-white">General Points Check Marking</th>
+                                                <th colSpan={draft.secA.questions.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Ask Four Quest. Marking</th>
+                                                <th colSpan={draft.secA.generalPoints.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">General Points Check Marking</th>
                                                 {isForm3 ? (
                                                     <>
-                                                        <th colSpan="10" className="border border-black p-1 bg-white text-red-600">10 Cycle Check</th>
-                                                        <th rowSpan="2" className="border border-black p-1 bg-white">Cycle Time Spec.</th>
-                                                        <th colSpan="2" className="border border-black p-1 bg-yellow-50 text-blue-600">Cycle Time Obs.</th>
+                                                        <th colSpan="10" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white text-red-600">10 Cycle Check</th>
+                                                        <th rowSpan="2" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white w-[40px] min-w-[40px] max-w-[40px]">Cycle Time Spec.</th>
+                                                        <th colSpan="2" className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-yellow-50 text-blue-700">Cycle Time Obs.</th>
                                                     </>
                                                 ) : (
-                                                    <th colSpan={draft.secB.instruments.length} className="border border-black p-1 bg-white">Measuring Instrument Using Method</th>
+                                                    <th colSpan={draft.secB.instruments.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Measuring Instrument Using Method</th>
                                                 )}
-                                                <th colSpan={draft.secC.columns.length} className="border border-black p-1 bg-white">Cross Inspection Marking</th>
+                                                <th colSpan={draft.secC.columns.length} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white">Cross Inspection Marking</th>
                                             </tr>
                                             <tr className="bg-gray-100 text-center font-bold text-[8px]">
                                                 {draft.secA.questions.map((q, idx) => (
-                                                    <th key={`pq_${q.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                    <th key={`pq_${q.id}`} className="relative group border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white w-[28px] min-w-[28px] max-w-[28px]">
                                                         <EditableCell
                                                             value={q.label}
                                                             placeholder="(empty)"
@@ -642,7 +642,7 @@ const Cycle10LayoutEditor = () => {
                                                     </th>
                                                 ))}
                                                 {draft.secA.generalPoints.map((g, idx) => (
-                                                    <th key={`pg_${g.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                    <th key={`pg_${g.id}`} className="relative group border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white w-[28px] min-w-[28px] max-w-[28px]">
                                                         <EditableCell
                                                             value={g.label}
                                                             placeholder="(empty)"
@@ -659,15 +659,15 @@ const Cycle10LayoutEditor = () => {
                                                 {isForm3 ? (
                                                     <>
                                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                                                            <th key={n} className="border border-black w-[32px] bg-white">{n}</th>
+                                                            <th key={n} className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white w-[32px] min-w-[32px] max-w-[32px]">{n}</th>
                                                         ))}
-                                                        <th className="border border-black w-[40px] bg-yellow-50 text-blue-600">Min.</th>
-                                                        <th className="border border-black w-[40px] bg-yellow-50 text-blue-600">Max.</th>
+                                                        <th className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-yellow-50 text-blue-700 w-[36px] min-w-[36px] max-w-[36px]">Min.</th>
+                                                        <th className="border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-yellow-50 text-blue-700 w-[36px] min-w-[36px] max-w-[36px]">Max.</th>
                                                     </>
                                                 ) : (
                                                     draft.secB.instruments.map((i, idx) => (
-                                                        <th key={`pi_${i.id}`} className="relative group border border-black w-[45px] bg-white">
-                                                            <div className="flex items-center justify-center h-24 w-full whitespace-nowrap px-1">
+                                                        <th key={`pi_${i.id}`} className="relative group border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white align-middle w-[60px] min-w-[60px] max-w-[60px]">
+                                                            <div className="flex items-center justify-center whitespace-normal break-words leading-tight">
                                                                 <EditableCell
                                                                     value={i.label}
                                                                     placeholder="(empty)"
@@ -684,7 +684,7 @@ const Cycle10LayoutEditor = () => {
                                                     ))
                                                 )}
                                                 {draft.secC.columns.map((c, idx) => (
-                                                    <th key={`pc_${c.id}`} className="relative group border border-black w-[32px] bg-white">
+                                                    <th key={`pc_${c.id}`} className="relative group border border-black p-1 whitespace-normal break-words leading-tight text-[10px] font-bold bg-white w-[28px] min-w-[28px] max-w-[28px]">
                                                         <EditableCell
                                                             value={c.label}
                                                             placeholder="(empty)"
@@ -703,47 +703,47 @@ const Cycle10LayoutEditor = () => {
                                         <tbody>
                                             {sampleRows.map((row) => (
                                                 <tr key={row.srNo} className="text-center h-7">
-                                                    <td className="border border-black">{row.srNo}</td>
-                                                    <td className="border border-black">{row.date}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.lineMachine}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.modelName}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.partName}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.operationName}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.sopNo}</td>
+                                                    <td className="border border-black text-[11px] font-bold w-[28px] min-w-[28px] max-w-[28px]">{row.srNo}</td>
+                                                    <td className="border border-black px-0.5 text-[11px] font-bold text-slate-800 w-[75px] min-w-[75px] max-w-[75px]"><div className="flex flex-col items-center gap-0.5 py-1"><span className="leading-tight">{row.date.split('-').reverse().join('-')}</span><CalendarDays size={13} className="text-slate-600" /></div></td>
+                                                    <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[80px] min-w-[80px] max-w-[80px]">{row.lineMachine}</td>
+                                                    <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[75px] min-w-[75px] max-w-[75px]">{row.modelName}</td>
+                                                    <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[85px] min-w-[85px] max-w-[85px]">{row.partName}</td>
+                                                    <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[85px] min-w-[85px] max-w-[85px]">{row.operationName}</td>
+                                                    <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[65px] min-w-[65px] max-w-[65px]">{row.sopNo}</td>
                                                     {draft.secA.questions.map(q => (
-                                                        <td key={`rq_${row.srNo}_${q.id}`} className="border border-black"><Mark value={row[`secA_${q.id}`]} /></td>
+                                                        <td key={`rq_${row.srNo}_${q.id}`} className="border border-black text-[12px] w-[28px] min-w-[28px] max-w-[28px]"><Mark value={row[`secA_${q.id}`]} /></td>
                                                     ))}
                                                     {draft.secA.generalPoints.map(g => (
-                                                        <td key={`rg_${row.srNo}_${g.id}`} className="border border-black"><Mark value={row[`secA_${g.id}`]} /></td>
+                                                        <td key={`rg_${row.srNo}_${g.id}`} className="border border-black text-[12px] w-[28px] min-w-[28px] max-w-[28px]"><Mark value={row[`secA_${g.id}`]} /></td>
                                                     ))}
                                                     {isForm3 ? (
                                                         <>
                                                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                                                                <td key={n} className="border border-black text-red-600 font-bold">{row[`secB_v${n}`]}</td>
+                                                                <td key={n} className="border border-black px-0.5 py-1 text-red-600 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[32px] min-w-[32px] max-w-[32px]">{row[`secB_v${n}`]}</td>
                                                             ))}
-                                                            <td className="border border-black text-blue-600">{row.secB_spec}</td>
-                                                            <td className="border border-black bg-yellow-50 font-bold text-blue-600">{row.secB_min}</td>
-                                                            <td className="border border-black bg-yellow-50 font-bold text-blue-600">{row.secB_max}</td>
+                                                            <td className="border border-black px-0.5 py-1 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[40px] min-w-[40px] max-w-[40px]">{row.secB_spec}</td>
+                                                            <td className="border border-black px-0.5 py-1 bg-yellow-50 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[36px] min-w-[36px] max-w-[36px]">{row.secB_min}</td>
+                                                            <td className="border border-black px-0.5 py-1 bg-yellow-50 text-blue-700 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[36px] min-w-[36px] max-w-[36px]">{row.secB_max}</td>
                                                         </>
                                                     ) : (
                                                         draft.secB.instruments.map(i => (
-                                                            <td key={`ri_${row.srNo}_${i.id}`} className="border border-black"><Mark value={row[`secB_${i.id}`]} /></td>
+                                                            <td key={`ri_${row.srNo}_${i.id}`} className="border border-black text-[12px] w-[60px] min-w-[60px] max-w-[60px]"><Mark value={row[`secB_${i.id}`]} /></td>
                                                         ))
                                                     )}
                                                     {draft.secC.columns.map(c => (
-                                                        <td key={`rc_${row.srNo}_${c.id}`} className="border border-black"><Mark value={row[`secC_${c.id}`]} /></td>
+                                                        <td key={`rc_${row.srNo}_${c.id}`} className="border border-black text-[12px] w-[28px] min-w-[28px] max-w-[28px]"><Mark value={row[`secC_${c.id}`]} /></td>
                                                     ))}
-                                                    <td className="border border-black text-blue-600 font-bold">{row.inspectorName}</td>
-                                                    <td className="border border-black text-blue-600 font-bold">{row.empCode}</td>
-                                                    <td className="border border-black">{row.skillLevel}</td>
-                                                    <td className="border border-black text-blue-600">{row.obsSecA}</td>
-                                                    <td className="border border-black text-blue-600">{row.obsSecB}</td>
-                                                    <td className="border border-black text-blue-600">{row.obsSecC}</td>
-                                                    <td className="border border-black bg-yellow-100 font-bold text-green-600">{row.passScore}</td>
-                                                    <td className="border border-black font-bold text-blue-600">{row.overallResult === '✓' ? 'Pass' : 'Fail'}</td>
-                                                    <td className="border border-black italic text-blue-600">{row.inspectorSign}</td>
-                                                    <td className="border border-black italic text-blue-600">{row.tlSign}</td>
-                                                    <td className="border border-black text-blue-600">{row.remark}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[90px] min-w-[90px] max-w-[90px]">{row.inspectorName}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[55px] min-w-[55px] max-w-[55px]">{row.empCode}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[36px] min-w-[36px] max-w-[36px]">{row.skillLevel}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[130px] min-w-[130px] max-w-[130px]">{row.obsSecA}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[130px] min-w-[130px] max-w-[130px]">{row.obsSecB}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[130px] min-w-[130px] max-w-[130px]">{row.obsSecC}</td>
+                                                    <td className="border border-black bg-yellow-100 text-green-600 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[45px] min-w-[45px] max-w-[45px]">{row.passScore}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[45px] min-w-[45px] max-w-[45px]">{row.overallResult === '✓' ? 'Pass' : 'Fail'}</td>
+                                                    <td className="border border-black italic text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[70px] min-w-[70px] max-w-[70px]">{row.inspectorSign}</td>
+                                                    <td className="border border-black italic text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[70px] min-w-[70px] max-w-[70px]">{row.tlSign}</td>
+                                                    <td className="border border-black text-blue-700 px-0.5 py-1 whitespace-normal break-words [overflow-wrap:anywhere] leading-tight text-[11px] font-bold w-[120px] min-w-[120px] max-w-[120px]">{row.remark}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

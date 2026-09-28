@@ -428,6 +428,18 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         return () => observer.disconnect();
     }, [fullScreenScrollEl]);
 
+    // Height of the sticky full-screen header, exposed as --sheet-sticky-top so the sheet's
+    // table header can freeze just beneath it (the header wraps, so its height varies).
+    const [fullScreenHeaderEl, setFullScreenHeaderEl] = useState(null);
+    useEffect(() => {
+        if (!fullScreenHeaderEl || !fullScreenScrollEl) return;
+        const update = () => fullScreenScrollEl.style.setProperty('--sheet-sticky-top', `${fullScreenHeaderEl.offsetHeight}px`);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenHeaderEl);
+        return () => observer.disconnect();
+    }, [fullScreenHeaderEl, fullScreenScrollEl]);
+
     const showFeedbackSheet = hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId));
 
     const renderSheetTabs = (compact = false) => (
@@ -505,7 +517,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
             <div ref={setFullScreenScrollEl} className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200">
                 {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
                 <div className="min-w-full w-max min-h-full flex flex-col">
-                <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                <div ref={setFullScreenHeaderEl} className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
                     <div
                         className="sticky left-0"
                         style={{ width: fullScreenViewportWidth || '100vw' }}

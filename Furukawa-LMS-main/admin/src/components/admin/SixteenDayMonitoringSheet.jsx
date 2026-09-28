@@ -21,7 +21,9 @@ import {
     ShieldCheck,
     Trash2,
     AlertTriangle,
-    Calendar as CalendarIcon
+    Calendar as CalendarIcon,
+    Minus,
+    Plus
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -51,6 +53,37 @@ import {
     DEFAULT_EVALUATION_LEGENDS,
     normalizeConfig,
 } from "@/utils/sixteenDayMonitoringConfig";
+
+// Frozen left columns (S.No / Parameters / Check Items / Mark). Widths and left offsets
+// must stay in sync: 15px gutter, then 60 + 120 + 340 = 520 → S.No at 15, Mark at 535.
+// With border-collapse the real borders belong to the table grid and scroll away, so frozen
+// cells draw their own borders on an ::after overlay that moves with the sticky cell.
+// The leftmost frozen cell carries a solid white 15px ::before block to mask the gutter, so
+// scrolled day cells don't show through it (box-shadow isn't painted on collapsed-table cells).
+// At rest it sits over the sheet's white p-4 padding.
+const FROZEN_EDGE = "after:absolute after:inset-0 after:pointer-events-none after:border-black after:border-b";
+const FROZEN_GUTTER = "before:absolute before:-top-px before:-bottom-px before:-left-[15px] before:w-[15px] before:bg-white before:pointer-events-none";
+const FROZEN_SNO = `sticky left-[15px] z-20 w-[60px] min-w-[60px] max-w-[60px] ${FROZEN_GUTTER} ${FROZEN_EDGE} after:border-l after:border-r`;
+const FROZEN_PARAM = `sticky left-[75px] z-20 w-[120px] min-w-[120px] max-w-[120px] ${FROZEN_EDGE} after:border-r`;
+const FROZEN_CHECK = `sticky left-[195px] z-20 w-[340px] min-w-[340px] max-w-[340px] ${FROZEN_EDGE} after:border-r`;
+const FROZEN_LABEL_SPAN = `sticky left-[15px] z-20 w-[520px] min-w-[520px] max-w-[520px] ${FROZEN_GUTTER} ${FROZEN_EDGE} after:border-l after:border-r`; // colSpan=3 over S.No..Check Items
+const FROZEN_MARK = `sticky left-[535px] z-20 w-[95px] min-w-[95px] max-w-[95px] border-r-2 border-black shadow-[2px_0_5px_-2px_rgba(0,0,0,0.25)] print:shadow-none ${FROZEN_EDGE} after:border-r-2`;
+
+// Sheet zoom (CSS `zoom`, so sticky header/columns and scroll sizes stay correct). Persisted per browser.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.05;
+const ZOOM_DEFAULT = 0.75;
+const ZOOM_STORAGE_KEY = "sixteen_day_sheet_zoom";
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+const readStoredZoom = () => {
+    try {
+        const stored = parseFloat(localStorage.getItem(ZOOM_STORAGE_KEY));
+        return Number.isFinite(stored) ? clampZoom(stored) : ZOOM_DEFAULT;
+    } catch {
+        return ZOOM_DEFAULT;
+    }
+};
 
 const SixteenDayMonitoringSheet = ({
     studentId,
@@ -130,6 +163,13 @@ const SixteenDayMonitoringSheet = ({
     const [selectedAttemptId, setSelectedAttemptId] = useState("");
     const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
     const [userStatus, setUserStatus] = useState(studentStatus || "PRESENT");
+
+    const [zoom, setZoom] = useState(readStoredZoom);
+    const handleZoomChange = (value) => {
+        const next = clampZoom(value);
+        setZoom(next);
+        try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
+    };
 
     useEffect(() => {
         setUserStatus(studentStatus || "PRESENT");
@@ -1122,6 +1162,50 @@ const SixteenDayMonitoringSheet = ({
         </div>
     );
 
+    const zoomPercent = Math.round(zoom * 100);
+    const zoomControl = (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 h-9 shadow-sm print:hidden">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom - ZOOM_STEP)}
+                disabled={zoom <= ZOOM_MIN}
+                aria-label="Zoom out"
+            >
+                <Minus className="h-4 w-4" />
+            </Button>
+            <input
+                type="range"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                value={zoom}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="w-28 cursor-pointer accent-indigo-600"
+                aria-label="Sheet zoom"
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom + ZOOM_STEP)}
+                disabled={zoom >= ZOOM_MAX}
+                aria-label="Zoom in"
+            >
+                <Plus className="h-4 w-4" />
+            </Button>
+            <button
+                type="button"
+                onClick={() => handleZoomChange(ZOOM_DEFAULT)}
+                title={`Reset zoom to ${Math.round(ZOOM_DEFAULT * 100)}%`}
+                className={`min-w-[3.25rem] rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums transition-colors ${zoomPercent === Math.round(ZOOM_DEFAULT * 100) ? 'text-slate-500 hover:bg-slate-100' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+            >
+                {zoomPercent}%
+            </button>
+        </div>
+    );
+
     const printButton = (
         <Button variant="outline" onClick={() => window.print()} className="h-9 gap-2">
             <Printer className="w-4 h-4" /> Print
@@ -1165,6 +1249,8 @@ const SixteenDayMonitoringSheet = ({
 
                     {!headerActionsContainer && attemptHistoryControl}
                 </div>
+
+                {!headerActionsContainer && zoomControl}
 
                 <div className="flex gap-2">
                     <div className="flex gap-2">
@@ -1222,6 +1308,8 @@ const SixteenDayMonitoringSheet = ({
                         {attemptHistoryControl}
                         {day16StatusBadge}
                     </div>
+                    {/* Middle: sheet zoom */}
+                    <div className="mx-auto">{zoomControl}</div>
                     {/* Right: save / submit / email, then print set apart */}
                     <div className="flex flex-wrap items-center gap-3 ml-auto">
                         {primaryActionButtons}
@@ -1234,7 +1322,11 @@ const SixteenDayMonitoringSheet = ({
 
             <Card className="border-none shadow-none bg-transparent">
                 <CardContent className="p-0">
-                    <div className="min-w-max p-4 text-sm text-black bg-white shadow-sm border border-black/10 rounded-lg">
+                    {/* --sheet-zoom lets zoomed descendants undo the scaling on page-level lengths (sticky top) */}
+                    <div
+                        className="min-w-max p-4 text-sm text-black bg-white shadow-sm border border-black/10 rounded-lg print:![zoom:1]"
+                        style={{ zoom, '--sheet-zoom': zoom }}
+                    >
 
                         <div className="border-t border-x border-black">
                             <div className="flex justify-between items-start border-b border-black">
@@ -1380,12 +1472,16 @@ const SixteenDayMonitoringSheet = ({
 
                         <div className="border border-black mt-0">
                             <table className="w-full border-collapse text-[14px]">
-                                <thead>
+                                {/* Frozen for vertical scroll beneath the full-screen header (--sheet-sticky-top, a
+                                    page-level px value, divided by the sheet zoom so it isn't scaled with the sheet).
+                                    Collapsed grid borders don't travel with a sticky thead, so every th draws its
+                                    own via ::after (frozen-left th already do through FROZEN_*). */}
+                                <thead className="sticky top-[calc(var(--sheet-sticky-top,0px)/var(--sheet-zoom,1))] print:top-0 z-30 bg-white [&_th:not(.sticky)]:relative [&_th:not(.sticky)]:after:absolute [&_th:not(.sticky)]:after:inset-0 [&_th:not(.sticky)]:after:pointer-events-none [&_th:not(.sticky)]:after:border-black [&_th:not(.sticky)]:after:border-r [&_th:not(.sticky)]:after:border-b [&>tr:first-child>th]:after:border-t">
                                     <tr className="border-b border-black font-bold">
-                                        <th rowSpan="3" className="border-r border-black min-w-[60px] bg-gray-50 text-[14px]">S.No</th>
-                                        <th rowSpan="3" className="border-r border-black w-[120px] min-w-[110px] max-w-[130px] bg-gray-50 text-center px-2 text-[14px] break-words whitespace-normal leading-tight">Parameters</th>
-                                        <th rowSpan="3" className="border-r border-black min-w-[300px] max-w-[380px] bg-gray-50 text-left px-3 text-[14px] break-words whitespace-normal">Check Items</th>
-                                        <th rowSpan="3" className="border-r border-black w-[95px] min-w-[90px] max-w-[110px] bg-gray-50 p-2 leading-tight text-[14px] break-words whitespace-normal">Mark<br />(Max.)</th>
+                                        <th rowSpan="3" className={`${FROZEN_SNO} !z-30 border-r border-black bg-gray-100 text-[14px]`}>S.No</th>
+                                        <th rowSpan="3" className={`${FROZEN_PARAM} !z-30 border-r border-black bg-gray-100 text-center px-2 text-[14px] break-words whitespace-normal leading-tight`}>Parameters</th>
+                                        <th rowSpan="3" className={`${FROZEN_CHECK} !z-30 border-r border-black bg-gray-100 text-left px-3 text-[14px] break-words whitespace-normal`}>Check Items</th>
+                                        <th rowSpan="3" className={`${FROZEN_MARK} !z-30 bg-gray-100 p-2 leading-tight text-[14px] break-words whitespace-normal`}>Mark<br />(Max.)</th>
                                         <th colSpan="46" className="border-r border-black text-center bg-gray-200 uppercase tracking-widest py-3 border-b border-black text-[15px] font-extrabold">DAY WISE PERFORMANCE MONITORING</th>
                                         <th rowSpan="3" className="min-w-[250px] bg-blue-50/50 leading-tight border-l border-black text-[14px] font-bold">Evaluation after monitoring of 16 days</th>
                                     </tr>
@@ -1503,16 +1599,16 @@ const SixteenDayMonitoringSheet = ({
                                                             <tr key={`${row.id}_${sub.id}`} className={`border-b border-black group hover:bg-blue-50/10 text-[14px] ${sub.rowClass || ''}`}>
                                                                 {rowIdx === 0 && sIdx === 0 && (
                                                                     <>
-                                                                        <td rowSpan={totalRowsInCat} className="border-r border-black text-center font-bold align-middle bg-gray-50/20">{catIdx + 1}</td>
-                                                                        <td rowSpan={totalRowsInCat} className="border-r border-black p-2 font-bold align-middle bg-gray-50/20 text-center text-[13px] leading-snug break-words whitespace-pre-line w-[120px] max-w-[130px]">{cat.category}</td>
+                                                                        <td rowSpan={totalRowsInCat} className={`${FROZEN_SNO} border-r border-black text-center font-bold align-middle bg-white`}>{catIdx + 1}</td>
+                                                                        <td rowSpan={totalRowsInCat} className={`${FROZEN_PARAM} border-r border-black p-2 font-bold align-middle bg-white text-center text-[13px] leading-snug break-words whitespace-pre-line`}>{cat.category}</td>
                                                                     </>
                                                                 )}
                                                                 {sIdx === 0 ? (
-                                                                    <td rowSpan={4} className="border-r border-black p-2 align-middle font-semibold text-left text-[14px] leading-snug break-words whitespace-normal max-w-[380px]">
+                                                                    <td rowSpan={4} className={`${FROZEN_CHECK} border-r border-black p-2 align-middle font-semibold text-left text-[14px] leading-snug break-words whitespace-normal bg-white`}>
                                                                         {row.label}
                                                                     </td>
                                                                 ) : null}
-                                                                <td className="border-r border-black text-center align-middle font-bold w-[95px] min-w-[90px] max-w-[110px] text-[14px] bg-gray-50/30 leading-tight px-1 break-words whitespace-normal">
+                                                                <td className={`${FROZEN_MARK} text-center align-middle font-bold text-[14px] ${sub.id === 'achievement' ? 'bg-yellow-100' : 'bg-gray-50'} leading-tight px-1 break-words whitespace-normal`}>
                                                                     {sub.hasMark ? row.weight : sub.label}
                                                                 </td>
                                                                 {daysDetailed.map(dayPrefix => (
@@ -1572,14 +1668,14 @@ const SixteenDayMonitoringSheet = ({
                                                         <tr key={row.id} className="border-b border-black group hover:bg-blue-50/10 min-h-[1.5rem] text-[14px]">
                                                             {rowIdx === 0 && (
                                                                 <>
-                                                                    <td rowSpan={totalRowsInCat} className="border-r border-black text-center font-bold align-middle bg-gray-50/20">{catIdx + 1}</td>
-                                                                    <td rowSpan={totalRowsInCat} className="border-r border-black p-2 font-bold align-middle bg-gray-50/20 text-center text-[13px] leading-snug break-words whitespace-pre-line w-[120px] max-w-[130px]">{cat.category}</td>
+                                                                    <td rowSpan={totalRowsInCat} className={`${FROZEN_SNO} border-r border-black text-center font-bold align-middle bg-white`}>{catIdx + 1}</td>
+                                                                    <td rowSpan={totalRowsInCat} className={`${FROZEN_PARAM} border-r border-black p-2 font-bold align-middle bg-white text-center text-[13px] leading-snug break-words whitespace-pre-line`}>{cat.category}</td>
                                                                 </>
                                                             )}
-                                                            <td className={`border-r border-black p-2.5 align-middle text-left text-[14px] leading-snug break-words whitespace-normal max-w-[380px] ${row.type === 'cycle' ? 'font-bold' : 'font-semibold'}`}>
+                                                            <td className={`${FROZEN_CHECK} border-r border-black p-2.5 align-middle text-left text-[14px] leading-snug break-words whitespace-normal bg-white ${row.type === 'cycle' ? 'font-bold' : 'font-semibold'}`}>
                                                                 {row.label}
                                                             </td>
-                                                            <td className="border-r border-black text-center align-middle font-bold text-[14px] w-[95px] min-w-[90px] max-w-[110px] bg-gray-50/10 break-words whitespace-normal">{row.weight}</td>
+                                                            <td className={`${FROZEN_MARK} text-center align-middle font-bold text-[14px] bg-gray-50 break-words whitespace-normal`}>{row.weight}</td>
                                                             {daysDetailed.map(dayPrefix => (
                                                                 <React.Fragment key={dayPrefix}>
                                                                     {row.type === 'cycle' ? (
@@ -1651,8 +1747,8 @@ const SixteenDayMonitoringSheet = ({
                                                 })}
                                                 {cat.totalMark && (
                                                     <tr className="border-b border-black bg-yellow-200">
-                                                        <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">Total Mark:</td>
-                                                        <td className="border-r border-black text-center font-bold text-blue-600 text-[14px]">{cat.totalMark}</td>
+                                                        <td colSpan="3" className={`${FROZEN_LABEL_SPAN} bg-yellow-200 text-right px-2 py-1 font-bold text-[14px]`}>Total Mark:</td>
+                                                        <td className={`${FROZEN_MARK} bg-yellow-200 text-center font-bold text-blue-600 text-[14px]`}>{cat.totalMark}</td>
                                                         {daysDetailed.map(d => (
                                                             <td key={d} colSpan="11" className={`border-r border-black p-0 ${dayPrefixBlurClass(d)}`}>
                                                                 <div className="relative flex items-center justify-center min-w-[100px] h-[26px]">
@@ -1687,8 +1783,8 @@ const SixteenDayMonitoringSheet = ({
                                                 {cat.target && (
                                                     <React.Fragment>
                                                         <tr className="border-b border-black bg-yellow-100 min-h-[30px]">
-                                                            <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">Target % :</td>
-                                                            <td className="border-r border-black text-center font-bold text-[14px]">{cat.target}</td>
+                                                            <td colSpan="3" className={`${FROZEN_LABEL_SPAN} bg-yellow-100 text-right px-2 py-1 font-bold text-[14px]`}>Target % :</td>
+                                                            <td className={`${FROZEN_MARK} bg-yellow-100 text-center font-bold text-[14px]`}>{cat.target}</td>
                                                             {daysDetailed.map(d => (
                                                                 <td key={d} colSpan="11" className={`border-r border-black text-center font-bold text-[14px] h-[30px] ${dayPrefixBlurClass(d)}`}>100%</td>
                                                             ))}
@@ -1703,8 +1799,8 @@ const SixteenDayMonitoringSheet = ({
                                                             </td>
                                                         </tr>
                                                         <tr className="border-b border-black bg-yellow-200 min-h-[30px]">
-                                                            <td colSpan="3" className="text-right px-2 py-1 font-bold text-[14px]">{cat.actualLabel || "Actual %:"}</td>
-                                                            <td className="border-r border-black text-center font-bold italic text-[14px]">-</td>
+                                                            <td colSpan="3" className={`${FROZEN_LABEL_SPAN} bg-yellow-200 text-right px-2 py-1 font-bold text-[14px]`}>{cat.actualLabel || "Actual %:"}</td>
+                                                            <td className={`${FROZEN_MARK} bg-yellow-200 text-center font-bold italic text-[14px]`}>-</td>
                                                             {daysDetailed.map(d => (
                                                                 <td key={d} colSpan="11" className={`border-r border-black p-0 h-full ${dayPrefixBlurClass(d)}`}>
                                                                     <div className="relative flex items-center justify-center min-w-[100px] h-[30px]">
@@ -1749,7 +1845,8 @@ const SixteenDayMonitoringSheet = ({
                             </table>
                         </div>
 
-                        <div className="mt-6 font-bold text-[14px] text-black uppercase tracking-tight">
+                        {/* w-fit so the note is narrower than the sheet and can actually stick while scrolling sideways */}
+                        <div className="sticky left-[15px] w-fit mt-6 font-bold text-[14px] text-black uppercase tracking-tight">
                             Fulfill above 1~5 parameters based on working days if person absent then fill next date into column days
                         </div>
 
@@ -1758,10 +1855,10 @@ const SixteenDayMonitoringSheet = ({
                                 <table className="w-full border-collapse text-[14px]">
                                     <tbody>
                                         <tr className="border-b border-black h-12">
-                                            <td rowSpan="3" className="border-r border-black font-bold text-center bg-blue-50/20 text-[14px]">6</td>
-                                            <td rowSpan="3" className="border-r border-black font-bold p-2 bg-blue-50/20 text-center align-middle text-[13px] leading-snug break-words whitespace-normal w-[120px] max-w-[130px]">Attendance</td>
-                                            <td className="border-r border-black font-bold p-2 text-[14px]">Total no. of Monitoring day's :</td>
-                                            <td className="min-w-[100px] border-r border-black font-bold text-center bg-gray-50 text-[14px]">Date</td>
+                                            <td rowSpan="3" className={`${FROZEN_SNO} border-r border-black font-bold text-center bg-white text-[14px]`}>6</td>
+                                            <td rowSpan="3" className={`${FROZEN_PARAM} border-r border-black font-bold p-2 bg-white text-center align-middle text-[13px] leading-snug break-words whitespace-normal`}>Attendance</td>
+                                            <td className={`${FROZEN_CHECK} border-r border-black font-bold p-2 bg-white text-[14px]`}>Total no. of Monitoring day's :</td>
+                                            <td className={`${FROZEN_MARK} font-bold text-center bg-gray-50 text-[14px]`}>Date</td>
                                             {Array.from({ length: 16 }, (_, i) => {
                                                 const val = gridData[`attendance_date_${i + 1}`] || "";
                                                 let selectedDate = undefined;
@@ -1812,16 +1909,16 @@ const SixteenDayMonitoringSheet = ({
                                             <td className="min-w-[120px] bg-blue-100/50 text-center font-bold text-[14px] border-l border-black italic">Avg. Score</td>
                                         </tr>
                                         <tr className="border-b border-black h-12">
-                                            <td className="border-r border-black font-bold p-2 text-[14px]">Target %</td>
-                                            <td className="min-w-[100px] border-r border-black text-center font-bold text-[14px]">100%</td>
+                                            <td className={`${FROZEN_CHECK} border-r border-black font-bold p-2 bg-white text-[14px]`}>Target %</td>
+                                            <td className={`${FROZEN_MARK} text-center font-bold bg-gray-50 text-[14px]`}>100%</td>
                                             {Array.from({ length: 16 }, (_, i) => (
                                                 <td key={i} className={`border-r border-black text-center text-[14px] font-bold ${dayBlurClass(i + 1)}`}>100%</td>
                                             ))}
                                             <td className="bg-blue-100/50 text-center font-bold text-[14px] border-l border-black">100%</td>
                                         </tr>
                                         <tr className="border-black h-12">
-                                            <td className="border-r border-black font-bold p-2 text-[14px]">Actual % age followed</td>
-                                            <td className="min-w-[100px] border-r border-black font-bold text-center text-[14px]">-</td>
+                                            <td className={`${FROZEN_CHECK} border-r border-black font-bold p-2 bg-white text-[14px]`}>Actual % age followed</td>
+                                            <td className={`${FROZEN_MARK} font-bold text-center bg-gray-50 text-[14px]`}>-</td>
                                             {Array.from({ length: 16 }, (_, i) => {
                                                 const val = gridData[`attendance_actual_${i + 1}`] || "";
                                                 return (

@@ -2852,6 +2852,12 @@ export const getSoftDeletedUsers = asyncHandler(async (req, res) => {
     params.push(t, t, t, t);
   }
 
+  // Tab filter: "1" = Dojo Candidates, "0" = Operators (NULL treated as operator)
+  if (req.query.isTemporary !== undefined && req.query.isTemporary !== "") {
+    const isTemp = req.query.isTemporary === "1" || req.query.isTemporary === "true";
+    whereClauses.push(isTemp ? "u.isTemporary = 1" : "(u.isTemporary = 0 OR u.isTemporary IS NULL)");
+  }
+
   if (req.query.deletedDateFrom) {
     whereClauses.push("CAST(u.updatedAt AS DATE) >= CAST(? AS DATE)");
     params.push(req.query.deletedDateFrom);
@@ -2887,7 +2893,7 @@ export const getSoftDeletedUsers = asyncHandler(async (req, res) => {
   const sortCol = sortableColumns[req.query.sortBy] || "u.updatedAt";
   const sortDir = req.query.order === "asc" ? "ASC" : "DESC";
 
-  const [[cnt], [users]] = await Promise.all([
+  const [[cnt], [users], [[tabCounts]]] = await Promise.all([
     executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${whereSQL}`, params, { label: "getSoftDeletedUsers.count" }),
     executeQuery(
       `SELECT u.*, d.deptName, s_res.sectionName, l_res.lineName
@@ -2897,6 +2903,17 @@ export const getSoftDeletedUsers = asyncHandler(async (req, res) => {
       [...params, offset, limit],
       { label: "getSoftDeletedUsers.select" }
     ),
+    // Unfiltered per-tab totals for the tab badges
+    executeQuery(
+      `SELECT
+         SUM(CASE WHEN u.isTemporary = 1 THEN 0 ELSE 1 END) AS operatorCount,
+         SUM(CASE WHEN u.isTemporary = 1 THEN 1 ELSE 0 END) AS dojoCount,
+         COUNT(*) AS totalCount
+       FROM users u
+       WHERE u.isDeleted = 1`,
+      [],
+      { label: "getSoftDeletedUsers.tabCounts" }
+    ),
   ]);
 
   res.json(new ApiResponse(200, {
@@ -2904,7 +2921,12 @@ export const getSoftDeletedUsers = asyncHandler(async (req, res) => {
     totalUsers: cnt.total,
     totalPages: Math.max(Math.ceil(cnt.total / limit), 1),
     currentPage: page,
-    limit
+    limit,
+    tabCounts: {
+      operators: tabCounts?.operatorCount || 0,
+      dojoCandidates: tabCounts?.dojoCount || 0,
+      total: tabCounts?.totalCount || 0,
+    },
   }, "Soft deleted users fetched"));
 });
 

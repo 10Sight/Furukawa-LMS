@@ -51,6 +51,7 @@ export const superAdminApi = createApi({
           sortBy: params.sortBy || "updatedAt",
           order: params.order || "desc",
           search: params.search || "",
+          isTemporary: params.isTemporary ?? "",
           deletedDateFrom: params.deletedDateFrom || "",
           deletedDateTo: params.deletedDateTo || "",
           departmentId: params.departmentId || "",

@@ -13,6 +13,8 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconLoader2,
+  IconUsers,
+  IconSchool,
 } from "@tabler/icons-react";
 import {
   useGetSoftDeletedUsersQuery,
@@ -28,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SearchInput from "@/components/common/SearchInput";
 import MultiSelectFilter from "@/components/common/MultiSelectFilter";
 import {
@@ -73,6 +76,8 @@ const SoftDeletedUsersManagement = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [activeTab, setActiveTab] = useState("operators"); // 'operators' | 'dojo'
+  const isDojoTab = activeTab === "dojo";
 
   const {
     data: deletedUsersData,
@@ -87,6 +92,7 @@ const SoftDeletedUsersManagement = () => {
     sortBy: "updatedAt",
     order: "desc",
     search: searchTerm,
+    isTemporary: isDojoTab ? "1" : "0",
     deletedDateFrom: filters.deletedDateFrom,
     deletedDateTo: filters.deletedDateTo,
     departmentId: filters.departmentId,
@@ -118,6 +124,14 @@ const SoftDeletedUsersManagement = () => {
   const deletedUsers = deletedUsersData?.data?.users || [];
   const totalUsers = deletedUsersData?.data?.totalUsers ?? deletedUsers.length;
   const totalPages = deletedUsersData?.data?.totalPages || 1;
+  const tabCounts = deletedUsersData?.data?.tabCounts;
+  const entityLabel = isDojoTab ? "Dojo candidate" : "operator";
+
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    setCurrentPage(1);
+    setSelectedUsers([]);
+  };
 
   const hasActiveFilters =
     !!searchTerm || Object.values(filters).some(Boolean);
@@ -216,6 +230,32 @@ const SoftDeletedUsersManagement = () => {
             reactivate it, or permanently delete it to remove it — and all its data — for good.
           </p>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200 pb-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full sm:w-auto">
+          <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
+            <TabsTrigger value="operators" className="flex items-center gap-2 px-4">
+              <IconUsers className="w-4 h-4 text-blue-600" />
+              <span>Operators</span>
+              {tabCounts && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {tabCounts.operators}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="dojo" className="flex items-center gap-2 px-4">
+              <IconSchool className="w-4 h-4 text-amber-600" />
+              <span>Dojo Candidates</span>
+              {tabCounts && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {tabCounts.dojoCandidates}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Filters */}
@@ -374,9 +414,9 @@ const SoftDeletedUsersManagement = () => {
                 <TableCell colSpan={7} className="py-14">
                   <div className="flex flex-col items-center text-center">
                     <IconUserOff className="w-10 h-10 text-gray-300 mb-3" />
-                    <h3 className="text-base font-medium text-gray-900">No deleted users found</h3>
+                    <h3 className="text-base font-medium text-gray-900">No deleted {entityLabel}s found</h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      {hasActiveFilters ? "Try adjusting or clearing your filters." : "There are no soft-deleted users to manage."}
+                      {hasActiveFilters ? "Try adjusting or clearing your filters." : `There are no soft-deleted ${entityLabel}s to manage.`}
                     </p>
                   </div>
                 </TableCell>
@@ -463,7 +503,7 @@ const SoftDeletedUsersManagement = () => {
         {!isLoading && deletedUsers.length > 0 && (
           <div className="px-5 py-3.5 border-t border-gray-200 flex items-center justify-between">
             <div className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages} &middot; {totalUsers} deleted user{totalUsers !== 1 ? "s" : ""}
+              Page {currentPage} of {totalPages} &middot; {totalUsers} deleted {entityLabel}{totalUsers !== 1 ? "s" : ""}
             </div>
             <div className="flex items-center gap-2">
               <Button

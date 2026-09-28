@@ -1156,8 +1156,8 @@ const ThreeDayMonitoringSheet = ({
                             <thead>
                                 <tr className="bg-gray-100 uppercase">
                                     <th className="border-r border-b border-black min-w-[50px] p-2 bg-gray-100" rowSpan={3}>S.No</th>
-                                    <th className="border-r border-b border-black min-w-[200px] p-2 bg-gray-100" rowSpan={3}>Parameters</th>
-                                    <th className="border-r border-b border-black min-w-[400px] p-2 bg-gray-100 uppercase" rowSpan={3}>Check Items</th>
+                                    <th className="border-r border-b border-black w-[120px] min-w-[110px] max-w-[130px] p-2 bg-gray-100 break-words whitespace-normal leading-tight" rowSpan={3}>Parameters</th>
+                                    <th className="border-r border-b border-black min-w-[300px] max-w-[380px] p-2 bg-gray-100 uppercase break-words whitespace-normal" rowSpan={3}>Check Items</th>
                                     <th className="border-r border-b border-black min-w-[80px] p-2 bg-gray-100" rowSpan={3}>Mark<br />(Max.)</th>
                                     <th className="border-r border-b border-black p-2 py-3 bg-gray-200 text-[14px] font-bold" colSpan={33}>DAY WISE PERFORMANCE MONITORING</th>
                                     <th className="border-r border-b border-black min-w-[250px] p-2 bg-blue-50/50" rowSpan={3}>Evaluation after monitoring of 3 days</th>
@@ -1212,9 +1212,9 @@ const ThreeDayMonitoringSheet = ({
                                     {[1, 2, 3].map(d => (
                                         <React.Fragment key={d}>
                                             {[...Array(10)].map((_, i) => (
-                                                <th key={i} className="border-r border-b border-black p-0 min-w-[45px] h-10 text-[11px] bg-white">{i + 1}</th>
+                                                <th key={i} className="border-r border-b border-black p-0 min-w-[36px] h-10 text-[11px] bg-white">{i + 1}</th>
                                             ))}
-                                            <th className="border-r border-b border-black p-0 min-w-[75px] h-10 text-[12px] font-bold bg-gray-50">Total</th>
+                                            <th className="border-r border-b border-black p-0 min-w-[60px] h-10 text-[12px] font-bold bg-gray-50">Total</th>
                                         </React.Fragment>
                                     ))}
                                 </tr>
@@ -1246,12 +1246,12 @@ const ThreeDayMonitoringSheet = ({
                                                     {/* Plan Row */}
                                                     <tr>
                                                         <td className="border-r border-b border-black p-1 text-center font-bold" rowSpan={4}>{catIdx + 1}</td>
-                                                        <td className="border-r border-b border-black p-1 font-bold" rowSpan={4}>
+                                                        <td className="border-r border-b border-black p-2 font-bold text-center leading-snug break-words whitespace-pre-line w-[120px] max-w-[130px]" rowSpan={4}>
                                                             {isDesignMode && canEditConfig ? (
                                                                 <EditableCell multiline value={cat.category} onCommit={(v) => updateCategoryField(cat.id, 'category', v)} />
                                                             ) : cat.category}
                                                         </td>
-                                                        <td className="border-r border-b border-black p-1">
+                                                        <td className="border-r border-b border-black p-1 leading-snug break-words whitespace-normal max-w-[380px]">
                                                             {isDesignMode && canEditConfig ? (
                                                                 <EditableCell multiline value={row.label} onCommit={(v) => updateRowField(cat.id, row.id, 'label', v)} />
                                                             ) : row.label}
@@ -1303,7 +1303,7 @@ const ThreeDayMonitoringSheet = ({
                                                     </tr>
                                                     {/* Actual Row */}
                                                     <tr>
-                                                        <td className="border-r border-b border-black p-2 font-semibold">
+                                                        <td className="border-r border-b border-black p-2 font-semibold leading-snug break-words whitespace-normal max-w-[380px]">
                                                             {isDesignMode && canEditConfig ? (
                                                                 <EditableCell multiline value={defectFreeRow?.label || ''} placeholder="Defect free product" onCommit={(v) => updateRowField(cat.id, 'defectFree', 'label', v)} />
                                                             ) : (defectFreeRow?.label || "Defect free product")}
@@ -1313,7 +1313,7 @@ const ThreeDayMonitoringSheet = ({
                                                             return (
                                                                 <td key={d} className="border-r border-b border-black p-0 h-10" colSpan={11}>
                                                                     <div className="relative flex items-center justify-center min-w-[100px] h-full px-2">
-                                                                        <span className="invisible whitespace-pre px-4 text-[13px] font-bold">{val || "00"}</span>
+                                                                        <span className="invisible whitespace-pre px-1 text-[13px] font-bold">{val || "00"}</span>
                                                                         <input
                                                                             className="absolute inset-0 w-full h-full text-center border-none outline-none bg-white font-bold text-[13px]"
                                                                             value={val}
@@ -1354,7 +1354,7 @@ const ThreeDayMonitoringSheet = ({
                                                         <td className="border-r border-b border-black p-2 text-center font-bold bg-gray-50/20 text-[13px]" rowSpan={totalRowsInCat}>{catIdx + 1}</td>
                                                     )}
                                                     {isFirstRow && (
-                                                        <td className="relative group border-r border-b border-black p-2 font-bold whitespace-pre-line text-[12px] align-top bg-gray-50/20" rowSpan={totalRowsInCat}>
+                                                        <td className="relative group border-r border-b border-black p-2 font-bold whitespace-pre-line text-[12px] text-center leading-snug break-words align-top bg-gray-50/20 w-[120px] max-w-[130px]" rowSpan={totalRowsInCat}>
                                                             {showEditor ? (
                                                                 <>
                                                                     <EditableCell multiline value={cat.category} onCommit={(v) => updateCategoryField(cat.id, 'category', v)} />
@@ -1368,7 +1368,7 @@ const ThreeDayMonitoringSheet = ({
                                                             ) : cat.category}
                                                         </td>
                                                     )}
-                                                    <td className="relative group border-r border-b border-black p-2 whitespace-pre-line text-[12px] font-medium" rowSpan={row.hasCT ? 2 : 1}>
+                                                    <td className="relative group border-r border-b border-black p-2 whitespace-pre-line text-[12px] font-medium leading-snug break-words max-w-[380px]" rowSpan={row.hasCT ? 2 : 1}>
                                                         {showEditor ? (
                                                             <>
                                                                 <EditableCell multiline value={row.label} onCommit={(v) => updateRowField(cat.id, row.id, 'label', v)} />
@@ -1402,9 +1402,9 @@ const ThreeDayMonitoringSheet = ({
                                                                     {[...Array(10)].map((_, i) => {
                                                                         const val = gridData[`${row.id}_${day}_${row.hasCT ? 'ct' : 'score'}_${i}`] || "";
                                                                         return (
-                                                                            <td key={i} className={`border-r border-b border-black p-0 h-10 min-w-[45px] ${row.hasCT ? 'bg-gray-50/30' : ''}`}>
-                                                                                <div className="relative flex items-center justify-center min-w-[45px] h-full">
-                                                                                    <span className="invisible whitespace-pre px-4 text-[12px] font-bold">{val || "00"}</span>
+                                                                            <td key={i} className={`border-r border-b border-black p-0 h-10 min-w-[36px] ${row.hasCT ? 'bg-gray-50/30' : ''}`}>
+                                                                                <div className="relative flex items-center justify-center min-w-[36px] h-full">
+                                                                                    <span className="invisible whitespace-pre px-1 text-[12px] font-bold">{val || "00"}</span>
                                                                                     <input
                                                                                         className="absolute inset-0 w-full h-full text-center border-none outline-none focus:bg-blue-100/50 text-[12px] font-bold"
                                                                                         value={val}
@@ -1414,9 +1414,9 @@ const ThreeDayMonitoringSheet = ({
                                                                             </td>
                                                                         );
                                                                     })}
-                                                                    <td className="border-r border-b border-black p-0 text-center font-bold bg-yellow-300 text-black min-w-[75px] text-[12px]">
-                                                                        <div className="relative flex items-center justify-center min-w-[75px] h-full">
-                                                                            <span className="invisible whitespace-pre px-4 text-[12px] font-bold">{gridData[`${row.id}_${day}_${row.hasCT ? 'ct_avg' : 'score_avg'}`] || "00"}</span>
+                                                                    <td className="border-r border-b border-black p-0 text-center font-bold bg-yellow-300 text-black min-w-[60px] text-[12px]">
+                                                                        <div className="relative flex items-center justify-center min-w-[60px] h-full">
+                                                                            <span className="invisible whitespace-pre px-1 text-[12px] font-bold">{gridData[`${row.id}_${day}_${row.hasCT ? 'ct_avg' : 'score_avg'}`] || "00"}</span>
                                                                             <div className="absolute inset-0 flex items-center justify-center">
                                                                                 {gridData[`${row.id}_${day}_${row.hasCT ? 'ct_avg' : 'score_avg'}`] || ""}
                                                                             </div>
@@ -1429,7 +1429,7 @@ const ThreeDayMonitoringSheet = ({
                                                         return (
                                                             <td key={d} className="border-r border-b border-black p-0 h-10 text-center" colSpan={11}>
                                                                 <div className="relative flex items-center justify-center min-w-[100px] h-full">
-                                                                    <span className="invisible whitespace-pre px-4 text-[13px] font-bold">{gridData[`${row.id}_${day}`] || "00"}</span>
+                                                                    <span className="invisible whitespace-pre px-1 text-[13px] font-bold">{gridData[`${row.id}_${day}`] || "00"}</span>
                                                                     <input
                                                                         className="absolute inset-0 w-full h-full text-center border-none outline-none focus:bg-blue-100/50 text-[13px] font-bold text-blue-800"
                                                                         value={gridData[`${row.id}_${day}`] || ""}
@@ -1477,9 +1477,9 @@ const ThreeDayMonitoringSheet = ({
                                                                     {[...Array(10)].map((_, i) => {
                                                                         const val = gridData[`${row.id}_${day}_score_${i}`] || "";
                                                                         return (
-                                                                            <td key={i} className="border-r border-b border-black p-0 h-10 min-w-[45px]">
-                                                                                <div className="relative flex items-center justify-center min-w-[45px] h-full">
-                                                                                    <span className="invisible whitespace-pre px-4 text-[12px] font-bold">{val || "00"}</span>
+                                                                            <td key={i} className="border-r border-b border-black p-0 h-10 min-w-[36px]">
+                                                                                <div className="relative flex items-center justify-center min-w-[36px] h-full">
+                                                                                    <span className="invisible whitespace-pre px-1 text-[12px] font-bold">{val || "00"}</span>
                                                                                     <input
                                                                                         className="absolute inset-0 w-full h-full text-center border-none outline-none font-bold focus:bg-blue-100/50 text-[12px]"
                                                                                         value={val}
@@ -1489,9 +1489,9 @@ const ThreeDayMonitoringSheet = ({
                                                                             </td>
                                                                         );
                                                                     })}
-                                                                    <td className="border-r border-b border-black p-0 text-center font-bold bg-yellow-300 text-black min-w-[75px] text-[12px]">
-                                                                        <div className="relative flex items-center justify-center min-w-[75px] h-full">
-                                                                            <span className="invisible whitespace-pre px-4 text-[12px] font-bold">{gridData[`${row.id}_${day}_score_avg`] || "00"}</span>
+                                                                    <td className="border-r border-b border-black p-0 text-center font-bold bg-yellow-300 text-black min-w-[60px] text-[12px]">
+                                                                        <div className="relative flex items-center justify-center min-w-[60px] h-full">
+                                                                            <span className="invisible whitespace-pre px-1 text-[12px] font-bold">{gridData[`${row.id}_${day}_score_avg`] || "00"}</span>
                                                                             <div className="absolute inset-0 flex items-center justify-center">
                                                                                 {gridData[`${row.id}_${day}_score_avg`] || ""}
                                                                             </div>
@@ -1538,7 +1538,7 @@ const ThreeDayMonitoringSheet = ({
                                                                 return (
                                                                     <td key={d} className="border-r border-b border-black p-1 text-center font-bold bg-yellow-300 text-black" colSpan={11}>
                                                                         <div className="relative flex items-center justify-center min-w-[100px] h-full">
-                                                                            <span className="invisible whitespace-pre px-4 text-[13px] font-bold">{val || "00%"}</span>
+                                                                            <span className="invisible whitespace-pre px-1 text-[13px] font-bold">{val || "00%"}</span>
                                                                             <div className="absolute inset-0 flex items-center justify-center">{val}</div>
                                                                         </div>
                                                                     </td>
@@ -1568,7 +1568,7 @@ const ThreeDayMonitoringSheet = ({
                                 {/* Attendance Row */}
                                 <tr>
                                     <td className="border-r border-b border-black p-2 text-center font-bold text-[13px]" rowSpan={5}>6</td>
-                                    <td className="border-r border-b border-black p-2 font-bold uppercase whitespace-pre-line text-[12px] align-top" rowSpan={5}>ATTENDANCE</td>
+                                    <td className="border-r border-b border-black p-2 font-bold uppercase whitespace-pre-line text-[12px] text-center leading-snug break-words align-top w-[120px] max-w-[130px]" rowSpan={5}>ATTENDANCE</td>
                                     <td className="border-r border-b border-black p-2 font-bold text-[12px]">Total no. of Monitoring day's :</td>
                                     <td className="border-r border-b border-black p-2 text-center font-bold">3</td>
                                     <td className="border-b border-black p-4 align-top bg-white" colSpan={34} rowSpan={5}>
@@ -1674,7 +1674,7 @@ const ThreeDayMonitoringSheet = ({
                                                 <table className="w-full border-collapse text-center">
                                                     <thead>
                                                         <tr className="bg-gray-100 uppercase">
-                                                            <th className="border-r border-b border-black p-2 text-left min-w-[200px]" rowSpan={2}>Parameters</th>
+                                                            <th className="border-r border-b border-black p-2 text-left w-[130px] break-words whitespace-normal" rowSpan={2}>Parameters</th>
                                                             <th className="border-r border-b border-black p-2 min-w-[120px]" rowSpan={2}>Total Weightage</th>
                                                             <th className="border-r border-b border-black p-1">Poor**</th>
                                                             <th className="border-r border-b border-black p-1">Average</th>
@@ -1746,7 +1746,7 @@ const ThreeDayMonitoringSheet = ({
                                                         <tr className="h-12 text-[12px]">
                                                             <td className="border-r border-b border-black p-2 font-bold text-left bg-gray-100" colSpan={1}>Total</td>
                                                             <td className="border-r border-b border-black p-2 font-bold uppercase bg-gray-100 text-[13px]">{computeTotalWeightage(config.scoreRanges)}</td>
-                                                            <td className="border-r border-b border-black p-2 text-left italic text-[11px] bg-gray-50 leading-tight" colSpan={4}>** Poor criteria is minimum passing marks for associates.</td>
+                                                            <td className="border-r border-b border-black p-2 text-left italic text-[12px] bg-gray-50 leading-tight" colSpan={4}>** Poor criteria is minimum passing marks for associates.</td>
                                                             <td className="border-r border-b border-black p-2 font-bold bg-gray-100 uppercase">100%</td>
                                                             <td className="border-r border-b border-black p-0">
                                                                 <input
@@ -1835,7 +1835,7 @@ const ThreeDayMonitoringSheet = ({
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 text-[10px] italic px-2 pb-2">* Procedure refer to product quality: if the defect capturing is less than 100% by employee, need to re-monitor for next 3 days</div>
+                                        <div className="mt-4 text-[12px] italic px-2 pb-2">* Procedure refer to product quality: if the defect capturing is less than 100% by employee, need to re-monitor for next 3 days</div>
 
                                         {/* Meta Info Footer */}
                                         <div className="mt-2 flex justify-between text-[12px] font-bold border-t border-black pt-2 pb-2 px-4">

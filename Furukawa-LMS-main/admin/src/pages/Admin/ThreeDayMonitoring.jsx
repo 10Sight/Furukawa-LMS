@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -69,6 +70,7 @@ const ThreeDayMonitoring = () => {
     const [activeTab, setActiveTab] = useState('stack');
 
     const { studentId: paramStudentId } = useParams();
+    const navigate = useNavigate();
 
     // Selections
     const [dept, setDept] = useState("");
@@ -205,6 +207,60 @@ const ThreeDayMonitoring = () => {
         return student;
     }, [monitoringList, studentId, isEmployee, authUser]);
 
+    // Staff open a sheet from the stack into a full-screen view; employees only ever see their
+    // own sheet (there's no stack to return to), so they keep the regular in-layout page.
+    const isFullScreenSheet = Boolean(studentId) && !isEmployee && activeTab === 'stack';
+
+    // Header context — selectedStudent comes from the stack list, which isn't fetched on a
+    // deep link, so fall back to the operator looked up from the URL param.
+    const sheetOperator = selectedStudent || paramStudentData?.data;
+
+    // Returns to the stack with department/section/line filters intact. On a deep link
+    // (/3-day-monitoring/:studentId) drop the id segment from the URL too, otherwise the
+    // init effect would immediately reopen the sheet.
+    const handleBackToStack = () => {
+        if (paramStudentId) navigate('..', { relative: 'path' });
+        setStudentId("");
+        setForceNewAttempt(false);
+    };
+
+    // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
+    // (Escape is closing that instead) or while the user is typing in a cell.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            const target = e.target;
+            if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+            if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+            handleBackToStack();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFullScreenSheet, paramStudentId]);
+
+    // Stop the page underneath from scrolling while the full-screen sheet is open.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, [isFullScreenSheet]);
+
+    // Visible width of the full-screen scroll container, so the header's controls stay in
+    // view while its bar stretches to the full (horizontally scrollable) sheet width.
+    const [fullScreenScrollEl, setFullScreenScrollEl] = useState(null);
+    const [fullScreenViewportWidth, setFullScreenViewportWidth] = useState(0);
+    useEffect(() => {
+        if (!fullScreenScrollEl) return;
+        const update = () => setFullScreenViewportWidth(fullScreenScrollEl.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenScrollEl);
+        return () => observer.disconnect();
+    }, [fullScreenScrollEl]);
+
     const getStatusBadge = (status, verifiedBy, approvedBy) => {
         if (!status || status === 'Draft') return { label: 'Draft', color: 'bg-slate-100 text-slate-600 border-slate-200' };
         if (verifiedBy?.includes('Rejected') || approvedBy?.includes('Rejected')) {
@@ -214,6 +270,84 @@ const ThreeDayMonitoring = () => {
         if (status === 'Submitted') return { label: 'Submitted', color: 'bg-blue-100 text-blue-600 border-blue-200' };
         return { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
     };
+
+    // Portaled to <body> so the view escapes the layout's stacking contexts and covers the
+    // sidebar and top navbar; Radix popovers/dialogs portal in after it and still sit on top.
+    if (isFullScreenSheet) {
+        const operatorName = sheetOperator?.fullName || sheetOperator?.name || "Operator";
+        const operatorCode = sheetOperator?.empId;
+        const operatorDept = sheetOperator?.departmentName || sheetOperator?.deptName || sheetOperator?.department?.name
+            || assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name;
+        const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name
+            || sections.find(s => String(s.id) === String(section))?.name;
+
+        return createPortal(
+            <div ref={setFullScreenScrollEl} className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200">
+                {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
+                <div className="min-w-full w-max min-h-full flex flex-col">
+                    <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                        <div
+                            className="sticky left-0"
+                            style={{ width: fullScreenViewportWidth || '100vw' }}
+                        >
+                            {/* Navigation + operator identity | shortcut hint */}
+                            <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                                <div className="flex items-center gap-4 min-w-0">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="gap-1.5 shrink-0 -ml-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50"
+                                        onClick={handleBackToStack}
+                                    >
+                                        <IconArrowLeft size={16} />
+                                        Back to Stack
+                                    </Button>
+                                    <div className="h-9 w-px bg-slate-200 shrink-0" />
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <Avatar className="h-10 w-10 ring-2 ring-amber-100 shrink-0">
+                                            <AvatarFallback className="bg-amber-50 text-amber-600 font-bold text-xs">
+                                                {operatorName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex flex-col gap-1 min-w-0">
+                                            <span className="text-sm font-bold text-slate-800 leading-none truncate">{operatorName}</span>
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                {operatorCode && (
+                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold px-1.5 py-0">
+                                                        #{operatorCode}
+                                                    </Badge>
+                                                )}
+                                                {(operatorDept || operatorSection) && (
+                                                    <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0 max-w-[260px] truncate">
+                                                        {[operatorDept, operatorSection].filter(Boolean).join(' / ')}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 font-medium whitespace-nowrap">
+                                    Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-4 sm:p-6 pb-20">
+                        <ThreeDayMonitoringSheet
+                            studentId={studentId}
+                            departmentId={dept}
+                            departmentName={assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name}
+                            sectionName={sections.find(s => String(s.id) === String(section))?.name}
+                            readOnly={false}
+                            initialForceNewAttempt={forceNewAttempt}
+                        />
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
 
     return (
         <div className="space-y-6 w-max min-w-full max-w-none mx-auto pb-20 p-4 min-h-screen">

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import useCountdown from '@/hooks/useCountdown';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
@@ -66,6 +67,7 @@ const SixteenDayMonitoringSheet = ({
     onAfterSave = null,
     feedbackRef = null,
     studentStatus = "PRESENT",
+    headerActionsContainer = null,
 }) => {
     const liveRevisionInfo = useRevisionInfo("sixteen-day-monitoring", { docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" }, { departmentId, sectionId: sectionId || null });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
@@ -1034,6 +1036,98 @@ const SixteenDayMonitoringSheet = ({
 
     const isDay16ColFilled = isDay16Filled();
 
+    // Action controls — rendered inline, or portaled into `headerActionsContainer` when the
+    // parent provides one (full-screen view's sticky header).
+    const attemptHistoryControl = historyAttempts.length > 0 && (
+        <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
+            <select
+                className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
+                value={selectedAttemptId}
+                onChange={(e) => handleAttemptChange(e.target.value)}
+            >
+                {historyAttempts.map((att) => (
+                    <option key={att.id} value={att.id}>
+                        Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
+                    </option>
+                ))}
+                {isForceNewAttempt && (
+                    <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
+                )}
+            </select>
+        </div>
+    );
+
+    const day16StatusBadge = studentId && (
+        <div className={headerActionsContainer ? "flex items-center" : "flex items-center mr-2"}>
+            {isDay16ColFilled ? (
+                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 flex items-center py-1.5 px-3">
+                    <CheckCircle2 className="h-3 w-3" /> Day 16 Complete
+                </Badge>
+            ) : (
+                <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-50 gap-1 flex items-center py-1.5 px-3">
+                    <XCircle className="h-3 w-3 text-amber-500" /> Day 16 Incomplete
+                </Badge>
+            )}
+        </div>
+    );
+
+    const primaryActionButtons = (
+        <div className={headerActionsContainer ? "flex items-center gap-2" : "flex gap-1 border-l pl-2 border-gray-200"}>
+            {headerInfo.status !== 'Submitted' && (
+                <Button
+                    variant="secondary"
+                    onClick={() => handleSave("Draft", false)}
+                    disabled={saving || !studentId || eligibilityStillLocked}
+                    className="h-9 gap-2"
+                >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Draft
+                </Button>
+            )}
+
+            {headerInfo.status === 'Submitted' && (
+                <Button
+                    variant="secondary"
+                    onClick={() => handleSave("Submitted", false)}
+                    disabled={saving || !studentId || isLocked || (readOnly && !(allowEduCellApproval && canVerifyEduCell))}
+                    className="h-9 gap-2"
+                >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Updates
+                </Button>
+            )}
+
+            <Button
+                variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
+                onClick={() => handleSave("Submitted", true)}
+                disabled={saving || !studentId || (!isLeftUser && !isDay16ColFilled) || isLocked || readOnly || eligibilityStillLocked}
+                className="h-9 gap-2"
+            >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {headerInfo.status === 'Submitted' ? 'Update & Re-Submit' : 'Submit Monitoring'}
+            </Button>
+
+            {(headerInfo.status === 'Submitted' || authUser?.isAdmin || authUser?.isTrainer) && studentId && (
+                <Button
+                    variant="outline"
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 gap-2"
+                    onClick={() => handleEmail()}
+                    disabled={sendingEmail || (!isLeftUser && !isDay16ColFilled)}
+                >
+                    {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                    Email Report
+                </Button>
+            )}
+        </div>
+    );
+
+    const printButton = (
+        <Button variant="outline" onClick={() => window.print()} className="h-9 gap-2">
+            <Printer className="w-4 h-4" /> Print
+        </Button>
+    );
+
     return (
         <div className="space-y-4">
             {isLeftUser && (
@@ -1069,25 +1163,7 @@ const SixteenDayMonitoringSheet = ({
                         )}
                     </div>
 
-                    {historyAttempts.length > 0 && (
-                        <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Attempt History:</span>
-                            <select
-                                className="text-xs font-bold bg-transparent border-none outline-none text-indigo-600 cursor-pointer"
-                                value={selectedAttemptId}
-                                onChange={(e) => handleAttemptChange(e.target.value)}
-                            >
-                                {historyAttempts.map((att) => (
-                                    <option key={att.id} value={att.id}>
-                                        Attempt #{att.attemptNumber} ({att.status}) - {new Date(att.createdAt).toLocaleDateString()}
-                                    </option>
-                                ))}
-                                {isForceNewAttempt && (
-                                    <option value="">Attempt #{(historyAttempts[0]?.attemptNumber || 0) + 1} (New)</option>
-                                )}
-                            </select>
-                        </div>
-                    )}
+                    {!headerActionsContainer && attemptHistoryControl}
                 </div>
 
                 <div className="flex gap-2">
@@ -1127,73 +1203,34 @@ const SixteenDayMonitoringSheet = ({
                             Export
                         </Button>
 
-                        {studentId && (
-                            <div className="flex items-center mr-2">
-                                {isDay16ColFilled ? (
-                                    <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 flex items-center py-1.5 px-3">
-                                        <CheckCircle2 className="h-3 w-3" /> Day 16 Complete
-                                    </Badge>
-                                ) : (
-                                    <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-50 gap-1 flex items-center py-1.5 px-3">
-                                        <XCircle className="h-3 w-3 text-amber-500" /> Day 16 Incomplete
-                                    </Badge>
-                                )}
-                            </div>
+                        {!headerActionsContainer && (
+                            <>
+                                {day16StatusBadge}
+                                {primaryActionButtons}
+                            </>
                         )}
-
-                        <div className="flex gap-1 border-l pl-2 border-gray-200">
-                            {headerInfo.status !== 'Submitted' && (
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => handleSave("Draft", false)}
-                                    disabled={saving || !studentId || eligibilityStillLocked}
-                                    className="h-9 gap-2"
-                                >
-                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    Save Draft
-                                </Button>
-                            )}
-
-                            {headerInfo.status === 'Submitted' && (
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => handleSave("Submitted", false)}
-                                    disabled={saving || !studentId || isLocked || (readOnly && !(allowEduCellApproval && canVerifyEduCell))}
-                                    className="h-9 gap-2"
-                                >
-                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    Save Updates
-                                </Button>
-                            )}
-
-                            <Button
-                                variant={headerInfo.status === 'Submitted' ? "outline" : "default"}
-                                onClick={() => handleSave("Submitted", true)}
-                                disabled={saving || !studentId || (!isLeftUser && !isDay16ColFilled) || isLocked || readOnly || eligibilityStillLocked}
-                                className="h-9 gap-2"
-                            >
-                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                {headerInfo.status === 'Submitted' ? 'Update & Re-Submit' : 'Submit Monitoring'}
-                            </Button>
-
-                            {(headerInfo.status === 'Submitted' || authUser?.isAdmin || authUser?.isTrainer) && studentId && (
-                                <Button
-                                    variant="outline"
-                                    className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 gap-2"
-                                    onClick={() => handleEmail()}
-                                    disabled={sendingEmail || (!isLeftUser && !isDay16ColFilled)}
-                                >
-                                    {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                                    Email Report
-                                </Button>
-                            )}
-                        </div>
                     </div>
-                    <Button variant="outline" onClick={() => window.print()} className="h-9 gap-2">
-                        <Printer className="w-4 h-4" /> Print
-                    </Button>
+                    {!headerActionsContainer && printButton}
                 </div>
             </div>
+
+            {/* Full-screen view: the key actions live in the page's sticky header instead */}
+            {headerActionsContainer && createPortal(
+                <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                    {/* Left: which attempt is shown and whether it's ready to submit */}
+                    <div className="flex flex-wrap items-center gap-3 min-w-0">
+                        {attemptHistoryControl}
+                        {day16StatusBadge}
+                    </div>
+                    {/* Right: save / submit / email, then print set apart */}
+                    <div className="flex flex-wrap items-center gap-3 ml-auto">
+                        {primaryActionButtons}
+                        <div className="h-7 w-px bg-slate-200" />
+                        {printButton}
+                    </div>
+                </div>,
+                headerActionsContainer
+            )}
 
             <Card className="border-none shadow-none bg-transparent">
                 <CardContent className="p-0">

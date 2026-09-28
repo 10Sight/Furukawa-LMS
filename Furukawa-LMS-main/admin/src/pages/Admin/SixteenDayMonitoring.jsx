@@ -408,25 +408,81 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         return () => { document.body.style.overflow = previous; };
     }, [isFullScreenSheet]);
 
-    const sheetContent = studentId ? (
-        <>
-            <SixteenDayMonitoringSheet
-                studentId={studentId}
-                studentName={selectedStudent?.fullName}
-                employeeCode={selectedStudent?.empId}
-                departmentName={selectedStudent?.departmentName || selectedStudent?.deptName || ""}
-                sectionName={selectedStudent?.sectionName || ""}
-                departmentId={activeDept || (dept !== "ALL" ? dept : "")}
-                sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
-                readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
-                allowEduCellApproval={allowEduCellApproval}
-                initialForceNewAttempt={forceNewAttempt}
-                onAfterSave={handleAfterMonitoringSave}
-                feedbackRef={feedbackRef}
-            />
+    // Which sheet is visible — both stay mounted so unsaved edits survive a tab switch and
+    // feedbackRef stays live for the combined save. Resets when another operator is opened.
+    const [activeSheetTab, setActiveSheetTab] = useState('monitoring'); // 'monitoring' | 'feedback'
+    useEffect(() => { setActiveSheetTab('monitoring'); }, [studentId]);
 
-            {(hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId))) && (
-                <div className="mt-12">
+    // Full-screen header: slot the sheet portals its actions into, and the visible width of
+    // the scroll container so the header's controls stay in view while its bar stretches to
+    // the full (horizontally scrollable) sheet width.
+    const [headerActionsEl, setHeaderActionsEl] = useState(null);
+    const [fullScreenScrollEl, setFullScreenScrollEl] = useState(null);
+    const [fullScreenViewportWidth, setFullScreenViewportWidth] = useState(0);
+    useEffect(() => {
+        if (!fullScreenScrollEl) return;
+        const update = () => setFullScreenViewportWidth(fullScreenScrollEl.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenScrollEl);
+        return () => observer.disconnect();
+    }, [fullScreenScrollEl]);
+
+    const showFeedbackSheet = hasManagePermission || canViewFeedback || (isEmployee && String(authUser?._id || authUser?.id) === String(studentId));
+
+    const renderSheetTabs = (compact = false) => (
+        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner w-fit">
+            {[
+                { key: 'monitoring', label: '16-Day Monitoring Sheet', Icon: IconCalendarCheck },
+                ...(showFeedbackSheet ? [{ key: 'feedback', label: compact ? "Mentee's Feedback" : "Mentee's Daily Feedback", Icon: IconMessage }] : []),
+            ].map(({ key, label, Icon }) => (
+                <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveSheetTab(key)}
+                    className={cn(
+                        "flex items-center gap-2 text-xs font-bold transition-all rounded-lg whitespace-nowrap",
+                        compact ? "px-4 py-1.5" : "px-4 py-2",
+                        activeSheetTab === key
+                            ? "bg-white text-indigo-600 shadow-sm"
+                            : "text-slate-500 hover:text-slate-700"
+                    )}
+                >
+                    <Icon size={compact ? 15 : 16} />
+                    {label}
+                </button>
+            ))}
+        </div>
+    );
+
+    const sheetContent = studentId ? (
+        <div className="space-y-6">
+            {!isFullScreenSheet && (
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    {renderSheetTabs()}
+                </div>
+            )}
+
+            <div className={cn(activeSheetTab === 'monitoring' ? "block" : "hidden")}>
+                <SixteenDayMonitoringSheet
+                    studentId={studentId}
+                    studentName={selectedStudent?.fullName}
+                    employeeCode={selectedStudent?.empId}
+                    departmentName={selectedStudent?.departmentName || selectedStudent?.deptName || ""}
+                    sectionName={selectedStudent?.sectionName || ""}
+                    departmentId={activeDept || (dept !== "ALL" ? dept : "")}
+                    sectionId={Number(selectedStudent?.sectionId) || Number(section) || 0}
+                    readOnly={readOnly || (isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId)))}
+                    allowEduCellApproval={allowEduCellApproval}
+                    initialForceNewAttempt={forceNewAttempt}
+                    onAfterSave={handleAfterMonitoringSave}
+                    feedbackRef={feedbackRef}
+                    headerActionsContainer={isFullScreenSheet ? headerActionsEl : null}
+                />
+            </div>
+
+            {showFeedbackSheet && (
+                <div className={cn(activeSheetTab === 'feedback' ? "block" : "hidden")}>
                     <MenteeFeedbackMonitoringSheet
                         ref={feedbackRef}
                         studentId={studentId}
@@ -434,7 +490,7 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                     />
                 </div>
             )}
-        </>
+        </div>
     ) : null;
 
     // Portaled to <body> so the view escapes the layout's stacking contexts and covers the
@@ -446,54 +502,67 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name;
 
         return createPortal(
-            <div className="fixed inset-0 z-50 bg-slate-100 overflow-y-auto flex flex-col w-screen h-screen animate-in fade-in duration-200">
-                <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
-                    <div className="max-w-[1900px] w-full mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-4 min-w-0">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2 shrink-0 text-slate-700 hover:text-indigo-600"
-                                onClick={handleBackToStack}
-                            >
-                                <IconArrowLeft size={16} />
-                                Back to Stack
-                            </Button>
-                            <div className="h-8 w-px bg-slate-200 shrink-0" />
-                            <div className="flex items-center gap-3 min-w-0">
-                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm shrink-0">
-                                    <AvatarFallback className="bg-indigo-50 text-indigo-600 font-bold text-xs">
-                                        {operatorName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <div className="flex flex-col min-w-0">
-                                    <span className="text-sm font-bold text-slate-800 truncate">{operatorName}</span>
-                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                        {operatorCode && (
-                                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-bold px-1.5 py-0">
-                                                #{operatorCode}
-                                            </Badge>
-                                        )}
-                                        {(operatorDept || operatorSection) && (
-                                            <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0">
-                                                {[operatorDept, operatorSection].filter(Boolean).join(' / ')}
-                                            </Badge>
-                                        )}
+            <div ref={setFullScreenScrollEl} className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200">
+                {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
+                <div className="min-w-full w-max min-h-full flex flex-col">
+                <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                    <div
+                        className="sticky left-0"
+                        style={{ width: fullScreenViewportWidth || '100vw' }}
+                    >
+                        {/* Row 1: navigation + operator identity | sheet tabs (centred) | shortcut hint */}
+                        <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                            <div className="flex items-center gap-4 min-w-0">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="gap-1.5 shrink-0 -ml-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
+                                    onClick={handleBackToStack}
+                                >
+                                    <IconArrowLeft size={16} />
+                                    Back to Stack
+                                </Button>
+                                <div className="h-9 w-px bg-slate-200 shrink-0" />
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <Avatar className="h-10 w-10 ring-2 ring-indigo-100 shrink-0">
+                                        <AvatarFallback className="bg-indigo-50 text-indigo-600 font-bold text-xs">
+                                            {operatorName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex flex-col gap-1 min-w-0">
+                                        <span className="text-sm font-bold text-slate-800 leading-none truncate">{operatorName}</span>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            {operatorCode && (
+                                                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-bold px-1.5 py-0">
+                                                    #{operatorCode}
+                                                </Badge>
+                                            )}
+                                            {(operatorDept || operatorSection) && (
+                                                <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0 max-w-[260px] truncate">
+                                                    {[operatorDept, operatorSection].filter(Boolean).join(' / ')}
+                                                </Badge>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                            <div className="shrink-0 lg:justify-self-center">
+                                {renderSheetTabs(true)}
+                            </div>
+                            <div className="hidden lg:flex justify-self-end items-center gap-1.5 text-xs text-slate-400 font-medium whitespace-nowrap">
+                                Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
+                            </div>
                         </div>
-                        <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 font-medium shrink-0">
-                            <IconCalendarCheck size={16} className="text-indigo-500" />
-                            <span>16-Day Monitoring</span>
-                            <span className="text-slate-300">·</span>
-                            <span>Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close</span>
-                        </div>
+
+                        {/* Row 2: action toolbar — SixteenDayMonitoringSheet portals its attempt
+                            history, Day 16 status, save/submit/email and print controls here */}
+                        <div ref={setHeaderActionsEl} className="border-t border-slate-200/80 bg-slate-50/80 empty:hidden" />
                     </div>
                 </div>
 
-                <div className="max-w-[1900px] w-full mx-auto p-4 sm:p-6 space-y-6 pb-20">
+                <div className="p-4 sm:p-6 space-y-6 pb-20">
                     {sheetContent}
+                </div>
                 </div>
             </div>,
             document.body

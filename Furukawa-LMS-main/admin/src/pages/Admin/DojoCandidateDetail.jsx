@@ -23,7 +23,7 @@ import {
   IconUserPlus, IconRefresh, IconChevronRight, IconFileText, IconChartBar,
   IconClipboardList, IconEye, IconClock, IconShieldCheck, IconHistory,
   IconActivity, IconCircleCheck, IconAlertTriangle, IconLoader2,
-  IconShieldLock, IconShieldOff
+  IconShieldLock, IconShieldOff, IconCalendarCheck, IconMessage
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { getMediaUrl } from "@/utils/mediaUtils";
@@ -61,6 +61,7 @@ const DojoCandidateDetail = () => {
   const [viewAttemptId, setViewAttemptId] = useState(null);
   const [attemptModalOpen, setAttemptModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
+  const [activeSheetTab, setActiveSheetTab] = useState("monitoring"); // 'monitoring' | 'feedback'
 
   const [evalAttempts, setEvalAttempts] = useState([]);
   const [evalLoading, setEvalLoading] = useState(false);
@@ -632,17 +633,42 @@ const DojoCandidateDetail = () => {
 
         {/* ── 16-Day Monitoring Tab ── */}
         <TabsContent value="monitoring" className="space-y-6 mt-6">
-          <SixteenDayMonitoringSheet
-            studentId={Number(studentId)}
-            studentName={candidate.fullName}
-            employeeCode={candidate.empId}
-            departmentId={candidate.targetDeptId || candidate.departmentId}
-            departmentName={candidate.deptName || candidate.department?.name}
-            sectionId={candidate.targetSectionId || candidate.sectionId || 0}
-            sectionName={candidate.sectionName}
-            studentStatus={candidate.status}
-          />
-          <MenteeFeedbackMonitoringSheet studentId={Number(studentId)} />
+          {/* Both sheets stay mounted so unsaved edits survive switching between them */}
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner w-fit">
+              {[
+                { key: "monitoring", label: "16-Day Monitoring Sheet", Icon: IconCalendarCheck },
+                { key: "feedback", label: "Mentee's Daily Feedback", Icon: IconMessage },
+              ].map(({ key, label, Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveSheetTab(key)}
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-all rounded-lg whitespace-nowrap ${
+                    activeSheetTab === key ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <Icon size={16} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={activeSheetTab === "monitoring" ? "block" : "hidden"}>
+            <SixteenDayMonitoringSheet
+              studentId={Number(studentId)}
+              studentName={candidate.fullName}
+              employeeCode={candidate.empId}
+              departmentId={candidate.targetDeptId || candidate.departmentId}
+              departmentName={candidate.deptName || candidate.department?.name}
+              sectionId={candidate.targetSectionId || candidate.sectionId || 0}
+              sectionName={candidate.sectionName}
+              studentStatus={candidate.status}
+            />
+          </div>
+          <div className={activeSheetTab === "feedback" ? "block" : "hidden"}>
+            <MenteeFeedbackMonitoringSheet studentId={Number(studentId)} />
+          </div>
         </TabsContent>
       </Tabs>
 

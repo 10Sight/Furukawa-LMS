@@ -1,20 +1,21 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import logger from "../logger/winston.logger.js";
 import MonthlyReportRecord from "../models/monthlyReportRecord.model.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Same approach as the PPT FME prototype's convert_presentation.ps1: PowerShell
-// drives the actual PowerPoint desktop app via COM automation to export each
-// slide as a PNG. This requires Microsoft PowerPoint to be installed and
-// licensed on whichever machine runs this Node server — it is a Windows-only,
-// COM-based approach (unlike a headless converter), so it only works here
-// because that's confirmed to be the case for this deployment.
-const CONVERT_SCRIPT_PATH = path.join(__dirname, "..", "scripts", "convertPresentation.ps1");
-const CONVERT_TIMEOUT_MS = 5 * 60 * 1000; // large decks with embedded video/animations can take a while
+// LibreOffice's own pptx->png export only renders the first slide, so the
+// reliable path (used by most production deck viewers) is two steps:
+//   1. soffice --headless --convert-to pdf   (pptx -> single pdf)
+//   2. pdftoppm -png                          (pdf -> one png per page)
+// Both binaries are external OS packages, not npm installs: install LibreOffice
+// (provides `soffice`) and poppler-utils (provides `pdftoppm`) on every machine
+// that runs this server, dev and prod alike. Paths are overridable via env vars
+// (SOFFICE_PATH / PDFTOPPM_PATH) for hosts where they aren't already on PATH
+// (common on a fresh Windows install — point them at soffice.exe/pdftoppm.exe).
+const SOFFICE_BIN = process.env.SOFFICE_PATH || "soffice";
+const PDFTOPPM_BIN = process.env.PDFTOPPM_PATH || "pdftoppm";
+const CONVERT_TIMEOUT_MS = 5 * 60 * 1000; // large decks with embedded video can take a while
 
 const UPLOADS_ROOT = path.join(process.cwd(), "uploads");
 const CONVERT_TMP_ROOT = path.join(UPLOADS_ROOT, "tmp", "monthly-report-convert");
@@ -22,51 +23,57 @@ const SLIDES_ROOT = path.join(UPLOADS_ROOT, "monthly-report", "slides");
 
 const ensureDir = (dir) => { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); };
 
-// Natural sort so slide_2.png sorts before slide_10.png.
+const runCommand = (bin, args, { cwd } = {}) => new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { cwd });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error(`${bin} timed out after ${CONVERT_TIMEOUT_MS}ms`));
+    }, CONVERT_TIMEOUT_MS);
+
+    child.stdout.on("data", (d) => { stdout += d.toString(); });
+    child.stderr.on("data", (d) => { stderr += d.toString(); });
+    child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(new Error(`Failed to start ${bin}: ${err.message}`));
+    });
+    child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve({ stdout, stderr });
+        else reject(new Error(`${bin} exited with code ${code}: ${stderr || stdout}`));
+    });
+});
+
+// Natural sort so slide-2.png sorts before slide-10.png.
 const sortSlideFiles = (files) => files.sort((a, b) => {
     const numA = parseInt(a.match(/(\d+)(?=\.png$)/)?.[1] || "0", 10);
     const numB = parseInt(b.match(/(\d+)(?=\.png$)/)?.[1] || "0", 10);
     return numA - numB;
 });
 
-function runConversionScript(inputPath, outputDir) {
-    return new Promise((resolve, reject) => {
-        const child = spawn("powershell.exe", [
-            "-ExecutionPolicy", "Bypass",
-            "-File", CONVERT_SCRIPT_PATH,
-            "-InputPath", inputPath,
-            "-OutputDir", outputDir
-        ]);
-
-        let stdout = "";
-        let stderr = "";
-        const timer = setTimeout(() => {
-            child.kill("SIGKILL");
-            reject(new Error(`PowerPoint conversion timed out after ${CONVERT_TIMEOUT_MS}ms`));
-        }, CONVERT_TIMEOUT_MS);
-
-        child.stdout.on("data", (d) => { stdout += d.toString(); });
-        child.stderr.on("data", (d) => { stderr += d.toString(); });
-        child.on("error", (err) => {
-            clearTimeout(timer);
-            reject(new Error(`Failed to start powershell.exe: ${err.message}`));
-        });
-        child.on("close", (code) => {
-            clearTimeout(timer);
-            if (code === 0 && stdout.includes("CONVERSION_SUCCESS")) resolve();
-            else reject(new Error(`PowerPoint conversion failed: ${stderr || stdout || `exit code ${code}`}`));
-        });
-    });
-}
-
 async function convertPptxToSlides(recordId, absolutePptxPath) {
     const tmpDir = path.join(CONVERT_TMP_ROOT, `${recordId}-${Date.now()}`);
     ensureDir(tmpDir);
 
     try {
-        await runConversionScript(absolutePptxPath, tmpDir);
+        await runCommand(SOFFICE_BIN, [
+            "--headless", "--norestore",
+            "--convert-to", "pdf",
+            "--outdir", tmpDir,
+            absolutePptxPath
+        ]);
 
-        const slideFiles = sortSlideFiles(fs.readdirSync(tmpDir).filter((f) => /^slide_\d+\.png$/i.test(f)));
+        const pdfFile = fs.readdirSync(tmpDir).find((f) => f.toLowerCase().endsWith(".pdf"));
+        if (!pdfFile) throw new Error("LibreOffice did not produce a PDF from this file");
+
+        await runCommand(PDFTOPPM_BIN, [
+            "-png", "-r", "150",
+            path.join(tmpDir, pdfFile),
+            path.join(tmpDir, "slide")
+        ]);
+
+        const slideFiles = sortSlideFiles(fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith(".png")));
         if (slideFiles.length === 0) throw new Error("No slide images were produced");
 
         const finalDir = path.join(SLIDES_ROOT, String(recordId));
@@ -88,11 +95,11 @@ async function convertPptxToSlides(recordId, absolutePptxPath) {
 }
 
 // --- Bounded-concurrency in-process queue -----------------------------------
-// PowerPoint COM automation is not reliable with multiple concurrent instances
-// on the same machine (unlike a headless converter), so conversions here run
-// strictly one at a time — a second upload simply waits its turn in the queue
-// rather than risking two PowerPoint COM sessions colliding.
-const MAX_CONCURRENT_CONVERSIONS = 1;
+// This app runs as a single `pm2 fork` instance today, so an in-process queue
+// is correctly sized. If upload volume grows enough to need multi-instance
+// workers, this is the piece to swap for BullMQ + Redis — the queue/worker
+// boundary is already isolated here for that.
+const MAX_CONCURRENT_CONVERSIONS = 2;
 const queue = [];
 let activeCount = 0;
 

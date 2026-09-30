@@ -54,14 +54,67 @@ const resolveStudentId = async (studentId) => {
     return users.length > 0 ? users[0].id : null;
 };
 
-export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
-    const { departmentId, sectionId, lineId } = req.query;
+// Signature columns a caller may use to classify a sheet as Approved/Pending. Whitelisted
+// because they're interpolated into the SQL as column names.
+const SIGNATURE_FIELDS = ["checkedBy", "verifiedBy", "approvedBy", "verifiedByEduCell"];
 
-    if (!departmentId) {
+// Mirrors isFieldApproved() in admin/src/pages/Admin/SixteenDayMonitoring.jsx: a signature
+// column counts as approved once it's filled and isn't a rejection. Keep both in sync.
+const approvedSql = (field) =>
+    `(m.${field} IS NOT NULL AND LTRIM(RTRIM(m.${field})) <> '' AND m.${field} NOT LIKE '%Rejected%')`;
+
+const formatMonitoringListRow = (row) => {
+    if (row.gridData) {
+        try {
+            row.gridData = JSON.parse(row.gridData);
+        } catch (e) {
+            row.gridData = {};
+        }
+    } else {
+        row.gridData = {};
+    }
+    if (row.adminRemarksHistory) {
+        try {
+            row.adminRemarksHistory = JSON.parse(row.adminRemarksHistory);
+        } catch (e) {
+            row.adminRemarksHistory = [];
+        }
+    } else {
+        row.adminRemarksHistory = [];
+    }
+
+    if (row.handoverApprovedAt) {
+        const eligibleAtMs = getNextCalendarDayMidnightIST(row.handoverApprovedAt).getTime();
+        row.eligibleAt = new Date(eligibleAtMs).toISOString();
+        row.isEligible = Date.now() >= eligibleAtMs;
+    } else {
+        row.eligibleAt = null;
+        row.isEligible = true;
+    }
+
+    return row;
+};
+
+// Query params:
+//   departmentId | departmentIds (comma-separated — lets "All Departments" fetch every
+//   accessible department in one query), sectionId, lineId.
+// Paginated mode (when `page` is sent): page, limit, search (name / emp ID), approvalTab
+//   (pending | approved | all), approvalField and pendingGateField (see SIGNATURE_FIELDS).
+//   Responds with { items, page, limit, total, totalPages, counts: { pending, approved, all } }.
+//   Counts cover the hierarchy selection only (not the search), matching the tab badges.
+// Without `page` the full list is returned as a plain array, as before.
+export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
+    const { departmentId, departmentIds, sectionId, lineId } = req.query;
+
+    const deptIds = departmentIds
+        ? String(departmentIds).split(",").map((id) => id.trim()).filter(Boolean)
+        : (departmentId ? [String(departmentId)] : []);
+
+    if (deptIds.length === 0) {
         throw new ApiError("Department ID is required", 400);
     }
 
-    let query = `
+    const cteSql = `
         WITH ApprovedHandovers AS (
             SELECT
                 TRY_CAST(JSON_VALUE(entry.value, '$.studentId') AS INT) as studentId,
@@ -72,15 +125,21 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
                 ) as rn
             FROM handover_sheets hs
             CROSS APPLY OPENJSON(hs.entries) as entry
-            WHERE hs.departmentId = ?
+            WHERE hs.departmentId IN (?)
               AND JSON_VALUE(entry.value, '$.interviewStatus') = 'APPROVE'
         )
-        SELECT
+    `;
+    const cteParams = [deptIds];
+
+    const selectColumnsSql = `
             u.id, u.fullName, u.empId, u.avatar, u.departmentId, u.sectionId, u.status as userStatus,
             d.name as departmentName, s.name as sectionName,
             m.status, m.checkedBy, m.verifiedBy, m.approvedBy, m.verifiedByEduCell, m.updatedAt, m.attemptNumber, m.startDate, m.gridData, m.adminRemarksHistory,
             stats.totalAttempts, stats.rejectedCount,
             ho.handoverApprovedAt
+    `;
+
+    let fromWhereSql = `
         FROM users u
         LEFT JOIN departments d ON u.departmentId = d.id
         LEFT JOIN sections s ON u.sectionId = s.id
@@ -96,58 +155,91 @@ export const listSixteenDayMonitoring = asyncHandler(async (req, res) => {
             GROUP BY studentId
         ) stats ON u.id = stats.studentId
         INNER JOIN ApprovedHandovers ho ON ho.studentId = u.id AND ho.rn = 1
-        WHERE u.departmentId = ?
+        WHERE u.departmentId IN (?)
         AND (u.isDeleted = 0 OR u.isDeleted IS NULL)
     `;
-    const params = [departmentId, departmentId];
+    const fromWhereParams = [deptIds];
 
     if (sectionId && sectionId !== "0") {
-        query += " AND u.sectionId = ?";
-        params.push(sectionId);
+        fromWhereSql += " AND u.sectionId = ?";
+        fromWhereParams.push(sectionId);
     }
     if (lineId && lineId !== "0" && lineId !== "all" && lineId !== "All" && lineId !== "undefined" && lineId !== "null") {
-        query += " AND u.lineId = ?";
-        params.push(lineId);
+        fromWhereSql += " AND u.lineId = ?";
+        fromWhereParams.push(lineId);
     }
 
-    query += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
+    fromWhereSql += " AND (u.role = 'STUDENT' OR u.isEmployee = 1)";
 
-    const [rows] = await executeQuery(query, params);
+    // Legacy (unpaginated) mode — full list as a plain array.
+    if (req.query.page === undefined) {
+        const [rows] = await executeQuery(
+            `${cteSql} SELECT ${selectColumnsSql} ${fromWhereSql}`,
+            [...cteParams, ...fromWhereParams]
+        );
+        return res.status(200).json(
+            new ApiResponse(200, rows.map(formatMonitoringListRow), "16-Day monitoring status list fetched successfully")
+        );
+    }
 
-    const formattedRows = rows.map(row => {
-        if (row.gridData) {
-            try {
-                row.gridData = JSON.parse(row.gridData);
-            } catch (e) {
-                row.gridData = {};
-            }
-        } else {
-            row.gridData = {};
-        }
-        if (row.adminRemarksHistory) {
-            try {
-                row.adminRemarksHistory = JSON.parse(row.adminRemarksHistory);
-            } catch (e) {
-                row.adminRemarksHistory = [];
-            }
-        } else {
-            row.adminRemarksHistory = [];
-        }
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 25));
 
-        if (row.handoverApprovedAt) {
-            const eligibleAtMs = getNextCalendarDayMidnightIST(row.handoverApprovedAt).getTime();
-            row.eligibleAt = new Date(eligibleAtMs).toISOString();
-            row.isEligible = Date.now() >= eligibleAtMs;
-        } else {
-            row.eligibleAt = null;
-            row.isEligible = true;
-        }
+    const approvalField = SIGNATURE_FIELDS.includes(req.query.approvalField) ? req.query.approvalField : "approvedBy";
+    const pendingGateField = SIGNATURE_FIELDS.includes(req.query.pendingGateField) ? req.query.pendingGateField : null;
+    const approvedCond = approvedSql(approvalField);
+    const pendingCond = pendingGateField
+        ? `(NOT ${approvedCond} AND ${approvedSql(pendingGateField)})`
+        : `(NOT ${approvedCond})`;
 
-        return row;
-    });
+    const approvalTab = ["pending", "approved", "all"].includes(req.query.approvalTab) ? req.query.approvalTab : "all";
+    const tabCond = approvalTab === "approved" ? approvedCond : approvalTab === "pending" ? pendingCond : "1 = 1";
+
+    const search = String(req.query.search || "").trim();
+    // Escape LIKE wildcards so a typed %, _ or [ matches literally.
+    const searchLike = `%${search.replace(/[[%_]/g, "[$&]")}%`;
+    const searchCond = search ? "(u.fullName LIKE ? OR u.empId LIKE ?)" : "1 = 1";
+    const searchParams = search ? [searchLike, searchLike] : [];
+
+    // Tab badge counts (hierarchy only) plus the number of rows matching the search + tab.
+    const countsPromise = executeQuery(
+        `${cteSql}
+        SELECT
+            COUNT(*) AS allCount,
+            SUM(CASE WHEN ${approvedCond} THEN 1 ELSE 0 END) AS approvedCount,
+            SUM(CASE WHEN ${pendingCond} THEN 1 ELSE 0 END) AS pendingCount,
+            SUM(CASE WHEN ${searchCond} AND ${tabCond} THEN 1 ELSE 0 END) AS matchCount
+        ${fromWhereSql}`,
+        [...cteParams, ...searchParams, ...fromWhereParams]
+    );
+
+    const pagePromise = executeQuery(
+        `${cteSql}
+        SELECT ${selectColumnsSql}
+        ${fromWhereSql}
+        AND ${searchCond} AND ${tabCond}
+        ORDER BY u.fullName, u.id
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`,
+        [...cteParams, ...fromWhereParams, ...searchParams, (pageNum - 1) * limitNum, limitNum]
+    );
+
+    const [[countRows], [rows]] = await Promise.all([countsPromise, pagePromise]);
+    const countRow = countRows[0] || {};
+    const total = Number(countRow.matchCount) || 0;
 
     return res.status(200).json(
-        new ApiResponse(200, formattedRows, "16-Day monitoring status list fetched successfully")
+        new ApiResponse(200, {
+            items: rows.map(formatMonitoringListRow),
+            page: pageNum,
+            limit: limitNum,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / limitNum)),
+            counts: {
+                pending: Number(countRow.pendingCount) || 0,
+                approved: Number(countRow.approvedCount) || 0,
+                all: Number(countRow.allCount) || 0,
+            },
+        }, "16-Day monitoring status list fetched successfully")
     );
 });
 

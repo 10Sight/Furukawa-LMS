@@ -172,6 +172,11 @@
     display: block !important;
   }
 
+  /* Full-screen plan sheets (Skill Upgradation / Multi-Skilling): print only the sheet, not the page underneath it */
+  body:has(> .sheet-fullscreen-portal) > *:not(.sheet-fullscreen-portal) {
+    display: none !important;
+  }
+
   body {
     background: white !important;
     padding: 0 !important;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSelector } from 'react-redux';
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,9 +8,25 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import axiosInstance from '@/Helper/axiosInstance';
-import { Loader2, Eye, Pencil, Lock } from "lucide-react";
+import { Loader2, Eye, Pencil, Lock, Minus, Plus } from "lucide-react";
 import { exportToExcel } from "@/utils/exportHelper";
 import { addCalendarMonths } from "@/utils/dateMath";
+
+// Sheet zoom (CSS `zoom`, so scroll sizes stay correct). Persisted per browser.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.05;
+const ZOOM_DEFAULT = 1;
+const ZOOM_STORAGE_KEY = "operator_observance_sheet_zoom";
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+const readStoredZoom = () => {
+    try {
+        const stored = parseFloat(localStorage.getItem(ZOOM_STORAGE_KEY));
+        return Number.isFinite(stored) ? clampZoom(stored) : ZOOM_DEFAULT;
+    } catch {
+        return ZOOM_DEFAULT;
+    }
+};
 
 // Check Contents defined in the image
 const CHECK_CONTENTS = [
@@ -43,6 +60,14 @@ const CHECK_CONTENTS = [
 ];
 
 const CHECK_ROW_IDS = CHECK_CONTENTS.map((row) => row.id);
+
+// Frozen first column ("Period for Inspection" / "Check Contents" / check-content titles) for
+// horizontal scroll, mirroring SixteenDayMonitoringSheet. The grid's dividers are border-lefts on
+// the *next* cell and the table's outer border sits on the container, so both scroll away from a
+// sticky cell: ::before paints a solid white 17px gutter ending in the 2px outer border (at rest it
+// sits exactly over the real border + card padding), and ::after redraws the 1px right divider.
+// Every frozen cell needs an opaque background so scrolled cells don't show through it.
+const FROZEN_FIRST_COL = "sticky left-[17px] z-20 before:absolute before:-top-px before:-bottom-px before:-left-[17px] before:w-[17px] before:bg-white before:border-r-2 before:border-black before:pointer-events-none after:absolute after:top-0 after:bottom-0 after:-right-px after:w-px after:bg-black after:pointer-events-none";
 const OBS_COLUMNS = ["obs1", "obs2", "obs3", "obs4"];
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
@@ -100,7 +125,14 @@ const validateObservanceSheet = (observanceData) => {
     return null;
 };
 
-const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "", readOnly = false }) => {
+const OperatorObservanceSheet = ({
+    studentId,
+    studentName = "",
+    employeeCode = "",
+    readOnly = false,
+    // Full-screen mode: the page's sticky header slot this sheet portals its toolbar into.
+    headerActionsContainer = null,
+}) => {
     const liveRevisionInfo = useRevisionInfo("operator-observance", { docNo: "FRM-WH-QA-277", revNo: "00", revDate: "01.04.2025" });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved record keeps whatever docNo/revNo/revDate was frozen into it at
@@ -110,6 +142,13 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
     const todayStr = new Date().toISOString().split('T')[0];
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+
+    const [zoom, setZoom] = useState(readStoredZoom);
+    const handleZoomChange = (value) => {
+        const next = clampZoom(value);
+        setZoom(next);
+        try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
+    };
 
     const hasObservancePermission = (permission) => {
         if (!authUser) return false;
@@ -470,47 +509,144 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
 
     if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
 
+    const modeToggle = (
+        <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg border border-gray-200 shadow-sm">
+            <button
+                onClick={() => setIsEditMode(false)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                    !isEditMode
+                        ? 'bg-white text-gray-800 shadow-sm border border-gray-200'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+            >
+                <Eye className="h-3.5 w-3.5" />
+                View
+            </button>
+            <button
+                onClick={() => canEdit && setIsEditMode(true)}
+                disabled={!canEdit}
+                title={!canEdit ? "You don't have permission to edit this sheet" : undefined}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                    isEditMode
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : canEdit
+                        ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                        : 'text-gray-300 cursor-not-allowed'
+                }`}
+            >
+                {canEdit ? <Pencil className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                Edit
+            </button>
+        </div>
+    );
+
+    const readOnlyNotice = !isEditMode && (
+        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
+            <Lock className="h-3 w-3 flex-shrink-0" />
+            <span>{canEdit ? "Viewing only — switch to Edit to make changes." : "You have read-only access to this sheet."}</span>
+        </div>
+    );
+
+    const zoomPercent = Math.round(zoom * 100);
+    const zoomControl = (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 h-9 shadow-sm print:hidden">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom - ZOOM_STEP)}
+                disabled={zoom <= ZOOM_MIN}
+                aria-label="Zoom out"
+            >
+                <Minus className="h-4 w-4" />
+            </Button>
+            <input
+                type="range"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                value={zoom}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="w-28 cursor-pointer accent-blue-600"
+                aria-label="Sheet zoom"
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom + ZOOM_STEP)}
+                disabled={zoom >= ZOOM_MAX}
+                aria-label="Zoom in"
+            >
+                <Plus className="h-4 w-4" />
+            </Button>
+            <button
+                type="button"
+                onClick={() => handleZoomChange(ZOOM_DEFAULT)}
+                title={`Reset zoom to ${Math.round(ZOOM_DEFAULT * 100)}%`}
+                className={`min-w-[3.25rem] rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums transition-colors ${zoomPercent === Math.round(ZOOM_DEFAULT * 100) ? 'text-slate-500 hover:bg-slate-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+            >
+                {zoomPercent}%
+            </button>
+        </div>
+    );
+
+    const actionButtons = (
+        <>
+            <Button
+                onClick={() => exportToExcel("Operator Observance Check Sheet", { id: studentId })}
+                variant="outline"
+                className="border-green-600 text-green-600 hover:bg-green-50"
+            >
+                Export to Excel
+            </Button>
+            {isEditMode && (
+                <>
+                    <Button onClick={() => handleSave("Draft")} disabled={saving} className="bg-slate-600 hover:bg-slate-700 text-white">
+                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Save Draft
+                    </Button>
+                    <Button onClick={() => handleSave("Submitted")} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Submit & Send Email
+                    </Button>
+                </>
+            )}
+        </>
+    );
+
     return (
-        <Card className="w-full overflow-auto">
+        <Card className={headerActionsContainer ? "w-max min-w-full print:shadow-none print:border-none" : "w-full overflow-auto"}>
+            {/* Full-screen view: mode toggle, zoom and the sheet actions live in the page's sticky header instead */}
+            {headerActionsContainer && createPortal(
+                <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                    {/* Left: view / edit mode */}
+                    <div className="flex flex-wrap items-center gap-3 min-w-0">
+                        {modeToggle}
+                        {readOnlyNotice}
+                    </div>
+                    {/* Middle: sheet zoom */}
+                    <div className="mx-auto">{zoomControl}</div>
+                    {/* Right: export / save / submit */}
+                    <div className="flex flex-wrap items-center gap-3 ml-auto">
+                        {actionButtons}
+                    </div>
+                </div>,
+                headerActionsContainer
+            )}
+
             <CardContent className="p-4 min-w-[1000px]">
                 {/* View / Edit Mode Toggle Bar */}
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg border border-gray-200 shadow-sm">
-                        <button
-                            onClick={() => setIsEditMode(false)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                                !isEditMode
-                                    ? 'bg-white text-gray-800 shadow-sm border border-gray-200'
-                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                            }`}
-                        >
-                            <Eye className="h-3.5 w-3.5" />
-                            View
-                        </button>
-                        <button
-                            onClick={() => canEdit && setIsEditMode(true)}
-                            disabled={!canEdit}
-                            title={!canEdit ? "You don't have permission to edit this sheet" : undefined}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                                isEditMode
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : canEdit
-                                    ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                                    : 'text-gray-300 cursor-not-allowed'
-                            }`}
-                        >
-                            {canEdit ? <Pencil className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                            Edit
-                        </button>
+                {!headerActionsContainer && (
+                    <div className="flex items-center justify-between gap-3 mb-3 print:hidden">
+                        {modeToggle}
+                        {zoomControl}
+                        {readOnlyNotice || <div />}
                     </div>
-                    {!isEditMode && (
-                        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
-                            <Lock className="h-3 w-3 flex-shrink-0" />
-                            <span>{canEdit ? "Viewing only — switch to Edit to make changes." : "You have read-only access to this sheet."}</span>
-                        </div>
-                    )}
-                </div>
+                )}
 
+                {/* --sheet-zoom lets zoomed descendants undo the scaling on page-level lengths */}
+                <div className="print:![zoom:1]" style={{ zoom, '--sheet-zoom': zoom }}>
                 {/* Header Section */}
                 <div className="border-2 border-black mb-4">
                     <div className="grid grid-cols-[3fr_1fr] border-b-2 border-black">
@@ -700,17 +836,19 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                 </div>
 
                 {/* Table Section */}
-                <div className="border-2 border-black text-sm">
-                    {/* Table Header */}
-                    <div className="grid grid-cols-[200px_repeat(8,1fr)_150px] divide-x border-black divide-black bg-gray-50 font-bold text-center">
+                {/* Top border lives on the header below so it travels with it when the header is frozen */}
+                <div className="border-x-2 border-b-2 border-black text-sm">
+                    {/* Table Header — frozen for vertical scroll beneath the full-screen header (--sheet-sticky-top,
+                        a page-level px value, divided by the sheet zoom so it isn't scaled with the sheet) */}
+                    <div className="sticky top-[calc(var(--sheet-sticky-top,0px)/var(--sheet-zoom,1))] z-30 print:static grid grid-cols-[200px_repeat(8,1fr)_150px] divide-x border-t-2 border-black divide-black bg-gray-50 font-bold text-center">
                         {/* Level labels row */}
-                        <div className="border-b border-black p-2 h-8"></div>
+                        <div className={`${FROZEN_FIRST_COL} bg-gray-50 border-b border-black p-2 h-8`}></div>
                         <div className="col-span-4 border-b border-black p-2 h-8 flex items-center justify-center">L1</div>
                         <div className="col-span-4 border-b border-black p-2 h-8 flex items-center justify-center">L2</div>
                         <div className="row-span-3 flex items-center justify-center p-2">Remarks (If Any)</div>
 
                         {/* Observance labels row */}
-                        <div className="flex items-center justify-center p-2 border-b border-black h-12">Period for Inspection--&gt;</div>
+                        <div className={`${FROZEN_FIRST_COL} bg-gray-50 flex items-center justify-center p-2 border-b border-black h-12`}>Period for Inspection--&gt;</div>
                         {/* Level 1 */}
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">1st Observance</div>
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">2nd Observance</div>
@@ -719,7 +857,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         <div className="col-span-2 border-b border-black p-2 h-12 flex items-center justify-center">2nd Observance</div>
 
                         {/* Sub headers */}
-                        <div className="border-b border-black p-2 flex items-center justify-center">Check Contents</div>
+                        <div className={`${FROZEN_FIRST_COL} bg-gray-50 border-b border-black p-2 flex items-center justify-center`}>Check Contents</div>
 
                         <div className="p-1 text-xs border-b border-black flex flex-col items-center justify-center gap-1 pb-2">
                             <span>1st Time</span>
@@ -814,7 +952,7 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                     {/* Table Body */}
                     {CHECK_CONTENTS.map((row) => (
                         <div key={row.id} className="grid grid-cols-[200px_repeat(8,1fr)_150px] divide-x divide-y border-black divide-black">
-                            <div className="p-2 text-sm border-black border-t">
+                            <div className={`${FROZEN_FIRST_COL} bg-white p-2 text-sm border-black border-t`}>
                                 <div className="font-bold">{row.title}</div>
                                 <div className="text-xs text-gray-600 whitespace-pre-wrap">{row.desc}</div>
                             </div>
@@ -887,28 +1025,13 @@ const OperatorObservanceSheet = ({ studentId, studentName = "", employeeCode = "
                         <span>Page1:1</span>
                     </div>
                 </div>
-
-                <div className="mt-6 flex justify-end gap-4">
-                    <Button
-                        onClick={() => exportToExcel("Operator Observance Check Sheet", { id: studentId })}
-                        variant="outline"
-                        className="border-green-600 text-green-600 hover:bg-green-50"
-                    >
-                        Export to Excel
-                    </Button>
-                    {isEditMode && (
-                        <>
-                            <Button onClick={() => handleSave("Draft")} disabled={saving} className="bg-slate-600 hover:bg-slate-700 text-white">
-                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Save Draft
-                            </Button>
-                            <Button onClick={() => handleSave("Submitted")} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
-                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Submit & Send Email
-                            </Button>
-                        </>
-                    )}
                 </div>
+
+                {!headerActionsContainer && (
+                    <div className="mt-6 flex justify-end gap-4 print:hidden">
+                        {actionButtons}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

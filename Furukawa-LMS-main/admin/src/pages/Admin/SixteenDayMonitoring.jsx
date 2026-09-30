@@ -37,7 +37,9 @@ import {
     IconMessage,
     IconClockHour4,
     IconCircleCheck,
-    IconListDetails
+    IconListDetails,
+    IconChevronLeft,
+    IconChevronRight
 } from "@tabler/icons-react";
 import SixteenDayMonitoringSheet from '@/components/admin/SixteenDayMonitoringSheet';
 import MenteeFeedbackMonitoringSheet from '@/components/admin/MenteeFeedbackMonitoringSheet';
@@ -50,6 +52,22 @@ import { useLogActionMutation } from '@/Redux/AllApi/AuditApi';
 import useCountdown from '@/hooks/useCountdown';
 
 const EMPTY_ARRAY = [];
+
+// Monitoring stack paging / search.
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 400;
+
+// Builds a compact page-number list around the current page, e.g. [1, "...", 4, 5, 6, "...", 20].
+const getPageNumbers = (current, total) => {
+    const WINDOW = 1;
+    const pages = [1];
+    if (current - WINDOW > 2) pages.push("...");
+    for (let p = Math.max(2, current - WINDOW); p <= Math.min(total - 1, current + WINDOW); p++) pages.push(p);
+    if (current + WINDOW < total - 1) pages.push("...");
+    if (total > 1) pages.push(total);
+    return pages;
+};
 
 // Renders the stack-table action button. The live countdown is shown to everyone whose
 // unlock (midnight IST of the day after Handover approval) hasn't arrived yet; only the
@@ -137,9 +155,27 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
     const [forceNewAttempt, setForceNewAttempt] = useState(false);
     const [approvalTab, setApprovalTab] = useState('pending');
 
-    // Monitoring Status List
+    // Monitoring Status List — one server-side page at a time (search, approval tab and
+    // pagination are all applied by the API; see listSixteenDayMonitoring).
     const [monitoringList, setMonitoringList] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
+    const [listMeta, setListMeta] = useState({ total: 0, totalPages: 1, counts: { pending: 0, approved: 0, all: 0 } });
+    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+    const listRequestIdRef = useRef(0);
+
+    // Server-side search, debounced so typing doesn't fire a request per keystroke.
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    // Page resets to 1 whenever the filters change. Tracked against the filter key (rather than
+    // a reset effect) so a filter change triggers exactly one fetch, not a stale-page fetch first.
+    const listFilterKey = `${dept}|${section}|${line}|${debouncedSearch}|${approvalTab}|${pageSize}`;
+    const [pageState, setPageState] = useState({ key: listFilterKey, page: 1 });
+    const page = pageState.key === listFilterKey ? pageState.page : 1;
+    const setPage = (next) => setPageState({ key: listFilterKey, page: next });
 
     // Deep Linking
     const { data: paramStudentData } = useGetInstructorByIdQuery(paramStudentId, { skip: !paramStudentId });
@@ -188,53 +224,59 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         }
     };
 
-    // Fetch Monitoring Status List
+    const emptyListMeta = { total: 0, totalPages: 1, counts: { pending: 0, approved: 0, all: 0 } };
+
+    // Fetch one page of the Monitoring Status List
     const fetchMonitoringList = async () => {
         if (studentId) return;
+        // Only the latest request may write state, so a slow earlier page can't overwrite a newer one.
+        const requestId = ++listRequestIdRef.current;
         try {
             setLoadingList(true);
 
+            const params = {
+                page,
+                limit: pageSize,
+                approvalTab,
+                approvalField,
+                ...(pendingGateField && { pendingGateField }),
+                ...(debouncedSearch && { search: debouncedSearch }),
+                ...(section && { sectionId: section }),
+                ...(line && { lineId: line }),
+            };
+
             if (dept === "ALL") {
-                // Backend requires a departmentId — fetch each accessible dept in parallel
+                // "All Departments" = every department this user can access, in a single query.
                 if (assignableDepartments.length === 0) {
                     setMonitoringList([]);
+                    setListMeta(emptyListMeta);
                     return;
                 }
-                const results = await Promise.all(
-                    assignableDepartments.map(d =>
-                        axiosInstance.get(`/api/sixteen-day-monitoring`, {
-                            params: {
-                                departmentId: String(d.id || d._id),
-                                ...(section && { sectionId: section }),
-                                ...(line && { lineId: line }),
-                            }
-                        })
-                            .then(res => res.data.success ? res.data.data : [])
-                            .catch(() => [])
-                    )
-                );
-                setMonitoringList(results.flat());
+                params.departmentIds = assignableDepartments.map(d => String(d.id || d._id)).join(",");
             } else {
-                const params = { departmentId: dept };
-                if (section) params.sectionId = section;
-                if (line) params.lineId = line;
-                const res = await axiosInstance.get(`/api/sixteen-day-monitoring`, { params });
-                if (res.data.success) {
-                    setMonitoringList(res.data.data);
-                }
+                params.departmentId = dept;
+            }
+
+            const res = await axiosInstance.get(`/api/sixteen-day-monitoring`, { params });
+            if (requestId !== listRequestIdRef.current) return;
+            if (res.data.success) {
+                const { items = [], total = 0, totalPages = 1, counts } = res.data.data || {};
+                setMonitoringList(items);
+                setListMeta({ total, totalPages, counts: counts || emptyListMeta.counts });
             }
         } catch (error) {
             console.error("Error fetching monitoring list:", error);
         } finally {
-            setLoadingList(false);
+            if (requestId === listRequestIdRef.current) setLoadingList(false);
         }
     };
 
     useEffect(() => {
-        if (!studentId) {
+        if (!studentId && dept) {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, assignableDepartments]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dept, section, line, studentId, assignableDepartments, page, pageSize, debouncedSearch, approvalTab, approvalField, pendingGateField]);
 
     const [logAction] = useLogActionMutation();
 
@@ -329,14 +371,11 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         return Boolean(value && value.trim() !== '' && !value.includes('Rejected'));
     };
 
-    // A sheet counts as Approved only once `approvalField` (Approved By / Dept. Head by default,
-    // or Verified By / Area Incharge-Training Cell when the caller overrides it) carries a valid,
-    // non-rejected signature.
-    const isSheetApproved = (item) => isFieldApproved(item, approvalField);
-
-    // A sheet counts as Pending once it's not yet Approved and — when `pendingGateField` is set
-    // (Dojo Hiring gates Pending on HOD's approvedBy) — has already cleared that earlier stage.
-    const isSheetPending = (item) => !isSheetApproved(item) && (!pendingGateField || isFieldApproved(item, pendingGateField));
+    // Approved / Pending classification for the tabs happens server-side (listSixteenDayMonitoring):
+    // Approved once `approvalField` (Approved By / Dept. Head by default, or Verified By / Area
+    // Incharge-Training Cell when the caller overrides it) carries a valid, non-rejected signature;
+    // Pending once not yet Approved and — when `pendingGateField` is set (Dojo Hiring gates Pending
+    // on HOD's approvedBy) — that earlier stage is already cleared.
 
     // Renders a signature column's value only once it's a genuine approval (never a rejection
     // or an empty/awaiting-signature field), stripping the "Approved/Verified/Checked By: " prefix.
@@ -345,26 +384,23 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
         return value.replace(/^(Approved|Verified|Checked) By:\s*/i, '');
     };
 
-    const { pendingCount, approvedCount, totalCount } = useMemo(() => {
-        return {
-            pendingCount: monitoringList.filter(isSheetPending).length,
-            approvedCount: monitoringList.filter(isSheetApproved).length,
-            totalCount: monitoringList.length
-        };
-    }, [monitoringList, approvalField, pendingGateField]);
+    // Tab badge counts cover the whole hierarchy selection (not just this page, and not the search).
+    const pendingCount = listMeta.counts.pending;
+    const approvedCount = listMeta.counts.approved;
+    const totalCount = listMeta.counts.all;
 
-    const filteredMonitoringList = useMemo(() => {
-        let list = monitoringList;
-        if (approvalTab === 'approved') list = list.filter(isSheetApproved);
-        else if (approvalTab === 'pending') list = list.filter(isSheetPending);
+    // The API already applied the search + approval tab and returned just this page.
+    const filteredMonitoringList = monitoringList;
+    const totalPages = Math.max(1, listMeta.totalPages || 1);
+    const rangeStart = listMeta.total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const rangeEnd = Math.min(page * pageSize, listMeta.total);
 
-        if (!searchTerm) return list;
-        const lowSearch = searchTerm.toLowerCase();
-        return list.filter(s =>
-            s.fullName?.toLowerCase().includes(lowSearch) ||
-            s.empId?.toLowerCase().includes(lowSearch)
-        );
-    }, [monitoringList, searchTerm, approvalTab, approvalField, pendingGateField]);
+    // If the list shrank under the current page (e.g. sheets approved since it was loaded),
+    // step back to the last page that still has rows.
+    useEffect(() => {
+        if (!loadingList && page > totalPages) setPage(totalPages);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingList, page, totalPages]);
 
     // Staff open a sheet from the stack into a full-screen view; employees only ever see their
     // own sheet (there's no stack to return to), so they keep the regular in-layout page.
@@ -936,6 +972,71 @@ const SixteenDayMonitoring = ({ readOnly = false, approvalField = 'approvedBy', 
                                     )}
                                 </TableBody>
                             </Table>
+
+                            {/* Pagination */}
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3 border-t border-slate-200 bg-slate-50/50">
+                                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                    <span>
+                                        {listMeta.total === 0
+                                            ? "No operators"
+                                            : `Showing ${rangeStart}-${rangeEnd} of ${listMeta.total} operators`}
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                        <span>Rows per page</span>
+                                        <Select value={String(pageSize)} onValueChange={(val) => setPageSize(Number(val))}>
+                                            <SelectTrigger className="h-8 w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {PAGE_SIZE_OPTIONS.map(size => (
+                                                    <SelectItem key={size} value={String(size)}>{size}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                {totalPages > 1 && (
+                                    <div className="flex items-center gap-1.5">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPage(page - 1)}
+                                            disabled={page <= 1 || loadingList}
+                                            className="h-8 px-2.5 text-xs"
+                                            aria-label="Previous page"
+                                        >
+                                            <IconChevronLeft className="h-3.5 w-3.5" />
+                                        </Button>
+                                        {getPageNumbers(page, totalPages).map((p, idx) =>
+                                            p === "..." ? (
+                                                <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400">…</span>
+                                            ) : (
+                                                <Button
+                                                    key={p}
+                                                    variant={p === page ? "default" : "outline"}
+                                                    size="sm"
+                                                    onClick={() => setPage(p)}
+                                                    disabled={loadingList}
+                                                    className={cn("h-8 w-8 p-0 text-xs", p === page && "bg-indigo-600 hover:bg-indigo-700")}
+                                                >
+                                                    {p}
+                                                </Button>
+                                            )
+                                        )}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPage(page + 1)}
+                                            disabled={page >= totalPages || loadingList}
+                                            className="h-8 px-2.5 text-xs"
+                                            aria-label="Next page"
+                                        >
+                                            <IconChevronRight className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </Card>
                         </div>
                     )}

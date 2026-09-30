@@ -33,8 +33,10 @@ import {
     IconUsersGroup, 
     IconArrowLeft, 
     IconPlus, 
-    IconDatabase, 
-    IconLayoutDashboard 
+    IconDatabase,
+    IconLayoutDashboard,
+    IconChevronLeft,
+    IconChevronRight
 } from "@tabler/icons-react";
 import ThreeDayMonitoringSheet from '@/components/admin/ThreeDayMonitoringSheet';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -43,6 +45,22 @@ import { cn } from "@/lib/utils";
 import axiosInstance from '@/Helper/axiosInstance';
 
 const EMPTY_ARRAY = [];
+
+// Monitoring stack paging / search.
+const PAGE_SIZE_OPTIONS = [10, 25, 30, 50, 100];
+const DEFAULT_PAGE_SIZE = 30;
+const SEARCH_DEBOUNCE_MS = 500;
+
+// Builds a compact page-number list around the current page, e.g. [1, "...", 4, 5, 6, "...", 20].
+const getPageNumbers = (current, total) => {
+    const WINDOW = 1;
+    const pages = [1];
+    if (current - WINDOW > 2) pages.push("...");
+    for (let p = Math.max(2, current - WINDOW); p <= Math.min(total - 1, current + WINDOW); p++) pages.push(p);
+    if (current + WINDOW < total - 1) pages.push("...");
+    if (total > 1) pages.push(total);
+    return pages;
+};
 const ThreeDayMonitoring = () => {
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
@@ -85,14 +103,22 @@ const ThreeDayMonitoring = () => {
     // Monitoring Status List
     const [monitoringList, setMonitoringList] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
-    const [monitoringPage, setMonitoringPage] = useState(1);
     const [monitoringTotalPages, setMonitoringTotalPages] = useState(1);
-    const monitoringPageSize = 30;
+    const [monitoringTotalCount, setMonitoringTotalCount] = useState(0);
+    const [monitoringPageSize, setMonitoringPageSize] = useState(DEFAULT_PAGE_SIZE);
 
+    // Server-side search, debounced so typing doesn't fire a request per keystroke.
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 500);
+        const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), SEARCH_DEBOUNCE_MS);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+
+    // Page resets to 1 whenever the filters change. Tracked against the filter key (rather than
+    // a reset effect) so a filter change triggers exactly one fetch, not a stale-page fetch first.
+    const listFilterKey = `${dept}|${section}|${line}|${debouncedSearchTerm}|${monitoringPageSize}`;
+    const [pageState, setPageState] = useState({ key: listFilterKey, page: 1 });
+    const monitoringPage = pageState.key === listFilterKey ? pageState.page : 1;
+    const setMonitoringPage = (next) => setPageState({ key: listFilterKey, page: next });
 
     // Freeze hierarchy if the user is a staff member restricted to their own area
     const isSelectionLocked = useMemo(() => {
@@ -164,6 +190,7 @@ const ThreeDayMonitoring = () => {
             if (res.data.success) {
                 setMonitoringList(res.data.data.list || []);
                 setMonitoringTotalPages(res.data.data.totalPages || 1);
+                setMonitoringTotalCount(res.data.data.totalCount || 0);
             }
         } catch (error) {
             if (axios.isCancel(error)) return;
@@ -180,14 +207,21 @@ const ThreeDayMonitoring = () => {
         if (dept && !studentId && activeTab === 'stack') {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, activeTab, monitoringPage, debouncedSearchTerm]);
+    }, [dept, section, line, studentId, activeTab, monitoringPage, monitoringPageSize, debouncedSearchTerm]);
 
     // Drop any in-flight list request when leaving the page.
     useEffect(() => () => listAbortRef.current?.abort(), []);
 
+    // If the list shrank under the current page (e.g. operators dropped out since it was
+    // loaded), step back to the last page that still has rows.
     useEffect(() => {
-        setMonitoringPage(1);
-    }, [dept, section, line, debouncedSearchTerm]);
+        const lastPage = Math.max(1, monitoringTotalPages);
+        if (!loadingList && monitoringPage > lastPage) setMonitoringPage(lastPage);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingList, monitoringPage, monitoringTotalPages]);
+
+    const monitoringRangeStart = monitoringTotalCount === 0 ? 0 : (monitoringPage - 1) * monitoringPageSize + 1;
+    const monitoringRangeEnd = Math.min(monitoringPage * monitoringPageSize, monitoringTotalCount);
 
     // Role-based Initialization & Auto-select
     useEffect(() => {
@@ -295,6 +329,18 @@ const ThreeDayMonitoring = () => {
         return () => observer.disconnect();
     }, [fullScreenScrollEl]);
 
+    // Height of the sticky full-screen header, exposed as --sheet-sticky-top so the sheet's
+    // table header can freeze just beneath it (the header wraps, so its height varies).
+    const [fullScreenHeaderEl, setFullScreenHeaderEl] = useState(null);
+    useEffect(() => {
+        if (!fullScreenHeaderEl || !fullScreenScrollEl) return;
+        const update = () => fullScreenScrollEl.style.setProperty('--sheet-sticky-top', `${fullScreenHeaderEl.offsetHeight}px`);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenHeaderEl);
+        return () => observer.disconnect();
+    }, [fullScreenHeaderEl, fullScreenScrollEl]);
+
     const getStatusBadge = (status, verifiedBy, approvedBy) => {
         if (!status || status === 'Draft') return { label: 'Draft', color: 'bg-slate-100 text-slate-600 border-slate-200' };
         if (verifiedBy?.includes('Rejected') || approvedBy?.includes('Rejected')) {
@@ -323,7 +369,7 @@ const ThreeDayMonitoring = () => {
             <div ref={setFullScreenScrollEl} className="fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200">
                 {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
                 <div className="min-w-full w-max min-h-full flex flex-col">
-                    <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                    <div ref={setFullScreenHeaderEl} className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
                         <div
                             className="sticky left-0"
                             style={{ width: fullScreenViewportWidth || '100vw' }}
@@ -688,33 +734,70 @@ const ThreeDayMonitoring = () => {
                                     )}
                                 </TableBody>
                             </Table>
-                            {!loadingList && monitoringList.length > 0 && (
-                                <div className="flex justify-between items-center px-3 py-2 border-t bg-slate-50 text-xs">
-                                    <span className="text-slate-500 font-medium">
-                                        Page {monitoringPage} of {monitoringTotalPages}
+                            {/* Pagination */}
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3 border-t border-slate-200 bg-slate-50/50">
+                                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                    <span>
+                                        {monitoringTotalCount === 0
+                                            ? "No operators"
+                                            : `Showing ${monitoringRangeStart}-${monitoringRangeEnd} of ${monitoringTotalCount} operators`}
                                     </span>
-                                    <div className="flex gap-2 items-center">
-                                        <Button
-                                            variant="outline"
-                                            size="xs"
-                                            className="h-7 px-3 border-slate-200"
-                                            disabled={monitoringPage <= 1}
-                                            onClick={() => setMonitoringPage(p => Math.max(1, p - 1))}
-                                        >
-                                            Previous
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="xs"
-                                            className="h-7 px-3 border-slate-200"
-                                            disabled={monitoringPage >= monitoringTotalPages}
-                                            onClick={() => setMonitoringPage(p => Math.min(monitoringTotalPages, p + 1))}
-                                        >
-                                            Next
-                                        </Button>
+                                    <div className="flex items-center gap-1.5">
+                                        <span>Rows per page</span>
+                                        <Select value={String(monitoringPageSize)} onValueChange={(val) => setMonitoringPageSize(Number(val))}>
+                                            <SelectTrigger className="h-8 w-[70px] bg-white border-slate-200 text-xs shadow-none">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {PAGE_SIZE_OPTIONS.map(size => (
+                                                    <SelectItem key={size} value={String(size)}>{size}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                 </div>
-                            )}
+
+                                {monitoringTotalPages > 1 && (
+                                    <div className="flex items-center gap-1.5">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setMonitoringPage(monitoringPage - 1)}
+                                            disabled={monitoringPage <= 1 || loadingList}
+                                            className="h-8 px-2.5 text-xs"
+                                            aria-label="Previous page"
+                                        >
+                                            <IconChevronLeft className="h-3.5 w-3.5" />
+                                        </Button>
+                                        {getPageNumbers(monitoringPage, monitoringTotalPages).map((p, idx) =>
+                                            p === "..." ? (
+                                                <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400">…</span>
+                                            ) : (
+                                                <Button
+                                                    key={p}
+                                                    variant={p === monitoringPage ? "default" : "outline"}
+                                                    size="sm"
+                                                    onClick={() => setMonitoringPage(p)}
+                                                    disabled={loadingList}
+                                                    className={cn("h-8 w-8 p-0 text-xs", p === monitoringPage && "bg-amber-500 hover:bg-amber-600")}
+                                                >
+                                                    {p}
+                                                </Button>
+                                            )
+                                        )}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setMonitoringPage(monitoringPage + 1)}
+                                            disabled={monitoringPage >= monitoringTotalPages || loadingList}
+                                            className="h-8 px-2.5 text-xs"
+                                            aria-label="Next page"
+                                        >
+                                            <IconChevronRight className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </Card>
                     )}
                 </div>

@@ -2265,9 +2265,39 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const out = list.filter((i) => !(count < 0 && i >= at && i < at - count)).map((i) => (i >= at ? i + count : i));
         return out.length ? out : undefined;
     };
+    // Shifts the 1-D span [lo, hi] for an insert/delete at `at`. An insert
+    // inside the span widens it; a delete trims the overlapped part. Returns
+    // null when the whole span was deleted.
+    const shiftSpan = (lo, hi, at, count) => {
+        if (count > 0) {
+            if (lo >= at) return [lo + count, hi + count];
+            return [lo, hi >= at ? hi + count : hi];
+        }
+        const delEnd = at - count - 1;
+        const overlap = Math.max(0, Math.min(hi, delEnd) - Math.max(lo, at) + 1);
+        const remaining = hi - lo + 1 - overlap;
+        if (remaining <= 0) return null;
+        const newLo = lo < at ? lo : lo > delEnd ? lo + count : at;
+        return [newLo, newLo + remaining - 1];
+    };
+    // Shifts a start/end cell-id range along `axis`; returns normalized
+    // bounds or null when the range was deleted entirely.
+    const shiftRange = (startId, endId, axis, at, count) => {
+        const s = parseCellRef(startId);
+        const e = parseCellRef(endId);
+        if (!s || !e) return null;
+        let minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+        let minCol = Math.min(s.col, e.col), maxCol = Math.max(s.col, e.col);
+        const span = axis === "row" ? shiftSpan(minRow, maxRow, at, count) : shiftSpan(minCol, maxCol, at, count);
+        if (!span) return null;
+        if (axis === "row") [minRow, maxRow] = span; else [minCol, maxCol] = span;
+        return { minRow, maxRow, minCol, maxCol };
+    };
 
     const shiftBands = (axis, at, count) => {
         if (!guardEditable()) return;
+        const newRowCount = axis === "row" ? Math.max(1, rowCount + count) : rowCount;
+        const newColumnCount = axis === "col" ? Math.max(1, columnCount + count) : columnCount;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const newCells = {};
@@ -2288,7 +2318,47 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 sheet.columnWidths = shiftIndexMap(sheet.columnWidths, at, count);
                 sheet.hiddenCols = shiftIndexList(sheet.hiddenCols, at, count);
             }
+
+            // Structural metadata anchored to cell coordinates moves with the
+            // cells; anything whose range was deleted outright is dropped.
+            const toIds = (b) => ({ start: getCellId(b.minRow, b.minCol), end: getCellId(b.maxRow, b.maxCol) });
+            sheet.merges = (sheet.merges || []).flatMap((m) => {
+                const b = shiftRange(m.start, m.end, axis, at, count);
+                if (!b || (b.minRow === b.maxRow && b.minCol === b.maxCol)) return [];
+                return [{ ...m, ...toIds(b) }];
+            });
+            sheet.tables = (sheet.tables || []).flatMap((t) => {
+                const b = shiftRange(t.range.start, t.range.end, axis, at, count);
+                if (!b) return [];
+                // Filters are keyed by absolute column index.
+                const filters = axis === "col" && t.filters ? shiftIndexMap(t.filters, at, count) : t.filters;
+                return [{ ...t, range: toIds(b), filters }];
+            });
+            sheet.conditionalRules = (sheet.conditionalRules || []).flatMap((rule) => {
+                const b = shiftRange(rule.range[0], rule.range[1], axis, at, count);
+                if (!b) return [];
+                const ids = toIds(b);
+                return [{ ...rule, range: [ids.start, ids.end] }];
+            });
+            const key = axis === "row" ? "row" : "col";
+            const limit = (axis === "row" ? sheet.rowCount : sheet.columnCount) - 1;
+            sheet.media = (sheet.media || []).map((item) => {
+                const pos = item[key] || 0;
+                if (pos < at) return item;
+                // Media anchored inside a deleted band snaps to the band's start.
+                const shifted = count < 0 && pos < at - count ? at : pos + count;
+                return { ...item, [key]: Math.max(0, Math.min(limit, shifted)) };
+            });
         });
+
+        // Keep the cursor and selection inside the resized grid.
+        const clampId = (id) => {
+            const ref = parseCellRef(id);
+            if (!ref) return "A1";
+            return getCellId(Math.min(ref.row, newRowCount - 1), Math.min(ref.col, newColumnCount - 1));
+        };
+        setActiveCell((prev) => clampId(prev));
+        setSelection((prev) => ({ start: clampId(prev.start), end: clampId(prev.end) }));
     };
     const insertRows = (at, count = 1) => shiftBands("row", at, count);
     const deleteRows = (at, count = 1) => shiftBands("row", at, -Math.min(count, rowCount - 1));

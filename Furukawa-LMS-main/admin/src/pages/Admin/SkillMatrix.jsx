@@ -1,9 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { useSelector } from 'react-redux';
-import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload, IconPhoto, IconX, IconMail } from "@tabler/icons-react";
+import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload, IconPhoto, IconX, IconMail, IconArrowLeft } from "@tabler/icons-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { toPng } from 'html-to-image';
 import { useGetAllDepartmentsQuery } from '@/Redux/AllApi/DepartmentApi';
 import { useGetSectionsByDepartmentQuery } from '@/Redux/AllApi/SectionApi';
@@ -965,6 +968,60 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hideTenCycle, hideOperatorObservance, activeTab, isEmbeddedView]);
+
+    // Full-screen Operator Observance sheet: open whenever an operator is selected on the Observance tab.
+    const isObservanceFullScreen = !isEmbeddedView && activeTab === "observance" && Boolean(selectedOperatorForObservance);
+    const observanceOperator = filteredObservanceUsers.find(e => String(e._id || e.id) === String(selectedOperatorForObservance));
+
+    // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
+    // (Escape is closing that instead) or while the user is typing in a cell.
+    useEffect(() => {
+        if (!isObservanceFullScreen) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            const target = e.target;
+            if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+            if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+            setSelectedOperatorForObservance(null);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isObservanceFullScreen]);
+
+    // Stop the page underneath from scrolling while the full-screen sheet is open.
+    useEffect(() => {
+        if (!isObservanceFullScreen) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, [isObservanceFullScreen]);
+
+    // Full-screen header: slot the sheet portals its actions into, and the visible width of
+    // the scroll container so the header's controls stay in view while its bar stretches to
+    // the full (horizontally scrollable) sheet width.
+    const [observanceHeaderActionsEl, setObservanceHeaderActionsEl] = useState(null);
+    const [observanceScrollEl, setObservanceScrollEl] = useState(null);
+    const [observanceViewportWidth, setObservanceViewportWidth] = useState(0);
+    useEffect(() => {
+        if (!observanceScrollEl) return;
+        const update = () => setObservanceViewportWidth(observanceScrollEl.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(observanceScrollEl);
+        return () => observer.disconnect();
+    }, [observanceScrollEl]);
+
+    // Height of the sticky full-screen header, exposed as --sheet-sticky-top so the sheet's
+    // table header can freeze just beneath it (the header wraps, so its height varies).
+    const [observanceHeaderEl, setObservanceHeaderEl] = useState(null);
+    useEffect(() => {
+        if (!observanceHeaderEl || !observanceScrollEl) return;
+        const update = () => observanceScrollEl.style.setProperty('--sheet-sticky-top', `${observanceHeaderEl.offsetHeight}px`);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(observanceHeaderEl);
+        return () => observer.disconnect();
+    }, [observanceHeaderEl, observanceScrollEl]);
 
     const canSignSkillMatrix = React.useMemo(() => {
         const result = {};
@@ -2809,31 +2866,9 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                         </div>
                     </div>
 
-                    {selectedOperatorForObservance ? (
-                        <div className="bg-white border rounded p-4 shadow space-y-4">
-                            <div className="flex justify-end no-print">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-xs font-semibold"
-                                    onClick={() => setSelectedOperatorForObservance(null)}
-                                >
-                                    Back to Operator List
-                                </Button>
-                            </div>
-                            <OperatorObservanceSheet
-                                studentId={selectedOperatorForObservance}
-                                studentName={
-                                    filteredObservanceUsers.find(e => String(e._id || e.id) === String(selectedOperatorForObservance))?.fullName ||
-                                    filteredObservanceUsers.find(e => String(e._id || e.id) === String(selectedOperatorForObservance))?.name || ""
-                                }
-                                employeeCode={
-                                    filteredObservanceUsers.find(e => String(e._id || e.id) === String(selectedOperatorForObservance))?.cardNo ||
-                                    filteredObservanceUsers.find(e => String(e._id || e.id) === String(selectedOperatorForObservance))?.empId || ""
-                                }
-                            />
-                        </div>
-                    ) : !observanceDepartment ? (
+                    {/* A selected operator's sheet opens full-screen (portaled at the end of this page),
+                        so the operator list stays rendered underneath it. */}
+                    {!observanceDepartment ? (
                         <div className="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg bg-gray-50">
                             Please select a Department to view the list of operators.
                         </div>
@@ -3184,6 +3219,78 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* Full-screen Operator Observance sheet — portaled to <body> so it escapes the layout's
+                stacking contexts and covers the sidebar and top navbar; Radix popovers/dialogs
+                portal in after it and still sit on top. */}
+            {isObservanceFullScreen && createPortal(
+                <div ref={setObservanceScrollEl} className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:overflow-visible print:bg-white">
+                    {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
+                    <div className="min-w-full w-max min-h-full flex flex-col">
+                        <div ref={setObservanceHeaderEl} className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                            <div
+                                className="sticky left-0"
+                                style={{ width: observanceViewportWidth || '100vw' }}
+                            >
+                                {/* Row 1: navigation + operator identity | shortcut hint */}
+                                <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="gap-1.5 shrink-0 -ml-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                                            onClick={() => setSelectedOperatorForObservance(null)}
+                                        >
+                                            <IconArrowLeft size={16} />
+                                            Back to Operator List
+                                        </Button>
+                                        <div className="h-9 w-px bg-slate-200 shrink-0" />
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <Avatar className="h-10 w-10 ring-2 ring-blue-100 shrink-0">
+                                                <AvatarFallback className="bg-blue-50 text-blue-600 font-bold text-xs">
+                                                    {(observanceOperator?.fullName || observanceOperator?.name || "Operator").split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="flex flex-col gap-1 min-w-0">
+                                                <span className="text-sm font-bold text-slate-800 leading-none truncate">
+                                                    {observanceOperator?.fullName || observanceOperator?.name || "Operator"}
+                                                </span>
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {(observanceOperator?.cardNo || observanceOperator?.empId) && (
+                                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5 py-0">
+                                                            #{observanceOperator?.cardNo || observanceOperator?.empId}
+                                                        </Badge>
+                                                    )}
+                                                    <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0">
+                                                        Operator Observance Sheet
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 font-medium whitespace-nowrap">
+                                        Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
+                                    </div>
+                                </div>
+
+                                {/* Row 2: action toolbar — OperatorObservanceSheet portals its view/edit
+                                    toggle, zoom and export / save / submit controls here */}
+                                <div ref={setObservanceHeaderActionsEl} className="border-t border-slate-200/80 bg-slate-50/80 empty:hidden" />
+                            </div>
+                        </div>
+
+                        <div className="p-4 sm:p-6 pb-20 print:p-0">
+                            <OperatorObservanceSheet
+                                studentId={selectedOperatorForObservance}
+                                studentName={observanceOperator?.fullName || observanceOperator?.name || ""}
+                                employeeCode={observanceOperator?.cardNo || observanceOperator?.empId || ""}
+                                headerActionsContainer={observanceHeaderActionsEl}
+                            />
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import useRevisionInfo from '@/hooks/useRevisionInfo';
 import { useSelector } from 'react-redux';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Select,
@@ -39,7 +40,8 @@ import {
     IconClipboardCheck,
     IconMail,
     IconPhoto,
-    IconDownload
+    IconDownload,
+    IconMinus
 } from "@tabler/icons-react";
 import AssignmentSelect from "@/components/common/AssignmentSelect";
 import { Badge } from "@/components/ui/badge";
@@ -230,6 +232,22 @@ import { cn } from '@/lib/utils';
 import UserAutocomplete from '@/components/common/UserAutocomplete';
 
 const todayStr = new Date().toLocaleDateString('en-CA');
+
+// Sheet zoom (full-screen recording view). Persisted per browser.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.05;
+const ZOOM_DEFAULT = 1;
+const ZOOM_STORAGE_KEY = "daily_5m_sheet_zoom";
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+const readStoredZoom = () => {
+    try {
+        const stored = parseFloat(localStorage.getItem(ZOOM_STORAGE_KEY));
+        return Number.isFinite(stored) ? clampZoom(stored) : ZOOM_DEFAULT;
+    } catch {
+        return ZOOM_DEFAULT;
+    }
+};
 
 
 // Builds a "child (parent)" display label, falling back to whichever part is present.
@@ -1240,7 +1258,7 @@ const Daily5MRecording = () => {
     const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
     const navigate = useNavigate();
     const location = useLocation();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const urlRecordId = searchParams.get('recordId');
     const viewMode = searchParams.get('mode') === 'view';
     const [logAction] = useLogActionMutation();
@@ -1320,6 +1338,25 @@ const Daily5MRecording = () => {
     const [emailForPDF, setEmailForPDF] = useState("");
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = React.useRef(null);
+
+    // Sheet zoom (CSS `zoom` on a wrapper around the sheet, so scroll sizes stay correct).
+    // Persisted per browser.
+    const [sheetZoom, setSheetZoom] = useState(readStoredZoom);
+    const handleZoomChange = (value) => {
+        const next = clampZoom(value);
+        setSheetZoom(next);
+        try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
+    };
+    const sheetZoomRef = React.useRef(null);
+    // PDF / image export measures and clones tableRef, so run it at 100% regardless of the
+    // on-screen zoom. Returns a function that restores the on-screen zoom afterwards.
+    const resetSheetZoomForCapture = () => {
+        const el = sheetZoomRef.current;
+        if (!el) return () => { };
+        const previous = el.style.zoom;
+        el.style.zoom = "1";
+        return () => { el.style.zoom = previous; };
+    };
 
     const assignableDepartments = React.useMemo(() => {
         const allDepts = departmentsData?.data?.departments || [];
@@ -1498,6 +1535,7 @@ const Daily5MRecording = () => {
     const generatePDFBlob = async () => {
         if (!tableRef.current) return null;
         setIsGeneratingPDF(true); // Ensure state is set immediately
+        const restoreSheetZoom = resetSheetZoomForCapture();
         try {
             const margin = 40;
             const logoHeight = 50;
@@ -1554,6 +1592,7 @@ const Daily5MRecording = () => {
             toast.error("Failed to generate PDF. Layout issues detected.");
             return null;
         } finally {
+            restoreSheetZoom();
             setIsGeneratingPDF(false);
         }
     };
@@ -1572,6 +1611,7 @@ const Daily5MRecording = () => {
         if (!tableRef.current) return;
         const loadingToast = toast.info("Generating high-resolution image for PPT...", { duration: 0 });
         setIsGeneratingPDF(true);
+        const restoreSheetZoom = resetSheetZoomForCapture();
 
         try {
             // 1. Get actual dimensions
@@ -1604,6 +1644,7 @@ const Daily5MRecording = () => {
             console.error("Image export error:", error);
             toast.error("Failed to generate high-res image.");
         } finally {
+            restoreSheetZoom();
             toast.dismiss(loadingToast);
             setIsGeneratingPDF(false);
         }
@@ -2854,6 +2895,100 @@ const Daily5MRecording = () => {
         return !!(data[`rec_${index}_Line`] || data[`rec_${index}_OpName`] || data[`rec_${index}_StationMC`] || data[`rec_${index}_OperatorName`]);
     };
 
+    const handleBackToList = () => {
+        if (location.state?.fromDashboard) {
+            navigate('/cms/daily-5m-dashboard');
+        } else {
+            navigate(location.pathname);
+            setShowFormList(true);
+        }
+    };
+
+    // An open recording sheet renders full-screen (portaled below), like the 16-Day sheet.
+    const isFullScreenSheet = Boolean(selectedDepartment && selectedSection && !loadingConfig && !configError && tableConfig && !showFormList);
+
+    // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
+    // (Escape is closing that instead) or while the user is typing in a cell.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            const target = e.target;
+            if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+            if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
+            handleBackToList();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFullScreenSheet, location.pathname, location.state]);
+
+    // Stop the page underneath from scrolling while the full-screen sheet is open.
+    useEffect(() => {
+        if (!isFullScreenSheet) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, [isFullScreenSheet]);
+
+    // Visible width of the full-screen scroll container, so the header's controls stay in
+    // view while its bar stretches to the full (horizontally scrollable) sheet width.
+    const [fullScreenScrollEl, setFullScreenScrollEl] = useState(null);
+    const [fullScreenViewportWidth, setFullScreenViewportWidth] = useState(0);
+    useEffect(() => {
+        if (!fullScreenScrollEl) return;
+        const update = () => setFullScreenViewportWidth(fullScreenScrollEl.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(fullScreenScrollEl);
+        return () => observer.disconnect();
+    }, [fullScreenScrollEl]);
+
+    const formTypeLabel = formType === 'standard' ? 'Assembly' : formType === 'src' ? 'SRC' : 'Cutting & Crimping';
+    const zoomPercent = Math.round(sheetZoom * 100);
+    const zoomControl = (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 h-9 shadow-sm print:hidden">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(sheetZoom - ZOOM_STEP)}
+                disabled={sheetZoom <= ZOOM_MIN}
+                aria-label="Zoom out"
+            >
+                <IconMinus className="h-4 w-4" />
+            </Button>
+            <input
+                type="range"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                value={sheetZoom}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="w-28 cursor-pointer accent-blue-600"
+                aria-label="Sheet zoom"
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(sheetZoom + ZOOM_STEP)}
+                disabled={sheetZoom >= ZOOM_MAX}
+                aria-label="Zoom in"
+            >
+                <IconPlus className="h-4 w-4" />
+            </Button>
+            <button
+                type="button"
+                onClick={() => handleZoomChange(ZOOM_DEFAULT)}
+                title={`Reset zoom to ${Math.round(ZOOM_DEFAULT * 100)}%`}
+                className={`min-w-[3.25rem] rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums transition-colors ${zoomPercent === Math.round(ZOOM_DEFAULT * 100) ? 'text-slate-500 hover:bg-slate-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+            >
+                {zoomPercent}%
+            </button>
+        </div>
+    );
+
     // Common Render: Header Section
     return (
         <div className="space-y-6 w-full mx-auto pb-10 px-0 sm:px-2">
@@ -3464,38 +3599,183 @@ const Daily5MRecording = () => {
                         </DialogContent>
                     </Dialog>
                 </div>
-            ) : (
-                <Card className="print:shadow-none print:border-none">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 print:hidden">
-                        <CardTitle className="text-xl font-bold flex items-center gap-2">
-                            <Badge variant="outline" className="uppercase bg-blue-50 text-blue-700 border-blue-200">
-                                {formType === 'standard' ? 'Assembly' : formType === 'src' ? 'SRC' : 'Cutting & Crimping'}
-                            </Badge>
-                            <span>Recording for {selectedDate}</span>
-                        </CardTitle>
-                        <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => setIsPrintDialogOpen(true)}>
-                                <IconPrinter className="mr-2" /> Print Sheet
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => {
-                                if (location.state?.fromDashboard) {
-                                    navigate('/cms/daily-5m-dashboard');
-                                } else {
-                                    navigate(location.pathname);
-                                    setShowFormList(true);
-                                }
-                            }}>
-                                <IconArrowLeft className="mr-2" /> Back to List
-                            </Button>
+            ) : null /* State 5: an open recording sheet — rendered full-screen, portaled below */}
+
+            {/* Full-screen recording sheet — portaled to <body> so it escapes the layout's stacking
+                contexts and covers the sidebar and top navbar; Radix dialogs (print, preview,
+                admin remark) portal in after it and still sit on top. */}
+            {isFullScreenSheet && createPortal(
+                <div ref={setFullScreenScrollEl} className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 overflow-auto w-screen h-screen animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:overflow-visible print:bg-white">
+                    {/* Grows to the widest sheet so the header bar spans the whole horizontal scroll */}
+                    <div className="min-w-full w-max min-h-full flex flex-col">
+                        <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
+                            <div
+                                className="sticky left-0"
+                                style={{ width: fullScreenViewportWidth || '100vw' }}
+                            >
+                                {/* Row 1: navigation + recording identity | shortcut hint */}
+                                <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="gap-1.5 shrink-0 -ml-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                                            onClick={handleBackToList}
+                                        >
+                                            <IconArrowLeft size={16} />
+                                            {location.state?.fromDashboard ? "Back to Dashboard" : "Back to List"}
+                                        </Button>
+                                        <div className="h-9 w-px bg-slate-200 shrink-0" />
+                                        <div className="flex flex-col gap-1 min-w-0">
+                                            <span className="text-sm font-bold text-slate-800 leading-none truncate">
+                                                Daily 5M Recording — {selectedDate}
+                                            </span>
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <Badge variant="outline" className="uppercase bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5 py-0">
+                                                    {formTypeLabel}
+                                                </Badge>
+                                                <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-semibold px-1.5 py-0 max-w-[320px] truncate">
+                                                    {selectedDeptName} / {selectedSectionName}
+                                                </Badge>
+                                                {currentRecordId && (
+                                                    <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px] font-mono px-1.5 py-0">
+                                                        #{currentRecordId}
+                                                    </Badge>
+                                                )}
+                                                <Badge variant="outline" className={cn(
+                                                    "uppercase text-[10px] font-bold px-1.5 py-0",
+                                                    recordStatus === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                        recordStatus === 'DECLINED' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                            'bg-slate-50 text-slate-600 border-slate-200'
+                                                )}>
+                                                    {recordStatus || 'PENDING'}
+                                                </Badge>
+                                                {viewMode && (
+                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold px-1.5 py-0">
+                                                        View Only
+                                                    </Badge>
+                                                )}
+                                                {submittedBy && (
+                                                    <span className="text-[11px] text-slate-500 font-medium">
+                                                        Submitted by <span className="text-blue-600 font-bold">{submittedBy}</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 font-medium whitespace-nowrap">
+                                        Press <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">Esc</kbd> to close
+                                    </div>
+                                </div>
+
+                                {/* Row 2: action toolbar — every page-level action lives here in full-screen:
+                                    save / submit (or switch to edit) | zoom | export / send / print | layout / people */}
+                                <div className="border-t border-slate-200/80 bg-slate-50/80 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                                    {/* Left: save / submit — in view mode (e.g. opened from the dashboard) offer to switch to edit */}
+                                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                        {viewMode ? (
+                                            hasEditPermission && (
+                                                <Button
+                                                    onClick={() => {
+                                                        const next = new URLSearchParams(searchParams);
+                                                        next.delete('mode');
+                                                        setSearchParams(next, { state: location.state });
+                                                    }}
+                                                    className="h-9 bg-blue-600 hover:bg-blue-700"
+                                                >
+                                                    <IconSettings className="w-4 h-4 mr-2" />
+                                                    Switch to Edit
+                                                </Button>
+                                            )
+                                        ) : (
+                                            <>
+                                                <Button
+                                                    onClick={() => handleSaveRecord(null, { showPreview: false })}
+                                                    disabled={loadingConfig || !hasEditPermission}
+                                                    variant="outline"
+                                                    className="h-9 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                                >
+                                                    <IconClipboardList className="w-4 h-4 mr-2" />
+                                                    Save Daily 5M
+                                                </Button>
+                                                <Button
+                                                    onClick={() => handleSaveRecord(null, { showPreview: true })}
+                                                    disabled={loadingConfig || !hasEditPermission}
+                                                    className="h-9 bg-blue-600 hover:bg-blue-700"
+                                                >
+                                                    <IconMail className="w-4 h-4 mr-2" />
+                                                    Submit & Mail Daily 5M
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                    {/* Middle: sheet zoom */}
+                                    <div className="mx-auto">{zoomControl}</div>
+                                    {/* Right: export / send / print, then layout & people set apart */}
+                                    <div className="flex flex-wrap items-center gap-2 ml-auto">
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleDownloadPDF}
+                                            disabled={isGeneratingPDF}
+                                            className="h-9 border-green-600 text-green-700 hover:bg-green-50"
+                                        >
+                                            {isGeneratingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <IconDownload className="w-4 h-4 mr-2" />}
+                                            Export PDF
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleDownloadHighResImage}
+                                            disabled={isGeneratingPDF}
+                                            className="h-9"
+                                        >
+                                            <IconPhoto className="w-4 h-4 mr-2" />
+                                            Export Image
+                                        </Button>
+                                        {/* Sending needs an email address, so this opens the send / print dialog */}
+                                        <Button variant="outline" onClick={() => setIsPrintDialogOpen(true)} className="h-9 border-blue-200 text-blue-700 hover:bg-blue-50">
+                                            <IconMail className="w-4 h-4 mr-2" /> Send PDF
+                                        </Button>
+                                        <Button variant="outline" onClick={() => window.print()} className="h-9">
+                                            <IconPrinter className="w-4 h-4 mr-2" /> Print
+                                        </Button>
+                                        <div className="h-7 w-px bg-slate-200 mx-1" />
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setEditingFormType(null);
+                                                setIsEditing(true);
+                                            }}
+                                            disabled={loadingConfig}
+                                            className="h-9"
+                                        >
+                                            <IconSettings className="w-4 h-4 mr-2" />
+                                            Edit Layout
+                                        </Button>
+                                        <Button variant="outline" onClick={() => setIsManagePeopleOpen(true)} className="h-9">
+                                            <IconPlus className="w-4 h-4 mr-2" />
+                                            Manage People
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    </CardHeader>
-                    <CardContent className="p-0 sm:p-4">
-                        {/* Table Container for PDF Capture */}
-                        <div ref={tableRef} data-pdf-content="true" className="w-full">
-                            {renderRecordingTable(viewMode)}
+
+                        <div className="p-4 sm:p-6 pb-20 print:p-0">
+                            <Card className="w-max min-w-full print:shadow-none print:border-none">
+                                <CardContent className="p-0 sm:p-4 print:p-0">
+                                    {/* On-screen zoom wraps (not on) the PDF-capture element; exports reset it to 100% */}
+                                    <div ref={sheetZoomRef} className="print:![zoom:1]" style={{ zoom: sheetZoom }}>
+                                        {/* Table Container for PDF Capture */}
+                                        <div ref={tableRef} data-pdf-content="true" className="w-full">
+                                            {renderRecordingTable(viewMode)}
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
                         </div>
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* Admin Remark Dialog — required when editing an approved session */}

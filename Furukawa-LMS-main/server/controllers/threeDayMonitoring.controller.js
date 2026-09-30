@@ -104,9 +104,12 @@ export const listThreeDayMonitoring = asyncHandler(async (req, res) => {
         userFilterSql += " AND u.lineId = ?";
         params.push(lineId);
     }
-    if (search) {
+    const searchText = String(search || "").trim();
+    if (searchText) {
+        // Escape LIKE wildcards so a typed %, _ or [ matches literally.
+        const searchLike = `%${searchText.replace(/[[%_]/g, "[$&]")}%`;
         userFilterSql += " AND (u.fullName LIKE ? OR u.empId LIKE ?)";
-        params.push(`%${search}%`, `%${search}%`);
+        params.push(searchLike, searchLike);
     }
 
     // One batch, staged through table variables so each expensive piece runs exactly once per

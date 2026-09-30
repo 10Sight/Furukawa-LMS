@@ -9,7 +9,7 @@ import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import axiosInstance from "@/Helper/axiosInstance";
 import useRevisionInfo from "@/hooks/useRevisionInfo";
 import { toast } from "sonner";
-import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconSend, IconLoader } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPrinter, IconTrash, IconPlus, IconMinus, IconSend, IconLoader, IconSearch } from "@tabler/icons-react";
 import {
     Select,
     SelectContent,
@@ -76,6 +76,22 @@ const emptyQuarterFields = (obj = {}) => {
         obj[`${key}Status`] = obj[`${key}Status`] || "";
     });
     return obj;
+};
+
+// Sheet zoom (CSS `zoom`, so sticky header rows / frozen columns and scroll sizes stay correct). Persisted per browser.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.05;
+const ZOOM_DEFAULT = 0.85;
+const ZOOM_STORAGE_KEY = "multi_skilling_plan_zoom";
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+const readStoredZoom = () => {
+    try {
+        const stored = parseFloat(localStorage.getItem(ZOOM_STORAGE_KEY));
+        return Number.isFinite(stored) ? clampZoom(stored) : ZOOM_DEFAULT;
+    } catch {
+        return ZOOM_DEFAULT;
+    }
 };
 
 const MIN_SEARCH_LENGTH = 2;
@@ -214,7 +230,9 @@ const UserCellSelector = React.memo(({ value, onChange, rowId, handleRowFieldCha
 });
 UserCellSelector.displayName = "UserCellSelector";
 
-const HorizontalScrollbar = React.memo(({ containerRef }) => {
+// `watch` recomputes the thumb when the content's size changes in a way ResizeObserver
+// doesn't report (e.g. a CSS `zoom` change on the table).
+const HorizontalScrollbar = React.memo(({ containerRef, watch }) => {
     const trackRef = useRef(null);
     const dragState = useRef(null);
     const rafRef = useRef(null);
@@ -262,6 +280,11 @@ const HorizontalScrollbar = React.memo(({ containerRef }) => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        scheduleRecompute();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [watch]);
 
     const scrollByThumbDelta = (deltaPx) => {
         const el = containerRef.current;
@@ -526,7 +549,16 @@ const MultiSkillingRow = React.memo(function MultiSkillingRow({
 });
 MultiSkillingRow.displayName = "MultiSkillingRow";
 
-const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", year }) => {
+const MultiSkillingPlan = ({
+    departmentId,
+    sectionId,
+    lineId,
+    lineName = "",
+    year,
+    // Full-screen mode: the page's sticky header slot this sheet portals its toolbar into.
+    headerActionsContainer = null,
+}) => {
+    const isFullScreen = Boolean(headerActionsContainer);
     const liveRevisionInfo = useRevisionInfo("multi-skilling-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
@@ -545,6 +577,13 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
     const [searchText, setSearchText] = useState("");
     const [rows, setRows] = useState([]);
     const [hasLoaded, setHasLoaded] = useState(false);
+
+    const [zoom, setZoom] = useState(readStoredZoom);
+    const handleZoomChange = useCallback((value) => {
+        const next = clampZoom(value);
+        setZoom(next);
+        try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
+    }, []);
 
     // Fetch lines for model & line selection helper
     const { data: deptLines } = useGetLinesByDepartmentQuery(departmentId, {
@@ -829,39 +868,137 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
     const stickyFrozenHeader = "sticky top-0 z-50 print:static";
     const stickyFrozenCell = "sticky z-30 bg-white group-hover:bg-slate-50 transition-colors print:static";
 
+    const addRowButton = (
+        <Button variant="outline" onClick={handleAddRow} className="h-9 border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
+            <IconPlus className="h-4 w-4 mr-2" />
+            Add Row
+        </Button>
+    );
+    const printButton = (
+        <Button variant="outline" onClick={handlePrint} className="h-9">
+            <IconPrinter className="h-4 w-4 mr-2" />
+            Print
+        </Button>
+    );
+    const saveButtons = canManage && (
+        <>
+            <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving || isLoadingPlan} className="h-9 border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
+                <IconDeviceFloppy className="h-4 w-4 mr-2" />
+                {isSaving ? "Saving..." : "Save"}
+            </Button>
+            <Button onClick={() => handleSave(true)} disabled={isSaving || isLoadingPlan} className="h-9 bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-sm">
+                <IconSend className="h-4 w-4 mr-2" />
+                {isSaving ? "Saving..." : "Submit & Mail"}
+            </Button>
+        </>
+    );
+
+    const zoomPercent = Math.round(zoom * 100);
+    const zoomControl = (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 h-9 shadow-sm print:hidden">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom - ZOOM_STEP)}
+                disabled={zoom <= ZOOM_MIN}
+                aria-label="Zoom out"
+            >
+                <IconMinus className="h-4 w-4" />
+            </Button>
+            <input
+                type="range"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                value={zoom}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="w-28 cursor-pointer accent-amber-500"
+                aria-label="Sheet zoom"
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleZoomChange(zoom + ZOOM_STEP)}
+                disabled={zoom >= ZOOM_MAX}
+                aria-label="Zoom in"
+            >
+                <IconPlus className="h-4 w-4" />
+            </Button>
+            <button
+                type="button"
+                onClick={() => handleZoomChange(ZOOM_DEFAULT)}
+                title={`Reset zoom to ${Math.round(ZOOM_DEFAULT * 100)}%`}
+                className={`min-w-[3.25rem] rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums transition-colors ${zoomPercent === Math.round(ZOOM_DEFAULT * 100) ? "text-slate-500 hover:bg-slate-100" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+            >
+                {zoomPercent}%
+            </button>
+        </div>
+    );
+
+    const searchInputControl = (
+        <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-72">
+                {isFullScreen && <IconSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />}
+                <Input
+                    placeholder="Filter active associates..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    className={`h-9 bg-white text-sm ${isFullScreen ? "pl-8" : ""}`}
+                />
+            </div>
+            {searchText && (
+                <Button variant="ghost" size="sm" onClick={() => setSearchText("")} className="h-9 px-2 text-xs">
+                    Clear
+                </Button>
+            )}
+        </div>
+    );
+
     return (
-        <Card className="max-w-full overflow-visible bg-white">
-            <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2 print:hidden">
-                    <div />
-                    <h2 className="text-xl font-bold uppercase tracking-wide border-b-2 border-transparent inline-block pb-1">
-                        Training plan for multi skilling
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={handleAddRow} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
-                            <IconPlus className="h-4 w-4 mr-2" />
-                            Add Row
-                        </Button>
-                        <Button variant="outline" onClick={handlePrint}>
-                            <IconPrinter className="h-4 w-4 mr-2" />
-                            Print
-                        </Button>
-                        {canManage && (
-                            <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving || isLoadingPlan} className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold shadow-sm">
-                                <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                                {isSaving ? "Saving..." : "Save"}
-                            </Button>
-                        )}
-                        {canManage && (
-                            <Button onClick={() => handleSave(true)} disabled={isSaving || isLoadingPlan} className="bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-sm">
-                                <IconSend className="h-4 w-4 mr-2" />
-                                {isSaving ? "Saving..." : "Submit & Mail"}
-                            </Button>
-                        )}
+        <Card className={isFullScreen
+            ? "h-full max-w-full flex flex-col overflow-hidden bg-white print:h-auto print:block print:overflow-visible print:border-0 print:shadow-none"
+            : "max-w-full overflow-visible bg-white"}
+        >
+            {!isFullScreen && (
+                <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2 print:hidden">
+                        <div />
+                        <h2 className="text-xl font-bold uppercase tracking-wide border-b-2 border-transparent inline-block pb-1">
+                            Training plan for multi skilling
+                        </h2>
+                        <div className="flex items-center gap-2">
+                            {addRowButton}
+                            {printButton}
+                            {saveButtons}
+                        </div>
                     </div>
-                </div>
-            </CardHeader>
-            <CardContent className="w-full overflow-visible">
+                </CardHeader>
+            )}
+
+            {/* Full-screen view: filter, zoom and the sheet actions live in the page's sticky header instead */}
+            {isFullScreen && createPortal(
+                <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                    {/* Left: row filter */}
+                    <div className="min-w-0">{searchInputControl}</div>
+                    {/* Middle: sheet zoom */}
+                    <div className="mx-auto">{zoomControl}</div>
+                    {/* Right: add row / save / submit, then print set apart */}
+                    <div className="flex flex-wrap items-center gap-2 ml-auto">
+                        {addRowButton}
+                        {saveButtons}
+                        <div className="h-7 w-px bg-slate-200 mx-1" />
+                        {printButton}
+                    </div>
+                </div>,
+                headerActionsContainer
+            )}
+
+            <CardContent className={isFullScreen
+                ? "flex-1 min-h-0 flex flex-col w-full pt-4 print:block print:p-0"
+                : "w-full overflow-visible"}
+            >
                 {/* Sheet Metadata Header Block - Visible in screen & print */}
                 <div className="flex justify-between items-center w-full mb-4 pb-2 border-b border-slate-200 print:border-black">
                     <div>
@@ -876,33 +1013,29 @@ const MultiSkillingPlan = ({ departmentId, sectionId, lineId, lineName = "", yea
                         Document No: {revisionInfo.docNo}
                     </div>
                 </div>
-                <div className="no-print flex flex-col sm:flex-row items-end gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className="w-full sm:w-72">
-                        <Label className="text-xs font-bold text-slate-700 mb-1 block">Filter Table Rows</Label>
-                        <div className="flex items-center gap-2">
-                            <Input
-                                placeholder="Filter active associates..."
-                                value={searchText}
-                                onChange={(e) => setSearchText(e.target.value)}
-                                className="h-9 bg-white text-sm"
-                            />
-                            {searchText && (
-                                <Button variant="ghost" size="sm" onClick={() => setSearchText("")} className="h-9 px-2 text-xs">
-                                    Clear
-                                </Button>
-                            )}
+                {!isFullScreen && (
+                    <div className="no-print flex flex-col sm:flex-row items-end justify-between gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div className="w-full sm:w-auto">
+                            <Label className="text-xs font-bold text-slate-700 mb-1 block">Filter Table Rows</Label>
+                            {searchInputControl}
                         </div>
+                        {zoomControl}
                     </div>
-                </div>
+                )}
 
-                <HorizontalScrollbar containerRef={tableContainerRef} />
+                <HorizontalScrollbar containerRef={tableContainerRef} watch={zoom} />
 
+                {/* In full-screen the table's own scroll track fills the remaining viewport height, so its
+                    sticky header rows and frozen left columns stay pinned beneath the page's sticky header. */}
                 <div
                     ref={tableContainerRef}
-                    className="w-full max-w-full max-h-[calc(100vh-340px)] overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar overscroll-contain"
+                    className={`w-full max-w-full overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg themed-scrollbar overscroll-contain bg-white print:max-h-none print:overflow-visible ${isFullScreen ? "flex-1 min-h-0" : "max-h-[calc(100vh-340px)]"}`}
                     style={{ WebkitOverflowScrolling: "touch" }}
                 >
-                    <table className="w-full min-w-[3800px] border-separate border-spacing-0 text-sm table-auto">
+                    <table
+                        className="w-full min-w-[3800px] border-separate border-spacing-0 text-sm table-auto print:![zoom:1]"
+                        style={{ zoom }}
+                    >
                         <thead className="bg-slate-100 text-slate-700">
                             {/* Group headers row */}
                             <tr className="h-12 [&>th]:border-b [&>th]:border-slate-300">

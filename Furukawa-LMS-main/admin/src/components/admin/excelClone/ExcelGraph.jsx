@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
-    IconSettings, IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette,
+    IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette,
     IconLayoutAlignTop, IconLayoutAlignBottom, IconLayoutAlignLeft, IconLayoutAlignRight, IconEyeOff,
-    IconChevronDown, IconChevronUp
+    IconChevronDown, IconChevronUp, IconMaximize, IconMinimize, IconChartBar,
+    IconChartInfographic, IconTableShortcut, IconInfoCircle
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -15,6 +16,19 @@ import {
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "./formulaEngine";
 import { cn } from "@/lib/utils";
+import FullScreenFrame from "./FullScreenFrame";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+    RibbonGroup, RibbonBtn, RibbonDropdown, RibbonSplit, MenuItem, MenuSeparator, MenuHeader, MenuClose,
+} from "./ribbonParts";
+import {
+    CHART_VARIANTS, CHART_FAMILIES, RIBBON_CHART_MENUS, variantType, comboSettingsForPreset, familyOfVariant,
+    EXTRA_CHART_TYPES, SPARKLINE_TYPES, chartRequirement,
+} from "./chartTypes";
+import {
+    ChartThumb, RibbonFamilyIcon, RecommendedChartsIcon, MapsIcon, PivotChartIcon, SparkLineIcon, SparkColumnIcon, SparkWinLossIcon,
+} from "./chartCatalog";
+import { renderExtraChart, Sparklines } from "./chartExtras";
 
 // Validated categorical palette (see dataviz skill's references/palette.md) —
 // fixed order, never cycled/re-sorted, so adjacent series stay CVD-safe.
@@ -156,6 +170,30 @@ const applyStackedLineCumulative = (data, seriesKeys) => data.map((row) => {
     });
     return next;
 });
+// 100% stacked line: the same running sum, as a fraction of each category's total.
+const applyPercentLineCumulative = (data, seriesKeys) => data.map((row) => {
+    const total = seriesKeys.reduce((s, key) => s + Math.abs(row[key] || 0), 0);
+    const next = { name: row.name };
+    let cumulative = 0;
+    seriesKeys.forEach((key) => {
+        cumulative += Math.abs(row[key] || 0);
+        next[key] = total ? cumulative / total : 0;
+    });
+    return next;
+});
+const prepareChartData = (activeSheet, displayGrid, cfg) => {
+    if (!activeSheet || !cfg) return { data: [], seriesKeys: [], hadInvalid: false };
+    const result = buildChartData({ activeSheet, displayGrid, config: cfg });
+    if (cfg.type === "lineStacked") return { ...result, data: applyStackedLineCumulative(result.data, result.seriesKeys) };
+    if (cfg.type === "linePercent") return { ...result, data: applyPercentLineCumulative(result.data, result.seriesKeys) };
+    return result;
+};
+
+// Newer variants reuse their base family's data-label positions.
+const LABEL_FAMILY = { columnPercent: "columnStacked", barPercent: "barStacked", linePercent: "lineStacked", lineMarkers: "line", areaStacked: "area", areaPercent: "area" };
+const labelFamily = (type) => LABEL_FAMILY[type] || type;
+// Only these draw one mark per (series, category), so only they can recolor single points.
+const POINT_COLOR_TYPES = new Set(["columnGrouped", "columnStacked", "columnPercent", "barGrouped", "barStacked", "barPercent", "pie", "doughnut"]);
 
 // Curated, chart-type-appropriate label position choices (Excel's "Format
 // Data Labels" position picker, scoped to what actually makes sense per family).
@@ -213,7 +251,7 @@ const LABEL_POSITION_OPTIONS_BY_TYPE = {
         { value: "center", label: "Center" },
     ],
 };
-const getLabelPositionOptions = (chartType) => LABEL_POSITION_OPTIONS_BY_TYPE[chartType] || LABEL_POSITION_OPTIONS_BY_TYPE.columnGrouped;
+const getLabelPositionOptions = (chartType) => LABEL_POSITION_OPTIONS_BY_TYPE[labelFamily(chartType)] || LABEL_POSITION_OPTIONS_BY_TYPE.columnGrouped;
 
 // "auto" reproduces this file's original hardcoded label placement, so an
 // existing saved chart renders unchanged until the user explicitly picks
@@ -239,8 +277,9 @@ const RECHARTS_LABEL_POSITION = {
 };
 
 const resolveLabelPosition = (config) => {
-    const key = config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[config.type];
-    return RECHARTS_LABEL_POSITION[config.type]?.[key] || "top";
+    const family = labelFamily(config.type);
+    const key = config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[family];
+    return RECHARTS_LABEL_POSITION[family]?.[key] || "top";
 };
 
 // Pie labels are positioned via a render-prop (radius fraction + optional
@@ -427,6 +466,128 @@ function ChartTypePreview({ type }) {
     }
 }
 
+// Excel's Insert Chart / Change Chart Type dialog: a Recommended Charts tab with
+// live thumbnails of the user's own data, and an All Charts tab listing every
+// family and its variants, both with a large preview of the selection.
+function InsertChartDialog({ state, onClose, recommended, currentType, renderPreview, onOk }) {
+    const [tab, setTab] = useState("recommended");
+    const [family, setFamily] = useState("column");
+    const [selected, setSelected] = useState("columnGrouped");
+
+    useEffect(() => {
+        if (!state) return;
+        setTab(state.tab);
+        const fam = CHART_FAMILIES.find((f) => f.key === state.family) || CHART_FAMILIES[0];
+        setFamily(fam.key);
+        setSelected(state.tab === "recommended" ? recommended[0] : (fam.keys.includes(currentType) ? currentType : fam.keys[0]));
+        // Only re-seed when the dialog (re)opens.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state]);
+
+    const chooseTab = (next) => {
+        setTab(next);
+        if (next === "recommended") setSelected(recommended[0]);
+        else {
+            const fam = CHART_FAMILIES.find((f) => f.key === family) || CHART_FAMILIES[0];
+            setSelected(fam.keys.includes(selected) ? selected : fam.keys[0]);
+        }
+    };
+    const chooseFamily = (key) => {
+        setFamily(key);
+        setSelected(CHART_FAMILIES.find((f) => f.key === key).keys[0]);
+    };
+    const activeFamily = CHART_FAMILIES.find((f) => f.key === family) || CHART_FAMILIES[0];
+    const variant = CHART_VARIANTS[selected];
+
+    return (
+        <Dialog open={!!state} onOpenChange={(open) => { if (!open) onClose(); }} className="max-w-4xl">
+            <DialogContent role="dialog" className="p-0">
+                <DialogHeader className="px-5 pt-4 mb-0">
+                    <DialogTitle className="text-base">{state?.tab === "all" && currentType ? "Change Chart Type" : "Insert Chart"}</DialogTitle>
+                </DialogHeader>
+                <div className="flex gap-1 px-5 border-b border-slate-200">
+                    {[["recommended", "Recommended Charts"], ["all", "All Charts"]].map(([key, label]) => (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => chooseTab(key)}
+                            className={cn(
+                                "relative px-3 py-2 text-[13px] cursor-pointer",
+                                tab === key ? "text-[#107C41] font-semibold" : "text-slate-600 hover:text-slate-900"
+                            )}
+                        >
+                            {label}
+                            {tab === key && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-[#107C41]" />}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex h-[440px]">
+                    <div className="w-52 shrink-0 border-r border-slate-200 overflow-y-auto p-2 space-y-1 bg-slate-50/60">
+                        {tab === "recommended" ? recommended.map((key) => (
+                            <button
+                                key={key}
+                                type="button"
+                                title={CHART_VARIANTS[key].label}
+                                onClick={() => setSelected(key)}
+                                onDoubleClick={() => onOk(key)}
+                                className={cn(
+                                    "w-full h-24 p-1.5 bg-white border rounded-sm cursor-pointer",
+                                    selected === key ? "border-amber-500 ring-1 ring-amber-400" : "border-slate-200 hover:border-amber-300"
+                                )}
+                            >
+                                <div className="w-full h-full pointer-events-none">{renderPreview(key, true)}</div>
+                            </button>
+                        )) : CHART_FAMILIES.map((f) => (
+                            <button
+                                key={f.key}
+                                type="button"
+                                onClick={() => chooseFamily(f.key)}
+                                className={cn(
+                                    "w-full flex items-center gap-2 px-2 py-1 rounded-sm text-left text-xs cursor-pointer",
+                                    family === f.key ? "bg-amber-100 text-slate-900 font-medium" : "text-slate-700 hover:bg-slate-100"
+                                )}
+                            >
+                                <ChartThumb type={f.keys[0]} className="w-5 h-5 shrink-0" />
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col p-4 gap-3">
+                        {tab === "all" && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {activeFamily.keys.map((key) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        title={CHART_VARIANTS[key].label}
+                                        onClick={() => setSelected(key)}
+                                        onDoubleClick={() => onOk(key)}
+                                        className={cn(
+                                            "p-1 border rounded-sm cursor-pointer",
+                                            selected === key ? "border-amber-500 bg-amber-50" : "border-transparent hover:border-amber-300"
+                                        )}
+                                    >
+                                        <ChartThumb type={key} className="w-11 h-11" />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <div className="text-sm font-semibold text-slate-800">{variant?.label}</div>
+                        <div className="flex-1 min-h-0 border border-slate-200 rounded-sm bg-white p-3">
+                            {selected && renderPreview(selected, false)}
+                        </div>
+                        <p className="text-xs text-slate-500 leading-snug">{variant?.desc}</p>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200">
+                    <Button size="sm" className="h-8 px-5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => onOk(selected)} disabled={!selected}>OK</Button>
+                    <Button size="sm" variant="outline" className="h-8 px-4 cursor-pointer" onClick={onClose}>Cancel</Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function ExcelGraph({ excelData, onChartsChange }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [draft, setDraft] = useState(null);
@@ -437,6 +598,11 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     const [renamingChartId, setRenamingChartId] = useState(null);
     const [renameValue, setRenameValue] = useState("");
     const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const exitFullScreen = useCallback(() => setIsFullScreen(false), []);
+    const [ribbonTab, setRibbonTab] = useState("insert"); // "insert" | "design"
+    // Insert Chart dialog: the tab it opened on and the family shown under All Charts.
+    const [insertDialog, setInsertDialog] = useState(null); // { tab: "recommended" | "all", family }
 
     const activeSheet = excelData?.sheets?.[excelData.activeSheetName] || null;
     const displayGrid = excelData?.displayGrid || {};
@@ -457,11 +623,78 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
         onChartsChange?.(nextCharts);
     }, [charts, config, onChartsChange]);
 
-    const addChart = () => {
-        const newChart = buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`);
+    const addChart = (patch = {}) => {
+        const newChart = { ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`), ...patch };
         setActiveChartId(newChart.id);
         onChartsChange?.([...charts, newChart]);
     };
+
+    // Patch for switching to a catalog variant; combo presets also seed each
+    // series' column/line/area type and axis.
+    const variantPatch = (key, cfg) => {
+        const v = CHART_VARIANTS[key];
+        const patch = { type: variantType(key) };
+        if (v?.preset) patch.comboSettings = comboSettingsForPreset(v.preset, cfg?.valueCols || []);
+        return patch;
+    };
+    // Picking a chart type changes the active chart (or inserts one when there is none).
+    const applyVariant = (key) => {
+        if (config) applyConfig(variantPatch(key, config));
+        else addChart(variantPatch(key, buildDefaultChart(columnCount, rowCount)));
+    };
+    const openCustomCombo = () => {
+        if (!config) { addChart(variantPatch("combo", buildDefaultChart(columnCount, rowCount))); return; }
+        const patch = variantPatch("combo", config);
+        applyConfig(patch);
+        setRibbonTab("design");
+        setDesignDraft({ ...config, ...patch });
+        setExpandedPointSeries(null);
+        setDesignPopoverOpen(true);
+    };
+    const openInsertDialog = (tab, family) => setInsertDialog({ tab, family: family || familyOfVariant(config?.type || "columnGrouped") });
+
+    // PivotChart: chart the active PivotTable sheet's whole used range.
+    const insertPivotChart = () => {
+        if (!activeSheet?.pivotConfig) {
+            toast.info("Open a PivotTable sheet first: create one from the spreadsheet's Insert > PivotTable, then choose PivotChart here.");
+            return;
+        }
+        let maxRow = -1, maxCol = -1, minRow = Infinity;
+        for (const id of Object.keys(activeSheet.cells || {})) {
+            const ref = parseCellRef(id);
+            const v = displayGrid[id];
+            if (!ref || v === undefined || v === "") continue;
+            minRow = Math.min(minRow, ref.row); maxRow = Math.max(maxRow, ref.row); maxCol = Math.max(maxCol, ref.col);
+        }
+        if (maxRow < 0 || maxCol < 1) { toast.error("This PivotTable has no data to chart yet."); return; }
+        const valueCols = [];
+        for (let c = 1; c <= maxCol; c++) valueCols.push(indexToCol(c));
+        addChart({ type: "columnGrouped", xAxisCol: "A", valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow: true, name: "PivotChart" });
+    };
+
+    const prepared = useMemo(() => prepareChartData(activeSheet, displayGrid, config), [activeSheet, displayGrid, config]);
+    const { data, seriesKeys, hadInvalid } = prepared;
+
+    // Excel's Recommended Charts: a short list suited to the data's shape.
+    const recommendedVariants = useMemo(() => {
+        const n = seriesKeys.length, rows = data.length;
+        const numericX = rows > 1 && data.every((row) => Number.isFinite(parseFloat(String(row.name).replace(/[$,%\s]/g, ""))));
+        const allPositive = data.every((row) => seriesKeys.every((k) => (row[k] || 0) >= 0));
+        const list = ["columnGrouped"];
+        if (n <= 1) {
+            if (allPositive && rows > 0 && rows <= 10) list.push("pie");
+            list.push("barGrouped");
+            if (rows >= 4) list.push("line");
+            if (allPositive) list.push("treemap");
+            list.push("funnel");
+        } else {
+            list.push("columnStacked", "lineMarkers", "barGrouped");
+            if (n === 2) list.push("comboColumnLineSecondary");
+            list.push("areaStacked", "radar");
+        }
+        if (numericX) list.push("scatter");
+        return [...new Set(list)].slice(0, 8);
+    }, [data, seriesKeys]);
 
     const deleteChart = (id) => {
         const nextCharts = charts.filter((c) => c.id !== id);
@@ -477,17 +710,6 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
         if (!id || !name) return;
         onChartsChange?.(charts.map((c) => (c.id === id ? { ...c, name } : c)));
     };
-
-    const { data, seriesKeys, hadInvalid } = useMemo(() => {
-        if (!activeSheet || !config) return { data: [], seriesKeys: [], hadInvalid: false };
-        const result = buildChartData({ activeSheet, displayGrid, config });
-        if (config.type === "lineStacked") {
-            return { ...result, data: applyStackedLineCumulative(result.data, result.seriesKeys) };
-        }
-        return result;
-    }, [activeSheet, displayGrid, config]);
-
-    const colorFor = (index) => config.seriesColors?.[config.valueCols[index]] || CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
 
     const openPopover = (open) => {
         setPopoverOpen(open);
@@ -517,7 +739,7 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     // bar/column and pie/doughnut only — recharts (like Excel) has no clean
     // way to recolor part of a single continuous Line/Area path. Combo mixes
     // series types per-column, so per-point overrides are skipped there too.
-    const supportsPointColors = config && !["line", "lineStacked", "area", "combo"].includes(config.type);
+    const supportsPointColors = config && POINT_COLOR_TYPES.has(config.type);
 
     const toggleDraftValueCol = (col) => {
         setDraft((d) => {
@@ -569,21 +791,39 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
 
     const commonAxisProps = { tick: { fill: INK_MUTED, fontSize: 11 }, axisLine: { stroke: AXIS_LINE_COLOR }, tickLine: false };
 
-    const renderChart = () => {
-        if (!config) return null;
-        const legendPosition = config.legendPosition || "bottom";
-        const labelPos = resolveLabelPosition(config);
-        switch (config.type) {
+    // Draws `cfg` from its prepared rows. `mini` strips axes/legend/labels for the
+    // Insert Chart dialog's live thumbnails.
+    const renderChartFor = (cfg, { data, seriesKeys }, mini = false) => {
+        if (!cfg) return null;
+        const colorFor = (index) => cfg.seriesColors?.[cfg.valueCols[index]] || CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
+        const ax = mini ? { ...commonAxisProps, hide: true } : commonAxisProps;
+        const legendPosition = mini ? "none" : (cfg.legendPosition || "bottom");
+        const showLabels = !mini && cfg.showDataLabels;
+        const showGrid = !mini && cfg.showGridlines;
+        const labelPos = resolveLabelPosition(cfg);
+        const margin = mini ? { top: 4, right: 4, left: 4, bottom: 4 } : { top: 8, right: 12, left: -12, bottom: 0 };
+        const legend = legendPosition !== "none" && seriesKeys.length > 1
+            ? <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />
+            : null;
+        const percentTick = (v) => `${Math.round(v * 100)}%`;
+
+        if (EXTRA_CHART_TYPES.has(cfg.type)) {
+            return renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps: ax, legend, mini });
+        }
+
+        switch (cfg.type) {
             case "columnGrouped":
-            case "columnStacked": {
-                const stacked = config.type === "columnStacked";
+            case "columnStacked":
+            case "columnPercent": {
+                const stacked = cfg.type !== "columnGrouped";
+                const percent = cfg.type === "columnPercent";
                 return (
-                    <BarChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...commonAxisProps} />
-                        <YAxis {...commonAxisProps} width={40} />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />
-                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
+                    <BarChart data={data} margin={margin} stackOffset={percent ? "expand" : undefined}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...ax} />
+                        <YAxis {...ax} width={40} tickFormatter={percent ? percentTick : undefined} />
+                        {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
+                        {legend}
                         {seriesKeys.map((key, i) => (
                             <Bar
                                 key={key}
@@ -591,10 +831,11 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                 stackId={stacked ? "stack" : undefined}
                                 fill={colorFor(i)}
                                 maxBarSize={24}
+                                isAnimationActive={!mini}
                                 radius={stacked ? (i === seriesKeys.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]) : [4, 4, 0, 0]}
                             >
-                                {data.map((row, di) => <Cell key={di} fill={pointColorFor(config, config.valueCols[i], row.name, i)} />)}
-                                {config.showDataLabels && (
+                                {data.map((row, di) => <Cell key={di} fill={pointColorFor(cfg, cfg.valueCols[i], row.name, i)} />)}
+                                {showLabels && (
                                     <LabelList dataKey={key} position={labelPos} fill={labelPos.startsWith("inside") || labelPos === "center" ? "#ffffff" : INK_SECONDARY} fontSize={10} />
                                 )}
                             </Bar>
@@ -603,15 +844,17 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                 );
             }
             case "barGrouped":
-            case "barStacked": {
-                const stacked = config.type === "barStacked";
+            case "barStacked":
+            case "barPercent": {
+                const stacked = cfg.type !== "barGrouped";
+                const percent = cfg.type === "barPercent";
                 return (
-                    <BarChart data={data} layout="vertical" margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
-                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} horizontal={false} />}
-                        <XAxis type="number" {...commonAxisProps} />
-                        <YAxis dataKey="name" type="category" {...commonAxisProps} width={70} />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />
-                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
+                    <BarChart data={data} layout="vertical" margin={mini ? margin : { top: 8, right: 20, left: 0, bottom: 0 }} stackOffset={percent ? "expand" : undefined}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} horizontal={false} />}
+                        <XAxis type="number" {...ax} tickFormatter={percent ? percentTick : undefined} />
+                        <YAxis dataKey="name" type="category" {...ax} width={70} />
+                        {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
+                        {legend}
                         {seriesKeys.map((key, i) => (
                             <Bar
                                 key={key}
@@ -619,10 +862,11 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                 stackId={stacked ? "stack" : undefined}
                                 fill={colorFor(i)}
                                 maxBarSize={24}
+                                isAnimationActive={!mini}
                                 radius={stacked ? (i === seriesKeys.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]) : [0, 4, 4, 0]}
                             >
-                                {data.map((row, di) => <Cell key={di} fill={pointColorFor(config, config.valueCols[i], row.name, i)} />)}
-                                {config.showDataLabels && (
+                                {data.map((row, di) => <Cell key={di} fill={pointColorFor(cfg, cfg.valueCols[i], row.name, i)} />)}
+                                {showLabels && (
                                     <LabelList dataKey={key} position={labelPos} fill={labelPos.startsWith("inside") || labelPos === "center" ? "#ffffff" : INK_SECONDARY} fontSize={10} />
                                 )}
                             </Bar>
@@ -632,13 +876,18 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
             }
             case "line":
             case "lineStacked":
+            case "linePercent":
+            case "lineMarkers": {
+                // Like Excel, only "Line with Markers" draws a dot on every point.
+                const markers = cfg.type === "lineMarkers";
+                const percent = cfg.type === "linePercent";
                 return (
-                    <LineChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...commonAxisProps} />
-                        <YAxis {...commonAxisProps} width={40} />
-                        <Tooltip content={<ChartTooltip />} />
-                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
+                    <LineChart data={data} margin={margin}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...ax} />
+                        <YAxis {...ax} width={40} domain={percent ? [0, 1] : undefined} tickFormatter={percent ? percentTick : undefined} />
+                        {!mini && <Tooltip content={<ChartTooltip />} />}
+                        {legend}
                         {seriesKeys.map((key, i) => (
                             <Line
                                 key={key}
@@ -646,57 +895,66 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                 dataKey={key}
                                 stroke={colorFor(i)}
                                 strokeWidth={2}
-                                dot={{ r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: colorFor(i) }}
+                                isAnimationActive={!mini}
+                                dot={markers && !mini ? { r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: colorFor(i) } : false}
                                 activeDot={{ r: 5, strokeWidth: 2, stroke: CHART_SURFACE }}
                             >
-                                {config.showDataLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
+                                {showLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
                             </Line>
                         ))}
                     </LineChart>
                 );
+            }
             case "area":
+            case "areaStacked":
+            case "areaPercent": {
+                const stacked = cfg.type !== "area";
+                const percent = cfg.type === "areaPercent";
                 return (
-                    <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...commonAxisProps} />
-                        <YAxis {...commonAxisProps} width={40} />
-                        <Tooltip content={<ChartTooltip />} />
-                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
+                    <AreaChart data={data} margin={margin} stackOffset={percent ? "expand" : undefined}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...ax} />
+                        <YAxis {...ax} width={40} tickFormatter={percent ? percentTick : undefined} />
+                        {!mini && <Tooltip content={<ChartTooltip />} />}
+                        {legend}
                         {seriesKeys.map((key, i) => (
                             <Area
                                 key={key}
                                 type="monotone"
                                 dataKey={key}
+                                stackId={stacked ? "stack" : undefined}
                                 stroke={colorFor(i)}
                                 strokeWidth={2}
                                 fill={colorFor(i)}
-                                fillOpacity={0.12}
+                                fillOpacity={stacked ? 0.75 : 0.12}
+                                isAnimationActive={!mini}
                             >
-                                {config.showDataLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
+                                {showLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
                             </Area>
                         ))}
                     </AreaChart>
                 );
+            }
             case "combo": {
                 const seriesMeta = seriesKeys.map((key, i) => {
-                    const col = config.valueCols[i];
-                    return { key, ...getComboSeriesSettings(config, col, i), color: colorFor(i) };
+                    const col = cfg.valueCols[i];
+                    return { key, ...getComboSeriesSettings(cfg, col, i), color: colorFor(i) };
                 });
                 const hasRightAxis = seriesMeta.some((s) => s.yAxisId === "right");
                 const renderSeries = (s) => {
-                    const labelList = config.showDataLabels && (
+                    const labelList = showLabels && (
                         <LabelList key="ll" dataKey={s.key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />
                     );
                     if (s.type === "column") {
                         return (
-                            <Bar key={s.key} dataKey={s.key} yAxisId={s.yAxisId} fill={s.color} maxBarSize={24} radius={[4, 4, 0, 0]}>
+                            <Bar key={s.key} dataKey={s.key} yAxisId={s.yAxisId} fill={s.color} maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={!mini}>
                                 {labelList}
                             </Bar>
                         );
                     }
                     if (s.type === "area") {
                         return (
-                            <Area key={s.key} type="monotone" dataKey={s.key} yAxisId={s.yAxisId} stroke={s.color} strokeWidth={2} fill={s.color} fillOpacity={0.12}>
+                            <Area key={s.key} type="monotone" dataKey={s.key} yAxisId={s.yAxisId} stroke={s.color} strokeWidth={2} fill={s.color} fillOpacity={0.12} isAnimationActive={!mini}>
                                 {labelList}
                             </Area>
                         );
@@ -709,7 +967,8 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                             yAxisId={s.yAxisId}
                             stroke={s.color}
                             strokeWidth={2}
-                            dot={{ r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: s.color }}
+                            isAnimationActive={!mini}
+                            dot={mini ? false : { r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: s.color }}
                             activeDot={{ r: 5, strokeWidth: 2, stroke: CHART_SURFACE }}
                         >
                             {labelList}
@@ -717,15 +976,15 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                     );
                 };
                 return (
-                    <ComposedChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-                        {config.showGridlines && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...commonAxisProps} />
-                        <YAxis yAxisId="left" {...commonAxisProps} width={40} />
-                        {hasRightAxis && <YAxis yAxisId="right" orientation="right" {...commonAxisProps} width={40} />}
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />
-                        {legendPosition !== "none" && seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />}
-                        {seriesMeta.filter((s) => s.type === "column").map(renderSeries)}
+                    <ComposedChart data={data} margin={margin}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...ax} />
+                        <YAxis yAxisId="left" {...ax} width={40} />
+                        {hasRightAxis && <YAxis yAxisId="right" orientation="right" {...ax} width={40} />}
+                        {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
+                        {legend}
                         {seriesMeta.filter((s) => s.type === "area").map(renderSeries)}
+                        {seriesMeta.filter((s) => s.type === "column").map(renderSeries)}
                         {seriesMeta.filter((s) => s.type === "line").map(renderSeries)}
                     </ComposedChart>
                 );
@@ -733,29 +992,30 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
             case "pie":
             case "doughnut": {
                 const key = seriesKeys[0];
-                const piePos = resolvePieLabelPosition(config);
+                const piePos = resolvePieLabelPosition(cfg);
                 return (
                     <PieChart margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                        <Tooltip content={<ChartTooltip />} />
+                        {!mini && <Tooltip content={<ChartTooltip />} />}
                         {legendPosition !== "none" && (
                             <Legend
                                 wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }}
                                 {...legendPropsFor(legendPosition)}
-                                payload={data.map((d, i) => ({ value: d.name, type: "circle", color: pieCellColorFor(config, key, d.name, i) }))}
+                                payload={data.map((d, i) => ({ value: d.name, type: "circle", color: pieCellColorFor(cfg, key, d.name, i) }))}
                             />
                         )}
                         <Pie
                             data={data}
                             dataKey={key}
                             nameKey="name"
-                            innerRadius={config.type === "doughnut" ? "55%" : 0}
-                            outerRadius="80%"
+                            innerRadius={cfg.type === "doughnut" ? "55%" : 0}
+                            outerRadius={mini ? "95%" : "80%"}
                             stroke={CHART_SURFACE}
                             strokeWidth={2}
-                            label={config.showDataLabels ? (labelProps) => renderPieLabel(labelProps, piePos) : false}
-                            labelLine={config.showDataLabels && piePos === "outsideEnd"}
+                            isAnimationActive={!mini}
+                            label={showLabels ? (labelProps) => renderPieLabel(labelProps, piePos) : false}
+                            labelLine={showLabels && piePos === "outsideEnd"}
                         >
-                            {data.map((row, i) => <Cell key={i} fill={pieCellColorFor(config, key, row.name, i)} />)}
+                            {data.map((row, i) => <Cell key={i} fill={pieCellColorFor(cfg, key, row.name, i)} />)}
                         </Pie>
                     </PieChart>
                 );
@@ -765,8 +1025,26 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
         }
     };
 
+    // Chart body for any type: sparklines aren't a single recharts chart, and
+    // some types need a particular data shape first.
+    const renderChartBody = (cfg, prepared, mini = false) => {
+        const requirement = chartRequirement(cfg.type, prepared.seriesKeys, prepared.data);
+        if (requirement) {
+            return <div className="flex items-center justify-center h-full text-center px-4 text-xs text-slate-400">{requirement}</div>;
+        }
+        if (SPARKLINE_TYPES.has(cfg.type)) {
+            const colorFor = (index) => cfg.seriesColors?.[cfg.valueCols[index]] || CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
+            return <Sparklines type={cfg.type} data={prepared.data} seriesKeys={prepared.seriesKeys} colorFor={colorFor} mini={mini} />;
+        }
+        return <ResponsiveContainer width="100%" height="100%">{renderChartFor(cfg, prepared, mini)}</ResponsiveContainer>;
+    };
+
     return (
-        <div className="w-full border border-slate-200 rounded-lg overflow-hidden bg-white">
+        <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Charts" icon={IconChartBar}>
+        <div className={cn(
+            "w-full border border-slate-200 rounded-lg overflow-hidden bg-white",
+            isFullScreen && "flex-1 min-h-0 flex flex-col [&>*]:shrink-0 shadow-sm"
+        )}>
             {/* Chart tabs — one per table on the sheet */}
             <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-slate-50">
                 <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
@@ -809,95 +1087,193 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                         )}
                     </div>
                 ))}
-                <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={addChart} title="Add chart">
+                <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={() => addChart()} title="Add chart">
                     <IconPlus className="w-4 h-4" />
                 </button>
                 </div>
-                {config && (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
-                        onClick={() => setIsToolbarExpanded((v) => !v)}
-                        title={isToolbarExpanded ? "Collapse chart toolbar" : "Expand chart toolbar"}
-                    >
-                        {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
-                    </Button>
+                {hadInvalid && config && (
+                    <span title="Some cells in the selected range aren't numbers and were treated as 0." className="flex items-center gap-1 text-amber-600 text-[11px] px-1.5 shrink-0">
+                        <IconAlertTriangle className="w-3.5 h-3.5" /> Data warning
+                    </span>
                 )}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
+                    onClick={() => setIsToolbarExpanded((v) => !v)}
+                    title={isToolbarExpanded ? "Collapse ribbon" : "Expand ribbon"}
+                >
+                    {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
+                    onClick={() => setIsFullScreen((v) => !v)}
+                    title={isFullScreen ? "Exit full screen (Esc)" : "Full screen"}
+                >
+                    {isFullScreen ? <IconMinimize className="w-4 h-4" /> : <IconMaximize className="w-4 h-4" />}
+                </Button>
             </div>
 
-            {!config ? (
-                <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">
-                    No charts yet. Click the "+" above to add one for a table on this sheet.
-                </div>
-            ) : (
-            <>
+            {/* Ribbon tabs — Insert mirrors Excel's Insert > Charts / Sparklines; Chart Design holds the chart's own settings */}
+            <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
+                {[["insert", "Insert"], ["design", "Chart Design"]].map(([key, label]) => (
+                    <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setRibbonTab(key); setIsToolbarExpanded(true); }}
+                        className={cn(
+                            "relative px-3 pt-1.5 pb-2 text-[13px] cursor-pointer rounded-t-sm hover:bg-slate-100",
+                            ribbonTab === key && isToolbarExpanded ? "text-[#107C41] font-semibold" : "text-slate-600"
+                        )}
+                    >
+                        {label}
+                        {ribbonTab === key && isToolbarExpanded && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-[#107C41]" />}
+                    </button>
+                ))}
+            </div>
+
             <div className={cn(
                 "transition-all duration-300 ease-in-out overflow-hidden",
-                isToolbarExpanded ? "max-h-[220px] opacity-100" : "max-h-0 opacity-0"
+                isToolbarExpanded ? "max-h-[160px] opacity-100" : "max-h-0 opacity-0"
             )}>
-            <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 border-b border-slate-200 bg-slate-50/60">
-                <div className="flex items-center flex-wrap">
-                    {CHART_TYPE_GROUPS.map((group) => (
-                        <div key={group.label} className="flex flex-col items-center gap-1 px-2 py-1 border-r border-slate-200 last:border-r-0">
-                            <div className="flex items-center gap-1">
-                                {group.types.map((t) => (
-                                    <button
-                                        key={t.key}
-                                        type="button"
-                                        onClick={() => applyConfig({ type: t.key })}
-                                        title={t.label}
-                                        className={cn(
-                                            "flex items-center justify-center w-9 h-7 rounded border cursor-pointer transition-colors",
-                                            config.type === t.key ? "bg-indigo-100 border-indigo-300" : "bg-white border-slate-200 hover:bg-slate-50"
-                                        )}
-                                    >
-                                        <ChartTypePreview type={t.key} />
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide">{group.label}</span>
-                        </div>
-                    ))}
-                </div>
+            {ribbonTab === "insert" ? (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                <RibbonGroup label="Charts" onLauncher={() => openInsertDialog("all")} launcherTitle="See All Charts">
+                    <RibbonBtn className="h-full flex-col justify-start px-1.5 pt-1 gap-0.5" title="Recommended Charts" onClick={() => openInsertDialog("recommended")}>
+                        <RecommendedChartsIcon />
+                        <span className="text-xs leading-tight text-center">Recommended<br />Charts</span>
+                    </RibbonBtn>
+                    <div className="grid grid-cols-3 grid-rows-3 gap-x-1 content-between py-0.5">
+                        {RIBBON_CHART_MENUS.map((menu) => (
+                            <RibbonDropdown key={menu.key} title={menu.title} trigger={<RibbonFamilyIcon family={menu.key} />} contentClassName="w-auto p-1">
+                                <MenuClose>{(close) => (
+                                    <div className="w-[228px]">
+                                        {menu.sections.map((section) => (
+                                            <div key={section.title}>
+                                                <MenuHeader>{section.title}</MenuHeader>
+                                                <div className="flex flex-wrap gap-1 px-1 pb-1.5">
+                                                    {section.keys.map((key) => (
+                                                        <button
+                                                            key={key}
+                                                            type="button"
+                                                            title={CHART_VARIANTS[key].label}
+                                                            onClick={() => { close(); applyVariant(key); }}
+                                                            className={cn(
+                                                                "p-1 border rounded-sm cursor-pointer hover:border-amber-400 hover:bg-amber-50",
+                                                                config?.type === variantType(key) && !CHART_VARIANTS[key].preset ? "border-amber-500 bg-amber-50" : "border-transparent"
+                                                            )}
+                                                        >
+                                                            <ChartThumb type={key} className="w-10 h-10" />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <MenuSeparator />
+                                        <MenuItem
+                                            icon={IconChartInfographic}
+                                            label={menu.more}
+                                            onClick={() => (menu.key === "combo" ? openCustomCombo() : openInsertDialog("all", menu.family))}
+                                        />
+                                    </div>
+                                )}</MenuClose>
+                            </RibbonDropdown>
+                        ))}
+                    </div>
+                    <RibbonDropdown
+                        large
+                        title="Maps"
+                        trigger={<><MapsIcon /><span className="text-xs leading-tight text-center">Maps<br /><IconChevronDown className="w-3 h-3 inline text-slate-500" /></span></>}
+                        contentClassName="w-64"
+                    >
+                        <MenuHeader>Filled Map</MenuHeader>
+                        <MenuItem icon={IconInfoCircle} label="Filled Map" disabled />
+                        <p className="px-2 pb-1.5 text-[11px] text-slate-500 leading-snug">
+                            Map charts need Excel&apos;s online geography service, so they aren&apos;t available in this workbook.
+                        </p>
+                    </RibbonDropdown>
+                    <RibbonSplit
+                        large
+                        title="PivotChart"
+                        onClick={insertPivotChart}
+                        face={<><PivotChartIcon /><span className="text-xs">PivotChart</span></>}
+                        contentClassName="w-60"
+                    >
+                        <MenuItem icon={IconChartBar} label="PivotChart" onClick={insertPivotChart} />
+                        <MenuItem
+                            icon={IconTableShortcut}
+                            label="PivotChart & PivotTable"
+                            onClick={() => toast.info("Create the PivotTable from the spreadsheet's Insert > PivotTable first, then choose PivotChart here.")}
+                        />
+                    </RibbonSplit>
+                </RibbonGroup>
 
-                <div className="flex items-center gap-1">
-                    {hadInvalid && (
-                        <span title="Some cells in the selected range aren't numbers and were treated as 0." className="flex items-center gap-1 text-amber-600 text-[11px] px-1.5 shrink-0">
-                            <IconAlertTriangle className="w-3.5 h-3.5" /> Data warning
-                        </span>
-                    )}
-                    <Button
-                        variant="ghost" size="sm"
-                        className={cn("h-7 text-[11px] px-1.5 cursor-pointer", config.legendPosition !== "none" && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
-                        onClick={() => applyConfig({ legendPosition: config.legendPosition === "none" ? "bottom" : "none" })}
-                        title="Toggle legend — use Design for position"
+                <RibbonGroup label="Sparklines">
+                    {[
+                        { key: "sparkLine", label: "Line", icon: <SparkLineIcon /> },
+                        { key: "sparkColumn", label: "Column", icon: <SparkColumnIcon /> },
+                        { key: "sparkWinLoss", label: "Win/\nLoss", icon: <SparkWinLossIcon /> },
+                    ].map(({ key, label, icon }) => (
+                        <RibbonBtn
+                            key={key}
+                            className="h-full flex-col justify-start px-1.5 pt-1 gap-0.5"
+                            active={config?.type === key}
+                            title={`${CHART_VARIANTS[key].label}: ${CHART_VARIANTS[key].desc}`}
+                            onClick={() => applyVariant(key)}
+                        >
+                            {icon}
+                            <span className="text-xs leading-tight text-center whitespace-pre-line">{label}</span>
+                        </RibbonBtn>
+                    ))}
+                </RibbonGroup>
+            </div>
+            ) : (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {!config ? (
+                    <div className="h-[94px] flex items-center px-4 text-xs text-slate-400">Insert a chart first to change its design.</div>
+                ) : (
+                <>
+                <RibbonGroup label="Chart Layouts">
+                    <RibbonDropdown
+                        large
+                        title="Add Chart Element"
+                        trigger={<><IconChartInfographic className="w-8 h-8 text-slate-700" strokeWidth={1.3} /><span className="text-xs leading-tight text-center">Add Chart<br />Element <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span></>}
+                        contentClassName="w-56 max-h-[70vh] overflow-y-auto"
                     >
-                        Legend
-                    </Button>
-                    <Button
-                        variant="ghost" size="sm"
-                        className={cn("h-7 text-[11px] px-1.5 cursor-pointer", config.showGridlines && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
-                        onClick={() => applyConfig({ showGridlines: !config.showGridlines })}
-                        title="Toggle gridlines"
-                    >
-                        Gridlines
-                    </Button>
-                    <Button
-                        variant="ghost" size="sm"
-                        className={cn("h-7 text-[11px] px-1.5 cursor-pointer", config.showDataLabels && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
-                        onClick={() => applyConfig({ showDataLabels: !config.showDataLabels })}
-                        title="Toggle data labels"
-                    >
-                        Labels
-                    </Button>
+                        <MenuHeader>Chart Title</MenuHeader>
+                        <MenuItem label="None" checked={!config.title} onClick={() => applyConfig({ title: "" })} />
+                        <MenuItem label="Above Chart..." checked={!!config.title} onClick={() => openDesignPopover(true)} />
+                        <MenuHeader>Data Labels</MenuHeader>
+                        <MenuItem label="None" checked={!config.showDataLabels} onClick={() => applyConfig({ showDataLabels: false })} />
+                        <MenuItem label="Auto" checked={config.showDataLabels && (!config.labelPosition || config.labelPosition === "auto")} onClick={() => applyConfig({ showDataLabels: true, labelPosition: "auto" })} />
+                        {getLabelPositionOptions(config.type).map((opt) => (
+                            <MenuItem
+                                key={opt.value}
+                                label={opt.label}
+                                checked={config.showDataLabels && config.labelPosition === opt.value}
+                                onClick={() => applyConfig({ showDataLabels: true, labelPosition: opt.value })}
+                            />
+                        ))}
+                        <MenuHeader>Gridlines</MenuHeader>
+                        <MenuItem label="Primary Major Horizontal" checked={!!config.showGridlines} onClick={() => applyConfig({ showGridlines: !config.showGridlines })} />
+                        <MenuHeader>Legend</MenuHeader>
+                        {[["none", "None"], ["right", "Right"], ["top", "Top"], ["left", "Left"], ["bottom", "Bottom"]].map(([value, label]) => (
+                            <MenuItem key={value} label={label} checked={(config.legendPosition || "bottom") === value} onClick={() => applyConfig({ legendPosition: value })} />
+                        ))}
+                    </RibbonDropdown>
+                </RibbonGroup>
+
+                <RibbonGroup label="Data">
                     <Popover open={popoverOpen} onOpenChange={openPopover}>
                         <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-7 text-[11px] px-2 cursor-pointer" title="Chart data settings">
-                                <IconSettings className="w-3.5 h-3.5" /> Data
-                            </Button>
+                            <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Select Data: choose the range this chart plots">
+                                <IconTableShortcut className="w-8 h-8 text-emerald-700" strokeWidth={1.3} />
+                                <span className="text-xs leading-tight text-center">Select<br />Data</span>
+                            </RibbonBtn>
                         </PopoverTrigger>
-                        <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg space-y-3" align="end">
+                        <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg space-y-3" align="start">
                             {draft && (
                                 <>
                                     <div className="space-y-1">
@@ -977,14 +1353,24 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                             )}
                         </PopoverContent>
                     </Popover>
+                </RibbonGroup>
 
+                <RibbonGroup label="Type">
+                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Change Chart Type" onClick={() => openInsertDialog("all")}>
+                        <IconChartBar className="w-8 h-8 text-blue-700" strokeWidth={1.3} />
+                        <span className="text-xs leading-tight text-center">Change<br />Chart Type</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+
+                <RibbonGroup label="Format">
                     <Popover open={designPopoverOpen} onOpenChange={openDesignPopover}>
                         <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-7 text-[11px] px-2 cursor-pointer" title="Chart design">
-                                <IconPalette className="w-3.5 h-3.5" /> Design
-                            </Button>
+                            <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Format Chart: title, legend, labels and colors">
+                                <IconPalette className="w-8 h-8 text-amber-600" strokeWidth={1.3} />
+                                <span className="text-xs leading-tight text-center">Format<br />Chart</span>
+                            </RibbonBtn>
                         </PopoverTrigger>
-                        <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg space-y-3 max-h-[70vh] overflow-y-auto" align="end">
+                        <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg space-y-3 max-h-[70vh] overflow-y-auto" align="start">
                             {designDraft && (
                                 <>
                                     <div className="space-y-1.5">
@@ -1176,11 +1562,21 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                             )}
                         </PopoverContent>
                     </Popover>
-                </div>
+                </RibbonGroup>
+                </>
+                )}
             </div>
+            )}
             </div>
 
-            <div className="p-3">
+            {!config ? (
+                <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">
+                    No charts yet. Pick a chart type from the Insert ribbon above, or click "+".
+                </div>
+            ) : (
+            <>
+            {/* In full screen the chart grows to fill the space under the toolbars */}
+            <div className={cn("p-3", isFullScreen && "flex-1 min-h-0 !shrink flex flex-col")}>
                 {config.title && (
                     <div className="text-center text-sm font-semibold text-slate-900 mb-1.5">{config.title}</div>
                 )}
@@ -1188,16 +1584,32 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                     <div className="flex items-center justify-center h-64 text-sm text-slate-400">Loading sheet…</div>
                 ) : data.length === 0 || seriesKeys.length === 0 ? (
                     <div className="flex items-center justify-center h-64 text-sm text-slate-400 text-center px-6">
-                        No data in the selected range. Use the "Data" settings above to choose columns and rows to chart.
+                        No data in the selected range. Use Chart Design › Select Data to choose columns and rows to chart.
+                    </div>
+                ) : isFullScreen ? (
+                    <div className="relative flex-1 min-h-[240px]">
+                        <div className="absolute inset-0">{renderChartBody(config, prepared)}</div>
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height={320}>
-                        {renderChart()}
-                    </ResponsiveContainer>
+                    <div className="h-[320px]">{renderChartBody(config, prepared)}</div>
                 )}
             </div>
             </>
             )}
+
+            <InsertChartDialog
+                state={insertDialog}
+                onClose={() => setInsertDialog(null)}
+                recommended={recommendedVariants}
+                currentType={config?.type}
+                renderPreview={(key, mini) => {
+                    const base = config || buildDefaultChart(columnCount, rowCount);
+                    const cfg = { ...base, ...variantPatch(key, base), title: "" };
+                    return renderChartBody(cfg, prepareChartData(activeSheet, displayGrid, cfg), mini);
+                }}
+                onOk={(key) => { applyVariant(key); setInsertDialog(null); }}
+            />
         </div>
+        </FullScreenFrame>
     );
 }

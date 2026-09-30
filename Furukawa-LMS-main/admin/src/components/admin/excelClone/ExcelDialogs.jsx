@@ -310,10 +310,15 @@ export const PasteSpecialDialog = ({ open, onOpenChange, onApply }) => {
 const DECIMAL_FORMATS = new Set(["number", "comma", "currency", "accounting", "percentage", "scientific"]);
 const BORDER_SIDES = ["top", "bottom", "left", "right"];
 
-export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numberFormats, fontFamilies, fontSizes, borderWeights, onApply }) => {
+export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numberFormats, fontFamilies, fontSizes, borderWeights, onApply, initialTab }) => {
     const [tab, setTab] = useState("number");
     const [draft, setDraft] = useState({});
     const touched = useRef(new Set());
+
+    // The ribbon's dialog launchers open straight onto their own tab.
+    useEffect(() => {
+        if (open && initialTab) setTab(initialTab);
+    }, [open, initialTab]);
 
     useEffect(() => {
         if (!open) return;

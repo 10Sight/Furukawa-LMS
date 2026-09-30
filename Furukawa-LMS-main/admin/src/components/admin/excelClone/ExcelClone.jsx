@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,16 +8,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Progress } from "@/components/ui/progress";
 import {
     IconBold, IconItalic, IconUnderline, IconStrikethrough,
-    IconAlignLeft, IconAlignCenter, IconAlignRight, IconPalette,
-    IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus, IconMinus,
+    IconAlignLeft, IconAlignCenter, IconAlignRight, IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus, IconMinus,
     IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll,
-    IconCopy, IconCut, IconClipboard, IconBrush, IconCurrencyDollar, IconPercentage,
+    IconCopy, IconClipboard, IconBrush, IconPercentage,
     IconBorderOuter, IconSortAscending, IconSortDescending, IconRowInsertTop, IconRowInsertBottom,
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
     IconSum, IconChevronDown, IconChevronUp, IconLayoutAlignTop, IconLayoutAlignMiddle,
     IconLayoutAlignBottom, IconTextWrap, IconCheck, IconBorderBottom, IconBorderNone, IconBorderRight, IconBorderLeft,
     IconFilter, IconFilterFilled, IconPhoto, IconVideo, IconCrop, IconPencil,
-    IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconArrowsHorizontal
+    IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconMaximize, IconMinimize,
+    IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
+    IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
+    IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
@@ -30,6 +32,12 @@ import {
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { cn } from "@/lib/utils";
+import FullScreenFrame from "./FullScreenFrame";
+import {
+    RibbonGroup, RibbonStack, RibbonRow, RibbonDivider, RibbonBtn, RibbonDropdown, RibbonSplit,
+    MenuItem, MenuSeparator, MenuHeader, MenuClose, ColorSplitButton, RibbonCombo,
+    CondFormatIcon, FormatTableIcon, CellStylesIcon, SortFilterIcon, DecimalIcon,
+} from "./ribbonParts";
 
 const DEFAULT_ROW_COUNT = 30;
 const DEFAULT_COLUMN_COUNT = 15;
@@ -43,8 +51,22 @@ const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
 const MEDIA_MIN_SIZE = 40;
 const ROW_VIRTUALIZATION_BUFFER = 10;
 const IO_CHUNK_SIZE = 250; // rows processed per batch during import/export, between UI-yielding pauses
-const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24];
-const FONT_FAMILIES = ["Aptos Narrow", "Calibri", "Arial", "Segoe UI"];
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
+const DEFAULT_FONT_SIZE = 12; // the grid's text-xs
+const FONT_FAMILIES = [
+    "Aptos Narrow", "Aptos", "Arial", "Calibri", "Cambria", "Candara", "Consolas", "Courier New",
+    "Georgia", "Segoe UI", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
+];
+const MAX_INDENT = 15;
+// Alignment > Orientation menu. `rotation` is stored like ExcelJS's textRotation:
+// degrees counter-clockwise (-90..90) or "vertical" for stacked text.
+const ORIENTATION_OPTIONS = [
+    { value: 45, label: "Angle Counterclockwise" },
+    { value: -45, label: "Angle Clockwise" },
+    { value: "vertical", label: "Vertical Text" },
+    { value: 90, label: "Rotate Text Up" },
+    { value: -90, label: "Rotate Text Down" },
+];
 const HISTORY_LIMIT = 100;
 const NUMBER_FORMATS = [
     { value: "general", label: "General" },
@@ -59,12 +81,18 @@ const NUMBER_FORMATS = [
     { value: "datetime", label: "Date & Time" },
     { value: "text", label: "Text" },
 ];
-const BORDER_SIDE_OPTIONS = [
-    { key: "all", label: "All Borders", icon: IconBorderAll, sides: ["top", "bottom", "left", "right"] },
-    { key: "right", label: "Right Border", icon: IconBorderRight, sides: ["right"] },
-    { key: "left", label: "Left Border", icon: IconBorderLeft, sides: ["left"] },
-    { key: "bottom", label: "Bottom Border", icon: IconBorderBottom, sides: ["bottom"] },
-    { key: "none", label: "No Border", icon: IconBorderNone, sides: [] },
+// Home > Borders menu. Edge presets outline the selection rectangle (like
+// Excel), "all" borders every cell, "none" clears.
+const BORDER_PRESETS = [
+    { key: "bottom", label: "Bottom Border", icon: IconBorderBottom },
+    { key: "top", label: "Top Border", icon: IconBorderTop },
+    { key: "left", label: "Left Border", icon: IconBorderLeft },
+    { key: "right", label: "Right Border", icon: IconBorderRight },
+    null,
+    { key: "none", label: "No Border", icon: IconBorderNone },
+    { key: "all", label: "All Borders", icon: IconBorderAll },
+    { key: "outside", label: "Outside Borders", icon: IconBorderOuter },
+    { key: "thickOutside", label: "Thick Outside Borders", icon: IconBorderOuter, weight: "thick" },
 ];
 const BORDER_WEIGHTS = [
     { value: "thin", label: "Thin" },
@@ -251,14 +279,25 @@ const isBlankCell = (cell) => {
     return !hasValue && !hasStyle;
 };
 
+const rotationStyleFor = (rotation) => {
+    if (rotation === "vertical") return { writingMode: "vertical-rl", textOrientation: "upright" };
+    if (rotation === 90) return { writingMode: "vertical-rl", transform: "rotate(180deg)" };
+    if (rotation === -90) return { writingMode: "vertical-rl" };
+    if (typeof rotation === "number" && rotation !== 0) return { transform: `rotate(${-rotation}deg)` };
+    return null;
+};
 const cellStyleFor = (cell) => ({
     fontWeight: cell?.bold ? "bold" : "normal",
     fontStyle: cell?.italic ? "italic" : "normal",
     textDecoration: [cell?.underline && "underline", cell?.strike && "line-through"].filter(Boolean).join(" ") || "none",
+    textDecorationStyle: cell?.underline === "double" ? "double" : undefined,
     textAlign: cell?.align || "left",
     color: cell?.color || undefined,
     fontSize: cell?.fontSize ? `${cell.fontSize}px` : undefined,
     fontFamily: cell?.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
+    // Each indent level is ~one character width, on the side the text is aligned to.
+    ...(cell?.indent ? { [cell.align === "right" ? "paddingRight" : "paddingLeft"]: `${6 + cell.indent * 9}px` } : null),
+    ...rotationStyleFor(cell?.rotation),
 });
 
 const BORDER_COLOR = "#334155";
@@ -359,12 +398,6 @@ const FormulaTextOverlay = ({ text, mono = false, className }) => {
     );
 };
 
-const RibbonGroup = ({ label, children }) => (
-    <div className="flex flex-col items-center gap-1 px-2 py-1.5 border-r border-slate-200 last:border-r-0">
-        <div className="flex items-center gap-0.5">{children}</div>
-        <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide">{label}</span>
-    </div>
-);
 
 // Finds the largest cumulative-offset index whose offset is <= px, i.e. which
 // row/column band a pixel coordinate falls inside — used to place a media
@@ -758,7 +791,7 @@ const extractExcelCellStyle = (cell) => {
     if (font) {
         if (font.bold) style.bold = true;
         if (font.italic) style.italic = true;
-        if (font.underline) style.underline = true;
+        if (font.underline) style.underline = font.underline === "double" ? "double" : true;
         if (font.strike) style.strike = true;
         if (font.size) style.fontSize = Math.round(font.size);
         if (font.name) style.fontFamily = font.name;
@@ -775,6 +808,10 @@ const extractExcelCellStyle = (cell) => {
         if (["left", "center", "right"].includes(alignment.horizontal)) style.align = alignment.horizontal;
         if (["top", "middle", "bottom"].includes(alignment.vertical)) style.valign = alignment.vertical;
         if (alignment.wrapText) style.wrap = true;
+        if (alignment.indent) style.indent = Math.min(MAX_INDENT, alignment.indent);
+        if (alignment.textRotation === "vertical" || (typeof alignment.textRotation === "number" && alignment.textRotation !== 0)) {
+            style.rotation = alignment.textRotation;
+        }
     }
     const border = cell.border;
     if (border) {
@@ -962,6 +999,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [gridlinesVisible, setGridlinesVisible] = useState(true);
     const [isFormulaBarExpanded, setIsFormulaBarExpanded] = useState(false);
     const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
+    const [isFullScreen, setIsFullScreen] = useState(false);
     const [coordInputValue, setCoordInputValue] = useState("A1");
 
     const [fillPreview, setFillPreview] = useState(null); // { axis: 'vertical'|'horizontal', extraCount }
@@ -980,7 +1018,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [condThreshold, setCondThreshold] = useState("");
     const [condColor, setCondColor] = useState("#fef08a");
 
-    const [tableStylePopoverOpen, setTableStylePopoverOpen] = useState(false);
     const [selectedTableStyleKey, setSelectedTableStyleKey] = useState(TABLE_STYLE_PRESETS[0].key);
     const [tableFiltersEnabled, setTableFiltersEnabled] = useState(true);
     const [filterPopover, setFilterPopover] = useState(null); // { tableId, colIdx }
@@ -996,6 +1033,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [goToOpen, setGoToOpen] = useState(false);
     const [pasteSpecialOpen, setPasteSpecialOpen] = useState(false);
     const [formatCellsOpen, setFormatCellsOpen] = useState(false);
+    const [formatCellsTab, setFormatCellsTab] = useState(null);
+    const [ribbonTab, setRibbonTab] = useState("home"); // "home" | "insert"
+    // Last colours picked, applied by the split buttons' faces (Excel starts with yellow fill / red font).
+    const [lastFillColor, setLastFillColor] = useState("#FFFF00");
+    const [lastFontColor, setLastFontColor] = useState("#FF0000");
     const [insertDeleteMode, setInsertDeleteMode] = useState(null); // "insert" | "delete" | null
     const [unhideSheetOpen, setUnhideSheetOpen] = useState(false);
     const [showFormulas, setShowFormulas] = useState(false); // Ctrl+`
@@ -2121,7 +2163,32 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
         toast.success(`Unmerged ${intersecting.length} cell range${intersecting.length === 1 ? "" : "s"}`);
     }, [selectionBounds, merges, activeSheetName, updateSheets]);
-    const setFontSize = (fontSize) => applyToSelection((cell) => ({ ...cell, fontSize: fontSize ? Number(fontSize) : undefined }));
+    const setFontSize = (fontSize) => {
+        const n = Number(fontSize);
+        if (fontSize !== "" && fontSize != null && !(n >= 1 && n <= 409)) { toast.error("Font size must be a number between 1 and 409."); return; }
+        applyToSelection((cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
+    };
+    // Increase / Decrease Font Size step through the size list, like Excel.
+    const stepFontSize = (dir) => {
+        const current = activeCellData?.fontSize || DEFAULT_FONT_SIZE;
+        const next = dir > 0 ? FONT_SIZES.find((sz) => sz > current) : [...FONT_SIZES].reverse().find((sz) => sz < current);
+        if (next) setFontSize(next);
+    };
+    const setUnderlineStyle = (kind) => {
+        const on = activeCellData?.underline === kind || (kind === true && activeCellData?.underline === true);
+        applyToSelection((cell) => ({ ...cell, underline: on ? undefined : kind }));
+    };
+    const adjustIndent = (delta) => applyToSelection((cell) => {
+        const indent = Math.max(0, Math.min(MAX_INDENT, (cell.indent || 0) + delta));
+        return { ...cell, indent: indent || undefined, align: indent && cell.align === "center" ? "left" : cell.align };
+    });
+    const setRotation = (rotation) => {
+        const same = activeCellData?.rotation === rotation;
+        applyToSelection((cell) => ({ ...cell, rotation: same ? undefined : rotation }));
+    };
+    // Home > Clear: formats keep only the value; all drops the cell entirely.
+    const clearFormats = () => { if (guardEditable()) applyToSelection((cell) => ({ value: cell.value })); };
+    const clearAll = () => { if (guardEditable()) applyToSelection(() => ({})); };
     const setFontFamily = (fontFamily) => applyToSelection((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
     const setBg = (bg) => applyToSelection((cell) => ({ ...cell, bg }));
     const setColor = (color) => applyToSelection((cell) => ({ ...cell, color }));
@@ -2130,14 +2197,22 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         ...cell,
         decimalPlaces: Math.max(0, (cell.decimalPlaces !== undefined ? cell.decimalPlaces : 2) + delta)
     }));
-    const applyBorderSides = (option) => {
-        if (option.sides.length === 0) {
-            applyToSelection((cell) => ({ ...cell, border: undefined }));
-            return;
-        }
-        const borderObj = Object.fromEntries(option.sides.map((s) => [s, borderWeight]));
-        applyToSelection((cell) => ({ ...cell, border: borderObj }));
+    const applyBorderPreset = (preset) => {
+        if (!guardEditable() || !selectionBounds) return;
+        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        const weight = preset.weight || borderWeight;
+        if (preset.key === "none") { applyToSelection((cell) => ({ ...cell, border: undefined })); return; }
+        if (preset.key === "all") { applyToSelection((cell) => ({ ...cell, border: { top: weight, bottom: weight, left: weight, right: weight } })); return; }
+        const edges = preset.key === "outside" || preset.key === "thickOutside" ? ["top", "bottom", "left", "right"] : [preset.key];
+        applyToSelection((cell, id) => {
+            const { row, col } = parseCellRef(id);
+            const onEdge = { top: row === minRow, bottom: row === maxRow, left: col === minCol, right: col === maxCol };
+            const border = { ...(cell.border || {}) };
+            for (const side of edges) if (onEdge[side]) border[side] = weight;
+            return { ...cell, border: Object.keys(border).length ? border : undefined };
+        });
     };
+    const [lastBorderPreset, setLastBorderPreset] = useState(BORDER_PRESETS[0]);
     const applyCellStylePreset = (preset) => applyToSelection((cell) => ({ ...cell, ...preset.style }));
 
     // Formats the current selection as a table: colors its first row as a header
@@ -2365,9 +2440,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const insertColumns = (at, count = 1) => shiftBands("col", at, count);
     const deleteColumns = (at, count = 1) => shiftBands("col", at, -Math.min(count, columnCount - 1));
     const insertRowAt = (rowIdx) => insertRows(rowIdx, 1);
-    const deleteRowAt = (rowIdx) => deleteRows(rowIdx, 1);
     const insertColumnAt = (colIdx) => insertColumns(colIdx, 1);
-    const deleteColumnAt = (colIdx) => deleteColumns(colIdx, 1);
 
     // --- AutoSum & Sort ---
 
@@ -2665,7 +2738,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         const font = {};
                         if (cellData.bold) font.bold = true;
                         if (cellData.italic) font.italic = true;
-                        if (cellData.underline) font.underline = true;
+                        if (cellData.underline) font.underline = cellData.underline === "double" ? "double" : true;
                         if (cellData.strike) font.strike = true;
                         if (cellData.fontSize) font.size = cellData.fontSize;
                         if (cellData.fontFamily) font.name = cellData.fontFamily;
@@ -2676,8 +2749,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             excelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${cellData.bg.replace("#", "").toUpperCase()}` } };
                         }
 
-                        if (cellData.align || cellData.valign || cellData.wrap) {
-                            excelCell.alignment = { horizontal: cellData.align, vertical: cellData.valign, wrapText: !!cellData.wrap };
+                        if (cellData.align || cellData.valign || cellData.wrap || cellData.indent || cellData.rotation) {
+                            excelCell.alignment = {
+                                horizontal: cellData.align, vertical: cellData.valign, wrapText: !!cellData.wrap,
+                                ...(cellData.indent ? { indent: cellData.indent } : null),
+                                ...(cellData.rotation ? { textRotation: cellData.rotation } : null),
+                            };
                         }
 
                         if (cellData.border) {
@@ -2922,6 +2999,45 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // =====================================================================
 
     const focusGrid = () => requestAnimationFrame(() => gridContainerRef.current?.focus());
+
+    // --- Full-screen view ---
+    // FullScreenFrame moves the sheet's DOM between the page and a body-level
+    // overlay, which resets the grid's scroll offset and drops focus — so the
+    // offset is captured before the move and restored (and the grid refocused)
+    // right after it. FullScreenFrame's own layout effect, which does the move,
+    // runs before this one since it's a child.
+    const savedGridScroll = useRef(null);
+    const toggleFullScreen = useCallback((next) => {
+        const el = gridContainerRef.current;
+        savedGridScroll.current = el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+        setIsFullScreen((v) => (typeof next === "boolean" ? next : !v));
+    }, []);
+    const exitFullScreen = useCallback(() => toggleFullScreen(false), [toggleFullScreen]);
+    useLayoutEffect(() => {
+        const el = gridContainerRef.current;
+        const saved = savedGridScroll.current;
+        if (!el || !saved) return;
+        el.scrollTop = saved.top;
+        el.scrollLeft = saved.left;
+        setScrollTop(el.scrollTop);
+        savedGridScroll.current = null;
+        el.focus({ preventScroll: true });
+    }, [isFullScreen]);
+
+    // In full screen the grid fills whatever height is left under the ribbon /
+    // formula bar and above the sheet tabs, instead of the fixed inline cap.
+    const [gridAreaEl, setGridAreaEl] = useState(null);
+    const [gridAreaHeight, setGridAreaHeight] = useState(0);
+    useEffect(() => {
+        if (!gridAreaEl || !isFullScreen) return;
+        const update = () => setGridAreaHeight(gridAreaEl.clientHeight);
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(gridAreaEl);
+        return () => ro.disconnect();
+    }, [gridAreaEl, isFullScreen]);
+    // -2 for the grid wrapper's top/bottom border.
+    const gridMaxHeight = isFullScreen && gridAreaHeight > 0 ? Math.max(120, gridAreaHeight - 2) : 560;
 
     const guardEditable = () => {
         if (readOnly) return false;
@@ -3694,6 +3810,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 return;
             case "Escape":
                 handled();
+                // Nothing left to clear → Escape leaves full screen, so a first
+                // press collapses the selection and a second one exits.
+                if (isFullScreen && selection.start === activeCell && selection.end === activeCell
+                    && clipboard?.type !== "cut" && !formatPainterStyle && !selectedMediaId) {
+                    exitFullScreen();
+                    return;
+                }
                 setSelection({ start: activeCell, end: activeCell });
                 setClipboard((c) => (c?.type === "cut" ? null : c));
                 setFormatPainterStyle(null);
@@ -3740,7 +3863,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [selectionBounds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
     const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
-    const ribbonBtnClass = (active) => cn("h-7 w-7 cursor-pointer", active && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100");
 
     const defaultPivotSourceRange = selectionBounds
         ? `${getCellId(selectionBounds.minRow, selectionBounds.minCol)}:${getCellId(selectionBounds.maxRow, selectionBounds.maxCol)}`
@@ -3755,7 +3877,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }
 
     return (
-        <div className="w-full" ref={rootRef} onKeyDown={handleKeyDown}>
+        <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Spreadsheet" icon={IconTable}>
+        <div
+            className={cn("w-full", isFullScreen && "flex-1 min-h-0 flex flex-col [&>*]:shrink-0 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden")}
+            ref={rootRef}
+            onKeyDown={handleKeyDown}
+        >
             {!readOnly && (
             <>
             {/* Quick access row */}
@@ -3817,6 +3944,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 >
                     {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
                 </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 cursor-pointer text-slate-500 hover:bg-slate-100 shrink-0"
+                    onClick={() => toggleFullScreen()}
+                    title={isFullScreen ? "Exit full screen (Esc)" : "Full screen"}
+                >
+                    {isFullScreen ? <IconMinimize className="w-4 h-4" /> : <IconMaximize className="w-4 h-4" />}
+                </Button>
+            </div>
+
+            {/* Ribbon tabs — Home mirrors Excel's Home tab; Insert holds PivotTable / media */}
+            <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
+                {[["home", "Home"], ["insert", "Insert"]].map(([key, label]) => (
+                    <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setRibbonTab(key); setIsToolbarExpanded(true); }}
+                        className={cn(
+                            "relative px-3 pt-1.5 pb-2 text-[13px] cursor-pointer rounded-t-sm hover:bg-slate-100",
+                            ribbonTab === key && isToolbarExpanded ? "text-[#107C41] font-semibold" : "text-slate-600"
+                        )}
+                    >
+                        {label}
+                        {ribbonTab === key && isToolbarExpanded && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-[#107C41]" />}
+                    </button>
+                ))}
             </div>
 
             {/* Ribbon */}
@@ -3824,27 +3978,367 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 "transition-all duration-300 ease-in-out overflow-hidden",
                 isToolbarExpanded ? "max-h-[160px] opacity-100" : "max-h-0 opacity-0"
             )}>
-            <div className="flex flex-wrap items-start border-b border-slate-200 bg-slate-50/60 overflow-x-auto">
-                <RibbonGroup label="Clipboard">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("copy")} title="Copy (Ctrl+C)"><IconCopy className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => copySelection("cut")} title="Cut (Ctrl+X)"><IconCut className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={handlePaste} disabled={!clipboard} title="Paste (Ctrl+V)"><IconClipboard className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => setPasteSpecialOpen(true)} disabled={!clipboard} title="Paste Special (Ctrl+Alt+V)"><IconClipboardList className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!formatPainterStyle)} onClick={activateFormatPainter} title="Format Painter — click a cell to apply"><IconBrush className="w-4 h-4" /></Button>
+            {ribbonTab === "home" ? (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {/* Clipboard */}
+                <RibbonGroup label="Clipboard" onLauncher={() => setPasteSpecialOpen(true)} launcherTitle="Paste Special (Ctrl+Alt+V)">
+                    <RibbonSplit
+                        large
+                        title="Paste (Ctrl+V)"
+                        onClick={handlePaste}
+                        disabled={!clipboard}
+                        face={<><IconClipboardText className="w-8 h-8 text-amber-700" strokeWidth={1.4} /><span className="text-xs">Paste</span></>}
+                        menuTitle="Paste options"
+                    >
+                        <MenuItem icon={IconClipboard} label="Paste" shortcut="Ctrl+V" onClick={handlePaste} disabled={!clipboard} />
+                        <MenuItem icon={IconClipboardList} label="Paste Special..." shortcut="Ctrl+Alt+V" onClick={() => setPasteSpecialOpen(true)} disabled={!clipboard} />
+                    </RibbonSplit>
+                    <RibbonStack>
+                        <RibbonBtn title="Cut (Ctrl+X)" onClick={() => copySelection("cut")}><IconScissors className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                        <RibbonDropdown title="Copy (Ctrl+C)" trigger={<IconCopy className="w-4 h-4" strokeWidth={1.5} />}>
+                            <MenuItem icon={IconCopy} label="Copy" shortcut="Ctrl+C" onClick={() => copySelection("copy")} />
+                            <MenuItem icon={IconScissors} label="Cut" shortcut="Ctrl+X" onClick={() => copySelection("cut")} />
+                        </RibbonDropdown>
+                        <RibbonBtn title="Format Painter — click a cell to apply" active={!!formatPainterStyle} onClick={activateFormatPainter}>
+                            <IconBrush className="w-4 h-4 text-amber-600" strokeWidth={1.5} />
+                        </RibbonBtn>
+                    </RibbonStack>
                 </RibbonGroup>
 
-                <RibbonGroup label="Insert">
-                    <Button
-                        variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer"
+                {/* Font */}
+                <RibbonGroup label="Font" onLauncher={() => { setFormatCellsTab("font"); setFormatCellsOpen(true); }} launcherTitle="Format Cells: Font (Ctrl+Shift+F)">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow className="gap-1">
+                            <RibbonCombo
+                                className="w-[140px]"
+                                title="Font"
+                                value={activeCellData?.fontFamily || ""}
+                                placeholder="Aptos Narrow"
+                                options={FONT_FAMILIES}
+                                onCommit={setFontFamily}
+                                renderOption={(f) => <span style={{ fontFamily: `${f}, sans-serif` }} className="text-[13px]">{f}</span>}
+                            />
+                            <RibbonCombo
+                                className="w-[58px]"
+                                title="Font Size"
+                                value={activeCellData?.fontSize ?? DEFAULT_FONT_SIZE}
+                                options={FONT_SIZES}
+                                onCommit={setFontSize}
+                                inputMode="numeric"
+                            />
+                            <RibbonBtn title="Increase Font Size" onClick={() => stepFontSize(1)}>
+                                <span className="text-[15px] leading-none text-slate-700">A<sup className="text-[9px] -top-1.5 relative">^</sup></span>
+                            </RibbonBtn>
+                            <RibbonBtn title="Decrease Font Size" onClick={() => stepFontSize(-1)}>
+                                <span className="text-[12px] leading-none text-slate-700">A<sup className="text-[8px] relative -top-1">ˇ</sup></span>
+                            </RibbonBtn>
+                        </RibbonRow>
+                        <RibbonRow className="gap-0.5">
+                            <RibbonBtn title="Bold (Ctrl+B)" active={!!activeCellData?.bold} onClick={() => toggleStyle("bold")}><IconBold className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Italic (Ctrl+I)" active={!!activeCellData?.italic} onClick={() => toggleStyle("italic")}><IconItalic className="w-4 h-4" /></RibbonBtn>
+                            <RibbonSplit
+                                title="Underline (Ctrl+U)"
+                                active={!!activeCellData?.underline}
+                                onClick={() => setUnderlineStyle(true)}
+                                face={<IconUnderline className="w-4 h-4" />}
+                                contentClassName="w-48"
+                            >
+                                <MenuItem label="Underline" checked={activeCellData?.underline === true} icon={IconUnderline} onClick={() => setUnderlineStyle(true)} />
+                                <MenuItem label="Double Underline" checked={activeCellData?.underline === "double"} onClick={() => setUnderlineStyle("double")} style={{ textDecoration: "underline double" }} />
+                                <MenuSeparator />
+                                <MenuItem label="Strikethrough" checked={!!activeCellData?.strike} icon={IconStrikethrough} shortcut="Ctrl+5" onClick={() => toggleStyle("strike")} />
+                            </RibbonSplit>
+                            <RibbonDivider />
+                            <RibbonSplit
+                                title={lastBorderPreset.label}
+                                onClick={() => applyBorderPreset(lastBorderPreset)}
+                                face={<lastBorderPreset.icon className="w-4 h-4" strokeWidth={1.5} />}
+                                menuTitle="Borders"
+                            >
+                                <MenuHeader>Borders</MenuHeader>
+                                {BORDER_PRESETS.map((preset, i) => preset ? (
+                                    <MenuItem key={preset.key} icon={preset.icon} label={preset.label} onClick={() => { setLastBorderPreset(preset); applyBorderPreset(preset); }} />
+                                ) : <MenuSeparator key={`sep-${i}`} />)}
+                                <MenuHeader>Line Style</MenuHeader>
+                                {BORDER_WEIGHTS.map((w) => (
+                                    <MenuItem key={w.value} label={w.label} checked={borderWeight === w.value} onClick={() => setBorderWeight(w.value)} />
+                                ))}
+                                <MenuSeparator />
+                                <MenuItem icon={IconBorderAll} label="More Borders..." onClick={() => { setFormatCellsTab("border"); setFormatCellsOpen(true); }} />
+                            </RibbonSplit>
+                            <RibbonDivider />
+                            <ColorSplitButton
+                                title="Fill Color"
+                                icon={<IconBucketDroplet className="w-4 h-4" strokeWidth={1.5} />}
+                                color={lastFillColor}
+                                value={activeCellData?.bg}
+                                onApply={(c) => { setLastFillColor(c); setBg(c); }}
+                                autoLabel="No Fill"
+                                onAuto={() => setBg(undefined)}
+                                autoIcon={IconX}
+                            />
+                            <ColorSplitButton
+                                title="Font Color"
+                                icon={<span className="text-[14px] font-semibold leading-[14px] text-slate-800">A</span>}
+                                color={lastFontColor}
+                                value={activeCellData?.color}
+                                onApply={(c) => { setLastFontColor(c); setColor(c); }}
+                                autoLabel="Automatic"
+                                onAuto={() => setColor(undefined)}
+                            />
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+
+                {/* Alignment */}
+                <RibbonGroup label="Alignment" onLauncher={() => { setFormatCellsTab("alignment"); setFormatCellsOpen(true); }} launcherTitle="Format Cells: Alignment">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow>
+                            <RibbonBtn title="Top Align" active={activeCellData?.valign === "top"} onClick={() => setValign("top")}><IconLayoutAlignTop className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Middle Align" active={!activeCellData?.valign || activeCellData?.valign === "middle"} onClick={() => setValign("middle")}><IconLayoutAlignMiddle className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Bottom Align" active={activeCellData?.valign === "bottom"} onClick={() => setValign("bottom")}><IconLayoutAlignBottom className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonDropdown title="Orientation" trigger={<IconTextOrientation className="w-4 h-4 text-slate-700" strokeWidth={1.5} />} contentClassName="w-60">
+                                {ORIENTATION_OPTIONS.map((o) => (
+                                    <MenuItem key={o.value} label={o.label} checked={activeCellData?.rotation === o.value} onClick={() => setRotation(o.value)} />
+                                ))}
+                                <MenuSeparator />
+                                <MenuItem icon={IconTextOrientation} label="Format Cell Alignment" onClick={() => { setFormatCellsTab("alignment"); setFormatCellsOpen(true); }} />
+                            </RibbonDropdown>
+                        </RibbonRow>
+                        <RibbonRow>
+                            <RibbonBtn title="Align Left" active={activeCellData?.align === "left" || !activeCellData?.align} onClick={() => setAlign("left")}><IconAlignLeft className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Center" active={activeCellData?.align === "center"} onClick={() => setAlign("center")}><IconAlignCenter className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Align Right" active={activeCellData?.align === "right"} onClick={() => setAlign("right")}><IconAlignRight className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Decrease Indent" disabled={!activeCellData?.indent} onClick={() => adjustIndent(-1)}><IconIndentDecrease className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Increase Indent" onClick={() => adjustIndent(1)}><IconIndentIncrease className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                        </RibbonRow>
+                    </RibbonStack>
+                    <RibbonDivider />
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow>
+                            <RibbonBtn title="Wrap Text" active={!!activeCellData?.wrap} onClick={toggleWrap}><IconTextWrap className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                        </RibbonRow>
+                        <RibbonRow>
+                            <RibbonSplit title="Merge & Center" onClick={mergeCenter} face={<IconArrowAutofitWidth className="w-4 h-4 text-blue-700" strokeWidth={1.5} />} menuTitle="Merge options" contentClassName="w-48">
+                                <MenuItem icon={IconArrowAutofitWidth} label="Merge & Center" onClick={mergeCenter} />
+                                <MenuItem icon={IconLayoutGrid} label="Unmerge Cells" onClick={unmergeCells} />
+                            </RibbonSplit>
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+
+                {/* Number */}
+                <RibbonGroup label="Number" onLauncher={() => { setFormatCellsTab("number"); setFormatCellsOpen(true); }} launcherTitle="Format Cells: Number">
+                    <RibbonStack className="gap-1 justify-start pt-1">
+                        <RibbonDropdown
+                            title="Number Format"
+                            buttonClassName="w-[118px] justify-between border border-slate-300 bg-white hover:bg-white hover:border-slate-400"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{NUMBER_FORMATS.find((f) => f.value === (activeCellData?.numberFormat || "general"))?.label || "General"}</span>}
+                            contentClassName="w-52 max-h-80 overflow-y-auto"
+                        >
+                            {NUMBER_FORMATS.map((f) => (
+                                <MenuItem key={f.value} label={f.label} checked={(activeCellData?.numberFormat || "general") === f.value} onClick={() => setNumberFormat(f.value)} />
+                            ))}
+                            <MenuSeparator />
+                            <MenuItem label="More Number Formats..." onClick={() => { setFormatCellsTab("number"); setFormatCellsOpen(true); }} />
+                        </RibbonDropdown>
+                        <RibbonRow className="gap-0.5">
+                            <RibbonSplit title="Accounting Number Format" onClick={() => setNumberFormat("accounting")} face={<IconCash className="w-4 h-4 text-emerald-700" strokeWidth={1.5} />} contentClassName="w-52">
+                                <MenuItem label="Accounting" checked={activeCellData?.numberFormat === "accounting"} onClick={() => setNumberFormat("accounting")} />
+                                <MenuItem label="Currency" checked={activeCellData?.numberFormat === "currency"} onClick={() => setNumberFormat("currency")} />
+                                <MenuSeparator />
+                                <MenuItem label="More Accounting Formats..." onClick={() => { setFormatCellsTab("number"); setFormatCellsOpen(true); }} />
+                            </RibbonSplit>
+                            <RibbonBtn title="Percent Style (Ctrl+Shift+%)" onClick={() => setNumberFormat("percentage")}><IconPercentage className="w-4 h-4" strokeWidth={1.75} /></RibbonBtn>
+                            <RibbonBtn title="Comma Style" onClick={() => setNumberFormat("comma")}><span className="text-[17px] font-bold leading-none -mt-1.5">,</span></RibbonBtn>
+                        </RibbonRow>
+                        <RibbonRow className="gap-0.5">
+                            <RibbonBtn title="Increase Decimal" onClick={() => adjustDecimals(1)}><DecimalIcon increase /></RibbonBtn>
+                            <RibbonBtn title="Decrease Decimal" onClick={() => adjustDecimals(-1)}><DecimalIcon /></RibbonBtn>
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+
+                {/* Styles */}
+                <RibbonGroup label="Styles">
+                    <RibbonStack className="items-start">
+                        <RibbonDropdown title="Conditional Formatting" trigger={<><CondFormatIcon /><span className="text-xs">Conditional Formatting</span></>} contentClassName="w-64 p-2">
+                            <MenuClose>{(close) => (
+                                <div className="space-y-2">
+                                    <div className="text-[11px] font-semibold text-slate-600">Highlight Cells Rules — value is:</div>
+                                    <div className="flex items-center gap-1">
+                                        <select className="h-7 text-xs border border-slate-200 rounded px-1 cursor-pointer" value={condOperator} onChange={(e) => setCondOperator(e.target.value)}>
+                                            <option value=">">Greater Than</option>
+                                            <option value="<">Less Than</option>
+                                            <option value=">=">Greater or Equal</option>
+                                            <option value="<=">Less or Equal</option>
+                                            <option value="=">Equal To</option>
+                                        </select>
+                                        <input type="number" className="h-7 text-xs border border-slate-200 rounded px-1.5 w-16" value={condThreshold} onChange={(e) => setCondThreshold(e.target.value)} placeholder="value" />
+                                        <input type="color" className="w-6 h-6 cursor-pointer" value={condColor} onChange={(e) => setCondColor(e.target.value)} title="Highlight color" />
+                                    </div>
+                                    <div className="flex gap-1.5">
+                                        <Button size="sm" className="h-7 text-xs flex-1 cursor-pointer" onClick={() => { addConditionalRule(); close(); }}>Apply</Button>
+                                        <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={() => { clearConditionalRules(); close(); }}>Clear Rules</Button>
+                                    </div>
+                                </div>
+                            )}</MenuClose>
+                        </RibbonDropdown>
+                        <RibbonDropdown title="Format as Table (Ctrl+T)" trigger={<><FormatTableIcon /><span className="text-xs">Format as Table</span></>} contentClassName="w-64 p-2">
+                            <MenuClose>{(close) => (
+                                <div className="space-y-2">
+                                    <div className="text-[11px] font-semibold text-slate-500">Table Styles</div>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {TABLE_STYLE_PRESETS.map((preset) => (
+                                            <button
+                                                key={preset.key}
+                                                title={preset.label}
+                                                onClick={() => setSelectedTableStyleKey(preset.key)}
+                                                className={cn(
+                                                    "rounded p-0.5 cursor-pointer border",
+                                                    selectedTableStyleKey === preset.key ? "border-indigo-500 ring-1 ring-indigo-300" : "border-transparent hover:border-slate-200"
+                                                )}
+                                            >
+                                                <TableStyleSwatch preset={preset} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <label className="flex items-center gap-2 px-1 pt-1 cursor-pointer">
+                                        <Checkbox checked={tableFiltersEnabled} onCheckedChange={(v) => setTableFiltersEnabled(!!v)} />
+                                        <span className="text-xs text-slate-700 select-none">My table has filter buttons</span>
+                                    </label>
+                                    <Button
+                                        size="sm"
+                                        className="w-full h-7 text-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white"
+                                        onClick={() => { applyTable(selectedTableStyleKey, tableFiltersEnabled); close(); }}
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
+                            )}</MenuClose>
+                        </RibbonDropdown>
+                        <RibbonDropdown title="Cell Styles" trigger={<><CellStylesIcon /><span className="text-xs">Cell Styles</span></>} contentClassName="w-72 p-2">
+                            <MenuClose>{(close) => (
+                                <div className="grid grid-cols-3 gap-1.5">
+                                    {CELL_STYLE_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.key}
+                                            className="h-8 px-2 text-xs text-left border border-slate-200 hover:outline hover:outline-2 hover:outline-amber-400 cursor-pointer truncate"
+                                            style={{
+                                                backgroundColor: preset.style.bg || "#fff",
+                                                color: preset.style.color || "#0f172a",
+                                                fontWeight: preset.style.bold ? 700 : 400,
+                                                borderTop: preset.style.border?.top ? "2px solid #334155" : undefined,
+                                            }}
+                                            onClick={() => { applyCellStylePreset(preset); close(); }}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}</MenuClose>
+                        </RibbonDropdown>
+                    </RibbonStack>
+                </RibbonGroup>
+
+                {/* Cells */}
+                <RibbonGroup label="Cells">
+                    <RibbonStack className="items-start">
+                        <RibbonSplit title="Insert (Ctrl++)" onClick={() => insertDeleteShortcut("insert")} disabled={isSheetReadOnly} face={<><IconTablePlus className="w-4 h-4 text-blue-700" strokeWidth={1.5} /><span className="text-xs ml-1">Insert</span></>}>
+                            <MenuItem icon={IconTablePlus} label="Insert Cells..." shortcut="Ctrl++" onClick={() => setInsertDeleteMode("insert")} />
+                            <MenuItem icon={IconRowInsertTop} label="Insert Sheet Rows" onClick={() => runInsertDelete("insert", "rows")} />
+                            <MenuItem icon={IconColumnInsertLeft} label="Insert Sheet Columns" onClick={() => runInsertDelete("insert", "cols")} />
+                            <MenuSeparator />
+                            <MenuItem icon={IconRowInsertBottom} label="Insert Row Below" onClick={() => insertRowAt(parseCellRef(activeCell).row + 1)} />
+                            <MenuItem icon={IconColumnInsertRight} label="Insert Column Right" onClick={() => insertColumnAt(parseCellRef(activeCell).col + 1)} />
+                            <MenuItem icon={IconPlus} label="Add Row at End" onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} />
+                            <MenuItem icon={IconPlus} label="Add Column at End" onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} />
+                            <MenuSeparator />
+                            <MenuItem icon={IconTable} label="Insert Sheet" shortcut="Shift+F11" onClick={addSheet} />
+                        </RibbonSplit>
+                        <RibbonSplit title="Delete (Ctrl+-)" onClick={() => insertDeleteShortcut("delete")} disabled={isSheetReadOnly} face={<><IconTableMinus className="w-4 h-4 text-red-600" strokeWidth={1.5} /><span className="text-xs ml-1">Delete</span></>}>
+                            <MenuItem icon={IconTableMinus} label="Delete Cells..." shortcut="Ctrl+-" onClick={() => setInsertDeleteMode("delete")} />
+                            <MenuItem icon={IconRowRemove} label="Delete Sheet Rows" onClick={() => runInsertDelete("delete", "rows")} />
+                            <MenuItem icon={IconColumnRemove} label="Delete Sheet Columns" onClick={() => runInsertDelete("delete", "cols")} />
+                            <MenuSeparator />
+                            <MenuItem icon={IconTrash} label="Delete Sheet" onClick={() => deleteSheet(activeSheetName)} />
+                        </RibbonSplit>
+                        <RibbonDropdown title="Format" trigger={<><IconTableOptions className="w-4 h-4 text-slate-700" strokeWidth={1.5} /><span className="text-xs ml-1">Format</span></>} contentClassName="w-60">
+                            <MenuHeader>Cell Size</MenuHeader>
+                            <MenuItem label="AutoFit Row Height" shortcut="Alt+H, O, A" onClick={autoFitRows} />
+                            <MenuItem label="AutoFit Column Width" shortcut="Alt+H, O, I" onClick={autoFitColumns} />
+                            <MenuHeader>Visibility</MenuHeader>
+                            <MenuItem label="Hide Rows" shortcut="Ctrl+9" onClick={hideSelectedRows} />
+                            <MenuItem label="Unhide Rows" shortcut="Ctrl+Shift+9" onClick={unhideSelectedRows} />
+                            <MenuItem label="Hide Columns" shortcut="Ctrl+0" onClick={hideSelectedColumns} />
+                            <MenuItem label="Unhide Columns" shortcut="Ctrl+Shift+0" onClick={unhideSelectedColumns} />
+                            <MenuHeader>Organize Sheets</MenuHeader>
+                            <MenuItem label="Rename Sheet" shortcut="Alt+O, H, R" onClick={() => startRenameSheet(activeSheetName)} />
+                            <MenuItem label="Hide Sheet" shortcut="Alt+O, H, H" onClick={() => hideSheet(activeSheetName)} />
+                            <MenuItem label="Unhide Sheet..." shortcut="Alt+O, H, U" onClick={() => setUnhideSheetOpen(true)} disabled={hiddenSheetNames.length === 0} />
+                            <MenuSeparator />
+                            <MenuItem icon={IconTableOptions} label="Format Cells..." shortcut="Ctrl+1" onClick={() => setFormatCellsOpen(true)} />
+                        </RibbonDropdown>
+                    </RibbonStack>
+                </RibbonGroup>
+
+                {/* Editing */}
+                <RibbonGroup label="Editing">
+                    <RibbonStack className="items-start">
+                        <RibbonSplit title="AutoSum (Alt+=)" onClick={() => insertAutoSum("SUM")} face={<IconSum className="w-4 h-4" strokeWidth={1.75} />} contentClassName="w-44">
+                            {AUTOSUM_FUNCS.map((fn) => (
+                                <MenuItem key={fn} label={fn === "SUM" ? "Sum" : fn === "AVERAGE" ? "Average" : fn === "COUNT" ? "Count Numbers" : fn === "MAX" ? "Max" : "Min"} onClick={() => insertAutoSum(fn)} />
+                            ))}
+                            <MenuSeparator />
+                            <MenuItem label="More Functions... (VLOOKUP)" onClick={() => startEditing(activeCell, "=VLOOKUP(lookup_value, table_array, col_index_num, FALSE)")} />
+                        </RibbonSplit>
+                        <RibbonDropdown title="Fill" trigger={<IconArrowBarToDown className="w-4 h-4 text-blue-700" strokeWidth={1.5} />} contentClassName="w-44">
+                            <MenuItem icon={IconArrowBarToDown} label="Down" shortcut="Ctrl+D" onClick={() => fillFromEdge("down")} />
+                            <MenuItem icon={IconArrowBarToRight} label="Right" shortcut="Ctrl+R" onClick={() => fillFromEdge("right")} />
+                        </RibbonDropdown>
+                        <RibbonDropdown title="Clear" trigger={<IconEraser className="w-4 h-4 text-pink-500" strokeWidth={1.5} />} contentClassName="w-44">
+                            <MenuItem icon={IconEraser} label="Clear All" onClick={clearAll} />
+                            <MenuItem icon={IconClearFormatting} label="Clear Formats" onClick={clearFormats} />
+                            <MenuItem label="Clear Contents" shortcut="Del" onClick={() => { if (guardEditable()) clearSelectedCells(); }} />
+                        </RibbonDropdown>
+                    </RibbonStack>
+                    <RibbonDropdown large title="Sort & Filter" trigger={<><SortFilterIcon /><span className="text-xs leading-tight text-center">Sort &amp;<br />Filter <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span></>} contentClassName="w-52">
+                        <MenuItem icon={IconSortAscending} label="Sort A to Z" onClick={() => sortSelection("asc")} />
+                        <MenuItem icon={IconSortDescending} label="Sort Z to A" onClick={() => sortSelection("desc")} />
+                        <MenuSeparator />
+                        <MenuItem icon={IconFilter} label="Filter" shortcut="Ctrl+Shift+L" onClick={toggleAutoFilter} />
+                    </RibbonDropdown>
+                    <RibbonDropdown large title="Find & Select" trigger={<><IconSearch className="w-7 h-7 text-slate-700" strokeWidth={1.4} /><span className="text-xs leading-tight text-center">Find &amp;<br />Select <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span></>} contentClassName="w-48" align="end">
+                        <MenuItem icon={IconSearch} label="Find..." shortcut="Ctrl+F" onClick={() => openFind(false)} />
+                        <MenuItem icon={IconReplace} label="Replace..." shortcut="Ctrl+H" onClick={() => openFind(true)} disabled={readOnly} />
+                        <MenuItem icon={IconArrowForward} label="Go To..." shortcut="Ctrl+G" onClick={() => setGoToOpen(true)} />
+                    </RibbonDropdown>
+                </RibbonGroup>
+            </div>
+            ) : (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                <RibbonGroup label="Tables">
+                    <RibbonBtn
+                        className="h-full flex-col px-2 gap-1"
                         title={isSheetReadOnly ? "Switch to a non-PivotTable sheet to insert a PivotTable" : "Insert PivotTable from the current selection"}
                         disabled={isSheetReadOnly}
                         onClick={openCreatePivotDialog}
                     >
-                        <IconTable className="w-4 h-4" /> PivotTable
-                    </Button>
+                        <IconTable className="w-7 h-7 text-emerald-700" strokeWidth={1.4} />
+                        <span className="text-xs">PivotTable</span>
+                    </RibbonBtn>
+                    <RibbonBtn className="h-full flex-col px-2 gap-1" title="Table (Ctrl+T)" onClick={() => applyTable(selectedTableStyleKey, true)}>
+                        <FormatTableIcon className="w-7 h-7" />
+                        <span className="text-xs">Table</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+                <RibbonGroup label="Illustrations">
                     <Popover open={imagePopoverOpen} onOpenChange={setImagePopoverOpen}>
                         <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert image"><IconPhoto className="w-4 h-4" /> Image</Button>
+                            <RibbonBtn className="h-full flex-col px-2 gap-1" title="Insert picture">
+                                <IconPhoto className="w-7 h-7 text-blue-700" strokeWidth={1.4} />
+                                <span className="text-xs">Pictures <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span>
+                            </RibbonBtn>
                         </PopoverTrigger>
                         <PopoverContent className="w-64 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
                             <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1">Image URL</div>
@@ -3871,9 +4365,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             />
                         </PopoverContent>
                     </Popover>
+                </RibbonGroup>
+                <RibbonGroup label="Media">
                     <Popover open={videoPopoverOpen} onOpenChange={setVideoPopoverOpen}>
                         <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert video"><IconVideo className="w-4 h-4" /> Video</Button>
+                            <RibbonBtn className="h-full flex-col px-2 gap-1" title="Insert video">
+                                <IconVideo className="w-7 h-7 text-red-600" strokeWidth={1.4} />
+                                <span className="text-xs">Video <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span>
+                            </RibbonBtn>
                         </PopoverTrigger>
                         <PopoverContent className="w-64 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
                             <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1">Video URL</div>
@@ -3901,256 +4400,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         </PopoverContent>
                     </Popover>
                 </RibbonGroup>
-
-                <RibbonGroup label="Font">
-                    <select className="h-7 text-[11px] border border-slate-200 rounded px-1 bg-white text-slate-700 w-24 cursor-pointer" value={activeCellData?.fontFamily || ""} onChange={(e) => setFontFamily(e.target.value)} title="Font family">
-                        <option value="">Default</option>
-                        {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                    <select className="h-7 text-[11px] border border-slate-200 rounded px-1 bg-white text-slate-700 w-12 cursor-pointer" value={activeCellData?.fontSize || ""} onChange={(e) => setFontSize(e.target.value)} title="Font size">
-                        <option value="">Size</option>
-                        {FONT_SIZES.map((sz) => <option key={sz} value={sz}>{sz}</option>)}
-                    </select>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.bold)} onClick={() => toggleStyle("bold")} title="Bold"><IconBold className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.italic)} onClick={() => toggleStyle("italic")} title="Italic"><IconItalic className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.underline)} onClick={() => toggleStyle("underline")} title="Underline"><IconUnderline className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.strike)} onClick={() => toggleStyle("strike")} title="Strikethrough"><IconStrikethrough className="w-4 h-4" /></Button>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" title="Borders"><IconBorderOuter className="w-4 h-4" /></Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-48 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
-                            <div>
-                                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1 mb-1">Weight</div>
-                                <div className="flex gap-1">
-                                    {BORDER_WEIGHTS.map((w) => (
-                                        <button
-                                            key={w.value}
-                                            className={cn(
-                                                "flex-1 text-[11px] px-1.5 py-1 rounded border cursor-pointer",
-                                                borderWeight === w.value ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                                            )}
-                                            onClick={() => setBorderWeight(w.value)}
-                                        >
-                                            {w.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="border-t border-slate-100 pt-1.5">
-                                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1 mb-1">Apply To</div>
-                                {BORDER_SIDE_OPTIONS.map((opt) => (
-                                    <button key={opt.key} className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => applyBorderSides(opt)}>
-                                        <opt.icon className="w-3.5 h-3.5 shrink-0" />
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                    <label className="flex items-center h-7 px-1 rounded hover:bg-slate-100 cursor-pointer" title="Font color">
-                        <IconPalette className="w-4 h-4 text-slate-600" />
-                        <input type="color" className="w-4 h-4 border-0 p-0 bg-transparent cursor-pointer" value={activeCellData?.color || "#0f172a"} onChange={(e) => setColor(e.target.value)} />
-                    </label>
-                    <label className="flex items-center gap-0.5 h-7 px-1 rounded hover:bg-slate-100 cursor-pointer" title="Fill color">
-                        <div className="w-3.5 h-3.5 rounded-sm border border-slate-300" style={{ backgroundColor: activeCellData?.bg || "#ffffff" }} />
-                        <input type="color" className="w-4 h-4 border-0 p-0 bg-transparent cursor-pointer" value={activeCellData?.bg || "#ffffff"} onChange={(e) => setBg(e.target.value)} />
-                    </label>
-                </RibbonGroup>
-
-                <RibbonGroup label="Alignment">
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.valign === "top")} onClick={() => setValign("top")} title="Align top"><IconLayoutAlignTop className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!activeCellData?.valign || activeCellData?.valign === "middle")} onClick={() => setValign("middle")} title="Align middle"><IconLayoutAlignMiddle className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.valign === "bottom")} onClick={() => setValign("bottom")} title="Align bottom"><IconLayoutAlignBottom className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.align === "left" || !activeCellData?.align)} onClick={() => setAlign("left")} title="Align left"><IconAlignLeft className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.align === "center")} onClick={() => setAlign("center")} title="Align center"><IconAlignCenter className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(activeCellData?.align === "right")} onClick={() => setAlign("right")} title="Align right"><IconAlignRight className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className={ribbonBtnClass(!!activeCellData?.wrap)} onClick={toggleWrap} title="Wrap text"><IconTextWrap className="w-4 h-4" /></Button>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer flex items-center gap-0.5" title="Merge options">
-                                Merge <IconChevronDown className="w-3 h-3 text-slate-400" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-36 p-1 bg-white border border-slate-200 shadow-md rounded-lg flex flex-col z-[100]" align="start">
-                            <Button variant="ghost" size="sm" className="justify-start text-[11px] h-7 cursor-pointer w-full text-left font-normal hover:bg-slate-100" onClick={mergeCenter}>
-                                Merge & Center
-                            </Button>
-                            <Button variant="ghost" size="sm" className="justify-start text-[11px] h-7 cursor-pointer w-full text-left font-normal hover:bg-slate-100" onClick={unmergeCells}>
-                                Unmerge Cells
-                            </Button>
-                        </PopoverContent>
-                    </Popover>
-                </RibbonGroup>
-
-                <RibbonGroup label="Number">
-                    <select className="h-7 text-[11px] border border-slate-200 rounded px-1 bg-white text-slate-700 w-24 cursor-pointer" value={activeCellData?.numberFormat || "general"} onChange={(e) => setNumberFormat(e.target.value)} title="Number format">
-                        {NUMBER_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                    </select>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => setNumberFormat("currency")} title="Currency"><IconCurrencyDollar className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => setNumberFormat("percentage")} title="Percent"><IconPercentage className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 text-xs font-semibold cursor-pointer" onClick={() => setNumberFormat("comma")} title="Comma">,</Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => adjustDecimals(1)} title="Increase decimal"><IconChevronUp className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => adjustDecimals(-1)} title="Decrease decimal"><IconChevronDown className="w-3.5 h-3.5" /></Button>
-                </RibbonGroup>
-
-                <RibbonGroup label="Styles">
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Conditional formatting">Cond. Format</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-60 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
-                            <div className="text-[11px] font-semibold text-slate-600">Highlight cells in selection where value:</div>
-                            <div className="flex items-center gap-1">
-                                <select className="h-7 text-xs border border-slate-200 rounded px-1 cursor-pointer" value={condOperator} onChange={(e) => setCondOperator(e.target.value)}>
-                                    <option value=">">&gt;</option>
-                                    <option value="<">&lt;</option>
-                                    <option value=">=">&ge;</option>
-                                    <option value="<=">&le;</option>
-                                    <option value="=">=</option>
-                                </select>
-                                <input type="number" className="h-7 text-xs border border-slate-200 rounded px-1.5 w-16" value={condThreshold} onChange={(e) => setCondThreshold(e.target.value)} placeholder="value" />
-                                <input type="color" className="w-6 h-6" value={condColor} onChange={(e) => setCondColor(e.target.value)} />
-                            </div>
-                            <div className="flex gap-1.5">
-                                <Button size="sm" className="h-7 text-xs flex-1 cursor-pointer" onClick={addConditionalRule}>Apply</Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={clearConditionalRules}>Clear All</Button>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                    <Popover open={tableStylePopoverOpen} onOpenChange={setTableStylePopoverOpen}>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Format as table"><IconTable className="w-4 h-4" /> Table</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-64 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
-                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1">Table Style</div>
-                            <div className="grid grid-cols-4 gap-1.5">
-                                {TABLE_STYLE_PRESETS.map((preset) => (
-                                    <button
-                                        key={preset.key}
-                                        title={preset.label}
-                                        onClick={() => setSelectedTableStyleKey(preset.key)}
-                                        className={cn(
-                                            "rounded p-0.5 cursor-pointer border",
-                                            selectedTableStyleKey === preset.key ? "border-indigo-500 ring-1 ring-indigo-300" : "border-transparent hover:border-slate-200"
-                                        )}
-                                    >
-                                        <TableStyleSwatch preset={preset} />
-                                    </button>
-                                ))}
-                            </div>
-                            <label className="flex items-center gap-2 px-1 pt-1 cursor-pointer">
-                                <Checkbox checked={tableFiltersEnabled} onCheckedChange={(v) => setTableFiltersEnabled(!!v)} />
-                                <span className="text-xs text-slate-700 select-none">Enable column filters</span>
-                            </label>
-                            <Button
-                                size="sm"
-                                className="w-full h-7 text-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white"
-                                onClick={() => { applyTable(selectedTableStyleKey, tableFiltersEnabled); setTableStylePopoverOpen(false); }}
-                            >
-                                Apply
-                            </Button>
-                        </PopoverContent>
-                    </Popover>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Cell styles">Cell Styles</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-40 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
-                            {CELL_STYLE_PRESETS.map((preset) => (
-                                <button key={preset.key} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => applyCellStylePreset(preset)}>
-                                    {preset.label}
-                                </button>
-                            ))}
-                        </PopoverContent>
-                    </Popover>
-                </RibbonGroup>
-
-                <RibbonGroup label="Cells">
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Insert"><IconRowInsertBottom className="w-4 h-4" /> Insert</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-44 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertRowAt(parseCellRef(activeCell).row)}><IconRowInsertTop className="w-3.5 h-3.5" /> Row Above</button>
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertRowAt(parseCellRef(activeCell).row + 1)}><IconRowInsertBottom className="w-3.5 h-3.5" /> Row Below</button>
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertColumnAt(parseCellRef(activeCell).col)}><IconColumnInsertLeft className="w-3.5 h-3.5" /> Column Left</button>
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertColumnAt(parseCellRef(activeCell).col + 1)}><IconColumnInsertRight className="w-3.5 h-3.5" /> Column Right</button>
-                        </PopoverContent>
-                    </Popover>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Delete"><IconTrash className="w-4 h-4" /> Delete</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-40 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => deleteRowAt(parseCellRef(activeCell).row)}><IconRowRemove className="w-3.5 h-3.5" /> Delete Row</button>
-                            <button className="w-full flex items-center gap-1.5 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => deleteColumnAt(parseCellRef(activeCell).col)}><IconColumnRemove className="w-3.5 h-3.5" /> Delete Column</button>
-                        </PopoverContent>
-                    </Popover>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="Format, hide & unhide"><IconArrowsHorizontal className="w-4 h-4" /> Format</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
-                            {[
-                                ["Format Cells…", "Ctrl+Shift+F", () => setFormatCellsOpen(true)],
-                                ["AutoFit Column Width", "Alt+H, O, I", autoFitColumns],
-                                ["AutoFit Row Height", "Alt+H, O, A", autoFitRows],
-                                null,
-                                ["Hide Rows", "Ctrl+9", hideSelectedRows],
-                                ["Unhide Rows", "Ctrl+Shift+9", unhideSelectedRows],
-                                ["Hide Columns", "Ctrl+0", hideSelectedColumns],
-                                ["Unhide Columns", "Ctrl+Shift+0", unhideSelectedColumns],
-                                null,
-                                ["Rename Sheet", "Alt+O, H, R", () => startRenameSheet(activeSheetName)],
-                                ["Hide Sheet", "Alt+O, H, H", () => hideSheet(activeSheetName)],
-                                ["Unhide Sheet…", "Alt+O, H, U", () => setUnhideSheetOpen(true)],
-                            ].map((item, i) => item ? (
-                                <button
-                                    key={item[0]}
-                                    className="w-full flex items-center justify-between gap-2 text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer disabled:opacity-40 disabled:hover:bg-transparent"
-                                    onClick={item[2]}
-                                    disabled={item[0] === "Unhide Sheet…" && hiddenSheetNames.length === 0}
-                                >
-                                    {item[0]}
-                                    <span className="text-[10px] text-slate-400 font-mono">{item[1]}</span>
-                                </button>
-                            ) : <div key={`sep-${i}`} className="my-1 border-t border-slate-100" />)}
-                        </PopoverContent>
-                    </Popover>
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} title="Add column at end"><IconPlus className="w-3.5 h-3.5" /> Col</Button>
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" disabled={isSheetReadOnly} onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} title="Add row at end"><IconPlus className="w-3.5 h-3.5" /> Row</Button>
-                </RibbonGroup>
-
-                <RibbonGroup label="Editing">
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-1.5 cursor-pointer" title="AutoSum"><IconSum className="w-4 h-4" /> AutoSum</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-40 p-1 bg-white border border-slate-200 shadow-md rounded-lg" align="start">
-                            {AUTOSUM_FUNCS.map((fn) => (
-                                <button key={fn} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer" onClick={() => insertAutoSum(fn)}>{fn}</button>
-                            ))}
-                            <div className="my-1 border-t border-slate-100" />
-                            <button
-                                className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 cursor-pointer"
-                                onClick={() => startEditing(activeCell, "=VLOOKUP(lookup_value, table_array, col_index_num, FALSE)")}
-                                title="Insert a VLOOKUP template"
-                            >
-                                VLOOKUP...
-                            </button>
-                        </PopoverContent>
-                    </Popover>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => sortSelection("asc")} title="Sort ascending by leftmost column"><IconSortAscending className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => sortSelection("desc")} title="Sort descending by leftmost column"><IconSortDescending className="w-4 h-4" /></Button>
-                    <Button
-                        variant="ghost" size="sm" className={cn("h-7 text-[11px] px-1.5 cursor-pointer", showFindReplace && "bg-indigo-100 text-indigo-700 hover:bg-indigo-100")}
-                        onClick={() => setShowFindReplace((v) => !v)} title="Find & Select"
-                    >
-                        <IconSearch className="w-4 h-4" /> Find
-                    </Button>
-                </RibbonGroup>
             </div>
+            )}
             </div>
             </>
             )}
@@ -4267,12 +4518,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             </div>
 
             {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
-            <div className="flex items-start gap-2">
+            <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")}>
             <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 min-w-0">
                 <div
                     ref={gridContainerRef}
                     className="overflow-auto outline-none select-none"
-                    style={{ maxHeight: 560 / zoom, zoom }}
+                    style={{ maxHeight: gridMaxHeight / zoom, zoom }}
                     tabIndex={0}
                     onMouseLeave={() => setHoveredCell(null)}
                 >
@@ -4696,6 +4947,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 >
                     {Math.round(zoom * 100)}%
                 </button>
+                <button
+                    className="p-1 rounded hover:bg-slate-200 text-slate-600 cursor-pointer transition-colors"
+                    onClick={() => toggleFullScreen()}
+                    title={isFullScreen ? "Exit full screen (Esc)" : "Full screen"}
+                >
+                    {isFullScreen ? <IconMinimize className="w-3.5 h-3.5" /> : <IconMaximize className="w-3.5 h-3.5" />}
+                </button>
             </div>
             </div>
 
@@ -4750,7 +5008,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             <PasteSpecialDialog open={pasteSpecialOpen} onOpenChange={(open) => { setPasteSpecialOpen(open); if (!open) focusGrid(); }} onApply={applyPasteSpecial} />
             <FormatCellsDialog
                 open={formatCellsOpen}
-                onOpenChange={(open) => { setFormatCellsOpen(open); if (!open) focusGrid(); }}
+                onOpenChange={(open) => { setFormatCellsOpen(open); if (!open) { setFormatCellsTab(null); focusGrid(); } }}
+                initialTab={formatCellsTab}
                 cell={activeCellData}
                 sampleValue={rawGrid[activeCell]}
                 numberFormats={NUMBER_FORMATS}
@@ -4772,6 +5031,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 onUnhide={unhideSheet}
             />
         </div>
+        </FullScreenFrame>
     );
 });
 

@@ -93,8 +93,9 @@ function StockShape({ x, y, width, height, payload }) {
 }
 
 // Returns a recharts element (not a component) so it can sit directly inside ResponsiveContainer.
+// `labelText` / `labelFill` carry the Format tab's Data Labels font (see ExcelGraph).
 // eslint-disable-next-line react-refresh/only-export-components
-export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, legend, mini }) {
+export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, categoryAxisProps = {}, legend, mini, labelText = { fontSize: 10 }, labelFill = (fallback) => fallback }) {
     const margin = mini ? { top: 4, right: 4, left: 4, bottom: 4 } : { top: 8, right: 16, left: -8, bottom: 0 };
     const grid = !mini && cfg.showGridlines;
     const labels = !mini && cfg.showDataLabels;
@@ -145,11 +146,11 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <BarChart data={bins} margin={margin} barCategoryGap={1}>
                     {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} hide={mini} />
-                    <YAxis {...axisProps} width={40} allowDecimals={false} hide={mini} />
+                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
+                    <YAxis {...axisProps} allowDecimals={false} hide={mini} />
                     {tooltip}
                     <Bar dataKey="count" fill={colorFor(0)} isAnimationActive={!mini}>
-                        {labels && <LabelList dataKey="count" position="top" fill={INK} fontSize={10} />}
+                        {labels && <LabelList dataKey="count" position="top" fill={labelFill(INK)} {...labelText} />}
                     </Bar>
                 </BarChart>
             );
@@ -166,12 +167,12 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <ComposedChart data={rows} margin={margin}>
                     {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} hide={mini} />
-                    <YAxis yAxisId="left" {...axisProps} width={40} hide={mini} />
-                    <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v) => `${v}%`} {...axisProps} width={40} hide={mini} />
+                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
+                    <YAxis yAxisId="left" {...axisProps} hide={mini} />
+                    <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v) => `${v}%`} {...axisProps} hide={mini} />
                     {tooltip}
                     <Bar yAxisId="left" dataKey="value" fill={colorFor(0)} maxBarSize={40} isAnimationActive={!mini}>
-                        {labels && <LabelList dataKey="value" position="top" fill={INK} fontSize={10} />}
+                        {labels && <LabelList dataKey="value" position="top" fill={labelFill(INK)} {...labelText} />}
                     </Bar>
                     <Line yAxisId="right" type="linear" dataKey="cumulative" stroke={colorFor(1)} strokeWidth={2} dot={mini ? false : { r: 3 }} isAnimationActive={!mini} />
                 </ComposedChart>
@@ -193,8 +194,8 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <BarChart data={boxes} margin={margin}>
                     {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} hide={mini} />
-                    <YAxis {...axisProps} width={40} domain={["auto", "auto"]} hide={mini} />
+                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
+                    <YAxis {...axisProps} domain={["auto", "auto"]} hide={mini} />
                     {tooltip}
                     <Bar dataKey="range" shape={<BoxShape />} isAnimationActive={false}>
                         {boxes.map((b, i) => <Cell key={i} fill={b.fill} />)}
@@ -218,7 +219,7 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
                 <ScatterChart margin={margin}>
                     {grid && <CartesianGrid stroke={GRID} />}
                     <XAxis type="number" dataKey="x" name="X" domain={["auto", "auto"]} {...axisProps} hide={mini} />
-                    <YAxis type="number" dataKey="y" name="Y" domain={["auto", "auto"]} {...axisProps} width={40} hide={mini} />
+                    <YAxis type="number" dataKey="y" name="Y" domain={["auto", "auto"]} {...axisProps} hide={mini} />
                     {bubble && <ZAxis type="number" dataKey="z" range={mini ? [20, 200] : [60, 1400]} />}
                     {tooltip}
                     {!bubble && legend}
@@ -236,7 +237,7 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
                             lineJointType={lineJoint}
                             isAnimationActive={!mini}
                         >
-                            {labels && <LabelList dataKey="y" position="top" fill={INK} fontSize={10} />}
+                            {labels && <LabelList dataKey="y" position="top" fill={labelFill(INK)} {...labelText} />}
                         </Scatter>
                     ))}
                 </ScatterChart>
@@ -253,13 +254,13 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <BarChart data={rows} margin={margin}>
                     {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} hide={mini} />
-                    <YAxis {...axisProps} width={40} hide={mini} />
+                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
+                    <YAxis {...axisProps} hide={mini} />
                     {tooltip}
                     <ReferenceLine y={0} stroke="#c3c2b7" />
                     <Bar dataKey="range" maxBarSize={40} isAnimationActive={!mini}>
                         {rows.map((r, i) => <Cell key={i} fill={r.fill} />)}
-                        {labels && <LabelList dataKey="value" position="top" fill={INK} fontSize={10} />}
+                        {labels && <LabelList dataKey="value" position="top" fill={labelFill(INK)} {...labelText} />}
                     </Bar>
                 </BarChart>
             );
@@ -274,7 +275,7 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <BarChart data={rows} layout="vertical" margin={margin} barCategoryGap={mini ? 1 : 4}>
                     <XAxis type="number" domain={[0, max]} hide />
-                    <YAxis type="category" dataKey="name" {...axisProps} width={mini ? 0 : 80} hide={mini} />
+                    <YAxis type="category" dataKey="name" {...axisProps} width={mini ? 0 : axisProps.width * 2} hide={mini} />
                     {tooltip}
                     <Bar dataKey="range" fill={colorFor(0)} isAnimationActive={!mini}>
                         {!mini && <LabelList dataKey="value" position="center" fill="#fff" fontSize={11} fontWeight={600} />}
@@ -291,8 +292,8 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <BarChart data={rows} margin={margin}>
                     {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} hide={mini} />
-                    <YAxis {...axisProps} width={40} domain={["auto", "auto"]} hide={mini} />
+                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
+                    <YAxis {...axisProps} domain={["auto", "auto"]} hide={mini} />
                     {tooltip}
                     <Bar dataKey="range" shape={<StockShape />} isAnimationActive={false} />
                 </BarChart>
@@ -303,8 +304,8 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, l
             return (
                 <RadarChart data={data} margin={margin} outerRadius={mini ? "85%" : "75%"}>
                     <PolarGrid stroke={GRID} />
-                    <PolarAngleAxis dataKey="name" tick={mini ? false : { fill: "#898781", fontSize: 11 }} />
-                    {!mini && <PolarRadiusAxis tick={{ fill: "#898781", fontSize: 10 }} axisLine={false} />}
+                    <PolarAngleAxis dataKey="name" tick={mini ? false : axisProps.tick} />
+                    {!mini && <PolarRadiusAxis tick={axisProps.tick} axisLine={false} />}
                     {!mini && <Tooltip />}
                     {legend}
                     {seriesKeys.map((key, i) => (

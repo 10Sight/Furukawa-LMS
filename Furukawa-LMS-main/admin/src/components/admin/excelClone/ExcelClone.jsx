@@ -30,6 +30,7 @@ import {
     evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula
 } from "./formulaEngine";
 import { patternWithDecimals } from "./numberFormatCatalog";
+import { parseDateTimeText } from "./formulaValues";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { cn } from "@/lib/utils";
@@ -4253,12 +4254,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         >
             {!readOnly && (
             <>
+            {/* Save floats at the bottom-left of the window so it stays in reach
+                however far the sheet is scrolled. z-[45]: above the meeting
+                view, below dialogs and the chart's full-screen overlay. */}
+            <Button
+                onClick={handleSave}
+                disabled={isSaving}
+                title="Save (Ctrl+S)"
+                className="fixed left-4 bottom-4 z-[45] h-10 px-4 rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+            >
+                {isSaving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
+                {isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}
+            </Button>
             {/* Quick access row */}
             <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-white rounded-t-lg">
-                <Button size="sm" onClick={handleSave} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 cursor-pointer">
-                    {isSaving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
-                    Save{isDirty ? " *" : ""}
-                </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={undo} disabled={historyPast.current.length === 0} title="Undo (Ctrl+Z)">
                     <IconArrowBackUp className="w-4 h-4" />
                 </Button>
@@ -5426,7 +5435,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 onOpenChange={(open) => { setFormatCellsOpen(open); if (!open) { setFormatCellsTab(null); focusGrid(); } }}
                 initialTab={formatCellsTab}
                 cell={activeCellData}
-                sampleValue={rawGrid[activeCell]}
+                sampleValue={typeof rawGrid[activeCell] === "string" ? (parseDateTimeText(rawGrid[activeCell]) ?? rawGrid[activeCell]) : rawGrid[activeCell]}
                 fontFamilies={FONT_FAMILIES}
                 fontSizes={FONT_SIZES}
                 borderWeights={BORDER_WEIGHTS}

@@ -10,7 +10,7 @@
 
 import {
     ERR, err, FormulaError, Matrix, MISSING, toScalar,
-    toNumber, toText, compareValues, fixFloat, nowSerial, formatGeneral,
+    toNumber, toText, compareValues, fixFloat, nowSerial, formatGeneral, parseDateTimeText,
 } from "./formulaValues";
 import { FUNCTIONS, RESULT_FORMAT_HINTS } from "./formulaFunctions";
 import { formatWithPattern, DATE_FORMAT_PATTERN, TIME_FORMAT_PATTERN, DATETIME_FORMAT_PATTERN } from "./formulaFormat";
@@ -733,7 +733,12 @@ export const evaluateSheet = (cells, options = {}) => {
         } else {
             const trimmed = String(v).trim();
             const num = /^-?\d+(\.\d+)?$/.test(trimmed) ? parseFloat(trimmed) : NaN;
-            display[id] = isNaN(num) ? String(v) : applyNumberFormat(num, cell);
+            // A typed or imported date is stored as text ("2024-03-14"). Once
+            // the cell is given a number format, show it through that format
+            // the way a date produced by a formula would be.
+            const dateSerial = isNaN(num) && cell.numberFormat && cell.numberFormat !== "text" ? parseDateTimeText(trimmed) : null;
+            if (dateSerial !== null) display[id] = applyNumberFormat(dateSerial, cell);
+            else display[id] = isNaN(num) ? String(v) : applyNumberFormat(num, cell);
             raw[id] = isNaN(num) ? v : num;
         }
     }

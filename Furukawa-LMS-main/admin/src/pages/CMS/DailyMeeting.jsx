@@ -840,8 +840,9 @@ export default function DailyMeeting() {
     // charts and spreadsheet: page header, department sidebar and the admin
     // settings panel are hidden so the workspace gets the full width.
     const isMeetingOpen = !!searchParams.get("meeting");
-    // The department list starts hidden so the sections get the full width;
-    // the "Departments" button in the header shows or hides it.
+    // The department list and the admin settings panel start hidden so the
+    // sections get the full page; the header's department button shows or
+    // hides both together.
     const [isDeptSidebarOpen, setIsDeptSidebarOpen] = useState(false);
     const activeDeptName = departments.find((d) => String(d.id || d._id) === activeDeptId)?.name;
 
@@ -881,7 +882,7 @@ export default function DailyMeeting() {
                         className="cursor-pointer flex items-center gap-1.5"
                         aria-expanded={isDeptSidebarOpen}
                         onClick={() => setIsDeptSidebarOpen((open) => !open)}
-                        title={isDeptSidebarOpen ? "Hide the department list" : "Show the department list"}
+                        title={isDeptSidebarOpen ? "Hide the department list and settings" : "Show the department list and settings"}
                     >
                         <IconFolder className="w-4 h-4 text-slate-500" />
                         <span className="max-w-48 truncate">{activeDeptName || "Departments"}</span>
@@ -957,7 +958,7 @@ export default function DailyMeeting() {
                                 <TabsContent key={deptId} value={deptId} className="space-y-6 mt-0">
                                     {isAdmin ? (
                                         <>
-                                            {!isMeetingOpen && (
+                                            {!isMeetingOpen && isDeptSidebarOpen && (
                                                 <AdminConfigPanel
                                                     departmentId={deptId}
                                                     sections={sections}

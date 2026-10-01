@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { IconChevronDown, IconArrowDownRight, IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -286,6 +286,9 @@ export const RibbonCombo = ({ value, placeholder, options, onCommit, className, 
     const commit = (v) => { if (String(v) !== String(value ?? "")) onCommit(v); };
     return (
         <Popover open={open} onOpenChange={setOpen}>
+            {/* The list hangs off the whole box (not just the chevron), so it
+                lines up with it and is exactly as wide unless an option needs more. */}
+            <PopoverAnchor asChild>
             <div className={cn("flex items-stretch h-6 border border-slate-300 rounded-sm bg-white hover:border-slate-400 focus-within:border-indigo-500", className)} title={title}>
                 <input
                     className="flex-1 min-w-0 px-1.5 text-xs text-slate-800 bg-transparent outline-none"
@@ -306,7 +309,8 @@ export const RibbonCombo = ({ value, placeholder, options, onCommit, className, 
                     </button>
                 </PopoverTrigger>
             </div>
-            <PopoverContent className="w-auto min-w-[var(--radix-popover-trigger-width)] max-h-72 overflow-y-auto p-1 bg-white border border-slate-200 shadow-lg rounded-md" align="end">
+            </PopoverAnchor>
+            <PopoverContent className="w-auto min-w-[var(--radix-popover-trigger-width)] max-h-72 overflow-y-auto p-1 bg-white border border-slate-200 shadow-lg rounded-md" align="start">
                 {options.map((opt) => (
                     <button
                         key={opt}

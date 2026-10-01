@@ -321,7 +321,10 @@ export const saveMeetingSheet = async (req, res) => {
         if (expectedVersion !== null && !Number.isInteger(expectedVersion)) {
             return res.status(400).json({ success: false, message: "Invalid version" });
         }
-        const existing = await DailyMorningMeeting.findById(id);
+        // A save never needs the stored workbook: it is neither read back
+        // before the write nor echoed in the response (the client keeps the
+        // copy it just sent and only takes the new version from here).
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -330,19 +333,18 @@ export const saveMeetingSheet = async (req, res) => {
         }
 
         const workbook = normalizeWorkbook({ sheets: sheets || {}, activeSheet });
-        const meeting = await DailyMorningMeeting.updateSheetData(id, workbook, expectedVersion);
+        const meeting = await DailyMorningMeeting.updateSheetData(id, workbook, expectedVersion, { withSheetData: false });
         if (!meeting) {
             return res.status(409).json({
                 success: false,
                 message: "This spreadsheet was changed in another tab or by another user. Reload to get the latest version before saving."
             });
         }
-        const parsedData = normalizeWorkbook(parseSheetData(meeting.sheetData));
 
         return res.status(200).json({
             success: true,
             message: "Spreadsheet saved successfully",
-            data: { ...formatMeetingRow(meeting), sheets: parsedData.sheets, activeSheet: parsedData.activeSheet }
+            data: { ...formatMeetingRow(meeting), activeSheet: workbook.activeSheet }
         });
     } catch (error) {
         logger.error("Error in saveMeetingSheet:", error);

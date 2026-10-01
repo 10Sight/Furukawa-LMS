@@ -8,7 +8,9 @@ import {
     IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette,
     IconLayoutAlignTop, IconLayoutAlignBottom, IconLayoutAlignLeft, IconLayoutAlignRight, IconEyeOff,
     IconChevronDown, IconChevronUp, IconMaximize, IconMinimize, IconChartBar,
-    IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal
+    IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal,
+    IconBold, IconItalic, IconUnderline, IconBucketDroplet, IconRestore,
+    IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowRight, IconAlignLeft, IconAlignCenter, IconAlignRight
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -24,6 +26,7 @@ import FullScreenFrame from "./FullScreenFrame";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
     RibbonGroup, RibbonBtn, RibbonDropdown, RibbonSplit, MenuItem, MenuSeparator, MenuHeader, MenuClose,
+    RibbonStack, RibbonRow, RibbonDivider, RibbonCombo, ColorSplitButton,
 } from "./ribbonParts";
 import {
     CHART_VARIANTS, CHART_FAMILIES, RIBBON_CHART_MENUS, variantType, comboSettingsForPreset, familyOfVariant,
@@ -277,11 +280,16 @@ const RECHARTS_LABEL_POSITION = {
     combo: { above: "top", below: "bottom", center: "center" },
 };
 
-const resolveLabelPosition = (config) => {
-    const family = labelFamily(config.type);
-    const key = config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[family];
-    return RECHARTS_LABEL_POSITION[family]?.[key] || "top";
+// Which label-position family one series belongs to: in a combo chart a column
+// series takes the column positions and a line/area series the above/below ones.
+const seriesLabelFamily = (config, seriesIndex) => {
+    if (config.type !== "combo") return labelFamily(config.type);
+    return getComboSeriesSettings(config, config.valueCols?.[seriesIndex], seriesIndex).type === "column" ? "columnGrouped" : "combo";
 };
+// Chart types whose data labels can be set series by series.
+const supportsSeriesLabels = (type) => !!RECHARTS_LABEL_POSITION[labelFamily(type)];
+// px each click of a label nudge arrow moves a series' labels.
+const LABEL_NUDGE_STEP = 4;
 
 // Pie labels are positioned via a render-prop (radius fraction + optional
 // leader line), not recharts' `position` enum — resolved separately in the
@@ -290,11 +298,47 @@ const resolvePieLabelPosition = (config) => (
     config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[config.type]
 );
 
+// --- Format tab: chart text ---
+// The pieces of chart text that can be styled, in the order Excel's "Chart
+// Elements" box lists them. "all" (Chart Area) styles every piece at once.
+const TEXT_ELEMENTS = [
+    { key: "all", label: "Chart Area" },
+    { key: "title", label: "Chart Title" },
+    { key: "axis", label: "Axis Labels" },
+    { key: "labels", label: "Data Labels" },
+    { key: "legend", label: "Legend" },
+];
+// How each piece looks until it is styled. Data labels have no fixed color:
+// they are white inside a bar and dark outside it.
+const TEXT_DEFAULTS = {
+    title: { fontSize: 14, bold: true, color: "#0f172a" },
+    axis: { fontSize: 11, color: INK_MUTED },
+    labels: { fontSize: 10 },
+    legend: { fontSize: 11, color: INK_SECONDARY },
+};
+// Same lists as the spreadsheet's Home > Font group.
+const CHART_FONT_FAMILIES = [
+    "Aptos Narrow", "Aptos", "Arial", "Calibri", "Cambria", "Candara", "Consolas", "Courier New",
+    "Georgia", "Segoe UI", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
+];
+const CHART_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
+// `cfg.textStyles` holds { all, title, axis, labels, legend }, each a partial
+// { fontFamily, fontSize, bold, italic, underline, color }.
+const textStyleFor = (cfg, element) => ({ ...TEXT_DEFAULTS[element], ...cfg?.textStyles?.all, ...cfg?.textStyles?.[element] });
+// The style as font attributes — valid both as SVG <text> props and as CSS.
+const fontPropsFor = (style) => ({
+    fontSize: style.fontSize,
+    fontFamily: style.fontFamily ? `"${style.fontFamily}", sans-serif` : undefined,
+    fontWeight: style.bold ? 700 : undefined,
+    fontStyle: style.italic ? "italic" : undefined,
+    textDecoration: style.underline ? "underline" : undefined,
+});
+
 const RADIAN = Math.PI / 180;
 // recharts' Pie `label` render-prop: returning a plain string only supports
 // its own default (outside) placement, so inside/center positions need a
 // custom <text> computed from the slice's own radius/angle.
-function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position) {
+function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position, labelText, labelFill) {
     const radius = position === "insideEnd" ? innerRadius + (outerRadius - innerRadius) * 0.88
         : position === "center" ? innerRadius + (outerRadius - innerRadius) * 0.5
         : outerRadius + 18; // outsideEnd
@@ -302,19 +346,26 @@ function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent },
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     const isOutside = position === "outsideEnd";
     return (
-        <text x={x} y={y} fill={isOutside ? INK_SECONDARY : "#ffffff"} fontSize={10} textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"} dominantBaseline="central">
+        <text x={x} y={y} fill={labelFill(isOutside ? INK_SECONDARY : "#ffffff")} {...labelText} textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"} dominantBaseline="central">
             {`${Math.round(percent * 100)}%`}
         </text>
     );
 }
 
-const legendPropsFor = (legendPosition) => {
+// `legendAlign` ("start" | "center" | "end") slides the legend along the side
+// it sits on: left/center/right for a top or bottom legend, top/middle/bottom
+// for one at the left or right.
+const LEGEND_ALIGN_HORIZONTAL = { start: "left", center: "center", end: "right" };
+const LEGEND_ALIGN_VERTICAL = { start: "top", center: "middle", end: "bottom" };
+const legendPropsFor = (legendPosition, legendAlign = "center") => {
+    const along = LEGEND_ALIGN_HORIZONTAL[legendAlign] || "center";
+    const down = LEGEND_ALIGN_VERTICAL[legendAlign] || "middle";
     switch (legendPosition) {
-        case "top": return { verticalAlign: "top", align: "center", layout: "horizontal" };
-        case "left": return { verticalAlign: "middle", align: "left", layout: "vertical" };
-        case "right": return { verticalAlign: "middle", align: "right", layout: "vertical" };
+        case "top": return { verticalAlign: "top", align: along, layout: "horizontal" };
+        case "left": return { verticalAlign: down, align: "left", layout: "vertical" };
+        case "right": return { verticalAlign: down, align: "right", layout: "vertical" };
         case "bottom":
-        default: return { verticalAlign: "bottom", align: "center", layout: "horizontal" };
+        default: return { verticalAlign: "bottom", align: along, layout: "horizontal" };
     }
 };
 
@@ -349,6 +400,65 @@ const getComboSeriesSettings = (config, col, index) => {
 // Per-series chart types a combo chart can mix (the renderer's three marks).
 const COMBO_SERIES_TYPES = [["column", "Clustered Column"], ["line", "Line"], ["area", "Area"]];
 
+// --- Category (X axis) labels ---
+// Every category's label is always written. A label gets one line of up to
+// CATEGORY_LINE_CHARS characters in its own slot; longer names wrap onto up to
+// CATEGORY_MAX_LINES lines, and only what still doesn't fit ends in "…" (the
+// full name shows on hover).
+const CATEGORY_LINE_CHARS = 16;
+const CATEGORY_MAX_LINES = 3;
+const CATEGORY_SLOT_MIN = 60; // px per category at the default font, before labels widen it
+const CATEGORY_LABEL_GAP = 18; // px of air between neighbouring labels
+
+// How the chart's category labels will be set: the widest line a slot is
+// sized for, and how many lines the longest name needs at that width.
+const categoryLabelLayout = (cfg, data) => {
+    const fontSize = textStyleFor(cfg, "axis").fontSize;
+    const charWidth = fontSize * 0.58;
+    const longest = (data || []).reduce((max, row) => Math.max(max, String(row.name ?? "").length), 0);
+    const lineChars = Math.min(CATEGORY_LINE_CHARS, Math.max(longest, 1));
+    const lines = Math.min(CATEGORY_MAX_LINES, Math.max(1, Math.ceil(longest / CATEGORY_LINE_CHARS)));
+    return { fontSize, charWidth, longest, lineChars, lines, lineHeight: Math.round(fontSize * 1.2) };
+};
+
+// Greedy word wrap to `maxChars` per line; an over-long word is split, and
+// text beyond `maxLines` is cut with an ellipsis.
+const wrapLabel = (text, maxChars, maxLines) => {
+    const lines = [];
+    let current = "";
+    const push = () => { if (current) { lines.push(current); current = ""; } };
+    for (let word of String(text).split(/\s+/).filter(Boolean)) {
+        while (word.length > maxChars) {
+            push();
+            lines.push(word.slice(0, maxChars));
+            word = word.slice(maxChars);
+        }
+        if (current && current.length + 1 + word.length > maxChars) push();
+        current = current ? `${current} ${word}` : word;
+    }
+    push();
+    if (lines.length <= maxLines) return lines;
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = `${kept[maxLines - 1].slice(0, Math.max(1, maxChars - 1))}…`;
+    return kept;
+};
+
+// recharts X-axis tick that wraps to the width of its own slot.
+function CategoryTick({ x, y, payload, width, visibleTicksCount, textStyle, layout }) {
+    // Without a measured axis width, fall back to the line the slots were sized for.
+    const slot = width > 0 ? width / Math.max(1, visibleTicksCount || 1) - CATEGORY_LABEL_GAP / 2 : 0;
+    const maxChars = slot > 0 ? Math.max(3, Math.floor(slot / layout.charWidth)) : layout.lineChars;
+    const lines = wrapLabel(payload?.value ?? "", maxChars, CATEGORY_MAX_LINES);
+    return (
+        <text x={x} y={y} textAnchor="middle" fill={textStyle.color} {...fontPropsFor(textStyle)}>
+            <title>{String(payload?.value ?? "")}</title>
+            {lines.map((line, i) => (
+                <tspan key={i} x={x} dy={i === 0 ? Math.round(layout.fontSize * 0.9) : layout.lineHeight}>{line}</tspan>
+            ))}
+        </text>
+    );
+}
+
 // Chart types whose categories run left to right along the X axis; only these
 // grow wider (and scroll) as categories are added.
 const HORIZONTAL_CATEGORY_TYPES = new Set([
@@ -362,7 +472,22 @@ const chartMinWidth = (cfg, { data, seriesKeys }) => {
     const barsPerCategory = cfg.type === "columnGrouped" ? seriesKeys.length
         : cfg.type === "combo" ? seriesKeys.filter((_, i) => getComboSeriesSettings(cfg, cfg.valueCols[i], i).type === "column").length
             : 1;
-    return data.length * Math.max(44, barsPerCategory * 14 + 12) + 80;
+    // Bigger axis or data-label fonts need a wider slot per category.
+    const axisScale = textStyleFor(cfg, "axis").fontSize / TEXT_DEFAULTS.axis.fontSize;
+    const barWidth = cfg.showDataLabels ? Math.max(14, textStyleFor(cfg, "labels").fontSize * 2.2) : 14;
+    // ...and a slot wide enough for one full line of its category label.
+    const { lineChars, charWidth } = categoryLabelLayout(cfg, data);
+    const slot = Math.max(CATEGORY_SLOT_MIN * axisScale, barsPerCategory * barWidth + 16, lineChars * charWidth + CATEGORY_LABEL_GAP);
+    return Math.round(data.length * slot + 80 * axisScale);
+};
+// The inline chart is 320px tall at the default fonts and grows by what larger
+// axis and legend text take, so the plot itself keeps its size.
+const chartHeight = (cfg, data) => {
+    const label = categoryLabelLayout(cfg, data);
+    const wrapExtra = HORIZONTAL_CATEGORY_TYPES.has(cfg.type) ? (label.lines - 1) * label.lineHeight : 0;
+    const axisExtra = Math.max(0, textStyleFor(cfg, "axis").fontSize - TEXT_DEFAULTS.axis.fontSize) * 2.7 + wrapExtra;
+    const legendExtra = Math.max(0, textStyleFor(cfg, "legend").fontSize - TEXT_DEFAULTS.legend.fontSize) * 2;
+    return Math.round(320 + axisExtra + legendExtra);
 };
 
 function ChartTooltip({ active, payload, label }) {
@@ -692,7 +817,10 @@ function ExcelGraph({ excelData, onChartsChange }) {
     const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const exitFullScreen = useCallback(() => setIsFullScreen(false), []);
-    const [ribbonTab, setRibbonTab] = useState("insert"); // "insert" | "design"
+    const [ribbonTab, setRibbonTab] = useState("insert"); // "insert" | "design" | "format"
+    const [formatTarget, setFormatTarget] = useState("all"); // key of TEXT_ELEMENTS
+    const [lastFontColor, setLastFontColor] = useState("#FF0000");
+    const [lastFillColor, setLastFillColor] = useState("#FFFF00");
     // Insert Chart dialog: the tab it opened on and the family shown under All Charts.
     const [insertDialog, setInsertDialog] = useState(null); // { tab: "recommended" | "all", family }
 
@@ -714,6 +842,68 @@ function ExcelGraph({ excelData, onChartsChange }) {
         const nextCharts = charts.map((c) => (c.id === config.id ? { ...c, ...patch } : c));
         onChartsChange?.(nextCharts);
     }, [charts, config, onChartsChange]);
+
+    // A series is picked as "series:<id>" (its id is its column letter / row
+    // number). Fonts have no per-series setting, so with a series selected the
+    // Font group edits the data labels as a whole.
+    const targetSeriesId = formatTarget.startsWith("series:") ? formatTarget.slice(7) : null;
+    const targetSeriesIndex = targetSeriesId === null ? -1 : (config?.valueCols || []).indexOf(targetSeriesId);
+    const textTarget = targetSeriesId === null ? formatTarget : "labels";
+    const targetSeriesLabel = (targetSeriesId !== null && config?.seriesLabels?.[targetSeriesId]) || {};
+    const setSeriesLabel = (patch) => {
+        if (!config || targetSeriesId === null) return;
+        applyConfig({ seriesLabels: { ...config.seriesLabels, [targetSeriesId]: { ...targetSeriesLabel, ...patch } } });
+    };
+    const nudgeSeriesLabel = (dx, dy) => setSeriesLabel({ show: true, dx: (targetSeriesLabel.dx || 0) + dx, dy: (targetSeriesLabel.dy || 0) + dy });
+
+    // Format tab: the selected element's current look, and a setter that
+    // writes to it. Styling the Chart Area replaces that property on every
+    // element, as in Excel; an empty value puts the default back.
+    // Chart Area has no text of its own, so its Font Size box shows the axis
+    // labels' current size rather than sitting empty.
+    const targetStyle = textTarget === "all"
+        ? { ...config?.textStyles?.all, fontSize: config?.textStyles?.all?.fontSize ?? textStyleFor(config, "axis").fontSize }
+        : textStyleFor(config, textTarget);
+    const setTextStyle = (patch) => {
+        if (!config) return;
+        const styles = { ...(config.textStyles || {}) };
+        const target = { ...(styles[textTarget] || {}) };
+        for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined || value === null || value === "") delete target[key];
+            else target[key] = value;
+        }
+        styles[textTarget] = target;
+        if (textTarget === "all") {
+            for (const element of Object.keys(TEXT_DEFAULTS)) {
+                if (!styles[element]) continue;
+                styles[element] = { ...styles[element] };
+                for (const key of Object.keys(patch)) delete styles[element][key];
+            }
+        }
+        applyConfig({ textStyles: styles });
+    };
+    const setTextFontSize = (value) => {
+        const size = Number(value);
+        if (value === "" || value === undefined) setTextStyle({ fontSize: undefined });
+        else if (Number.isFinite(size) && size >= 1 && size <= 409) setTextStyle({ fontSize: size });
+        else toast.error("Font size must be between 1 and 409.");
+    };
+    // Grow/Shrink Font step through the size list, like Excel's A^ / Aˇ.
+    const stepTextFontSize = (direction) => {
+        const stepped = (current) => (direction > 0
+            ? CHART_FONT_SIZES.find((size) => size > current)
+            : [...CHART_FONT_SIZES].reverse().find((size) => size < current)) ?? current;
+        if (textTarget !== "all") { setTextStyle({ fontSize: stepped(targetStyle.fontSize) }); return; }
+        // On the Chart Area every piece of text moves one step from its own
+        // size, so the title stays larger than the labels.
+        const styles = { ...(config.textStyles || {}) };
+        for (const element of Object.keys(TEXT_DEFAULTS)) {
+            styles[element] = { ...styles[element], fontSize: stepped(textStyleFor(config, element).fontSize) };
+        }
+        styles.all = { ...styles.all };
+        delete styles.all.fontSize;
+        applyConfig({ textStyles: styles });
+    };
 
     const addChart = (patch = {}) => {
         const newChart = { ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`), ...patch };
@@ -954,19 +1144,71 @@ function ExcelGraph({ excelData, onChartsChange }) {
     const renderChartFor = (cfg, { data, seriesKeys }, mini = false) => {
         if (!cfg) return null;
         const colorFor = (index) => cfg.seriesColors?.[cfg.valueCols[index]] || CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
-        const ax = mini ? { ...commonAxisProps, hide: true } : commonAxisProps;
+        const axisText = textStyleFor(cfg, "axis");
+        // The room each axis reserves grows with its font, so bigger tick
+        // labels push the plot in instead of being clipped. `width` is read
+        // by the Y axis and `height` by the X axis.
+        const axisScale = axisText.fontSize / TEXT_DEFAULTS.axis.fontSize;
+        const styledAxisProps = {
+            ...commonAxisProps,
+            tick: { fill: axisText.color, ...fontPropsFor(axisText) },
+            width: Math.round(40 * axisScale),
+            height: Math.round(30 * axisScale),
+        };
+        const ax = mini ? { ...styledAxisProps, hide: true } : styledAxisProps;
+        // Category axis: write every label (recharts otherwise drops the ones
+        // that would overlap), wrapped to its slot, with room for the lines.
+        const labelLayout = categoryLabelLayout(cfg, data);
+        const categoryAxis = mini ? {} : {
+            interval: 0,
+            tick: <CategoryTick textStyle={axisText} layout={labelLayout} />,
+            height: Math.round(labelLayout.lines * labelLayout.lineHeight + 12 * axisScale),
+        };
+        const labelStyle = textStyleFor(cfg, "labels");
+        const labelText = fontPropsFor(labelStyle);
+        const labelFill = (fallback) => labelStyle.color || fallback;
+        const legendText = textStyleFor(cfg, "legend");
+        const legendStyle = { color: legendText.color, ...fontPropsFor(legendText) };
         const legendPosition = mini ? "none" : (cfg.legendPosition || "bottom");
-        const showLabels = !mini && cfg.showDataLabels;
+        // `cfg.seriesLabels[seriesId]` = { show, position, dx, dy } overrides the
+        // chart-wide data-label settings for that one series.
+        const seriesLabelOptions = (index) => cfg.seriesLabels?.[cfg.valueCols?.[index]] || {};
+        const showLabels = !mini && (cfg.showDataLabels || Object.values(cfg.seriesLabels || {}).some((o) => o?.show));
         const showGrid = !mini && cfg.showGridlines;
-        const labelPos = resolveLabelPosition(cfg);
-        const margin = mini ? { top: 4, right: 4, left: 4, bottom: 4 } : { top: 8, right: 12, left: -12, bottom: 0 };
+        // The data labels of series `index`, or null when that series shows none.
+        const seriesLabel = (index) => {
+            const options = seriesLabelOptions(index);
+            if (mini || !(options.show ?? cfg.showDataLabels)) return null;
+            const family = seriesLabelFamily(cfg, index);
+            const positions = RECHARTS_LABEL_POSITION[family] || {};
+            const chartWide = cfg.labelPosition && cfg.labelPosition !== "auto" ? cfg.labelPosition : null;
+            const position = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
+            // White on a bar's own fill, dark anywhere else.
+            const insideMark = ["columnGrouped", "columnStacked", "barGrouped", "barStacked"].includes(family) && (position.startsWith("inside") || position === "center");
+            return (
+                <LabelList
+                    key="ll"
+                    dataKey={seriesKeys[index]}
+                    position={position}
+                    dx={options.dx || 0}
+                    dy={options.dy || 0}
+                    fill={labelFill(insideMark ? "#ffffff" : INK_SECONDARY)}
+                    {...labelText}
+                />
+            );
+        };
+        // Headroom for data labels above the tallest mark, and for the last
+        // category label's overhang on the right.
+        const margin = mini
+            ? { top: 4, right: 4, left: 4, bottom: 4 }
+            : { top: showLabels ? Math.max(8, labelStyle.fontSize + 6) : 8, right: Math.round(12 * axisScale), left: -12, bottom: 0 };
         const legend = legendPosition !== "none" && seriesKeys.length > 1
-            ? <Legend wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }} {...legendPropsFor(legendPosition)} />
+            ? <Legend wrapperStyle={legendStyle} {...legendPropsFor(legendPosition, cfg.legendAlign)} />
             : null;
         const percentTick = (v) => `${Math.round(v * 100)}%`;
 
         if (EXTRA_CHART_TYPES.has(cfg.type)) {
-            return renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps: ax, legend, mini });
+            return renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps: ax, categoryAxisProps: categoryAxis, legend, mini, labelText, labelFill });
         }
 
         switch (cfg.type) {
@@ -978,8 +1220,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 return (
                     <BarChart data={data} margin={margin} stackOffset={percent ? "expand" : undefined}>
                         {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...ax} />
-                        <YAxis {...ax} width={40} tickFormatter={percent ? percentTick : undefined} />
+                        <XAxis dataKey="name" {...ax} {...categoryAxis} />
+                        <YAxis {...ax} tickFormatter={percent ? percentTick : undefined} />
                         {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
                         {legend}
                         {seriesKeys.map((key, i) => (
@@ -993,9 +1235,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                                 radius={stacked ? (i === seriesKeys.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]) : [4, 4, 0, 0]}
                             >
                                 {data.map((row, di) => <Cell key={di} fill={pointColorFor(cfg, cfg.valueCols[i], row.name, i)} />)}
-                                {showLabels && (
-                                    <LabelList dataKey={key} position={labelPos} fill={labelPos.startsWith("inside") || labelPos === "center" ? "#ffffff" : INK_SECONDARY} fontSize={10} />
-                                )}
+                                {seriesLabel(i)}
                             </Bar>
                         ))}
                     </BarChart>
@@ -1007,10 +1247,10 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 const stacked = cfg.type !== "barGrouped";
                 const percent = cfg.type === "barPercent";
                 return (
-                    <BarChart data={data} layout="vertical" margin={mini ? margin : { top: 8, right: 20, left: 0, bottom: 0 }} stackOffset={percent ? "expand" : undefined}>
+                    <BarChart data={data} layout="vertical" margin={mini ? margin : { top: 8, right: showLabels ? Math.max(20, labelStyle.fontSize * 3) : 20, left: 0, bottom: 0 }} stackOffset={percent ? "expand" : undefined}>
                         {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} horizontal={false} />}
                         <XAxis type="number" {...ax} tickFormatter={percent ? percentTick : undefined} />
-                        <YAxis dataKey="name" type="category" {...ax} width={70} />
+                        <YAxis dataKey="name" type="category" {...ax} width={Math.round(Math.max(ax.width * 1.75, Math.min(220, labelLayout.longest * labelLayout.charWidth + 14)))} />
                         {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
                         {legend}
                         {seriesKeys.map((key, i) => (
@@ -1024,9 +1264,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                                 radius={stacked ? (i === seriesKeys.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]) : [0, 4, 4, 0]}
                             >
                                 {data.map((row, di) => <Cell key={di} fill={pointColorFor(cfg, cfg.valueCols[i], row.name, i)} />)}
-                                {showLabels && (
-                                    <LabelList dataKey={key} position={labelPos} fill={labelPos.startsWith("inside") || labelPos === "center" ? "#ffffff" : INK_SECONDARY} fontSize={10} />
-                                )}
+                                {seriesLabel(i)}
                             </Bar>
                         ))}
                     </BarChart>
@@ -1042,8 +1280,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 return (
                     <LineChart data={data} margin={margin}>
                         {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...ax} />
-                        <YAxis {...ax} width={40} domain={percent ? [0, 1] : undefined} tickFormatter={percent ? percentTick : undefined} />
+                        <XAxis dataKey="name" {...ax} {...categoryAxis} />
+                        <YAxis {...ax} domain={percent ? [0, 1] : undefined} tickFormatter={percent ? percentTick : undefined} />
                         {!mini && <Tooltip content={<ChartTooltip />} />}
                         {legend}
                         {seriesKeys.map((key, i) => (
@@ -1057,7 +1295,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                                 dot={markers && !mini ? { r: 4, strokeWidth: 2, stroke: CHART_SURFACE, fill: colorFor(i) } : false}
                                 activeDot={{ r: 5, strokeWidth: 2, stroke: CHART_SURFACE }}
                             >
-                                {showLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
+                                {seriesLabel(i)}
                             </Line>
                         ))}
                     </LineChart>
@@ -1071,8 +1309,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 return (
                     <AreaChart data={data} margin={margin} stackOffset={percent ? "expand" : undefined}>
                         {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...ax} />
-                        <YAxis {...ax} width={40} tickFormatter={percent ? percentTick : undefined} />
+                        <XAxis dataKey="name" {...ax} {...categoryAxis} />
+                        <YAxis {...ax} tickFormatter={percent ? percentTick : undefined} />
                         {!mini && <Tooltip content={<ChartTooltip />} />}
                         {legend}
                         {seriesKeys.map((key, i) => (
@@ -1087,7 +1325,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                                 fillOpacity={stacked ? 0.75 : 0.12}
                                 isAnimationActive={!mini}
                             >
-                                {showLabels && <LabelList dataKey={key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />}
+                                {seriesLabel(i)}
                             </Area>
                         ))}
                     </AreaChart>
@@ -1096,13 +1334,11 @@ function ExcelGraph({ excelData, onChartsChange }) {
             case "combo": {
                 const seriesMeta = seriesKeys.map((key, i) => {
                     const col = cfg.valueCols[i];
-                    return { key, ...getComboSeriesSettings(cfg, col, i), color: colorFor(i) };
+                    return { key, index: i, ...getComboSeriesSettings(cfg, col, i), color: colorFor(i) };
                 });
                 const hasRightAxis = seriesMeta.some((s) => s.yAxisId === "right");
                 const renderSeries = (s) => {
-                    const labelList = showLabels && (
-                        <LabelList key="ll" dataKey={s.key} position={labelPos} fill={INK_SECONDARY} fontSize={10} />
-                    );
+                    const labelList = seriesLabel(s.index);
                     if (s.type === "column") {
                         return (
                             <Bar key={s.key} dataKey={s.key} yAxisId={s.yAxisId} fill={s.color} maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={!mini}>
@@ -1136,9 +1372,9 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 return (
                     <ComposedChart data={data} margin={margin}>
                         {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
-                        <XAxis dataKey="name" {...ax} />
-                        <YAxis yAxisId="left" {...ax} width={40} />
-                        {hasRightAxis && <YAxis yAxisId="right" orientation="right" {...ax} width={40} />}
+                        <XAxis dataKey="name" {...ax} {...categoryAxis} />
+                        <YAxis yAxisId="left" {...ax} />
+                        {hasRightAxis && <YAxis yAxisId="right" orientation="right" {...ax} />}
                         {!mini && <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(79,70,229,0.06)" }} />}
                         {legend}
                         {seriesMeta.filter((s) => s.type === "area").map(renderSeries)}
@@ -1156,8 +1392,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                         {!mini && <Tooltip content={<ChartTooltip />} />}
                         {legendPosition !== "none" && (
                             <Legend
-                                wrapperStyle={{ fontSize: 11, color: INK_SECONDARY }}
-                                {...legendPropsFor(legendPosition)}
+                                wrapperStyle={legendStyle}
+                                {...legendPropsFor(legendPosition, cfg.legendAlign)}
                                 payload={data.map((d, i) => ({ value: d.name, type: "circle", color: pieCellColorFor(cfg, key, d.name, i) }))}
                             />
                         )}
@@ -1170,7 +1406,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                             stroke={CHART_SURFACE}
                             strokeWidth={2}
                             isAnimationActive={!mini}
-                            label={showLabels ? (labelProps) => renderPieLabel(labelProps, piePos) : false}
+                            label={showLabels ? (labelProps) => renderPieLabel(labelProps, piePos, labelText, labelFill) : false}
                             labelLine={showLabels && piePos === "outsideEnd"}
                         >
                             {data.map((row, i) => <Cell key={i} fill={pieCellColorFor(cfg, key, row.name, i)} />)}
@@ -1210,6 +1446,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
             <div className="h-full" style={{ minWidth: chartMinWidth(cfg, prepared) }}>{renderChartBody(cfg, prepared)}</div>
         </div>
     );
+
+    const titleText = textStyleFor(config, "title");
 
     return (
         <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Charts" icon={IconChartBar}>
@@ -1290,7 +1528,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
 
             {/* Ribbon tabs — Insert mirrors Excel's Insert > Charts / Sparklines; Chart Design holds the chart's own settings */}
             <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
-                {[["insert", "Insert"], ["design", "Chart Design"]].map(([key, label]) => (
+                {[["insert", "Insert"], ["design", "Chart Design"], ["format", "Format"]].map(([key, label]) => (
                     <button
                         key={key}
                         type="button"
@@ -1400,6 +1638,207 @@ function ExcelGraph({ excelData, onChartsChange }) {
                         </RibbonBtn>
                     ))}
                 </RibbonGroup>
+            </div>
+            ) : ribbonTab === "format" ? (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {!config ? (
+                    <div className="h-[94px] flex items-center px-4 text-xs text-slate-400">Insert a chart first to format it.</div>
+                ) : (
+                <>
+                <RibbonGroup label="Current Selection">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonDropdown
+                            title="Chart Elements: choose which part of the chart to format"
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[190px] max-h-72 overflow-y-auto"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{targetSeriesId === null ? TEXT_ELEMENTS.find((el) => el.key === formatTarget)?.label : `Series "${seriesKeys[targetSeriesIndex] ?? targetSeriesId}"`}</span>}
+                        >
+                            {TEXT_ELEMENTS.map((el) => (
+                                <MenuItem key={el.key} label={el.label} checked={formatTarget === el.key} onClick={() => setFormatTarget(el.key)} />
+                            ))}
+                            {supportsSeriesLabels(config.type) && seriesKeys.length > 0 && (
+                                <>
+                                    <MenuSeparator />
+                                    {seriesKeys.map((name, i) => (
+                                        <MenuItem
+                                            key={config.valueCols[i]}
+                                            label={`Series "${name}"`}
+                                            checked={formatTarget === `series:${config.valueCols[i]}`}
+                                            onClick={() => setFormatTarget(`series:${config.valueCols[i]}`)}
+                                        />
+                                    ))}
+                                </>
+                            )}
+                        </RibbonDropdown>
+                        <RibbonBtn
+                            className="justify-start gap-1.5 px-1.5"
+                            title="Reset to Match Style: clear this chart's custom fonts, fill, label placement and legend alignment"
+                            onClick={() => applyConfig({ textStyles: {}, chartFill: undefined, seriesLabels: {}, legendAlign: undefined })}
+                        >
+                            <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                            <span className="text-xs">Reset to Match Style</span>
+                        </RibbonBtn>
+                    </RibbonStack>
+                </RibbonGroup>
+                <RibbonGroup label="Font">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow className="gap-1">
+                            <RibbonCombo
+                                className="w-[140px]"
+                                title="Font"
+                                value={targetStyle.fontFamily || ""}
+                                placeholder="Aptos Narrow"
+                                options={CHART_FONT_FAMILIES}
+                                onCommit={(fontFamily) => setTextStyle({ fontFamily })}
+                                renderOption={(f) => <span style={{ fontFamily: `${f}, sans-serif` }} className="text-[13px]">{f}</span>}
+                            />
+                            <RibbonCombo
+                                className="w-[58px]"
+                                title="Font Size"
+                                value={targetStyle.fontSize ?? ""}
+                                options={CHART_FONT_SIZES}
+                                onCommit={setTextFontSize}
+                                inputMode="numeric"
+                            />
+                            <RibbonBtn title="Increase Font Size" onClick={() => stepTextFontSize(1)}>
+                                <span className="text-[15px] leading-none text-slate-700">A<sup className="text-[9px] -top-1.5 relative">^</sup></span>
+                            </RibbonBtn>
+                            <RibbonBtn title="Decrease Font Size" onClick={() => stepTextFontSize(-1)}>
+                                <span className="text-[12px] leading-none text-slate-700">A<sup className="text-[8px] relative -top-1">ˇ</sup></span>
+                            </RibbonBtn>
+                        </RibbonRow>
+                        <RibbonRow className="gap-0.5">
+                            <RibbonBtn title="Bold" active={!!targetStyle.bold} onClick={() => setTextStyle({ bold: !targetStyle.bold })}><IconBold className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Italic" active={!!targetStyle.italic} onClick={() => setTextStyle({ italic: !targetStyle.italic })}><IconItalic className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Underline" active={!!targetStyle.underline} onClick={() => setTextStyle({ underline: !targetStyle.underline })}><IconUnderline className="w-4 h-4" /></RibbonBtn>
+                            <RibbonDivider />
+                            <ColorSplitButton
+                                title="Font Color"
+                                icon={<span className="text-[14px] font-semibold leading-[14px] text-slate-800">A</span>}
+                                color={lastFontColor}
+                                value={targetStyle.color}
+                                onApply={(c) => { setLastFontColor(c); setTextStyle({ color: c }); }}
+                                autoLabel="Automatic"
+                                onAuto={() => setTextStyle({ color: undefined })}
+                            />
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+                {targetSeriesIndex >= 0 ? (
+                <RibbonGroup label="Series Data Labels">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonDropdown
+                            title="Label Position: where this series' data labels sit"
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[170px]"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
+                                {!(targetSeriesLabel.show ?? config.showDataLabels) ? "No Labels"
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                            </span>}
+                        >
+                            <MenuItem label="No Labels" checked={!(targetSeriesLabel.show ?? config.showDataLabels)} onClick={() => setSeriesLabel({ show: false })} />
+                            <MenuItem label="Same as Chart" checked={(targetSeriesLabel.show ?? config.showDataLabels) && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
+                            <MenuSeparator />
+                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
+                                <MenuItem
+                                    key={opt.value}
+                                    label={opt.label}
+                                    checked={(targetSeriesLabel.show ?? config.showDataLabels) && targetSeriesLabel.position === opt.value}
+                                    onClick={() => setSeriesLabel({ show: true, position: opt.value })}
+                                />
+                            ))}
+                        </RibbonDropdown>
+                        <RibbonRow className="gap-0.5">
+                            <RibbonBtn title="Move labels left" onClick={() => nudgeSeriesLabel(-LABEL_NUDGE_STEP, 0)}><IconArrowLeft className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Move labels up" onClick={() => nudgeSeriesLabel(0, -LABEL_NUDGE_STEP)}><IconArrowUp className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Move labels down" onClick={() => nudgeSeriesLabel(0, LABEL_NUDGE_STEP)}><IconArrowDown className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Move labels right" onClick={() => nudgeSeriesLabel(LABEL_NUDGE_STEP, 0)}><IconArrowRight className="w-4 h-4" /></RibbonBtn>
+                            <RibbonDivider />
+                            <RibbonBtn
+                                className="px-1.5"
+                                title="Reset this series' labels to the chart's settings"
+                                onClick={() => {
+                                    const next = { ...config.seriesLabels };
+                                    delete next[targetSeriesId];
+                                    applyConfig({ seriesLabels: next });
+                                }}
+                            >
+                                <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                            </RibbonBtn>
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+                ) : (
+                <RibbonGroup label="Labels & Legend">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow className="gap-1">
+                            <span className="text-xs text-slate-600 w-14">Labels</span>
+                            <RibbonDropdown
+                                title="Data Labels: position for every series (pick a series under Chart Elements to set one on its own)"
+                                buttonClassName="w-[120px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                                contentClassName="w-[150px]"
+                                trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
+                                    {!config.showDataLabels ? "None" : getLabelPositionOptions(config.type).find((o) => o.value === config.labelPosition)?.label || "Auto"}
+                                </span>}
+                            >
+                                <MenuItem label="None" checked={!config.showDataLabels} onClick={() => applyConfig({ showDataLabels: false })} />
+                                <MenuItem label="Auto" checked={config.showDataLabels && (!config.labelPosition || config.labelPosition === "auto")} onClick={() => applyConfig({ showDataLabels: true, labelPosition: "auto" })} />
+                                {getLabelPositionOptions(config.type).map((opt) => (
+                                    <MenuItem key={opt.value} label={opt.label} checked={config.showDataLabels && config.labelPosition === opt.value} onClick={() => applyConfig({ showDataLabels: true, labelPosition: opt.value })} />
+                                ))}
+                            </RibbonDropdown>
+                        </RibbonRow>
+                        <RibbonRow className="gap-1">
+                            <span className="text-xs text-slate-600 w-14">Legend</span>
+                            <RibbonDropdown
+                                title="Legend Position"
+                                buttonClassName="w-[76px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                                contentClassName="w-[110px]"
+                                trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate capitalize">{config.legendPosition || "bottom"}</span>}
+                            >
+                                {[["none", "None"], ["right", "Right"], ["top", "Top"], ["left", "Left"], ["bottom", "Bottom"]].map(([value, label]) => (
+                                    <MenuItem key={value} label={label} checked={(config.legendPosition || "bottom") === value} onClick={() => applyConfig({ legendPosition: value })} />
+                                ))}
+                            </RibbonDropdown>
+                            {[{ value: "start", icon: IconAlignLeft }, { value: "center", icon: IconAlignCenter }, { value: "end", icon: IconAlignRight }].map(({ value, icon }) => {
+                                const AlignIcon = icon;
+                                const vertical = config.legendPosition === "left" || config.legendPosition === "right";
+                                const names = vertical ? { start: "Top", center: "Middle", end: "Bottom" } : { start: "Left", center: "Center", end: "Right" };
+                                return (
+                                    <RibbonBtn
+                                        key={value}
+                                        title={`Align legend: ${names[value]}`}
+                                        active={(config.legendAlign || "center") === value}
+                                        disabled={config.legendPosition === "none"}
+                                        onClick={() => applyConfig({ legendAlign: value })}
+                                    >
+                                        <AlignIcon className={cn("w-4 h-4", vertical && "rotate-90")} />
+                                    </RibbonBtn>
+                                );
+                            })}
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+                )}
+                <RibbonGroup label="Shape Styles">
+                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                        <RibbonRow className="gap-1">
+                            <ColorSplitButton
+                                title="Shape Fill: chart area background"
+                                icon={<IconBucketDroplet className="w-4 h-4" strokeWidth={1.5} />}
+                                color={lastFillColor}
+                                value={config.chartFill}
+                                onApply={(c) => { setLastFillColor(c); applyConfig({ chartFill: c }); }}
+                                autoLabel="No Fill"
+                                onAuto={() => applyConfig({ chartFill: undefined })}
+                                autoIcon={IconX}
+                            />
+                            <span className="text-xs text-slate-600 self-center">Shape Fill</span>
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+                </>
+                )}
             </div>
             ) : (
             <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
@@ -1783,9 +2222,9 @@ function ExcelGraph({ excelData, onChartsChange }) {
             ) : (
             <>
             {/* In full screen the chart grows to fill the space under the toolbars */}
-            <div className={cn("p-3", isFullScreen && "flex-1 min-h-0 !shrink flex flex-col")}>
+            <div className={cn("p-3", isFullScreen && "flex-1 min-h-0 !shrink flex flex-col")} style={{ backgroundColor: config.chartFill }}>
                 {config.title && (
-                    <div className="text-center text-sm font-semibold text-slate-900 mb-1.5">{config.title}</div>
+                    <div className="text-center mb-1.5" style={{ color: titleText.color, ...fontPropsFor(titleText) }}>{config.title}</div>
                 )}
                 {!activeSheet ? (
                     <div className="flex items-center justify-center h-64 text-sm text-slate-400">Loading sheet…</div>
@@ -1798,7 +2237,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                         <div className="absolute inset-0">{scrollableChart(config, prepared)}</div>
                     </div>
                 ) : (
-                    <div className="h-[320px]">{scrollableChart(config, prepared)}</div>
+                    <div style={{ height: chartHeight(config, data) }}>{scrollableChart(config, prepared)}</div>
                 )}
             </div>
             </>

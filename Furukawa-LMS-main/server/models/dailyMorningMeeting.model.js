@@ -70,6 +70,21 @@ class DailyMorningMeeting {
         return rows;
     }
 
+    // The meeting row without sheetData — for permission checks and save
+    // responses, which have no use for the (possibly multi-megabyte) workbook.
+    static async findMetaById(id) {
+        const [rows] = await executeQuery(
+            `SELECT m.id, m.sectionId, m.agenda, m.description, m.meetingDate, m.meetingTime, m.createdBy,
+                    m.createdAt, m.updatedAt, m.fileProvider, m.m365WebUrl, m.m365EmbedUrl, m.lastSyncedAt,
+                    m.version, u.fullName AS createdByName
+             FROM daily_morning_meetings m
+             LEFT JOIN users u ON u.id = m.createdBy
+             WHERE m.id = ?`,
+            [id]
+        );
+        return rows.length > 0 ? rows[0] : null;
+    }
+
     static async findById(id) {
         const [rows] = await executeQuery(
             `SELECT m.*, u.fullName AS createdByName
@@ -114,8 +129,9 @@ class DailyMorningMeeting {
 
     // Every save bumps `version`. When `expectedVersion` is given the update is
     // atomic on it: if another tab/user saved in between, no row matches and
-    // this returns null instead of overwriting their work.
-    static async updateSheetData(id, sheetData, expectedVersion = null) {
+    // this returns null instead of overwriting their work. `withSheetData:
+    // false` returns the updated row without reading the workbook back out.
+    static async updateSheetData(id, sheetData, expectedVersion = null, { withSheetData = true } = {}) {
         const dataJson = typeof sheetData === "string" ? sheetData : JSON.stringify(sheetData);
         const hasExpected = expectedVersion !== null && expectedVersion !== undefined;
         const [, result] = await executeQuery(
@@ -123,7 +139,7 @@ class DailyMorningMeeting {
             hasExpected ? [dataJson, id, expectedVersion] : [dataJson, id]
         );
         if (hasExpected && !result.affectedRows) return null;
-        return DailyMorningMeeting.findById(id);
+        return withSheetData ? DailyMorningMeeting.findById(id) : DailyMorningMeeting.findMetaById(id);
     }
 
     static async updateM365Info(id, { fileProvider, m365DriveId, m365ItemId, m365WebUrl, m365EmbedUrl }) {

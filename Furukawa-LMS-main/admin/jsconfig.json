@@ -1,7 +1,17 @@
 {
-            "include": ["src/**/*"],
-            "compilerOptions": {
-              "baseUrl": ".",
-              "paths": { "@/*": ["./src/*"] }
-            }
-          }
+  "include": ["src/**/*"],
+  "compilerOptions": {
+    "baseUrl": "src",
+    "paths": {
+      "@/*": ["*"],
+      "@components/*": ["components/*"],
+      "@layouts/*": ["layouts/*"],
+      "@pages/*": ["pages/*"],
+      "@routes/*": ["routes/*"],
+      "@store/*": ["store/*"],
+      "@utils/*": ["utils/*"],
+      "@config/*": ["config/*"],
+      "@lib/*": ["lib/*"]
+    }
+  }
+}

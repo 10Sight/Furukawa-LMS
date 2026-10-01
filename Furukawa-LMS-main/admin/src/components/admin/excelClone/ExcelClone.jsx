@@ -15,7 +15,7 @@ import {
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
     IconSum, IconChevronDown, IconChevronUp, IconLayoutAlignTop, IconLayoutAlignMiddle,
     IconLayoutAlignBottom, IconTextWrap, IconCheck, IconBorderBottom, IconBorderNone, IconBorderRight, IconBorderLeft,
-    IconFilter, IconFilterFilled, IconPhoto, IconVideo, IconCrop, IconPencil,
+    IconFilter, IconFilterFilled, IconPhoto, IconTriangleSquareCircle, IconVideo, IconCrop, IconPencil,
     IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconMaximize, IconMinimize,
     IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
     IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
@@ -355,7 +355,16 @@ const SelectionRangeBorder = ({ top, bottom, left, right, color = SELECTION_BORD
     );
 };
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const rangeBounds = (range) => {
+    const s = parseCellRef(range.start), e = parseCellRef(range.end);
+    if (!s || !e) return null;
+    return {
+        minRow: Math.min(s.row, e.row), maxRow: Math.max(s.row, e.row),
+        minCol: Math.min(s.col, e.col), maxCol: Math.max(s.col, e.col)
+    };
+};
+
+const escapeRegex =(s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Excel-style "point mode" reference coloring: each unique cell/range mentioned
 // in a formula gets one consistent color, reused for that reference's grid
@@ -456,7 +465,72 @@ const mediaCropStyle = (crop) => ({
     maxHeight: "none",
 });
 
-// Floating image/video box, anchored to a grid cell (row/col + pixel offset)
+// --- Insert > Shapes ---
+// A shape is a floating media item (`type: "shape"`) drawn from the SVG
+// markup below on a 100x100 canvas that stretches to the item's box, so it
+// moves, resizes and deletes exactly like a picture.
+const SHAPE_DEFAULT_FILL = "#4472C4";
+const SHAPE_STROKE = "#2F528F";
+const SHAPE_DEFAULT_SIZE = 120;
+const shapePolygon = (points) => `<polygon points="${points}"/>`;
+const starPoints = (tips, innerRatio) => Array.from({ length: tips * 2 }, (_, i) => {
+    const radius = i % 2 === 0 ? 48 : 48 * innerRatio;
+    const angle = (Math.PI * i) / tips - Math.PI / 2;
+    return `${(50 + radius * Math.cos(angle)).toFixed(1)},${(50 + radius * Math.sin(angle)).toFixed(1)}`;
+}).join(" ");
+const SHAPE_GROUPS = [
+    { label: "Lines", shapes: [
+        { key: "line", label: "Line", line: true, body: '<line x1="3" y1="3" x2="97" y2="97"/>' },
+    ] },
+    { label: "Rectangles", shapes: [
+        { key: "rect", label: "Rectangle", body: '<rect x="2" y="2" width="96" height="96"/>' },
+        { key: "roundRect", label: "Rounded Rectangle", body: '<rect x="2" y="2" width="96" height="96" rx="14" ry="14"/>' },
+    ] },
+    { label: "Basic Shapes", shapes: [
+        { key: "ellipse", label: "Oval", body: '<ellipse cx="50" cy="50" rx="48" ry="48"/>' },
+        { key: "triangle", label: "Isosceles Triangle", body: shapePolygon("50,2 98,98 2,98") },
+        { key: "rightTriangle", label: "Right Triangle", body: shapePolygon("2,2 98,98 2,98") },
+        { key: "diamond", label: "Diamond", body: shapePolygon("50,2 98,50 50,98 2,50") },
+        { key: "parallelogram", label: "Parallelogram", body: shapePolygon("25,2 98,2 75,98 2,98") },
+        { key: "trapezoid", label: "Trapezoid", body: shapePolygon("25,2 75,2 98,98 2,98") },
+        { key: "pentagon", label: "Pentagon", body: shapePolygon("50,2 98,38 80,98 20,98 2,38") },
+        { key: "hexagon", label: "Hexagon", body: shapePolygon("25,2 75,2 98,50 75,98 25,98 2,50") },
+        { key: "octagon", label: "Octagon", body: shapePolygon("30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30") },
+        { key: "cross", label: "Cross", body: shapePolygon("35,2 65,2 65,35 98,35 98,65 65,65 65,98 35,98 35,65 2,65 2,35 35,35") },
+    ] },
+    { label: "Block Arrows", shapes: [
+        { key: "arrowRight", label: "Arrow: Right", body: shapePolygon("2,30 60,30 60,5 98,50 60,95 60,70 2,70") },
+        { key: "arrowLeft", label: "Arrow: Left", body: shapePolygon("98,30 40,30 40,5 2,50 40,95 40,70 98,70") },
+        { key: "arrowUp", label: "Arrow: Up", body: shapePolygon("30,98 30,40 5,40 50,2 95,40 70,40 70,98") },
+        { key: "arrowDown", label: "Arrow: Down", body: shapePolygon("30,2 30,60 5,60 50,98 95,60 70,60 70,2") },
+        { key: "arrowLeftRight", label: "Arrow: Left-Right", body: shapePolygon("2,50 28,10 28,32 72,32 72,10 98,50 72,90 72,68 28,68 28,90") },
+        { key: "chevron", label: "Arrow: Chevron", body: shapePolygon("2,2 65,2 98,50 65,98 2,98 35,50") },
+    ] },
+    { label: "Stars and Banners", shapes: [
+        { key: "star4", label: "Star: 4 Points", body: shapePolygon(starPoints(4, 0.4)) },
+        { key: "star5", label: "Star: 5 Points", body: shapePolygon(starPoints(5, 0.4)) },
+        { key: "star8", label: "Star: 8 Points", body: shapePolygon(starPoints(8, 0.6)) },
+    ] },
+    { label: "Callouts", shapes: [
+        { key: "callout", label: "Speech Bubble: Rectangle", body: shapePolygon("2,2 98,2 98,70 45,70 20,98 25,70 2,70") },
+    ] },
+];
+const SHAPES_BY_KEY = Object.fromEntries(SHAPE_GROUPS.flatMap((g) => g.shapes).map((shape) => [shape.key, shape]));
+
+// The shape as an SVG image URL — used for the grid, the Shapes menu and the
+// Excel export alike. The outline keeps its thickness however the box is stretched.
+const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_SIZE) => {
+    const shape = SHAPES_BY_KEY[item.shape] || SHAPES_BY_KEY.rect;
+    const fill = item.fill || SHAPE_DEFAULT_FILL;
+    const paint = shape.line
+        ? `fill="none" stroke="${fill}" stroke-width="2.5" stroke-linecap="round"`
+        : `fill="${fill}" stroke="${SHAPE_STROKE}" stroke-width="1.5" stroke-linejoin="round"`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" width="${width}" height="${height}">`
+        + `<style>*{vector-effect:non-scaling-stroke}</style><g ${paint}>${shape.body}</g></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+// Floating image/video/shape box, anchored to a grid cell (row/col + pixel offset)
 // rather than an absolute page position, so it tracks column/row resizes the
 // way Excel's floating objects do. Drag/resize use local component state and
 // window listeners scoped to the active gesture (added on pointerdown, torn
@@ -590,7 +664,9 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         >
             <div
                 className={cn(
-                    "relative w-full h-full border rounded overflow-hidden bg-white",
+                    "relative w-full h-full border rounded",
+                    // A shape shows the cells behind it; pictures sit on white.
+                    item.type === "shape" ? "bg-transparent" : "overflow-hidden bg-white",
                     isSelected ? "border-indigo-500 ring-2 ring-indigo-500 ring-offset-1" : "border-transparent group-hover:border-indigo-400"
                 )}
             >
@@ -602,7 +678,15 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                         <div className="absolute -right-1 -bottom-1 w-2 h-2 bg-indigo-600 rounded-sm z-20 pointer-events-none" />
                     </>
                 )}
-                {!isCropping && (item.type === "image" ? (
+                {!isCropping && (item.type === "shape" ? (
+                    <img
+                        src={shapeDataUrl(item)}
+                        alt=""
+                        draggable={false}
+                        className={cn("w-full h-full select-none", !readOnly && "cursor-move")}
+                        onMouseDown={startDrag}
+                    />
+                ) : item.type === "image" ? (
                     <img
                         src={item.src}
                         alt=""
@@ -658,14 +742,25 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
 
                 {!readOnly && !isCropping && (
                     <>
-                        <button
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={openCrop}
-                            className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                            title="Crop"
-                        >
-                            <IconCrop className="w-3.5 h-3.5" />
-                        </button>
+                        {item.type === "shape" ? (
+                            <input
+                                type="color"
+                                value={item.fill || SHAPE_DEFAULT_FILL}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onChange={(e) => onUpdate({ fill: e.target.value })}
+                                className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Shape color"
+                            />
+                        ) : (
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={openCrop}
+                                className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Crop"
+                            >
+                                <IconCrop className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                         <button
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={onDelete}
@@ -949,6 +1044,11 @@ const canvasPng = (img, sx, sy, sw, sh) => {
 // Returns null for items that can't be exported (video, a remote image
 // without CORS, a broken src).
 const prepareImageForExport = async (item) => {
+    // A shape goes out as a picture of itself at its current size.
+    if (item.type === "shape") {
+        const width = item.width || SHAPE_DEFAULT_SIZE, height = item.height || SHAPE_DEFAULT_SIZE;
+        return prepareImageForExport({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
+    }
     if (item.type !== "image" || !item.src) return null;
     try {
         const img = await loadImageElement(item.src);
@@ -991,7 +1091,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const prevIdsRef = useRef({ sectionId, meetingId });
 
     const [activeCell, setActiveCell] = useState("A1");
-    const [selection, setSelection] = useState({ start: "A1", end: "A1" });
+    // `selection` is the active range (fill handle, paste target, bounds-based
+    // commands). `extraRanges` holds the earlier ranges of a Ctrl+click
+    // multi-selection. Plain setSelection() drops them, so every existing
+    // caller keeps its single-range behavior; only the Ctrl/Shift paths use
+    // setSelectionRaw to move the active range while keeping the others.
+    const [selection, setSelectionRaw] = useState({ start: "A1", end: "A1" });
+    const [extraRanges, setExtraRanges] = useState([]);
+    const setSelection = useCallback((value) => {
+        setExtraRanges((prev) => (prev.length ? [] : prev));
+        setSelectionRaw(value);
+    }, []);
     const [selectedMediaId, setSelectedMediaId] = useState(null);
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState("");
@@ -1080,6 +1190,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
     const [videoPopoverOpen, setVideoPopoverOpen] = useState(false);
+    const [shapesPopoverOpen, setShapesPopoverOpen] = useState(false);
     const [imageUrlDraft, setImageUrlDraft] = useState("");
     const [videoUrlDraft, setVideoUrlDraft] = useState("");
     const mediaImageInputRef = useRef(null);
@@ -1203,18 +1314,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // whatever range the user currently has drag-selected in the grid.
     useEffect(() => {
         if (!onDataChange) return;
-        onDataChange({ sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, activeCell });
-    }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, activeCell, onDataChange]);
+        // `selection` stays the active range for existing consumers; `ranges`
+        // lists every range of a Ctrl+click multi-selection (active one last).
+        onDataChange({ sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, ranges: [...extraRanges, selection], activeCell });
+    }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, extraRanges, activeCell, onDataChange]);
 
-    const selectedCellIds = useMemo(() => new Set(expandRange(selection.start, selection.end)), [selection]);
-    const selectionBounds = useMemo(() => {
-        const s = parseCellRef(selection.start), e = parseCellRef(selection.end);
-        if (!s || !e) return null;
-        return {
-            minRow: Math.min(s.row, e.row), maxRow: Math.max(s.row, e.row),
-            minCol: Math.min(s.col, e.col), maxCol: Math.max(s.col, e.col)
-        };
-    }, [selection]);
+    // Union of every selected range — a Set, so overlapping ranges count once.
+    const selectedCellIds = useMemo(() => {
+        const ids = new Set(expandRange(selection.start, selection.end));
+        for (const r of extraRanges) for (const id of expandRange(r.start, r.end)) ids.add(id);
+        return ids;
+    }, [selection, extraRanges]);
+    const selectionBounds = useMemo(() => rangeBounds(selection), [selection]);
+    const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean), [extraRanges]);
+    const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
+    const hasMultipleRanges = extraRanges.length > 0;
 
     // Maps every cell id covered by a merge (anchor included) to that merge,
     // so rendering can skip non-anchor cells and navigation can redirect off
@@ -1573,8 +1687,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // media item itself (row/col + pixel offset, width/height) and are only
     // ever touched again by a drag/resize gesture's onUpdate.
 
-    const handleInsertMedia = useCallback((type, src) => {
-        if (!src) return;
+    // `extra` overrides the defaults — a shape passes its key and size here
+    // and has no `src`.
+    const handleInsertMedia = useCallback((type, src, extra) => {
+        if (!src && type !== "shape") return;
         const anchor = parseCellRef(activeCell) || { row: 0, col: 0 };
         const newItem = {
             id: newMediaId(),
@@ -1586,7 +1702,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             offsetY: 8,
             width: 280,
             height: 200,
+            ...extra,
         };
+        setSelectedMediaId(newItem.id);
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             if (!sheet) return;
@@ -1733,6 +1851,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const copySelection = useCallback((type) => {
         if (!selectionBounds) return;
+        if (hasMultipleRanges) toast.info("Copy works on one range at a time — only the active range was copied.");
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const cellsByRelPos = {};
         // Evaluated values as of the copy, for Paste Special > Values —
@@ -1749,7 +1868,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
         }
         setClipboard({ cellsByRelPos, valuesByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
-    }, [selectionBounds, cells, rawGrid, evaluation]);
+    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation]);
 
     const handlePaste = useCallback(() => {
         if (!clipboard || !selectionBounds) return;
@@ -1819,7 +1938,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => window.removeEventListener("paste", onPaste);
     }, [handlePaste, handleInsertMediaFile, readOnly]);
 
-    const handleCellMouseDown = useCallback((cellId) => {
+    const handleCellMouseDown = useCallback((cellId, e) => {
         // Point mode: while typing a formula, clicking another cell inserts its
         // reference instead of committing the edit and navigating away — matches
         // Excel's click-to-build-a-formula behavior. Clicking back into the cell
@@ -1842,9 +1961,39 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         isSelecting.current = true;
         setSelectedMediaId(null);
+        // Shift+click: stretch the active range to this cell; the active cell
+        // and any other Ctrl-selected ranges stay as they are.
+        if (e?.shiftKey) {
+            e.preventDefault(); // no native text selection across the cells
+            gridContainerRef.current?.focus();
+            setSelectionRaw((prev) => ({ start: prev.start, end: cellId }));
+            return;
+        }
+        if (e?.ctrlKey || e?.metaKey) {
+            const isSingle = (r) => r.start === cellId && r.end === cellId;
+            // Ctrl+click on an already-selected lone cell deselects it (as long
+            // as another range remains to fall back on).
+            if (extraRanges.length && isSingle(selection)) {
+                const fallback = extraRanges[extraRanges.length - 1];
+                isSelecting.current = false;
+                setExtraRanges(extraRanges.slice(0, -1));
+                setSelectionRaw(fallback);
+                setActiveCell(fallback.start);
+                return;
+            }
+            if (extraRanges.some(isSingle)) {
+                isSelecting.current = false;
+                setExtraRanges(extraRanges.filter((r) => !isSingle(r)));
+                return;
+            }
+            setExtraRanges([...extraRanges, selection]);
+            setActiveCell(cellId);
+            setSelectionRaw({ start: cellId, end: cellId });
+            return;
+        }
         setActiveCell(cellId);
         setSelection({ start: cellId, end: cellId });
-    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference]);
+    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference, selection, extraRanges, setSelection]);
 
     const handleFillHandleMouseDown = useCallback((e) => {
         e.stopPropagation();
@@ -1879,7 +2028,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
         if (isSelecting.current && e.buttons === 1) {
-            setSelection((prev) => ({ ...prev, end: cellId }));
+            setSelectionRaw((prev) => ({ ...prev, end: cellId }));
         }
     }, [rowCount, columnCount, insertFormulaReference]);
 
@@ -2002,27 +2151,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // handleKeyDown. They also drop any selected media item, which that
     // handler would otherwise delete instead of the selected cells' contents.
     // `extend` spans from headerSelectAnchor for a drag across headers.
-    const selectRow = useCallback((rowIdx, extend = false) => {
+    // `additive` (Ctrl+click on a header) keeps the current ranges and adds
+    // this row/column as a new active range.
+    const selectRow = useCallback((rowIdx, extend = false, additive = false) => {
         if (editingCell) commitEdit();
         const anchorRow = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : rowIdx;
         const start = getCellId(Math.min(anchorRow, rowIdx), 0);
         const end = getCellId(Math.max(anchorRow, rowIdx), columnCount - 1);
         setSelectedMediaId(null);
         setActiveCell(start);
-        setSelection({ start, end });
+        if (additive) setExtraRanges((prev) => [...prev, selection]);
+        if (extend || additive) setSelectionRaw({ start, end });
+        else setSelection({ start, end });
         gridContainerRef.current?.focus();
-    }, [columnCount, editingCell, commitEdit]);
+    }, [columnCount, editingCell, commitEdit, selection, setSelection]);
 
-    const selectColumn = useCallback((colIdx, extend = false) => {
+    const selectColumn = useCallback((colIdx, extend = false, additive = false) => {
         if (editingCell) commitEdit();
         const anchorCol = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : colIdx;
         const start = getCellId(0, Math.min(anchorCol, colIdx));
         const end = getCellId(rowCount - 1, Math.max(anchorCol, colIdx));
         setSelectedMediaId(null);
         setActiveCell(start);
-        setSelection({ start, end });
+        if (additive) setExtraRanges((prev) => [...prev, selection]);
+        if (extend || additive) setSelectionRaw({ start, end });
+        else setSelection({ start, end });
         gridContainerRef.current?.focus();
-    }, [rowCount, editingCell, commitEdit]);
+    }, [rowCount, editingCell, commitEdit, selection, setSelection]);
 
     const selectAllCells = useCallback(() => {
         if (editingCell) commitEdit();
@@ -2039,7 +2194,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         e.preventDefault();
         headerSelectAnchor.current = rowIdx;
         isSelectingRowHeader.current = true;
-        selectRow(rowIdx);
+        selectRow(rowIdx, false, e.ctrlKey || e.metaKey);
     }, [selectRow]);
 
     const handleRowHeaderMouseEnter = useCallback((rowIdx) => {
@@ -2051,7 +2206,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         e.preventDefault();
         headerSelectAnchor.current = colIdx;
         isSelectingColHeader.current = true;
-        selectColumn(colIdx);
+        selectColumn(colIdx, false, e.ctrlKey || e.metaKey);
     }, [selectColumn]);
 
     const handleColHeaderMouseEnter = useCallback((colIdx) => {
@@ -2059,15 +2214,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [selectColumn]);
 
     const applyToSelection = useCallback((mutator) => {
-        const ids = expandRange(selection.start, selection.end);
         mutateActiveCells((next) => {
-            for (const id of ids) {
+            for (const id of selectedCellIds) {
                 const merged = mutator({ ...(next[id] || {}) }, id);
                 if (isBlankCell(merged)) delete next[id];
                 else next[id] = merged;
             }
         });
-    }, [selection, mutateActiveCells]);
+    }, [selectedCellIds, mutateActiveCells]);
 
     // Excel's Delete/Backspace: clears cell contents but leaves formatting
     // (colors, borders, alignment, ...) in place, matching applyToSelection's
@@ -2098,6 +2252,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const mergeCenter = () => {
         if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
+        if (hasMultipleRanges) { toast.error("Cannot merge multiple selections. Select a single block of cells."); return; }
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         if (minRow === maxRow && minCol === maxCol) {
             setAlign("center");
@@ -2199,14 +2354,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }));
     const applyBorderPreset = (preset) => {
         if (!guardEditable() || !selectionBounds) return;
-        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const weight = preset.weight || borderWeight;
         if (preset.key === "none") { applyToSelection((cell) => ({ ...cell, border: undefined })); return; }
         if (preset.key === "all") { applyToSelection((cell) => ({ ...cell, border: { top: weight, bottom: weight, left: weight, right: weight } })); return; }
         const edges = preset.key === "outside" || preset.key === "thickOutside" ? ["top", "bottom", "left", "right"] : [preset.key];
         applyToSelection((cell, id) => {
             const { row, col } = parseCellRef(id);
-            const onEdge = { top: row === minRow, bottom: row === maxRow, left: col === minCol, right: col === maxCol };
+            // Each selected range is outlined on its own perimeter.
+            const onEdge = { top: false, bottom: false, left: false, right: false };
+            for (const b of allSelectionBounds) {
+                if (row < b.minRow || row > b.maxRow || col < b.minCol || col > b.maxCol) continue;
+                if (row === b.minRow) onEdge.top = true;
+                if (row === b.maxRow) onEdge.bottom = true;
+                if (col === b.minCol) onEdge.left = true;
+                if (col === b.maxCol) onEdge.right = true;
+            }
             const border = { ...(cell.border || {}) };
             for (const side of edges) if (onEdge[side]) border[side] = weight;
             return { ...cell, border: Object.keys(border).length ? border : undefined };
@@ -2465,6 +2627,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const sortSelection = (direction) => {
         if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
+        if (hasMultipleRanges) { toast.error("Cannot sort multiple selections. Select a single block of cells."); return; }
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const sortCol = minCol;
         updateSheets((next) => {
@@ -3136,7 +3299,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const moveTo = (pos, extend) => {
         const id = resolveToAnchor(getCellId(pos.row, pos.col));
         if (extend) {
-            setSelection((prev) => ({ start: prev.start, end: id }));
+            setSelectionRaw((prev) => ({ start: prev.start, end: id }));
             scrollCellIntoView(id);
             return;
         }
@@ -3350,9 +3513,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const s = parseCellRef(t.range.start), e = parseCellRef(t.range.end);
         return s && e && row >= Math.min(s.row, e.row) && row <= Math.max(s.row, e.row) && col >= Math.min(s.col, e.col) && col <= Math.max(s.col, e.col);
     });
+    // The range a table/filter command acts on, like Excel: a single cell
+    // grows to the data region around it; a selected header row (a slice such
+    // as A1:D1, or the whole row via its row number) grows down to the last
+    // contiguous data row; any taller selection is used exactly as selected.
     const regionForCommand = () => {
         const ref = parseCellRef(activeCell);
-        return isMultiSelection ? selectionBounds : currentRegion(ref.row, ref.col);
+        if (!isMultiSelection) return currentRegion(ref.row, ref.col);
+        if (selectionBounds.minRow !== selectionBounds.maxRow) return selectionBounds;
+        const headerRow = selectionBounds.minRow;
+        let { minCol, maxCol } = selectionBounds;
+        if (minCol === 0 && maxCol === columnCount - 1) {
+            // Whole row: narrow to the run of filled header cells around the
+            // active column, or the first such run if that cell is empty.
+            let start = hasContentAt(headerRow, ref.col) ? ref.col : -1;
+            for (let c = 0; start < 0 && c < columnCount; c++) if (hasContentAt(headerRow, c)) start = c;
+            if (start < 0) return selectionBounds;
+            minCol = maxCol = start;
+            while (minCol > 0 && hasContentAt(headerRow, minCol - 1)) minCol--;
+            while (maxCol < columnCount - 1 && hasContentAt(headerRow, maxCol + 1)) maxCol++;
+        }
+        let maxRow = headerRow;
+        const rowHasData = (r) => {
+            for (let c = minCol; c <= maxCol; c++) if (hasContentAt(r, c)) return true;
+            return false;
+        };
+        while (maxRow < rowCount - 1 && rowHasData(maxRow + 1)) maxRow++;
+        return { minRow: headerRow, maxRow, minCol, maxCol };
     };
 
     // Ctrl+L / Ctrl+T: format the selection (or the data region around the
@@ -3373,8 +3560,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const table = tableAt(ref.row, ref.col);
         if (table) {
             updateSheets((next) => {
-                const t = (next[activeSheetName].tables || []).find((x) => x.id === table.id);
+                const sheet = next[activeSheetName];
+                const t = (sheet.tables || []).find((x) => x.id === table.id);
                 if (!t) return;
+                // A plain AutoFilter is nothing but its filter buttons, so
+                // turning it off removes it; a styled table just loses them.
+                if (!t.styleKey && t.filtersEnabled) {
+                    sheet.tables = sheet.tables.filter((x) => x.id !== table.id);
+                    return;
+                }
                 t.filtersEnabled = !t.filtersEnabled;
                 if (!t.filtersEnabled) t.filters = {};
             });
@@ -3812,7 +4006,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 handled();
                 // Nothing left to clear → Escape leaves full screen, so a first
                 // press collapses the selection and a second one exits.
-                if (isFullScreen && selection.start === activeCell && selection.end === activeCell
+                if (isFullScreen && selection.start === activeCell && selection.end === activeCell && !hasMultipleRanges
                     && clipboard?.type !== "cut" && !formatPainterStyle && !selectedMediaId) {
                     exitFullScreen();
                     return;
@@ -3840,13 +4034,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // Status bar: quick totals for a multi-cell selection (visible cells only).
     const selectionStats = useMemo(() => {
-        if (!selectionBounds) return null;
-        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
-        if (minRow === maxRow && minCol === maxCol) return null;
+        if (selectedCellIds.size < 2) return null;
         let count = 0, numericCount = 0, sum = 0, min = Infinity, max = -Infinity;
         for (const [id, v] of Object.entries(rawGrid)) {
+            if (!selectedCellIds.has(id)) continue;
             const ref = parseCellRef(id);
-            if (!ref || ref.row < minRow || ref.row > maxRow || ref.col < minCol || ref.col > maxCol) continue;
+            if (!ref) continue;
             if (hiddenRowSet.has(ref.row) || hiddenColSet.has(ref.col)) continue;
             const typed = cells[id]?.value;
             if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) continue;
@@ -3860,7 +4053,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         if (!count) return null;
         return { count, numericCount, sum, min, max, average: numericCount ? sum / numericCount : null };
-    }, [selectionBounds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
+    }, [selectedCellIds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
     const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 
@@ -4210,7 +4403,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     <Button
                                         size="sm"
                                         className="w-full h-7 text-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white"
-                                        onClick={() => { applyTable(selectedTableStyleKey, tableFiltersEnabled); close(); }}
+                                        onClick={() => { applyTable(selectedTableStyleKey, tableFiltersEnabled, regionForCommand()); close(); }}
                                     >
                                         Apply
                                     </Button>
@@ -4327,7 +4520,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <IconTable className="w-7 h-7 text-emerald-700" strokeWidth={1.4} />
                         <span className="text-xs">PivotTable</span>
                     </RibbonBtn>
-                    <RibbonBtn className="h-full flex-col px-2 gap-1" title="Table (Ctrl+T)" onClick={() => applyTable(selectedTableStyleKey, true)}>
+                    <RibbonBtn className="h-full flex-col px-2 gap-1" title="Table (Ctrl+T)" onClick={() => applyTable(selectedTableStyleKey, true, regionForCommand())}>
                         <FormatTableIcon className="w-7 h-7" />
                         <span className="text-xs">Table</span>
                     </RibbonBtn>
@@ -4363,6 +4556,39 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 className="hidden"
                                 onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleInsertMediaFile("image", f); setImagePopoverOpen(false); } e.target.value = ""; }}
                             />
+                        </PopoverContent>
+                    </Popover>
+                    <Popover open={shapesPopoverOpen} onOpenChange={setShapesPopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <RibbonBtn className="h-full flex-col px-2 gap-1" title="Insert shape">
+                                <IconTriangleSquareCircle className="w-7 h-7 text-blue-700" strokeWidth={1.4} />
+                                <span className="text-xs">Shapes <IconChevronDown className="w-3 h-3 inline text-slate-500" /></span>
+                            </RibbonBtn>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 max-h-80 overflow-y-auto p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start">
+                            {SHAPE_GROUPS.map((group) => (
+                                <div key={group.label}>
+                                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-1 pb-1">{group.label}</div>
+                                    <div className="grid grid-cols-8 gap-0.5">
+                                        {group.shapes.map((shape) => (
+                                            <button
+                                                key={shape.key}
+                                                type="button"
+                                                title={shape.label}
+                                                aria-label={shape.label}
+                                                className="w-7 h-7 p-1 rounded-sm border border-transparent hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer"
+                                                onClick={() => {
+                                                    if (!guardEditable()) return;
+                                                    handleInsertMedia("shape", null, { shape: shape.key, width: SHAPE_DEFAULT_SIZE, height: SHAPE_DEFAULT_SIZE });
+                                                    setShapesPopoverOpen(false);
+                                                }}
+                                            >
+                                                <img src={shapeDataUrl({ shape: shape.key })} alt="" className="w-full h-full" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </PopoverContent>
                     </Popover>
                 </RibbonGroup>
@@ -4570,7 +4796,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     onMouseEnter={() => handleColHeaderMouseEnter(colIdx)}
                                     className={cn(
                                         "sticky top-0 z-20 border border-slate-200 text-[11px] font-semibold h-7 cursor-pointer hover:bg-slate-200 select-none",
-                                        (hoveredCell?.col === colIdx || (selectionBounds && colIdx >= selectionBounds.minCol && colIdx <= selectionBounds.maxCol))
+                                        (hoveredCell?.col === colIdx || allSelectionBounds.some((b) => colIdx >= b.minCol && colIdx <= b.maxCol))
                                             ? "bg-indigo-100 text-indigo-700"
                                             : "bg-slate-100 text-slate-600",
                                         // Marks where hidden columns sit, like Excel's double line.
@@ -4605,7 +4831,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     onMouseEnter={() => handleRowHeaderMouseEnter(rowIdx)}
                                     className={cn(
                                         "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
-                                        (hoveredCell?.row === rowIdx || (selectionBounds && rowIdx >= selectionBounds.minRow && rowIdx <= selectionBounds.maxRow))
+                                        (hoveredCell?.row === rowIdx || allSelectionBounds.some((b) => rowIdx >= b.minRow && rowIdx <= b.maxRow))
                                             ? "bg-indigo-100 text-indigo-700"
                                             : "bg-slate-100 text-slate-500",
                                         manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
@@ -4651,12 +4877,26 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
                                     const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
                                     const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
-                                    const selectionEdges = isMultiSelection && isInRange ? {
+                                    const inActiveRange = rowIdx >= selectionBounds?.minRow && rowIdx <= selectionBounds?.maxRow
+                                        && colIdx >= selectionBounds?.minCol && colIdx <= selectionBounds?.maxCol;
+                                    let selectionEdges = isMultiSelection && inActiveRange ? {
                                         top: rowIdx === selectionBounds.minRow,
                                         bottom: spanRowEnd === selectionBounds.maxRow,
                                         left: colIdx === selectionBounds.minCol,
                                         right: spanColEnd === selectionBounds.maxCol
                                     } : null;
+                                    // The other Ctrl-selected ranges each get their own perimeter.
+                                    if (isInRange) {
+                                        for (const b of extraBounds) {
+                                            if (rowIdx < b.minRow || rowIdx > b.maxRow || colIdx < b.minCol || colIdx > b.maxCol) continue;
+                                            selectionEdges = {
+                                                top: selectionEdges?.top || rowIdx === b.minRow,
+                                                bottom: selectionEdges?.bottom || spanRowEnd === b.maxRow,
+                                                left: selectionEdges?.left || colIdx === b.minCol,
+                                                right: selectionEdges?.right || spanColEnd === b.maxCol
+                                            };
+                                        }
+                                    }
                                     const formulaRefEdges = formulaRefBorderMap[cellId];
                                     // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
                                     const filterTable = tables.find((t) => {
@@ -4675,7 +4915,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                             key={cellId}
                                             rowSpan={mergeSpan?.rowSpan}
                                             colSpan={mergeSpan?.colSpan}
-                                            onMouseDown={() => handleCellMouseDown(cellId)}
+                                            onMouseDown={(e) => handleCellMouseDown(cellId, e)}
                                             onMouseEnter={(e) => handleCellMouseEnter(cellId, e)}
                                             onDoubleClick={readOnly ? undefined : () => startEditing(cellId)}
                                             className={cn(

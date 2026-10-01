@@ -67,18 +67,21 @@ const PortalCard = ({ accent, darkMode, icon, title, desc, onClick, ctaLabel }) 
             onClick={onClick}
         >
             <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 bg-gradient-to-br ${a.wash} to-transparent transition-opacity duration-300 pointer-events-none`} />
-            <CardContent className="relative p-3 sm:p-4 md:p-5 flex flex-col items-center text-center space-y-1.5 sm:space-y-2.5 md:space-y-3 pt-3.5 sm:pt-5 md:pt-6">
-                <div className={`w-9 h-9 sm:w-11 sm:h-11 md:w-13 md:h-13 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform duration-300 shrink-0 ${darkMode ? `${a.iconBgDark} ${a.iconFgDark}` : `${a.iconBg} ${a.iconFg}`}`}>
-                    <Icon className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 md:w-6.5 md:h-6.5" />
+            <CardContent className="relative p-4 sm:p-5 md:p-7 flex flex-col items-center text-center space-y-2 sm:space-y-3 md:space-y-4">
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform duration-300 shrink-0 ${darkMode ? `${a.iconBgDark} ${a.iconFgDark}` : `${a.iconBg} ${a.iconFg}`}`}>
+                    <Icon className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8" />
                 </div>
                 <div className="space-y-0.5 sm:space-y-1 w-full">
-                    <h3 className={`text-xs sm:text-sm md:text-base font-bold truncate ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h3>
-                    <p className={`text-[10px] sm:text-xs leading-snug line-clamp-2 px-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {/* Fixed-height wrapper keeps cards aligned when a translated title wraps to two lines */}
+                    <div className="min-h-[2.5rem] sm:min-h-[3rem] md:min-h-[3.5rem] flex items-center justify-center">
+                        <h3 className={`text-sm sm:text-base md:text-lg font-bold line-clamp-2${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h3>
+                    </div>
+                    <p className={`text-xs sm:text-[13px] md:text-sm leading-relaxed line-clamp-2 sm:line-clamp-3 px-0.5${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         {desc}
                     </p>
                 </div>
-                <div className={`flex items-center gap-1 text-[10px] sm:text-xs font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 -translate-x-0 sm:-translate-x-1 sm:group-hover:translate-x-0 transition-all duration-200 pt-0.5 ${darkMode ? a.linkDark : a.link}`}>
-                    {ctaLabel} <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                <div className={`flex items-center gap-1 text-xs sm:text-[13px] md:text-sm font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 -translate-x-0 sm:-translate-x-1 sm:group-hover:translate-x-0 transition-all duration-200 pt-0.5 ${darkMode ? a.linkDark : a.link}`}>
+                    {ctaLabel} <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
             </CardContent>
         </Card>
@@ -208,12 +211,12 @@ const LandingPage = () => {
 
     const gridColsClass =
         accessibleCount === 1 ? 'grid-cols-1 max-w-xs sm:max-w-sm mx-auto w-full' :
-            accessibleCount === 2 ? 'grid-cols-2 max-w-sm sm:max-w-xl lg:max-w-2xl mx-auto w-full' :
-                accessibleCount === 3 ? 'grid-cols-1 sm:grid-cols-3 max-w-xs sm:max-w-3xl lg:max-w-4xl mx-auto w-full' :
-                    'grid-cols-2 lg:grid-cols-4 max-w-md sm:max-w-2xl lg:max-w-5xl xl:max-w-6xl mx-auto w-full';
+            accessibleCount === 2 ? 'grid-cols-1 sm:grid-cols-2 max-w-sm sm:max-w-2xl lg:max-w-3xl mx-auto w-full' :
+                accessibleCount === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-sm sm:max-w-3xl lg:max-w-5xl mx-auto w-full' :
+                    'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 max-w-sm sm:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto w-full';
 
     return (
-        <div className={`h-screen max-h-[100dvh] w-full flex flex-col justify-between pt-14 sm:pt-16 pb-2 sm:pb-3 px-3 sm:px-6 overflow-hidden select-none transition-colors duration-300 bg-gradient-to-br ${darkMode ? 'bg-slate-950 from-slate-950 via-indigo-950/30 to-slate-900' : 'bg-slate-50 from-blue-100 via-indigo-50 to-slate-100'}`}>
+        <div className={`min-h-[100dvh] w-full flex flex-col justify-between pt-14 sm:pt-16 md:pt-20 pb-4 px-3 sm:px-6 md:px-8 overflow-y-auto select-none transition-colors duration-300 bg-gradient-to-br ${darkMode ? 'bg-slate-950 from-slate-950 via-indigo-950/30 to-slate-900' : 'bg-slate-50 from-blue-100 via-indigo-50 to-slate-100'}`}>
 
             {/* Top Header */}
             <header className={`fixed top-0 left-0 right-0 z-50 h-14 sm:h-16 backdrop-blur-lg shadow-sm border-b flex items-center justify-between px-3 sm:px-6 overflow-visible transition-colors duration-300 ${darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-slate-100'}`}>
@@ -228,7 +231,7 @@ const LandingPage = () => {
                 </div>
 
                 {/* Left: brand label & mobile logo */}
-                <div className="flex items-center gap-2 sm:gap-2.5 lg:ml-44 xl:ml-52">
+                <div className="flex items-center gap-2 sm:gap-2.5 lg:ml-44 xl:ml-52 min-w-0 whitespace-nowrap">
                     <img
                         src="/fme_transparent.png"
                         alt="FURUKAWA Logo"
@@ -241,7 +244,7 @@ const LandingPage = () => {
                 </div>
 
                 {/* Right: Actions */}
-                <div className="flex items-center gap-0.5 sm:gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     <LanguageSelector />
 
                     <Button
@@ -324,12 +327,12 @@ const LandingPage = () => {
                 </div>
             </header>
 
-            {/* Main Content Area — flex auto center to guarantee full fit without scrolling */}
-            <main className="flex-1 min-h-0 flex flex-col items-center justify-center w-full max-w-6xl mx-auto px-2 sm:px-4 py-1 sm:py-2">
+            {/* Main Content Area — centers when space allows, grows and scrolls when it doesn't */}
+            <main className="flex-1 my-auto flex flex-col items-center justify-center w-full max-w-7xl mx-auto px-2 sm:px-4 py-3 sm:py-6">
 
                 {/* Hero / Header Section */}
-                <div className="text-center space-y-1.5 sm:space-y-2 md:space-y-2.5 mb-2.5 sm:mb-4 md:mb-5 animate-fade-in w-full shrink-0">
-                    <div className={`w-32 h-14 sm:w-40 sm:h-16 md:w-48 md:h-18 rounded-xl shadow-sm border flex items-center justify-center p-2 sm:p-2.5 mx-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="text-center space-y-2 sm:space-y-3 md:space-y-4 mb-4 sm:mb-6 md:mb-8 animate-fade-in w-full shrink-0">
+                    <div className={`w-40 h-16 sm:w-48 sm:h-20 md:w-56 md:h-24 rounded-xl shadow-sm border flex items-center justify-center p-2 sm:p-2.5 mx-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                         <img
                             src="/fme_transparent.png"
                             alt="FURUKAWA Logo"
@@ -338,20 +341,20 @@ const LandingPage = () => {
                     </div>
 
                     <div className="space-y-0.5 sm:space-y-1 px-2">
-                        <h1 className={`text-base sm:text-xl md:text-2xl lg:text-3xl font-extrabold tracking-tight bg-gradient-to-r bg-clip-text text-transparent ${darkMode ? 'from-slate-100 via-blue-400 to-indigo-400' : 'from-slate-800 via-blue-700 to-indigo-700'}`}>
+                        <h1 className={`text-xl sm:text-2xl md:text-3xl lg:text-4xl font-extrabold tracking-tight bg-gradient-to-r bg-clip-text text-transparent ${darkMode ? 'from-slate-100 via-blue-400 to-indigo-400' : 'from-slate-800 via-blue-700 to-indigo-700'}`}>
                             {t('landing.title')}
                         </h1>
-                        <p className={`text-[9px] sm:text-[10px] md:text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        <p className={`text-[10px] sm:text-xs md:text-sm font-semibold uppercase tracking-[0.2em] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                             DOJO 2.0
                         </p>
-                        <p className={`text-[11px] sm:text-xs md:text-sm max-w-md mx-auto px-2 line-clamp-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <p className={`text-xs sm:text-sm md:text-base max-w-lg mx-auto px-2 line-clamp-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             {t('landing.subtitle')}
                         </p>
                     </div>
                 </div>
 
                 {/* Cards Container */}
-                <div className={`grid gap-2.5 sm:gap-3.5 md:gap-4 w-full px-1 sm:px-3 ${gridColsClass}`}>
+                <div className={`grid gap-3 sm:gap-4 md:gap-5 w-full px-1 sm:px-3 ${gridColsClass}`}>
 
                     {hasDashboardAccess && (
                         <PortalCard
@@ -403,13 +406,6 @@ const LandingPage = () => {
 
                 </div>
             </main>
-
-            {/* Footer */}
-            <footer className="w-full shrink-0 py-1 sm:py-1.5 text-center">
-                <p className={`text-[10px] sm:text-[11px] ${darkMode ? 'text-slate-600' : 'text-slate-400'}`}>
-                    {t('landing.copyright')}
-                </p>
-            </footer>
 
         </div>
     );

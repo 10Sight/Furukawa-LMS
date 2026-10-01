@@ -8,13 +8,17 @@ import {
     IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette,
     IconLayoutAlignTop, IconLayoutAlignBottom, IconLayoutAlignLeft, IconLayoutAlignRight, IconEyeOff,
     IconChevronDown, IconChevronUp, IconMaximize, IconMinimize, IconChartBar,
-    IconChartInfographic, IconTableShortcut, IconInfoCircle
+    IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
     PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "./formulaEngine";
+import {
+    parseNumericCell, parseRangeString, formatRangeString, chartRanges, naturalPlotBy,
+    seriesIdsForRanges, seriesCountForRanges, MAX_CHART_SERIES, extractDisjointChartData, legacyConfigRanges,
+} from "./chartMatrixEngine";
 import { cn } from "@/lib/utils";
 import FullScreenFrame from "./FullScreenFrame";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -102,20 +106,17 @@ const getChartsForSheet = (activeSheet, columnCount, rowCount) => {
     return [buildDefaultChart(columnCount, rowCount)];
 };
 
-// Strips $ , % and whitespace before parsing so formatted numbers still chart;
-// returns null (never NaN) for genuinely non-numeric text so callers can flag it.
-const parseNumericCell = (raw) => {
-    if (raw === undefined || raw === null || raw === "") return null;
-    const cleaned = String(raw).replace(/[$,%\s]/g, "");
-    if (cleaned === "" || cleaned === "-") return null;
-    const num = parseFloat(cleaned);
-    return Number.isNaN(num) ? null : num;
-};
+// Series are keyed by column letter, or by row number when a chart plots by rows.
+const seriesIdLabel = (id) => (/^\d+$/.test(String(id)) ? `Row ${id}` : `Col ${id}`);
 
 // Reads the configured row/column range out of the live displayGrid. A text
 // cell inside the range is treated as 0 rather than thrown away, with
 // `hadInvalid` surfaced so the toolbar can show a non-blocking warning.
 function buildChartData({ activeSheet, displayGrid, config }) {
+    // Charts built from a range list (Ctrl-selected, or switched to plot by
+    // rows) read exactly those ranges; the fields below are the older
+    // single-block form, still used by every chart saved without one.
+    if (chartRanges(config)) return extractDisjointChartData({ displayGrid, config });
     const rowCountMax = activeSheet?.rowCount || 0;
     const valueCols = config.valueCols?.length ? config.valueCols : [];
     const xCol = config.xAxisCol || "A";
@@ -345,6 +346,9 @@ const getComboSeriesSettings = (config, col, index) => {
     };
 };
 
+// Per-series chart types a combo chart can mix (the renderer's three marks).
+const COMBO_SERIES_TYPES = [["column", "Clustered Column"], ["line", "Line"], ["area", "Area"]];
+
 function ChartTooltip({ active, payload, label }) {
     if (!active || !payload || payload.length === 0) return null;
     return (
@@ -469,35 +473,55 @@ function ChartTypePreview({ type }) {
 // Excel's Insert Chart / Change Chart Type dialog: a Recommended Charts tab with
 // live thumbnails of the user's own data, and an All Charts tab listing every
 // family and its variants, both with a large preview of the selection.
-function InsertChartDialog({ state, onClose, recommended, currentType, renderPreview, onOk }) {
+// Combo variants add Excel's per-series table (chart type + secondary axis):
+// `comboSeries` lists the chart's series with their current settings, and the
+// edited settings are handed to `renderPreview` and `onOk`.
+function InsertChartDialog({ state, onClose, recommended, currentType, comboSeries, renderPreview, onOk }) {
     const [tab, setTab] = useState("recommended");
     const [family, setFamily] = useState("column");
     const [selected, setSelected] = useState("columnGrouped");
+    const [comboSettings, setComboSettings] = useState({});
+
+    // Picking a combo preset fills the series table from it; Custom
+    // Combination keeps whatever the table currently holds.
+    const select = (key) => {
+        setSelected(key);
+        const preset = CHART_VARIANTS[key]?.preset;
+        if (preset) setComboSettings(comboSettingsForPreset(preset, comboSeries.map((s) => s.id)));
+    };
 
     useEffect(() => {
         if (!state) return;
         setTab(state.tab);
         const fam = CHART_FAMILIES.find((f) => f.key === state.family) || CHART_FAMILIES[0];
         setFamily(fam.key);
-        setSelected(state.tab === "recommended" ? recommended[0] : (fam.keys.includes(currentType) ? currentType : fam.keys[0]));
+        setComboSettings(Object.fromEntries(comboSeries.map((s) => [s.id, { type: s.type, yAxisId: s.yAxisId }])));
+        select(state.tab === "recommended" ? recommended[0] : (state.select || (fam.keys.includes(currentType) ? currentType : fam.keys[0])));
         // Only re-seed when the dialog (re)opens.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [state]);
 
     const chooseTab = (next) => {
         setTab(next);
-        if (next === "recommended") setSelected(recommended[0]);
+        if (next === "recommended") select(recommended[0]);
         else {
             const fam = CHART_FAMILIES.find((f) => f.key === family) || CHART_FAMILIES[0];
-            setSelected(fam.keys.includes(selected) ? selected : fam.keys[0]);
+            select(fam.keys.includes(selected) ? selected : fam.keys[0]);
         }
     };
     const chooseFamily = (key) => {
         setFamily(key);
-        setSelected(CHART_FAMILIES.find((f) => f.key === key).keys[0]);
+        select(CHART_FAMILIES.find((f) => f.key === key).keys[0]);
     };
     const activeFamily = CHART_FAMILIES.find((f) => f.key === family) || CHART_FAMILIES[0];
     const variant = CHART_VARIANTS[selected];
+    const isCombo = variantType(selected) === "combo";
+    const selectedComboSettings = isCombo ? comboSettings : undefined;
+    // Editing a series turns any preset into a Custom Combination, like Excel.
+    const setSeriesSetting = (id, patch) => {
+        setComboSettings((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+        setSelected("combo");
+    };
 
     return (
         <Dialog open={!!state} onOpenChange={(open) => { if (!open) onClose(); }} className="max-w-4xl">
@@ -521,14 +545,14 @@ function InsertChartDialog({ state, onClose, recommended, currentType, renderPre
                         </button>
                     ))}
                 </div>
-                <div className="flex h-[440px]">
+                <div className="flex h-[500px]">
                     <div className="w-52 shrink-0 border-r border-slate-200 overflow-y-auto p-2 space-y-1 bg-slate-50/60">
                         {tab === "recommended" ? recommended.map((key) => (
                             <button
                                 key={key}
                                 type="button"
                                 title={CHART_VARIANTS[key].label}
-                                onClick={() => setSelected(key)}
+                                onClick={() => select(key)}
                                 onDoubleClick={() => onOk(key)}
                                 className={cn(
                                     "w-full h-24 p-1.5 bg-white border rounded-sm cursor-pointer",
@@ -560,8 +584,8 @@ function InsertChartDialog({ state, onClose, recommended, currentType, renderPre
                                         key={key}
                                         type="button"
                                         title={CHART_VARIANTS[key].label}
-                                        onClick={() => setSelected(key)}
-                                        onDoubleClick={() => onOk(key)}
+                                        onClick={() => select(key)}
+                                        onDoubleClick={() => onOk(key, CHART_VARIANTS[key].preset ? undefined : comboSettings)}
                                         className={cn(
                                             "p-1 border rounded-sm cursor-pointer",
                                             selected === key ? "border-amber-500 bg-amber-50" : "border-transparent hover:border-amber-300"
@@ -574,13 +598,65 @@ function InsertChartDialog({ state, onClose, recommended, currentType, renderPre
                         )}
                         <div className="text-sm font-semibold text-slate-800">{variant?.label}</div>
                         <div className="flex-1 min-h-0 border border-slate-200 rounded-sm bg-white p-3">
-                            {selected && renderPreview(selected, false)}
+                            {selected && renderPreview(selected, false, selectedComboSettings)}
                         </div>
-                        <p className="text-xs text-slate-500 leading-snug">{variant?.desc}</p>
+                        {isCombo ? (
+                            <div className="space-y-1">
+                                <div className="text-xs text-slate-700">Choose the chart type and axis for your data series:</div>
+                                <div className="h-36 overflow-y-auto border border-slate-300 bg-white">
+                                    <table className="w-full text-xs border-collapse">
+                                        <thead className="sticky top-0 bg-white">
+                                            <tr className="text-left text-slate-700">
+                                                <th className="font-normal px-2 py-1 border-b border-r border-slate-200">Series Name</th>
+                                                <th className="font-normal px-2 py-1 border-b border-r border-slate-200 w-48">Chart Type</th>
+                                                <th className="font-normal px-2 py-1 border-b border-slate-200 w-28 text-center">Secondary Axis</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {comboSeries.map((s) => {
+                                                const setting = comboSettings[s.id] || { type: s.type, yAxisId: s.yAxisId };
+                                                return (
+                                                    <tr key={s.id}>
+                                                        <td className="px-2 py-1.5">
+                                                            <span className="flex items-center gap-2 min-w-0">
+                                                                <span className="w-2 h-4 shrink-0" style={{ backgroundColor: s.color }} />
+                                                                <span className="truncate" title={s.name}>{s.name}</span>
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2 py-1.5">
+                                                            <select
+                                                                aria-label={`Chart type for ${s.name}`}
+                                                                className="w-full h-7 text-xs border border-slate-300 rounded-sm px-1.5 cursor-pointer bg-white"
+                                                                value={setting.type}
+                                                                onChange={(e) => setSeriesSetting(s.id, { type: e.target.value })}
+                                                            >
+                                                                {COMBO_SERIES_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                                            </select>
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-center">
+                                                            <Checkbox
+                                                                aria-label={`Secondary axis for ${s.name}`}
+                                                                checked={setting.yAxisId === "right"}
+                                                                onCheckedChange={(v) => setSeriesSetting(s.id, { yAxisId: v ? "right" : "left" })}
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {comboSeries.length === 0 && (
+                                                <tr><td colSpan={3} className="px-2 py-3 text-center text-slate-400">This chart has no data series yet.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-slate-500 leading-snug">{variant?.desc}</p>
+                        )}
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200">
-                    <Button size="sm" className="h-8 px-5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => onOk(selected)} disabled={!selected}>OK</Button>
+                    <Button size="sm" className="h-8 px-5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => onOk(selected, selectedComboSettings)} disabled={!selected}>OK</Button>
                     <Button size="sm" variant="outline" className="h-8 px-4 cursor-pointer" onClick={onClose}>Cancel</Button>
                 </div>
             </DialogContent>
@@ -631,26 +707,21 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
 
     // Patch for switching to a catalog variant; combo presets also seed each
     // series' column/line/area type and axis.
-    const variantPatch = (key, cfg) => {
+    // `comboSettings` (from the dialog's series table) wins over the preset.
+    const variantPatch = (key, cfg, comboSettings) => {
         const v = CHART_VARIANTS[key];
         const patch = { type: variantType(key) };
         if (v?.preset) patch.comboSettings = comboSettingsForPreset(v.preset, cfg?.valueCols || []);
+        if (comboSettings && patch.type === "combo") patch.comboSettings = comboSettings;
         return patch;
     };
     // Picking a chart type changes the active chart (or inserts one when there is none).
-    const applyVariant = (key) => {
-        if (config) applyConfig(variantPatch(key, config));
-        else addChart(variantPatch(key, buildDefaultChart(columnCount, rowCount)));
+    const applyVariant = (key, comboSettings) => {
+        if (config) applyConfig(variantPatch(key, config, comboSettings));
+        else addChart(variantPatch(key, buildDefaultChart(columnCount, rowCount), comboSettings));
     };
-    const openCustomCombo = () => {
-        if (!config) { addChart(variantPatch("combo", buildDefaultChart(columnCount, rowCount))); return; }
-        const patch = variantPatch("combo", config);
-        applyConfig(patch);
-        setRibbonTab("design");
-        setDesignDraft({ ...config, ...patch });
-        setExpandedPointSeries(null);
-        setDesignPopoverOpen(true);
-    };
+    // Opens the dialog on Combo > Custom Combination, with its series table.
+    const openCustomCombo = () => setInsertDialog({ tab: "all", family: "combo", select: "combo" });
     const openInsertDialog = (tab, family) => setInsertDialog({ tab, family: family || familyOfVariant(config?.type || "columnGrouped") });
 
     // PivotChart: chart the active PivotTable sheet's whole used range.
@@ -674,6 +745,13 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
 
     const prepared = useMemo(() => prepareChartData(activeSheet, displayGrid, config), [activeSheet, displayGrid, config]);
     const { data, seriesKeys, hadInvalid } = prepared;
+
+    // The chart's series with their current combo type/axis, for the Change
+    // Chart Type dialog's series table.
+    const comboSeries = useMemo(() => (config ? seriesKeys.map((name, i) => {
+        const id = config.valueCols[i];
+        return { id, name, color: config.seriesColors?.[id] || CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length], ...getComboSeriesSettings(config, id, i) };
+    }) : []), [config, seriesKeys]);
 
     // Excel's Recommended Charts: a short list suited to the data's shape.
     const recommendedVariants = useMemo(() => {
@@ -752,6 +830,14 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
     // right now, instead of the user having to count rows/columns by eye — the
     // fix for sheets with several tables scattered at arbitrary positions.
     const useSelectionForDraft = () => {
+        // A Ctrl-selection of several ranges is charted as a range list, so
+        // the rows/columns skipped between the ranges stay out of the chart.
+        const multi = excelData?.ranges;
+        if (Array.isArray(multi) && multi.length > 1) {
+            setDraft((d) => ({ ...d, rangeString: formatRangeString(multi), plotBy: naturalPlotBy(multi), hasHeaderRow: true }));
+            toast.success("Ranges filled from your selection — review and Apply.");
+            return;
+        }
         const sel = excelData?.selection;
         const s = sel && parseCellRef(sel.start);
         const e = sel && parseCellRef(sel.end);
@@ -781,8 +867,64 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
             return raw !== undefined && raw !== "" && parseNumericCell(raw) === null;
         });
 
-        setDraft((d) => ({ ...d, xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow }));
+        setDraft((d) => ({ ...d, xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow, rangeString: "", ranges: undefined, plotBy: undefined }));
         toast.success("Range filled from your selection — review and Apply.");
+    };
+
+    const draftUsesRanges = !!draft && (!!String(draft.rangeString || "").trim() || !!draft.ranges?.length);
+
+    const warnIfTooManySeries = (ranges, plotBy, hasHeader) => {
+        const total = seriesCountForRanges(ranges, plotBy, hasHeader);
+        if (total > MAX_CHART_SERIES) toast.warning(`This range has ${total} series; only the first ${MAX_CHART_SERIES} are plotted.`);
+    };
+
+    // Select Data > Apply. A range list is validated here, and `valueCols` is
+    // re-pointed at its series so colors and combo settings stay keyed to them.
+    const applyDraft = () => {
+        if (!draftUsesRanges) {
+            applyConfig({ ...draft, rangeString: "", ranges: undefined, plotBy: undefined });
+            setPopoverOpen(false);
+            return;
+        }
+        const ranges = String(draft.rangeString || "").trim() ? parseRangeString(draft.rangeString) : draft.ranges;
+        if (!ranges) {
+            toast.error("Enter ranges like A1:A10, C1:C10.");
+            return;
+        }
+        const plotBy = draft.plotBy || naturalPlotBy(ranges);
+        warnIfTooManySeries(ranges, plotBy, draft.hasHeaderRow !== false);
+        applyConfig({
+            ...draft,
+            rangeString: formatRangeString(ranges),
+            ranges: undefined,
+            plotBy,
+            valueCols: seriesIdsForRanges(ranges, plotBy, draft.hasHeaderRow !== false),
+        });
+        setPopoverOpen(false);
+    };
+
+    // Excel's Switch Row/Column: series become categories and vice versa.
+    const switchRowColumn = () => {
+        if (!config) return;
+        let ranges = chartRanges(config);
+        let current = config.plotBy || (ranges ? naturalPlotBy(ranges) : "columns");
+        if (!ranges) {
+            const xIdx = colToIndex(config.xAxisCol || "A");
+            if ((config.valueCols || []).some((c) => colToIndex(c) < xIdx)) {
+                toast.error("Switch Row/Column needs the X-axis column to be left of the value columns.");
+                return;
+            }
+            ranges = legacyConfigRanges({ ...config, rowEnd: Math.min(Number(config.rowEnd) || rowCount, rowCount || Infinity) });
+            current = "columns";
+        }
+        const plotBy = current === "rows" ? "columns" : "rows";
+        warnIfTooManySeries(ranges, plotBy, config.hasHeaderRow !== false);
+        applyConfig({
+            rangeString: formatRangeString(ranges),
+            ranges: undefined,
+            plotBy,
+            valueCols: seriesIdsForRanges(ranges, plotBy, config.hasHeaderRow !== false),
+        });
     };
 
     const setDraftXAxis = (col) => {
@@ -1289,6 +1431,34 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                         </p>
                                     </div>
 
+                                    <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Ranges</Label>
+                                        <input
+                                            className="w-full h-8 text-xs border border-slate-200 rounded px-2"
+                                            placeholder="e.g. A1:A10, C1:C10"
+                                            value={draft.rangeString ?? formatRangeString(draft.ranges)}
+                                            onChange={(e) => setDraft((d) => ({ ...d, rangeString: e.target.value, ranges: undefined }))}
+                                        />
+                                        <p className="text-[10px] text-slate-400 leading-snug">
+                                            Optional. Comma-separated ranges for non-adjacent data; leave empty to pick columns and rows below.
+                                        </p>
+                                    </div>
+
+                                    {draftUsesRanges && (
+                                        <div className="space-y-1.5">
+                                            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Series In</Label>
+                                            <select
+                                                className="w-full h-8 text-xs border border-slate-200 rounded px-2 cursor-pointer"
+                                                value={draft.plotBy || naturalPlotBy(parseRangeString(draft.rangeString) || draft.ranges || [])}
+                                                onChange={(e) => setDraft((d) => ({ ...d, plotBy: e.target.value }))}
+                                            >
+                                                <option value="columns">Columns</option>
+                                                <option value="rows">Rows</option>
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {!draftUsesRanges && (<>
                                     <div className="space-y-1.5">
                                         <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">X-Axis Column</Label>
                                         <select
@@ -1311,12 +1481,14 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                             ))}
                                         </div>
                                     </div>
+                                    </>)}
 
                                     <div className="flex items-center gap-2">
                                         <Checkbox id="chartHasHeader" checked={draft.hasHeaderRow} onCheckedChange={(v) => setDraft((d) => ({ ...d, hasHeaderRow: !!v }))} />
-                                        <label htmlFor="chartHasHeader" className="text-xs text-slate-700 cursor-pointer select-none">First row has headers</label>
+                                        <label htmlFor="chartHasHeader" className="text-xs text-slate-700 cursor-pointer select-none">{draftUsesRanges && draft.plotBy === "rows" ? "First column has series names" : "First row has headers"}</label>
                                     </div>
 
+                                    {!draftUsesRanges && (
                                     <div className="grid grid-cols-2 gap-2">
                                         <div className="space-y-1">
                                             <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Row Start</Label>
@@ -1337,14 +1509,15 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                             />
                                         </div>
                                     </div>
+                                    )}
 
                                     <div className="flex justify-end gap-1.5 pt-1">
                                         <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={() => setPopoverOpen(false)}>Cancel</Button>
                                         <Button
                                             size="sm"
                                             className="h-7 text-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white"
-                                            onClick={() => { applyConfig(draft); setPopoverOpen(false); }}
-                                            disabled={draft.valueCols.length === 0}
+                                            onClick={applyDraft}
+                                            disabled={!draftUsesRanges && draft.valueCols.length === 0}
                                         >
                                             Apply
                                         </Button>
@@ -1353,6 +1526,10 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                             )}
                         </PopoverContent>
                     </Popover>
+                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Switch Row/Column: swap the series and the categories" onClick={switchRowColumn}>
+                        <IconSwitchHorizontal className="w-8 h-8 text-emerald-700" strokeWidth={1.3} />
+                        <span className="text-xs leading-tight text-center">Switch Row/<br />Column</span>
+                    </RibbonBtn>
                 </RibbonGroup>
 
                 <RibbonGroup label="Type">
@@ -1417,7 +1594,7 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                                                     const settings = getComboSeriesSettings(designDraft, c, i);
                                                     return (
                                                         <div key={c} className="flex items-center gap-1.5">
-                                                            <span className="text-[11px] text-slate-600 w-12 shrink-0 truncate">Col {c}</span>
+                                                            <span className="text-[11px] text-slate-600 w-12 shrink-0 truncate">{seriesIdLabel(c)}</span>
                                                             <select
                                                                 className="flex-1 h-7 text-[11px] border border-slate-200 rounded px-1.5 cursor-pointer"
                                                                 value={settings.type}
@@ -1602,12 +1779,13 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                 onClose={() => setInsertDialog(null)}
                 recommended={recommendedVariants}
                 currentType={config?.type}
-                renderPreview={(key, mini) => {
+                comboSeries={comboSeries}
+                renderPreview={(key, mini, comboSettings) => {
                     const base = config || buildDefaultChart(columnCount, rowCount);
-                    const cfg = { ...base, ...variantPatch(key, base), title: "" };
+                    const cfg = { ...base, ...variantPatch(key, base, comboSettings), title: "" };
                     return renderChartBody(cfg, prepareChartData(activeSheet, displayGrid, cfg), mini);
                 }}
-                onOk={(key) => { applyVariant(key); setInsertDialog(null); }}
+                onOk={(key, comboSettings) => { applyVariant(key, comboSettings); setInsertDialog(null); }}
             />
         </div>
         </FullScreenFrame>

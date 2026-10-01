@@ -22,6 +22,7 @@ const AddQuestionPaper = lazy(() => import("./pages/CMS/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("./pages/CMS/Daily5MRecording.jsx"));
 const Daily5MDashboard = lazy(() => import("./pages/CMS/Daily5MDashboard.jsx"));
 const DailyMeeting = lazy(() => import("./pages/CMS/DailyMeeting.jsx"));
+const Phase2 = lazy(() => import("./pages/CMS/Phase2.jsx"));
 const MisPortalHub = lazy(() => import("./pages/CMS/MisPortalHub.jsx"));
 const MonthlyMeetingReport = lazy(() => import("./pages/CMS/MonthlyMeetingReport.jsx"));
 const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome.jsx"));
@@ -388,6 +389,7 @@ const App = () => {
               </RequireAccess>
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="phase-2" element={<Phase2 />} />
           </Route>
 
           {/* Daily Meeting Layout Routes */}
@@ -574,6 +576,7 @@ const App = () => {
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="phase-2" element={<Phase2 />} />
             <Route path="daily-meeting" element={<MisPortalHub />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />

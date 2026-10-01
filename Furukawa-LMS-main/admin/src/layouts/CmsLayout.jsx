@@ -39,6 +39,7 @@ import { useUpdateAvatarMutation } from "@/Redux/AllApi/UserApi";
 import { profile as fetchProfile } from "@/Redux/Slice/AuthSlice";
 import useTranslate from "@/hooks/useTranslate";
 import { getSidebarTabs, isPathAllowedForUser } from "@/constants/pageRegistry";
+import { PHASE_2_URL, openPhase2 } from "@/pages/CMS/Phase2";
 
 // Different tabs for CMS Layout - User can customize these later
 
@@ -226,6 +227,11 @@ export function CmsLayout() {
                 ${collapsed ? "justify-center mx-1" : "items-center px-4"}`}
                                 key={item.label}
                                 onClick={() => {
+                                    // Phase 2 is an external link — open it in a new browser tab
+                                    if (item.key === "cms-phase-2" && PHASE_2_URL) {
+                                        openPhase2();
+                                        return;
+                                    }
                                     navigate(item.link);
                                     if (isMobile) setCollapsed(true);
                                 }}

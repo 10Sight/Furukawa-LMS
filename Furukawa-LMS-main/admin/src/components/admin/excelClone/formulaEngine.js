@@ -662,13 +662,16 @@ const formatNumber = (n) => (Number.isInteger(n) ? String(n) : String(Math.round
 
 // Renders a number per the cell's `numberFormat` + `decimalPlaces` (default
 // 2). `hint` (from a date/time-returning formula) applies only when the cell
-// has no explicit format. 'accounting' reuses the currency rendering — a
+// has no explicit format. A cell formatted through Format Cells carries an
+// Excel format code in `numberPattern`, which wins over the category
+// rendering below. 'accounting' reuses the currency rendering — a
 // true accounting layout (symbol pinned left, negatives in parens) needs
 // column-level layout this per-cell formatter doesn't have.
 export const applyNumberFormat = (num, cell, hint = null) => {
     const explicit = cell?.numberFormat && cell.numberFormat !== "general" ? cell.numberFormat : null;
     const fmt = explicit || hint;
     if (!fmt || typeof num !== "number" || isNaN(num)) return formatNumber(num);
+    if (explicit && cell.numberPattern) return formatWithPattern(num, cell.numberPattern);
 
     const decimals = cell?.decimalPlaces !== undefined && cell?.decimalPlaces !== null ? cell.decimalPlaces : 2;
     switch (fmt) {

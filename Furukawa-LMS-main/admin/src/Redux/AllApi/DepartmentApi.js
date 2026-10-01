@@ -328,12 +328,31 @@ export const departmentApi = createApi({
         }),
 
         saveDailyMorningMeetingSheet: builder.mutation({
-            query: ({ meetingId, sheets, activeSheet }) => ({
+            // `version` is the one the client loaded; the server answers 409 if the
+            // sheet has been saved by someone else since.
+            query: ({ meetingId, sheets, activeSheet, version }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}/sheet`,
                 method: "POST",
-                data: { sheets, activeSheet }
+                data: { sheets, activeSheet, version }
             }),
-            invalidatesTags: (result, error, { meetingId }) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
+            // Patches the cached detail with what was just saved instead of
+            // invalidating its tag — a refetch would pull the whole workbook
+            // back down after every save for data the client already holds.
+            async onQueryStarted({ meetingId, sheets, activeSheet }, { dispatch, queryFulfilled }) {
+                try {
+                    const { data: response } = await queryFulfilled;
+                    dispatch(
+                        departmentApi.util.updateQueryData('getDailyMorningMeetingDetail', String(meetingId), (draft) => {
+                            if (!draft?.data) return;
+                            draft.data.sheets = sheets;
+                            draft.data.activeSheet = activeSheet;
+                            if (response?.data?.version != null) draft.data.version = response.data.version;
+                        })
+                    );
+                } catch {
+                    // Save failed — leave the cache as is; the error is surfaced via .unwrap() at the call site.
+                }
+            },
         }),
 
         deleteDailyMorningMeeting: builder.mutation({

@@ -56,6 +56,7 @@ const formatMeetingRow = (row) => {
         m365WebUrl: row.m365WebUrl || null,
         m365EmbedUrl: row.m365EmbedUrl || null,
         lastSyncedAt: row.lastSyncedAt || null,
+        version: row.version ?? 1,
     };
 };
 
@@ -314,7 +315,12 @@ export const updateMeeting = async (req, res) => {
 export const saveMeetingSheet = async (req, res) => {
     try {
         const { id } = req.params;
-        const { sheets, activeSheet } = req.body;
+        const { sheets, activeSheet, version } = req.body;
+        // Optional so an already-open client that predates the version field can still save.
+        const expectedVersion = version === undefined || version === null ? null : Number(version);
+        if (expectedVersion !== null && !Number.isInteger(expectedVersion)) {
+            return res.status(400).json({ success: false, message: "Invalid version" });
+        }
         const existing = await DailyMorningMeeting.findById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
@@ -324,7 +330,13 @@ export const saveMeetingSheet = async (req, res) => {
         }
 
         const workbook = normalizeWorkbook({ sheets: sheets || {}, activeSheet });
-        const meeting = await DailyMorningMeeting.updateSheetData(id, workbook);
+        const meeting = await DailyMorningMeeting.updateSheetData(id, workbook, expectedVersion);
+        if (!meeting) {
+            return res.status(409).json({
+                success: false,
+                message: "This spreadsheet was changed in another tab or by another user. Reload to get the latest version before saving."
+            });
+        }
         const parsedData = normalizeWorkbook(parseSheetData(meeting.sheetData));
 
         return res.status(200).json({

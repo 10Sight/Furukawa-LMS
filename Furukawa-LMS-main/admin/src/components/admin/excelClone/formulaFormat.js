@@ -1,8 +1,9 @@
 // Excel number-format codes ("#,##0.00", "0.0%", "yyyy-mm-dd", "hh:mm AM/PM",
 // "0.00E+00", "$#,##0;($#,##0)", ...) applied to a value — backs the TEXT()
 // function and the Date/Time/Scientific cell formats. Covers the format
-// syntax people actually write; exotic pieces (fractions "# ?/?", [color]
-// and [condition] prefixes, elapsed "[h]") are skipped rather than rejected.
+// syntax people actually write, including fractions ("# ?/?", "# ?/8"),
+// digit templates ("000-00-0000") and [<=9999999]-style section conditions;
+// [color] prefixes and elapsed "[h]" are skipped rather than rejected.
 
 import { formatGeneral, roundHalfAway, serialToParts, MONTH_NAMES, DAY_NAMES } from "./formulaValues";
 
@@ -119,6 +120,54 @@ const formatDateSection = (serial, items) => {
 
 const groupThousands = (digits) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
+// "# ?/?" (best fraction with up to that many denominator digits) or "# ?/8"
+// (a fixed denominator). Without the leading "#" the whole part folds into
+// the numerator ("?/?" shows 2.5 as 5/2).
+const FRACTION_SECTION = /^([#0?]*) *([#0?]+)\/([#?]+|\d+)$/;
+const formatFractionSection = (n, match, withSign) => {
+    const [, wholePattern, , denominatorPattern] = match;
+    const abs = Math.abs(n);
+    let whole = wholePattern ? Math.floor(abs) : 0;
+    const rest = abs - whole;
+    let numerator = 0, denominator = 1;
+    if (/^\d+$/.test(denominatorPattern) && Number(denominatorPattern) > 0) {
+        denominator = Number(denominatorPattern);
+        numerator = Math.round(rest * denominator);
+    } else {
+        const maxDenominator = Math.pow(10, denominatorPattern.length) - 1;
+        let bestError = Infinity;
+        for (let den = 1; den <= maxDenominator; den++) {
+            const num = Math.round(rest * den);
+            const error = Math.abs(rest - num / den);
+            if (error < bestError - 1e-12) { bestError = error; numerator = num; denominator = den; }
+        }
+    }
+    if (wholePattern && numerator === denominator) { whole += 1; numerator = 0; }
+    const sign = withSign && n < 0 && (whole !== 0 || numerator !== 0) ? "-" : "";
+    if (numerator === 0) return `${sign}${whole}`;
+    return whole === 0 ? `${sign}${numerator}/${denominator}` : `${sign}${whole} ${numerator}/${denominator}`;
+};
+
+// Whole-number templates with punctuation between the digits ("00000-0000",
+// "(###) ###-####"): digits fill the placeholders from the right, and
+// punctuation with no digits left of it is dropped.
+const formatTemplateSection = (n, slots, prefix, suffix, withSign) => {
+    const isPlaceholder = (it) => it.ch && "0#?".includes(it.ch);
+    const digits = String(Math.round(Math.abs(n)));
+    let remaining = digits.length;
+    const out = [];
+    for (let i = slots.length - 1; i >= 0; i--) {
+        const slot = slots[i];
+        if (isPlaceholder(slot)) {
+            if (remaining > 0) out.unshift(digits[--remaining]);
+            else if (slot.ch === "0") out.unshift("0");
+        } else if (remaining > 0 || slots.slice(0, i).some((s) => s.ch === "0")) {
+            out.unshift(slot.lit ?? slot.ch);
+        }
+    }
+    return `${withSign && n < 0 ? "-" : ""}${prefix}${digits.slice(0, remaining)}${out.join("")}${suffix}`;
+};
+
 const formatNumberSection = (n, items, withSign) => {
     const isPlaceholder = (it) => it.ch && "0#?".includes(it.ch);
     const first = items.findIndex(isPlaceholder);
@@ -126,8 +175,16 @@ const formatNumberSection = (n, items, withSign) => {
         // No digit placeholders: all literal (e.g. "Yes"), or just "%".
         return items.map((it) => (it.lit !== undefined ? it.lit : it.ch === "%" ? "%" : it.ch)).join("");
     }
+    const fraction = items.every((it) => it.ch) && FRACTION_SECTION.exec(items.map((it) => it.ch).join("").trim());
+    if (fraction) return formatFractionSection(n, fraction, withSign);
     let last = items.length - 1;
     while (last > first && !(items[last].ch && "0#?.,Ee+-".includes(items[last].ch))) last--;
+    const slots = items.slice(first, last + 1);
+    if (slots.some((it) => !isPlaceholder(it) && it.ch !== ",") && !slots.some((it) => it.ch && ".Ee%".includes(it.ch))) {
+        while (last > first && !isPlaceholder(items[last])) last--;
+        const side = (part) => part.map((it) => it.lit ?? it.ch).join("");
+        return formatTemplateSection(n, items.slice(first, last + 1), side(items.slice(0, first)), side(items.slice(last + 1)), withSign);
+    }
     // Scientific exponent digits end the numeric part too.
     const core = items.slice(first, last + 1).map((it) => it.ch ?? "").join("");
     const prefix = items.slice(0, first).map((it) => it.lit ?? it.ch).join("");
@@ -170,6 +227,17 @@ const formatNumberSection = (n, items, withSign) => {
     return `${withSign && n < 0 && rounded !== 0 ? "-" : ""}${prefix}${body}${exponentText}${suffix}`;
 };
 
+// A section's leading [<n] / [>=n] / ... test (after an optional [Color]), as a predicate.
+const sectionCondition = (section) => {
+    const m = /^(?:\[[A-Za-z]+\d*\])?\[(<=|>=|<>|<|>|=)(-?\d+(?:\.\d+)?)\]/.exec(section || "");
+    if (!m) return null;
+    const limit = Number(m[2]);
+    return {
+        "<": (v) => v < limit, "<=": (v) => v <= limit, ">": (v) => v > limit,
+        ">=": (v) => v >= limit, "=": (v) => v === limit, "<>": (v) => v !== limit,
+    }[m[1]];
+};
+
 export const formatWithPattern = (value, pattern) => {
     const fmt = String(pattern ?? "");
     if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
@@ -185,7 +253,15 @@ export const formatWithPattern = (value, pattern) => {
 
     let section = sections[0];
     let withSign = true;
-    if (value < 0 && sections.length >= 2 && sections[1] !== "") { section = sections[1]; withSign = false; }
+    const firstCondition = sectionCondition(sections[0]);
+    if (firstCondition) {
+        // "[<=9999999]###-####;(###) ###-####": the first section whose
+        // condition holds wins; a section without one is the "otherwise".
+        if (!firstCondition(value) && sections.length >= 2) {
+            const secondCondition = sectionCondition(sections[1]);
+            section = !secondCondition || secondCondition(value) ? sections[1] : (sections[2] ?? sections[1]);
+        }
+    } else if (value < 0 && sections.length >= 2 && sections[1] !== "") { section = sections[1]; withSign = false; }
     else if (value === 0 && sections.length >= 3 && sections[2] !== "") section = sections[2];
 
     const items = lexSection(section);

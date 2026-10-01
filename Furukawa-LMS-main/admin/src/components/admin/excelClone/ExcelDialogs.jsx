@@ -13,6 +13,12 @@ import { IconCopy, IconSearch, IconArrowRight } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { FUNCTION_CATALOG, FUNCTION_CATEGORIES, SHORTCUT_CATALOG, FORMULA_BASICS } from "./formulaCatalog";
 import { applyNumberFormat } from "./formulaEngine";
+import { formatWithPattern } from "./formulaFormat";
+import {
+    NUMBER_CATEGORIES, LOCALES, CALENDAR_TYPES, CURRENCY_SYMBOLS, DEFAULT_SYMBOL_BY_LOCALE, DATE_TYPES_BY_LOCALE, TIME_TYPES_BY_LOCALE,
+    FRACTION_TYPES, SPECIAL_TYPES, CUSTOM_CODES, BUILT_CATEGORIES, TYPE_LIST_CATEGORIES, SAMPLE_DATE_SERIAL, NEGATIVE_STYLES,
+    buildNumberPattern, optionsFromPattern,
+} from "./numberFormatCatalog";
 
 // Shared chrome: Escape closes, Enter confirms (outside multi-line fields),
 // and keystrokes never bubble up to the grid's shortcut handler behind it —
@@ -307,10 +313,26 @@ export const PasteSpecialDialog = ({ open, onOpenChange, onApply }) => {
 // ---------------------------------------------------------------------------
 // Ctrl+1 — Format Cells
 
-const DECIMAL_FORMATS = new Set(["number", "comma", "currency", "accounting", "percentage", "scientific"]);
+// Number tab: the "Type" list for a category, as { pattern, label } rows.
+// Date and Time rows are labelled with 14 March 2012 1:30 PM in that format, like Excel.
+const typeListFor = (category, locale) => {
+    const dated = (patterns) => patterns.map((pattern) => ({ pattern, label: formatWithPattern(SAMPLE_DATE_SERIAL, pattern) }));
+    switch (category) {
+        case "date": return dated(DATE_TYPES_BY_LOCALE[locale] || DATE_TYPES_BY_LOCALE["en-IN"]);
+        case "time": return dated(TIME_TYPES_BY_LOCALE[locale] || TIME_TYPES_BY_LOCALE["en-IN"]);
+        case "fraction": return FRACTION_TYPES;
+        case "special": return SPECIAL_TYPES;
+        case "custom": return CUSTOM_CODES.map((pattern) => ({ pattern, label: pattern }));
+        default: return [];
+    }
+};
+// Older cells store "comma" / "datetime"; the dialog shows them under Number / Date.
+const categoryOfFormat = (numberFormat) => ({ comma: "number", datetime: "date" }[numberFormat] || numberFormat || "general");
+const LEGACY_PATTERNS = { date: "yyyy-mm-dd", time: "hh:mm:ss", datetime: "yyyy-mm-dd hh:mm" };
+const NUMBER_FIELDS = ["category", "decimalPlaces", "useSeparator", "negativeStyle", "symbol", "pattern"];
 const BORDER_SIDES = ["top", "bottom", "left", "right"];
 
-export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numberFormats, fontFamilies, fontSizes, borderWeights, onApply, initialTab }) => {
+export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, fontFamilies, fontSizes, borderWeights, onApply, initialTab }) => {
     const [tab, setTab] = useState("number");
     const [draft, setDraft] = useState({});
     const touched = useRef(new Set());
@@ -323,9 +345,17 @@ export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numbe
     useEffect(() => {
         if (!open) return;
         touched.current = new Set();
+        const category = categoryOfFormat(cell?.numberFormat);
+        const options = optionsFromPattern(cell?.numberPattern, cell?.numberFormat);
         setDraft({
-            numberFormat: cell?.numberFormat || "general",
+            category,
             decimalPlaces: cell?.decimalPlaces ?? 2,
+            useSeparator: options.useSeparator,
+            negativeStyle: options.negativeStyle,
+            // Cells formatted before format codes existed render with "$".
+            symbol: options.symbol ?? (cell?.numberPattern ? "" : cell?.numberFormat ? "$" : DEFAULT_SYMBOL_BY_LOCALE["en-IN"]),
+            pattern: cell?.numberPattern || LEGACY_PATTERNS[cell?.numberFormat] || "",
+            locale: "en-IN",
             align: cell?.align || "",
             valign: cell?.valign || "middle",
             wrap: !!cell?.wrap,
@@ -349,11 +379,15 @@ export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numbe
 
     const submit = () => {
         const patch = {};
+        if (NUMBER_FIELDS.some((f) => touched.current.has(f))) {
+            patch.numberFormat = draft.category === "general" ? undefined : draft.category;
+            patch.numberPattern = numberPattern;
+            patch.decimalPlaces = BUILT_CATEGORIES.has(draft.category) ? decimalPlaces : undefined;
+        }
         for (const field of touched.current) {
+            if (NUMBER_FIELDS.includes(field) || field === "locale") continue;
             const v = draft[field];
             switch (field) {
-                case "numberFormat": patch.numberFormat = v === "general" ? undefined : v; break;
-                case "decimalPlaces": patch.decimalPlaces = Math.max(0, Math.min(10, Number(v) || 0)); break;
                 case "align": patch.align = v || undefined; break;
                 case "fontFamily": patch.fontFamily = v || undefined; break;
                 case "fontSize": patch.fontSize = v ? Number(v) : undefined; break;
@@ -372,11 +406,43 @@ export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numbe
         onOpenChange(false);
     };
 
+    const decimalPlaces = Math.max(0, Math.min(30, Number(draft.decimalPlaces) || 0));
+    // The format code the current Number-tab choices stand for (none for General / Text).
+    const numberPattern = BUILT_CATEGORIES.has(draft.category)
+        ? buildNumberPattern({ ...draft, decimalPlaces })
+        : TYPE_LIST_CATEGORIES.has(draft.category) && draft.pattern && !/^general$/i.test(draft.pattern.trim()) ? draft.pattern : undefined;
+    const typeList = useMemo(() => typeListFor(draft.category, draft.locale), [draft.category, draft.locale]);
+
+    // Sample shows the active cell's own value; an empty or text cell falls
+    // back to a stand-in so the format is still visible.
     const preview = useMemo(() => {
-        const n = typeof sampleValue === "number" ? sampleValue : 1234.5678;
-        const fmt = draft.numberFormat === "text" ? null : draft.numberFormat;
-        return draft.numberFormat === "text" ? String(sampleValue ?? "1234.5678") : applyNumberFormat(n, { numberFormat: fmt, decimalPlaces: draft.decimalPlaces });
-    }, [draft.numberFormat, draft.decimalPlaces, sampleValue]);
+        if (draft.category === "text") return String(sampleValue ?? "");
+        const isDated = draft.category === "date" || draft.category === "time";
+        const n = typeof sampleValue === "number" ? sampleValue : isDated ? SAMPLE_DATE_SERIAL : 1234.5678;
+        return applyNumberFormat(n, { numberFormat: draft.category, numberPattern, decimalPlaces });
+    }, [draft.category, numberPattern, decimalPlaces, sampleValue]);
+
+    // Switching category lands on that category's first Type, unless the
+    // current code already belongs to it. Custom keeps whatever code is in effect.
+    const chooseCategory = (category) => {
+        touched.current.add("category");
+        setDraft((d) => {
+            const current = BUILT_CATEGORIES.has(d.category) ? buildNumberPattern({ ...d, decimalPlaces }) : d.pattern;
+            const list = typeListFor(category, d.locale);
+            let pattern = d.pattern;
+            if (category === "custom") pattern = current || "General";
+            else if (list.length && !list.some((t) => t.pattern === d.pattern)) pattern = list[0].pattern;
+            return { ...d, category, pattern };
+        });
+    };
+    const chooseLocale = (locale) => setDraft((d) => {
+        const list = typeListFor(d.category, locale);
+        const keep = !list.length || list.some((t) => t.pattern === d.pattern);
+        if (!keep) touched.current.add("pattern");
+        return { ...d, locale, pattern: keep ? d.pattern : list[0].pattern };
+    });
+    const categoryInfo = NUMBER_CATEGORIES.find((c) => c.key === draft.category) || NUMBER_CATEGORIES[0];
+    const negativeSample = (1234.1).toFixed(decimalPlaces).replace(/\B(?=(\d{3})+(?!\d))/g, draft.category === "number" && !draft.useSeparator ? "" : ",");
 
     const field = "h-8 text-sm border border-slate-200 rounded-md px-2 bg-white outline-none focus:border-indigo-400";
     return (
@@ -389,38 +455,117 @@ export const FormatCellsDialog = ({ open, onOpenChange, cell, sampleValue, numbe
                 </TabsList>
 
                 <TabsContent value="number" className="mt-3 space-y-3">
-                    <div className="grid grid-cols-[160px_1fr] gap-4">
-                        <div className="border border-slate-200 rounded-md max-h-56 overflow-y-auto">
-                            {numberFormats.map((f) => (
-                                <button
-                                    key={f.value}
-                                    className={cn("w-full text-left text-sm px-2.5 py-1.5 cursor-pointer", draft.numberFormat === f.value ? "bg-indigo-600 text-white" : "hover:bg-slate-50 text-slate-700")}
-                                    onClick={() => set("numberFormat", f.value)}
-                                >
-                                    {f.label}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="space-y-3">
-                            <div>
-                                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Sample</div>
-                                <div className="h-9 px-3 flex items-center border border-slate-200 rounded-md bg-slate-50 font-mono text-sm">{preview}</div>
+                    <div className="grid grid-cols-[150px_1fr] gap-4">
+                        <div>
+                            <div className="text-sm text-slate-700 mb-1">Category:</div>
+                            <div className="border border-slate-300 h-72 overflow-y-auto bg-white" role="listbox" aria-label="Category">
+                                {NUMBER_CATEGORIES.map((c) => (
+                                    <button
+                                        key={c.key}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={draft.category === c.key}
+                                        className={cn("w-full text-left text-sm px-2 py-0.5 cursor-pointer", draft.category === c.key ? "bg-indigo-600 text-white" : "hover:bg-slate-100 text-slate-800")}
+                                        onClick={() => chooseCategory(c.key)}
+                                    >
+                                        {c.label}
+                                    </button>
+                                ))}
                             </div>
-                            {DECIMAL_FORMATS.has(draft.numberFormat) && (
-                                <label className="flex items-center gap-2 text-sm text-slate-700">
-                                    Decimal places
-                                    <input type="number" min={0} max={10} className={cn(field, "w-20")} value={draft.decimalPlaces} onChange={(e) => set("decimalPlaces", e.target.value)} />
+                        </div>
+                        <div className="space-y-2.5 min-w-0">
+                            <fieldset className="border border-slate-300 px-2 pb-1.5">
+                                <legend className="text-sm text-slate-700 px-1">Sample</legend>
+                                <div className="h-6 text-sm text-slate-900 truncate">{preview}</div>
+                            </fieldset>
+
+                            {draft.category === "custom" && (
+                                <label className="block text-sm text-slate-700 space-y-1">
+                                    <div>Type:</div>
+                                    <input className={cn(field, "w-full font-mono")} value={draft.pattern || ""} onChange={(e) => set("pattern", e.target.value)} spellCheck={false} />
                                 </label>
                             )}
-                            <p className="text-xs text-slate-500">
-                                {draft.numberFormat === "date" && "Shows date serials (e.g. from =TODAY()) as yyyy-mm-dd."}
-                                {draft.numberFormat === "time" && "Shows the time part as hh:mm:ss."}
-                                {draft.numberFormat === "datetime" && "Shows yyyy-mm-dd hh:mm."}
-                                {draft.numberFormat === "text" && "Shows exactly what was typed."}
-                                {draft.numberFormat === "general" && "No specific number format."}
-                            </p>
+
+                            {BUILT_CATEGORIES.has(draft.category) && (
+                                <label className="flex items-center gap-2 text-sm text-slate-700">
+                                    Decimal places:
+                                    <input type="number" min={0} max={30} className={cn(field, "w-20")} value={draft.decimalPlaces} onChange={(e) => set("decimalPlaces", e.target.value)} />
+                                </label>
+                            )}
+                            {draft.category === "number" && (
+                                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                    <Checkbox checked={!!draft.useSeparator} onCheckedChange={(v) => set("useSeparator", !!v)} /> Use 1000 Separator (,)
+                                </label>
+                            )}
+                            {(draft.category === "currency" || draft.category === "accounting") && (
+                                <label className="flex items-center gap-2 text-sm text-slate-700">
+                                    Symbol:
+                                    <select className={cn(field, "w-28")} value={draft.symbol || ""} onChange={(e) => set("symbol", e.target.value)}>
+                                        {CURRENCY_SYMBOLS.map((sym) => <option key={sym.label} value={sym.value}>{sym.label}</option>)}
+                                    </select>
+                                </label>
+                            )}
+                            {(draft.category === "number" || draft.category === "currency") && (
+                                <div className="text-sm text-slate-700 space-y-1">
+                                    <div>Negative numbers:</div>
+                                    <div className="border border-slate-300 bg-white" role="listbox" aria-label="Negative numbers">
+                                        {NEGATIVE_STYLES.map((style) => (
+                                            <button
+                                                key={style.key}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={draft.negativeStyle === style.key}
+                                                className={cn("w-full text-left text-sm px-2 py-0.5 cursor-pointer", draft.negativeStyle === style.key ? "bg-indigo-600 text-white" : "hover:bg-slate-100 text-slate-800")}
+                                                onClick={() => set("negativeStyle", style.key)}
+                                            >
+                                                {style.sample(`${draft.category === "currency" ? draft.symbol || "" : ""}${negativeSample}`)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {typeList.length > 0 && (
+                                <div className="text-sm text-slate-700 space-y-1">
+                                    {draft.category !== "custom" && <div>Type:</div>}
+                                    <div className={cn("border border-slate-300 overflow-y-auto bg-white", draft.category === "custom" ? "h-36" : "h-28")} role="listbox" aria-label="Type">
+                                        {typeList.map((t) => (
+                                            <button
+                                                key={t.pattern}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={draft.pattern === t.pattern}
+                                                title={t.pattern}
+                                                className={cn("w-full text-left text-sm px-2 py-0.5 cursor-pointer truncate", draft.pattern === t.pattern ? "bg-indigo-600 text-white" : "hover:bg-slate-100 text-slate-800")}
+                                                onClick={() => set("pattern", t.pattern)}
+                                                onDoubleClick={submit}
+                                            >
+                                                {t.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {(draft.category === "date" || draft.category === "time" || draft.category === "special") && (
+                                <label className="block text-sm text-slate-700 space-y-1">
+                                    <div>Locale (location):</div>
+                                    <select className={cn(field, "w-full")} value={draft.locale || "en-IN"} onChange={(e) => chooseLocale(e.target.value)}>
+                                        {LOCALES.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
+                                    </select>
+                                </label>
+                            )}
+                            {draft.category === "date" && (
+                                <label className="block text-sm text-slate-700 space-y-1">
+                                    <div>Calendar type:</div>
+                                    <select className={cn(field, "w-full")} defaultValue="gregorian">
+                                        {CALENDAR_TYPES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                                    </select>
+                                </label>
+                            )}
                         </div>
                     </div>
+                    <p className="text-xs text-slate-600 leading-snug min-h-8">{categoryInfo.help}</p>
                 </TabsContent>
 
                 <TabsContent value="alignment" className="mt-3 space-y-3">

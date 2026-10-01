@@ -29,6 +29,7 @@ import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
     evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula
 } from "./formulaEngine";
+import { patternWithDecimals } from "./numberFormatCatalog";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { cn } from "@/lib/utils";
@@ -67,7 +68,26 @@ const ORIENTATION_OPTIONS = [
     { value: 90, label: "Rotate Text Up" },
     { value: -90, label: "Rotate Text Down" },
 ];
-const HISTORY_LIMIT = 100;
+const HISTORY_LIMIT = 30;
+const DATA_BROADCAST_DEBOUNCE_MS = 120;
+const CHART_SAVE_DEBOUNCE_MS = 800;
+
+// Deep-clones the workbook's containers the way a JSON round-trip would
+// (undefined props dropped, non-finite numbers -> null), but strings are
+// carried over by reference — so base64 media payloads aren't duplicated into
+// every undo snapshot.
+const cloneWorkbook = (value) => {
+    if (value === null || typeof value !== "object") {
+        return typeof value === "number" && !Number.isFinite(value) ? null : value;
+    }
+    if (Array.isArray(value)) return value.map((v) => (v === undefined ? null : cloneWorkbook(v)));
+    const out = {};
+    for (const key of Object.keys(value)) {
+        const v = value[key];
+        if (v !== undefined && typeof v !== "function") out[key] = cloneWorkbook(v);
+    }
+    return out;
+};
 const NUMBER_FORMATS = [
     { value: "general", label: "General" },
     { value: "number", label: "Number" },
@@ -81,6 +101,8 @@ const NUMBER_FORMATS = [
     { value: "datetime", label: "Date & Time" },
     { value: "text", label: "Text" },
 ];
+// Categories only Format Cells can set (they need a format code).
+const NUMBER_FORMAT_LABELS = { fraction: "Fraction", special: "Special", custom: "Custom" };
 // Home > Borders menu. Edge presets outline the selection rectangle (like
 // Excel), "all" borders every cell, "none" clears.
 const BORDER_PRESETS = [
@@ -129,6 +151,17 @@ const TableStyleSwatch = ({ preset }) => (
         <div style={{ background: preset.bandA, height: "33%" }} />
     </div>
 );
+
+// Drag-select auto-scroll: how close to the grid's right/bottom edge the
+// pointer must be, how far each tick scrolls, and how much the sheet grows
+// when the drag reaches its end.
+const DRAG_SCROLL_EDGE = 20;
+const DRAG_SCROLL_INTERVAL_MS = 50;
+const DRAG_SCROLL_STEP_X = 60;
+const DRAG_SCROLL_STEP_Y = 30;
+const DRAG_GROW_ROWS = 10;
+const DRAG_GROW_COLUMNS = 5;
+const DRAG_GROW_INTERVAL_MS = 300;
 
 const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
 const EMPTY_LIST = Object.freeze([]); // stable fallback for optional per-sheet arrays, so memo deps don't churn
@@ -870,6 +903,19 @@ const extractExcelCellValue = (cell) => {
     if (v instanceof Date) return excelDateToLocalString(v);
     if (typeof v === "object") {
         if (v.formula !== undefined) return `=${v.formula}`;
+        // A formula filled down/across in Excel is saved once on its first
+        // cell; the rest only point at it (`sharedFormula`). ExcelJS's
+        // `cell.formula` rebuilds each one with its references shifted. If it
+        // can't, keep the value Excel last calculated rather than a blank.
+        if (v.sharedFormula !== undefined) {
+            let formula;
+            try { formula = cell.formula; } catch { formula = undefined; }
+            if (formula) return `=${formula}`;
+            const result = v.result;
+            if (result === null || result === undefined) return "";
+            if (result instanceof Date) return excelDateToLocalString(result);
+            return typeof result === "object" ? String(result.error ?? "") : String(result);
+        }
         if (v.richText) return v.richText.map((r) => r.text).join("");
         if (v.text !== undefined) return String(v.text);
         if (v.error) return String(v.error);
@@ -1224,6 +1270,60 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [, setHistoryTick] = useState(0);
     const bumpHistory = useCallback(() => setHistoryTick((t) => t + 1), []);
 
+    // Latest values for the debounced chart save below, which fires from a
+    // timer (or on unmount) and so can't rely on a render's closure.
+    const sheetsRef = useRef(sheets);
+    sheetsRef.current = sheets;
+    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet });
+    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet };
+    const chartSaveRef = useRef(null); // { timer, meetingId, sectionId, activeSheet } | null
+    const broadcastNowRef = useRef(false); // next onDataChange skips the debounce (chart edits)
+
+    // Saves the workbook for a queued chart change right away. The target ids
+    // are the ones captured when the change was queued, so a flush triggered
+    // by switching meetings still writes to the meeting the chart belongs to.
+    // A meeting's sheet carries a server-side `version` that every save bumps;
+    // sending the one this grid loaded lets the server reject a save that would
+    // overwrite another tab's/user's newer copy (409). Saves run one at a time
+    // so a queued chart save and a manual Save can't race each other and trip
+    // that check against their own previous write.
+    const meetingVersionsRef = useRef({}); // meetingId -> last version seen from the server
+    const saveQueueRef = useRef(Promise.resolve());
+    const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets: snapshot, activeSheet }) => {
+        const run = async () => {
+            if (!targetMeetingId) {
+                return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
+            }
+            const res = await saveFnsRef.current.saveMeetingSheet({
+                meetingId: targetMeetingId, sheets: snapshot, activeSheet, version: meetingVersionsRef.current[targetMeetingId]
+            }).unwrap();
+            if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
+            return res;
+        };
+        const result = saveQueueRef.current.then(run, run);
+        saveQueueRef.current = result.catch(() => {});
+        return result;
+    }, []);
+    const saveErrorMessage = (err, fallback) => (err?.status === 409 && err.message ? err.message : fallback);
+
+    const flushChartSave = useCallback(async () => {
+        const pending = chartSaveRef.current;
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        chartSaveRef.current = null;
+        const snapshot = sheetsRef.current;
+        try {
+            await saveWorkbook({ meetingId: pending.meetingId, sectionId: pending.sectionId, sheets: snapshot, activeSheet: pending.activeSheet });
+            // Edits made while the request was in flight are still unsaved.
+            if (sheetsRef.current === snapshot) setIsDirty(false);
+        } catch (err) {
+            toast.error(saveErrorMessage(err, "Failed to save chart settings."));
+        }
+    }, [saveWorkbook]);
+
+    // Don't drop a queued chart save when the grid unmounts mid-debounce.
+    useEffect(() => () => { flushChartSave(); }, [flushChartSave]);
+
     useEffect(() => {
         if (sheetData?.data && !loadedRef.current) {
             const loadedSheets = sheetData.data.sheets && Object.keys(sheetData.data.sheets).length > 0
@@ -1236,12 +1336,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             );
             setSheets(sanitizedSheets);
             setActiveSheetName(sheetData.data.activeSheet && sanitizedSheets[sheetData.data.activeSheet] ? sheetData.data.activeSheet : Object.keys(sanitizedSheets)[0]);
+            // Taken only at load: a later background refetch must not move the
+            // version forward while the grid still holds the older sheets.
+            if (meetingId && sheetData.data.version != null) meetingVersionsRef.current[meetingId] = sheetData.data.version;
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];
             bumpHistory();
         }
-    }, [sheetData, bumpHistory]);
+    }, [sheetData, bumpHistory, meetingId]);
 
     // Reset load-guard and local state only when switching to a DIFFERENT
     // section's sheet/meeting on an already-mounted instance. Without the
@@ -1253,6 +1356,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     useEffect(() => {
         const prev = prevIdsRef.current;
         if (prev.sectionId !== sectionId || prev.meetingId !== meetingId) {
+            flushChartSave();
             loadedRef.current = false;
             setIsDirty(false);
             setActiveCell("A1");
@@ -1267,7 +1371,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             bumpHistory();
             prevIdsRef.current = { sectionId, meetingId };
         }
-    }, [sectionId, meetingId, bumpHistory]);
+    }, [sectionId, meetingId, bumpHistory, flushChartSave]);
 
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
@@ -1308,15 +1412,26 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const hiddenColSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
     const manualHiddenRowSet = useMemo(() => new Set(hiddenRows), [hiddenRows]);
 
-    // Broadcasts the live sheet + evaluated values to the parent (e.g. ExcelGraph)
-    // on every change, so a chart above the grid can re-render as the user types.
+    // Broadcasts the live sheet + evaluated values to the parent (e.g. ExcelGraph),
+    // so a chart above the grid can re-render as the user types.
     // `selection` rides along too, so the chart's "Use Selection" action can read
     // whatever range the user currently has drag-selected in the grid.
+    // Debounced: a drag-select or held arrow key changes the selection many
+    // times a second, and each broadcast re-renders the parent and its charts.
+    // Chart edits skip the debounce — ExcelGraph builds its next chart list
+    // from this snapshot, so it must not lag behind the change it just made.
     useEffect(() => {
         if (!onDataChange) return;
         // `selection` stays the active range for existing consumers; `ranges`
         // lists every range of a Ctrl+click multi-selection (active one last).
-        onDataChange({ sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, ranges: [...extraRanges, selection], activeCell });
+        const snapshot = { sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, ranges: [...extraRanges, selection], activeCell };
+        if (broadcastNowRef.current) {
+            broadcastNowRef.current = false;
+            onDataChange(snapshot);
+            return;
+        }
+        const timer = setTimeout(() => onDataChange(snapshot), DATA_BROADCAST_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
     }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, extraRanges, activeCell, onDataChange]);
 
     // Union of every selected range — a Set, so overlapping ranges count once.
@@ -1441,7 +1556,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         bumpHistory();
 
         setSheets((prev) => {
-            const next = JSON.parse(JSON.stringify(prev));
+            const next = cloneWorkbook(prev);
             updater(next);
             // Every commit — a source-sheet edit, a pivot config change, an
             // import, a sheet rename — can affect a pivot sheet's output, so
@@ -2145,6 +2260,66 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => window.removeEventListener("mouseup", onMouseUp);
     }, []);
 
+    // Drag-selecting to (or past) the grid's edge keeps scrolling that way and
+    // extends the selection to the cell under the pointer, like Excel. At the
+    // end of the sheet it appends rows/columns so the drag can keep going —
+    // in batches, so a long drag leaves a few undo steps rather than hundreds.
+    const dragScrollState = useRef(null);
+    dragScrollState.current = {
+        rowOffsets, colOffsets, rowCount, columnCount, zoom,
+        grow: readOnly || isSheetReadOnly ? null : (axis) => updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (!sheet) return;
+            if (axis === "row") sheet.rowCount += DRAG_GROW_ROWS;
+            else sheet.columnCount += DRAG_GROW_COLUMNS;
+        }),
+    };
+    useEffect(() => {
+        let pointer = null, timer = null, lastGrowAt = 0;
+        const stop = () => { clearInterval(timer); timer = null; };
+        const tick = () => {
+            const el = gridContainerRef.current;
+            const state = dragScrollState.current;
+            if (!el || !pointer || !isSelecting.current) { stop(); return; }
+            const rect = el.getBoundingClientRect();
+            const headerRight = rect.left + ROW_HEADER_WIDTH * state.zoom;
+            const headerBottom = rect.top + HEADER_ROW_HEIGHT * state.zoom;
+            const dx = pointer.x > rect.right - DRAG_SCROLL_EDGE ? 1 : pointer.x < headerRight ? -1 : 0;
+            const dy = pointer.y > rect.bottom - DRAG_SCROLL_EDGE ? 1 : pointer.y < headerBottom ? -1 : 0;
+            if (!dx && !dy) return;
+
+            el.scrollLeft += dx * DRAG_SCROLL_STEP_X;
+            el.scrollTop += dy * DRAG_SCROLL_STEP_Y;
+            const atRightEnd = dx > 0 && el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+            const atBottomEnd = dy > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+            if (state.grow && (atRightEnd || atBottomEnd) && Date.now() - lastGrowAt > DRAG_GROW_INTERVAL_MS) {
+                lastGrowAt = Date.now();
+                if (atBottomEnd) state.grow("row");
+                if (atRightEnd) state.grow("col");
+            }
+
+            // The cell under the pointer, held just inside the visible grid.
+            const x = clamp(pointer.x, headerRight + 1, rect.right - DRAG_SCROLL_EDGE);
+            const y = clamp(pointer.y, headerBottom + 1, rect.bottom - DRAG_SCROLL_EDGE);
+            const col = clamp(bandIndexForPixel(state.colOffsets, (x - rect.left) / state.zoom + el.scrollLeft), 0, state.columnCount - 1);
+            const row = clamp(bandIndexForPixel(state.rowOffsets, (y - rect.top) / state.zoom + el.scrollTop), 0, state.rowCount - 1);
+            const id = getCellId(row, col);
+            setSelectionRaw((prev) => (prev.end === id ? prev : { ...prev, end: id }));
+        };
+        const onMouseMove = (e) => {
+            if (!isSelecting.current || e.buttons !== 1) { pointer = null; return; }
+            pointer = { x: e.clientX, y: e.clientY };
+            if (!timer) timer = setInterval(tick, DRAG_SCROLL_INTERVAL_MS);
+        };
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", stop);
+        return () => {
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", stop);
+            stop();
+        };
+    }, []);
+
     // Header selections explicitly take keyboard focus (header mousedown is
     // preventDefault-ed so a drag doesn't start a text selection, which also
     // skips the browser's own focus move) so Delete/Backspace reach
@@ -2347,11 +2522,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const setFontFamily = (fontFamily) => applyToSelection((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
     const setBg = (bg) => applyToSelection((cell) => ({ ...cell, bg }));
     const setColor = (color) => applyToSelection((cell) => ({ ...cell, color }));
-    const setNumberFormat = (fmt) => applyToSelection((cell) => ({ ...cell, numberFormat: fmt === "general" ? undefined : fmt }));
-    const adjustDecimals = (delta) => applyToSelection((cell) => ({
-        ...cell,
-        decimalPlaces: Math.max(0, (cell.decimalPlaces !== undefined ? cell.decimalPlaces : 2) + delta)
-    }));
+    // The ribbon's quick formats replace any format code set through Format Cells.
+    const setNumberFormat = (fmt) => applyToSelection((cell) => ({ ...cell, numberFormat: fmt === "general" ? undefined : fmt, numberPattern: undefined }));
+    const adjustDecimals = (delta) => applyToSelection((cell) => {
+        const decimalPlaces = Math.max(0, (cell.decimalPlaces !== undefined ? cell.decimalPlaces : 2) + delta);
+        return {
+            ...cell,
+            decimalPlaces,
+            numberPattern: cell.numberPattern ? patternWithDecimals(cell.numberPattern, decimalPlaces) : undefined,
+        };
+    });
     const applyBorderPreset = (preset) => {
         if (!guardEditable() || !selectionBounds) return;
         const weight = preset.weight || borderWeight;
@@ -2813,16 +2993,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // --- Save / export / import ---
 
     const handleSave = async () => {
+        // This saves the whole workbook, charts included — a queued chart save is redundant.
+        if (chartSaveRef.current) {
+            clearTimeout(chartSaveRef.current.timer);
+            chartSaveRef.current = null;
+        }
         try {
-            if (meetingId) {
-                await saveMeetingSheet({ meetingId, sheets, activeSheet: activeSheetName }).unwrap();
-            } else {
-                await saveSectionSheet({ sectionId, sheets, activeSheet: activeSheetName }).unwrap();
-            }
-            setIsDirty(false);
+            await saveWorkbook({ meetingId, sectionId, sheets, activeSheet: activeSheetName });
+            if (sheetsRef.current === sheets) setIsDirty(false);
             toast.success("Spreadsheet saved successfully!");
         } catch (err) {
-            toast.error("Failed to save spreadsheet. Please try again.");
+            toast.error(saveErrorMessage(err, "Failed to save spreadsheet. Please try again."));
         }
     };
 
@@ -2830,25 +3011,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // one per table), so persisting them reuses the same save-the-whole-workbook
     // endpoint as a normal cell edit — no separate backend route needed. Bypasses
     // the undo history (chart settings aren't something a user expects Ctrl+Z to
-    // touch) and saves immediately so the chart layout survives a refresh without
-    // the user hitting Save.
-    const persistCharts = useCallback(async (charts) => {
+    // touch) and auto-saves so the chart layout survives a refresh without the
+    // user hitting Save. The local state updates at once; the network save is
+    // debounced so dragging a colour picker or flipping through chart types
+    // sends one request instead of one per change.
+    const persistCharts = useCallback((charts) => {
         if (readOnly) return;
-        const nextSheets = JSON.parse(JSON.stringify(sheets));
-        if (!nextSheets[activeSheetName]) return;
-        nextSheets[activeSheetName].charts = charts;
-        setSheets(nextSheets);
-        try {
-            if (meetingId) {
-                await saveMeetingSheet({ meetingId, sheets: nextSheets, activeSheet: activeSheetName }).unwrap();
-            } else {
-                await saveSectionSheet({ sectionId, sheets: nextSheets, activeSheet: activeSheetName }).unwrap();
-            }
-            setIsDirty(false);
-        } catch (err) {
-            toast.error("Failed to save chart settings.");
-        }
-    }, [sheets, activeSheetName, sectionId, meetingId, readOnly, saveSectionSheet, saveMeetingSheet]);
+        if (!sheetsRef.current[activeSheetName]) return;
+        broadcastNowRef.current = true;
+        setSheets((prev) => (prev[activeSheetName] ? { ...prev, [activeSheetName]: { ...prev[activeSheetName], charts } } : prev));
+        clearTimeout(chartSaveRef.current?.timer);
+        chartSaveRef.current = { meetingId, sectionId, activeSheet: activeSheetName, timer: setTimeout(flushChartSave, CHART_SAVE_DEBOUNCE_MS) };
+    }, [activeSheetName, sectionId, meetingId, readOnly, flushChartSave]);
 
     useImperativeHandle(ref, () => ({
         updateCharts: persistCharts,
@@ -2944,7 +3118,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 datetime: "yyyy-mm-dd hh:mm",
                                 text: "@",
                             };
-                            excelCell.numFmt = fmtMap[cellData.numberFormat] || "General";
+                            excelCell.numFmt = cellData.numberPattern || fmtMap[cellData.numberFormat] || "General";
                         }
                     }
                     processedRows++;
@@ -3613,6 +3787,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         applyToSelection((cell) => ({
             ...cell,
             numberFormat: numberFormat === "general" ? undefined : numberFormat,
+            numberPattern: undefined,
             decimalPlaces: decimalPlaces ?? cell.decimalPlaces,
         }));
     };
@@ -4326,7 +4501,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <RibbonDropdown
                             title="Number Format"
                             buttonClassName="w-[118px] justify-between border border-slate-300 bg-white hover:bg-white hover:border-slate-400"
-                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{NUMBER_FORMATS.find((f) => f.value === (activeCellData?.numberFormat || "general"))?.label || "General"}</span>}
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{NUMBER_FORMATS.find((f) => f.value === (activeCellData?.numberFormat || "general"))?.label || NUMBER_FORMAT_LABELS[activeCellData?.numberFormat] || "General"}</span>}
                             contentClassName="w-52 max-h-80 overflow-y-auto"
                         >
                             {NUMBER_FORMATS.map((f) => (
@@ -5252,7 +5427,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 initialTab={formatCellsTab}
                 cell={activeCellData}
                 sampleValue={rawGrid[activeCell]}
-                numberFormats={NUMBER_FORMATS}
                 fontFamilies={FONT_FAMILIES}
                 fontSizes={FONT_SIZES}
                 borderWeights={BORDER_WEIGHTS}

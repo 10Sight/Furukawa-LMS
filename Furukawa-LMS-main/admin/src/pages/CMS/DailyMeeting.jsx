@@ -28,9 +28,9 @@ import {
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import ExcelClone from "@/components/admin/excelClone/ExcelClone";
 import ExcelGraph from "@/components/admin/excelClone/ExcelGraph";
+import ExcelErrorBoundary from "@/components/admin/excelClone/ErrorBoundary";
 
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
@@ -368,6 +368,9 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const handleChartsChange = useCallback((newCharts) => {
         excelRef.current?.updateCharts(newCharts);
     }, []);
+    // The snapshot belongs to one meeting — drop it when another opens, so the
+    // charts never briefly render (or edit) the previous meeting's data.
+    useEffect(() => { setExcelState(null); }, [selectedMeetingId]);
 
     const [createMeeting, { isLoading: isCreating }] = useCreateDailyMorningMeetingMutation();
     const [cloneMeeting, { isLoading: isCloning }] = useCloneDailyMorningMeetingMutation();
@@ -471,13 +474,18 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                             </div>
                         </CardHeader>
                         <CardContent className="p-0 bg-white">
-                            <div className={cn(
-                                "transition-all duration-300 ease-in-out overflow-hidden bg-slate-50/50 border-b border-slate-100",
-                                isGraphVisible ? "max-h-[500px] opacity-100 p-3" : "max-h-0 opacity-0 p-0 border-b-0"
-                            )}>
-                                <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
-                            </div>
-                            <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />
+                            {/* Mounted only while visible: collapsing it with a max-height
+                                transition handed recharts a 0px-tall box mid-animation. */}
+                            {isGraphVisible && (
+                                <div className="bg-slate-50/50 border-b border-slate-100 p-3">
+                                    <ExcelErrorBoundary key={selectedMeeting.id} title="Charts failed to render" description="The chart area hit an unexpected error. The spreadsheet below is not affected.">
+                                        <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
+                                    </ExcelErrorBoundary>
+                                </div>
+                            )}
+                            <ExcelErrorBoundary key={selectedMeeting.id} title="Spreadsheet failed to render" description="The spreadsheet hit an unexpected error. Changes you already saved are not affected.">
+                                <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />
+                            </ExcelErrorBoundary>
                         </CardContent>
                     </Card>
                 ) : null}

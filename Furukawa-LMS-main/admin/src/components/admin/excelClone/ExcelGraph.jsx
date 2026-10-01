@@ -349,6 +349,22 @@ const getComboSeriesSettings = (config, col, index) => {
 // Per-series chart types a combo chart can mix (the renderer's three marks).
 const COMBO_SERIES_TYPES = [["column", "Clustered Column"], ["line", "Line"], ["area", "Area"]];
 
+// Chart types whose categories run left to right along the X axis; only these
+// grow wider (and scroll) as categories are added.
+const HORIZONTAL_CATEGORY_TYPES = new Set([
+    "columnGrouped", "columnStacked", "columnPercent", "line", "lineStacked", "linePercent", "lineMarkers",
+    "area", "areaStacked", "areaPercent", "combo", "histogram", "pareto", "waterfall", "stock",
+]);
+// Narrowest width, in px, at which every category stays readable. Side-by-side
+// columns need room for each series' bar; everything else one slot per category.
+const chartMinWidth = (cfg, { data, seriesKeys }) => {
+    if (!HORIZONTAL_CATEGORY_TYPES.has(cfg.type)) return undefined;
+    const barsPerCategory = cfg.type === "columnGrouped" ? seriesKeys.length
+        : cfg.type === "combo" ? seriesKeys.filter((_, i) => getComboSeriesSettings(cfg, cfg.valueCols[i], i).type === "column").length
+            : 1;
+    return data.length * Math.max(44, barsPerCategory * 14 + 12) + 80;
+};
+
 function ChartTooltip({ active, payload, label }) {
     if (!active || !payload || payload.length === 0) return null;
     return (
@@ -664,7 +680,7 @@ function InsertChartDialog({ state, onClose, recommended, currentType, comboSeri
     );
 }
 
-export default function ExcelGraph({ excelData, onChartsChange }) {
+function ExcelGraph({ excelData, onChartsChange }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [draft, setDraft] = useState(null);
     const [designPopoverOpen, setDesignPopoverOpen] = useState(false);
@@ -1178,8 +1194,22 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
             const colorFor = (index) => cfg.seriesColors?.[cfg.valueCols[index]] || CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
             return <Sparklines type={cfg.type} data={prepared.data} seriesKeys={prepared.seriesKeys} colorFor={colorFor} mini={mini} />;
         }
-        return <ResponsiveContainer width="100%" height="100%">{renderChartFor(cfg, prepared, mini)}</ResponsiveContainer>;
+        // minWidth/minHeight keep recharts from measuring a 0px box (a collapsing
+        // or not-yet-laid-out parent), which yields NaN geometry in the SVG.
+        return (
+            <ResponsiveContainer width="100%" height="100%" minWidth={mini ? 1 : 120} minHeight={mini ? 1 : 260}>
+                {renderChartFor(cfg, prepared, mini)}
+            </ResponsiveContainer>
+        );
     };
+
+    // A chart with many categories gets a fixed width per category instead of
+    // being squeezed into the panel, and the panel scrolls sideways.
+    const scrollableChart = (cfg, prepared) => (
+        <div className="w-full h-full overflow-x-auto overflow-y-hidden">
+            <div className="h-full" style={{ minWidth: chartMinWidth(cfg, prepared) }}>{renderChartBody(cfg, prepared)}</div>
+        </div>
+    );
 
     return (
         <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Charts" icon={IconChartBar}>
@@ -1764,11 +1794,11 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
                         No data in the selected range. Use Chart Design › Select Data to choose columns and rows to chart.
                     </div>
                 ) : isFullScreen ? (
-                    <div className="relative flex-1 min-h-[240px]">
-                        <div className="absolute inset-0">{renderChartBody(config, prepared)}</div>
+                    <div className="relative flex-1 min-h-[260px]">
+                        <div className="absolute inset-0">{scrollableChart(config, prepared)}</div>
                     </div>
                 ) : (
-                    <div className="h-[320px]">{renderChartBody(config, prepared)}</div>
+                    <div className="h-[320px]">{scrollableChart(config, prepared)}</div>
                 )}
             </div>
             </>
@@ -1791,3 +1821,7 @@ export default function ExcelGraph({ excelData, onChartsChange }) {
         </FullScreenFrame>
     );
 }
+
+// Memoized so a parent re-render that doesn't change the sheet snapshot (a
+// dialog opening, a query refetch) doesn't redo the chart work.
+export default React.memo(ExcelGraph);

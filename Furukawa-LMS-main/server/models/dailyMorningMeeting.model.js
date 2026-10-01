@@ -33,6 +33,15 @@ class DailyMorningMeeting {
             await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365ETag', 'NVARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365CreatedDateTime', 'DATETIME NULL');
             await migrationHelper.ensureColumnExists('daily_morning_meetings', 'm365LastModifiedDateTime', 'DATETIME NULL');
+            // Optimistic-concurrency token for sheet saves. Added here, after every
+            // earlier column and not in the CREATE TABLE above, so it lands in the
+            // same position on a fresh database as on one that is being migrated.
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'version', 'INT NOT NULL DEFAULT 1');
+            await migrationHelper.ensureIndexExists(
+                'daily_morning_meetings',
+                'IX_daily_morning_meetings_section_meetingDate',
+                'CREATE INDEX IX_daily_morning_meetings_section_meetingDate ON daily_morning_meetings (sectionId, meetingDate DESC)'
+            );
             await migrationHelper.ensureIndexExists(
                 'daily_morning_meetings',
                 'IX_daily_morning_meetings_section_m365ItemId',
@@ -45,9 +54,13 @@ class DailyMorningMeeting {
         }
     }
 
+    // List rows only — sheetData (the whole workbook JSON, possibly megabytes
+    // per meeting) is left out; findById loads it when a meeting is opened.
     static async findBySectionId(sectionId) {
         const [rows] = await executeQuery(
-            `SELECT m.*, u.fullName AS createdByName
+            `SELECT m.id, m.sectionId, m.agenda, m.description, m.meetingDate, m.meetingTime, m.createdBy,
+                    m.createdAt, m.updatedAt, m.fileProvider, m.m365WebUrl, m.m365EmbedUrl, m.lastSyncedAt,
+                    m.version, u.fullName AS createdByName
              FROM daily_morning_meetings m
              LEFT JOIN users u ON u.id = m.createdBy
              WHERE m.sectionId = ?
@@ -99,12 +112,17 @@ class DailyMorningMeeting {
         return DailyMorningMeeting.findById(id);
     }
 
-    static async updateSheetData(id, sheetData) {
+    // Every save bumps `version`. When `expectedVersion` is given the update is
+    // atomic on it: if another tab/user saved in between, no row matches and
+    // this returns null instead of overwriting their work.
+    static async updateSheetData(id, sheetData, expectedVersion = null) {
         const dataJson = typeof sheetData === "string" ? sheetData : JSON.stringify(sheetData);
-        await executeQuery(
-            "UPDATE daily_morning_meetings SET sheetData = ?, updatedAt = GETDATE() WHERE id = ?",
-            [dataJson, id]
+        const hasExpected = expectedVersion !== null && expectedVersion !== undefined;
+        const [, result] = await executeQuery(
+            `UPDATE daily_morning_meetings SET sheetData = ?, version = version + 1, updatedAt = GETDATE() WHERE id = ?${hasExpected ? " AND version = ?" : ""}`,
+            hasExpected ? [dataJson, id, expectedVersion] : [dataJson, id]
         );
+        if (hasExpected && !result.affectedRows) return null;
         return DailyMorningMeeting.findById(id);
     }
 

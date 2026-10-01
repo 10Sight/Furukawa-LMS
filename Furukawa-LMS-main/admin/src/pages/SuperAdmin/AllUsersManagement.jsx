@@ -7,7 +7,6 @@ import {
   IconSearch,
   IconFilter,
   IconDownload,
-  IconEdit,
   IconTrash,
   IconEye,
   IconMail,
@@ -29,7 +28,6 @@ import {
   useGetAllUsersQuery as useSuperAdminGetAllUsersQuery,
   useCreateUserMutation as useSuperAdminCreateUserMutation,
   useUpdateUserMutation as useSuperAdminUpdateUserMutation,
-  usePermanentDeleteUserMutation
 } from "@/Redux/AllApi/SuperAdminApi";
 import { useBulkUpdateShiftScheduleMutation } from "@/Redux/AllApi/UserApi";
 import { useGetUniqueDesignationsQuery } from "@/Redux/AllApi/DesignationApi";
@@ -42,6 +40,8 @@ import { useGetMachinesBySubSectionQuery } from "@/Redux/AllApi/MachineApi";
 import { IconCalendar } from "@tabler/icons-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import axiosInstance from "@/Helper/axiosInstance";
 import { FormSelect } from "@/components/form/FormSelect";
 import ShiftScheduler from "@/components/admin/ShiftScheduler";
@@ -70,8 +70,6 @@ const AllUsersManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [shiftUser, setShiftUser] = useState(null);
   const [shiftScheduleDraft, setShiftScheduleDraft] = useState({});
@@ -81,6 +79,7 @@ const AllUsersManagement = () => {
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
   const [showDebugInfo, setShowDebugInfo] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [filters, setFilters] = useState({
     role: "",
@@ -242,29 +241,6 @@ const AllUsersManagement = () => {
   const subSections = subSectionData?.data || [];
   const stations = machineData?.data || [];
 
-  // Edit User Hierarchy Hooks
-  const { data: editSectionData } = useGetSectionsByDepartmentQuery(
-    (selectedUser?.departments || []).join(","),
-    { skip: !selectedUser?.departments?.length || !showEditModal }
-  );
-  const { data: editLineData } = useGetLinesBySectionQuery(
-    (selectedUser?.sections || []).join(","),
-    { skip: !selectedUser?.sections?.length || !showEditModal }
-  );
-  const { data: editSubSectionData } = useGetSubSectionsByLineQuery(
-    (selectedUser?.lines || []).join(","),
-    { skip: !selectedUser?.lines?.length || !showEditModal }
-  );
-  const { data: editMachineData } = useGetMachinesBySubSectionQuery(
-    (selectedUser?.subSections || []).join(","),
-    { skip: !selectedUser?.subSections?.length || !showEditModal }
-  );
-
-  const editSections = editSectionData?.data || [];
-  const editLines = editLineData?.data || [];
-  const editSubSections = editSubSectionData?.data || [];
-  const editStations = editMachineData?.data || [];
-
   // Create User Hierarchy Hooks
   const { data: createSectionData } = useGetSectionsByDepartmentQuery(
     (newUser?.departments || []).join(","),
@@ -335,67 +311,12 @@ const AllUsersManagement = () => {
 
   const [createUser] = useSuperAdminCreateUserMutation();
   const [updateUser] = useSuperAdminUpdateUserMutation();
-  const [deleteUser] = usePermanentDeleteUserMutation();
   const [bulkUpdateShiftSchedule] = useBulkUpdateShiftScheduleMutation();
 
   const users = usersData?.data?.users || [];
   const totalPages = usersData?.data?.totalPages || 1;
   const totalUsers = usersData?.data?.totalUsers || 0;
 
-
-  const handleOpenEditModal = (user) => {
-    const rawDepts = typeof user.departments === 'string' ? JSON.parse(user.departments || "[]") : (user.departments || []);
-    const resolvedDepts = Array.isArray(rawDepts) && rawDepts.length > 0
-      ? rawDepts.map(String)
-      : (user.departmentId || user.DepartmentId) ? [String(user.departmentId || user.DepartmentId)]
-      : user.department?._id ? [String(user.department._id)]
-      : [];
-
-    const rawStations = typeof user.stations === 'string' ? JSON.parse(user.stations || "[]") : (user.stations || []);
-    const resolvedStations = Array.isArray(rawStations) && rawStations.length > 0
-      ? rawStations.map(String)
-      : (user.stationId || user.StationId) ? [String(user.stationId || user.StationId)]
-      : [];
-
-    const rawSections = typeof user.sections === 'string' ? JSON.parse(user.sections || "[]") : (user.sections || []);
-    const resolvedSections = Array.isArray(rawSections) && rawSections.length > 0
-      ? rawSections.map(String)
-      : [...new Set([
-          ...(user.sectionId ? [String(user.sectionId)] : []),
-          ...(user.assignments || []).map(a => String(a.sectionId))
-        ])].filter(Boolean);
-
-    const rawLines = typeof user.lines === 'string' ? JSON.parse(user.lines || "[]") : (user.lines || []);
-    const resolvedLines = Array.isArray(rawLines) && rawLines.length > 0
-      ? rawLines.map(String)
-      : [...new Set([
-          ...(user.lineId ? [String(user.lineId)] : []),
-          ...(user.assignments || []).map(a => String(a.lineId))
-        ])].filter(Boolean);
-
-    const rawSubSections = typeof user.subSections === 'string' ? JSON.parse(user.subSections || "[]") : (user.subSections || []);
-    const resolvedSubSections = Array.isArray(rawSubSections) && rawSubSections.length > 0
-      ? rawSubSections.map(String)
-      : [...new Set([
-          ...(user.subSectionId ? [String(user.subSectionId)] : []),
-          ...(user.assignments || []).map(a => String(a.subSectionId))
-        ])].filter(Boolean);
-
-    const resolvedShiftSchedule = typeof user.shiftSchedule === 'string'
-      ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
-      : (user.shiftSchedule || {});
-
-    setSelectedUser({
-      ...user,
-      departments: resolvedDepts,
-      sections: resolvedSections,
-      lines: resolvedLines,
-      subSections: resolvedSubSections,
-      stations: resolvedStations,
-      shiftSchedule: resolvedShiftSchedule,
-    });
-    setShowEditModal(true);
-  };
 
   const handleCreateUser = async () => {
     try {
@@ -429,25 +350,6 @@ const AllUsersManagement = () => {
     } catch (error) {
       console.error("Error creating user:", error);
       toast.error(error?.data?.message || "Failed to create user");
-    }
-  };
-
-  const handleUpdateUser = async () => {
-    try {
-      const { _id, ...updateData } = selectedUser;
-      const payload = {
-        ...updateData,
-        sectionId: updateData.sections[0] || null,
-        subSectionId: updateData.subSections[0] || null,
-        lineId: updateData.lines[0] || null,
-      };
-      await updateUser({ id: _id, ...payload }).unwrap();
-      toast.success("User updated successfully!");
-      setShowEditModal(false);
-      refetch();
-    } catch (error) {
-      console.error("Error updating user:", error);
-      toast.error(error?.data?.message || "Failed to update user");
     }
   };
 
@@ -496,19 +398,6 @@ const AllUsersManagement = () => {
       refetch();
     } catch (error) {
       toast.error(error?.data?.message || "Failed to save shift schedule");
-    }
-  };
-
-  const handleDeleteUser = async (userId, permanent = false) => {
-    if (window.confirm(`Are you sure you want to ${permanent ? 'permanently delete' : 'delete'} this user?`)) {
-      try {
-        await deleteUser(userId).unwrap();
-        toast.success("User deleted successfully!");
-        refetch();
-      } catch (error) {
-        console.error("Error deleting user:", error);
-        toast.error(error?.data?.message || "Failed to delete user");
-      }
     }
   };
 
@@ -611,6 +500,108 @@ const AllUsersManagement = () => {
     }
 
     return [];
+  };
+
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // Fetch the full filtered result (not just the visible page)
+      const pageSize = 10000;
+      let allUsers = [];
+      let page = 1;
+      let exportTotalPages = 1;
+      do {
+        const res = await axiosInstance.get("/api/users", {
+          params: {
+            ...filters,
+            page,
+            limit: pageSize,
+            sortBy,
+            order: sortOrder,
+            search: searchTerm,
+            includeLeft: "true",
+          },
+        });
+        const data = res.data?.data;
+        allUsers = allUsers.concat(data?.users || []);
+        exportTotalPages = data?.totalPages || 1;
+        page += 1;
+      } while (page <= exportTotalPages);
+
+      // If rows are ticked, export only those
+      if (selectedUsers.length > 0) {
+        allUsers = allUsers.filter((u) => selectedUsers.includes(u._id));
+      }
+
+      if (allUsers.length === 0) {
+        toast.error("No users to export");
+        return;
+      }
+
+      const clean = (val) => (val && String(val).toLowerCase() !== "none" ? val : "-");
+      const hasDateFilter = filters.date || (filters.dateFrom && filters.dateTo);
+
+      const rows = allUsers.map((user) => {
+        const schedule = typeof user.shiftSchedule === 'string'
+          ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
+          : (user.shiftSchedule || {});
+        const rawDate = user.logDate || filters.date;
+        const activeDate = rawDate
+          ? (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : String(rawDate).substring(0, 10))
+          : format(new Date(), "yyyy-MM-dd");
+
+        return {
+          empId: user.empId || "-",
+          date: user.logDate ? format(new Date(user.logDate), "dd MMM yyyy") : (filters.date ? format(new Date(filters.date), "dd MMM yyyy") : "-"),
+          fullName: user.fullName || "-",
+          userName: user.userName || "-",
+          shift: user.logShift || user.shift || "-",
+          scheduledShift: schedule[activeDate] || "-",
+          status: user.logStatus || (hasDateFilter ? "Absent" : user.status) || "-",
+          efficiency: user.currentEffeciency || 0,
+          department: getUserDeptNames(user).join(", ") || "-",
+          section: getUserSectionNames(user).join(", ") || "-",
+          line: clean(user.lineName),
+          subSection: clean(user.subSectionName),
+          station: clean(user.stationName),
+          role: user.role === "STUDENT" ? "Operator" : (user.customRoleName || user.role || "-"),
+        };
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Users");
+      sheet.columns = [
+        { header: "Emp ID", key: "empId", width: 14 },
+        { header: "Date", key: "date", width: 14 },
+        { header: "Name", key: "fullName", width: 28 },
+        { header: "Username", key: "userName", width: 20 },
+        { header: "Shift", key: "shift", width: 8 },
+        { header: "Scheduled Shift", key: "scheduledShift", width: 16 },
+        { header: "Status", key: "status", width: 12 },
+        { header: "Efficiency (%)", key: "efficiency", width: 14 },
+        { header: "Department", key: "department", width: 24 },
+        { header: "Section", key: "section", width: 24 },
+        { header: "Line", key: "line", width: 18 },
+        { header: "Sub-Section", key: "subSection", width: 18 },
+        { header: "Station", key: "station", width: 18 },
+        { header: "Role", key: "role", width: 16 },
+      ];
+      sheet.addRows(rows);
+      sheet.getRow(1).font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `users_${format(new Date(), "yyyy-MM-dd")}.xlsx`
+      );
+      toast.success(`Exported ${rows.length} users`);
+    } catch (error) {
+      console.error("Error exporting users:", error);
+      toast.error(error?.response?.data?.message || "Failed to export users");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getRoleColor = (role) => {
@@ -954,245 +945,6 @@ const AllUsersManagement = () => {
                   className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
                 >
                   Create User
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="text-lg sm:text-xl">Edit User</DialogTitle>
-                <DialogDescription className="text-sm">
-                  Update user information and role assignment.
-                </DialogDescription>
-              </DialogHeader>
-              {selectedUser && (
-                <div className="grid gap-4 py-4">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-fullName" className="text-sm font-medium">
-                        Full Name *
-                      </Label>
-                      <Input
-                        id="edit-fullName"
-                        value={selectedUser.fullName}
-                        onChange={(e) => setSelectedUser({ ...selectedUser, fullName: e.target.value })}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-email" className="text-sm font-medium">
-                        Email *
-                      </Label>
-                      <Input
-                        id="edit-email"
-                        type="email"
-                        value={selectedUser.email}
-                        onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-role" className="text-sm font-medium">
-                        System Role *
-                      </Label>
-                      <Select
-                        value={selectedUser.role}
-                        onValueChange={(value) => setSelectedUser({ ...selectedUser, role: value })}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="STUDENT">Student</SelectItem>
-                          <SelectItem value="INSTRUCTOR">Instructor</SelectItem>
-                          <SelectItem value="ADMIN">Admin</SelectItem>
-                          <SelectItem value="SUPERADMIN">Super Admin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-customRole" className="text-sm font-medium">
-                        Custom Role (Optional)
-                      </Label>
-                      <Select
-                        value={selectedUser.customRoleId || "none"}
-                        onValueChange={(value) =>
-                          setSelectedUser({
-                            ...selectedUser,
-                            customRoleId: value === "none" ? "" : value
-                          })
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select custom role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {customRoles.map((role) => (
-                            <SelectItem key={role.id} value={String(role.id)}>
-                              {role.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-shift" className="text-sm font-medium">
-                        Default Shift (Optional)
-                      </Label>
-                      <Select
-                        value={selectedUser.shift || "none"}
-                        onValueChange={(value) =>
-                          setSelectedUser({ ...selectedUser, shift: value === "none" ? "" : value })
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select shift" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          <SelectItem value="A">Shift A</SelectItem>
-                          <SelectItem value="B">Shift B</SelectItem>
-                          <SelectItem value="C">Shift C</SelectItem>
-                          <SelectItem value="G">Shift G</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-status" className="text-sm font-medium">
-                        Status
-                      </Label>
-                      <Select
-                        value={selectedUser.status}
-                        onValueChange={(value) => setSelectedUser({ ...selectedUser, status: value })}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ACTIVE">Active</SelectItem>
-                          <SelectItem value="SUSPENDED">Suspended</SelectItem>
-                          <SelectItem value="BANNED">Banned</SelectItem>
-                          <SelectItem value="PENDING">Pending</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Separator className="my-2" />
-                    
-                    <div className="space-y-4 pt-2">
-                       <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                         <IconShield className="w-4 h-4 text-blue-600" />
-                         Organizational Assignment
-                       </h4>
-                       
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium text-gray-500">Department</Label>
-                            <FormSelect
-                              multiple={true}
-                              placeholder="Select Departments"
-                              value={selectedUser.departments}
-                              onValueChange={(values) => setSelectedUser({
-                                ...selectedUser,
-                                departments: values,
-                                sections: [],
-                                lines: [],
-                                subSections: [],
-                                stations: []
-                              })}
-                              options={departments.map(d => ({ value: String(getDeptId(d)), label: d.name }))}
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium text-gray-500">Section</Label>
-                            <FormSelect
-                              multiple={true}
-                              placeholder="Select Sections"
-                              value={selectedUser.sections}
-                              onValueChange={(values) => setSelectedUser({
-                                ...selectedUser,
-                                sections: values,
-                                lines: [],
-                                subSections: [],
-                                stations: []
-                              })}
-                              options={editSections.map(s => ({ value: String(s.id), label: s.name }))}
-                              disabled={!selectedUser.departments.length}
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium text-gray-500">Line</Label>
-                            <FormSelect
-                              multiple={true}
-                              placeholder="Select Lines"
-                              value={selectedUser.lines}
-                              onValueChange={(values) => setSelectedUser({
-                                ...selectedUser,
-                                lines: values,
-                                subSections: [],
-                                stations: []
-                              })}
-                              options={editLines.map(l => ({ value: String(l.id), label: l.name }))}
-                              disabled={!selectedUser.sections.length}
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium text-gray-500">Sub-Section</Label>
-                            <FormSelect
-                              multiple={true}
-                              placeholder="Select Sub-sections"
-                              value={selectedUser.subSections}
-                              onValueChange={(values) => setSelectedUser({
-                                ...selectedUser,
-                                subSections: values,
-                                stations: []
-                              })}
-                              options={editSubSections.map(ss => ({ value: String(ss.id), label: ss.name }))}
-                              disabled={!selectedUser.lines.length}
-                            />
-                          </div>
-
-                          <div className="space-y-2 sm:col-span-2">
-                            <Label className="text-xs font-medium text-gray-500">Station (Machine)</Label>
-                            <FormSelect
-                              multiple={true}
-                              placeholder="Select Stations"
-                              value={selectedUser.stations}
-                              onValueChange={(values) => setSelectedUser({
-                                ...selectedUser,
-                                stations: values
-                              })}
-                              options={editStations.map(st => ({ value: String(st.id), label: st.name }))}
-                              disabled={!selectedUser.subSections.length}
-                            />
-                          </div>
-                        </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowEditModal(false)}
-                  className="w-full sm:w-auto"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpdateUser}
-                  disabled={!selectedUser?.fullName || !selectedUser?.email}
-                  className="w-full sm:w-auto bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
-                >
-                  Save Changes
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1770,9 +1522,13 @@ const AllUsersManagement = () => {
               <span>Refresh</span>
             </button>
 
-            <button className="flex items-center space-x-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors">
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center space-x-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <IconDownload className="w-4 h-4" />
-              <span>Export</span>
+              <span>{isExporting ? "Exporting..." : "Export"}</span>
             </button>
           </div>
         </div>
@@ -1989,13 +1745,6 @@ const AllUsersManagement = () => {
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           <button
-                            onClick={() => handleOpenEditModal(user)}
-                            className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
-                            title="Edit User"
-                          >
-                            <IconEdit className="w-4 h-4" />
-                          </button>
-                          <button
                             onClick={() => handleOpenShiftModal(user)}
                             className="p-1.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded transition-colors"
                             title="Shift Schedule"
@@ -2008,13 +1757,6 @@ const AllUsersManagement = () => {
                             title="Start Action"
                           >
                             <span className="text-[10px] font-black leading-none">5M</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteUser(user._id, true)}
-                            className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
-                            title="Permanently Delete"
-                          >
-                            <IconTrash className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -2070,12 +1812,6 @@ const AllUsersManagement = () => {
 
                         <div className="flex shrink-0 items-center space-x-1">
                           <button
-                            onClick={() => handleOpenEditModal(user)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          >
-                            <IconEdit className="w-4 h-4" />
-                          </button>
-                          <button
                             onClick={() => handleOpenShiftModal(user)}
                             className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                             title="Shift Schedule"
@@ -2088,12 +1824,6 @@ const AllUsersManagement = () => {
                             title="Start Action"
                           >
                             <span className="text-[10px] font-black leading-none">5M</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteUser(user._id, true)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <IconTrash className="w-4 h-4" />
                           </button>
                         </div>
                       </div>

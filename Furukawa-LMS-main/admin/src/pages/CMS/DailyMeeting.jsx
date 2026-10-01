@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,6 +29,7 @@ import {
 } from "@/Redux/AllApi/DepartmentApi";
 import { useGetSectionsByDepartmentQuery } from "@/Redux/AllApi/SectionApi";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import ExcelClone from "@/components/admin/excelClone/ExcelClone";
 import ExcelGraph from "@/components/admin/excelClone/ExcelGraph";
 import ExcelErrorBoundary from "@/components/admin/excelClone/ErrorBoundary";
@@ -423,9 +425,21 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
         }
     };
 
-    if (mode !== "list") {
-        return (
-            <div className="space-y-3 p-3">
+    // An open meeting covers the whole window (app sidebar and navbar
+    // included), so the page behind it must not scroll underneath.
+    const isMeetingOpen = mode !== "list";
+    useEffect(() => {
+        if (!isMeetingOpen) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => { document.body.style.overflow = previous; };
+    }, [isMeetingOpen]);
+
+    if (isMeetingOpen) {
+        // Portaled to <body> so no ancestor's layout can clip it. z-40 keeps it
+        // under dialogs, popovers and the sheet/chart's own full-screen view.
+        return createPortal(
+            <div className="fixed inset-0 z-40 overflow-auto bg-slate-50 space-y-3 p-3">
                 <Button variant="outline" size="sm" onClick={backToList} className="cursor-pointer flex items-center gap-1.5">
                     <IconArrowLeft className="w-4 h-4" /> Back to Meetings
                 </Button>
@@ -496,7 +510,8 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                     onSave={handleSaveDetails}
                     isSaving={isUpdating}
                 />
-            </div>
+            </div>,
+            document.body
         );
     }
 
@@ -712,6 +727,9 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
     // Active section tab lives in the URL (?section=) so a refresh re-opens the
     // same section instead of falling back to the first tab.
     const activeSectionId = searchParams.get("section") || "";
+    // An open meeting takes the whole page: the section tabs and the section
+    // card's header step aside until "Back to Meetings".
+    const isMeetingOpen = !!searchParams.get("meeting");
 
     useEffect(() => {
         if (visibleSections.length === 0) return;
@@ -750,7 +768,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
 
     return (
         <div className="space-y-4">
-            {isPreview && (
+            {isPreview && !isMeetingOpen && (
                 <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
                     <IconEye className="w-3.5 h-3.5" />
                     Preview (What Custom Roles See)
@@ -768,7 +786,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 }}
                 className="w-full"
             >
-                <TabsList className="flex flex-wrap gap-1.5 justify-start bg-slate-100/80 p-1.5 rounded-lg mb-4 h-auto w-fit">
+                <TabsList className={cn("flex flex-wrap gap-1.5 justify-start bg-slate-100/80 p-1.5 rounded-lg mb-4 h-auto w-fit", isMeetingOpen && "hidden")}>
                     {visibleSections.map((sec) => {
                         const secId = String(sec.id || sec._id);
                         return (
@@ -786,10 +804,12 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 {visibleSections.map((sec) => (
                     <TabsContent key={sec.id || sec._id} value={String(sec.id || sec._id)}>
                         <Card className="border-slate-200/70 shadow-sm hover:shadow-md transition-shadow">
-                            <CardHeader className="pb-3 border-b border-slate-100 bg-white">
-                                <CardTitle className="text-lg font-bold text-slate-800">{sec.name}</CardTitle>
-                                <CardDescription>Section ID: {sec.id || sec._id} • Management Information System Sheet</CardDescription>
-                            </CardHeader>
+                            {!isMeetingOpen && (
+                                <CardHeader className="pb-3 border-b border-slate-100 bg-white">
+                                    <CardTitle className="text-lg font-bold text-slate-800">{sec.name}</CardTitle>
+                                    <CardDescription>Section ID: {sec.id || sec._id} • Management Information System Sheet</CardDescription>
+                                </CardHeader>
+                            )}
                             <CardContent className="p-0 bg-white">
                                 <SectionMeetingSpace sectionId={String(sec.id || sec._id)} departmentId={departmentId} />
                             </CardContent>
@@ -816,6 +836,14 @@ export default function DailyMeeting() {
     // Active department tab lives in the URL (?dept=) so a refresh re-opens the same
     // department/section/meeting instead of restarting from the first department.
     const activeDeptId = searchParams.get("dept") || "";
+    // While a meeting is open (?meeting=) the page shows only that meeting's
+    // charts and spreadsheet: page header, department sidebar and the admin
+    // settings panel are hidden so the workspace gets the full width.
+    const isMeetingOpen = !!searchParams.get("meeting");
+    // The department list starts hidden so the sections get the full width;
+    // the "Departments" button in the header shows or hides it.
+    const [isDeptSidebarOpen, setIsDeptSidebarOpen] = useState(false);
+    const activeDeptName = departments.find((d) => String(d.id || d._id) === activeDeptId)?.name;
 
     useEffect(() => {
         if (departments.length === 0) return;
@@ -836,7 +864,7 @@ export default function DailyMeeting() {
     return (
         <div className="space-y-6 w-full pb-20 p-2 md:p-4 min-h-screen">
             {/* Page Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className={cn("flex flex-col md:flex-row justify-between items-start md:items-center gap-4", isMeetingOpen && "hidden")}>
                 <div className="flex items-center gap-3">
                     <div className="p-3 bg-indigo-500 rounded-xl shadow-lg shadow-indigo-200">
                         <IconCalendar className="w-6 h-6 text-white" />
@@ -846,6 +874,20 @@ export default function DailyMeeting() {
                         <p className="text-sm text-slate-500 font-medium">Browse daily standup and metrics by department and section</p>
                     </div>
                 </div>
+                {departments.length > 0 && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="cursor-pointer flex items-center gap-1.5"
+                        aria-expanded={isDeptSidebarOpen}
+                        onClick={() => setIsDeptSidebarOpen((open) => !open)}
+                        title={isDeptSidebarOpen ? "Hide the department list" : "Show the department list"}
+                    >
+                        <IconFolder className="w-4 h-4 text-slate-500" />
+                        <span className="max-w-48 truncate">{activeDeptName || "Departments"}</span>
+                        {isDeptSidebarOpen ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
+                    </Button>
+                )}
             </div>
 
             {!canReadDailyMeeting ? (
@@ -892,7 +934,7 @@ export default function DailyMeeting() {
                     orientation="vertical"
                     className="w-full flex flex-col md:flex-row items-start gap-4"
                 >
-                    <TabsList className="flex flex-col items-stretch gap-1 justify-start bg-slate-100/70 p-1.5 rounded-xl w-full md:w-56 shrink-0 h-auto">
+                    <TabsList className={cn("flex flex-col items-stretch gap-1 justify-start bg-slate-100/70 p-1.5 rounded-xl w-full md:w-56 shrink-0 h-auto", (isMeetingOpen || !isDeptSidebarOpen) && "hidden")}>
                         {departments.map((d) => {
                             const deptId = String(d.id || d._id);
                             return (
@@ -915,11 +957,13 @@ export default function DailyMeeting() {
                                 <TabsContent key={deptId} value={deptId} className="space-y-6 mt-0">
                                     {isAdmin ? (
                                         <>
-                                            <AdminConfigPanel
-                                                departmentId={deptId}
-                                                sections={sections}
-                                                allSectionsLoading={sectionsLoading && activeDeptId === deptId}
-                                            />
+                                            {!isMeetingOpen && (
+                                                <AdminConfigPanel
+                                                    departmentId={deptId}
+                                                    sections={sections}
+                                                    allSectionsLoading={sectionsLoading && activeDeptId === deptId}
+                                                />
+                                            )}
                                             <SectionTabsView
                                                 departmentId={deptId}
                                                 sections={sections}

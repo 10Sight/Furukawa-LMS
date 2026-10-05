@@ -2040,6 +2040,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const onMouseUp = () => {
             const r = resizeRef.current;
             if (!r) return;
+            // A click on the handle without dragging (each half of a
+            // double-click-to-fit) isn't a resize: leave the sheet untouched.
+            if (r.currentSize === r.startSize) {
+                resizeRef.current = null;
+                setResizePreview(null);
+                return;
+            }
             updateSheets((next) => {
                 const sheet = next[activeSheetName];
                 if (r.type === "col") {
@@ -3930,15 +3937,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return Math.max(0, ...String(text).split("\n").map((line) => ctx.measureText(line).width));
     };
 
-    const autoFitColumns = () => {
-        if (readOnly || !selectionBounds) return;
-        const { minCol, maxCol } = selectionBounds;
+    const autoFitColumnRange = (minCol, maxCol) => {
+        if (readOnly) return;
         const widest = {};
         forEachFilledCell((id, row, col) => {
             if (col < minCol || col > maxCol || hiddenRowSet.has(row) || mergeMap[id]) return;
             const text = displayGrid[id];
             if (text === "") return;
-            widest[col] = Math.max(widest[col] || 0, measureTextWidth(text, cells[id]));
+            // Indent adds 9px of padding per level when the cell is drawn.
+            const indent = (cells[id]?.indent || 0) * 9;
+            widest[col] = Math.max(widest[col] || 0, measureTextWidth(text, cells[id]) + indent);
         });
         updateSheets((next) => {
             const sheet = next[activeSheetName];
@@ -3948,6 +3956,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 else sheet.columnWidths[c] = clamp(Math.ceil(widest[c]) + 16, MIN_COLUMN_WIDTH, 600);
             }
         });
+    };
+
+    const autoFitColumns = () => {
+        if (!selectionBounds) return;
+        autoFitColumnRange(selectionBounds.minCol, selectionBounds.maxCol);
+    };
+
+    // Double-clicking a column's right border fits it to its contents, like
+    // Excel. When that column is part of a whole-column selection, every
+    // selected column is fitted.
+    const handleColumnBorderDoubleClick = (colIdx) => {
+        const b = selectionBounds;
+        const inColumnSelection = b && b.minRow === 0 && b.maxRow === rowCount - 1 && colIdx >= b.minCol && colIdx <= b.maxCol;
+        if (inColumnSelection) autoFitColumnRange(b.minCol, b.maxCol);
+        else autoFitColumnRange(colIdx, colIdx);
     };
 
     const autoFitRows = () => {
@@ -4603,19 +4626,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         >
             {!readOnly && (
             <>
-            {/* Save floats at the bottom-right of the window so it stays in reach
-                however far the sheet is scrolled, raised clear of the sheet
-                tabs / zoom bar along the bottom edge. z-[45]: above the meeting
-                view, below dialogs and the chart's full-screen overlay. */}
-            <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                title="Save (Ctrl+S)"
-                className="fixed right-6 bottom-16 z-[45] h-10 px-4 rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
-            >
-                {isSaving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
-                {isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}
-            </Button>
             {/* Quick access row */}
             <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-white rounded-t-lg">
                 <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={undo} disabled={historyPast.current.length === 0} title="Undo (Ctrl+Z)">
@@ -4707,6 +4717,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             )}>
             {ribbonTab === "home" ? (
             <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {/* File */}
+                <RibbonGroup label="File">
+                    <RibbonBtn large title="Save (Ctrl+S)" onClick={handleSave} disabled={isSaving}>
+                        {isSaving
+                            ? <IconLoader2 className="w-8 h-8 animate-spin text-indigo-600" strokeWidth={1.4} />
+                            : <IconDeviceFloppy className="w-8 h-8 text-indigo-600" strokeWidth={1.4} />}
+                        <span className="text-xs">{isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+
                 {/* Clipboard */}
                 <RibbonGroup label="Clipboard" onLauncher={() => setPasteSpecialOpen(true)} launcherTitle="Paste Special (Ctrl+Alt+V)">
                     <RibbonSplit
@@ -5378,8 +5398,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     <div
                                         onMouseDown={(e) => startColumnResize(e, colIdx)}
                                         onClick={(e) => e.stopPropagation()}
+                                        onDoubleClick={(e) => { e.stopPropagation(); handleColumnBorderDoubleClick(colIdx); }}
                                         className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-indigo-400/60 z-10"
-                                        title="Drag to resize column"
+                                        title="Drag to resize column · double-click to fit"
                                     />
                                 </th>
                             ); })}

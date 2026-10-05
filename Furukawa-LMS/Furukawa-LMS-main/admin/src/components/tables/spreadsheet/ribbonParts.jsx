@@ -37,12 +37,14 @@ export const RibbonRow = ({ children, className }) => (
 );
 export const RibbonDivider = () => <div className="w-px self-stretch my-1 bg-slate-200 mx-0.5" />;
 
-export const RibbonBtn = React.forwardRef(({ active, className, children, ...props }, ref) => (
+// `large` fills the group's height with the icon stacked over its label.
+export const RibbonBtn = React.forwardRef(({ active, large, className, children, ...props }, ref) => (
     <button
         ref={ref}
         type="button"
         className={cn(
-            "h-6 min-w-6 px-1 inline-flex items-center justify-center gap-1 rounded-sm text-slate-700 cursor-pointer disabled:opacity-35 disabled:cursor-default disabled:hover:bg-transparent",
+            "inline-flex items-center rounded-sm text-slate-700 cursor-pointer disabled:opacity-35 disabled:cursor-default disabled:hover:bg-transparent",
+            large ? "h-full flex-col justify-start gap-0.5 px-1.5 pt-1 pb-0.5" : "h-6 min-w-6 px-1 justify-center gap-1",
             HOVER,
             active && ACTIVE,
             className

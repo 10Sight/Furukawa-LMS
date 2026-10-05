@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/common/ui/button.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
@@ -28,12 +28,13 @@ import {
 } from "@/services/api/DepartmentApi.js";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
-    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula
+    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
+import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { diffWorkbook } from "./workbookDiff.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
@@ -71,28 +72,19 @@ const ORIENTATION_OPTIONS = [
     { value: 90, label: "Rotate Text Up" },
     { value: -90, label: "Rotate Text Down" },
 ];
-const HISTORY_LIMIT = 30;
+// An undo step for an ordinary edit holds only the cells it changed (see
+// workbookUpdate.js). A bulk step — an import, a sort, a format applied to
+// thousands of cells, an inserted row — keeps the whole previous sheet, which
+// on a sheet with several hundred thousand cells is tens of MB; this cap
+// bounds how many of those can pile up.
+const HISTORY_LIMIT = 10;
 const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
-
-// Deep-clones the workbook's containers the way a JSON round-trip would
-// (undefined props dropped, non-finite numbers -> null), but strings are
-// carried over by reference — so base64 media payloads aren't duplicated into
-// every undo snapshot.
-const cloneWorkbook = (value) => {
-    if (value === null || typeof value !== "object") {
-        return typeof value === "number" && !Number.isFinite(value) ? null : value;
-    }
-    if (Array.isArray(value)) return value.map((v) => (v === undefined ? null : cloneWorkbook(v)));
-    const out = {};
-    for (const key of Object.keys(value)) {
-        const v = value[key];
-        if (v !== undefined && typeof v !== "function") out[key] = cloneWorkbook(v);
-    }
-    return out;
-};
 // A patch bigger than this (as JSON) is sent as a full workbook save instead.
 const MAX_PATCH_CHARS = 1024 * 1024;
+// Above this many selected cells, the status-bar totals walk the sheet's
+// filled cells instead of every cell of the selection.
+const SELECTION_SCAN_LIMIT = 20000;
 const NUMBER_FORMATS = [
     { value: "general", label: "General" },
     { value: "number", label: "Number" },
@@ -976,6 +968,12 @@ const extractExcelCellStyle = (cell) => {
     return style;
 };
 
+// Whether an imported style holds anything beyond a font name/size.
+const hasOwnFormatting = (style) => {
+    for (const key in style) if (key !== "fontFamily" && key !== "fontSize") return true;
+    return false;
+};
+
 // --- Floating images <-> Excel pictures ---
 // Excel anchors a picture to a cell plus an offset in EMUs (English Metric
 // Units, 9525 per 96-dpi pixel); this app anchors media to a cell plus a
@@ -1137,7 +1135,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const isLoading = meetingId ? isMeetingLoading : isSectionLoading;
     const isSaving = meetingId ? isSavingMeeting : isSavingSection;
 
-    const [sheets, setSheets] = useState({ [DEFAULT_SHEET_NAME]: emptySheet() });
+    const [sheets, setSheetsState] = useState({ [DEFAULT_SHEET_NAME]: emptySheet() });
     const [activeSheetName, setActiveSheetName] = useState(DEFAULT_SHEET_NAME);
     const [isDirty, setIsDirty] = useState(false);
     const loadedRef = useRef(false);
@@ -1279,8 +1277,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // Latest values for the debounced chart save below, which fires from a
     // timer (or on unmount) and so can't rely on a render's closure.
+    // The one way `sheets` is ever changed, so sheetsRef always holds the latest
+    // workbook synchronously. Updates are computed from it on the spot instead
+    // of in a state-updater callback: that lets each update return its own undo
+    // record, and lets two updates in the same tick build on one another.
     const sheetsRef = useRef(sheets);
-    sheetsRef.current = sheets;
+    const setSheets = useCallback((next) => {
+        sheetsRef.current = next;
+        setSheetsState(next);
+    }, []);
     const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch });
     saveFnsRef.current = { saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch };
     const chartSaveRef = useRef(null); // { timer, meetingId, sectionId, activeSheet } | null
@@ -1384,7 +1389,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             historyFuture.current = [];
             bumpHistory();
         }
-    }, [sheetData, bumpHistory, meetingId]);
+    }, [sheetData, bumpHistory, meetingId, setSheets]);
 
     // Reset load-guard and local state only when switching to a DIFFERENT
     // section's sheet/meeting on an already-mounted instance. Without the
@@ -1411,7 +1416,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             bumpHistory();
             prevIdsRef.current = { sectionId, meetingId };
         }
-    }, [sectionId, meetingId, bumpHistory, flushChartSave]);
+    }, [sectionId, meetingId, bumpHistory, flushChartSave, setSheets]);
 
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
@@ -1474,16 +1479,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => clearTimeout(timer);
     }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, extraRanges, activeCell, onDataChange]);
 
-    // Union of every selected range — a Set, so overlapping ranges count once.
-    const selectedCellIds = useMemo(() => {
-        const ids = new Set(expandRange(selection.start, selection.end));
-        for (const r of extraRanges) for (const id of expandRange(r.start, r.end)) ids.add(id);
-        return ids;
-    }, [selection, extraRanges]);
+    // The selection is kept as rectangles only — never expanded into a list of
+    // cell ids, which for a whole column or Ctrl+A on a large sheet would be
+    // hundreds of thousands of strings rebuilt on every drag tick.
     const selectionBounds = useMemo(() => rangeBounds(selection), [selection]);
     const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean), [extraRanges]);
     const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
     const hasMultipleRanges = extraRanges.length > 0;
+    const isCellSelected = (row, col) => {
+        for (const b of allSelectionBounds) {
+            if (row >= b.minRow && row <= b.maxRow && col >= b.minCol && col <= b.maxCol) return true;
+        }
+        return false;
+    };
 
     // Maps every cell id covered by a merge (anchor included) to that merge,
     // so rendering can skip non-anchor cells and navigation can redirect off
@@ -1586,27 +1594,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return map;
     }, [conditionalRules, displayGrid]);
 
-    // Deep-clones the whole workbook before mutating, so the snapshot pushed
-    // onto the undo stack a moment ago can never be corrupted by an in-place
-    // edit to the "current" state that shares the same nested objects.
+    // The updater mutates a draft of the workbook; only what it actually touches
+    // is copied, and everything else is shared with the previous state — see
+    // workbookUpdate.js. An updater must make every change through the draft
+    // it is given, and must replace a cell (`cells[id] = {...}`) instead of
+    // editing one in place. The undo stack holds change records, not copies of
+    // the workbook.
     const updateSheets = useCallback((updater) => {
-        historyPast.current.push(sheets);
+        // Every commit — a source-sheet edit, a pivot config change, an
+        // import, a sheet rename — can affect a pivot sheet's output, so
+        // recompute all of them rather than trying to track which commits
+        // actually matter. Skipped outright when the workbook has none.
+        const recomputePivots = (workbook) => {
+            if (!Object.values(workbook).some((sheet) => sheet?.pivotConfig)) return workbook;
+            const withPivots = { ...workbook };
+            recomputePivotSheets(withPivots, buildRawValueGrid);
+            return withPivots;
+        };
+        const { next, undo: record } = applyWorkbookUpdate(sheetsRef.current, updater, recomputePivots);
+        if (!record) return; // the updater changed nothing
+
+        historyPast.current.push(record);
         if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
         historyFuture.current = [];
         bumpHistory();
-
-        setSheets((prev) => {
-            const next = cloneWorkbook(prev);
-            updater(next);
-            // Every commit — a source-sheet edit, a pivot config change, an
-            // import, a sheet rename — can affect a pivot sheet's output, so
-            // just recompute all of them unconditionally rather than trying
-            // to track which commits actually matter.
-            recomputePivotSheets(next, buildRawValueGrid);
-            return next;
-        });
+        setSheets(next);
         setIsDirty(true);
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const mutateActiveCells = useCallback((mutator) => {
         if (isSheetReadOnly) return;
@@ -1900,23 +1914,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const undo = useCallback(() => {
         if (historyPast.current.length === 0) return;
-        const prevSnapshot = historyPast.current.pop();
-        historyFuture.current.push(sheets);
+        const { next, inverse } = applyHistoryRecord(sheetsRef.current, historyPast.current.pop());
+        historyFuture.current.push(inverse);
         if (historyFuture.current.length > HISTORY_LIMIT) historyFuture.current.shift();
-        setSheets(prevSnapshot);
+        setSheets(next);
         setIsDirty(true);
         bumpHistory();
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const redo = useCallback(() => {
         if (historyFuture.current.length === 0) return;
-        const nextSnapshot = historyFuture.current.pop();
-        historyPast.current.push(sheets);
+        const { next, inverse } = applyHistoryRecord(sheetsRef.current, historyFuture.current.pop());
+        historyPast.current.push(inverse);
         if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
-        setSheets(nextSnapshot);
+        setSheets(next);
         setIsDirty(true);
         bumpHistory();
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const commitEdit = useCallback(() => {
         // editSessionRef guards against the editor's onBlur re-committing (or
@@ -2430,13 +2444,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const applyToSelection = useCallback((mutator) => {
         mutateActiveCells((next) => {
-            for (const id of selectedCellIds) {
-                const merged = mutator({ ...(next[id] || {}) }, id);
-                if (isBlankCell(merged)) delete next[id];
-                else next[id] = merged;
-            }
+            const current = plainOf(next);
+            allSelectionBounds.forEach((b, i) => {
+                for (let r = b.minRow; r <= b.maxRow; r++) {
+                    for (let c = b.minCol; c <= b.maxCol; c++) {
+                        // A cell inside two overlapping ranges is handled once, by the first.
+                        let seen = false;
+                        for (let j = 0; j < i && !seen; j++) {
+                            const p = allSelectionBounds[j];
+                            seen = r >= p.minRow && r <= p.maxRow && c >= p.minCol && c <= p.maxCol;
+                        }
+                        if (seen) continue;
+                        const id = getCellId(r, c);
+                        const merged = mutator({ ...(current[id] || {}) }, id);
+                        if (isBlankCell(merged)) {
+                            if (current[id]) delete next[id];
+                            continue;
+                        }
+                        for (const key of Object.keys(merged)) if (merged[key] === undefined) delete merged[key];
+                        next[id] = merged;
+                    }
+                }
+            });
         });
-    }, [selectedCellIds, mutateActiveCells]);
+    }, [allSelectionBounds, mutateActiveCells]);
 
     // Excel's Delete/Backspace: clears cell contents but leaves formatting
     // (colors, borders, alignment, ...) in place, matching applyToSelection's
@@ -2488,13 +2519,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             if (!sheet.merges) sheet.merges = [];
-            const newIds = new Set(expandRange(rangeStart, rangeEnd));
-            sheet.merges = sheet.merges.filter((m) => !expandRange(m.start, m.end).some((id) => newIds.has(id)));
+            // Two rectangles share a cell exactly when they overlap on both axes.
+            sheet.merges = sheet.merges.filter((m) => {
+                const b = rangeBounds(m);
+                return !b || b.maxRow < minRow || b.minRow > maxRow || b.maxCol < minCol || b.minCol > maxCol;
+            });
             sheet.merges.push({ start: rangeStart, end: rangeEnd });
 
-            for (const id of newIds) {
-                if (id === rangeStart) continue;
-                delete sheet.cells[id];
+            const current = plainOf(sheet.cells);
+            for (let r = minRow; r <= maxRow; r++) {
+                for (let c = minCol; c <= maxCol; c++) {
+                    const id = getCellId(r, c);
+                    if (id !== rangeStart && current[id]) delete sheet.cells[id];
+                }
             }
             const anchor = { ...(sheet.cells[rangeStart] || {}), align: "center", valign: sheet.cells[rangeStart]?.valign || "middle" };
             sheet.cells[rangeStart] = anchor;
@@ -2757,13 +2794,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const newColumnCount = axis === "col" ? Math.max(1, columnCount + count) : columnCount;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
+            const oldCells = plainOf(sheet.cells);
             const newCells = {};
-            for (const id of Object.keys(sheet.cells)) {
+            for (const id of Object.keys(oldCells)) {
                 const ref = parseCellRef(id);
                 const pos = axis === "row" ? ref.row : ref.col;
                 if (count < 0 && pos >= at && pos < at - count) continue;
                 const shifted = pos >= at ? pos + count : pos;
-                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = sheet.cells[id];
+                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = oldCells[id];
             }
             sheet.cells = newCells;
             if (axis === "row") {
@@ -2852,10 +2890,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const sortCol = minCol;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
+            const current = plainOf(sheet.cells);
             const rowsData = [];
             for (let r = minRow; r <= maxRow; r++) {
                 const rowCells = {};
-                for (let c = minCol; c <= maxCol; c++) rowCells[c] = sheet.cells[getCellId(r, c)];
+                for (let c = minCol; c <= maxCol; c++) rowCells[c] = current[getCellId(r, c)];
                 rowsData.push(rowCells);
             }
             const keyFor = (rowCells) => {
@@ -2872,6 +2911,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const targetRow = minRow + i;
                 for (let c = minCol; c <= maxCol; c++) {
                     const id = getCellId(targetRow, c);
+                    if (rowCells[c] === current[id]) continue; // already where it belongs
                     if (rowCells[c]) sheet.cells[id] = rowCells[c]; else delete sheet.cells[id];
                 }
             });
@@ -2905,15 +2945,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setActiveSheetName(name);
     };
 
-    // updateSheets already deep-clones the whole workbook before handing it to
-    // the updater, so `next[name]` is a private copy — re-cloning it into
-    // `next[newName]` is what gives the duplicate and the original independent
-    // object graphs (editing one can never mutate the other).
+    // The duplicate starts out pointing at the very same (immutable) sheet
+    // object as the original; the two only diverge as each is edited, since
+    // an edit copies what it touches instead of changing it in place.
     const copySheet = (name) => {
         if (!sheets[name]) return;
         const newName = getDuplicateSheetName(name, Object.keys(sheets));
         updateSheets((next) => {
-            next[newName] = JSON.parse(JSON.stringify(next[name]));
+            next[newName] = plainOf(next[name]);
         });
         setActiveSheetName(newName);
         toast.success(`Sheet "${name}" duplicated as "${newName}"`);
@@ -3057,12 +3096,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // sends one request instead of one per change.
     const persistCharts = useCallback((charts) => {
         if (readOnly) return;
-        if (!sheetsRef.current[activeSheetName]) return;
+        const current = sheetsRef.current;
+        if (!current[activeSheetName]) return;
         broadcastNowRef.current = true;
-        setSheets((prev) => (prev[activeSheetName] ? { ...prev, [activeSheetName]: { ...prev[activeSheetName], charts } } : prev));
+        setSheets({ ...current, [activeSheetName]: { ...current[activeSheetName], charts } });
         clearTimeout(chartSaveRef.current?.timer);
         chartSaveRef.current = { meetingId, sectionId, activeSheet: activeSheetName, timer: setTimeout(flushChartSave, CHART_SAVE_DEBOUNCE_MS) };
-    }, [activeSheetName, sectionId, meetingId, readOnly, flushChartSave]);
+    }, [activeSheetName, sectionId, meetingId, readOnly, flushChartSave, setSheets]);
 
     useImperativeHandle(ref, () => ({
         updateCharts: persistCharts,
@@ -3279,7 +3319,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             const cIdx = colNumber - 1;
                             const value = extractExcelCellValue(cell);
                             const style = extractExcelCellStyle(cell);
-                            if (value === "" && Object.keys(style).length === 0) return;
+                            // Sparse storage: an empty cell is kept only if it carries
+                            // formatting of its own. Nearly every Excel cell names the
+                            // workbook's default font, which on an empty cell shows
+                            // nothing — keeping those would store a blank object for
+                            // every cell of a large sheet's used range.
+                            if (value === "" && !hasOwnFormatting(style)) return;
                             importedCells[getCellId(rIdx, cIdx)] = { value, ...style };
                             maxRow = Math.max(maxRow, rIdx + 1);
                             maxCol = Math.max(maxCol, cIdx + 1);
@@ -3332,14 +3377,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     };
                 }
 
+                // A workbook always keeps at least one visible sheet. Settled
+                // before the commit below, which freezes the imported sheets.
+                const importedNames = Object.keys(importedSheets);
+                if (importedNames.every((name) => importedSheets[name].hidden)) delete importedSheets[importedNames[0]].hidden;
                 setEditingCell(null);
                 updateSheets((next) => {
                     for (const name of Object.keys(next)) delete next[name];
                     Object.assign(next, importedSheets);
                 });
-                // A workbook always keeps at least one visible sheet.
-                const importedNames = Object.keys(importedSheets);
-                if (importedNames.every((name) => importedSheets[name].hidden)) delete importedSheets[importedNames[0]].hidden;
                 setActiveSheetName(importedNames.find((name) => !importedSheets[name].hidden));
                 setActiveCell("A1");
                 setSelection({ start: "A1", end: "A1" });
@@ -3467,15 +3513,36 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
     };
 
+    // Calls `visit(id, row, col)` for every cell that can show something: one
+    // with a typed value or formula, or one a formula spills into. Position
+    // filters belong in `visit` ahead of any displayGrid read, so a pass over a
+    // large sheet only formats the cells it actually needs.
+    const forEachFilledCell = (visit) => {
+        const emit = (id) => {
+            const pos = cellPosOf(id);
+            if (pos >= 0) {
+                const col = pos % CELL_POS_STRIDE;
+                visit(id, (pos - col) / CELL_POS_STRIDE, col);
+                return;
+            }
+            const ref = parseCellRef(id);
+            if (ref) visit(id, ref.row, ref.col);
+        };
+        for (const id in cells) {
+            const v = cells[id]?.value;
+            if (v !== undefined && v !== null && v !== "") emit(id);
+        }
+        for (const id of evaluation.spillAnchors.keys()) emit(id);
+    };
+
     const lastUsedCell = () => {
         let maxRow = 0, maxCol = 0;
-        for (const [id, v] of Object.entries(displayGrid)) {
-            if (v === "" || v === undefined) continue;
-            const ref = parseCellRef(id);
-            if (!ref) continue;
-            if (ref.row > maxRow) maxRow = ref.row;
-            if (ref.col > maxCol) maxCol = ref.col;
-        }
+        forEachFilledCell((id, row, col) => {
+            if (row <= maxRow && col <= maxCol) return;
+            if (displayGrid[id] === "") return;
+            if (row > maxRow) maxRow = row;
+            if (col > maxCol) maxCol = col;
+        });
         return { row: Math.min(maxRow, rowCount - 1), col: Math.min(maxCol, columnCount - 1) };
     };
 
@@ -3654,12 +3721,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (readOnly || !selectionBounds) return;
         const { minCol, maxCol } = selectionBounds;
         const widest = {};
-        for (const [id, text] of Object.entries(displayGrid)) {
-            if (text === "" || mergeMap[id]) continue;
-            const ref = parseCellRef(id);
-            if (!ref || ref.col < minCol || ref.col > maxCol || hiddenRowSet.has(ref.row)) continue;
-            widest[ref.col] = Math.max(widest[ref.col] || 0, measureTextWidth(text, cells[id]));
-        }
+        forEachFilledCell((id, row, col) => {
+            if (col < minCol || col > maxCol || hiddenRowSet.has(row) || mergeMap[id]) return;
+            const text = displayGrid[id];
+            if (text === "") return;
+            widest[col] = Math.max(widest[col] || 0, measureTextWidth(text, cells[id]));
+        });
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             sheet.columnWidths = { ...(sheet.columnWidths || {}) };
@@ -3674,19 +3741,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (readOnly || !selectionBounds) return;
         const { minRow, maxRow } = selectionBounds;
         const tallest = {};
-        for (const [id, text] of Object.entries(displayGrid)) {
-            if (text === "" || mergeMap[id]) continue;
-            const ref = parseCellRef(id);
-            if (!ref || ref.row < minRow || ref.row > maxRow) continue;
+        forEachFilledCell((id, row, col) => {
+            if (row < minRow || row > maxRow || mergeMap[id]) return;
+            const text = displayGrid[id];
+            if (text === "") return;
             const cell = cells[id];
             const fontSize = cell?.fontSize || 12;
             let lines = 1;
             if (cell?.wrap) {
-                const available = Math.max(20, (columnWidths[ref.col] || DEFAULT_COLUMN_WIDTH) - 12);
+                const available = Math.max(20, (columnWidths[col] || DEFAULT_COLUMN_WIDTH) - 12);
                 lines = String(text).split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(measureTextWidth(line, cell) / available)), 0);
             }
-            tallest[ref.row] = Math.max(tallest[ref.row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
-        }
+            tallest[row] = Math.max(tallest[row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
+        });
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             sheet.rowHeights = { ...(sheet.rowHeights || {}) };
@@ -4248,16 +4315,28 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     };
 
     // Status bar: quick totals for a multi-cell selection (visible cells only).
+    // Computed from a deferred copy of the selection, so totalling a very large
+    // range never holds up the selection highlight itself while dragging.
+    const statsBounds = useDeferredValue(allSelectionBounds);
     const selectionStats = useMemo(() => {
-        if (selectedCellIds.size < 2) return null;
+        const inEarlier = (row, col, upTo) => {
+            for (let j = 0; j < upTo; j++) {
+                const p = statsBounds[j];
+                if (row >= p.minRow && row <= p.maxRow && col >= p.minCol && col <= p.maxCol) return true;
+            }
+            return false;
+        };
+        let area = 0;
+        for (const b of statsBounds) area += (b.maxRow - b.minRow + 1) * (b.maxCol - b.minCol + 1);
+        if (area < 2) return null;
+
         let count = 0, numericCount = 0, sum = 0, min = Infinity, max = -Infinity;
-        for (const [id, v] of Object.entries(rawGrid)) {
-            if (!selectedCellIds.has(id)) continue;
-            const ref = parseCellRef(id);
-            if (!ref) continue;
-            if (hiddenRowSet.has(ref.row) || hiddenColSet.has(ref.col)) continue;
+        const add = (id, row, col) => {
+            if (hiddenRowSet.has(row) || hiddenColSet.has(col)) return;
             const typed = cells[id]?.value;
-            if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) continue;
+            if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) return;
+            const v = rawGrid[id];
+            if (v === undefined) return;
             count++;
             if (typeof v === "number" && Number.isFinite(v)) {
                 numericCount++;
@@ -4265,10 +4344,28 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 if (v < min) min = v;
                 if (v > max) max = v;
             }
+        };
+        if (area <= SELECTION_SCAN_LIMIT) {
+            statsBounds.forEach((b, i) => {
+                for (let r = b.minRow; r <= b.maxRow; r++) {
+                    for (let c = b.minCol; c <= b.maxCol; c++) {
+                        if (!inEarlier(r, c, i)) add(getCellId(r, c), r, c); // overlapping ranges count once
+                    }
+                }
+            });
+        } else {
+            const visit = (id) => {
+                const pos = cellPosOf(id);
+                if (pos < 0) return;
+                const col = pos % CELL_POS_STRIDE, row = (pos - col) / CELL_POS_STRIDE;
+                if (inEarlier(row, col, statsBounds.length)) add(id, row, col);
+            };
+            for (const id in cells) visit(id);
+            for (const id of evaluation.spillAnchors.keys()) if (!Object.prototype.hasOwnProperty.call(cells, id)) visit(id);
         }
         if (!count) return null;
         return { count, numericCount, sum, min, max, average: numericCount ? sum / numericCount : null };
-    }, [selectedCellIds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
+    }, [statsBounds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
     const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 
@@ -5080,7 +5177,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
                                     const cell = cells[cellId];
                                     const isActive = activeCell === cellId;
-                                    const isInRange = selectedCellIds.has(cellId);
+                                    const isInRange = isCellSelected(rowIdx, colIdx);
                                     const isEditing = editingCell === cellId;
                                     const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
                                     const isFillPreviewCell = fillPreviewCellIds.has(cellId);

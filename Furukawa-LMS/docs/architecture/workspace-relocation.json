@@ -1,0 +1,27 @@
+{
+  "projectRoot": "Furukawa-LMS",
+  "gitMetadataRemainsAtWorkspaceRoot": true,
+  "relocations": [
+    {
+      "from": "src, public, dist, dev-dist, .env, .env.production and frontend configuration/package files",
+      "to": "Furukawa-LMS/Furukawa-LMS-main/portal"
+    },
+    {
+      "from": "docs, scripts, README.md, .gitignore",
+      "to": "Furukawa-LMS"
+    }
+  ],
+  "preservedPackages": [
+    "Furukawa-LMS-main/admin",
+    "Furukawa-LMS-main/portal",
+    "Furukawa-LMS-main/server",
+    "Furukawa-LMS-main/shared"
+  ],
+  "adjustedReferences": [
+    "Portal shared-rule imports",
+    "Tailwind integration exclusion",
+    "Structure validation scripts and manifest application roots",
+    "Maintenance source path",
+    "Documentation links"
+  ]
+}

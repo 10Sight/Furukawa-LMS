@@ -1,0 +1,39 @@
+{
+  "include": [
+    "src/**/*"
+  ],
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@components/*": [
+        "./src/components/*"
+      ],
+      "@pages/*": [
+        "./src/pages/*"
+      ],
+      "@routes/*": [
+        "./src/routes/*"
+      ],
+      "@hooks/*": [
+        "./src/hooks/*"
+      ],
+      "@context/*": [
+        "./src/context/*"
+      ],
+      "@services/*": [
+        "./src/services/*"
+      ],
+      "@utils/*": [
+        "./src/utils/*"
+      ],
+      "@constants/*": [
+        "./src/constants/*"
+      ],
+      "@styles/*": [
+        "./src/styles/*"
+      ]
+    }
+  }
+}

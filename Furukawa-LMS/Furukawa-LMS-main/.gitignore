@@ -1,0 +1,44 @@
+﻿# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+dev-dist/
+build/
+
+# Server folders
+server/uploads/
+server/backups/
+nginx/certs/
+
+# Scratch / debug
+scratch/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sw?
+
+# Misc
+*.local
+.vercel

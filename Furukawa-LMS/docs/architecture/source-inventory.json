@@ -1,0 +1,7638 @@
+[
+  {
+    "file": "src/App.jsx",
+    "lines": 602,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "highcharts",
+      "react-router-dom",
+      "./components/ProtectedRoute",
+      "./components/PublicRoute",
+      "./components/RequireAccess"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/CreateOJTDialog.jsx",
+    "lines": 304,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/chartCatalog.jsx",
+    "lines": 101,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/chartExtras.jsx",
+    "lines": 380,
+    "imports": [
+      "react",
+      "recharts"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/chartMatrixEngine.js",
+    "lines": 139,
+    "imports": [
+      "./formulaEngine"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/chartTypes.js",
+    "lines": 127,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/ErrorBoundary.jsx",
+    "lines": 44,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/ExcelClone.jsx",
+    "lines": 5462,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/button",
+      "@/components/ui/popover",
+      "@/components/ui/context-menu",
+      "@/components/ui/checkbox",
+      "@/components/ui/dialog",
+      "@/components/ui/progress",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "./formulaEngine",
+      "./numberFormatCatalog",
+      "./formulaValues",
+      "./ExcelDialogs",
+      "./pivotEngine",
+      "@/lib/utils",
+      "./FullScreenFrame",
+      "./ribbonParts"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/ExcelDialogs.jsx",
+    "lines": 704,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/button",
+      "@/components/ui/checkbox",
+      "@/components/ui/dialog",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "@/lib/utils",
+      "./formulaCatalog",
+      "./formulaEngine",
+      "./formulaFormat",
+      "./numberFormatCatalog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/ExcelGraph.jsx",
+    "lines": 2267,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/button",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@/components/ui/label",
+      "@tabler/icons-react",
+      "recharts",
+      "./formulaEngine",
+      "./chartMatrixEngine",
+      "@/lib/utils",
+      "./FullScreenFrame",
+      "@/components/ui/dialog",
+      "./ribbonParts",
+      "./chartTypes",
+      "./chartCatalog",
+      "./chartExtras"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/formulaCatalog.js",
+    "lines": 274,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/formulaEngine.js",
+    "lines": 875,
+    "imports": [
+      "./formulaValues",
+      "./formulaFunctions",
+      "./formulaFormat"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/formulaFormat.js",
+    "lines": 275,
+    "imports": [
+      "./formulaValues"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/formulaFunctions.js",
+    "lines": 1491,
+    "imports": [
+      "./formulaValues",
+      "./formulaFormat"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/formulaValues.js",
+    "lines": 339,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/FullScreenFrame.jsx",
+    "lines": 83,
+    "imports": [
+      "react",
+      "react-dom",
+      "@tabler/icons-react",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/numberFormatCatalog.js",
+    "lines": 130,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/pivotEngine.js",
+    "lines": 264,
+    "imports": [
+      "./formulaEngine"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/excelClone/ribbonParts.jsx",
+    "lines": 331,
+    "imports": [
+      "react",
+      "@/components/ui/popover",
+      "@tabler/icons-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/LayoutEditorCells.jsx",
+    "lines": 126,
+    "imports": [
+      "react",
+      "@/components/ui/select"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/m365Excel/MicrosoftExcelEmbed.jsx",
+    "lines": 50,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/MenteeFeedbackMonitoringSheet.jsx",
+    "lines": 422,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "react-redux",
+      "lucide-react",
+      "@/hooks/useRevisionInfo"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/monthlyReport/CreateFolderDialog.jsx",
+    "lines": 93,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@tabler/icons-react",
+      "@/lib/utils",
+      "@/Redux/AllApi/MonthlyMeetingReportApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/monthlyReport/FoldersAndRecordsPanel.jsx",
+    "lines": 337,
+    "imports": [
+      "react",
+      "sonner",
+      "lucide-react",
+      "@tabler/icons-react",
+      "@/components/ui/alert-dialog",
+      "@/Redux/AllApi/MonthlyMeetingReportApi",
+      "./CreateFolderDialog",
+      "./UploadRecordDialog",
+      "./PresentationViewer"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/monthlyReport/PresentationViewer.jsx",
+    "lines": 213,
+    "imports": [
+      "react",
+      "lucide-react",
+      "@tabler/icons-react",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/monthlyReport/UploadRecordDialog.jsx",
+    "lines": 145,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/MonthlyMeetingReportApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/OJTList.jsx",
+    "lines": 90,
+    "imports": [
+      "react",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/components/ui/alert"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/OJTTrainingRecordSheet.jsx",
+    "lines": 809,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "@/utils/exportHelper",
+      "sonner",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/common/UserAutocomplete",
+      "@/hooks/useRevisionInfo"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/OnJobTrainingTable.jsx",
+    "lines": 694,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@tabler/icons-react",
+      "@/utils/exportHelper",
+      "sonner",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/OperatorObservanceSheet.jsx",
+    "lines": 1041,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/hooks/useRevisionInfo",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/textarea",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "lucide-react",
+      "@/utils/exportHelper",
+      "@/utils/dateMath"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionEditModal.jsx",
+    "lines": 181,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/button",
+      "lucide-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionHistoryBySheet.jsx",
+    "lines": 56,
+    "imports": [
+      "react",
+      "@/components/ui/accordion",
+      "@/components/ui/badge",
+      "./RevisionHistoryTable",
+      "./revisionHistoryUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionHistoryList.jsx",
+    "lines": 17,
+    "imports": [
+      "react",
+      "./RevisionHistoryTable"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionHistoryModal.jsx",
+    "lines": 68,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "./RevisionHistoryTable"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionHistoryTable.jsx",
+    "lines": 67,
+    "imports": [
+      "react",
+      "@/components/ui/table",
+      "@/components/ui/badge",
+      "./revisionHistoryUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/revisionHistoryUtils.js",
+    "lines": 7,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/revision/RevisionRecordList.jsx",
+    "lines": 114,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/table",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/ShiftScheduler.jsx",
+    "lines": 312,
+    "imports": [
+      "react",
+      "date-fns",
+      "lucide-react",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/SixteenDayMonitoringSheet.jsx",
+    "lines": 2368,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/hooks/useCountdown",
+      "@/hooks/useRevisionInfo",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "lucide-react",
+      "@/components/ui/badge",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "date-fns",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/utils/exportHelper",
+      "@/Redux/AllApi/AuditApi",
+      "react-router-dom",
+      "@/utils/sixteenDayMonitoringConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/SkillMatrixCertificate.jsx",
+    "lines": 1403,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "lucide-react",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/utils/exportHelper",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/badge",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/hooks/useRevisionInfo"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/SkillMatrixTableView.jsx",
+    "lines": 9,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/StudentLevelManager.jsx",
+    "lines": 593,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/select",
+      "@/components/ui/table",
+      "@/components/ui/label",
+      "@/components/ui/alert",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/CourseLevelConfigApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/admin/ThreeDayMonitoringSheet.jsx",
+    "lines": 2052,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/Helper/axiosInstance",
+      "@/hooks/useRevisionInfo",
+      "sonner",
+      "@/utils/exportHelper",
+      "@/lib/utils",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/dialog",
+      "lucide-react",
+      "@/components/ui/badge",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "date-fns",
+      "@/components/admin/LayoutEditorCells",
+      "@/utils/threeDayMonitoringConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/auth/AuthProvider.jsx",
+    "lines": 33,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-redux",
+      "@/Redux/Slice/AuthSlice"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/auth/ProtectedRoute.jsx",
+    "lines": 53,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/Slice/AuthSlice"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/auth/PublicRoute.jsx",
+    "lines": 18,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/auth/RequireAccess.jsx",
+    "lines": 56,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/AuthProvider.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/charts/ContractorWiseOperatorChart.jsx",
+    "lines": 560,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/ContractorApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/Cycle10ComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DailyJoiningHandoverCohortChart.jsx",
+    "lines": 566,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DepartmentQuizChart.jsx",
+    "lines": 635,
+    "imports": [
+      "react",
+      "@reduxjs/toolkit/query/react",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/Redux/AllApi/AnalyticsApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DojoHandoverComparisonChart.jsx",
+    "lines": 680,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DojoHiringTrendChart.jsx",
+    "lines": 675,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DojoTemporaryMetricsChart.jsx",
+    "lines": 523,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DPRCalendar.jsx",
+    "lines": 147,
+    "imports": [
+      "react",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DPRChart.jsx",
+    "lines": 745,
+    "imports": [
+      "react",
+      "highcharts",
+      "highcharts-react-official",
+      "highcharts/highcharts-3d",
+      "date-fns",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "lucide-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/DailyProductionReportApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/DPRManualChartsContainer.jsx",
+    "lines": 752,
+    "imports": [
+      "react",
+      "highcharts",
+      "highcharts-react-official",
+      "sonner",
+      "lucide-react",
+      "@/Redux/AllApi/DailyProductionReportApi",
+      "./DPRCalendar"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/EfficiencyChart.jsx",
+    "lines": 1329,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "recharts",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/components/ui/skeleton",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/LeftUsersLeavingReasonChart.jsx",
+    "lines": 950,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/MultiSkillingPlanComparisonChart.jsx",
+    "lines": 641,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/OnJobTrainingApprovedComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/OperatorObservanceComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/SixteenDayMonitoringComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/SkillMatrixCertificateComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/SkillUpgradationPlanComparisonChart.jsx",
+    "lines": 641,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/TestPaperPassChart.jsx",
+    "lines": 530,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "@/components/common/MultiSelectFilter",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/ThreeDayMonitoringComparisonChart.jsx",
+    "lines": 585,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "highcharts",
+      "highcharts-react-official",
+      "@/hooks/useTranslate",
+      "@/hooks/useIsTablet",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/charts/UserStatusDistributionChart.jsx",
+    "lines": 402,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/Redux/AllApi/AdminHomeApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/skeleton",
+      "@tabler/icons-react",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "highcharts",
+      "highcharts-react-official",
+      "highcharts/highcharts-3d",
+      "highcharts/modules/no-data-to-display",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/ActionButtons.jsx",
+    "lines": 100,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/AssignmentSelect.jsx",
+    "lines": 66,
+    "imports": [
+      "react",
+      "@/Helper/axiosInstance",
+      "@/lib/utils",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/AttemptReviewModal.jsx",
+    "lines": 724,
+    "imports": [
+      "react",
+      "@/utils/formatters",
+      "react-redux",
+      "@/components/ui/dialog",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "@/components/ui/input",
+      "@/components/ui/checkbox",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/utils/mediaUtils",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/ConfirmationModal.jsx",
+    "lines": 92,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "lucide-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/ConfirmDialog.jsx",
+    "lines": 151,
+    "imports": [
+      "react",
+      "@mui/material",
+      "@/hooks/useTranslate",
+      "lucide-react",
+      "@mui/material/styles"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/DraggableCanvas.jsx",
+    "lines": 440,
+    "imports": [
+      "react",
+      "clsx",
+      "lucide-react",
+      "@/utils/mediaUtils",
+      "@/components/ui/context-menu"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/ExportColumnSelectorModal.jsx",
+    "lines": 343,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/checkbox",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/FilterBar.jsx",
+    "lines": 39,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/FilterSelect.jsx",
+    "lines": 38,
+    "imports": [
+      "react",
+      "@/components/ui/select"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/LanguageSelector.jsx",
+    "lines": 68,
+    "imports": [
+      "react",
+      "react-redux",
+      "lucide-react",
+      "@/components/ui/button",
+      "@/components/ui/dropdown-menu",
+      "@/localization/translations",
+      "@/Redux/Slice/LocalizationSlice",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/LazyContainer.jsx",
+    "lines": 39,
+    "imports": [
+      "react",
+      "@/components/ui/skeleton"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/MultiSelectFilter.jsx",
+    "lines": 116,
+    "imports": [
+      "react",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/NotificationCenter.jsx",
+    "lines": 171,
+    "imports": [
+      "react",
+      "lucide-react",
+      "../ui/button",
+      "../ui/badge",
+      "../ui/card",
+      "../ui/popover",
+      "../../contexts/SocketContext",
+      "date-fns",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/PortalTile.jsx",
+    "lines": 68,
+    "imports": [
+      "react",
+      "lucide-react",
+      "@/components/ui/card"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/SearchInput.jsx",
+    "lines": 59,
+    "imports": [
+      "react",
+      "@/components/ui/input",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/ServerSearchMultiSelect.jsx",
+    "lines": 197,
+    "imports": [
+      "react",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/SlideRender.jsx",
+    "lines": 63,
+    "imports": [
+      "react",
+      "clsx",
+      "./slide-stage.css",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/SlideStage.jsx",
+    "lines": 50,
+    "imports": [
+      "react",
+      "clsx",
+      "./slide-stage.css"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/StatCard.jsx",
+    "lines": 37,
+    "imports": [
+      "react",
+      "@/components/ui/card"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/TabNavigation.jsx",
+    "lines": 41,
+    "imports": [
+      "react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/common/UserAutocomplete.jsx",
+    "lines": 201,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/UserApi",
+      "@/components/ui/input",
+      "@/components/ui/popover",
+      "lucide-react",
+      "@/hooks/useDebounce",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/AssignmentForm.jsx",
+    "lines": 45,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/form/index",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/AssignmentList.jsx",
+    "lines": 185,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert-dialog",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "@/Redux/AllApi/AssignmentApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/CModuleForm.jsx",
+    "lines": 112,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/form/index",
+      "./ResourceForm",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/CourseDetails.jsx",
+    "lines": 61,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/CourseStats.jsx",
+    "lines": 47,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/components/common/StatCard"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ModuleForm.jsx",
+    "lines": 142,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ModuleItem.jsx",
+    "lines": 271,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "sonner",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/LessonApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ModuleList.jsx",
+    "lines": 90,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "@/Redux/AllApi/moduleApi",
+      "./ModuleItem"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/QuestionForm.jsx",
+    "lines": 107,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/form/index",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/QuizForm.jsx",
+    "lines": 99,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/form/index",
+      "./QuestionForm",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/QuizList.jsx",
+    "lines": 190,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "sonner",
+      "@/Redux/AllApi/QuizApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourceForm.jsx",
+    "lines": 188,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/form/index",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourceList.jsx",
+    "lines": 85,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "./ResourceModule",
+      "./UniversalResourceList"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourceManagementModal.jsx",
+    "lines": 349,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "@/components/form/index",
+      "@/components/ui/dialog",
+      "@tabler/icons-react",
+      "sonner",
+      "@/Redux/AllApi/resourceApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourceModule.jsx",
+    "lines": 321,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "@/Redux/AllApi/resourceApi",
+      "sonner",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourcePanel.jsx",
+    "lines": 519,
+    "imports": [
+      "react",
+      "../../Redux/AllApi/resourceApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/skeleton",
+      "@/components/ui/tooltip"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/ResourceSystemExamples.jsx",
+    "lines": 119,
+    "imports": [
+      "react",
+      "./UniversalResourceList"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/course/UniversalResourceList.jsx",
+    "lines": 330,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/Redux/AllApi/resourceApi",
+      "./ResourceManagementModal",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/dashboard/DashboardDateFilter.jsx",
+    "lines": 85,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/components/ui/dropdown-menu",
+      "date-fns"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/dashboard/RecentActivityCard.jsx",
+    "lines": 78,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/dashboard/SystemOverviewCard.jsx",
+    "lines": 76,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentCancellationBanner.jsx",
+    "lines": 118,
+    "imports": [
+      "react",
+      "@/components/ui/alert",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentCourseCard.jsx",
+    "lines": 110,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentDetailHeader.jsx",
+    "lines": 80,
+    "imports": [
+      "react",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "date-fns"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentInstructorCard.jsx",
+    "lines": 92,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/avatar",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentLineManager.jsx",
+    "lines": 258,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/table",
+      "@/Redux/AllApi/LineApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/dialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentSectionManager.jsx",
+    "lines": 959,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/components/ui/checkbox",
+      "./SectionLineManager",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentSkeleton.jsx",
+    "lines": 137,
+    "imports": [
+      "react",
+      "@/components/ui/skeleton",
+      "@/components/ui/card"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentStats.jsx",
+    "lines": 61,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentStatusNotifications.jsx",
+    "lines": 282,
+    "imports": [
+      "react",
+      "@/components/ui/alert",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/card",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/DepartmentStudentsTable.jsx",
+    "lines": 830,
+    "imports": [
+      "react",
+      "@/components/ui/table",
+      "@/components/ui/card",
+      "@/components/ui/dialog",
+      "@/components/ui/alert-dialog",
+      "@/components/ui/avatar",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "@/components/ui/skeleton",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/UserApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/HandoverSheet.jsx",
+    "lines": 1508,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@tabler/icons-react",
+      "jspdf",
+      "html-to-image",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/utils/exportHelper",
+      "lucide-react",
+      "@/components/ui/dialog",
+      "@/components/ui/textarea",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "date-fns",
+      "../common/UserAutocomplete",
+      "@/components/ui/select",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/MachineManager.jsx",
+    "lines": 341,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/table",
+      "@/Redux/AllApi/MachineApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/components/ui/badge",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/MultiSkillingPlan.jsx",
+    "lines": 1101,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Helper/axiosInstance",
+      "@/hooks/useRevisionInfo",
+      "sonner",
+      "@tabler/icons-react",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/input"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/SectionLineManager.jsx",
+    "lines": 548,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/table",
+      "@/Redux/AllApi/LineApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/checkbox",
+      "@/components/ui/badge",
+      "../common/UserAutocomplete",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/SkillUpgradationPlan.jsx",
+    "lines": 1463,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Helper/axiosInstance",
+      "@/hooks/useRevisionInfo",
+      "@/Redux/AllApi/AuditApi",
+      "sonner",
+      "@tabler/icons-react",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/input"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/SkillUpgradationWrapper.jsx",
+    "lines": 724,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@tabler/icons-react",
+      "@/components/departments/SkillUpgradationPlan",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dialog",
+      "sonner",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/SubSectionDetailHeader.jsx",
+    "lines": 40,
+    "imports": [
+      "react",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/departments/SubSectionManager.jsx",
+    "lines": 455,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/table",
+      "@/Redux/AllApi/SubSectionApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/card",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/components/ui/select",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/DynamicForm.jsx",
+    "lines": 617,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/separator",
+      "@/components/ui/badge",
+      "./FormInput",
+      "./FormSelect",
+      "./FormTextarea",
+      "./FormCard",
+      "@tabler/icons-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/FormCard.jsx",
+    "lines": 168,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/separator",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/FormExample.jsx",
+    "lines": 320,
+    "imports": [
+      "react",
+      "./index",
+      "@/components/ui/button",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/FormInput.jsx",
+    "lines": 213,
+    "imports": [
+      "react",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/FormSelect.jsx",
+    "lines": 403,
+    "imports": [
+      "react",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/select",
+      "@/components/ui/popover",
+      "@/components/ui/checkbox",
+      "@tabler/icons-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/FormTextarea.jsx",
+    "lines": 254,
+    "imports": [
+      "react",
+      "@/components/ui/textarea",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/form/index.js",
+    "lines": 16,
+    "imports": [
+      "./FormCard",
+      "./FormInput",
+      "./FormSelect",
+      "./FormTextarea",
+      "./DynamicForm"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/index.js",
+    "lines": 4,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/instructor/EditInstructorDialog.jsx",
+    "lines": 162,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "@/components/ui/textarea",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/instructor/InstructorCourses.jsx",
+    "lines": 138,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/ui/table",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/instructor/InstructorDepartments.jsx",
+    "lines": 193,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/table",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/instructor/InstructorDetailHeader.jsx",
+    "lines": 137,
+    "imports": [
+      "react",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/instructor/InstructorProfile.jsx",
+    "lines": 157,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/instructor/InstructorStats.jsx",
+    "lines": 54,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/lesson-editor/EditorRibbon.jsx",
+    "lines": 68,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/tabs",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/lesson-editor/LayersPanel.jsx",
+    "lines": 82,
+    "imports": [
+      "react",
+      "clsx",
+      "@/components/ui/button",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/lesson-editor/SlideEditorWorkspace.jsx",
+    "lines": 181,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/components/ui/rich-text-editor",
+      "@/components/common/SlideStage",
+      "@/components/common/DraggableCanvas",
+      "@/components/lesson-editor/EditorRibbon",
+      "@/components/lesson-editor/LayersPanel",
+      "@/hooks/useKeyboardShortcuts"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/lesson-editor/useSlidesEditor.js",
+    "lines": 282,
+    "imports": [
+      "react",
+      "@/hooks/useHistoryState"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/mentors/AssignMentorDialog.jsx",
+    "lines": 359,
+    "imports": [
+      "react",
+      "react-redux",
+      "sonner",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/dialog",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/avatar",
+      "@tabler/icons-react",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ProtectedRoute.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/PublicRoute.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/RequireAccess.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/student/AccountStatusNotification.jsx",
+    "lines": 91,
+    "imports": [
+      "react",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/AccountStatusWrapper.jsx",
+    "lines": 70,
+    "imports": [
+      "react",
+      "react-redux",
+      "./AccountStatusNotification"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/AssignmentDetailsModal.jsx",
+    "lines": 249,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/AssignmentSubmissionModal.jsx",
+    "lines": 366,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "lucide-react",
+      "@/hooks/useFileUpload",
+      "@/Redux/AllApi/SubmissionApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/DownloadAppPopup.jsx",
+    "lines": 265,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/FinalAssessments.jsx",
+    "lines": 83,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/index.js",
+    "lines": 7,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/components/student/ModuleAssignment.jsx",
+    "lines": 103,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/alert",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/ModuleLessons.jsx",
+    "lines": 141,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/ModuleQuiz.jsx",
+    "lines": 103,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/alert",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/ModuleResources.jsx",
+    "lines": 281,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/StudentCourseResources.jsx",
+    "lines": 244,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/utils/mediaUtils",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/StudentModuleAssignments.jsx",
+    "lines": 172,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/StudentModuleQuizzes.jsx",
+    "lines": 411,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/Helper/axiosInstance",
+      "@/components/common/AttemptReviewModal"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/student/StudentModuleResources.jsx",
+    "lines": 241,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/accordion.jsx",
+    "lines": 63,
+    "imports": [
+      "react",
+      "@radix-ui/react-accordion",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/alert-dialog.jsx",
+    "lines": 137,
+    "imports": [
+      "react",
+      "@radix-ui/react-alert-dialog",
+      "@/lib/utils",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/alert.jsx",
+    "lines": 64,
+    "imports": [
+      "react",
+      "class-variance-authority",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/avatar.jsx",
+    "lines": 42,
+    "imports": [
+      "react",
+      "@radix-ui/react-avatar",
+      "@/lib/utils",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/badge.jsx",
+    "lines": 38,
+    "imports": [
+      "react",
+      "class-variance-authority",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/breadcrumb.jsx",
+    "lines": 113,
+    "imports": [
+      "react",
+      "@radix-ui/react-slot",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/button.jsx",
+    "lines": 56,
+    "imports": [
+      "react",
+      "@radix-ui/react-slot",
+      "class-variance-authority",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/calendar.jsx",
+    "lines": 174,
+    "imports": [
+      "react",
+      "lucide-react",
+      "react-day-picker",
+      "@/lib/utils",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/card.jsx",
+    "lines": 61,
+    "imports": [
+      "react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/checkbox.jsx",
+    "lines": 29,
+    "imports": [
+      "react",
+      "@radix-ui/react-checkbox",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/context-menu.jsx",
+    "lines": 181,
+    "imports": [
+      "react",
+      "@radix-ui/react-context-menu",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/dialog.jsx",
+    "lines": 82,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/dropdown-menu.jsx",
+    "lines": 222,
+    "imports": [
+      "react",
+      "@radix-ui/react-dropdown-menu",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/FileTransferProgress.jsx",
+    "lines": 76,
+    "imports": [
+      "react",
+      "lucide-react",
+      "@/components/ui/dialog",
+      "@/components/ui/progress",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/form.jsx",
+    "lines": 145,
+    "imports": [
+      "react",
+      "@radix-ui/react-slot",
+      "react-hook-form",
+      "@/lib/utils",
+      "@/components/ui/label"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/input.jsx",
+    "lines": 25,
+    "imports": [
+      "react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/label.jsx",
+    "lines": 22,
+    "imports": [
+      "react",
+      "@radix-ui/react-label",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/popover.jsx",
+    "lines": 46,
+    "imports": [
+      "react",
+      "@radix-ui/react-popover",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/progress.jsx",
+    "lines": 28,
+    "imports": [
+      "react",
+      "@radix-ui/react-progress",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/rich-text-editor.jsx",
+    "lines": 326,
+    "imports": [
+      "react",
+      "@/lib/utils",
+      "@tiptap/react",
+      "@tiptap/core",
+      "@tiptap/starter-kit",
+      "@tiptap/extension-placeholder",
+      "@tiptap/extension-text-align",
+      "@tiptap/extension-image",
+      "@tiptap/extension-text-style",
+      "@tiptap/extension-color",
+      "@tiptap/extension-underline",
+      "@/Helper/axiosInstance",
+      "@/utils/mediaUtils",
+      "sonner",
+      "@/components/ui/tooltip",
+      "lucide-react",
+      "./rich-text-editor.css"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/select.jsx",
+    "lines": 156,
+    "imports": [
+      "react",
+      "@radix-ui/react-select",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/separator.jsx",
+    "lines": 22,
+    "imports": [
+      "react",
+      "@radix-ui/react-separator",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/sheet.jsx",
+    "lines": 139,
+    "imports": [
+      "react",
+      "@radix-ui/react-dialog",
+      "lucide-react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/skeleton.jsx",
+    "lines": 16,
+    "imports": [
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/switch.jsx",
+    "lines": 28,
+    "imports": [
+      "react",
+      "@radix-ui/react-switch",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/table.jsx",
+    "lines": 90,
+    "imports": [
+      "react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/tabs.jsx",
+    "lines": 61,
+    "imports": [
+      "react",
+      "@radix-ui/react-tabs",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/textarea.jsx",
+    "lines": 21,
+    "imports": [
+      "react",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/components/ui/tooltip.jsx",
+    "lines": 26,
+    "imports": [
+      "react",
+      "@radix-ui/react-tooltip",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/config/monitoring/sixteenDayMonitoringConfig.js",
+    "lines": 141,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/config/monitoring/tenCycleSheetConfig.js",
+    "lines": 117,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/config/monitoring/threeDayMonitoringConfig.js",
+    "lines": 140,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/config/navigation/IconRegistry.js",
+    "lines": 90,
+    "imports": [
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/config/navigation/pageRegistry.js",
+    "lines": 371,
+    "imports": [
+      "./IconRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/constants/IconRegistry.js",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/constants/pageRegistry.js",
+    "lines": 1,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/contexts/SocketContext.jsx",
+    "lines": 315,
+    "imports": [
+      "react",
+      "react-redux",
+      "sonner",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Helper/axiosBaseQuery.js",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Helper/axiosInstance.js",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/hooks/useCountdown.js",
+    "lines": 46,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useDebounce.js",
+    "lines": 18,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useFileUpload.js",
+    "lines": 87,
+    "imports": [
+      "react",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useHistoryState.js",
+    "lines": 82,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useIsTablet.js",
+    "lines": 46,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useKeyboardShortcuts.js",
+    "lines": 72,
+    "imports": [
+      "react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/usePrivileges.jsx",
+    "lines": 84,
+    "imports": [
+      "react",
+      "@/Helper/axiosInstance",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useRevisionInfo.js",
+    "lines": 38,
+    "imports": [
+      "react",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/hooks/useTranslate.js",
+    "lines": 23,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/Redux/Slice/LocalizationSlice",
+      "@/localization/translations"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Layout/CmsLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/CustomRoleLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/DailyMeetingLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/DashboardLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/HomeLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/InstructorLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/StudentLayout.jsx",
+    "lines": 2,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Layout/SuperAdminLayout.jsx",
+    "lines": 1,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/layouts/CmsLayout.jsx",
+    "lines": 341,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "../components/common/NotificationCenter",
+      "../components/common/LanguageSelector",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/Slice/AuthSlice",
+      "@/hooks/useTranslate",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/CustomRoleLayout.jsx",
+    "lines": 289,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "@/hooks/useTranslate",
+      "../components/common/LanguageSelector",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/DailyMeetingLayout.jsx",
+    "lines": 157,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/button",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "@/components/common/NotificationCenter",
+      "@/components/common/LanguageSelector",
+      "@/hooks/useTranslate",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/DashboardLayout.jsx",
+    "lines": 562,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "../components/common/NotificationCenter",
+      "../components/common/LanguageSelector",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/Slice/AuthSlice",
+      "@/hooks/useTranslate",
+      "@/hooks/usePrivileges",
+      "@/constants/pageRegistry",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/HomeLayout.jsx",
+    "lines": 717,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/components/ui/separator",
+      "@/Redux/Slice/AuthSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "../components/common/NotificationCenter",
+      "../components/common/LanguageSelector",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/Slice/AuthSlice",
+      "@/Helper/axiosInstance",
+      "@/hooks/useTranslate",
+      "@/hooks/usePrivileges",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/index.js",
+    "lines": 9,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/layouts/InstructorLayout.jsx",
+    "lines": 470,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/components/ui/separator",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/Slice/AuthSlice",
+      "@/Helper/axiosInstance",
+      "@/hooks/useTranslate",
+      "../components/common/LanguageSelector",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/StudentLayout.jsx",
+    "lines": 532,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@/Redux/AllApi/UserApi",
+      "@tabler/icons-react",
+      "lucide-react",
+      "clsx",
+      "@/Helper/axiosInstance",
+      "@/hooks/useTranslate",
+      "../components/common/LanguageSelector",
+      "@/constants/pageRegistry"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/layouts/SuperAdminLayout.jsx",
+    "lines": 374,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/breadcrumb",
+      "@/components/ui/button",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@tabler/icons-react",
+      "lucide-react",
+      "@/hooks/useTranslate",
+      "../components/common/LanguageSelector"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/lib/axios/axiosBaseQuery.js",
+    "lines": 48,
+    "imports": [
+      "sonner",
+      "./axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/lib/axios/axiosInstance.js",
+    "lines": 57,
+    "imports": [
+      "@/utils/authSession",
+      "axios"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/lib/utils.js",
+    "lines": 7,
+    "imports": [
+      "clsx",
+      "tailwind-merge"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/localization/translations.js",
+    "lines": 4214,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/main.jsx",
+    "lines": 61,
+    "imports": [
+      "./utils/authSession.js",
+      "./Redux/Slice/AuthSlice.js",
+      "virtual:pwa-register",
+      "react-dom/client",
+      "sonner",
+      "./index.css",
+      "./App.jsx",
+      "react-redux",
+      "./Redux/store.js",
+      "./components/AuthProvider.jsx",
+      "./contexts/SocketContext.jsx"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/AccessDenied.jsx",
+    "lines": 156,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AbnormalCondition.jsx",
+    "lines": 723,
+    "imports": [
+      "react",
+      "react-redux",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/AbnormalConditionApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddAssignmentPage.jsx",
+    "lines": 351,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/AssignmentApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/calendar",
+      "@/components/ui/popover",
+      "date-fns",
+      "@/lib/utils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddCourse.jsx",
+    "lines": 827,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/AssignmentApi",
+      "@/Redux/AllApi/resourceApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/button",
+      "@/components/form",
+      "@/components/course/CModuleForm",
+      "@/components/course/QuizForm",
+      "@/components/course/AssignmentForm",
+      "@tabler/icons-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddLessonPage.jsx",
+    "lines": 233,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/components/lesson-editor/SlideEditorWorkspace",
+      "@/components/lesson-editor/useSlidesEditor"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddModulePage.jsx",
+    "lines": 358,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/LessonApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/rich-text-editor",
+      "@tabler/icons-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddQuizPage.jsx",
+    "lines": 1048,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/LessonApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/hooks/useFileUpload",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddResourcePage.jsx",
+    "lines": 563,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/resourceApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/LessonApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AddTestPaper.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/Analytics.jsx",
+    "lines": 334,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/AuditApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AttemptRequests.jsx",
+    "lines": 127,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/table",
+      "@/components/ui/select",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/badge",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/AuditLogs.jsx",
+    "lines": 854,
+    "imports": [
+      "react",
+      "react-redux",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/AuditApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/CertificateTemplates.jsx",
+    "lines": 1044,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "@/hooks/useTranslate",
+      "@/Redux/AllApi/CertificateTemplateApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/alert",
+      "@/components/ui/dialog",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/table",
+      "@/components/ui/dropdown-menu",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/ChangePassword.jsx",
+    "lines": 138,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/UserApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/components/ApplyLeftDialog.jsx",
+    "lines": 173,
+    "imports": [
+      "react",
+      "sonner",
+      "date-fns",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/LeftRequestApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/components/LeftRequestsTab.jsx",
+    "lines": 948,
+    "imports": [
+      "react",
+      "sonner",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "@/components/ui/checkbox",
+      "@/components/ui/avatar",
+      "@/components/ui/select",
+      "@/components/ui/dialog",
+      "@tabler/icons-react",
+      "@/utils/dateUtils",
+      "@/components/common/MultiSelectFilter",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/LeftRequestApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/ContractorDetail.jsx",
+    "lines": 225,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "date-fns",
+      "react-redux",
+      "@/Redux/AllApi/ContractorApi",
+      "@/components/ui/table",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/avatar",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Contractors.jsx",
+    "lines": 374,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "date-fns",
+      "@/Redux/AllApi/ContractorApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/select",
+      "react-redux",
+      "@tabler/icons-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Course.jsx",
+    "lines": 1242,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/tooltip",
+      "@/components/ui/avatar",
+      "@/components/ui/skeleton",
+      "@/components/ui/textarea",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/CourseDetailPage.jsx",
+    "lines": 307,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton",
+      "sonner",
+      "@/components/course/ModuleList",
+      "@/components/course/ResourceList",
+      "@/components/course/CourseStats"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/CourseLevelSettings.jsx",
+    "lines": 717,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/components/ui/alert",
+      "@/components/ui/switch",
+      "@/components/ui/dialog",
+      "lucide-react",
+      "sonner",
+      "@/Redux/AllApi/CourseLevelConfigApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/CreateLearningComparison.jsx",
+    "lines": 446,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "lucide-react",
+      "@/components/ui/select",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/components/ui/FileTransferProgress"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Cycle10.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/Cycle10LayoutEditor.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/DailyProductionReport.jsx",
+    "lines": 2284,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/tabs",
+      "./DPRManage",
+      "date-fns",
+      "lucide-react",
+      "@/components/ui/button",
+      "@/utils/exportHelper",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@/hooks/useRevisionInfo",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/DailyProductionReportApi",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/components/ui/textarea",
+      "@/components/charts/DPRChart",
+      "@/components/charts/DPRManualChartsContainer"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DepartmentDetail.jsx",
+    "lines": 691,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/departments/DepartmentDetailHeader",
+      "@/components/departments/DepartmentInstructorCard",
+      "@/components/departments/DepartmentCourseCard",
+      "@/components/departments/DepartmentStudentsTable",
+      "@/components/departments/DepartmentStats",
+      "@/components/departments/DepartmentSkeleton",
+      "@/components/departments/DepartmentCancellationBanner",
+      "@/components/departments/DepartmentSectionManager",
+      "@/components/departments/MultiSkillingPlan",
+      "@/components/departments/HandoverSheet",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/ui/progress",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "@tabler/icons-react",
+      "react-router-dom",
+      "sonner",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Departments.jsx",
+    "lines": 2825,
+    "imports": [
+      "react",
+      "@/components/ui/dropdown-menu",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/tabs",
+      "@/components/ui/tooltip",
+      "@/components/ui/avatar",
+      "@/components/ui/skeleton",
+      "@/components/ui/switch",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar",
+      "react-router-dom",
+      "react-redux",
+      "@/components/departments/DepartmentStatusNotifications",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DesignationsPage.jsx",
+    "lines": 190,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/DesignationApi",
+      "@/components/ui/table",
+      "@/components/ui/input",
+      "@/components/ui/badge",
+      "@/components/ui/switch",
+      "@tabler/icons-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DesignationUsersPage.jsx",
+    "lines": 264,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/common/SearchInput",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/dojo-hiring/DojoHiringPage.jsx",
+    "lines": 2297,
+    "imports": [
+      "react",
+      "react-dom",
+      "xlsx",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/ContractorApi",
+      "@/Redux/AllApi/AuditApi",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "date-fns",
+      "@/utils/dateUtils",
+      "@/components/common/ExportColumnSelectorModal",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/components/ui/select",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@/components/ui/avatar",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar",
+      "react-redux",
+      "react-router-dom",
+      "@/hooks/useTranslate",
+      "@/pages/Admin/sheets/test-paper",
+      "./tabs/evaluation-test",
+      "@/pages/Admin/sheets/handover-sheet",
+      "@/pages/Admin/sheets/sixteen-day",
+      "@/pages/Admin/Course",
+      "./tabs/configuration",
+      "./tabs/shift-scheduler"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/dojo-hiring/index.jsx",
+    "lines": 2297,
+    "imports": [
+      "react",
+      "react-dom",
+      "xlsx",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/ContractorApi",
+      "@/Redux/AllApi/AuditApi",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "date-fns",
+      "@/utils/dateUtils",
+      "@/components/common/ExportColumnSelectorModal",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/components/ui/select",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@/components/ui/avatar",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar",
+      "react-redux",
+      "react-router-dom",
+      "@/hooks/useTranslate",
+      "@/pages/Admin/sheets/test-paper",
+      "./tabs/evaluation-test",
+      "@/pages/Admin/sheets/handover-sheet",
+      "@/pages/Admin/sheets/sixteen-day",
+      "@/pages/Admin/Course",
+      "./tabs/configuration",
+      "./tabs/shift-scheduler"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/dojo-hiring/tabs/configuration/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/DojoHiringConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/dojo-hiring/tabs/evaluation-test/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/EvaluationTest/EvaluationTestList"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/dojo-hiring/tabs/shift-scheduler/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/components/admin/ShiftScheduler"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DojoCandidateDetail.jsx",
+    "lines": 1019,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/components/common/AttemptReviewModal",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "@/components/ui/avatar",
+      "@/components/ui/skeleton",
+      "@/components/ui/table",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "sonner",
+      "@/utils/mediaUtils",
+      "@/components/ui/alert-dialog",
+      "@/Helper/axiosInstance",
+      "@/components/admin/SixteenDayMonitoringSheet",
+      "@/components/admin/MenteeFeedbackMonitoringSheet",
+      "@/utils/dateUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DojoHiring.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/DojoHiringConfig.jsx",
+    "lines": 552,
+    "imports": [
+      "react",
+      "react-redux",
+      "sonner",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/components/ui/card",
+      "@/components/ui/table",
+      "@/components/ui/switch",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/skeleton",
+      "@/components/common/ServerSearchMultiSelect",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/DPRManage.jsx",
+    "lines": 611,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/DailyProductionReportApi",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EditLearningComparison.jsx",
+    "lines": 609,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "lucide-react",
+      "@/components/ui/select",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/badge",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/components/ui/FileTransferProgress"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EditLessonPage.jsx",
+    "lines": 203,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/lesson-editor/SlideEditorWorkspace",
+      "@/components/lesson-editor/useSlidesEditor",
+      "lucide-react",
+      "sonner",
+      "@/Redux/AllApi/LessonApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EditModulePage.jsx",
+    "lines": 80,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/course/ModuleForm",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EditQuizPage.jsx",
+    "lines": 702,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/QuizApi",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "@/components/ui/select",
+      "@/hooks/useFileUpload",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EditTestPaper.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/EmailConfiguration.jsx",
+    "lines": 373,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/badge",
+      "@/components/ui/switch",
+      "@tabler/icons-react",
+      "@/Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EvaluationTest/EvaluationTestAttemptPage.jsx",
+    "lines": 1151,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/hooks/useRevisionInfo",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EvaluationTest/EvaluationTestBuilder.jsx",
+    "lines": 1056,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EvaluationTest/EvaluationTestList.jsx",
+    "lines": 369,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/components/ui/dialog",
+      "@/components/ui/tabs",
+      "./EvaluationTestMonitoring"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EvaluationTest/EvaluationTestMonitoring.jsx",
+    "lines": 737,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "sonner",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton",
+      "@/components/ui/dialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/EvaluationTest/EvaluationTestOperatorsPage.jsx",
+    "lines": 436,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/table",
+      "@/components/ui/select",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/ExamHistory.jsx",
+    "lines": 128,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/AnalyticsApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/HandoverSheetPage.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/Incharge.jsx",
+    "lines": 16,
+    "imports": [
+      "react",
+      "./RoleBasedUserManagement",
+      "@/Redux/AllApi/InstructorApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Instructor.jsx",
+    "lines": 919,
+    "imports": [
+      "react",
+      "date-fns",
+      "exceljs",
+      "file-saver",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/AuthApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/tabs",
+      "@/components/ui/tooltip",
+      "@/components/ui/avatar",
+      "@/components/ui/skeleton",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar",
+      "react-router-dom",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/InstructorDetail.jsx",
+    "lines": 224,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/tabs",
+      "@/components/ui/card",
+      "@/components/ui/skeleton",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/instructor/InstructorDetailHeader",
+      "@/components/instructor/InstructorStats",
+      "@/components/instructor/InstructorCourses",
+      "@/components/instructor/InstructorDepartments",
+      "@/components/instructor/EditInstructorDialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Learning.jsx",
+    "lines": 395,
+    "imports": [
+      "react",
+      "lucide-react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/badge",
+      "@/components/ui/select",
+      "react-router-dom",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/hooks/usePrivileges",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/LearningComparisonDetail.jsx",
+    "lines": 324,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-router-dom",
+      "lucide-react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "sonner",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/LineDetail.jsx",
+    "lines": 68,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/LineApi",
+      "@/components/departments/MachineManager",
+      "@/components/departments/SubSectionManager",
+      "@/components/ui/tabs",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/LineRequirementManager.jsx",
+    "lines": 626,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "lucide-react",
+      "@/components/ui/dialog",
+      "@/Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/MachineDetail.jsx",
+    "lines": 530,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/avatar",
+      "@tabler/icons-react",
+      "sonner",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/UserApi",
+      "@/hooks/useDebounce",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Mentor.jsx",
+    "lines": 16,
+    "imports": [
+      "react",
+      "./RoleBasedUserManagement",
+      "@/Redux/AllApi/InstructorApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/MentorDetail.jsx",
+    "lines": 212,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/avatar",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "date-fns",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/index.jsx",
+    "lines": 1264,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@tabler/icons-react",
+      "@/components/departments/MultiSkillingPlan",
+      "@/components/ui/tabs",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/dialog",
+      "sonner",
+      "@/lib/axios/axiosInstance",
+      "./tabs/ojt",
+      "./tabs/test-paper",
+      "./tabs/daily-5m",
+      "./tabs/cycle-10",
+      "./tabs/three-day",
+      "./tabs/evaluation",
+      "./tabs/skill-matrix",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/MultiSkillingPage.jsx",
+    "lines": 1264,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@tabler/icons-react",
+      "@/components/departments/MultiSkillingPlan",
+      "@/components/ui/tabs",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/input",
+      "@/components/ui/dialog",
+      "sonner",
+      "@/lib/axios/axiosInstance",
+      "./tabs/ojt",
+      "./tabs/test-paper",
+      "./tabs/daily-5m",
+      "./tabs/cycle-10",
+      "./tabs/three-day",
+      "./tabs/evaluation",
+      "./tabs/skill-matrix",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/cycle-10/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/cycle-10"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/daily-5m/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/CMS/Daily5MRecording"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/evaluation/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/components/admin/SkillMatrixCertificate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/ojt/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/ojt"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/skill-matrix/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/skill-evaluation"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/test-paper/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/test-paper"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/multi-skilling/tabs/three-day/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/three-day"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/MultiSkilling.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/OnboardingID.jsx",
+    "lines": 442,
+    "imports": [
+      "react-qr-code",
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/OnJobTraining.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/OperatorImportLogs.jsx",
+    "lines": 421,
+    "imports": [
+      "react",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/UserApi",
+      "date-fns",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/QuizAttemptReviewPage.jsx",
+    "lines": 740,
+    "imports": [
+      "react",
+      "@/utils/formatters",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "@/components/ui/input",
+      "@/components/ui/checkbox",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/utils/mediaUtils",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/QuizMonitoring.jsx",
+    "lines": 757,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/hooks/useTranslate",
+      "@/hooks/useDebounce",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/components/common/AttemptReviewModal",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "sonner",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Report.jsx",
+    "lines": 744,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/tabs",
+      "@/components/ui/popover",
+      "../Dashboard/ReportClubbing",
+      "lucide-react",
+      "@/utils/exportHelper",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/ReportClubApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/RevisionSheetHistory.jsx",
+    "lines": 198,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/ui/button",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/components/admin/revision/RevisionRecordList",
+      "@/components/admin/revision/RevisionHistoryList",
+      "@/components/admin/revision/RevisionEditModal",
+      "@/components/admin/revision/RevisionHistoryModal"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/RevisionTable.jsx",
+    "lines": 182,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/components/admin/revision/RevisionRecordList",
+      "@/components/admin/revision/RevisionHistoryBySheet",
+      "@/components/admin/revision/RevisionHistoryModal",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/RoleBasedUserManagement.jsx",
+    "lines": 904,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "date-fns",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/AuthApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/tooltip",
+      "@/components/ui/avatar",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/FilterBar",
+      "@/components/common/StatCard",
+      "@/components/mentors/AssignMentorDialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/RoleManager.jsx",
+    "lines": 424,
+    "imports": [
+      "react",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/constants/pageRegistry",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/badge",
+      "@/components/ui/switch",
+      "@/components/ui/label"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/RoleUserManager.jsx",
+    "lines": 1430,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/form/FormSelect",
+      "@/Redux/AllApi/UserApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/tabs",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/components/ui/select",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@/components/ui/avatar",
+      "lucide-react",
+      "@/components/ui/input",
+      "sonner",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Settings.jsx",
+    "lines": 74,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "../Student/Profile",
+      "./EmailConfiguration",
+      "./ChangePassword"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/cycle-10/Cycle10.jsx",
+    "lines": 2269,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/hooks/useRevisionInfo",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "@/utils/exportHelper",
+      "sonner",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/common/UserAutocomplete",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/utils/tenCycleSheetConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/cycle-10/Cycle10LayoutEditor.jsx",
+    "lines": 918,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/utils/tenCycleSheetConfig",
+      "@/components/admin/LayoutEditorCells"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/cycle-10/index.js",
+    "lines": 4,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/handover-sheet/HandoverSheetPage.jsx",
+    "lines": 931,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/tabs",
+      "@/components/ui/dialog",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@tabler/icons-react",
+      "sonner",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/departments/HandoverSheet",
+      "@/utils/dateUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/handover-sheet/index.js",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/ojt/index.js",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/ojt/OnJobTraining.jsx",
+    "lines": 558,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/AuditApi",
+      "sonner",
+      "react-router-dom",
+      "@/components/admin/CreateOJTDialog",
+      "@/components/admin/OJTTrainingRecordSheet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/sixteen-day/index.js",
+    "lines": 4,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/sixteen-day/SixteenDayMonitoring.jsx",
+    "lines": 1060,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/table",
+      "@/components/ui/popover",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@tabler/icons-react",
+      "@/components/admin/SixteenDayMonitoringSheet",
+      "@/components/admin/MenteeFeedbackMonitoringSheet",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@/lib/utils",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/AuditApi",
+      "@/hooks/useCountdown"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/sixteen-day/SixteenDayMonitoringLayoutEditor.jsx",
+    "lines": 919,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/dialog",
+      "@/components/ui/select",
+      "@/utils/sixteenDayMonitoringConfig",
+      "@/components/admin/LayoutEditorCells"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/test-paper/AddTestPaper.jsx",
+    "lines": 1700,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/hooks/useFileUpload",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/test-paper/EditTestPaper.jsx",
+    "lines": 1705,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/hooks/useFileUpload",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/test-paper/index.js",
+    "lines": 5,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/test-paper/TestPaper.jsx",
+    "lines": 969,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/AuditApi",
+      "@tabler/icons-react",
+      "sonner",
+      "react-router-dom",
+      "@/components/ui/skeleton",
+      "react-redux",
+      "date-fns/locale",
+      "@/hooks/useTranslate",
+      "@/components/ui/tabs",
+      "@/pages/Admin/QuizMonitoring",
+      "@/pages/Admin/CertificateTemplates"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/sheets/three-day/index.js",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/sheets/three-day/ThreeDayMonitoring.jsx",
+    "lines": 821,
+    "imports": [
+      "react",
+      "react-dom",
+      "axios",
+      "react-router-dom",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/table",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@tabler/icons-react",
+      "@/components/admin/ThreeDayMonitoringSheet",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/lib/utils",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/SixteenDayMonitoring.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/SixteenDayMonitoringLayoutEditor.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/index.jsx",
+    "lines": 3300,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/hooks/useRevisionInfo",
+      "react-router-dom",
+      "@/components/ui/button",
+      "react-redux",
+      "@tabler/icons-react",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "html-to-image",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "../../../../../shared/skillMatrixRouting.js",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "@/components/ui/input",
+      "@/utils/exportHelper",
+      "@/components/ui/select",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "lucide-react",
+      "@/lib/axios/axiosInstance",
+      "@/components/ui/tabs",
+      "./tabs/evaluation",
+      "./tabs/cycle-10",
+      "./tabs/observance",
+      "./tabs/test-paper",
+      "./tabs/ojt",
+      "./tabs/handover",
+      "./tabs/sixteen-day",
+      "./tabs/skill-upgradation"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/SkillMatrixPage.jsx",
+    "lines": 3300,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/hooks/useRevisionInfo",
+      "react-router-dom",
+      "@/components/ui/button",
+      "react-redux",
+      "@tabler/icons-react",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "html-to-image",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "../../../../../shared/skillMatrixRouting.js",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "@/components/ui/input",
+      "@/utils/exportHelper",
+      "@/components/ui/select",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "lucide-react",
+      "@/lib/axios/axiosInstance",
+      "@/components/ui/tabs",
+      "./tabs/evaluation",
+      "./tabs/cycle-10",
+      "./tabs/observance",
+      "./tabs/test-paper",
+      "./tabs/ojt",
+      "./tabs/handover",
+      "./tabs/sixteen-day",
+      "./tabs/skill-upgradation"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/cycle-10/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/cycle-10"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/evaluation/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/components/admin/SkillMatrixCertificate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/handover/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/handover-sheet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/observance/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/components/admin/OperatorObservanceSheet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/ojt/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/ojt"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/sixteen-day/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/sixteen-day"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/skill-upgradation/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/components/departments/SkillUpgradationWrapper"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/skill-evaluation/tabs/test-paper/index.jsx",
+    "lines": 7,
+    "imports": [
+      "react",
+      "@/pages/Admin/sheets/test-paper"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/SkillMatrix.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/SkillMatrixDetail.jsx",
+    "lines": 8,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/StudentComparison.jsx",
+    "lines": 744,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "sonner",
+      "xlsx",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/form/FormSelect",
+      "@/components/common/ConfirmationModal",
+      "@tabler/icons-react",
+      "@/utils/dateUtils",
+      "@/utils/excelUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/StudentDetail.jsx",
+    "lines": 2107,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/ProgressApi",
+      "@/Redux/AllApi/SubmissionApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/common/AttemptReviewModal",
+      "@/components/admin/OnJobTrainingTable",
+      "@/components/admin/OJTTrainingRecordSheet",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/pages/Admin/EvaluationTest/EvaluationTestAttemptPage",
+      "@/components/admin/SkillMatrixCertificate",
+      "@/components/admin/OperatorObservanceSheet",
+      "@/components/admin/SixteenDayMonitoringSheet",
+      "@/components/admin/ThreeDayMonitoringSheet",
+      "@/components/ui/badge",
+      "@/components/ui/progress",
+      "@/components/ui/skeleton",
+      "@/components/ui/avatar",
+      "@/components/ui/tabs",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/alert",
+      "@/utils/mediaUtils",
+      "@/utils/dateUtils",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/StudentLevelManagement.jsx",
+    "lines": 19,
+    "imports": [
+      "react",
+      "@/components/admin/StudentLevelManager"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Students.jsx",
+    "lines": 4893,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/InstructorApi",
+      "date-fns",
+      "exceljs",
+      "xlsx",
+      "file-saver",
+      "@/Redux/AllApi/AuthApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DesignationApi",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/popover",
+      "@/components/common/ExportColumnSelectorModal",
+      "@/components/ui/calendar",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/ContractorApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/components/ui/table",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/checkbox",
+      "@/components/ui/card",
+      "@tabler/icons-react",
+      "sonner",
+      "@/components/ui/select",
+      "@/components/ui/tabs",
+      "@/components/ui/tooltip",
+      "@/components/ui/avatar",
+      "@/components/ui/skeleton",
+      "@/components/ui/textarea",
+      "@/components/form/FormSelect",
+      "@/components/common/SearchInput",
+      "@/components/common/FilterSelect",
+      "@/components/common/StatCard",
+      "@/components/common/FilterBar",
+      "@/components/common/MultiSelectFilter",
+      "react-router-dom",
+      "@/utils/mediaUtils",
+      "@/utils/dateUtils",
+      "@/utils/excelUtils",
+      "@/components/admin/StudentLevelManager",
+      "@/components/admin/ShiftScheduler",
+      "@/Redux/AllApi/LeftRequestApi",
+      "./components/ApplyLeftDialog",
+      "./components/LeftRequestsTab"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/SubSectionDetail.jsx",
+    "lines": 71,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/components/departments/SubSectionDetailHeader",
+      "@/components/departments/MachineManager",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/AuditApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/Supervisor.jsx",
+    "lines": 16,
+    "imports": [
+      "react",
+      "./RoleBasedUserManagement",
+      "@/Redux/AllApi/InstructorApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Admin/TestPaper.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/Admin/ThreeDayMonitoring.jsx",
+    "lines": 3,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/pages/CMS/AddQuestionPaper.jsx",
+    "lines": 281,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/textarea",
+      "lucide-react",
+      "sonner",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/MachineApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/components/OperatorAutocomplete.jsx",
+    "lines": 134,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/input",
+      "@/components/ui/popover",
+      "lucide-react",
+      "@/hooks/useDebounce"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/Daily5MDashboard.jsx",
+    "lines": 1247,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/button",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Helper/axiosInstance",
+      "date-fns",
+      "lucide-react",
+      "react-router-dom",
+      "sonner",
+      "@/components/ui/dialog",
+      "@/lib/utils",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "recharts",
+      "highcharts",
+      "highcharts-react-official",
+      "highcharts/highcharts-3d"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/Daily5MRecording.jsx",
+    "lines": 3847,
+    "imports": [
+      "react",
+      "react-dom",
+      "@/hooks/useRevisionInfo",
+      "react-redux",
+      "@/components/ui/card",
+      "react-router-dom",
+      "@/components/ui/select",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/AuditApi",
+      "../../../../shared/daily5mRouting.js",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/components/common/AssignmentSelect",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "lucide-react",
+      "@/components/ui/dialog",
+      "@/components/ui/textarea",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "jspdf",
+      "html-to-image",
+      "@/lib/utils",
+      "@/components/common/UserAutocomplete"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/DailyMeeting.jsx",
+    "lines": 992,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/ui/switch",
+      "@/components/ui/checkbox",
+      "@/components/ui/popover",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "@/components/ui/dialog",
+      "@/components/ui/alert-dialog",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "sonner",
+      "@/lib/utils",
+      "@/components/admin/excelClone/ExcelClone",
+      "@/components/admin/excelClone/ExcelGraph",
+      "@/components/admin/excelClone/ErrorBoundary"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/FmeDashboardPage.jsx",
+    "lines": 34,
+    "imports": [
+      "react",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/MisPortalHub.jsx",
+    "lines": 75,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "lucide-react",
+      "@/components/common/PortalTile",
+      "@/hooks/useTranslate"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/MonthlyMeetingReport.jsx",
+    "lines": 195,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/admin/monthlyReport/FoldersAndRecordsPanel"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/CMS/Phase2.jsx",
+    "lines": 23,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/button"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/AddMailRequirementChanges.jsx",
+    "lines": 716,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/Attendance.jsx",
+    "lines": 834,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@/components/ui/tabs",
+      "lucide-react",
+      "../../Helper/axiosInstance",
+      "./UnmappedPresentModal",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/DashboardHome.jsx",
+    "lines": 4480,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/select",
+      "@/components/ui/dialog",
+      "recharts",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "lucide-react",
+      "highcharts",
+      "highcharts-react-official",
+      "highcharts/highcharts-3d",
+      "@/Redux/AllApi/DashboardApi",
+      "../../Helper/axiosInstance",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/EmailReports.jsx",
+    "lines": 672,
+    "imports": [
+      "react",
+      "../../Helper/axiosInstance",
+      "react-redux",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/MissingAttendanceModal.jsx",
+    "lines": 444,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "lucide-react",
+      "../../Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/ReportClubbing.jsx",
+    "lines": 362,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/checkbox",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/accordion",
+      "@/components/ui/table",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/components/ui/switch",
+      "@/Redux/AllApi/ReportClubApi",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/RequirementUpdateLogs.jsx",
+    "lines": 466,
+    "imports": [
+      "react",
+      "lucide-react",
+      "date-fns",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/table",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "@/lib/utils",
+      "@/Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/SetRequirements.jsx",
+    "lines": 1801,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@/components/ui/badge",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/popover",
+      "@/components/ui/calendar",
+      "lucide-react",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "@/hooks/usePrivileges",
+      "./AddMailRequirementChanges",
+      "xlsx"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/UnmappedPresentModal.jsx",
+    "lines": 378,
+    "imports": [
+      "react",
+      "@/components/ui/dialog",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "lucide-react",
+      "../../Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Dashboard/UserManagement.jsx",
+    "lines": 372,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/avatar",
+      "@/components/ui/badge",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/switch",
+      "@/components/ui/checkbox",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "sonner",
+      "@/hooks/usePrivileges"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Home.jsx",
+    "lines": 135,
+    "imports": [
+      "react",
+      "date-fns",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/common/LazyContainer",
+      "@/hooks/useTranslate",
+      "@/components/charts/DepartmentQuizChart",
+      "@/components/charts/DojoHiringTrendChart",
+      "@/components/charts/DailyJoiningHandoverCohortChart",
+      "@/components/charts/DojoTemporaryMetricsChart",
+      "@/components/charts/LeftUsersLeavingReasonChart",
+      "@/components/charts/TestPaperPassChart",
+      "@/components/charts/EfficiencyChart",
+      "@/components/charts/DojoHandoverComparisonChart",
+      "@/components/charts/SixteenDayMonitoringComparisonChart",
+      "@/components/charts/ThreeDayMonitoringComparisonChart",
+      "@/components/charts/Cycle10ComparisonChart",
+      "@/components/charts/SkillMatrixCertificateComparisonChart",
+      "@/components/charts/OperatorObservanceComparisonChart",
+      "@/components/charts/OnJobTrainingApprovedComparisonChart",
+      "@/components/charts/ContractorWiseOperatorChart",
+      "@/components/charts/SkillUpgradationPlanComparisonChart",
+      "@/components/charts/MultiSkillingPlanComparisonChart",
+      "@/Redux/AllApi/AuditApi",
+      "@/hooks/useIsTablet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/AssignmentMonitoring.jsx",
+    "lines": 598,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Helper/axiosInstance",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/button",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/input",
+      "@/components/ui/textarea",
+      "sonner",
+      "@/components/ui/table",
+      "@/components/ui/select",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/AttemptRequests.jsx",
+    "lines": 5,
+    "imports": [
+      "../Admin/AttemptRequests"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/CertificateIssuance.jsx",
+    "lines": 528,
+    "imports": [
+      "react",
+      "@/Redux/AllApi/InstructorApi",
+      "@/Redux/AllApi/CertificateApi",
+      "@/Redux/AllApi/CertificateTemplateApi",
+      "@/Redux/AllApi/SubmissionApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/alert",
+      "@/components/ui/dialog",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/select",
+      "@/components/ui/table",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/Courses.jsx",
+    "lines": 244,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/input",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/Dashboard.jsx",
+    "lines": 256,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/Departments.jsx",
+    "lines": 284,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/input",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/InstructorCourseDetailPage.jsx",
+    "lines": 539,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/moduleApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/AssignmentApi",
+      "@/Redux/AllApi/SubmissionApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton",
+      "sonner",
+      "@/components/ui/table",
+      "@/components/ui/progress",
+      "@/components/course/ModuleList",
+      "@/components/course/QuizList",
+      "@/components/course/AssignmentList",
+      "@/components/course/ResourceList",
+      "@/components/course/CourseStats"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/InstructorCourses.jsx",
+    "lines": 368,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/CourseApi",
+      "@/components/ui/table",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton",
+      "@/components/ui/avatar",
+      "@/components/common/SearchInput",
+      "@/components/common/StatCard"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/QuizMonitoring.jsx",
+    "lines": 555,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/select",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/table",
+      "@/components/common/AttemptReviewModal",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@tabler/icons-react",
+      "@/components/ui/skeleton"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/SkillMatrix.jsx",
+    "lines": 1362,
+    "imports": [
+      "react",
+      "@/components/ui/button",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/Redux/AllApi/SkillMatrixApi",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "@/components/ui/input",
+      "@/components/ui/select",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/admin/SkillMatrixCertificate",
+      "../Admin/TestPaper"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/StudentDetail.jsx",
+    "lines": 1270,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/ProgressApi",
+      "@/Redux/AllApi/SubmissionApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/Redux/AllApi/EvaluationTestApi",
+      "@/pages/Admin/EvaluationTest/EvaluationTestAttemptPage",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/MachineApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/common/AttemptReviewModal",
+      "@/components/admin/OnJobTrainingTable",
+      "@/components/admin/OJTTrainingRecordSheet",
+      "@/components/admin/SixteenDayMonitoringSheet",
+      "@/components/admin/SkillMatrixCertificate",
+      "@/components/ui/badge",
+      "@/components/ui/progress",
+      "@/components/ui/skeleton",
+      "@/components/ui/avatar",
+      "@/components/ui/tabs",
+      "@/components/ui/dialog",
+      "@/components/ui/label",
+      "@/components/ui/select",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/utils/dateUtils",
+      "sonner",
+      "@/components/ui/alert"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Instructor/Students.jsx",
+    "lines": 306,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/InstructorApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/Redux/AllApi/UserApi",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/table",
+      "@/components/ui/select",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/LandingPage.jsx",
+    "lines": 366,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "lucide-react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/dropdown-menu",
+      "@/components/ui/avatar",
+      "@/constants/pageRegistry",
+      "@/Redux/Slice/AuthSlice",
+      "@/Redux/Slice/ThemeSlice",
+      "@/components/common/NotificationCenter",
+      "@/components/common/LanguageSelector",
+      "@tabler/icons-react",
+      "@/hooks/useTranslate",
+      "@/hooks/usePrivileges"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Login.jsx",
+    "lines": 209,
+    "imports": [
+      "react",
+      "react-hook-form",
+      "@hookform/resolvers/zod",
+      "zod",
+      "react-router-dom",
+      "lucide-react",
+      "react-redux",
+      "@/Redux/Slice/AuthSlice"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/NotFound.jsx",
+    "lines": 117,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Public/OJTShareView.jsx",
+    "lines": 22,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/admin/OJTTrainingRecordSheet"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Certificates.jsx",
+    "lines": 789,
+    "imports": [
+      "react",
+      "react-dom",
+      "react-redux",
+      "@/Redux/AllApi/CertificateApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/AuthApi",
+      "@/Redux/AllApi/CourseLevelConfigApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/alert",
+      "@/components/ui/dialog",
+      "lucide-react",
+      "sonner",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/CourseReport.jsx",
+    "lines": 420,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Redux/AllApi/ProgressApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/separator",
+      "@/components/ui/alert",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Dashboard.jsx",
+    "lines": 630,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "react-redux",
+      "@/Helper/axiosInstance",
+      "../../components/student/AccountStatusWrapper",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "lucide-react",
+      "@/Redux/AllApi/CourseLevelConfigApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Department.jsx",
+    "lines": 340,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@/Helper/axiosInstance",
+      "../../components/student/AccountStatusWrapper",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/alert",
+      "@/components/ui/button",
+      "lucide-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/DepartmentCourse.jsx",
+    "lines": 1965,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "@/components/ui/tabs",
+      "lucide-react",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/resourceApi",
+      "@/Redux/AllApi/QuizApi",
+      "@/Redux/AllApi/AssignmentApi",
+      "@/Redux/AllApi/SubmissionApi",
+      "@/Redux/AllApi/AttemptedQuizApi",
+      "@/components/student/StudentModuleResources",
+      "@/components/student/StudentCourseResources",
+      "@/components/student/StudentModuleQuizzes",
+      "@/components/student/StudentModuleAssignments",
+      "@/components/student/AssignmentDetailsModal",
+      "@/components/student/AssignmentSubmissionModal"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Feedback.jsx",
+    "lines": 244,
+    "imports": [
+      "react",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/LessonDetail.jsx",
+    "lines": 835,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "lucide-react",
+      "@/Redux/AllApi/resourceApi",
+      "@/Helper/axiosInstance",
+      "@/components/common/SlideRender"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/OnJobTraining.jsx",
+    "lines": 121,
+    "imports": [
+      "react",
+      "react-redux",
+      "@/components/ui/card",
+      "@/components/ui/tabs",
+      "@/components/admin/OnJobTrainingTable",
+      "@/components/admin/OJTTrainingRecordSheet",
+      "@/Redux/AllApi/OnJobTrainingApi",
+      "@/components/ui/table",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Profile.jsx",
+    "lines": 245,
+    "imports": [
+      "react",
+      "react-redux",
+      "@tabler/icons-react",
+      "../../components/student/AccountStatusNotification",
+      "../../components/student/AccountStatusWrapper",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/Slice/AuthSlice",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/Reports.jsx",
+    "lines": 276,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/skeleton",
+      "@/components/ui/alert",
+      "lucide-react",
+      "@/Redux/AllApi/ProgressApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/ResourcePreview.jsx",
+    "lines": 369,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/resourceApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/alert",
+      "lucide-react",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/Student/TakeQuiz.jsx",
+    "lines": 1299,
+    "imports": [
+      "react",
+      "@/utils/formatters",
+      "react-router-dom",
+      "@/hooks/useTranslate",
+      "@/Helper/axiosInstance",
+      "@/Redux/AllApi/AuditApi",
+      "@/components/ui/card",
+      "@/components/ui/badge",
+      "@/components/ui/button",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "@/components/ui/table",
+      "@tabler/icons-react",
+      "@/utils/mediaUtils",
+      "react-redux"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/AdvancedAnalytics.jsx",
+    "lines": 548,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "recharts",
+      "date-fns",
+      "sonner",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/AllUsersManagement.jsx",
+    "lines": 1976,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/SuperAdminApi",
+      "@/Redux/AllApi/UserApi",
+      "@/Redux/AllApi/DesignationApi",
+      "@/components/ui/popover",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "@/Redux/AllApi/SubSectionApi",
+      "@/Redux/AllApi/MachineApi",
+      "@tabler/icons-react",
+      "date-fns",
+      "sonner",
+      "exceljs",
+      "file-saver",
+      "@/Helper/axiosInstance",
+      "@/components/form/FormSelect",
+      "@/components/admin/ShiftScheduler",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/badge",
+      "@/components/ui/avatar",
+      "@/components/ui/table",
+      "@/components/ui/select",
+      "@/components/ui/checkbox",
+      "@/components/common/MultiSelectFilter",
+      "@/components/ui/dialog",
+      "@/components/ui/alert",
+      "@/components/ui/separator"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/BulkOperations.jsx",
+    "lines": 958,
+    "imports": [
+      "react",
+      "sonner",
+      "lucide-react",
+      "@/Redux/AllApi/SuperAdminApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/textarea",
+      "@/components/ui/select",
+      "@/components/ui/checkbox",
+      "@/components/ui/badge",
+      "@/components/ui/tabs",
+      "@/components/ui/progress",
+      "@/components/ui/alert",
+      "@/components/ui/table",
+      "@/components/ui/separator",
+      "@/components/ui/popover"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/CertificateManagement.jsx",
+    "lines": 1106,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/CertificateTemplateApi",
+      "@/Redux/AllApi/CertificateApi",
+      "@/Redux/AllApi/CourseApi",
+      "@/Redux/AllApi/SuperAdminApi",
+      "@/Redux/AllApi/SuperAdminApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/AssignRoleModal.jsx",
+    "lines": 281,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "react-toastify",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/BulkAssignRoles.jsx",
+    "lines": 348,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "react-toastify",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/CreateRoleModal.jsx",
+    "lines": 399,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "react-toastify",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/EditRoleModal.jsx",
+    "lines": 437,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "react-toastify",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/PermissionMatrix.jsx",
+    "lines": 396,
+    "imports": [
+      "react",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/RoleCard.jsx",
+    "lines": 146,
+    "imports": [
+      "react",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/components/UsersByRole.jsx",
+    "lines": 371,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/SuperAdminApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/CreateAdmin.jsx",
+    "lines": 184,
+    "imports": [
+      "react",
+      "react-router-dom",
+      "@/Redux/AllApi/UserApi",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/label",
+      "@/components/ui/button",
+      "@/components/ui/select",
+      "@tabler/icons-react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/Dashboard.jsx",
+    "lines": 430,
+    "imports": [
+      "react",
+      "react-redux",
+      "react-router-dom",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/index",
+      "@/Redux/AllApi/SuperAdminApi",
+      "@/Redux/AllApi/SuperAdminApi",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/progress",
+      "@/components/ui/separator",
+      "@/components/ui/alert",
+      "@/components/ui/skeleton"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/DataManagement.jsx",
+    "lines": 460,
+    "imports": [
+      "react",
+      "react-dom",
+      "../../Redux/AllApi/SuperAdminApi",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/RolesPermissions.jsx",
+    "lines": 381,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "react-toastify",
+      "@/Redux/AllApi/SuperAdminApi",
+      "./components/RoleCard",
+      "./components/CreateRoleModal",
+      "./components/EditRoleModal",
+      "./components/AssignRoleModal",
+      "./components/BulkAssignRoles",
+      "./components/UsersByRole",
+      "./components/PermissionMatrix",
+      "@/components/common/ConfirmDialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/SoftDeletedUsersManagement.jsx",
+    "lines": 567,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/SuperAdminApi",
+      "@/Redux/AllApi/DepartmentApi",
+      "@/Redux/AllApi/SectionApi",
+      "@/Redux/AllApi/LineApi",
+      "sonner",
+      "@/components/ui/card",
+      "@/components/ui/input",
+      "@/components/ui/button",
+      "@/components/ui/badge",
+      "@/components/ui/skeleton",
+      "@/components/ui/tabs",
+      "@/components/common/SearchInput",
+      "@/components/common/MultiSelectFilter",
+      "@/components/ui/table",
+      "@/components/ui/alert-dialog"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/SystemAuditLogs.jsx",
+    "lines": 937,
+    "imports": [
+      "@/utils/authSession",
+      "react",
+      "react-redux",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/SuperAdminApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/SystemMonitoring.jsx",
+    "lines": 554,
+    "imports": [
+      "react",
+      "../../Redux/AllApi/SuperAdminApi",
+      "recharts",
+      "lucide-react",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/SystemSettings.jsx",
+    "lines": 729,
+    "imports": [
+      "react",
+      "@tabler/icons-react",
+      "@/Redux/AllApi/SuperAdminApi",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/pages/SuperAdmin/UsersManagement.jsx",
+    "lines": 418,
+    "imports": [
+      "react",
+      "sonner",
+      "lucide-react",
+      "@/Redux/AllApi/UserApi",
+      "@/components/common/TabNavigation",
+      "@/components/common/ConfirmationModal",
+      "@/components/common/ActionButtons",
+      "@/components/ui/button",
+      "@/components/ui/input",
+      "@/components/ui/badge",
+      "@/components/ui/select",
+      "@/components/ui/table",
+      "@/components/ui/card",
+      "@/utils/mediaUtils"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AbnormalConditionApi.js",
+    "lines": 73,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AdminHomeApi.js",
+    "lines": 200,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AnalyticsApi.js",
+    "lines": 108,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AssignmentApi.js",
+    "lines": 124,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AttemptedQuizApi.js",
+    "lines": 164,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AuditApi.js",
+    "lines": 77,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/AuthApi.js",
+    "lines": 90,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/CertificateApi.js",
+    "lines": 87,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/CertificateTemplateApi.js",
+    "lines": 82,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/ContractorApi.js",
+    "lines": 43,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/CourseApi.js",
+    "lines": 114,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/CourseLevelConfigApi.js",
+    "lines": 111,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/DailyProductionReportApi.js",
+    "lines": 132,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/DashboardApi.js",
+    "lines": 56,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/DepartmentApi.js",
+    "lines": 462,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/DesignationApi.js",
+    "lines": 47,
+    "imports": [
+      "./UserApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/EnrollmentApi.js",
+    "lines": 80,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/EvaluationTestApi.js",
+    "lines": 129,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/index.js",
+    "lines": 347,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Redux/AllApi/InstructorApi.js",
+    "lines": 352,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/LeftRequestApi.js",
+    "lines": 114,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/LessonApi.js",
+    "lines": 100,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/LineApi.js",
+    "lines": 75,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/MachineApi.js",
+    "lines": 184,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery",
+      "./UserApi",
+      "./InstructorApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/moduleApi.js",
+    "lines": 60,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/MonthlyMeetingReportApi.js",
+    "lines": 85,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/MultiSkillingApi.js",
+    "lines": 61,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/OnJobTrainingApi.js",
+    "lines": 93,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/ProgressApi.js",
+    "lines": 88,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/QuizApi.js",
+    "lines": 184,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/ReportClubApi.js",
+    "lines": 50,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/resourceApi.js",
+    "lines": 80,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/SectionApi.js",
+    "lines": 61,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/SkillMatrixApi.js",
+    "lines": 108,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/SubmissionApi.js",
+    "lines": 70,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/SubSectionApi.js",
+    "lines": 76,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/SuperAdminApi.js",
+    "lines": 698,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/AllApi/UserApi.js",
+    "lines": 396,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/index.js",
+    "lines": 9,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Redux/Slice/AuthSlice.js",
+    "lines": 280,
+    "imports": [
+      "@/utils/authSession",
+      "@reduxjs/toolkit",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/Slice/CourseSlice.js",
+    "lines": 94,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/Slice/index.js",
+    "lines": 46,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/Redux/Slice/LocalizationSlice.js",
+    "lines": 29,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/Slice/ThemeSlice.js",
+    "lines": 48,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/Slice/UserSlice.js",
+    "lines": 67,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/Redux/store.js",
+    "lines": 138,
+    "imports": [
+      "@reduxjs/toolkit",
+      "./Slice/AuthSlice",
+      "./Slice/UserSlice",
+      "./Slice/CourseSlice",
+      "./Slice/LocalizationSlice",
+      "./Slice/ThemeSlice",
+      "./AllApi/AuthApi",
+      "./AllApi/UserApi",
+      "./AllApi/InstructorApi",
+      "./AllApi/CourseApi",
+      "./AllApi/AssignmentApi",
+      "./AllApi/DepartmentApi",
+      "./AllApi/QuizApi",
+      "./AllApi/EnrollmentApi",
+      "./AllApi/ProgressApi",
+      "./AllApi/SubmissionApi",
+      "./AllApi/CertificateApi",
+      "./AllApi/CertificateTemplateApi",
+      "./AllApi/AuditApi",
+      "./AllApi/AttemptedQuizApi",
+      "./AllApi/resourceApi",
+      "./AllApi/moduleApi",
+      "./AllApi/LessonApi",
+      "./AllApi/AnalyticsApi",
+      "./AllApi/SuperAdminApi",
+      "./AllApi/CourseLevelConfigApi",
+      "./AllApi/OnJobTrainingApi",
+      "./AllApi/LineApi",
+      "./AllApi/MachineApi",
+      "./AllApi/SkillMatrixApi",
+      "./AllApi/DashboardApi",
+      "./AllApi/DailyProductionReportApi",
+      "./AllApi/SectionApi",
+      "./AllApi/SubSectionApi",
+      "./AllApi/ReportClubApi",
+      "./AllApi/MultiSkillingApi",
+      "./AllApi/AdminHomeApi",
+      "./AllApi/AbnormalConditionApi",
+      "./AllApi/EvaluationTestApi",
+      "./AllApi/ContractorApi",
+      "./AllApi/LeftRequestApi",
+      "./AllApi/MonthlyMeetingReportApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AbnormalConditionApi.js",
+    "lines": 73,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AdminHomeApi.js",
+    "lines": 200,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AnalyticsApi.js",
+    "lines": 108,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AssignmentApi.js",
+    "lines": 124,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AttemptedQuizApi.js",
+    "lines": 164,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AuditApi.js",
+    "lines": 77,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/AuthApi.js",
+    "lines": 90,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/CertificateApi.js",
+    "lines": 87,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/CertificateTemplateApi.js",
+    "lines": 82,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/ContractorApi.js",
+    "lines": 43,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/CourseApi.js",
+    "lines": 114,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/CourseLevelConfigApi.js",
+    "lines": 111,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/DailyProductionReportApi.js",
+    "lines": 132,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/DashboardApi.js",
+    "lines": 56,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/DepartmentApi.js",
+    "lines": 443,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/DesignationApi.js",
+    "lines": 47,
+    "imports": [
+      "./UserApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/EnrollmentApi.js",
+    "lines": 80,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/EvaluationTestApi.js",
+    "lines": 129,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/index.js",
+    "lines": 347,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/store/api/InstructorApi.js",
+    "lines": 352,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/LeftRequestApi.js",
+    "lines": 114,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/LessonApi.js",
+    "lines": 100,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/LineApi.js",
+    "lines": 75,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/MachineApi.js",
+    "lines": 184,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery",
+      "./UserApi",
+      "./InstructorApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/moduleApi.js",
+    "lines": 60,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/MonthlyMeetingReportApi.js",
+    "lines": 85,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/MultiSkillingApi.js",
+    "lines": 61,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/OnJobTrainingApi.js",
+    "lines": 93,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/ProgressApi.js",
+    "lines": 88,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/QuizApi.js",
+    "lines": 184,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/ReportClubApi.js",
+    "lines": 50,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/resourceApi.js",
+    "lines": 80,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/SectionApi.js",
+    "lines": 61,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/SkillMatrixApi.js",
+    "lines": 108,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/SubmissionApi.js",
+    "lines": 70,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/SubSectionApi.js",
+    "lines": 76,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/SuperAdminApi.js",
+    "lines": 698,
+    "imports": [
+      "@reduxjs/toolkit/query/react",
+      "@/Helper/axiosBaseQuery"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/api/UserApi.js",
+    "lines": 396,
+    "imports": [
+      "@/Helper/axiosBaseQuery",
+      "@reduxjs/toolkit/query/react"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/index.js",
+    "lines": 9,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/store/slices/AuthSlice.js",
+    "lines": 280,
+    "imports": [
+      "@/utils/authSession",
+      "@reduxjs/toolkit",
+      "sonner",
+      "@/Helper/axiosInstance",
+      "react-router-dom"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/slices/CourseSlice.js",
+    "lines": 94,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/slices/index.js",
+    "lines": 46,
+    "imports": [],
+    "wrapper": true
+  },
+  {
+    "file": "src/store/slices/LocalizationSlice.js",
+    "lines": 29,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/slices/ThemeSlice.js",
+    "lines": 48,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/slices/UserSlice.js",
+    "lines": 67,
+    "imports": [
+      "@reduxjs/toolkit"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/store/store.js",
+    "lines": 139,
+    "imports": [
+      "@reduxjs/toolkit",
+      "./slices/AuthSlice",
+      "./slices/UserSlice",
+      "./slices/CourseSlice",
+      "./slices/LocalizationSlice",
+      "./slices/ThemeSlice",
+      "./api/AuthApi",
+      "./api/UserApi",
+      "./api/InstructorApi",
+      "./api/CourseApi",
+      "./api/AssignmentApi",
+      "./api/DepartmentApi",
+      "./api/QuizApi",
+      "./api/EnrollmentApi",
+      "./api/ProgressApi",
+      "./api/SubmissionApi",
+      "./api/CertificateApi",
+      "./api/CertificateTemplateApi",
+      "./api/AuditApi",
+      "./api/AttemptedQuizApi",
+      "./api/resourceApi",
+      "./api/moduleApi",
+      "./api/LessonApi",
+      "./api/AnalyticsApi",
+      "./api/SuperAdminApi",
+      "./api/CourseLevelConfigApi",
+      "./api/OnJobTrainingApi",
+      "./api/LineApi",
+      "./api/MachineApi",
+      "./api/SkillMatrixApi",
+      "./api/DashboardApi",
+      "./api/DailyProductionReportApi",
+      "./api/SectionApi",
+      "./api/SubSectionApi",
+      "./api/ReportClubApi",
+      "./api/MultiSkillingApi",
+      "./api/AdminHomeApi",
+      "./api/AbnormalConditionApi",
+      "./api/EvaluationTestApi",
+      "./api/ContractorApi",
+      "./api/LeftRequestApi",
+      "./api/MonthlyMeetingReportApi"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/sw.js",
+    "lines": 92,
+    "imports": [
+      "workbox-core",
+      "workbox-precaching",
+      "workbox-routing",
+      "workbox-strategies",
+      "workbox-expiration",
+      "workbox-cacheable-response"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/authSession.js",
+    "lines": 74,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/authSession.test.js",
+    "lines": 74,
+    "imports": [
+      "node:test",
+      "node:assert/strict",
+      "./authSession.js"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/dateMath.js",
+    "lines": 19,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/dateUtils.js",
+    "lines": 106,
+    "imports": [
+      "date-fns"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/excelUtils.js",
+    "lines": 38,
+    "imports": [
+      "xlsx"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/exportHelper.js",
+    "lines": 57,
+    "imports": [
+      "../Helper/axiosInstance",
+      "sonner"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/formatters.js",
+    "lines": 13,
+    "imports": [],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/mediaUtils.js",
+    "lines": 48,
+    "imports": [
+      "../Helper/axiosInstance"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/sixteenDayMonitoringConfig.js",
+    "lines": 4,
+    "imports": [
+      "../config/monitoring/sixteenDayMonitoringConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/tenCycleSheetConfig.js",
+    "lines": 4,
+    "imports": [
+      "../config/monitoring/tenCycleSheetConfig"
+    ],
+    "wrapper": false
+  },
+  {
+    "file": "src/utils/threeDayMonitoringConfig.js",
+    "lines": 4,
+    "imports": [
+      "../config/monitoring/threeDayMonitoringConfig"
+    ],
+    "wrapper": false
+  }
+]

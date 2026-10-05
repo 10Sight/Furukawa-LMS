@@ -1,0 +1,32 @@
+[
+  {
+    "application": "Furukawa-LMS-main/portal",
+    "modules": 449,
+    "routes": 237,
+    "missingDestinations": [],
+    "brokenImports": [],
+    "brokenExports": [],
+    "logicChanges": [],
+    "exactDuplicates": []
+  },
+  {
+    "application": "Furukawa-LMS-main/admin",
+    "modules": 449,
+    "routes": 237,
+    "missingDestinations": [],
+    "brokenImports": [],
+    "brokenExports": [],
+    "logicChanges": [],
+    "exactDuplicates": []
+  },
+  {
+    "application": "integration/fme-dashboard",
+    "modules": 47,
+    "brokenImports": []
+  },
+  {
+    "application": "integration/fme-dashboard-root",
+    "modules": 47,
+    "brokenImports": []
+  }
+]

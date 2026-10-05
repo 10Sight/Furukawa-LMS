@@ -1,0 +1,84 @@
+/* SlideStage styles: modern, minimal canvas with guides */
+.stage-outer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.stage-wrapper {
+  width: 100%;
+  max-width: 1100px;
+  padding: 0.5rem;
+}
+
+/* Keep 16:9 aspect ratio and center */
+.stage-inner {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  overflow: hidden;
+  transition: background-color 180ms ease;
+}
+
+/* Content area ensures padding so elements don't hit edges */
+.stage-content {
+  position: absolute;
+  inset: 0;
+  padding: clamp(16px, 2.5vmin, 28px);
+  overflow: auto;
+  /* Smooth scroll and transform for perf */
+  will-change: transform;
+}
+
+/* Subtle grid */
+.stage-grid::before,
+.stage-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+/* Center guides */
+.guide {
+  position: absolute;
+  background: #3b82f6; /* tailwind blue-500 */
+  opacity: 0.35;
+  pointer-events: none;
+}
+.guide-v { top: 0; bottom: 0; left: 50%; width: 1px; }
+.guide-h { left: 0; right: 0; top: 50%; height: 1px; }
+
+/* Fullscreen overrides */
+.stage-outer.fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000; /* subtle letterbox background */
+}
+.stage-outer.fullscreen .stage-wrapper {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  padding: 0; /* remove outer padding in fullscreen */
+}
+.stage-outer.fullscreen .stage-inner {
+  aspect-ratio: auto; /* allow free sizing */
+  width: 100%;
+  height: 100%;
+  border-radius: 0; /* edge-to-edge */
+  box-shadow: none; /* no drop shadow in fullscreen */
+}
+.stage-outer.fullscreen .stage-content {
+  padding: clamp(12px, 2vmin, 24px);
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .stage-inner { animation: none !important; }
+}

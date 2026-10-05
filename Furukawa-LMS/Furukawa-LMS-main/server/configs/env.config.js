@@ -57,6 +57,28 @@ const ENV = {
     // Let spreadsheet clients save changed cells as a patch instead of the whole
     // workbook (see utils/sheetWorkbook.js). Off unless set to "true".
     SHEET_PATCH_SAVE: process.env.SHEET_PATCH_SAVE === "true",
+    // Have spreadsheet clients save by themselves a few seconds after an edit, instead
+    // of only when Save is pressed. Needs SHEET_PATCH_SAVE. Off unless set to "true".
+    SHEET_AUTOSAVE: process.env.SHEET_AUTOSAVE === "true",
+    // Fold patches into the stored workbook on a worker thread, so the server keeps
+    // answering requests meanwhile. On unless set to "false".
+    SHEET_COMPACT_IN_WORKER: process.env.SHEET_COMPACT_IN_WORKER !== "false",
+    // Answer "open this meeting" by passing the stored workbook through as text
+    // instead of parsing and re-serialising it. Off unless set to "true".
+    SHEET_RAW_OPEN: process.env.SHEET_RAW_OPEN === "true",
+    // Live co-editing: tell everyone who has a meeting open about each save as it
+    // happens. Needs SHEET_PATCH_SAVE. Off unless set to "true".
+    SHEET_LIVE_SYNC: process.env.SHEET_LIVE_SYNC === "true",
+    // Refuse socket logins that don't carry a valid access token. Off unless set to
+    // "true": with it off, a socket without a token still gets the general
+    // notifications it always did, but can never join a meeting's live editing.
+    SOCKET_AUTH_REQUIRED: process.env.SOCKET_AUTH_REQUIRED === "true",
+
+    // Largest JSON (or form) body any route accepts, and the larger allowance for the
+    // spreadsheet save routes, where a whole workbook is one body. Both take the
+    // formats express does ("50mb", "1gb"). See middlewares/bodyLimits.middleware.js.
+    JSON_BODY_LIMIT: process.env.JSON_BODY_LIMIT || "100mb",
+    SHEET_BODY_LIMIT: process.env.SHEET_BODY_LIMIT || "1gb",
 
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,
     STUDENT_URL: process.env.STUDENT_URL,

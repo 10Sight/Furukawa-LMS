@@ -6,10 +6,13 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import ENV from "./configs/env.config.js";
 import logger from "./logger/winston.logger.js";
-import connectDB, { getPoolStatus } from "./db/connectDB.js";
+import connectDB, { getPoolStatus, poolPromise } from "./db/connectDB.js";
 import path from "path";
 import fs from "fs";
 import socketIOService from "./utils/socketIO.js";
+import { jsonBody, urlencodedBody } from "./middlewares/bodyLimits.middleware.js";
+import { initSheetLiveSync, registerSheetSocketHandlers, isMeetingRoom } from "./services/sheetLiveSync.js";
+import { monitorEventLoopDelay } from "perf_hooks";
 
 // import morganMiddleware from "./logger/morgan.logger.js";
 // Routes
@@ -179,10 +182,11 @@ app.use(cors(corsOptions));
 // Performance optimizations
 app.use(compression()); // Enable gzip/deflate compression
 
-// Body parsing middleware
-app.use(express.json({ limit: '10gb' })); // Increased limit for file uploads (e.g. large PDFs)
-app.use(express.urlencoded({ extended: true, limit: '10gb' }));
-app.use(cookieParser()); // Add cookie parser middleware
+// Body parsing middleware. Cookies first: the size a JSON body may have depends on
+// whether the request carries a valid access token (see bodyLimits.middleware.js).
+app.use(cookieParser());
+app.use(jsonBody);
+app.use(urlencodedBody);
 
 
 
@@ -243,15 +247,41 @@ app.get("/", (req, res) => {
     res.send("This is Backend");
 });
 
-// Health check endpoint
+// Health check endpoint. Answers 503 when the database can't be reached, so a monitor
+// can tell "the process is up" from "the app is usable".
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+eventLoopDelay.enable();
+const DB_PING_TIMEOUT_MS = 5000;
+const pingDatabase = async () => {
+    const startedAt = Date.now();
+    let timer;
+    try {
+        await Promise.race([
+            (async () => { await (await poolPromise).request().query("SELECT 1 AS ok"); })(),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timed out")), DB_PING_TIMEOUT_MS); })
+        ]);
+        return { ok: true, pingMs: Date.now() - startedAt };
+    } catch (error) {
+        return { ok: false, pingMs: Date.now() - startedAt, error: error.message };
+    } finally {
+        clearTimeout(timer);
+    }
+};
+const toMb = (bytes) => Math.round(bytes / 1048576);
 app.get("/api/health", async (req, res) => {
-    const db = await getPoolStatus();
-    res.status(200).json({
-        status: "OK",
-        message: "Server is running",
+    const [ping, pools] = await Promise.all([pingDatabase(), getPoolStatus()]);
+    const memory = process.memoryUsage();
+    // The histogram counts in nanoseconds and covers the time since the last call.
+    const loop = { meanMs: +(eventLoopDelay.mean / 1e6).toFixed(1), maxMs: +(eventLoopDelay.max / 1e6).toFixed(1) };
+    eventLoopDelay.reset();
+    res.status(ping.ok ? 200 : 503).json({
+        status: ping.ok ? "OK" : "DEGRADED",
+        message: ping.ok ? "Server is running" : "Database is not reachable",
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        db
+        db: { ...pools, ...ping },
+        memory: { rssMb: toMb(memory.rss), heapUsedMb: toMb(memory.heapUsed), heapTotalMb: toMb(memory.heapTotal), externalMb: toMb(memory.external) },
+        eventLoopDelay: loop
     });
 });
 
@@ -338,13 +368,29 @@ app.use("/api/revision-records", revisionRecordRoutes);
 
 // Initialize Socket.IO service
 socketIOService.initialize(io);
+// Works out who each socket belongs to from its access token (socket.data.user).
+initSheetLiveSync(io);
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     logger.info(`User connected: ${socket.id}`);
 
     // Handle user authentication and room joining
-    socket.on('authenticate', (userData) => {
+    // A socket whose connection carried a valid access token is who the token says it
+    // is, whatever the message claims. Only a socket without one is taken at its word,
+    // as before, and only while SOCKET_AUTH_REQUIRED is off (it can't connect otherwise).
+    const verifiedUser = socket.data.user;
+    registerSheetSocketHandlers(socket);
+
+    socket.on('authenticate', (userData = {}) => {
+        if (verifiedUser) {
+            userData = {
+                ...userData,
+                userId: verifiedUser.id,
+                role: verifiedUser.role,
+                name: verifiedUser.fullName || verifiedUser.userName || userData.name
+            };
+        }
         socket.userId = userData.userId;
         socket.userRole = userData.role;
         socket.userName = userData.name;
@@ -369,6 +415,9 @@ io.on('connection', (socket) => {
 
     // Handle manual room joining
     socket.on('join-room', (roomId) => {
+        // A meeting's live-editing room is joined through sheet:join, which checks the
+        // user may read meetings. It can't be entered by name.
+        if (isMeetingRoom(roomId)) return;
         socket.join(roomId);
         logger.info(`User ${socket.id} joined room: ${roomId}`);
         socket.to(roomId).emit('user-joined', {

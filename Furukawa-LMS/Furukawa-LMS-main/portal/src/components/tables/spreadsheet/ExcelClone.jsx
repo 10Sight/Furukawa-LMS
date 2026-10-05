@@ -36,6 +36,8 @@ import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, In
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { diffWorkbook } from "./workbookDiff.js";
+import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
+import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import {
@@ -82,6 +84,18 @@ const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
 // A patch bigger than this (as JSON) is sent as a full workbook save instead.
 const MAX_PATCH_CHARS = 1024 * 1024;
+// With autosave on, unsaved edits are saved this long after the last one.
+const AUTOSAVE_DELAY_MS = 3000;
+// How many times a save that someone else's save got in ahead of is rebuilt on top of
+// theirs and sent again (live co-editing only) before it is reported as failed.
+const MAX_SAVE_RETRIES = 3;
+// True when `live` holds nothing that isn't already in `saved` (see workbookDiff.js).
+const isWorkbookSaved = (saved, live) => {
+    if (!saved || !live) return false;
+    if (saved === live) return true;
+    const pending = diffWorkbook(saved, live);
+    return !!pending && Object.keys(pending.sheets).length === 0;
+};
 // Above this many selected cells, the status-bar totals walk the sheet's
 // filled cells instead of every cell of the selection.
 const SELECTION_SCAN_LIMIT = 20000;
@@ -1125,7 +1139,7 @@ const prepareImageForExport = async (item) => {
 
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
-    const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
+    const { data: meetingSheetData, isLoading: isMeetingLoading, refetch: refetchMeeting } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
     const [saveSectionSheet, { isLoading: isSavingSection }] = useSaveDailyMeetingSheetMutation();
     const [saveMeetingSheet, { isLoading: isSavingMeetingFull }] = useSaveDailyMorningMeetingSheetMutation();
     const [saveMeetingSheetPatch, { isLoading: isSavingMeetingPatch }] = useSaveDailyMorningMeetingSheetPatchMutation();
@@ -1140,6 +1154,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [isDirty, setIsDirty] = useState(false);
     const loadedRef = useRef(false);
     const prevIdsRef = useRef({ sectionId, meetingId });
+    // What the server offers for the meeting that is loaded (see the load effect).
+    const [sheetFeatures, setSheetFeatures] = useState({ liveSync: false, autosave: false });
+    const [reloadNonce, setReloadNonce] = useState(0); // bumped to load the workbook again
 
     const [activeCell, setActiveCell] = useState("A1");
     // `selection` is the active range (fill handle, paste target, bounds-based
@@ -1307,46 +1324,89 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // patch can't express (sheets added/removed/renamed, a bulk rewrite) and any
     // patch the server won't take is saved in full, exactly as before.
     const meetingVersionsRef = useRef({}); // meetingId -> last version seen from the server
-    const savedWorkbooksRef = useRef({}); // meetingId -> { sheets, patchSave }: the workbook at that version
+    // With live co-editing on (see useSheetLiveSync.js), other people's saves arrive
+    // while this grid is open and move that tracked workbook and version forward too.
+    // They go through the same queue as the saves here, so the two never interleave.
+    // And a save that finds someone else got in first is no longer simply refused: what
+    // they saved is fetched and taken in, the workbook being saved is carried over it
+    // (keeping this user's changes), and the save is sent again.
+    const savedWorkbooksRef = useRef({}); // meetingId -> { sheets, patchSave, liveSync }: the workbook at that version
     const saveQueueRef = useRef(Promise.resolve());
-    const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets: snapshot, activeSheet }) => {
-        const run = async () => {
-            if (!targetMeetingId) {
-                return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
-            }
-            const version = meetingVersionsRef.current[targetMeetingId];
-            const saved = savedWorkbooksRef.current[targetMeetingId];
-
-            let res = null;
-            if (saved?.patchSave && version != null) {
-                let patch = diffWorkbook(saved.sheets, snapshot, { activeSheet });
-                // e.g. an embedded image: that's a full save's worth of bytes anyway.
-                if (patch && JSON.stringify(patch).length > MAX_PATCH_CHARS) patch = null;
-                if (patch) {
-                    try {
-                        res = await saveFnsRef.current.saveMeetingSheetPatch({
-                            meetingId: targetMeetingId, patch, version, sheets: snapshot, activeSheet
-                        }).unwrap();
-                    } catch (err) {
-                        // Rejected as a patch (not as a save): send the whole workbook.
-                        // A version conflict or a network failure is a real failure.
-                        if (![400, 404, 413].includes(err?.status)) throw err;
-                    }
-                }
-            }
-            if (!res) {
-                res = await saveFnsRef.current.saveMeetingSheet({
-                    meetingId: targetMeetingId, sheets: snapshot, activeSheet, version
-                }).unwrap();
-            }
-            if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
-            if (saved) savedWorkbooksRef.current[targetMeetingId] = { ...saved, sheets: snapshot };
-            return res;
-        };
-        const result = saveQueueRef.current.then(run, run);
+    const clientIdRef = useRef(null); // names this grid in its saves; see useSheetLiveSync.js
+    if (!clientIdRef.current) clientIdRef.current = newClientId();
+    const catchUpRef = useRef(null); // set below, once the live-sync hook has run
+    const enqueueSaveTask = useCallback((task) => {
+        const result = saveQueueRef.current.then(task, task);
         saveQueueRef.current = result.catch(() => {});
         return result;
     }, []);
+    const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets, activeSheet }) => {
+        const run = async () => {
+            let snapshot = sheets;
+            if (!targetMeetingId) {
+                return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
+            }
+            const clientId = clientIdRef.current;
+
+            let res = null;
+            for (let attempt = 0; ; attempt++) {
+                const version = meetingVersionsRef.current[targetMeetingId];
+                const saved = savedWorkbooksRef.current[targetMeetingId];
+                try {
+                    res = null;
+                    if (saved?.patchSave && version != null) {
+                        let patch = diffWorkbook(saved.sheets, snapshot, { activeSheet });
+                        // e.g. an embedded image: that's a full save's worth of bytes anyway.
+                        if (patch && JSON.stringify(patch).length > MAX_PATCH_CHARS) patch = null;
+                        if (patch) {
+                            try {
+                                res = await saveFnsRef.current.saveMeetingSheetPatch({
+                                    meetingId: targetMeetingId, patch, version, sheets: snapshot, activeSheet, clientId
+                                }).unwrap();
+                            } catch (err) {
+                                // Rejected as a patch (not as a save): send the whole workbook.
+                                // A version conflict or a network failure is a real failure.
+                                if (![400, 404, 413].includes(err?.status)) throw err;
+                            }
+                        }
+                    }
+                    if (!res) {
+                        res = await saveFnsRef.current.saveMeetingSheet({
+                            meetingId: targetMeetingId, sheets: snapshot, activeSheet, version, clientId
+                        }).unwrap();
+                    }
+                    break;
+                } catch (err) {
+                    // 409: someone else saved first. Take in what they saved and try
+                    // again on top of it — unless that isn't possible (live co-editing
+                    // is off, or they replaced the whole workbook), which is a failure
+                    // the user has to resolve by reloading, as it always was.
+                    if (err?.status !== 409 || !saved?.liveSync || !catchUpRef.current || attempt >= MAX_SAVE_RETRIES) throw err;
+                    let missed = null;
+                    try {
+                        missed = await catchUpRef.current(targetMeetingId);
+                    } catch {
+                        throw err;
+                    }
+                    if (!missed) throw err;
+                    snapshot = rebaseSnapshot(snapshot, saved.sheets, missed);
+                }
+            }
+            if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
+            const tracked = savedWorkbooksRef.current[targetMeetingId];
+            if (tracked) savedWorkbooksRef.current[targetMeetingId] = { ...tracked, sheets: snapshot };
+            return res;
+        };
+        return enqueueSaveTask(run);
+    }, [enqueueSaveTask]);
+    // Whether everything in `snapshot` (a workbook that was just saved) is all there is
+    // to save: nothing was edited meanwhile. With live co-editing the workbook on
+    // screen can have moved on without any new edit — by taking in other people's
+    // saves — so for a meeting this compares against what the server now holds.
+    const nothingLeftToSave = useCallback((snapshot, targetMeetingId) => (
+        sheetsRef.current === snapshot
+        || (!!targetMeetingId && isWorkbookSaved(savedWorkbooksRef.current[targetMeetingId]?.sheets, sheetsRef.current))
+    ), []);
     const saveErrorMessage = (err, fallback) => (err?.status === 409 && err.message ? err.message : fallback);
 
     const flushChartSave = useCallback(async () => {
@@ -1358,11 +1418,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         try {
             await saveWorkbook({ meetingId: pending.meetingId, sectionId: pending.sectionId, sheets: snapshot, activeSheet: pending.activeSheet });
             // Edits made while the request was in flight are still unsaved.
-            if (sheetsRef.current === snapshot) setIsDirty(false);
+            if (nothingLeftToSave(snapshot, pending.meetingId)) setIsDirty(false);
         } catch (err) {
             toast.error(saveErrorMessage(err, "Failed to save chart settings."));
         }
-    }, [saveWorkbook]);
+    }, [saveWorkbook, nothingLeftToSave]);
 
     // Don't drop a queued chart save when the grid unmounts mid-debounce.
     useEffect(() => () => { flushChartSave(); }, [flushChartSave]);
@@ -1383,13 +1443,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             // version forward while the grid still holds the older sheets.
             if (meetingId && sheetData.data.version != null) meetingVersionsRef.current[meetingId] = sheetData.data.version;
             // Likewise the workbook patches are diffed against: what the server holds at that version.
-            if (meetingId) savedWorkbooksRef.current[meetingId] = { sheets: sanitizedSheets, patchSave: !!sheetData.data.capabilities?.patchSave };
+            const capabilities = (meetingId && sheetData.data.capabilities) || {};
+            const patchSave = !!capabilities.patchSave;
+            // Both of these build on patch saves: without them every save is the whole workbook.
+            const liveSync = patchSave && !!capabilities.liveSync;
+            const autosave = patchSave && !!capabilities.autosave;
+            if (meetingId) savedWorkbooksRef.current[meetingId] = { sheets: sanitizedSheets, patchSave, liveSync };
+            setSheetFeatures({ liveSync, autosave });
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];
             bumpHistory();
         }
-    }, [sheetData, bumpHistory, meetingId, setSheets]);
+    }, [sheetData, bumpHistory, meetingId, setSheets, reloadNonce]);
 
     // Reset load-guard and local state only when switching to a DIFFERENT
     // section's sheet/meeting on an already-mounted instance. Without the
@@ -1403,6 +1469,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (prev.sectionId !== sectionId || prev.meetingId !== meetingId) {
             flushChartSave();
             loadedRef.current = false;
+            setSheetFeatures({ liveSync: false, autosave: false });
             setIsDirty(false);
             setActiveCell("A1");
             setSelection({ start: "A1", end: "A1" });
@@ -1417,6 +1484,86 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             prevIdsRef.current = { sectionId, meetingId };
         }
     }, [sectionId, meetingId, bumpHistory, flushChartSave, setSheets]);
+
+    // --- Live co-editing ---
+
+    // Someone replaced the whole workbook (or too much was missed to catch up on): it
+    // has to be loaded again. Done at once when nothing here is unsaved; otherwise the
+    // user decides, since reloading drops their unsaved edits.
+    const handleReloadNeeded = useCallback(({ userName } = {}) => {
+        const targetMeetingId = meetingId;
+        if (!targetMeetingId) return;
+        const reload = async () => {
+            try {
+                await refetchMeeting();
+            } catch {
+                return;
+            }
+            if (prevIdsRef.current.meetingId !== targetMeetingId) return; // moved on meanwhile
+            loadedRef.current = false;
+            setIsDirty(false);
+            setReloadNonce((n) => n + 1);
+        };
+        if (isWorkbookSaved(savedWorkbooksRef.current[targetMeetingId]?.sheets, sheetsRef.current)) {
+            reload();
+            return;
+        }
+        toast.warning(`${userName || "Someone"} saved changes that replaced this whole spreadsheet.`, {
+            id: `sheet-reload-${targetMeetingId}`,
+            description: "Reload to get them. Your unsaved edits here will be lost.",
+            duration: Infinity,
+            action: { label: "Reload", onClick: reload },
+        });
+    }, [meetingId, refetchMeeting]);
+
+    const livePosition = useMemo(
+        () => ({ sheet: activeSheetName, cell: activeCell, start: selection.start, end: selection.end }),
+        [activeSheetName, activeCell, selection]
+    );
+    const { peers: livePeers, catchUpNow } = useSheetLiveSync({
+        enabled: !!meetingId && sheetFeatures.liveSync,
+        meetingId,
+        clientId: clientIdRef.current,
+        meetingVersionsRef, savedWorkbooksRef, sheetsRef, setSheets,
+        enqueue: enqueueSaveTask,
+        onReloadNeeded: handleReloadNeeded,
+        position: livePosition,
+    });
+    catchUpRef.current = catchUpNow;
+
+    // --- Autosave ---
+
+    // Saves a few seconds after the last edit, when the server offers it. Only edits
+    // that go as a small patch are saved this way; one that needs the whole workbook
+    // sent (a sheet added or renamed, a very large paste) waits for the Save button.
+    const autosaveFailedRef = useRef(false);
+    useEffect(() => {
+        if (readOnly || !meetingId || !sheetFeatures.autosave || !isDirty) return undefined;
+        const timer = setTimeout(async () => {
+            const snapshot = sheetsRef.current;
+            const saved = savedWorkbooksRef.current[meetingId];
+            if (!saved) return;
+            const pending = diffWorkbook(saved.sheets, snapshot);
+            if (!pending) return;
+            if (Object.keys(pending.sheets).length === 0) {
+                setIsDirty(false);
+                return;
+            }
+            if (JSON.stringify(pending).length > MAX_PATCH_CHARS) return;
+            try {
+                await saveWorkbook({ meetingId, sectionId, sheets: snapshot, activeSheet: activeSheetName });
+                autosaveFailedRef.current = false;
+                if (nothingLeftToSave(snapshot, meetingId)) setIsDirty(false);
+            } catch (err) {
+                // Said once, not after every edit; the next edit tries again quietly.
+                if (!autosaveFailedRef.current) {
+                    toast.error(saveErrorMessage(err, "Autosave failed. Your changes are still here — use Save to try again."));
+                }
+                autosaveFailedRef.current = true;
+            }
+        }, AUTOSAVE_DELAY_MS);
+        return () => clearTimeout(timer);
+    }, [readOnly, meetingId, sectionId, sheetFeatures.autosave, isDirty, sheets, activeSheetName, saveWorkbook, nothingLeftToSave]);
 
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
@@ -3079,7 +3226,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         try {
             await saveWorkbook({ meetingId, sectionId, sheets, activeSheet: activeSheetName });
-            if (sheetsRef.current === sheets) setIsDirty(false);
+            autosaveFailedRef.current = false;
+            if (nothingLeftToSave(sheets, meetingId)) setIsDirty(false);
             toast.success("Spreadsheet saved successfully!");
         } catch (err) {
             toast.error(saveErrorMessage(err, "Failed to save spreadsheet. Please try again."));
@@ -5074,6 +5222,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     onMouseLeave={() => setHoveredCell(null)}
                 >
                 <div className="relative">
+                {/* Where the other people editing this meeting are (live co-editing):
+                    their selection outlined in their colour, with their name. Below
+                    the sticky headers (z-10 and up), and never in the way of the mouse. */}
+                {livePeers.map((peer) => {
+                    if (peer.sheet !== activeSheetName) return null;
+                    const bounds = rangeBounds({ start: peer.start, end: peer.end });
+                    if (!bounds || bounds.minRow >= rowCount || bounds.minCol >= columnCount) return null;
+                    const maxRow = Math.min(bounds.maxRow, rowCount - 1);
+                    const maxCol = Math.min(bounds.maxCol, columnCount - 1);
+                    const top = rowOffsets[bounds.minRow];
+                    const left = colOffsets[bounds.minCol];
+                    return (
+                        <div
+                            key={peer.socketId}
+                            className="absolute pointer-events-none z-[5]"
+                            style={{
+                                top, left,
+                                width: colOffsets[maxCol + 1] - left,
+                                height: rowOffsets[maxRow + 1] - top,
+                                border: `2px solid ${peer.color}`,
+                            }}
+                        >
+                            <span
+                                className="absolute left-[-2px] px-1 text-[10px] leading-4 text-white whitespace-nowrap rounded-sm"
+                                style={{ background: peer.color, ...(bounds.minRow === 0 ? { top: "100%" } : { bottom: "100%" }) }}
+                            >
+                                {peer.userName}
+                            </span>
+                        </div>
+                    );
+                })}
                 {media.map((item) => (
                     <DraggableMedia
                         key={item.id}

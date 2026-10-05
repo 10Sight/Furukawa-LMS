@@ -2,7 +2,8 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { encodeSheetPayload, decodeSheetPayload, gzipText, gunzipText } from "../utils/sheetCodec.js";
-import { parseSheetData, normalizeWorkbook, applyPatch } from "../utils/sheetWorkbook.js";
+import { parseSheetData, normalizeWorkbook, applyPatch, pendingPatchRun } from "../utils/sheetWorkbook.js";
+import { foldStoredPatches } from "../utils/sheetCompactor.js";
 
 // How a meeting's workbook is stored
 // ----------------------------------
@@ -31,9 +32,7 @@ const hydrate = async (row, patchRows = []) => {
     const { sheetDataGz, ...rest } = row;
     rest.sheetData = await decodeSheetPayload(row.sheetData, sheetDataGz);
 
-    const byVersion = new Map(patchRows.map((p) => [p.version, p]));
-    const pending = [];
-    for (let v = rest.version; byVersion.has(v); v--) pending.unshift(byVersion.get(v));
+    const pending = pendingPatchRun(rest.version, patchRows);
     rest.pendingPatches = pending.length;
     if (pending.length === 0) return rest;
 
@@ -160,6 +159,14 @@ class DailyMorningMeeting {
     // updates the meeting row first, so none can land between the two reads and leave
     // this holding a snapshot from one version and patches from another.
     static async findById(id) {
+        const stored = await DailyMorningMeeting.findStoredById(id);
+        return stored ? hydrate(stored.row, stored.patchRows) : null;
+    }
+
+    // The meeting exactly as stored: the row with both workbook columns untouched, and
+    // its patch rows (gzipped, any order — see pendingPatchRun for which of them count).
+    // For callers that can do without the parsed workbook; everything else wants findById.
+    static async findStoredById(id) {
         await schemaReady;
         const [rows, meta] = await executeQuery(
             `SET XACT_ABORT ON;
@@ -174,7 +181,51 @@ class DailyMorningMeeting {
             [id],
             { label: "dailyMorningMeeting.findById" }
         );
-        return hydrate(rows[0], meta.recordsets[1] || []);
+        return rows[0] ? { row: rows[0], patchRows: meta.recordsets[1] || [] } : null;
+    }
+
+    // The saves made after version `afterVersion`, for a client that is behind to catch
+    // up without reloading the workbook. Only possible while every one of them is still
+    // held as a patch.
+    // Returns null when the meeting doesn't exist; otherwise { version, patches }, where
+    // `patches` is the unbroken run afterVersion+1 .. version (oldest first, parsed), or
+    // null when part of it is gone — folded into the stored workbook, or replaced by a
+    // full save — and the client has to load the workbook again.
+    static async findPatchesAfter(id, afterVersion) {
+        await schemaReady;
+        const [rows, meta] = await executeQuery(
+            `SET XACT_ABORT ON;
+             DECLARE @id INT = ?, @after INT = ?;
+             BEGIN TRAN;
+             SELECT m.version FROM daily_morning_meetings m WITH (HOLDLOCK) WHERE m.id = @id;
+             SELECT p.version, p.patch, p.createdBy, u.fullName AS createdByName
+             FROM daily_morning_meeting_patches p
+             LEFT JOIN users u ON u.id = p.createdBy
+             WHERE p.meetingId = @id AND p.version > @after
+             ORDER BY p.version;
+             COMMIT;`,
+            [id, afterVersion],
+            { label: "dailyMorningMeeting.findPatchesAfter" }
+        );
+        if (!rows[0]) return null;
+        const { version } = rows[0];
+        if (afterVersion === version) return { version, patches: [] };
+        const patchRows = meta.recordsets[1] || [];
+        const complete = afterVersion < version
+            && patchRows.length === version - afterVersion
+            && patchRows.every((row, i) => row.version === afterVersion + 1 + i);
+        if (!complete) return { version, patches: null };
+
+        const patches = [];
+        for (const row of patchRows) {
+            patches.push({
+                version: row.version,
+                patch: JSON.parse(await gunzipText(row.patch)),
+                userId: row.createdBy,
+                userName: row.createdByName || ""
+            });
+        }
+        return { version, patches };
     }
 
     static async create({ sectionId, agenda, description, meetingDate, meetingTime, createdBy }) {
@@ -293,10 +344,19 @@ class DailyMorningMeeting {
         if (compacting.has(key)) return false;
         compacting.add(key);
         try {
-            const meeting = await DailyMorningMeeting.findById(id);
-            if (!meeting || meeting.pendingPatches === 0) return false;
+            const stored = await DailyMorningMeeting.findStoredById(id);
+            if (!stored) return false;
+            const meeting = stored.row;
+            const pending = pendingPatchRun(meeting.version, stored.patchRows);
+            if (pending.length === 0) return false;
 
-            const { text, gz } = await encodeSheetPayload(JSON.stringify(meeting.sheetData));
+            // Off the main thread: this is a parse and re-serialise of the whole workbook.
+            const { text, gz, missingSheets } = await foldStoredPatches({
+                text: meeting.sheetData, gz: meeting.sheetDataGz, patches: pending.map((p) => p.patch)
+            });
+            if (missingSheets.length > 0) {
+                logger.error(`[SHEET PATCH] meeting ${id}: patches address sheets the workbook lacks: ${missingSheets.join(", ")}`);
+            }
             const [rows] = await executeQuery(
                 `SET XACT_ABORT ON;
                  DECLARE @id INT = ?, @version INT = ?, @updated INT;
@@ -310,7 +370,7 @@ class DailyMorningMeeting {
                 { label: "dailyMorningMeeting.compactPatches" }
             );
             const compacted = rows[0].updated === 1;
-            if (compacted) logger.info(`[SHEET PATCH] compacted ${meeting.pendingPatches} patch(es) into meeting ${id} at v${meeting.version}`);
+            if (compacted) logger.info(`[SHEET PATCH] compacted ${pending.length} patch(es) into meeting ${id} at v${meeting.version}`);
             return compacted;
         } finally {
             compacting.delete(key);

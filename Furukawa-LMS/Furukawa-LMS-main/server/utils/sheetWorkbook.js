@@ -138,3 +138,73 @@ export const applyPatch = (workbook, patch) => {
     }
     return missingSheets;
 };
+
+/**
+ * The patches that are part of the current workbook, oldest first: the unbroken run of
+ * versions ending at the meeting's current `version`. A full save bumps the version
+ * without adding a patch, so anything older than a gap in the numbering has already
+ * been superseded and is left out.
+ * @template {{ version: number }} T
+ * @param {number} version the meeting's current version
+ * @param {T[]} patchRows
+ * @returns {T[]}
+ */
+export const pendingPatchRun = (version, patchRows) => {
+    const byVersion = new Map(patchRows.map((row) => [row.version, row]));
+    const pending = [];
+    for (let v = version; byVersion.has(v); v--) pending.unshift(byVersion.get(v));
+    return pending;
+};
+
+/**
+ * Applies patches, oldest first, to a stored workbook and returns the result as JSON.
+ * @param {string|null|undefined} snapshotJson the stored workbook
+ * @param {string[]} patchJsons
+ * @returns {{ json: string, missingSheets: string[] }}
+ */
+export const foldPatches = (snapshotJson, patchJsons) => {
+    const workbook = normalizeWorkbook(parseSheetData(snapshotJson));
+    const missingSheets = [];
+    for (const patchJson of patchJsons) missingSheets.push(...applyPatch(workbook, JSON.parse(patchJson)));
+    return { json: JSON.stringify(workbook), missingSheets: [...new Set(missingSheets)] };
+};
+
+// --- Export to a real .xlsx ---------------------------------------------------------
+
+/**
+ * Where a stored cell sits on a worksheet, 1-indexed as Excel counts.
+ * Cells are keyed by their A1-style id ("B7"). Workbooks saved by a much older grid
+ * used "row,col" (0-indexed); both are understood.
+ * @returns {{ row: number, col: number }|null} null when the key is neither form
+ */
+export const cellKeyToPosition = (key) => {
+    const text = String(key);
+    const a1 = /^([A-Z]{1,3})([1-9][0-9]{0,6})$/.exec(text);
+    if (a1) {
+        let col = 0;
+        for (const ch of a1[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
+        return { row: Number(a1[2]), col };
+    }
+    const legacy = /^(\d+),(\d+)$/.exec(text);
+    if (legacy) return { row: Number(legacy[1]) + 1, col: Number(legacy[2]) + 1 };
+    return null;
+};
+
+/**
+ * The value to write to Excel for a stored cell, following the grid's own export: a
+ * value starting with "=" is a formula, a numeric string is a number, anything else is
+ * kept as is.
+ * @returns {{ formula: string }|number|string|boolean|null} null for an empty cell
+ */
+export const cellExportValue = (cell) => {
+    if (!isPlainObject(cell)) return null;
+    // `formula` is the old shape; the grid keeps a formula in `value` itself.
+    const raw = cell.formula ? `=${String(cell.formula).replace(/^=/, "")}` : cell.value;
+    if (raw === undefined || raw === null || raw === "") return null;
+    if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith("=")) return trimmed.length > 1 ? { formula: trimmed.slice(1) } : null;
+        if (trimmed !== "" && !Number.isNaN(Number(trimmed))) return Number(trimmed);
+    }
+    return raw;
+};

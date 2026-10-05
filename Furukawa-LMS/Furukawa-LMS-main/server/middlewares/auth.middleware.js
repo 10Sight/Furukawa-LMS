@@ -3,10 +3,11 @@ import User from "../models/auth.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import ENV from "../configs/env.config.js";
+import { readAccessToken } from "../utils/accessToken.js";
 
 const verifyJWT = asyncHandler(async (req, res, next) => {
 
-    const token = req?.cookies?.accessToken || req?.header("Authorization")?.replace("Bearer ", "") || req?.query?.token;
+    const token = readAccessToken(req);
 
     if (!token) {
         throw new ApiError("You are not logged in!", 401);

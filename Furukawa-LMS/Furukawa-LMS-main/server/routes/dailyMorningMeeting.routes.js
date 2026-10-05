@@ -4,6 +4,7 @@ import authorizeRoles from "../middlewares/authrization.middleware.js";
 import {
     getMeetingsForSection,
     getMeetingDetail,
+    getMeetingPatchesAfter,
     createMeeting,
     cloneMeeting,
     updateMeeting,
@@ -25,6 +26,7 @@ router.use(verifyJWT);
 // holding daily_meeting:read can view meetings across every department/section.
 router.get("/section/:sectionId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingsForSection);
 router.get("/:id", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingDetail);
+router.get("/:id/patches", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingPatchesAfter);
 router.get("/:id/m365-snapshot", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingM365Snapshot);
 // Read-gated only (like the routes above) — the edit-vs-view split is decided
 // server-side per requester in the controller, not by route-level permissions.

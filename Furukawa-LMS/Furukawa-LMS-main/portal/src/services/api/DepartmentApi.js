@@ -1,5 +1,6 @@
 import axiosBaseQuery from "@/services/requests/axiosBaseQuery.js";
 import { createApi } from "@reduxjs/toolkit/query/react";
+import { normalizeStoredWorkbook } from "@/utils/spreadsheets/workbookSync.js";
 
 export const departmentApi = createApi({
     reducerPath: "departmentApi",
@@ -273,10 +274,20 @@ export const departmentApi = createApi({
         }),
 
         getDailyMorningMeetingDetail: builder.query({
+            // `workbook=raw` asks the server to pass the stored workbook through as it
+            // is (under `workbook`) instead of parsing and rebuilding it, when it can.
+            // A server that doesn't do that ignores it and sends `sheets` as before;
+            // either way this hands on `sheets` and `activeSheet`.
             query: (meetingId) => ({
                 url: `/api/daily-morning-meetings/${meetingId}`,
                 method: "GET",
+                params: { workbook: "raw" },
             }),
+            transformResponse: (response) => {
+                if (!response?.data || response.data.workbook === undefined) return response;
+                const { workbook, ...meeting } = response.data;
+                return { ...response, data: { ...meeting, ...normalizeStoredWorkbook(workbook) } };
+            },
             providesTags: (result, error, meetingId) => [{ type: 'Department', id: `daily-morning-meeting-${meetingId}` }],
         }),
 
@@ -330,10 +341,12 @@ export const departmentApi = createApi({
         saveDailyMorningMeetingSheet: builder.mutation({
             // `version` is the one the client loaded; the server answers 409 if the
             // sheet has been saved by someone else since.
-            query: ({ meetingId, sheets, activeSheet, version }) => ({
+            // `clientId` names the grid that is saving, so the server's announcement of
+            // this save to everyone with the meeting open can be skipped by that grid.
+            query: ({ meetingId, sheets, activeSheet, version, clientId }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}/sheet`,
                 method: "POST",
-                data: { sheets, activeSheet, version }
+                data: { sheets, activeSheet, version, clientId }
             }),
             // Patches the cached detail with what was just saved instead of
             // invalidating its tag — a refetch would pull the whole workbook
@@ -359,10 +372,10 @@ export const departmentApi = createApi({
             // Sends only `patch` (what changed since `version`, see workbookDiff.js).
             // `sheets`/`activeSheet` are the full workbook the patch produces; they
             // never leave the browser — they're here to update the cache below.
-            query: ({ meetingId, patch, version }) => ({
+            query: ({ meetingId, patch, version, clientId }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}/sheet/patch`,
                 method: "POST",
-                data: { patch, version }
+                data: { patch, version, clientId }
             }),
             async onQueryStarted({ meetingId, sheets, activeSheet }, { dispatch, queryFulfilled }) {
                 try {

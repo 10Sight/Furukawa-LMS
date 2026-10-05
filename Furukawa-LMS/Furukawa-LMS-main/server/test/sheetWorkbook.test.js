@@ -1,11 +1,11 @@
 // Run with: node --test test/sheetWorkbook.test.js
 //
 // Exercises the patch format from both ends: the client's diff
-// (admin/.../excelClone/workbookDiff.js) and the server's validate/apply.
+// (admin/.../spreadsheet/workbookDiff.js) and the server's validate/apply.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeWorkbook, validatePatch, applyPatch } from "../utils/sheetWorkbook.js";
-import { diffWorkbook, MAX_PATCH_CELLS } from "../../admin/src/components/admin/excelClone/workbookDiff.js";
+import { diffWorkbook, MAX_PATCH_CELLS } from "../../admin/src/components/tables/spreadsheet/workbookDiff.js";
 
 const sheet = (cells, extra = {}) => ({ cells, rowCount: 30, columnCount: 15, merges: [], media: [], ...extra });
 // What the server ends up holding: the patch goes over the wire as JSON and is applied

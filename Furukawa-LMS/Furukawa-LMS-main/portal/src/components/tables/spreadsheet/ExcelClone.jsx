@@ -57,6 +57,9 @@ const ROW_HEADER_WIDTH = 40;
 const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
 const MEDIA_MIN_SIZE = 40;
 const ROW_VIRTUALIZATION_BUFFER = 10;
+const COL_VIRTUALIZATION_BUFFER = 4;
+// Used for the visible-column window until the grid's width has been measured.
+const UNMEASURED_VIEWPORT_WIDTH = 2400;
 const IO_CHUNK_SIZE = 250; // rows processed per batch during import/export, between UI-yielding pauses
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 const DEFAULT_FONT_SIZE = 12; // the grid's text-xs
@@ -1249,6 +1252,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // so scrolling/resizing the container actually triggers a re-render.
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const [scrollLeft, setScrollLeft] = useState(0);
+    const [viewportWidth, setViewportWidth] = useState(0);
     const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
 
     // Import/export progress dialog. { title, label, current, total } | null —
@@ -1863,26 +1868,38 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return offsets;
     }, [rowCount, heightForRow]);
 
-    // Keeps scrollTop/viewportHeight in sync with the actual DOM so virtualization
-    // can compute which rows are visible. A plain scroll listener (not rAF-throttled)
-    // is fine here — each resulting re-render is cheap since it only re-renders the
-    // visible row slice, not the whole sheet.
+    // Keeps the scroll position and viewport size in sync with the actual DOM so
+    // virtualization can compute which rows and columns are visible. A plain scroll
+    // listener (not rAF-throttled) is fine here — each resulting re-render is cheap
+    // since it only re-renders the visible slice of rows and columns, not the whole
+    // sheet.
+    // Re-run when loading finishes: while the sheet is loading a spinner is rendered
+    // in place of the grid, so on a first open there is no grid element yet when this
+    // first runs — and with nothing listening, the visible window never moved.
     useEffect(() => {
         const el = gridContainerRef.current;
         if (!el) return;
-        const onScroll = () => setScrollTop(el.scrollTop);
+        const onScroll = () => {
+            setScrollTop(el.scrollTop);
+            setScrollLeft(el.scrollLeft);
+        };
         el.addEventListener("scroll", onScroll, { passive: true });
         setScrollTop(el.scrollTop);
+        setScrollLeft(el.scrollLeft);
         setViewportHeight(el.clientHeight);
+        setViewportWidth(el.clientWidth);
         const ro = new ResizeObserver((entries) => {
-            for (const entry of entries) setViewportHeight(entry.contentRect.height);
+            for (const entry of entries) {
+                setViewportHeight(entry.contentRect.height);
+                setViewportWidth(entry.contentRect.width);
+            }
         });
         ro.observe(el);
         return () => {
             el.removeEventListener("scroll", onScroll);
             ro.disconnect();
         };
-    }, []);
+    }, [isLoading]);
 
     // Visible row window for virtualization: the scroll-position -> row-index
     // binary search, padded by a buffer, then widened to fully contain any
@@ -1906,6 +1923,53 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         return { startRow, endRow };
     }, [scrollTop, viewportHeight, rowOffsets, rowCount, merges]);
+
+    // Visible column window, the same idea across: only these columns get a <th> and
+    // a <td> per row; the ones to either side are stood in for by a single spacer
+    // cell of their combined width. Without it every row drew every column, so a
+    // sheet's width — an imported file can claim thousands of columns — decided how
+    // long each keystroke took.
+    // Widened to fully contain any merge that reaches into the visible rows and
+    // columns: a merge's cells are drawn by its top-left cell alone, so that cell
+    // has to be among the ones rendered. Widening can bring a further merge into the
+    // window (unlike with rows alone), hence the loop.
+    const visibleColRange = useMemo(() => {
+        if (columnCount === 0) return { startCol: 0, endCol: -1 };
+        const viewLeft = scrollLeft;
+        const viewRight = scrollLeft + (viewportWidth || UNMEASURED_VIEWPORT_WIDTH);
+        let startCol = clamp(bandIndexForPixel(colOffsets, viewLeft) - COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
+        let endCol = clamp(bandIndexForPixel(colOffsets, viewRight) + COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
+        if (merges.length > 0) {
+            const { startRow, endRow } = visibleRowRange;
+            const inRows = [];
+            for (const m of merges) {
+                const s = parseCellRef(m.start), e = parseCellRef(m.end);
+                if (!s || !e) continue;
+                const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+                if (maxRow >= startRow && minRow <= endRow) inRows.push({ minCol: Math.min(s.col, e.col), maxCol: Math.max(s.col, e.col) });
+            }
+            for (let widened = true; widened;) {
+                widened = false;
+                for (const m of inRows) {
+                    if (m.maxCol < startCol || m.minCol > endCol) continue;
+                    if (m.minCol < startCol) { startCol = m.minCol; widened = true; }
+                    if (m.maxCol > endCol) { endCol = Math.min(m.maxCol, columnCount - 1); widened = true; }
+                }
+            }
+        }
+        return { startCol, endCol };
+    }, [scrollLeft, viewportWidth, colOffsets, columnCount, merges, visibleRowRange]);
+    // The column indexes to render (hidden ones left out), and the widths of the
+    // spacers standing in for the columns before and after them.
+    const visibleCols = useMemo(() => {
+        const list = [];
+        for (let c = visibleColRange.startCol; c <= visibleColRange.endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
+        return list;
+    }, [visibleColRange, hiddenColSet]);
+    const leftSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[visibleColRange.startCol] - colOffsets[0];
+    const rightSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[columnCount] - colOffsets[visibleColRange.endCol + 1];
+    // Cells in a full-width row: the row header, the rendered columns and the spacers.
+    const renderedColSpan = 1 + visibleCols.length + (leftSpacerWidth > 0 ? 1 : 0) + (rightSpacerWidth > 0 ? 1 : 0);
 
     // Keyboard navigation can move the active cell to a row/column that isn't
     // currently rendered at all (virtualized rows) or is just scrolled out of
@@ -3591,6 +3655,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         el.scrollTop = saved.top;
         el.scrollLeft = saved.left;
         setScrollTop(el.scrollTop);
+        setScrollLeft(el.scrollLeft);
         savedGridScroll.current = null;
         el.focus({ preventScroll: true });
     }, [isFullScreen]);
@@ -5278,7 +5343,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 ))}
                 <table
                     className="border-collapse"
-                    style={{ tableLayout: "fixed", width: ROW_HEADER_WIDTH + columns.reduce((sum, _, colIdx) => sum + widthForCol(colIdx), 0) }}
+                    style={{ tableLayout: "fixed", width: colOffsets[columnCount] }}
                 >
                     <thead>
                         <tr>
@@ -5288,7 +5353,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 style={{ width: ROW_HEADER_WIDTH }}
                                 title="Select all cells"
                             />
-                            {columns.map((c, colIdx) => hiddenColSet.has(colIdx) ? null : (
+                            {/* In a fixed-layout table the first row sets every column's
+                                width, so the spacers get theirs here; the body rows'
+                                spacer cells just line up under them. */}
+                            {leftSpacerWidth > 0 && <th key="left-spacer" style={{ width: leftSpacerWidth, padding: 0, border: "none" }} />}
+                            {visibleCols.map((colIdx) => { const c = columns[colIdx]; return (
                                 <th
                                     key={c}
                                     onMouseDown={(e) => handleColHeaderMouseDown(colIdx, e)}
@@ -5312,13 +5381,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         title="Drag to resize column"
                                     />
                                 </th>
-                            ))}
+                            ); })}
+                            {rightSpacerWidth > 0 && <th key="right-spacer" style={{ width: rightSpacerWidth, padding: 0, border: "none" }} />}
                         </tr>
                     </thead>
                     <tbody>
                         {visibleRowRange.startRow > 0 && (
                             <tr key="top-spacer">
-                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
+                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
                             </tr>
                         )}
                         {rows.slice(visibleRowRange.startRow, visibleRowRange.endRow + 1).map((rowIdx) => {
@@ -5346,8 +5416,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         title="Drag to resize row"
                                     />
                                 </td>
-                                {columns.map((_, colIdx) => {
-                                    if (hiddenColSet.has(colIdx)) return null;
+                                {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
+                                {visibleCols.map((colIdx) => {
                                     const cellId = getCellId(rowIdx, colIdx);
                                     const merge = mergeMap[cellId];
                                     // Cells covered by a merge but not its anchor render nothing —
@@ -5531,12 +5601,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         </td>
                                     );
                                 })}
+                                {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
                             </tr>
                             );
                         })}
                         {visibleRowRange.endRow < rowCount - 1 && (
                             <tr key="bottom-spacer">
-                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
+                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
                             </tr>
                         )}
                     </tbody>

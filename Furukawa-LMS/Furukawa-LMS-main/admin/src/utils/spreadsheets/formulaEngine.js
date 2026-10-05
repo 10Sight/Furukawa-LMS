@@ -425,6 +425,9 @@ const mulberry32 = (a) => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
+// Stands in for "nothing there" in EvalPass's value cache, where undefined means "not read yet".
+const NO_VALUE = Symbol("noValue");
+
 class EvalPass {
     constructor(cells, layout, known, options) {
         this.cells = cells;
@@ -435,6 +438,10 @@ class EvalPass {
         this.memo = new Map();
         this.literalMemo = new Map();
         this.inProgress = new Set();
+        // Every value read so far in this pass, by position. A lookup or a running
+        // total reads the same cells from hundreds of formulas; without this each
+        // read rebuilt the cell's id string and looked the cell up again.
+        this.values = new Map();
     }
 
     // Final value of a formula cell: { value, matrix?, hint, spillBlocked? }.
@@ -483,15 +490,29 @@ class EvalPass {
     }
 
     valueAt(row, col) {
+        const key = row * CELL_POS_STRIDE + col;
+        const seen = this.values.get(key);
+        if (seen !== undefined) return seen === NO_VALUE ? null : seen;
+
         const id = getCellId(row, col);
         const raw = this.cells[id]?.value;
+        let value;
         if (isEmptyRaw(raw)) {
             const spilled = this.known.spill.get(id);
-            return spilled ? spilled.value : null;
+            value = spilled ? spilled.value : null;
+        } else if (isFormula(raw)) {
+            const entry = this.evalFormula(id);
+            // A formula still being evaluated (a circular reference) answers with an
+            // error that is only how it looks from inside its own evaluation, not
+            // its result — the one value that must not be remembered.
+            if (this.memo.get(id) !== entry) return entry.value;
+            value = entry.value;
+        } else {
+            if (!this.literalMemo.has(id)) this.literalMemo.set(id, parseLiteral(raw));
+            value = this.literalMemo.get(id);
         }
-        if (isFormula(raw)) return this.evalFormula(id).value;
-        if (!this.literalMemo.has(id)) this.literalMemo.set(id, parseLiteral(raw));
-        return this.literalMemo.get(id);
+        if (value !== undefined) this.values.set(key, value === null ? NO_VALUE : value);
+        return value;
     }
 
     areaMatrix(r1, r2, c1, c2) {

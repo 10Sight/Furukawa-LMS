@@ -24,7 +24,7 @@ import {
 // and keystrokes never bubble up to the grid's shortcut handler behind it —
 // React events travel through portals, so without this typing "a" in a
 // dialog input would also reach the sheet.
-const DialogShell = ({ open, onOpenChange, title, description, className, onSubmit, children }) => {
+export const DialogShell = ({ open, onOpenChange, title, description, className, onSubmit, children }) => {
     if (!open) return null;
     return (
         <Dialog open={open} onOpenChange={onOpenChange} className={className}>

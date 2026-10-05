@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
-import { IconChevronDown, IconArrowDownRight, IconCheck } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconArrowDownRight, IconCheck } from "@tabler/icons-react";
 import { cn } from "@/utils/classNames.js";
 
 // Building blocks for the Excel-style Home ribbon: groups with a bottom label and
@@ -145,6 +145,44 @@ export const MenuItem = ({ icon: Icon, label, shortcut, onClick, disabled, check
             <span className="flex-1 truncate" style={style}>{label}</span>
             {shortcut && <span className="text-[10px] text-slate-400 font-mono shrink-0">{shortcut}</span>}
         </button>
+    );
+};
+// A menu row that opens a flyout to its right, on hover or click. Items inside
+// still close the whole dropdown, since the flyout shares its close context.
+export const MenuSub = ({ icon, label, children, contentClassName }) => {
+    const [open, setOpen] = useState(false);
+    const timer = useRef(null);
+    const show = () => { clearTimeout(timer.current); setOpen(true); };
+    const hideSoon = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setOpen(false), 180); };
+    useEffect(() => () => clearTimeout(timer.current), []);
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button
+                    type="button"
+                    className={cn("w-full flex items-center gap-2 text-left text-xs px-2 py-1.5 rounded-sm hover:bg-slate-100 text-slate-700 cursor-pointer", open && "bg-slate-100")}
+                    onMouseEnter={show}
+                    onMouseLeave={hideSoon}
+                    // Hovering already opened it; a click must not toggle it shut.
+                    onClick={(e) => { e.preventDefault(); show(); }}
+                >
+                    {icon !== undefined && <span className="shrink-0 inline-flex items-center justify-center">{icon}</span>}
+                    <span className="flex-1 truncate">{label}</span>
+                    <IconChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent
+                side="right"
+                align="start"
+                sideOffset={2}
+                className={cn("w-56 p-1 bg-white border border-slate-200 shadow-lg rounded-md", contentClassName)}
+                onMouseEnter={show}
+                onMouseLeave={hideSoon}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+                {children}
+            </PopoverContent>
+        </Popover>
     );
 };
 export const MenuSeparator = () => <div className="my-1 border-t border-slate-100" />;

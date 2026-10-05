@@ -35,6 +35,8 @@ import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js"
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
+import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
+import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { diffWorkbook } from "./workbookDiff.js";
 import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
 import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
@@ -346,6 +348,21 @@ const cellStyleFor = (cell) => ({
     ...(cell?.indent ? { [cell.align === "right" ? "paddingRight" : "paddingLeft"]: `${6 + cell.indent * 9}px` } : null),
     ...rotationStyleFor(cell?.rotation),
 });
+// A cell's own style with its conditional formatting laid over it: the rule's
+// font settings win, and an icon takes a strip on the left of the cell.
+const conditionalCellStyle = (cell, { style, icon }) => {
+    const base = cellStyleFor(cell);
+    if (style) {
+        if (style.color) base.color = style.color;
+        if (style.bold) base.fontWeight = "bold";
+        if (style.italic) base.fontStyle = "italic";
+        if (style.underline || style.strike) {
+            base.textDecoration = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
+        }
+    }
+    if (icon) base.paddingLeft = `${Math.max(22, parseInt(base.paddingLeft, 10) || 0)}px`;
+    return base;
+};
 
 const BORDER_COLOR = "#334155";
 const borderWidthFor = (style) => (style === "thick" ? 3 : style === "double" ? 3 : 1);
@@ -1195,9 +1212,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [clipboard, setClipboard] = useState(null); // { cellsByRelPos, height, width, type, sourceBounds }
     const [formatPainterStyle, setFormatPainterStyle] = useState(null);
     const [borderWeight, setBorderWeight] = useState("thin");
-    const [condOperator, setCondOperator] = useState(">");
-    const [condThreshold, setCondThreshold] = useState("");
-    const [condColor, setCondColor] = useState("#fef08a");
+    // Conditional formatting dialogs.
+    const [cfQuickKind, setCfQuickKind] = useState(null); // "gt" | "top" | … (see QuickRuleDialog)
+    const [cfNewRule, setCfNewRule] = useState(null); // the rule the New Formatting Rule dialog starts from
+    const [cfManagerOpen, setCfManagerOpen] = useState(false);
 
     const [selectedTableStyleKey, setSelectedTableStyleKey] = useState(TABLE_STYLE_PRESETS[0].key);
     const [tableFiltersEnabled, setTableFiltersEnabled] = useState(true);
@@ -1585,7 +1603,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const cells = activeSheet.cells;
     const rowCount = activeSheet.rowCount;
     const columnCount = activeSheet.columnCount;
-    const conditionalRules = activeSheet.conditionalRules || [];
+    const storedConditionalRules = activeSheet.conditionalRules;
+    const conditionalRules = useMemo(() => normalizeRules(storedConditionalRules), [storedConditionalRules]);
     const merges = activeSheet.merges || [];
     const columnWidths = activeSheet.columnWidths || {};
     const rowHeights = activeSheet.rowHeights || {};
@@ -1725,26 +1744,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return map;
     }, [isEditingFormula, editValue]);
 
-    // Live conditional-formatting overlay: re-evaluated from the current display
-    // values every render, so edits to referenced cells update highlighting
-    // immediately instead of baking in a one-time static color.
-    const conditionalBgMap = useMemo(() => {
-        const map = {};
-        for (const rule of conditionalRules) {
-            for (const cellId of expandRange(rule.range[0], rule.range[1])) {
-                const raw = displayGrid[cellId];
-                const num = parseFloat(String(raw ?? "").replace(/[$,%]/g, ""));
-                if (isNaN(num)) continue;
-                const match = rule.operator === ">" ? num > rule.threshold
-                    : rule.operator === "<" ? num < rule.threshold
-                    : rule.operator === ">=" ? num >= rule.threshold
-                    : rule.operator === "<=" ? num <= rule.threshold
-                    : num === rule.threshold;
-                if (match) map[cellId] = rule.color;
-            }
-        }
-        return map;
-    }, [conditionalRules, displayGrid]);
+    // Live conditional-formatting overlay: re-evaluated from the current
+    // values whenever they change, so edits to referenced cells update
+    // highlighting immediately instead of baking in a one-time static color.
+    // cellId -> { style, dataBar, icon }.
+    const conditionalMap = useMemo(
+        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells }),
+        [conditionalRules, displayGrid, rawGrid, cells]
+    );
 
     // The updater mutates a draft of the workbook; only what it actually touches
     // is copied, and everything else is shared with the previous state — see
@@ -2941,18 +2948,43 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- Conditional formatting ---
 
-    const addConditionalRule = () => {
-        const threshold = parseFloat(condThreshold);
-        if (isNaN(threshold)) { toast.error("Enter a numeric threshold."); return; }
+    // The selected areas as rule ranges (every Ctrl-selected range, like Excel).
+    const selectionRuleRanges = () => allSelectionBounds.map(rangeOfBounds);
+
+    // A new rule goes to the top of the list, so it wins over older ones.
+    const addConditionalRule = (rule) => {
+        if (readOnly) return;
+        const ranges = rule.ranges?.length ? rule.ranges : selectionRuleRanges();
+        if (!ranges.length) { toast.info("Select the cells to format first."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
-            if (!sheet.conditionalRules) sheet.conditionalRules = [];
-            sheet.conditionalRules.push({ range: [selection.start, selection.end], operator: condOperator, threshold, color: condColor });
+            sheet.conditionalRules = [{ ...rule, id: rule.id || newRuleId(), ranges }, ...normalizeRules(plainOf(sheet.conditionalRules))];
         });
-        toast.success("Conditional formatting rule applied.");
     };
-    const clearConditionalRules = () => {
-        updateSheets((next) => { next[activeSheetName].conditionalRules = []; });
+    const clearConditionalRules = (scope) => {
+        if (readOnly) return;
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            sheet.conditionalRules = scope === "sheet" ? [] : clearRulesFromBounds(normalizeRules(plainOf(sheet.conditionalRules)), allSelectionBounds);
+        });
+    };
+    const openNewConditionalRule = (preset) => {
+        const ranges = selectionRuleRanges();
+        if (!ranges.length) { toast.info("Select the cells to format first."); return; }
+        setCfNewRule({ ...blankRule(preset), id: newRuleId(), ranges });
+    };
+    // Every sheet's rules, for the Rules Manager's "Show formatting rules for" list.
+    const conditionalRulesBySheet = useMemo(
+        () => (cfManagerOpen ? Object.fromEntries(Object.keys(sheets).map((name) => [name, normalizeRules(sheets[name]?.conditionalRules)])) : {}),
+        [cfManagerOpen, sheets]
+    );
+    const commitConditionalRules = (rulesBySheet) => {
+        if (readOnly) return;
+        const changed = Object.keys(rulesBySheet).filter((name) => sheets[name] && rulesBySheet[name] !== conditionalRulesBySheet[name]);
+        if (!changed.length) return;
+        updateSheets((next) => {
+            for (const name of changed) if (next[name]) next[name].conditionalRules = rulesBySheet[name];
+        });
     };
 
     // --- Insert / delete rows & columns ---
@@ -3047,11 +3079,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const filters = axis === "col" && t.filters ? shiftIndexMap(t.filters, at, count) : t.filters;
                 return [{ ...t, range: toIds(b), filters }];
             });
-            sheet.conditionalRules = (sheet.conditionalRules || []).flatMap((rule) => {
-                const b = shiftRange(rule.range[0], rule.range[1], axis, at, count);
-                if (!b) return [];
-                const ids = toIds(b);
-                return [{ ...rule, range: [ids.start, ids.end] }];
+            sheet.conditionalRules = normalizeRules(plainOf(sheet.conditionalRules)).flatMap((rule) => {
+                const ranges = (rule.ranges || []).flatMap((range) => {
+                    const b = shiftRange(range.start, range.end, axis, at, count);
+                    return b ? [toIds(b)] : [];
+                });
+                return ranges.length ? [{ ...rule, ranges }] : [];
             });
             const key = axis === "row" ? "row" : "col";
             const limit = (axis === "row" ? sheet.rowCount : sheet.columnCount) - 1;
@@ -4909,27 +4942,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 {/* Styles */}
                 <RibbonGroup label="Styles">
                     <RibbonStack className="items-start">
-                        <RibbonDropdown title="Conditional Formatting" trigger={<><CondFormatIcon /><span className="text-xs">Conditional Formatting</span></>} contentClassName="w-64 p-2">
-                            <MenuClose>{(close) => (
-                                <div className="space-y-2">
-                                    <div className="text-[11px] font-semibold text-slate-600">Highlight Cells Rules — value is:</div>
-                                    <div className="flex items-center gap-1">
-                                        <select className="h-7 text-xs border border-slate-200 rounded px-1 cursor-pointer" value={condOperator} onChange={(e) => setCondOperator(e.target.value)}>
-                                            <option value=">">Greater Than</option>
-                                            <option value="<">Less Than</option>
-                                            <option value=">=">Greater or Equal</option>
-                                            <option value="<=">Less or Equal</option>
-                                            <option value="=">Equal To</option>
-                                        </select>
-                                        <input type="number" className="h-7 text-xs border border-slate-200 rounded px-1.5 w-16" value={condThreshold} onChange={(e) => setCondThreshold(e.target.value)} placeholder="value" />
-                                        <input type="color" className="w-6 h-6 cursor-pointer" value={condColor} onChange={(e) => setCondColor(e.target.value)} title="Highlight color" />
-                                    </div>
-                                    <div className="flex gap-1.5">
-                                        <Button size="sm" className="h-7 text-xs flex-1 cursor-pointer" onClick={() => { addConditionalRule(); close(); }}>Apply</Button>
-                                        <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={() => { clearConditionalRules(); close(); }}>Clear Rules</Button>
-                                    </div>
-                                </div>
-                            )}</MenuClose>
+                        <RibbonDropdown title="Conditional Formatting" trigger={<><CondFormatIcon /><span className="text-xs">Conditional Formatting</span></>} contentClassName="w-60">
+                            <ConditionalFormatMenu
+                                onQuick={setCfQuickKind}
+                                onAddRule={addConditionalRule}
+                                onNewRule={openNewConditionalRule}
+                                onClear={clearConditionalRules}
+                                onManage={() => setCfManagerOpen(true)}
+                            />
                         </RibbonDropdown>
                         <RibbonDropdown title="Format as Table (Ctrl+T)" trigger={<><FormatTableIcon /><span className="text-xs">Format as Table</span></>} contentClassName="w-64 p-2">
                             <MenuClose>{(close) => (
@@ -5452,7 +5472,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     const isEditing = editingCell === cellId;
                                     const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
                                     const isFillPreviewCell = fillPreviewCellIds.has(cellId);
-                                    const conditionalBg = conditionalBgMap[cellId];
+                                    const conditional = conditionalMap[cellId];
+                                    const conditionalStyle = conditional?.style;
                                     // Spans count only rendered rows/columns, so a merge that
                                     // covers hidden ones doesn't push the rest of the row over.
                                     const mergeSpan = merge ? (() => {
@@ -5519,9 +5540,25 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                             style={{
                                                 height: heightForRow(rowIdx),
                                                 verticalAlign: cell?.valign || "middle",
-                                                backgroundColor: conditionalBg || cell?.bg
+                                                backgroundColor: conditionalStyle?.bg || cell?.bg
                                             }}
                                         >
+                                            {conditional?.dataBar && !isEditing && (
+                                                <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
+                                                    <div
+                                                        className="h-full"
+                                                        style={{
+                                                            width: `${conditional.dataBar.pct * 100}%`,
+                                                            background: conditional.dataBar.gradient
+                                                                ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
+                                                                : conditional.dataBar.color
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+                                            {conditionalStyle?.borderColor && (
+                                                <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
+                                            )}
                                             <CellBorderOverlay border={cell?.border} />
                                             {isInRange && !isActive && (
                                                 <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
@@ -5607,9 +5644,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                 </div>
                                             ) : (
                                                 <div
-                                                    className={cn("px-1.5 text-xs", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                                                    style={cellStyleFor(cell)}
+                                                    className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
+                                                    style={conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
                                                 >
+                                                    {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
                                                     {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
                                                 </div>
                                             )}
@@ -5860,6 +5898,25 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 onOpenChange={setUnhideSheetOpen}
                 hiddenSheets={hiddenSheetNames}
                 onUnhide={unhideSheet}
+            />
+            <QuickRuleDialog
+                kind={cfQuickKind}
+                onOpenChange={(open) => { if (!open) { setCfQuickKind(null); focusGrid(); } }}
+                onApply={addConditionalRule}
+            />
+            <NewRuleDialog
+                rule={cfNewRule}
+                onOpenChange={(open) => { if (!open) { setCfNewRule(null); focusGrid(); } }}
+                onApply={addConditionalRule}
+            />
+            <RulesManagerDialog
+                open={cfManagerOpen}
+                onOpenChange={(open) => { setCfManagerOpen(open); if (!open) focusGrid(); }}
+                rulesBySheet={conditionalRulesBySheet}
+                activeSheetName={activeSheetName}
+                selectionBounds={allSelectionBounds}
+                selectionRanges={allSelectionBounds.map(rangeOfBounds)}
+                onCommit={commitConditionalRules}
             />
         </div>
         </FullScreenFrame>

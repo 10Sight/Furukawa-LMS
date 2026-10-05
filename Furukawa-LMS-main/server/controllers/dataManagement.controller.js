@@ -62,6 +62,39 @@ const ENTITY_TABLE_MAP = {
 const resolveTableNames = (keys, allTables) =>
     keys.map(k => ENTITY_TABLE_MAP[k] || k).filter(name => allTables.includes(name));
 
+// Binary columns (VARBINARY — e.g. a gzipped spreadsheet workbook) can't go through a
+// JSON export as they are: a Buffer serialises to an array of byte numbers several times
+// its size, and the import would then write that array's JSON text back into the column.
+// Export turns each one into { $binary: "<base64>" }; import turns it back into a Buffer.
+//
+// With `dropNulls`, a NULL in a binary column is left out of the exported row. The
+// import binds null as NVARCHAR, which SQL Server refuses to convert to VARBINARY, so
+// the column has to be absent from the INSERT for the row to import at all.
+const BINARY_COLUMN_TYPES = new Set([mssql.VarBinary, mssql.Binary, mssql.Image]);
+
+const encodeBinaryColumns = (rows, { dropNulls = false } = {}) => {
+    const binaryColumns = Object.entries(rows.columns || {})
+        .filter(([, column]) => BINARY_COLUMN_TYPES.has(column.type?.type || column.type))
+        .map(([name]) => name);
+    if (binaryColumns.length === 0) return rows;
+
+    for (const row of rows) {
+        for (const name of binaryColumns) {
+            if (Buffer.isBuffer(row[name])) row[name] = { $binary: row[name].toString("base64") };
+            else if (dropNulls && row[name] == null) delete row[name];
+        }
+    }
+    return rows;
+};
+
+const decodeImportValue = (value) => {
+    if (value === null || typeof value !== "object") return value;
+    if (typeof value.$binary === "string" && Object.keys(value).length === 1) {
+        return Buffer.from(value.$binary, "base64");
+    }
+    return JSON.stringify(value);
+};
+
 // === DATABASE BACKUP OPERATIONS ===
 // .bak files are produced outside this app (e.g. a SQL Server Agent maintenance plan)
 // and dropped into BACKUP_DIR. This module only lists, restores, and deletes them.
@@ -229,7 +262,8 @@ export const exportSystemData = asyncHandler(async (req, res) => {
 
         try {
             const [rows] = await pool.query(sql, params);
-            exportData[tableName] = rows;
+            // CSV keeps the NULLs: its header row is taken from the first record's keys.
+            exportData[tableName] = encodeBinaryColumns(rows, { dropNulls: format === 'json' });
         } catch (e) {
             // Likely table missing or column missing
             console.warn(`Skipped export for ${tableName}: ${e.message}`);
@@ -311,7 +345,7 @@ export const importSystemData = asyncHandler(async (req, res) => {
                     // This is complex for generic without known schema columns.
                     // Strategy: use keys from record
                     const cols = Object.keys(record);
-                    const vals = Object.values(record).map(v => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v);
+                    const vals = Object.values(record).map(decodeImportValue);
 
                     // Prepare placeholders
                     const sql = `INSERT INTO [${tableName}] (${cols.map(c => `[${c}]`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`;

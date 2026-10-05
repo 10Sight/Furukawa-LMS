@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import ExcelJS from "exceljs";
 import DailyMorningMeeting from "../models/dailyMorningMeeting.model.js";
 import logger from "../logger/winston.logger.js";
@@ -58,6 +59,17 @@ const formatMeetingRow = (row) => {
         lastSyncedAt: row.lastSyncedAt || null,
         version: row.version ?? 1,
     };
+};
+
+// ETag for the meeting detail response, derived from the meeting's metadata alone.
+// Every workbook save bumps `version` and every other edit moves `updatedAt`, so the
+// metadata identifies the whole response — which lets a revalidation be answered
+// 304 without loading the workbook. Bump DETAIL_ETAG_SCHEMA whenever the shape of
+// the detail response changes, or browsers would keep reusing a body in the old shape.
+const DETAIL_ETAG_SCHEMA = 1;
+const meetingDetailETag = (row) => {
+    const hash = createHash("sha1").update(JSON.stringify(formatMeetingRow(row))).digest("base64url");
+    return `W/"dmm${DETAIL_ETAG_SCHEMA}-${hash}"`;
 };
 
 // Builds a real .xlsx buffer from the same { sheets, activeSheet } shape ExcelClone
@@ -125,10 +137,25 @@ export const getMeetingsForSection = async (req, res) => {
 export const getMeetingDetail = async (req, res) => {
     try {
         const { id } = req.params;
+        // A browser reopening a meeting it already holds revalidates with If-None-Match.
+        // Answer that from the metadata row, before the workbook is read at all.
+        const meta = await DailyMorningMeeting.findMetaById(id);
+        if (!meta) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        // The copy must be revalidated on every use, and never stored by a shared cache.
+        res.set("Cache-Control", "private, no-cache");
+        res.set("ETag", meetingDetailETag(meta));
+        if (req.fresh) {
+            return res.status(304).end();
+        }
+
         const meeting = await DailyMorningMeeting.findById(id);
         if (!meeting) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
+        // Tag the body with the row it was built from, in case a save landed in between.
+        res.set("ETag", meetingDetailETag(meeting));
         // Read access is permission-gated only (route middleware) — no department/section lock.
         // M365-backed meetings render via the embed iframe on the client, which reads the
         // live workbook straight from Excel Online — the sheetData column is only kept
@@ -297,7 +324,7 @@ export const updateMeeting = async (req, res) => {
         if (!agenda || !agenda.trim()) {
             return res.status(400).json({ success: false, message: "Agenda is required" });
         }
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -431,7 +458,7 @@ export const openMeetingInM365 = async (req, res) => {
             });
         }
 
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -442,7 +469,12 @@ export const openMeetingInM365 = async (req, res) => {
         let itemId = existing.m365ItemId;
 
         if (!itemId) {
-            const workbook = normalizeWorkbook(parseSheetData(existing.sheetData));
+            // Only this first open needs the workbook itself, to build the file from.
+            const withSheet = await DailyMorningMeeting.findById(id);
+            if (!withSheet) {
+                return res.status(404).json({ success: false, message: "Meeting not found" });
+            }
+            const workbook = normalizeWorkbook(parseSheetData(withSheet.sheetData));
             const fileBuffer = await buildWorkbookBuffer(workbook);
             const { sectionName, departmentName } = await getSectionAndDepartmentNames(existing.sectionId);
 
@@ -585,7 +617,7 @@ export const syncSectionMeetingsFromM365 = async (req, res) => {
 export const refreshMeetingEmbedUrl = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -618,7 +650,7 @@ export const refreshMeetingEmbedUrl = async (req, res) => {
 export const getMeetingM365Snapshot = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -637,7 +669,7 @@ export const getMeetingM365Snapshot = async (req, res) => {
 export const deleteMeeting = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }

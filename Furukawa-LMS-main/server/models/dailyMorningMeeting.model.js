@@ -1,6 +1,17 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
+import { encodeSheetPayload, decodeSheetPayload } from "../utils/sheetCodec.js";
+
+// A workbook lives in one of two columns: `sheetData` (plain JSON text) or, when it
+// was stored compressed, `sheetDataGz` (see utils/sheetCodec.js). Callers only ever
+// see `sheetData` as the JSON string, whichever column actually holds it.
+const hydrate = async (row) => {
+    if (!row) return null;
+    const { sheetDataGz, ...rest } = row;
+    rest.sheetData = await decodeSheetPayload(row.sheetData, sheetDataGz);
+    return rest;
+};
 
 class DailyMorningMeeting {
     static async init() {
@@ -37,6 +48,8 @@ class DailyMorningMeeting {
             // earlier column and not in the CREATE TABLE above, so it lands in the
             // same position on a fresh database as on one that is being migrated.
             await migrationHelper.ensureColumnExists('daily_morning_meetings', 'version', 'INT NOT NULL DEFAULT 1');
+            // Gzipped workbook, for the ones too large to keep as text in sheetData.
+            await migrationHelper.ensureColumnExists('daily_morning_meetings', 'sheetDataGz', 'VARBINARY(MAX) NULL');
             await migrationHelper.ensureIndexExists(
                 'daily_morning_meetings',
                 'IX_daily_morning_meetings_section_meetingDate',
@@ -70,17 +83,18 @@ class DailyMorningMeeting {
         return rows;
     }
 
-    // The meeting row without sheetData — for permission checks and save
-    // responses, which have no use for the (possibly multi-megabyte) workbook.
+    // The meeting row without sheetData — for permission checks, M365 lookups and
+    // save responses, which have no use for the (possibly multi-megabyte) workbook.
     static async findMetaById(id) {
         const [rows] = await executeQuery(
             `SELECT m.id, m.sectionId, m.agenda, m.description, m.meetingDate, m.meetingTime, m.createdBy,
-                    m.createdAt, m.updatedAt, m.fileProvider, m.m365WebUrl, m.m365EmbedUrl, m.lastSyncedAt,
-                    m.version, u.fullName AS createdByName
+                    m.createdAt, m.updatedAt, m.fileProvider, m.m365DriveId, m.m365ItemId, m.m365WebUrl,
+                    m.m365EmbedUrl, m.lastSyncedAt, m.version, u.fullName AS createdByName
              FROM daily_morning_meetings m
              LEFT JOIN users u ON u.id = m.createdBy
              WHERE m.id = ?`,
-            [id]
+            [id],
+            { label: "dailyMorningMeeting.findMetaById" }
         );
         return rows.length > 0 ? rows[0] : null;
     }
@@ -91,9 +105,10 @@ class DailyMorningMeeting {
              FROM daily_morning_meetings m
              LEFT JOIN users u ON u.id = m.createdBy
              WHERE m.id = ?`,
-            [id]
+            [id],
+            { label: "dailyMorningMeeting.findById" }
         );
-        return rows.length > 0 ? rows[0] : null;
+        return hydrate(rows[0]);
     }
 
     static async create({ sectionId, agenda, description, meetingDate, meetingTime, createdBy }) {
@@ -109,11 +124,16 @@ class DailyMorningMeeting {
 
     static async createWithSheetData({ sectionId, agenda, description, meetingDate, meetingTime, createdBy, sheetData }) {
         const dataJson = typeof sheetData === "string" ? sheetData : JSON.stringify(sheetData || {});
+        const { text, gz } = await encodeSheetPayload(dataJson);
+        await schemaReady;
+        // NULL goes in as a literal: a null parameter is sent typed NVARCHAR, which SQL
+        // Server refuses to convert to VARBINARY.
         const [result] = await executeQuery(
-            `INSERT INTO daily_morning_meetings (sectionId, agenda, description, meetingDate, meetingTime, createdBy, sheetData, createdAt, updatedAt)
+            `INSERT INTO daily_morning_meetings (sectionId, agenda, description, meetingDate, meetingTime, createdBy, sheetData, sheetDataGz, createdAt, updatedAt)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
-            [sectionId, agenda, description || null, meetingDate, meetingTime, createdBy, dataJson]
+             VALUES (?, ?, ?, ?, ?, ?, ?, ${gz ? "?" : "NULL"}, GETDATE(), GETDATE())`,
+            [sectionId, agenda, description || null, meetingDate, meetingTime, createdBy, text, ...(gz ? [gz] : [])],
+            { label: "dailyMorningMeeting.createWithSheetData" }
         );
         const insertedId = result[0].id;
         return DailyMorningMeeting.findById(insertedId);
@@ -124,7 +144,7 @@ class DailyMorningMeeting {
             "UPDATE daily_morning_meetings SET agenda = ?, description = ?, updatedAt = GETDATE() WHERE id = ?",
             [agenda, description || null, id]
         );
-        return DailyMorningMeeting.findById(id);
+        return DailyMorningMeeting.findMetaById(id);
     }
 
     // Every save bumps `version`. When `expectedVersion` is given the update is
@@ -134,9 +154,17 @@ class DailyMorningMeeting {
     static async updateSheetData(id, sheetData, expectedVersion = null, { withSheetData = true } = {}) {
         const dataJson = typeof sheetData === "string" ? sheetData : JSON.stringify(sheetData);
         const hasExpected = expectedVersion !== null && expectedVersion !== undefined;
+        const { text, gz } = await encodeSheetPayload(dataJson);
+        await schemaReady;
+        // Both columns are written every time so neither is ever left holding an older
+        // workbook. NULL goes in as a literal: a null parameter is sent typed NVARCHAR,
+        // which SQL Server refuses to convert to VARBINARY.
+        const params = gz ? [text, gz, id] : [text, id];
+        if (hasExpected) params.push(expectedVersion);
         const [, result] = await executeQuery(
-            `UPDATE daily_morning_meetings SET sheetData = ?, version = version + 1, updatedAt = GETDATE() WHERE id = ?${hasExpected ? " AND version = ?" : ""}`,
-            hasExpected ? [dataJson, id, expectedVersion] : [dataJson, id]
+            `UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = ${gz ? "?" : "NULL"}, version = version + 1, updatedAt = GETDATE() WHERE id = ?${hasExpected ? " AND version = ?" : ""}`,
+            params,
+            { label: "dailyMorningMeeting.updateSheetData" }
         );
         if (hasExpected && !result.affectedRows) return null;
         return withSheetData ? DailyMorningMeeting.findById(id) : DailyMorningMeeting.findMetaById(id);
@@ -149,7 +177,7 @@ class DailyMorningMeeting {
              WHERE id = ?`,
             [fileProvider, m365DriveId || null, m365ItemId || null, m365WebUrl || null, m365EmbedUrl || null, id]
         );
-        return DailyMorningMeeting.findById(id);
+        return DailyMorningMeeting.findMetaById(id);
     }
 
     // m365ItemId is unique per SharePoint drive, so this is a global lookup — used
@@ -157,7 +185,7 @@ class DailyMorningMeeting {
     // under a different section (e.g. moved in SharePoint after being synced).
     static async findByM365ItemId(m365ItemId) {
         const [rows] = await executeQuery(
-            "SELECT * FROM daily_morning_meetings WHERE m365ItemId = ?",
+            "SELECT id, sectionId FROM daily_morning_meetings WHERE m365ItemId = ?",
             [m365ItemId]
         );
         return rows.length > 0 ? rows[0] : null;
@@ -203,6 +231,7 @@ class DailyMorningMeeting {
     }
 }
 
-DailyMorningMeeting.init().catch(err => logger.error("Failed to initialize daily_morning_meetings table:", err));
+// Sheet writes name the sheetDataGz column, so they wait for the migration that adds it.
+const schemaReady = DailyMorningMeeting.init().catch(err => logger.error("Failed to initialize daily_morning_meetings table:", err));
 
 export default DailyMorningMeeting;

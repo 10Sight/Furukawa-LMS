@@ -33,9 +33,14 @@ class DailyMeetingSheet {
 
     static async upsert(sectionId, data) {
         const dataJson = typeof data === 'string' ? data : JSON.stringify(data);
-        const existing = await DailyMeetingSheet.findBySectionId(sectionId);
+        // Existence check only — the stored workbook is about to be replaced, and the
+        // caller already holds the one it is saving, so it is never read here.
+        const [existingRows] = await executeQuery(
+            "SELECT id FROM daily_meeting_sheets WHERE sectionId = ?",
+            [sectionId]
+        );
 
-        if (existing) {
+        if (existingRows.length > 0) {
             await executeQuery(
                 "UPDATE daily_meeting_sheets SET data = ?, updatedAt = GETDATE() WHERE sectionId = ?",
                 [dataJson, sectionId]
@@ -47,8 +52,6 @@ class DailyMeetingSheet {
                 [sectionId, dataJson]
             );
         }
-
-        return DailyMeetingSheet.findBySectionId(sectionId);
     }
 }
 

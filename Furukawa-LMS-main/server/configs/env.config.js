@@ -48,6 +48,10 @@ const ENV = {
     BASE_URL: process.env.BASE_URL || "http://192.168.90.19:5174",
     APP_BASE_URL: process.env.APP_BASE_URL || "http://192.168.90.19:5174",
 
+    // Store large spreadsheet workbooks gzipped (see utils/sheetCodec.js). Reading the
+    // compressed form needs no flag; only turn this on once every running server has it.
+    SHEET_COMPRESSION_WRITE: process.env.SHEET_COMPRESSION_WRITE === "true",
+
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,
     STUDENT_URL: process.env.STUDENT_URL,
     SUPERADMIN_URL: process.env.SUPERADMIN_URL,

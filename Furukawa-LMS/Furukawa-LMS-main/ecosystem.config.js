@@ -16,9 +16,8 @@ module.exports = {
     },
     {
       name: "lms-frontend",
-      cwd: "./admin",
+      cwd: "./portal", // <-- CHANGED from ./admin to ./portal
       script: "./node_modules/vite/bin/vite.js",
-      // Remove "preview" so it starts the dev server (which compiles files on-the-fly)
       args: "--host --port 5174", 
       instances: 1,
       exec_mode: "fork",

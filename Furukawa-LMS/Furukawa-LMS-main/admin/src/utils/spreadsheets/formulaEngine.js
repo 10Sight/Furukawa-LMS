@@ -47,6 +47,25 @@ export const parseCellRef = (ref) => {
     return { col: colToIndex(m[1]), row: parseInt(m[2], 10) - 1 };
 };
 
+// Position of a canonical cell id ("AB12": capitals, no "$") packed into one
+// number — row * CELL_POS_STRIDE + col — or -1 if `id` isn't in that form.
+// Allocation- and regex-free, for loops over every cell of a large sheet;
+// use parseCellRef for anything a user typed.
+export const CELL_POS_STRIDE = 32768;
+export const cellPosOf = (id) => {
+    const n = id.length;
+    let i = 0, col = 0, ch;
+    while (i < n && (ch = id.charCodeAt(i)) >= 65 && ch <= 90) { col = col * 26 + (ch - 64); i++; }
+    if (i === 0 || i === n || i > 3) return -1;
+    let row = 0;
+    for (; i < n; i++) {
+        ch = id.charCodeAt(i);
+        if (ch < 48 || ch > 57) return -1;
+        row = row * 10 + (ch - 48);
+    }
+    return row < 1 ? -1 : (row - 1) * CELL_POS_STRIDE + (col - 1);
+};
+
 export const expandRange = (startRef, endRef) => {
     const s = parseCellRef(startRef);
     const e = parseCellRef(endRef);
@@ -598,36 +617,134 @@ const sameKnown = (a, b) => {
 // what some formula would have read, the sheet is re-evaluated with the new
 // spill layout until it settles — a sheet with no array formulas takes one
 // pass.
+// ---------------------------------------------------------------------------
+// Per-sheet index: which cells hold formulas, and how far the data reaches.
+//
+// A sheet can hold hundreds of thousands of plain values, and finding its
+// formulas means looking at every one of them. So the answer is remembered
+// per `cells` object — which is treated as immutable once evaluated — and
+// when an edit produces a new `cells` object from an old one, deriveCellIndex
+// carries the index across by looking only at the cells that changed.
+
+const cellIndexCache = new WeakMap(); // cells -> { formulas: Map<id, {row, col}>, used: {maxRow, maxCol} | null }
+
+const posOf = (id) => {
+    const pos = cellPosOf(id);
+    if (pos < 0) return parseCellRef(id);
+    const col = pos % CELL_POS_STRIDE;
+    return { row: (pos - col) / CELL_POS_STRIDE, col };
+};
+
+const isFormulaCell = (cell) => {
+    const v = cell?.value;
+    if (typeof v !== "string" || v.length === 0) return false;
+    const first = v.charCodeAt(0);
+    if (first !== 61 && first > 32) return false; // not "=" and no leading whitespace to trim
+    return isFormula(v);
+};
+
+const cellIndexOf = (cells) => {
+    let index = cellIndexCache.get(cells);
+    if (!index) {
+        const formulas = new Map();
+        for (const id in cells) {
+            if (!isFormulaCell(cells[id])) continue;
+            const ref = parseCellRef(id);
+            if (ref) formulas.set(id, ref);
+        }
+        index = { formulas, used: null };
+        cellIndexCache.set(cells, index);
+    }
+    return index;
+};
+
+// Last filled row/column — needed only by whole-column/row references (A:A,
+// 1:1), so the full-sheet scan runs the first time one asks.
+const usedRangeOf = (cells) => {
+    const index = cellIndexOf(cells);
+    if (!index.used) {
+        let maxRow = 0, maxCol = 0;
+        for (const id in cells) {
+            if (isEmptyRaw(cells[id]?.value)) continue;
+            const ref = posOf(id);
+            if (!ref) continue;
+            if (ref.row > maxRow) maxRow = ref.row;
+            if (ref.col > maxCol) maxCol = ref.col;
+        }
+        index.used = { maxRow, maxCol };
+    }
+    return index.used;
+};
+
+// Tells the engine that `nextCells` is `prevCells` with only `changedIds`
+// added, replaced or removed, so its index can be derived instead of rebuilt.
+// Purely an optimization: skipping the call (or calling it for a sheet that
+// was never evaluated) just means the next evaluation scans the sheet.
+export const deriveCellIndex = (nextCells, prevCells, changedIds) => {
+    const prevIndex = cellIndexCache.get(prevCells);
+    if (!prevIndex || cellIndexCache.has(nextCells)) return;
+    let formulas = prevIndex.formulas;
+    let used = prevIndex.used;
+    const ownFormulas = () => {
+        if (formulas === prevIndex.formulas) formulas = new Map(formulas);
+        return formulas;
+    };
+    for (const id of changedIds) {
+        const cell = nextCells[id];
+        const ref = isFormulaCell(cell) ? parseCellRef(id) : null;
+        if (ref) { if (!formulas.has(id)) ownFormulas().set(id, ref); }
+        else if (formulas.has(id)) ownFormulas().delete(id);
+
+        if (!used) continue;
+        const pos = posOf(id);
+        if (!pos) continue;
+        if (!isEmptyRaw(cell?.value)) {
+            if (pos.row > used.maxRow || pos.col > used.maxCol) {
+                used = { maxRow: Math.max(used.maxRow, pos.row), maxCol: Math.max(used.maxCol, pos.col) };
+            }
+        } else if (pos.row >= used.maxRow || pos.col >= used.maxCol) {
+            used = null; // a cell on the edge was emptied: the range may have shrunk
+        }
+    }
+    cellIndexCache.set(nextCells, { formulas, used });
+};
+
 const evaluateSheetCells = (cells, options = {}) => {
     const opts = { now: options.now ?? nowSerial(), seed: options.seed ?? 0 };
-    const positions = new Map();
-    const formulaIds = [];
-    let maxRow = 0, maxCol = 0;
-    for (const id of Object.keys(cells)) {
-        const ref = parseCellRef(id);
-        if (!ref) continue;
-        positions.set(id, ref);
-        if (isEmptyRaw(cells[id]?.value)) continue;
-        if (ref.row > maxRow) maxRow = ref.row;
-        if (ref.col > maxCol) maxCol = ref.col;
-        if (isFormula(cells[id].value)) formulaIds.push(id);
-    }
+    // Only formula cells are evaluated here; plain values are read (and
+    // parsed) only if a formula actually references them.
+    const positions = cellIndexOf(cells).formulas;
+    const formulaIds = [...positions.keys()];
     formulaIds.sort((a, b) => {
         const pa = positions.get(a), pb = positions.get(b);
         return pa.row - pb.row || pa.col - pb.col;
     });
+    const usedRange = () => usedRangeOf(cells);
+    // The used range also covers cells the previous pass spilled into.
+    const makeLayout = (spill) => {
+        let resolved = null;
+        const resolve = () => {
+            if (resolved) return resolved;
+            let { maxRow, maxCol } = usedRange();
+            for (const id of spill.keys()) {
+                const ref = parseCellRef(id);
+                if (ref.row > maxRow) maxRow = ref.row;
+                if (ref.col > maxCol) maxCol = ref.col;
+            }
+            resolved = { maxRow, maxCol };
+            return resolved;
+        };
+        return {
+            positions,
+            get maxRow() { return resolve().maxRow; },
+            get maxCol() { return resolve().maxCol; },
+        };
+    };
+
     let known = { spill: new Map(), blocked: new Set() };
     let pass = null;
     for (let iteration = 0; iteration < 6; iteration++) {
-        // Whole-column/row references (A:A, 1:1) stop at the used range,
-        // which includes cells the previous pass spilled into.
-        const layout = { positions, maxRow, maxCol };
-        for (const id of known.spill.keys()) {
-            const ref = parseCellRef(id);
-            if (ref.row > layout.maxRow) layout.maxRow = ref.row;
-            if (ref.col > layout.maxCol) layout.maxCol = ref.col;
-        }
-        pass = new EvalPass(cells, layout, known, opts);
+        pass = new EvalPass(cells, makeLayout(known.spill), known, opts);
         for (const id of formulaIds) pass.evalFormula(id);
 
         const next = { spill: new Map(), blocked: new Set() };
@@ -707,47 +824,85 @@ const displayValue = (value, cell, hint) => {
 
 const rawValue = (value) => (value instanceof FormulaError ? value.code : value ?? 0);
 
+const hasOwn = Object.prototype.hasOwnProperty;
+const PLAIN_NUMBER_RE = /^-?\d+(\.\d+)?$/;
+
 // Evaluates a whole sheet once and returns both views callers need:
 //   display — formatted text per cell (what the grid shows), and
 //   raw     — evaluated values (numbers stay numbers, errors are "#..." codes).
 // Both include cells that only hold spilled values. `options.seed` re-rolls
 // RAND/RANDBETWEEN (F9); `options.now` pins TODAY/NOW.
+//
+// Formulas are evaluated up front (their spills decide what other cells
+// show), but `display` and `raw` are filled lazily: each is a read-only view
+// that formats a cell the first time it's read and remembers the result. They
+// index, enumerate and `in`-test like the plain { id: value } objects they
+// stand in for, so the grid only pays for the rows it renders instead of
+// formatting every cell of a large sheet on each edit.
 export const evaluateSheet = (cells, options = {}) => {
     const { pass, known } = evaluateSheetCells(cells, options);
-    const display = {};
-    const raw = {};
-    for (const id of Object.keys(cells)) {
+
+    // [display, raw] for a cell, or null when the sheet has nothing there.
+    const compute = (id) => {
+        const spilled = known.spill.get(id);
+        if (!hasOwn.call(cells, id)) {
+            if (!spilled) return null;
+            const hint = pass.memo.get(spilled.anchor)?.hint || null;
+            return [displayValue(spilled.value, undefined, hint), rawValue(spilled.value)];
+        }
         const cell = cells[id];
         const v = cell?.value;
         if (isEmptyRaw(v)) {
-            if (!known.spill.has(id)) {
-                display[id] = "";
-                raw[id] = 0;
-            }
-            continue;
+            if (!spilled) return ["", 0];
+            const hint = pass.memo.get(spilled.anchor)?.hint || null;
+            return [displayValue(spilled.value, cell, hint), rawValue(spilled.value)];
         }
         if (isFormula(v)) {
             const entry = pass.evalFormula(id);
-            display[id] = displayValue(entry.value, cell, entry.hint);
-            raw[id] = rawValue(entry.value);
-        } else {
-            const trimmed = String(v).trim();
-            const num = /^-?\d+(\.\d+)?$/.test(trimmed) ? parseFloat(trimmed) : NaN;
-            // A typed or imported date is stored as text ("2024-03-14"). Once
-            // the cell is given a number format, show it through that format
-            // the way a date produced by a formula would be.
-            const dateSerial = isNaN(num) && cell.numberFormat && cell.numberFormat !== "text" ? parseDateTimeText(trimmed) : null;
-            if (dateSerial !== null) display[id] = applyNumberFormat(dateSerial, cell);
-            else display[id] = isNaN(num) ? String(v) : applyNumberFormat(num, cell);
-            raw[id] = isNaN(num) ? v : num;
+            return [displayValue(entry.value, cell, entry.hint), rawValue(entry.value)];
         }
-    }
-    for (const [id, { value, anchor }] of known.spill) {
-        const hint = pass.memo.get(anchor)?.hint || null;
-        display[id] = displayValue(value, cells[id], hint);
-        raw[id] = rawValue(value);
-    }
-    return { display, raw, spillAnchors: new Map([...known.spill].map(([id, s]) => [id, s.anchor])) };
+        const trimmed = String(v).trim();
+        const num = PLAIN_NUMBER_RE.test(trimmed) ? parseFloat(trimmed) : NaN;
+        // A typed or imported date is stored as text ("2024-03-14"). Once
+        // the cell is given a number format, show it through that format
+        // the way a date produced by a formula would be.
+        const dateSerial = isNaN(num) && cell.numberFormat && cell.numberFormat !== "text" ? parseDateTimeText(trimmed) : null;
+        let text;
+        if (dateSerial !== null) text = applyNumberFormat(dateSerial, cell);
+        else text = isNaN(num) ? String(v) : applyNumberFormat(num, cell);
+        return [text, isNaN(num) ? v : num];
+    };
+
+    const cache = new Map();
+    const entryFor = (id) => {
+        if (typeof id !== "string") return null;
+        let entry = cache.get(id);
+        if (entry === undefined) {
+            entry = compute(id);
+            cache.set(id, entry);
+        }
+        return entry;
+    };
+    const allIds = () => {
+        const ids = Object.keys(cells);
+        for (const id of known.spill.keys()) if (!hasOwn.call(cells, id)) ids.push(id);
+        return ids;
+    };
+    const lazyView = (index) => new Proxy({}, {
+        get: (_, id) => entryFor(id)?.[index],
+        has: (_, id) => entryFor(id) !== null,
+        ownKeys: allIds,
+        getOwnPropertyDescriptor: (_, id) => {
+            const entry = entryFor(id);
+            return entry ? { value: entry[index], enumerable: true, configurable: true, writable: false } : undefined;
+        },
+    });
+
+    return {
+        display: lazyView(0),
+        raw: lazyView(1),
+        spillAnchors: new Map([...known.spill].map(([id, s]) => [id, s.anchor])),
+    };
 };
 
 export const buildDisplayGrid = (cells, options) => evaluateSheet(cells, options).display;

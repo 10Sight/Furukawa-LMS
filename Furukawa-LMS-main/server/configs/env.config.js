@@ -51,6 +51,10 @@ const ENV = {
     // Store large spreadsheet workbooks gzipped (see utils/sheetCodec.js). Reading the
     // compressed form needs no flag; only turn this on once every running server has it.
     SHEET_COMPRESSION_WRITE: process.env.SHEET_COMPRESSION_WRITE === "true",
+    // Tell spreadsheet clients they may save changed cells as a patch instead of the
+    // whole workbook (see utils/sheetWorkbook.js). Stored patches are always read back,
+    // whatever this says; turning it off only stops clients creating new ones.
+    SHEET_PATCH_SAVE: process.env.SHEET_PATCH_SAVE === "true",
 
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,
     STUDENT_URL: process.env.STUDENT_URL,

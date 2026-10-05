@@ -1,17 +1,55 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
-import { encodeSheetPayload, decodeSheetPayload } from "../utils/sheetCodec.js";
+import { encodeSheetPayload, decodeSheetPayload, gzipText, gunzipText } from "../utils/sheetCodec.js";
+import { parseSheetData, normalizeWorkbook, applyPatch } from "../utils/sheetWorkbook.js";
 
-// A workbook lives in one of two columns: `sheetData` (plain JSON text) or, when it
-// was stored compressed, `sheetDataGz` (see utils/sheetCodec.js). Callers only ever
-// see `sheetData` as the JSON string, whichever column actually holds it.
-const hydrate = async (row) => {
+// How a meeting's workbook is stored
+// ----------------------------------
+// The row holds a full copy of the workbook (the "snapshot") in one of two columns:
+// `sheetData` (plain JSON text) or, when it was stored compressed, `sheetDataGz` (see
+// utils/sheetCodec.js).
+//
+// A save of a few changed cells doesn't rewrite the snapshot. It adds a row to
+// daily_morning_meeting_patches (see utils/sheetWorkbook.js for the format), keyed by
+// the meeting `version` that save produced — every save, full or patch, bumps
+// `version` by one. The current workbook is the snapshot with the latest unbroken run
+// of patches applied: the patches numbered ..., version-1, version. A full save bumps
+// `version` without adding a patch, which breaks the run, so patches older than a
+// full save are never applied again even if their rows are still around.
+//
+// Callers of findById see none of this: `sheetData` is the current workbook, as the
+// JSON string when the snapshot is current, or as the already-parsed object when
+// patches had to be applied to it.
+
+// Fold a meeting's patches into a fresh snapshot once they pass either of these.
+const COMPACT_AFTER_PATCHES = 200;
+const COMPACT_AFTER_BYTES = 5 * 1024 * 1024;
+
+const hydrate = async (row, patchRows = []) => {
     if (!row) return null;
     const { sheetDataGz, ...rest } = row;
     rest.sheetData = await decodeSheetPayload(row.sheetData, sheetDataGz);
+
+    const byVersion = new Map(patchRows.map((p) => [p.version, p]));
+    const pending = [];
+    for (let v = rest.version; byVersion.has(v); v--) pending.unshift(byVersion.get(v));
+    rest.pendingPatches = pending.length;
+    if (pending.length === 0) return rest;
+
+    const workbook = normalizeWorkbook(parseSheetData(rest.sheetData));
+    for (const { version, patch } of pending) {
+        const missingSheets = applyPatch(workbook, JSON.parse(await gunzipText(patch)));
+        if (missingSheets.length > 0) {
+            logger.error(`[SHEET PATCH] meeting ${rest.id} patch v${version} addresses sheets the workbook lacks: ${missingSheets.join(", ")}`);
+        }
+    }
+    rest.sheetData = workbook;
     return rest;
 };
+
+// Meetings with a compaction in flight in this process, so a burst of saves starts one.
+const compacting = new Set();
 
 class DailyMorningMeeting {
     static async init() {
@@ -61,6 +99,24 @@ class DailyMorningMeeting {
                 'CREATE INDEX IX_daily_morning_meetings_section_m365ItemId ON daily_morning_meetings (sectionId, m365ItemId)'
             );
 
+            // createdBy is deliberately not a foreign key: patches are short-lived, and
+            // one waiting to be compacted shouldn't be what blocks deleting a user.
+            if (!await migrationHelper.tableExists('daily_morning_meeting_patches')) {
+                await executeQuery(`
+                    CREATE TABLE daily_morning_meeting_patches (
+                        meetingId INT NOT NULL,
+                        version INT NOT NULL,
+                        patch VARBINARY(MAX) NOT NULL,
+                        rawBytes INT NOT NULL,
+                        createdBy INT NOT NULL,
+                        createdAt DATETIME NOT NULL DEFAULT GETDATE(),
+                        CONSTRAINT PK_daily_morning_meeting_patches PRIMARY KEY (meetingId, version),
+                        CONSTRAINT FK_daily_morning_meeting_patches_meeting FOREIGN KEY (meetingId)
+                            REFERENCES daily_morning_meetings(id) ON DELETE CASCADE
+                    )
+                `);
+            }
+
             logger.info("Checked/Created daily_morning_meetings table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_morning_meetings table", error);
@@ -99,16 +155,26 @@ class DailyMorningMeeting {
         return rows.length > 0 ? rows[0] : null;
     }
 
+    // The meeting with its current workbook. The row and its patches are read in one
+    // transaction with the row share-locked (HOLDLOCK): every write to a workbook
+    // updates the meeting row first, so none can land between the two reads and leave
+    // this holding a snapshot from one version and patches from another.
     static async findById(id) {
-        const [rows] = await executeQuery(
-            `SELECT m.*, u.fullName AS createdByName
-             FROM daily_morning_meetings m
+        await schemaReady;
+        const [rows, meta] = await executeQuery(
+            `SET XACT_ABORT ON;
+             DECLARE @id INT = ?;
+             BEGIN TRAN;
+             SELECT m.*, u.fullName AS createdByName
+             FROM daily_morning_meetings m WITH (HOLDLOCK)
              LEFT JOIN users u ON u.id = m.createdBy
-             WHERE m.id = ?`,
+             WHERE m.id = @id;
+             SELECT version, patch FROM daily_morning_meeting_patches WHERE meetingId = @id;
+             COMMIT;`,
             [id],
             { label: "dailyMorningMeeting.findById" }
         );
-        return hydrate(rows[0]);
+        return hydrate(rows[0], meta.recordsets[1] || []);
     }
 
     static async create({ sectionId, agenda, description, meetingDate, meetingTime, createdBy }) {
@@ -159,15 +225,103 @@ class DailyMorningMeeting {
         // Both columns are written every time so neither is ever left holding an older
         // workbook. NULL goes in as a literal: a null parameter is sent typed NVARCHAR,
         // which SQL Server refuses to convert to VARBINARY.
-        const params = gz ? [text, gz, id] : [text, id];
+        const params = gz ? [id, text, gz] : [id, text];
         if (hasExpected) params.push(expectedVersion);
-        const [, result] = await executeQuery(
-            `UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = ${gz ? "?" : "NULL"}, version = version + 1, updatedAt = GETDATE() WHERE id = ?${hasExpected ? " AND version = ?" : ""}`,
+        // The new snapshot already contains whatever the meeting's patches held, so they
+        // go in the same transaction. (Leaving them would still be correct — see the
+        // note at the top of this file — this just doesn't keep dead rows around.)
+        const [rows] = await executeQuery(
+            `SET XACT_ABORT ON;
+             DECLARE @id INT = ?, @updated INT;
+             BEGIN TRAN;
+             UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = ${gz ? "?" : "NULL"}, version = version + 1, updatedAt = GETDATE() WHERE id = @id${hasExpected ? " AND version = ?" : ""};
+             SET @updated = @@ROWCOUNT;
+             IF @updated > 0 DELETE FROM daily_morning_meeting_patches WHERE meetingId = @id;
+             COMMIT;
+             SELECT @updated AS updated;`,
             params,
             { label: "dailyMorningMeeting.updateSheetData" }
         );
-        if (hasExpected && !result.affectedRows) return null;
+        if (hasExpected && !rows[0].updated) return null;
         return withSheetData ? DailyMorningMeeting.findById(id) : DailyMorningMeeting.findMetaById(id);
+    }
+
+    // Saves a patch (see utils/sheetWorkbook.js) as the next version of the workbook.
+    // Atomic on `expectedVersion` exactly like updateSheetData: if anything was saved
+    // since the client loaded that version, nothing is written and this returns null.
+    static async appendPatch(id, expectedVersion, patch, userId) {
+        const patchJson = JSON.stringify(patch);
+        const gz = await gzipText(patchJson);
+        await schemaReady;
+        const [rows] = await executeQuery(
+            `SET XACT_ABORT ON;
+             DECLARE @id INT = ?, @expected INT = ?, @updated INT;
+             BEGIN TRAN;
+             UPDATE daily_morning_meetings SET version = version + 1, updatedAt = GETDATE() WHERE id = @id AND version = @expected;
+             SET @updated = @@ROWCOUNT;
+             IF @updated = 1
+                 INSERT INTO daily_morning_meeting_patches (meetingId, version, patch, rawBytes, createdBy)
+                 VALUES (@id, @expected + 1, ?, ?, ?);
+             COMMIT;
+             SELECT @updated AS updated,
+                    (SELECT COUNT(*) FROM daily_morning_meeting_patches WHERE meetingId = @id) AS patchCount,
+                    (SELECT ISNULL(SUM(rawBytes), 0) FROM daily_morning_meeting_patches WHERE meetingId = @id) AS patchBytes;`,
+            [id, expectedVersion, gz, Buffer.byteLength(patchJson, "utf8"), userId],
+            { label: "dailyMorningMeeting.appendPatch" }
+        );
+        const { updated, patchCount, patchBytes } = rows[0];
+        if (!updated) return null;
+
+        if (patchCount >= COMPACT_AFTER_PATCHES || patchBytes >= COMPACT_AFTER_BYTES) {
+            // After the response has gone out; a failure here costs nothing but a retry
+            // on a later save, since the patches are still there.
+            setImmediate(() => {
+                DailyMorningMeeting.compactPatches(id).catch((error) =>
+                    logger.error(`[SHEET PATCH] compaction failed for meeting ${id}:`, error));
+            });
+        }
+        return DailyMorningMeeting.findMetaById(id);
+    }
+
+    // Folds a meeting's pending patches into its snapshot. The workbook, its `version`
+    // and `updatedAt` are all unchanged by this — only where the content is kept. If a
+    // save lands while this is working, the write below matches no row and nothing
+    // changes; the next trigger tries again.
+    // Returns true when a new snapshot was written.
+    static async compactPatches(id) {
+        const key = String(id);
+        if (compacting.has(key)) return false;
+        compacting.add(key);
+        try {
+            const meeting = await DailyMorningMeeting.findById(id);
+            if (!meeting || meeting.pendingPatches === 0) return false;
+
+            const { text, gz } = await encodeSheetPayload(JSON.stringify(meeting.sheetData));
+            const [rows] = await executeQuery(
+                `SET XACT_ABORT ON;
+                 DECLARE @id INT = ?, @version INT = ?, @updated INT;
+                 BEGIN TRAN;
+                 UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = ${gz ? "?" : "NULL"} WHERE id = @id AND version = @version;
+                 SET @updated = @@ROWCOUNT;
+                 IF @updated = 1 DELETE FROM daily_morning_meeting_patches WHERE meetingId = @id AND version <= @version;
+                 COMMIT;
+                 SELECT @updated AS updated;`,
+                gz ? [id, meeting.version, text, gz] : [id, meeting.version, text],
+                { label: "dailyMorningMeeting.compactPatches" }
+            );
+            const compacted = rows[0].updated === 1;
+            if (compacted) logger.info(`[SHEET PATCH] compacted ${meeting.pendingPatches} patch(es) into meeting ${id} at v${meeting.version}`);
+            return compacted;
+        } finally {
+            compacting.delete(key);
+        }
+    }
+
+    // Ids of meetings that currently have patch rows, for the maintenance script.
+    static async findIdsWithPatches() {
+        await schemaReady;
+        const [rows] = await executeQuery("SELECT DISTINCT meetingId FROM daily_morning_meeting_patches ORDER BY meetingId");
+        return rows.map((r) => r.meetingId);
     }
 
     static async updateM365Info(id, { fileProvider, m365DriveId, m365ItemId, m365WebUrl, m365EmbedUrl }) {

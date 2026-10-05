@@ -22,7 +22,8 @@ import {
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
-    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation
+    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation,
+    useSaveDailyMorningMeetingSheetPatchMutation
 } from "@/Redux/AllApi/DepartmentApi";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
@@ -33,6 +34,7 @@ import { parseDateTimeText } from "./formulaValues";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "./workbookUpdate";
+import { diffWorkbook } from "./workbookDiff";
 import { cn } from "@/lib/utils";
 import FullScreenFrame from "./FullScreenFrame";
 import {
@@ -77,6 +79,8 @@ const ORIENTATION_OPTIONS = [
 const HISTORY_LIMIT = 10;
 const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
+// A patch bigger than this (as JSON) is sent as a full workbook save instead.
+const MAX_PATCH_CHARS = 1024 * 1024;
 // Above this many selected cells, the status-bar totals walk the sheet's
 // filled cells instead of every cell of the selection.
 const SELECTION_SCAN_LIMIT = 20000;
@@ -1122,7 +1126,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
     const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
     const [saveSectionSheet, { isLoading: isSavingSection }] = useSaveDailyMeetingSheetMutation();
-    const [saveMeetingSheet, { isLoading: isSavingMeeting }] = useSaveDailyMorningMeetingSheetMutation();
+    const [saveMeetingSheet, { isLoading: isSavingMeetingFull }] = useSaveDailyMorningMeetingSheetMutation();
+    const [saveMeetingSheetPatch, { isLoading: isSavingMeetingPatch }] = useSaveDailyMorningMeetingSheetPatchMutation();
+    const isSavingMeeting = isSavingMeetingFull || isSavingMeetingPatch;
 
     const sheetData = meetingId ? meetingSheetData : sectionSheetData;
     const isLoading = meetingId ? isMeetingLoading : isSectionLoading;
@@ -1279,8 +1285,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         sheetsRef.current = next;
         setSheetsState(next);
     }, []);
-    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet });
-    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet };
+    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch });
+    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch };
     const chartSaveRef = useRef(null); // { timer, meetingId, sectionId, activeSheet } | null
     const broadcastNowRef = useRef(false); // next onDataChange skips the debounce (chart edits)
 
@@ -1292,17 +1298,48 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // overwrite another tab's/user's newer copy (409). Saves run one at a time
     // so a queued chart save and a manual Save can't race each other and trip
     // that check against their own previous write.
+    //
+    // When the server offers it, a meeting save sends a patch — just the cells and
+    // sheet settings that differ from the workbook the server holds — instead of
+    // the whole workbook. That workbook is tracked per meeting next to its version:
+    // set when the sheet loads, moved forward by each successful save. Anything a
+    // patch can't express (sheets added/removed/renamed, a bulk rewrite) and any
+    // patch the server won't take is saved in full, exactly as before.
     const meetingVersionsRef = useRef({}); // meetingId -> last version seen from the server
+    const savedWorkbooksRef = useRef({}); // meetingId -> { sheets, patchSave }: the workbook at that version
     const saveQueueRef = useRef(Promise.resolve());
     const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets: snapshot, activeSheet }) => {
         const run = async () => {
             if (!targetMeetingId) {
                 return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
             }
-            const res = await saveFnsRef.current.saveMeetingSheet({
-                meetingId: targetMeetingId, sheets: snapshot, activeSheet, version: meetingVersionsRef.current[targetMeetingId]
-            }).unwrap();
+            const version = meetingVersionsRef.current[targetMeetingId];
+            const saved = savedWorkbooksRef.current[targetMeetingId];
+
+            let res = null;
+            if (saved?.patchSave && version != null) {
+                let patch = diffWorkbook(saved.sheets, snapshot, { activeSheet });
+                // e.g. an embedded image: that's a full save's worth of bytes anyway.
+                if (patch && JSON.stringify(patch).length > MAX_PATCH_CHARS) patch = null;
+                if (patch) {
+                    try {
+                        res = await saveFnsRef.current.saveMeetingSheetPatch({
+                            meetingId: targetMeetingId, patch, version, sheets: snapshot, activeSheet
+                        }).unwrap();
+                    } catch (err) {
+                        // Rejected as a patch (not as a save): send the whole workbook.
+                        // A version conflict or a network failure is a real failure.
+                        if (![400, 404, 413].includes(err?.status)) throw err;
+                    }
+                }
+            }
+            if (!res) {
+                res = await saveFnsRef.current.saveMeetingSheet({
+                    meetingId: targetMeetingId, sheets: snapshot, activeSheet, version
+                }).unwrap();
+            }
             if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
+            if (saved) savedWorkbooksRef.current[targetMeetingId] = { ...saved, sheets: snapshot };
             return res;
         };
         const result = saveQueueRef.current.then(run, run);
@@ -1344,6 +1381,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             // Taken only at load: a later background refetch must not move the
             // version forward while the grid still holds the older sheets.
             if (meetingId && sheetData.data.version != null) meetingVersionsRef.current[meetingId] = sheetData.data.version;
+            // Likewise the workbook patches are diffed against: what the server holds at that version.
+            if (meetingId) savedWorkbooksRef.current[meetingId] = { sheets: sanitizedSheets, patchSave: !!sheetData.data.capabilities?.patchSave };
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];

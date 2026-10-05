@@ -8,6 +8,7 @@ import {
     cloneMeeting,
     updateMeeting,
     saveMeetingSheet,
+    saveMeetingSheetPatch,
     migrateMeetingToM365,
     refreshMeetingEmbedUrl,
     openMeetingInM365,
@@ -36,6 +37,7 @@ router.post("/", authorizeRoles("daily_meeting:create", "isAdmin", "SUPERADMIN")
 router.post("/:id/clone", authorizeRoles("daily_meeting:create", "isAdmin", "SUPERADMIN"), cloneMeeting);
 router.put("/:id", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), updateMeeting);
 router.post("/:id/sheet", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), saveMeetingSheet);
+router.post("/:id/sheet/patch", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), saveMeetingSheetPatch);
 router.post("/:id/migrate-to-m365", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), migrateMeetingToM365);
 router.post("/:id/refresh-embed-url", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), refreshMeetingEmbedUrl);
 // Reconciliation creates new rows for files found in SharePoint, so it's gated

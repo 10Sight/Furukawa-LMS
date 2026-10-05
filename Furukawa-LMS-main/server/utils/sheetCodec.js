@@ -44,6 +44,10 @@ export const encodeSheetPayload = async (json, { compress = ENV.SHEET_COMPRESSIO
     return { text: COMPRESSED_PLACEHOLDER, gz, rawBytes, storedBytes: gz.length };
 };
 
+// Unconditional gzip of a short text (a sheet patch), and its inverse.
+export const gzipText = (text) => gzip(text, { level: GZIP_LEVEL });
+export const gunzipText = async (gz) => (await gunzip(gz, { maxOutputLength: MAX_INFLATED_BYTES })).toString("utf8");
+
 /**
  * The workbook JSON for a stored row: the compressed column when it has content,
  * otherwise the text column as is.

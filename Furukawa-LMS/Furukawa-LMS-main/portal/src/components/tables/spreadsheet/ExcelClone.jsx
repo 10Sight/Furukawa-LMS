@@ -23,8 +23,8 @@ import {
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
-<<<<<<< HEAD:Furukawa-LMS/Furukawa-LMS-main/portal/src/components/tables/spreadsheet/ExcelClone.jsx
-    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation
+    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation,
+    useSaveDailyMorningMeetingSheetPatchMutation
 } from "@/services/api/DepartmentApi.js";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
@@ -34,25 +34,9 @@ import { patternWithDecimals } from "../../../constants/spreadsheets/numberForma
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
+import { diffWorkbook } from "./workbookDiff.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
-=======
-    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation,
-    useSaveDailyMorningMeetingSheetPatchMutation
-} from "@/Redux/AllApi/DepartmentApi";
-import {
-    getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
-    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE
-} from "./formulaEngine";
-import { patternWithDecimals } from "./numberFormatCatalog";
-import { parseDateTimeText } from "./formulaValues";
-import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs";
-import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "./pivotEngine";
-import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "./workbookUpdate";
-import { diffWorkbook } from "./workbookDiff";
-import { cn } from "@/lib/utils";
-import FullScreenFrame from "./FullScreenFrame";
->>>>>>> feat/sheet-patch-saves:Furukawa-LMS-main/admin/src/components/admin/excelClone/ExcelClone.jsx
 import {
     RibbonGroup, RibbonStack, RibbonRow, RibbonDivider, RibbonBtn, RibbonDropdown, RibbonSplit,
     MenuItem, MenuSeparator, MenuHeader, MenuClose, ColorSplitButton, RibbonCombo,
@@ -90,7 +74,6 @@ const ORIENTATION_OPTIONS = [
 const HISTORY_LIMIT = 30;
 const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
-<<<<<<< HEAD:Furukawa-LMS/Furukawa-LMS-main/portal/src/components/tables/spreadsheet/ExcelClone.jsx
 
 // Deep-clones the workbook's containers the way a JSON round-trip would
 // (undefined props dropped, non-finite numbers -> null), but strings are
@@ -108,13 +91,8 @@ const cloneWorkbook = (value) => {
     }
     return out;
 };
-=======
 // A patch bigger than this (as JSON) is sent as a full workbook save instead.
 const MAX_PATCH_CHARS = 1024 * 1024;
-// Above this many selected cells, the status-bar totals walk the sheet's
-// filled cells instead of every cell of the selection.
-const SELECTION_SCAN_LIMIT = 20000;
->>>>>>> feat/sheet-patch-saves:Furukawa-LMS-main/admin/src/components/admin/excelClone/ExcelClone.jsx
 const NUMBER_FORMATS = [
     { value: "general", label: "General" },
     { value: "number", label: "Number" },
@@ -1302,18 +1280,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Latest values for the debounced chart save below, which fires from a
     // timer (or on unmount) and so can't rely on a render's closure.
     const sheetsRef = useRef(sheets);
-<<<<<<< HEAD:Furukawa-LMS/Furukawa-LMS-main/portal/src/components/tables/spreadsheet/ExcelClone.jsx
     sheetsRef.current = sheets;
-    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet });
-    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet };
-=======
-    const setSheets = useCallback((next) => {
-        sheetsRef.current = next;
-        setSheetsState(next);
-    }, []);
     const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch });
     saveFnsRef.current = { saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch };
->>>>>>> feat/sheet-patch-saves:Furukawa-LMS-main/admin/src/components/admin/excelClone/ExcelClone.jsx
     const chartSaveRef = useRef(null); // { timer, meetingId, sectionId, activeSheet } | null
     const broadcastNowRef = useRef(false); // next onDataChange skips the debounce (chart edits)
 

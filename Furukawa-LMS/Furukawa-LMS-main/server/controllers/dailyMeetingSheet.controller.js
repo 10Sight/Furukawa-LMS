@@ -73,13 +73,14 @@ export const saveDailyMeetingSheet = async (req, res) => {
             return res.status(400).json({ success: false, message: "Section ID is required" });
         }
         const workbook = normalizeWorkbook({ sheets: sheets || {}, activeSheet });
-        const sheet = await DailyMeetingSheet.upsert(sectionId, workbook);
-        const parsedData = normalizeWorkbook(parseSheetData(sheet.data));
+        await DailyMeetingSheet.upsert(sectionId, workbook);
 
+        // The saved workbook is the one just written — echo it back as is rather than
+        // reading it out of the database and parsing it again.
         return res.status(200).json({
             success: true,
             message: "Spreadsheet saved successfully",
-            data: { sectionId, sheets: parsedData.sheets, activeSheet: parsedData.activeSheet }
+            data: { sectionId, sheets: workbook.sheets, activeSheet: workbook.activeSheet }
         });
     } catch (error) {
         logger.error("Error in saveDailyMeetingSheet:", error);

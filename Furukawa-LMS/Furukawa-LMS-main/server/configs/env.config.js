@@ -48,6 +48,16 @@ const ENV = {
     BASE_URL: process.env.BASE_URL || "http://192.168.90.19:5174",
     APP_BASE_URL: process.env.APP_BASE_URL || "http://192.168.90.19:5174",
 
+    // Spreadsheet storage. Changing either needs only a restart: the server converts
+    // existing data to match on startup (see services/sheetStorageMaintenance.js).
+    //
+    // Store large workbooks gzipped (see utils/sheetCodec.js). On unless set to "false";
+    // set it to "false" and restart before deploying a release from before this existed.
+    SHEET_COMPRESSION_WRITE: process.env.SHEET_COMPRESSION_WRITE !== "false",
+    // Let spreadsheet clients save changed cells as a patch instead of the whole
+    // workbook (see utils/sheetWorkbook.js). Off unless set to "true".
+    SHEET_PATCH_SAVE: process.env.SHEET_PATCH_SAVE === "true",
+
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,
     STUDENT_URL: process.env.STUDENT_URL,
     SUPERADMIN_URL: process.env.SUPERADMIN_URL,

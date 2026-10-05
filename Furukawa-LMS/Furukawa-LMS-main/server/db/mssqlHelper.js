@@ -35,7 +35,9 @@ const executeRequest = async (request, processedQuery, queryText, label) => {
         // which complicates simple translation. If we just need rows, we return recordset.
         const fakeMetadata = {
             insertId: null, // We'll need to manually ensure output inserted.id is used if we need insertId
-            affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0
+            affectedRows: result.rowsAffected ? result.rowsAffected[0] : 0,
+            // Every result set of a multi-statement batch; `rows` above is only the first.
+            recordsets: result.recordsets || []
         };
 
         return [result.recordset || [], fakeMetadata];

@@ -355,6 +355,32 @@ export const departmentApi = createApi({
             },
         }),
 
+        saveDailyMorningMeetingSheetPatch: builder.mutation({
+            // Sends only `patch` (what changed since `version`, see workbookDiff.js).
+            // `sheets`/`activeSheet` are the full workbook the patch produces; they
+            // never leave the browser — they're here to update the cache below.
+            query: ({ meetingId, patch, version }) => ({
+                url: `/api/daily-morning-meetings/${meetingId}/sheet/patch`,
+                method: "POST",
+                data: { patch, version }
+            }),
+            async onQueryStarted({ meetingId, sheets, activeSheet }, { dispatch, queryFulfilled }) {
+                try {
+                    const { data: response } = await queryFulfilled;
+                    dispatch(
+                        departmentApi.util.updateQueryData('getDailyMorningMeetingDetail', String(meetingId), (draft) => {
+                            if (!draft?.data) return;
+                            draft.data.sheets = sheets;
+                            draft.data.activeSheet = activeSheet;
+                            if (response?.data?.version != null) draft.data.version = response.data.version;
+                        })
+                    );
+                } catch {
+                    // Save failed — leave the cache as is; the error is surfaced via .unwrap() at the call site.
+                }
+            },
+        }),
+
         deleteDailyMorningMeeting: builder.mutation({
             query: ({ meetingId }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}`,
@@ -452,6 +478,7 @@ export const {
     useCloneDailyMorningMeetingMutation,
     useUpdateDailyMorningMeetingMutation,
     useSaveDailyMorningMeetingSheetMutation,
+    useSaveDailyMorningMeetingSheetPatchMutation,
     useDeleteDailyMorningMeetingMutation,
     useMigrateDailyMorningMeetingToM365Mutation,
     useRefreshDailyMorningMeetingEmbedUrlMutation,

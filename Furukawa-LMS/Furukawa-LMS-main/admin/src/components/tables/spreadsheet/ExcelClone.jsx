@@ -4603,14 +4603,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         >
             {!readOnly && (
             <>
-            {/* Save floats at the bottom-left of the window so it stays in reach
-                however far the sheet is scrolled. z-[45]: above the meeting
+            {/* Save floats at the bottom-right of the window so it stays in reach
+                however far the sheet is scrolled, raised clear of the sheet
+                tabs / zoom bar along the bottom edge. z-[45]: above the meeting
                 view, below dialogs and the chart's full-screen overlay. */}
             <Button
                 onClick={handleSave}
                 disabled={isSaving}
                 title="Save (Ctrl+S)"
-                className="fixed left-4 bottom-4 z-[45] h-10 px-4 rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                className="fixed right-6 bottom-16 z-[45] h-10 px-4 rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
             >
                 {isSaving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
                 {isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}

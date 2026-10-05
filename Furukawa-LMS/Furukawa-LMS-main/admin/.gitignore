@@ -43,3 +43,6 @@ workbox-*.js.map
 *.local
 .vercel
 coverage/
+
+
+Furukawa-LMS-main/

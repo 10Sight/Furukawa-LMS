@@ -48,12 +48,14 @@ const ENV = {
     BASE_URL: process.env.BASE_URL || "http://192.168.90.19:5174",
     APP_BASE_URL: process.env.APP_BASE_URL || "http://192.168.90.19:5174",
 
-    // Store large spreadsheet workbooks gzipped (see utils/sheetCodec.js). Reading the
-    // compressed form needs no flag; only turn this on once every running server has it.
-    SHEET_COMPRESSION_WRITE: process.env.SHEET_COMPRESSION_WRITE === "true",
-    // Tell spreadsheet clients they may save changed cells as a patch instead of the
-    // whole workbook (see utils/sheetWorkbook.js). Stored patches are always read back,
-    // whatever this says; turning it off only stops clients creating new ones.
+    // Spreadsheet storage. Changing either needs only a restart: the server converts
+    // existing data to match on startup (see services/sheetStorageMaintenance.js).
+    //
+    // Store large workbooks gzipped (see utils/sheetCodec.js). On unless set to "false";
+    // set it to "false" and restart before deploying a release from before this existed.
+    SHEET_COMPRESSION_WRITE: process.env.SHEET_COMPRESSION_WRITE !== "false",
+    // Let spreadsheet clients save changed cells as a patch instead of the whole
+    // workbook (see utils/sheetWorkbook.js). Off unless set to "true".
     SHEET_PATCH_SAVE: process.env.SHEET_PATCH_SAVE === "true",
 
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,

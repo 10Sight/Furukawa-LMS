@@ -363,6 +363,11 @@ export const saveMeetingSheet = async (req, res) => {
 // one whenever a change can't be expressed as a patch.
 export const saveMeetingSheetPatch = async (req, res) => {
     try {
+        // A client that loaded the meeting while patch saves were on may still send
+        // one after they've been turned off. 404 makes it save the whole workbook.
+        if (!ENV.SHEET_PATCH_SAVE) {
+            return res.status(404).json({ success: false, message: "Patch saves are not enabled" });
+        }
         const { id } = req.params;
         const { patch, version } = req.body;
         // Required here, unlike the full save: a patch only means something against

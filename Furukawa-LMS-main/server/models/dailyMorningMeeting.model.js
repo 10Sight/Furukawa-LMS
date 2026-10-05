@@ -317,11 +317,93 @@ class DailyMorningMeeting {
         }
     }
 
-    // Ids of meetings that currently have patch rows, for the maintenance script.
+    // --- Storage maintenance (see services/sheetStorageMaintenance.js) ---------------
+
+    // Ids of meetings that currently have patch rows.
     static async findIdsWithPatches() {
         await schemaReady;
         const [rows] = await executeQuery("SELECT DISTINCT meetingId FROM daily_morning_meeting_patches ORDER BY meetingId");
         return rows.map((r) => r.meetingId);
+    }
+
+    // Removes patch rows that a later full save has made unreachable — ones older than
+    // the current version when the current version itself has no patch. They are
+    // never applied (see the note at the top of this file); this only tidies up.
+    static async purgeSupersededPatches(id) {
+        await executeQuery(
+            `DELETE p FROM daily_morning_meeting_patches p
+             JOIN daily_morning_meetings m ON m.id = p.meetingId
+             WHERE p.meetingId = ? AND p.version < m.version
+               AND NOT EXISTS (SELECT 1 FROM daily_morning_meeting_patches c WHERE c.meetingId = m.id AND c.version = m.version)`,
+            [id]
+        );
+    }
+
+    // Ids of meetings whose snapshot is not stored the way `compressed` asks for,
+    // smallest first. For compressed = true, snapshots too small to be worth
+    // compressing are left out (32K characters, at two bytes each in NVARCHAR).
+    static async findIdsToConvert(compressed) {
+        await schemaReady;
+        const [rows] = await executeQuery(
+            compressed
+                ? "SELECT id FROM daily_morning_meetings WHERE sheetDataGz IS NULL AND DATALENGTH(sheetData) >= 65536 ORDER BY DATALENGTH(sheetData), id"
+                : "SELECT id FROM daily_morning_meetings WHERE sheetDataGz IS NOT NULL ORDER BY DATALENGTH(sheetDataGz), id",
+            [],
+            { longRunning: true }
+        );
+        return rows.map((r) => r.id);
+    }
+
+    // Moves one meeting's snapshot into the gzipped column (compressed = true) or back
+    // to plain text (false). The row is rewritten only if its `version` is still the
+    // one that was read, so a save that lands meanwhile is never overwritten — the row
+    // is simply left for the next run. Neither `version` nor `updatedAt` is touched:
+    // the workbook's content is unchanged, so open editors keep saving normally and
+    // browser caches stay valid. Pending patches are unaffected.
+    // Returns { changed, fromBytes, toBytes } or { changed: false, reason }.
+    static async convertSnapshotStorage(id, compressed, { dryRun = false } = {}) {
+        await schemaReady;
+        const LONG = { longRunning: true };
+        const [[row]] = await executeQuery(
+            `SELECT sheetData, sheetDataGz, version FROM daily_morning_meetings WHERE id = ? AND sheetDataGz IS ${compressed ? "NULL" : "NOT NULL"}`,
+            [id], LONG
+        );
+        if (!row) return { changed: false, reason: "already stored that way, or deleted" };
+
+        let fromBytes, toBytes, sql, params;
+        if (compressed) {
+            if (row.sheetData == null) return { changed: false, reason: "no workbook stored" };
+            const { text, gz, storedBytes } = await encodeSheetPayload(row.sheetData, { compress: true });
+            if (!gz) return { changed: false, reason: "too small to be worth compressing" };
+            // Prove the compressed copy reads back exactly before it replaces the original.
+            if ((await decodeSheetPayload(text, gz)) !== row.sheetData) {
+                throw new Error("round-trip check failed; row left untouched");
+            }
+            fromBytes = row.sheetData.length * 2;
+            toBytes = storedBytes;
+            sql = "UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = ? WHERE id = ? AND version = ? AND sheetDataGz IS NULL";
+            params = [text, gz, id, row.version];
+        } else {
+            const json = await decodeSheetPayload(row.sheetData, row.sheetDataGz);
+            fromBytes = row.sheetDataGz.length;
+            toBytes = json.length * 2;
+            sql = "UPDATE daily_morning_meetings SET sheetData = ?, sheetDataGz = NULL WHERE id = ? AND version = ? AND sheetDataGz IS NOT NULL";
+            params = [json, id, row.version];
+        }
+        if (dryRun) return { changed: false, reason: "dry run", fromBytes, toBytes };
+
+        const [, result] = await executeQuery(sql, params, LONG);
+        return result.affectedRows
+            ? { changed: true, fromBytes, toBytes }
+            : { changed: false, reason: "saved by someone meanwhile; left for the next run" };
+    }
+
+    // Hands the space freed by compressing snapshots back to the data file. Online, and
+    // safe to run at any time; it just has nothing to do unless large values shrank.
+    static async reclaimSnapshotSpace() {
+        await executeQuery(
+            "ALTER INDEX ALL ON daily_morning_meetings REORGANIZE WITH (LOB_COMPACTION = ON)", [], { longRunning: true }
+        );
     }
 
     static async updateM365Info(id, { fileProvider, m365DriveId, m365ItemId, m365WebUrl, m365EmbedUrl }) {

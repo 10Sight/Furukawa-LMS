@@ -69,6 +69,7 @@ import planNotificationScheduler from "./services/planNotificationScheduler.js";
 import headcountReportScheduler from "./services/headcountReportScheduler.js";
 import DojoStageHistory from "./models/dojoStagHistory.model.js";
 import dojoStageHistoryScheduler from "./services/dojoStageHistoryScheduler.js";
+import sheetStorageMaintenance from "./services/sheetStorageMaintenance.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -548,6 +549,7 @@ const startServer = async () => {
                 planNotificationScheduler.init();
                 headcountReportScheduler.init();
                 dojoStageHistoryScheduler.init();
+                sheetStorageMaintenance.init();
 
                 // Deliberately no historical backfill here. dojo_stage_history should only ever hold
                 // snapshots that were actually captured on (or very near) the date they're for — via
@@ -571,6 +573,7 @@ const startServer = async () => {
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();
+            sheetStorageMaintenance.stop();
             process.exit(0);
         });
 
@@ -583,6 +586,7 @@ const startServer = async () => {
             sixteenDayEligibilityScheduler.stop();
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();
+            sheetStorageMaintenance.stop();
             process.exit(0);
         });
 

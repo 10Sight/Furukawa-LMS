@@ -8,9 +8,10 @@ import ENV from "../configs/env.config.js";
 // VARBINARY(MAX) column instead; small ones stay as plain text where they are still
 // readable in a query window.
 //
-// Reading always understands both forms. Writing the compressed form is opt-in
-// (SHEET_COMPRESSION_WRITE=true) so that the release that can read it is running
-// everywhere before any row is written that an older release could not read.
+// Reading always understands both forms. Writing the compressed form can be turned
+// off (SHEET_COMPRESSION_WRITE=false), which is what makes it possible to go back to
+// a release that only knows the text column: services/sheetStorageMaintenance.js
+// converts every existing row to match the setting.
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);

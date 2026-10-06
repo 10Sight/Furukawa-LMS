@@ -19,6 +19,7 @@ import {
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
 import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
 
@@ -764,6 +765,21 @@ const processSingleEmployeeRow = async ({
                 } else {
                     updatedData.joiningDate = rejoiningDate;
                 }
+            }
+
+            // validateImportDates above only compares the two dates within the Excel row. A row
+            // that fills in just one of them still has to agree with the other date already on
+            // file, so re-check the effective pair that this update would leave behind.
+            const effectiveDateError = getJoiningLeavingDateError(
+                updatedData.joiningDate !== undefined ? updatedData.joiningDate : existingUser.joiningDate,
+                updatedData.leavingDate !== undefined ? updatedData.leavingDate : existingUser.leavingDate
+            );
+            if (effectiveDateError) {
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "FAILED", effectiveDateError]
+                );
+                return { status: "FAILED", rowNumber, error: effectiveDateError };
             }
 
             // Compute the updated statusHistory array whenever this row's diff above touched

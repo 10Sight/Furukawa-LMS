@@ -6,6 +6,7 @@ import LeftRequest from "../models/leftRequest.model.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import sendMail from "../utils/mail.util.js";
 import emailTemplates from "../utils/emailTemplates.js";
 import logAudit from "../utils/auditLogger.js";
@@ -105,7 +106,7 @@ const sendLeftRequestResolutionEmail = async (request) => {
 // request stays meaningful even if the operator's assignment changes afterward.
 const loadTargetUser = async (userId) => {
     const [rows] = await executeQuery(`
-        SELECT id, fullName, empId, status, departmentId, sectionId, lineId, subSectionId, stationId, isTemporary
+        SELECT id, fullName, empId, status, joiningDate, departmentId, sectionId, lineId, subSectionId, stationId, isTemporary
         FROM users
         WHERE id = ? AND (isDeleted = 0 OR isDeleted IS NULL)
     `, [userId]);
@@ -127,6 +128,9 @@ export const applyLeftRequest = asyncHandler(async (req, res) => {
     const targetUser = await loadTargetUser(userId);
     if (!targetUser) throw new ApiError("Associate not found", 404);
     if (targetUser.status === "LEFT") throw new ApiError("This associate has already left", 400);
+
+    const dateError = getJoiningLeavingDateError(targetUser.joiningDate, leavingDate);
+    if (dateError) throw new ApiError(dateError, 400);
 
     const existingPending = await LeftRequest.findPendingByUserId(userId);
     if (existingPending) throw new ApiError("A left request is already pending for this associate", 400);
@@ -184,6 +188,9 @@ export const bulkApplyLeftRequest = asyncHandler(async (req, res) => {
         const targetUser = await loadTargetUser(userId);
         if (!targetUser) { skipped.push({ userId, reason: "Not found" }); continue; }
         if (targetUser.status === "LEFT") { skipped.push({ userId, reason: "Already left" }); continue; }
+
+        const dateError = getJoiningLeavingDateError(targetUser.joiningDate, leavingDate);
+        if (dateError) { skipped.push({ userId, reason: dateError }); continue; }
 
         const existingPending = await LeftRequest.findPendingByUserId(userId);
         if (existingPending) { skipped.push({ userId, reason: "Already has a pending request" }); continue; }
@@ -265,6 +272,11 @@ const applyApproval = async (request, reviewer, hrReason, syncedBy) => {
     // users.leavingDate is NVARCHAR -- normalize to "YYYY-MM-DD" before it touches that column or
     // statusHistory, see toDateOnlyString's comment for why.
     const leavingDateStr = toDateOnlyString(request.leavingDate);
+
+    // Re-checked here because the associate's joiningDate may have been edited between the
+    // request being raised and HR approving it.
+    const dateError = getJoiningLeavingDateError(targetUser.joiningDate, leavingDateStr);
+    if (dateError) throw new ApiError(dateError, 400);
     const deptReason = request.reasonOfLeavingByDept || request.reasonOfLeaving;
     // Prefer the department snapshotted on the request (where it was raised from), falling
     // back to the associate's current department.
@@ -372,7 +384,15 @@ export const bulkApproveLeftRequests = asyncHandler(async (req, res) => {
         if (request.status !== "PENDING") { skipped.push({ id, reason: `Already ${request.status.toLowerCase()}` }); continue; }
 
         // A blank HR reason keeps each request's own department reason.
-        const result = await applyApproval(request, req.user, resolveHrReason(req.body, request), 'bulkApproveLeftRequests');
+        // applyApproval rejects a request whose leaving date now falls before the associate's
+        // joining date -- skip just that one instead of aborting the rest of the batch.
+        let result;
+        try {
+            result = await applyApproval(request, req.user, resolveHrReason(req.body, request), 'bulkApproveLeftRequests');
+        } catch (err) {
+            if (err instanceof ApiError && err.statuscode === 400) { skipped.push({ id, reason: err.message }); continue; }
+            throw err;
+        }
         if (!result) { skipped.push({ id, reason: "Associate no longer exists" }); continue; }
 
         approved.push(result.updatedRequest);

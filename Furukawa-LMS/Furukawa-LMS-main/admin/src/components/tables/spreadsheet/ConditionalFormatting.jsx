@@ -14,7 +14,7 @@ import { cn } from "@/utils/classNames.js";
 import { DialogShell } from "./ExcelDialogs.jsx";
 import { MenuItem, MenuSeparator, MenuSub, MenuHeader, MenuClose } from "./ribbonParts.jsx";
 import {
-    ICON_SETS, DATE_PERIODS, VISUAL_RULE_TYPES, TYPE_DEFAULTS, CATEGORY_DEFAULT_TYPE, blankRule, describeRule, newRuleId, ruleTouchesBounds, parseRangesText, formatRangesText,
+    ICON_SETS, DATE_PERIODS, VISUAL_RULE_TYPES, TYPE_DEFAULTS, CATEGORY_DEFAULT_TYPE, blankRule, describeRule, isReadableFormula, newRuleId, ruleTouchesBounds, parseRangesText, formatRangesText,
 } from "../../../utils/spreadsheets/conditionalFormat.js";
 
 // ---------------------------------------------------------------------------
@@ -407,11 +407,12 @@ const RULE_CATEGORIES = [
     ["rank", "Format only top or bottom ranked values"],
     ["average", "Format only values that are above or below average"],
     ["unique", "Format only unique or duplicate values"],
+    ["formula", "Use a formula to determine which cells to format"],
 ];
 const CATEGORY_OF_TYPE = {
     dataBar: "values", colorScale: "values", iconSet: "values",
     cellIs: "contain", text: "contain", date: "contain", blanks: "contain", noBlanks: "contain", errors: "contain", noErrors: "contain",
-    top: "rank", average: "average", duplicate: "unique", unique: "unique",
+    top: "rank", average: "average", duplicate: "unique", unique: "unique", formula: "formula",
 };
 const CONTAIN_TYPES = [
     ["cellIs", "Cell Value"], ["text", "Specific Text"], ["date", "Dates Occurring"],
@@ -424,14 +425,18 @@ const CELL_IS_OPERATORS = [
 const TEXT_OPERATORS = [["contains", "containing"], ["notContains", "not containing"], ["beginsWith", "beginning with"], ["endsWith", "ending with"]];
 const AVERAGE_MODES = [["above", "above"], ["below", "below"], ["equalAbove", "equal or above"], ["equalBelow", "equal or below"]];
 
+// Cut-off points (from an imported rule) are kept while they still match the rule's shape.
+const pointsFor = (draft, count) => (Array.isArray(draft.points) && draft.points.length === count ? { points: draft.points } : null);
+const asFormula = (text) => { const body = String(text ?? "").trim(); return body.startsWith("=") ? body : `=${body}`; };
+
 // Keeps only what the rule's type uses, so switching types never leaves stale settings behind.
 const finalizeRule = (draft) => {
     const base = { id: draft.id, type: draft.type, ranges: draft.ranges };
     if (draft.byDisplay) base.byDisplay = true;
     switch (draft.type) {
-        case "dataBar": return { ...base, color: draft.color || "#638ec6", gradient: !!draft.gradient };
-        case "colorScale": return { ...base, colors: draft.colors };
-        case "iconSet": return { ...base, set: draft.set, ...(draft.reverse ? { reverse: true } : null) };
+        case "dataBar": return { ...base, color: draft.color || "#638ec6", gradient: !!draft.gradient, ...pointsFor(draft, 2) };
+        case "colorScale": return { ...base, colors: draft.colors, ...pointsFor(draft, draft.colors.length) };
+        case "iconSet": return { ...base, set: draft.set, ...(draft.reverse ? { reverse: true } : null), ...pointsFor(draft, ICON_SETS[draft.set]?.icons.length) };
         default: break;
     }
     const rule = { ...base, format: draft.format || {}, ...(draft.stopIfTrue ? { stopIfTrue: true } : null) };
@@ -444,14 +449,22 @@ const finalizeRule = (draft) => {
         case "date": return { ...rule, period: draft.period };
         case "top": return { ...rule, rank: Math.floor(Number(draft.rank)), ...(draft.bottom ? { bottom: true } : null), ...(draft.percent ? { percent: true } : null) };
         case "average": return { ...rule, mode: draft.mode };
+        case "formula": return { ...rule, formula: asFormula(draft.formula) };
         default: return rule;
     }
 };
 
 const problemWith = (draft) => {
     if (draft.type === "cellIs") {
-        if (String(draft.value ?? "").trim() === "") return "Enter a value for the rule.";
-        if ((draft.operator === "between" || draft.operator === "notBetween") && String(draft.value2 ?? "").trim() === "") return "Enter both values for the rule.";
+        const two = draft.operator === "between" || draft.operator === "notBetween";
+        const values = [draft.value, ...(two ? [draft.value2] : [])].map((v) => String(v ?? "").trim());
+        if (values[0] === "") return "Enter a value for the rule.";
+        if (values.includes("")) return "Enter both values for the rule.";
+        if (values.some((v) => v.startsWith("=") && !isReadableFormula(v))) return "That formula can't be read. Check it for a typing mistake.";
+    }
+    if (draft.type === "formula") {
+        if (String(draft.formula ?? "").trim() === "") return "Enter a formula for the rule.";
+        if (!isReadableFormula(asFormula(draft.formula))) return "That formula can't be read. Check it for a typing mistake.";
     }
     if (draft.type === "text" && String(draft.text ?? "") === "") return "Enter the text to look for.";
     if (draft.type === "top") {
@@ -466,7 +479,7 @@ const RuleEditorForm = ({ initialRule, onSave, onCancel }) => {
     const [draft, setDraft] = useState(initialRule);
     const category = CATEGORY_OF_TYPE[draft.type] || "contain";
     const patch = (changes) => setDraft((d) => ({ ...d, ...changes }));
-    const setType = (type) => setDraft((d) => (d.type === type ? d : { ...d, ...TYPE_DEFAULTS[type], type }));
+    const setType = (type) => setDraft((d) => (d.type === type ? d : { ...d, points: undefined, ...TYPE_DEFAULTS[type], type }));
     const field = (key) => (e) => patch({ [key]: e.target.value });
     const isVisual = VISUAL_RULE_TYPES.has(draft.type);
     const scaleStyle = draft.type === "colorScale" ? (draft.colors?.length === 3 ? "scale3" : "scale2") : draft.type;
@@ -498,7 +511,6 @@ const RuleEditorForm = ({ initialRule, onSave, onCancel }) => {
                         ► {label}
                     </button>
                 ))}
-                <div className="w-full text-left text-sm px-2 py-1 text-slate-400" title="Formula rules aren't supported yet">► Use a formula to determine which cells to format</div>
             </div>
 
             <div className="text-xs font-semibold text-slate-600 mt-4 mb-1">Edit the Rule Description:</div>
@@ -621,6 +633,23 @@ const RuleEditorForm = ({ initialRule, onSave, onCancel }) => {
                         </select>
                         <span>values in the selected range</span>
                     </div>
+                )}
+
+                {category === "formula" && (
+                    <label className="block text-sm text-slate-700">
+                        Format values where this formula is true:
+                        <input
+                            autoFocus
+                            spellCheck={false}
+                            className={cn(INPUT, "w-full font-mono mt-1")}
+                            placeholder="=$B1>100"
+                            value={draft.formula ?? ""}
+                            onChange={field("formula")}
+                        />
+                        <span className="block text-[11px] text-slate-500 mt-1">
+                            Write it for the top-left cell of the range. References without $ move with each cell; $ keeps a column or row fixed.
+                        </span>
+                    </label>
                 )}
 
                 {!isVisual && <FormatEditor value={draft.format} onChange={(format) => patch({ format })} />}

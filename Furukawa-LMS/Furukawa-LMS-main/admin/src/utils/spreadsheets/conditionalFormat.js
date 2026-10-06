@@ -17,10 +17,21 @@
 //   dataBar       color, gradient
 //   colorScale    colors: [min, max] or [min, mid, max]
 //   iconSet       set (a key of ICON_SETS), reverse
+//   formula       formula ("=$B2>100", written for the top-left cell of the range)
+//
+// A cellIs value may itself be a formula ("=$C$1*2"); like a formula rule it is
+// written for the top-left cell and its relative references move with each cell.
+//
+// The three value-based styles normally scale between the lowest and highest
+// value. `points` overrides that with explicit cut-offs, each
+// { type: min|max|num|percent|percentile, value }:
+//   colorScale    one point per colour
+//   dataBar       [shortest bar, longest bar]
+//   iconSet       where each icon starts, lowest icon first (the first is ignored)
 //
 // `format` is { bg, color, bold, italic, underline, strike, borderColor }.
 
-import { parseCellRef, getCellId } from "./formulaEngine.js";
+import { parseCellRef, getCellId, adjustFormula, parseFormula } from "./formulaEngine.js";
 import { parseDateTimeText, dateToSerial, serialToParts, nowSerial } from "./formulaValues.js";
 
 export const VISUAL_RULE_TYPES = new Set(["dataBar", "colorScale", "iconSet"]);
@@ -58,8 +69,15 @@ export const TYPE_DEFAULTS = {
     date: { period: "yesterday" },
     top: { rank: 10 },
     average: { mode: "above" },
+    formula: { formula: "" },
 };
-export const CATEGORY_DEFAULT_TYPE = { values: "colorScale", contain: "cellIs", rank: "top", average: "average", unique: "duplicate" };
+export const CATEGORY_DEFAULT_TYPE = { values: "colorScale", contain: "cellIs", rank: "top", average: "average", unique: "duplicate", formula: "formula" };
+
+// Whether text is a formula the engine can read ("=A1>5"); used to check rule input.
+export const isReadableFormula = (text) => {
+    const body = String(text ?? "").trim();
+    return body.startsWith("=") && body.length > 1 && parseFormula(body).type !== "err";
+};
 
 // A blank rule for the dialog. `preset` is a category ("rank") or, for the
 // value-based styles, "values:<type>".
@@ -184,6 +202,7 @@ export const describeRule = (rule) => {
         case "dataBar": return "Data Bar";
         case "colorScale": return "Graded Color Scale";
         case "iconSet": return "Icon Set";
+        case "formula": return `Formula: ${rule.formula}`;
         default: return "Rule";
     }
 };
@@ -225,6 +244,29 @@ const datePeriodBounds = (period, today) => {
     }
 };
 
+// The value at the p-th percentile of an ascending list (linear interpolation, like Excel).
+const percentileOf = (sorted, p) => {
+    if (!sorted.length) return null;
+    const pos = ((sorted.length - 1) * Math.min(100, Math.max(0, p))) / 100;
+    const low = Math.floor(pos), high = Math.ceil(pos);
+    return sorted[low] + (sorted[high] - sorted[low]) * (pos - low);
+};
+
+// Where a cut-off point falls among a range's values (ascending), or null when it can't be read.
+const pointValue = (point, sorted) => {
+    if (!point || !sorted.length) return null;
+    const lo = sorted[0], hi = sorted[sorted.length - 1];
+    const value = Number(point.value);
+    switch (point.type) {
+        case "min": return lo;
+        case "max": return hi;
+        case "num": return Number.isFinite(value) ? value : null;
+        case "percent": return Number.isFinite(value) ? lo + ((hi - lo) * value) / 100 : null;
+        case "percentile": return Number.isFinite(value) ? percentileOf(sorted, value) : null;
+        default: return null;
+    }
+};
+
 // Above this many cells a rule's range is walked through the sheet's filled
 // cells instead of cell by cell, so a whole-column rule stays cheap.
 const DENSE_RANGE_LIMIT = 20000;
@@ -233,7 +275,9 @@ const DENSE_RANGE_LIMIT = 20000;
 //   display / raw : the evaluated grids (formatted text / number-or-string)
 //   cells         : the sheet's stored cells (for their number formats)
 //   today         : whole-day serial, for the date rules
-export const computeConditionalFormats = (rules, { display, raw, cells = {}, today = Math.floor(nowSerial()) }) => {
+//   evaluateAt    : (formula, row, col) => value, from evaluateSheet — needed
+//                   for formula rules and formulas used as rule values
+export const computeConditionalFormats = (rules, { display, raw, cells = {}, today = Math.floor(nowSerial()), evaluateAt = null }) => {
     const result = {};
     const list = normalizeRules(rules);
     if (!list.length) return result;
@@ -250,7 +294,7 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
         return filled;
     };
 
-    const entryFor = (id, rule) => {
+    const entryFor = (id, rule, row, col) => {
         const text = display[id];
         const shown = text === undefined || text === null ? "" : String(text);
         const value = raw[id];
@@ -263,7 +307,7 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
                 if (!isNaN(parsed)) num = parsed;
             } else if (typeof value === "number" && Number.isFinite(value)) num = value;
         }
-        return { id, shown, value, blank, error, num };
+        return { id, row, col, shown, value, blank, error, num };
     };
 
     const stopped = new Set();
@@ -271,15 +315,18 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
     for (const rule of list) {
         const seen = new Set();
         const entries = [];
+        // Rule formulas are written for the top-left cell of the first range.
+        let anchor = null;
         for (const range of rule.ranges || []) {
             const b = boundsOfRange(range);
             if (!b) continue;
+            if (!anchor) anchor = { row: b.minRow, col: b.minCol };
             const area = (b.maxRow - b.minRow + 1) * (b.maxCol - b.minCol + 1);
             if (area > DENSE_RANGE_LIMIT) {
                 for (const c of filledCells()) {
                     if (c.row < b.minRow || c.row > b.maxRow || c.col < b.minCol || c.col > b.maxCol || seen.has(c.id)) continue;
                     seen.add(c.id);
-                    entries.push(entryFor(c.id, rule));
+                    entries.push(entryFor(c.id, rule, c.row, c.col));
                 }
             } else {
                 for (let r = b.minRow; r <= b.maxRow; r++) {
@@ -287,7 +334,7 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
                         const id = getCellId(r, c);
                         if (seen.has(id)) continue;
                         seen.add(id);
-                        entries.push(entryFor(id, rule));
+                        entries.push(entryFor(id, rule, r, c));
                     }
                 }
             }
@@ -296,16 +343,22 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
 
         const effectFor = (id) => (result[id] || (result[id] = {}));
         const numbers = () => entries.filter((e) => e.num !== null).map((e) => e.num);
+        // The formula as it reads at a given cell, evaluated there.
+        const formulaAt = (formula, e) => evaluateAt(adjustFormula(formula, e.row - anchor.row, e.col - anchor.col), e.row, e.col);
 
         if (rule.type === "dataBar") {
             const nums = numbers();
             const maxAbs = nums.reduce((m, n) => Math.max(m, Math.abs(n)), 0);
+            const sorted = Array.isArray(rule.points) ? [...nums].sort((a, b) => a - b) : null;
+            const from = sorted ? pointValue(rule.points[0], sorted) : null;
+            const to = sorted ? pointValue(rule.points[1], sorted) : null;
+            const custom = from !== null && to !== null && to > from;
             for (const e of entries) {
                 if (e.num === null || stopped.has(e.id)) continue;
                 const effect = effectFor(e.id);
                 if (effect.dataBar) continue;
                 effect.dataBar = {
-                    pct: maxAbs ? Math.abs(e.num) / maxAbs : 0,
+                    pct: custom ? Math.min(1, Math.max(0, (e.num - from) / (to - from))) : maxAbs ? Math.abs(e.num) / maxAbs : 0,
                     color: e.num < 0 ? "#e34948" : rule.color || "#638ec6",
                     gradient: !!rule.gradient,
                 };
@@ -317,18 +370,19 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
             const nums = numbers().sort((a, b) => a - b);
             if (!nums.length) continue;
             const colors = Array.isArray(rule.colors) && rule.colors.length >= 2 ? rule.colors : ["#f8696b", "#63be7b"];
-            const lo = nums[0], hi = nums[nums.length - 1];
-            const midPos = (nums.length - 1) / 2;
-            const mid = (nums[Math.floor(midPos)] + nums[Math.ceil(midPos)]) / 2;
+            const points = Array.isArray(rule.points) && rule.points.length === colors.length ? rule.points.map((p) => pointValue(p, nums)) : [];
+            const lo = points[0] ?? nums[0], hi = points[colors.length - 1] ?? nums[nums.length - 1];
+            const mid = (colors.length === 3 ? points[1] : null) ?? percentileOf(nums, 50);
             for (const e of entries) {
                 if (e.num === null || stopped.has(e.id)) continue;
                 const effect = effectFor(e.id);
                 const style = effect.style || (effect.style = {});
                 if (style.bg !== undefined) continue;
-                if (hi === lo) { style.bg = colors[colors.length - 1]; continue; }
-                if (colors.length === 2) style.bg = mixColors(colors[0], colors[1], (e.num - lo) / (hi - lo));
-                else if (e.num <= mid) style.bg = mid === lo ? colors[1] : mixColors(colors[0], colors[1], (e.num - lo) / (mid - lo));
-                else style.bg = mixColors(colors[1], colors[2], (e.num - mid) / (hi - mid));
+                if (hi <= lo) { style.bg = colors[colors.length - 1]; continue; }
+                const v = Math.min(hi, Math.max(lo, e.num));
+                if (colors.length === 2) style.bg = mixColors(colors[0], colors[1], (v - lo) / (hi - lo));
+                else if (v <= mid) style.bg = mid <= lo ? colors[1] : mixColors(colors[0], colors[1], (v - lo) / (mid - lo));
+                else style.bg = hi <= mid ? colors[2] : mixColors(colors[1], colors[2], (v - mid) / (hi - mid));
             }
             continue;
         }
@@ -339,13 +393,27 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
             if (!nums.length) continue;
             const lo = Math.min(...nums), hi = Math.max(...nums);
             const count = set.icons.length;
+            // Explicit cut-offs: starts[i] is where the i-th icon from the bottom begins.
+            let starts = null;
+            if (Array.isArray(rule.points) && rule.points.length === count) {
+                const sorted = [...nums].sort((a, b) => a - b);
+                starts = rule.points.map((p) => ({ at: pointValue(p, sorted), exclusive: p?.gte === false }));
+                if (starts.slice(1).some((p) => p.at === null)) starts = null;
+            }
             for (const e of entries) {
                 if (e.num === null || stopped.has(e.id)) continue;
                 const effect = effectFor(e.id);
                 if (effect.icon) continue;
                 // Bands split the value range evenly; the top band gets icon 0.
-                const pct = hi === lo ? 1 : (e.num - lo) / (hi - lo);
-                let index = count - 1 - Math.min(count - 1, Math.floor(pct * count + 1e-9));
+                let index;
+                if (starts) {
+                    let band = 0;
+                    for (let i = 1; i < count; i++) if (starts[i].exclusive ? e.num > starts[i].at : e.num >= starts[i].at) band = i;
+                    index = count - 1 - band;
+                } else {
+                    const pct = hi === lo ? 1 : (e.num - lo) / (hi - lo);
+                    index = count - 1 - Math.min(count - 1, Math.floor(pct * count + 1e-9));
+                }
                 if (rule.reverse) index = count - 1 - index;
                 effect.icon = { set: rule.set in ICON_SETS ? rule.set : "3Arrows", index };
             }
@@ -356,28 +424,35 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
         let matches;
         switch (rule.type) {
             case "cellIs": {
-                const resolve = (v) => {
+                // A value is a constant, or a formula read afresh at each cell.
+                const operand = (v) => {
                     const text = String(v ?? "").trim();
-                    if (text.startsWith("=")) {
+                    if (text.startsWith("=") && text.length > 1) {
+                        if (evaluateAt) return (e) => formulaAt(text, e);
+                        // Without the formula engine only a plain cell reference can be read.
                         const ref = text.slice(1).replace(/\$/g, "").toUpperCase();
                         if (parseCellRef(ref)) {
                             const refRaw = raw[ref];
-                            return typeof refRaw === "number" ? refRaw : String(display[ref] ?? "");
+                            const fixed = typeof refRaw === "number" ? refRaw : String(display[ref] ?? "");
+                            return () => fixed;
                         }
-                        return text.slice(1).replace(/^"|"$/g, "");
+                        const literal = text.slice(1).replace(/^"|"$/g, "");
+                        return () => literal;
                     }
-                    return NUMERIC_RE.test(text) ? parseFloat(text) : text;
+                    const constant = NUMERIC_RE.test(text) ? parseFloat(text) : text.replace(/^"(.*)"$/, "$1");
+                    return () => constant;
                 };
-                const a = resolve(rule.value), b = resolve(rule.value2);
+                const a = operand(rule.value), b = operand(rule.value2);
                 const compare = (e, target) => {
+                    if (typeof target === "boolean") target = target ? "TRUE" : "FALSE";
                     if (typeof target === "number") return e.num === null ? null : e.num - target;
-                    if (e.blank || e.error) return null;
+                    if (e.blank || e.error || ERROR_RE.test(String(target))) return null;
                     return e.shown.toLowerCase().localeCompare(String(target).toLowerCase());
                 };
                 matches = (e) => {
-                    const ca = compare(e, a);
+                    const ca = compare(e, a(e));
                     if (rule.operator === "between" || rule.operator === "notBetween") {
-                        const cb = compare(e, b);
+                        const cb = compare(e, b(e));
                         if (ca === null || cb === null) return false;
                         const inside = (ca >= 0 && cb <= 0) || (ca <= 0 && cb >= 0);
                         return rule.operator === "between" ? inside : !inside;
@@ -456,6 +531,16 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
                         case "equalBelow": return e.num <= mean;
                         default: return e.num > mean;
                     }
+                };
+                break;
+            }
+            case "formula": {
+                const formula = String(rule.formula ?? "").trim();
+                const usable = !!evaluateAt && isReadableFormula(formula);
+                matches = (e) => {
+                    if (!usable) return false;
+                    const value = formulaAt(formula, e);
+                    return value === true || (typeof value === "number" && value !== 0);
                 };
                 break;
             }

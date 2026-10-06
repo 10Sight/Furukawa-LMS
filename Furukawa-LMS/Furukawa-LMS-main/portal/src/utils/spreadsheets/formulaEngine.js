@@ -919,10 +919,30 @@ export const evaluateSheet = (cells, options = {}) => {
         },
     });
 
+    // Evaluates a formula that isn't stored in any cell (a conditional
+    // formatting rule) as if it sat at (row, col), against this sheet's
+    // evaluated values. Returns a raw value like `raw` does: a number, text, a
+    // boolean, or an "#..." error code; an array result gives its first value.
+    const evaluateAt = (formulaText, row, col) => {
+        const ast = parseFormula(formulaText);
+        const id = getCellId(row, col);
+        let callCounter = 0;
+        const frame = { row, col, id, random: () => mulberry32(hashString(`${pass.seed}|cf|${id}|${callCounter++}`)) };
+        let result;
+        try {
+            result = pass.evalNode(ast, frame);
+        } catch {
+            return ERR.ERROR;
+        }
+        if (result instanceof Matrix) result = result.height && result.width ? result.rows[0][0] : err(ERR.CALC);
+        return rawValue(result);
+    };
+
     return {
         display: lazyView(0),
         raw: lazyView(1),
         spillAnchors: new Map([...known.spill].map(([id, s]) => [id, s.anchor])),
+        evaluateAt,
     };
 };
 

@@ -37,6 +37,7 @@ import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotShe
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
 import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
+import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
 import { diffWorkbook } from "./workbookDiff.js";
 import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
 import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
@@ -89,8 +90,6 @@ const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
 // A patch bigger than this (as JSON) is sent as a full workbook save instead.
 const MAX_PATCH_CHARS = 1024 * 1024;
-// With autosave on, unsaved edits are saved this long after the last one.
-const AUTOSAVE_DELAY_MS = 3000;
 // How many times a save that someone else's save got in ahead of is rebuilt on top of
 // theirs and sent again (live co-editing only) before it is reported as failed.
 const MAX_SAVE_RETRIES = 3;
@@ -362,6 +361,23 @@ const conditionalCellStyle = (cell, { style, icon }) => {
     }
     if (icon) base.paddingLeft = `${Math.max(22, parseInt(base.paddingLeft, 10) || 0)}px`;
     return base;
+};
+
+// The same overlay as inline CSS declarations for the printed table. A data
+// bar prints as a hard-stopped gradient; icons aren't printed.
+const printConditionalCss = (conditional, cell) => {
+    if (!conditional) return [];
+    const { style, dataBar } = conditional;
+    const bar = dataBar && `linear-gradient(90deg, ${dataBar.color} ${dataBar.pct * 100}%, transparent ${dataBar.pct * 100}%)`;
+    return [
+        style?.bg && `background:${style.bg};`,
+        bar && `background-image:${bar};`,
+        style?.color && `color:${style.color};`,
+        style?.bold && "font-weight:bold;",
+        style?.italic && "font-style:italic;",
+        (style?.underline || style?.strike) && `text-decoration:${[(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ")};`,
+        style?.borderColor && `outline:1px solid ${style.borderColor};outline-offset:-1px;`,
+    ];
 };
 
 const BORDER_COLOR = "#334155";
@@ -1175,7 +1191,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const loadedRef = useRef(false);
     const prevIdsRef = useRef({ sectionId, meetingId });
     // What the server offers for the meeting that is loaded (see the load effect).
-    const [sheetFeatures, setSheetFeatures] = useState({ liveSync: false, autosave: false });
+    const [sheetFeatures, setSheetFeatures] = useState({ liveSync: false });
     const [reloadNonce, setReloadNonce] = useState(0); // bumped to load the workbook again
 
     const [activeCell, setActiveCell] = useState("A1");
@@ -1468,11 +1484,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             // Likewise the workbook patches are diffed against: what the server holds at that version.
             const capabilities = (meetingId && sheetData.data.capabilities) || {};
             const patchSave = !!capabilities.patchSave;
-            // Both of these build on patch saves: without them every save is the whole workbook.
+            // Builds on patch saves: without them every save is the whole workbook.
             const liveSync = patchSave && !!capabilities.liveSync;
-            const autosave = patchSave && !!capabilities.autosave;
             if (meetingId) savedWorkbooksRef.current[meetingId] = { sheets: sanitizedSheets, patchSave, liveSync };
-            setSheetFeatures({ liveSync, autosave });
+            setSheetFeatures({ liveSync });
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];
@@ -1492,7 +1507,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (prev.sectionId !== sectionId || prev.meetingId !== meetingId) {
             flushChartSave();
             loadedRef.current = false;
-            setSheetFeatures({ liveSync: false, autosave: false });
+            setSheetFeatures({ liveSync: false });
             setIsDirty(false);
             setActiveCell("A1");
             setSelection({ start: "A1", end: "A1" });
@@ -1553,40 +1568,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         position: livePosition,
     });
     catchUpRef.current = catchUpNow;
-
-    // --- Autosave ---
-
-    // Saves a few seconds after the last edit, when the server offers it. Only edits
-    // that go as a small patch are saved this way; one that needs the whole workbook
-    // sent (a sheet added or renamed, a very large paste) waits for the Save button.
-    const autosaveFailedRef = useRef(false);
-    useEffect(() => {
-        if (readOnly || !meetingId || !sheetFeatures.autosave || !isDirty) return undefined;
-        const timer = setTimeout(async () => {
-            const snapshot = sheetsRef.current;
-            const saved = savedWorkbooksRef.current[meetingId];
-            if (!saved) return;
-            const pending = diffWorkbook(saved.sheets, snapshot);
-            if (!pending) return;
-            if (Object.keys(pending.sheets).length === 0) {
-                setIsDirty(false);
-                return;
-            }
-            if (JSON.stringify(pending).length > MAX_PATCH_CHARS) return;
-            try {
-                await saveWorkbook({ meetingId, sectionId, sheets: snapshot, activeSheet: activeSheetName });
-                autosaveFailedRef.current = false;
-                if (nothingLeftToSave(snapshot, meetingId)) setIsDirty(false);
-            } catch (err) {
-                // Said once, not after every edit; the next edit tries again quietly.
-                if (!autosaveFailedRef.current) {
-                    toast.error(saveErrorMessage(err, "Autosave failed. Your changes are still here — use Save to try again."));
-                }
-                autosaveFailedRef.current = true;
-            }
-        }, AUTOSAVE_DELAY_MS);
-        return () => clearTimeout(timer);
-    }, [readOnly, meetingId, sectionId, sheetFeatures.autosave, isDirty, sheets, activeSheetName, saveWorkbook, nothingLeftToSave]);
 
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
@@ -1749,8 +1730,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // highlighting immediately instead of baking in a one-time static color.
     // cellId -> { style, dataBar, icon }.
     const conditionalMap = useMemo(
-        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells }),
-        [conditionalRules, displayGrid, rawGrid, cells]
+        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells, evaluateAt: evaluation.evaluateAt }),
+        [conditionalRules, displayGrid, rawGrid, cells, evaluation]
     );
 
     // The updater mutates a draft of the workbook; only what it actually touches
@@ -3330,7 +3311,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         try {
             await saveWorkbook({ meetingId, sectionId, sheets, activeSheet: activeSheetName });
-            autosaveFailedRef.current = false;
             if (nothingLeftToSave(sheets, meetingId)) setIsDirty(false);
             toast.success("Spreadsheet saved successfully!");
         } catch (err) {
@@ -3382,6 +3362,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const usedNames = new Set();
             let processedRows = 0;
             let skippedMedia = 0;
+            const stopIfTrueBySheetId = {}; // ExcelJS worksheet id -> rule priorities flagged Stop If True
 
             for (let sheetIdx = 0; sheetIdx < sheetEntries.length; sheetIdx++) {
                 const [sheetName, sheet] = sheetEntries[sheetIdx];
@@ -3473,6 +3454,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 for (const c of sheet.hiddenCols || []) worksheet.getColumn(c + 1).hidden = true;
                 if (sheet.hidden) worksheet.state = "hidden";
 
+                const conditional = rulesToExcel(sheet.conditionalRules);
+                for (const block of conditional.blocks) {
+                    try { worksheet.addConditionalFormatting(block); } catch { /* a rule Excel's writer rejects — skip it rather than fail the whole export */ }
+                }
+                if (conditional.stopIfTrue.length) stopIfTrueBySheetId[worksheet.id] = conditional.stopIfTrue;
+
                 // Media is placed by absolute pixel position re-anchored against
                 // this sheet's own sizes, since a drag can leave an item's offset
                 // spanning past its anchor cell and Excel expects it within.
@@ -3504,7 +3491,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             workbook.views = [{ activeTab, firstSheet: 0, visibility: "visible" }];
 
             setIoProgress({ title: "Exporting Spreadsheet", label: "Generating file…", current: 0, total: 0 });
-            const buffer = await workbook.xlsx.writeBuffer();
+            let buffer = await workbook.xlsx.writeBuffer();
+            // ExcelJS has no "Stop If True" for conditional formatting; it is set in the file's XML.
+            if (Object.keys(stopIfTrueBySheetId).length) {
+                try {
+                    const JSZip = (await import("jszip")).default;
+                    const zip = await JSZip.loadAsync(buffer);
+                    await writeStopIfTrue(zip, stopIfTrueBySheetId);
+                    buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+                } catch { /* the export is still good, just without the Stop If True flags */ }
+            }
             const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -3548,6 +3544,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const usedNames = new Set();
                 let processedRows = 0;
                 let importedImageCount = 0, skippedUnsupportedImages = 0, skippedLargeImages = 0;
+                let importedRuleCount = 0, skippedRuleCount = 0;
+                // ExcelJS doesn't read "Stop If True" on conditional formatting; it comes from the file's XML.
+                let stopIfTrueBySheet = {};
+                try {
+                    const JSZip = (await import("jszip")).default;
+                    stopIfTrueBySheet = await readStopIfTrue(await JSZip.loadAsync(evt.target.result));
+                } catch { /* the rules still import, without the flag */ }
 
                 for (let wsIdx = 0; wsIdx < worksheets.length; wsIdx++) {
                     const worksheet = worksheets[wsIdx];
@@ -3612,9 +3615,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     skippedLargeImages += images.skippedTooLarge;
                     importedImageCount += images.media.length;
 
+                    const conditional = rulesFromExcel(worksheet.conditionalFormattings, {
+                        resolveColor: parseExcelColor,
+                        stopIfTrue: stopIfTrueBySheet[worksheet.name],
+                    });
+                    importedRuleCount += conditional.rules.length;
+                    skippedRuleCount += conditional.skipped;
+
                     importedSheets[sheetName] = {
                         ...emptySheet(),
                         cells: importedCells,
+                        conditionalRules: conditional.rules,
                         // Grown to cover picture anchors too, since media is
                         // positioned off the grid's row/column offsets.
                         rowCount: Math.max(DEFAULT_ROW_COUNT, maxRow, images.maxRow),
@@ -3645,7 +3656,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
                 const count = worksheets.length;
                 const imageNote = importedImageCount > 0 ? ` and ${importedImageCount} image${importedImageCount === 1 ? "" : "s"}` : "";
-                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}. Click Save to persist ${count === 1 && !imageNote ? "it" : "them"}.`);
+                const ruleNote = importedRuleCount > 0 ? `${imageNote ? "," : " with"} ${importedRuleCount} conditional formatting rule${importedRuleCount === 1 ? "" : "s"}` : "";
+                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}${ruleNote}. Click Save to persist ${count === 1 && !imageNote && !ruleNote ? "it" : "them"}.`);
+                if (skippedRuleCount > 0) {
+                    toast.warning(`${skippedRuleCount} conditional formatting rule${skippedRuleCount === 1 ? " was" : "s were"} skipped — no equivalent here.`);
+                }
                 if (skippedUnsupportedImages > 0) {
                     toast.warning(`${skippedUnsupportedImages} image${skippedUnsupportedImages === 1 ? " was" : "s were"} skipped — format not supported in the browser (e.g. EMF/WMF/TIFF).`);
                 }
@@ -4305,6 +4320,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     `vertical-align:${cell?.valign || "middle"};`,
                     cell?.wrap ? "white-space:pre-wrap;" : "white-space:nowrap;",
                     ...["top", "bottom", "left", "right"].map((side) => borderCss(side, cell?.border?.[side])),
+                    // Conditional formatting goes last so it overrides the cell's own format.
+                    ...printConditionalCss(conditionalMap[id], cell),
                 ].filter(Boolean).join("");
                 const text = showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[id] ?? "");
                 html += `<td${spanAttrs} style="${style}">${escapeHtml(text)}</td>`;

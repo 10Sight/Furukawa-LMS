@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'react-toastify';
 import { useCreateRoleMutation } from "@/services/api/SuperAdminApi.js";
+import PortalPageAccess from "./PortalPageAccess.jsx";
 
 const ROLE_COLORS = [
   '#3B82F6',
@@ -131,11 +132,12 @@ const PermissionCategory = ({ category, permissions, selectedPermissions, onPerm
   );
 };
 
-const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
+const CreateRoleModal = ({ open, onClose, permissions, portals, onSuccess }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     permissions: [],
+    allowedPages: [],
     color: '#3B82F6',
     targetLayout: 'custom',
   });
@@ -150,6 +152,16 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
+  };
+
+  // A page brings the permission it needs along with it.
+  const handlePagesChange = (allowedPages, requiredPermissions) => {
+    setFormData(prev => ({
+      ...prev,
+      allowedPages,
+      permissions: [...new Set([...prev.permissions, ...requiredPermissions])],
+    }));
+    if (requiredPermissions.length && errors.permissions) setErrors(prev => ({ ...prev, permissions: null }));
   };
 
   const validate = () => {
@@ -175,7 +187,7 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
   };
 
   const handleClose = () => {
-    setFormData({ name: '', description: '', permissions: [], color: '#3B82F6', targetLayout: 'custom' });
+    setFormData({ name: '', description: '', permissions: [], allowedPages: [], color: '#3B82F6', targetLayout: 'custom' });
     setErrors({});
     onClose();
   };
@@ -314,6 +326,13 @@ const CreateRoleModal = ({ open, onClose, permissions, onSuccess }) => {
 
           {/* Right Column — Permissions */}
           <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 min-w-0">
+            <PortalPageAccess
+              portals={portals}
+              allowedPages={formData.allowedPages}
+              onChange={handlePagesChange}
+              roleColor={selectedColor}
+            />
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <IconKey size={18} className="text-gray-500" />

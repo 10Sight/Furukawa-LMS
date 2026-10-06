@@ -14,7 +14,8 @@ import {
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
-    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart
+    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart,
+    Label as ChartLabel
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "../../../utils/spreadsheets/formulaEngine.js";
 import {
@@ -228,21 +229,29 @@ const LABEL_POSITION_OPTIONS_BY_TYPE = {
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     lineStacked: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     area: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     combo: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     pie: [
         { value: "outsideEnd", label: "Outside End" },
@@ -274,10 +283,10 @@ const RECHARTS_LABEL_POSITION = {
     columnStacked: { center: "center", insideEnd: "insideTop", insideBase: "insideBottom" },
     barGrouped: { outsideEnd: "right", insideEnd: "insideRight", center: "center", insideBase: "insideLeft" },
     barStacked: { center: "center", insideEnd: "insideRight", insideBase: "insideLeft" },
-    line: { above: "top", below: "bottom", center: "center" },
-    lineStacked: { above: "top", below: "bottom", center: "center" },
-    area: { above: "top", below: "bottom", center: "center" },
-    combo: { above: "top", below: "bottom", center: "center" },
+    line: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    lineStacked: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    area: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    combo: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
 };
 
 // Which label-position family one series belongs to: in a combo chart a column
@@ -286,8 +295,11 @@ const seriesLabelFamily = (config, seriesIndex) => {
     if (config.type !== "combo") return labelFamily(config.type);
     return getComboSeriesSettings(config, config.valueCols?.[seriesIndex], seriesIndex).type === "column" ? "columnGrouped" : "combo";
 };
-// Chart types whose data labels can be set series by series.
-const supportsSeriesLabels = (type) => !!RECHARTS_LABEL_POSITION[labelFamily(type)];
+const PIE_TYPES = new Set(["pie", "doughnut"]);
+// Chart types whose data labels can be set series by series, and label by label.
+const supportsSeriesLabels = (type) => !!RECHARTS_LABEL_POSITION[labelFamily(type)] || PIE_TYPES.has(type);
+// How a selected data label is marked on the chart.
+const SELECTED_LABEL_PROPS = { stroke: "#4f46e5", strokeWidth: 0.75, paintOrder: "stroke" };
 // px each click of a label nudge arrow moves a series' labels.
 const LABEL_NUDGE_STEP = 4;
 
@@ -297,6 +309,35 @@ const LABEL_NUDGE_STEP = 4;
 const resolvePieLabelPosition = (config) => (
     config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[config.type]
 );
+
+// One data label of a bar/line/area series, drawn by recharts' own <Label> so
+// it sits exactly where a plain LabelList would put it. `resolveLabel(index)`
+// gives that point's { position, dx, dy, fill, selected }, or null to hide it —
+// which is what lets a single value's label be placed apart from its series.
+// `onPick(index)`, when given, makes the label clickable.
+function DataPointLabel({ viewBox, parentViewBox, value, index, resolveLabel, textProps, onPick }) {
+    const own = resolveLabel(index);
+    if (!own) return null;
+    const label = (
+        <ChartLabel
+            viewBox={viewBox}
+            parentViewBox={parentViewBox}
+            value={value}
+            position={own.position}
+            dx={own.dx}
+            dy={own.dy}
+            fill={own.fill}
+            {...textProps}
+            {...(own.selected ? SELECTED_LABEL_PROPS : null)}
+        />
+    );
+    if (!onPick) return label;
+    return (
+        <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPick(index); }}>
+            {label}
+        </g>
+    );
+}
 
 // --- Format tab: chart text ---
 // The pieces of chart text that can be styled, in the order Excel's "Chart
@@ -338,15 +379,25 @@ const RADIAN = Math.PI / 180;
 // recharts' Pie `label` render-prop: returning a plain string only supports
 // its own default (outside) placement, so inside/center positions need a
 // custom <text> computed from the slice's own radius/angle.
-function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position, labelText, labelFill) {
+function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position, labelText, labelFill, { dx = 0, dy = 0, selected = false, onPick = null } = {}) {
     const radius = position === "insideEnd" ? innerRadius + (outerRadius - innerRadius) * 0.88
         : position === "center" ? innerRadius + (outerRadius - innerRadius) * 0.5
         : outerRadius + 18; // outsideEnd
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    const x = cx + radius * Math.cos(-midAngle * RADIAN) + dx;
+    const y = cy + radius * Math.sin(-midAngle * RADIAN) + dy;
     const isOutside = position === "outsideEnd";
     return (
-        <text x={x} y={y} fill={labelFill(isOutside ? INK_SECONDARY : "#ffffff")} {...labelText} textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"} dominantBaseline="central">
+        <text
+            x={x}
+            y={y}
+            fill={labelFill(isOutside ? INK_SECONDARY : "#ffffff")}
+            {...labelText}
+            {...(selected ? SELECTED_LABEL_PROPS : null)}
+            textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"}
+            dominantBaseline="central"
+            style={onPick ? { cursor: "pointer" } : undefined}
+            onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}
+        >
             {`${Math.round(percent * 100)}%`}
         </text>
     );
@@ -818,7 +869,10 @@ function ExcelGraph({ excelData, onChartsChange }) {
     const [isFullScreen, setIsFullScreen] = useState(false);
     const exitFullScreen = useCallback(() => setIsFullScreen(false), []);
     const [ribbonTab, setRibbonTab] = useState("insert"); // "insert" | "design" | "format"
-    const [formatTarget, setFormatTarget] = useState("all"); // key of TEXT_ELEMENTS
+    const [formatTarget, setFormatTarget] = useState("all"); // key of TEXT_ELEMENTS, or "series:<id>"
+    // With a series selected: the one data label being formatted (its category
+    // name), or null for the series' labels as a whole.
+    const [targetPoint, setTargetPoint] = useState(null);
     const [lastFontColor, setLastFontColor] = useState("#FF0000");
     const [lastFillColor, setLastFillColor] = useState("#FFFF00");
     // Insert Chart dialog: the tab it opened on and the family shown under All Charts.
@@ -951,6 +1005,43 @@ function ExcelGraph({ excelData, onChartsChange }) {
 
     const prepared = useMemo(() => prepareChartData(activeSheet, displayGrid, config), [activeSheet, displayGrid, config]);
     const { data, seriesKeys, hadInvalid } = prepared;
+
+    // --- One data label on its own (Excel: click a label twice) ---
+    // `config.pointLabels[seriesId][categoryName]` = { show, position, dx, dy }
+    // overrides that series' label settings for a single value.
+    useEffect(() => { setTargetPoint(null); }, [formatTarget, config?.id]);
+    const pointNames = useMemo(() => [...new Set(data.map((d) => d.name))], [data]);
+    const activePoint = targetSeriesId !== null && targetPoint !== null && pointNames.includes(targetPoint) ? targetPoint : null;
+    const targetPointLabel = (activePoint !== null && config?.pointLabels?.[targetSeriesId]?.[activePoint]) || {};
+    const seriesLabelsShown = targetSeriesLabel.show ?? config?.showDataLabels;
+    const pointLabelShown = targetPointLabel.show ?? seriesLabelsShown;
+    const setPointLabel = (patch) => {
+        if (!config || activePoint === null) return;
+        applyConfig({
+            pointLabels: {
+                ...config.pointLabels,
+                [targetSeriesId]: { ...config.pointLabels?.[targetSeriesId], [activePoint]: { ...targetPointLabel, ...patch } },
+            },
+        });
+    };
+    const clearPointLabel = () => {
+        if (!config || activePoint === null) return;
+        const forSeries = { ...config.pointLabels?.[targetSeriesId] };
+        delete forSeries[activePoint];
+        applyConfig({ pointLabels: { ...config.pointLabels, [targetSeriesId]: forSeries } });
+    };
+    // The arrows move whichever is selected: one label, or the whole series.
+    const nudgeLabel = (dx, dy) => (activePoint !== null
+        ? setPointLabel({ show: true, dx: (targetPointLabel.dx || 0) + dx, dy: (targetPointLabel.dy || 0) + dy })
+        : nudgeSeriesLabel(dx, dy));
+    // Clicking a data label on the chart selects its series' labels; clicking
+    // again within that series narrows to the one label, as in Excel.
+    const pickDataLabel = (seriesId, categoryName) => {
+        setRibbonTab("format");
+        setIsToolbarExpanded(true);
+        if (formatTarget === `series:${seriesId}`) setTargetPoint(categoryName);
+        else setFormatTarget(`series:${seriesId}`);
+    };
 
     // The chart's series with their current combo type/axis, for the Change
     // Chart Type dialog's series table.
@@ -1173,27 +1264,56 @@ function ExcelGraph({ excelData, onChartsChange }) {
         // `cfg.seriesLabels[seriesId]` = { show, position, dx, dy } overrides the
         // chart-wide data-label settings for that one series.
         const seriesLabelOptions = (index) => cfg.seriesLabels?.[cfg.valueCols?.[index]] || {};
-        const showLabels = !mini && (cfg.showDataLabels || Object.values(cfg.seriesLabels || {}).some((o) => o?.show));
+        // `cfg.pointLabels[seriesId][categoryName]` does the same for one value's label.
+        const pointLabelOptions = (index) => cfg.pointLabels?.[cfg.valueCols?.[index]] || {};
+        const showsOwnLabel = (points) => Object.values(points || {}).some((o) => o?.show);
+        const showLabels = !mini && (cfg.showDataLabels
+            || Object.values(cfg.seriesLabels || {}).some((o) => o?.show)
+            || Object.values(cfg.pointLabels || {}).some(showsOwnLabel));
+        // Labels are clickable, and show which one is selected, only on the chart being edited.
+        const isActiveChart = !mini && cfg.id === config?.id;
+        const selectedPointOf = (seriesId) => (isActiveChart && ribbonTab === "format" && formatTarget === `series:${seriesId}` ? activePoint : null);
         const showGrid = !mini && cfg.showGridlines;
         // The data labels of series `index`, or null when that series shows none.
         const seriesLabel = (index) => {
             const options = seriesLabelOptions(index);
-            if (mini || !(options.show ?? cfg.showDataLabels)) return null;
+            const points = pointLabelOptions(index);
+            const seriesShown = options.show ?? cfg.showDataLabels;
+            if (mini || (!seriesShown && !showsOwnLabel(points))) return null;
+            const seriesId = cfg.valueCols?.[index];
             const family = seriesLabelFamily(cfg, index);
             const positions = RECHARTS_LABEL_POSITION[family] || {};
             const chartWide = cfg.labelPosition && cfg.labelPosition !== "auto" ? cfg.labelPosition : null;
-            const position = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
-            // White on a bar's own fill, dark anywhere else.
-            const insideMark = ["columnGrouped", "columnStacked", "barGrouped", "barStacked"].includes(family) && (position.startsWith("inside") || position === "center");
+            const seriesPosition = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
+            const onBar = ["columnGrouped", "columnStacked", "barGrouped", "barStacked"].includes(family);
+            const selectedPoint = selectedPointOf(seriesId);
+            // Each label takes its own value's settings where it has any, else the series'.
+            const resolveLabel = (dataIndex) => {
+                const categoryName = data[dataIndex]?.name;
+                const own = points[categoryName] || {};
+                if (!(own.show ?? seriesShown)) return null;
+                const position = positions[own.position] || seriesPosition;
+                // White on a bar's own fill, dark anywhere else.
+                const insideMark = onBar && (position.startsWith("inside") || position === "center");
+                return {
+                    position,
+                    dx: (options.dx || 0) + (own.dx || 0),
+                    dy: (options.dy || 0) + (own.dy || 0),
+                    fill: labelFill(insideMark ? "#ffffff" : INK_SECONDARY),
+                    selected: selectedPoint !== null && selectedPoint === categoryName,
+                };
+            };
             return (
                 <LabelList
                     key="ll"
                     dataKey={seriesKeys[index]}
-                    position={position}
-                    dx={options.dx || 0}
-                    dy={options.dy || 0}
-                    fill={labelFill(insideMark ? "#ffffff" : INK_SECONDARY)}
-                    {...labelText}
+                    content={
+                        <DataPointLabel
+                            resolveLabel={resolveLabel}
+                            textProps={labelText}
+                            onPick={isActiveChart ? (dataIndex) => pickDataLabel(seriesId, data[dataIndex]?.name) : null}
+                        />
+                    }
                 />
             );
         };
@@ -1386,7 +1506,23 @@ function ExcelGraph({ excelData, onChartsChange }) {
             case "pie":
             case "doughnut": {
                 const key = seriesKeys[0];
-                const piePos = resolvePieLabelPosition(cfg);
+                const pieSeriesId = cfg.valueCols?.[0];
+                const pieSeries = seriesLabelOptions(0);
+                const piePoints = pointLabelOptions(0);
+                const pieSeriesShown = pieSeries.show ?? cfg.showDataLabels;
+                const piePos = pieSeries.position || resolvePieLabelPosition(cfg);
+                const pieSelected = selectedPointOf(pieSeriesId);
+                // Each slice's label takes its own settings where it has any, else the series'.
+                const pieLabel = (labelProps) => {
+                    const own = piePoints[labelProps.name] || {};
+                    if (!(own.show ?? pieSeriesShown)) return null;
+                    return renderPieLabel(labelProps, own.position || piePos, labelText, labelFill, {
+                        dx: (pieSeries.dx || 0) + (own.dx || 0),
+                        dy: (pieSeries.dy || 0) + (own.dy || 0),
+                        selected: pieSelected !== null && pieSelected === labelProps.name,
+                        onPick: isActiveChart ? () => pickDataLabel(pieSeriesId, labelProps.name) : null,
+                    });
+                };
                 return (
                     <PieChart margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                         {!mini && <Tooltip content={<ChartTooltip />} />}
@@ -1406,8 +1542,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                             stroke={CHART_SURFACE}
                             strokeWidth={2}
                             isAnimationActive={!mini}
-                            label={showLabels ? (labelProps) => renderPieLabel(labelProps, piePos, labelText, labelFill) : false}
-                            labelLine={showLabels && piePos === "outsideEnd"}
+                            label={showLabels ? pieLabel : false}
+                            labelLine={showLabels && pieSeriesShown && piePos === "outsideEnd"}
                         >
                             {data.map((row, i) => <Cell key={i} fill={pieCellColorFor(cfg, key, row.name, i)} />)}
                         </Pie>
@@ -1673,7 +1809,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                         <RibbonBtn
                             className="justify-start gap-1.5 px-1.5"
                             title="Reset to Match Style: clear this chart's custom fonts, fill, label placement and legend alignment"
-                            onClick={() => applyConfig({ textStyles: {}, chartFill: undefined, seriesLabels: {}, legendAlign: undefined })}
+                            onClick={() => applyConfig({ textStyles: {}, chartFill: undefined, seriesLabels: {}, pointLabels: {}, legendAlign: undefined })}
                         >
                             <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
                             <span className="text-xs">Reset to Match Style</span>
@@ -1725,42 +1861,82 @@ function ExcelGraph({ excelData, onChartsChange }) {
                     </RibbonStack>
                 </RibbonGroup>
                 {targetSeriesIndex >= 0 ? (
-                <RibbonGroup label="Series Data Labels">
-                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                <RibbonGroup label={activePoint !== null ? "Data Label" : "Series Data Labels"}>
+                    <RibbonStack className="py-0">
                         <RibbonDropdown
-                            title="Label Position: where this series' data labels sit"
+                            title="Data Point: format every label of this series, or the label of one value. Clicking a label on the chart twice picks it too."
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[190px] max-h-72 overflow-y-auto"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{activePoint !== null ? activePoint : "All Points"}</span>}
+                        >
+                            <MenuItem label="All Points" checked={activePoint === null} onClick={() => setTargetPoint(null)} />
+                            <MenuSeparator />
+                            {pointNames.map((name) => (
+                                <MenuItem key={name} label={name} checked={activePoint === name} onClick={() => setTargetPoint(name)} />
+                            ))}
+                        </RibbonDropdown>
+                        {activePoint !== null ? (
+                        <RibbonDropdown
+                            title="Label Position: where this one value's data label sits"
                             buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
                             contentClassName="w-[170px]"
                             trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
-                                {!(targetSeriesLabel.show ?? config.showDataLabels) ? "No Labels"
-                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                                {!pointLabelShown ? "No Label"
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetPointLabel.position)?.label || "Same as Series"}
                             </span>}
                         >
-                            <MenuItem label="No Labels" checked={!(targetSeriesLabel.show ?? config.showDataLabels)} onClick={() => setSeriesLabel({ show: false })} />
-                            <MenuItem label="Same as Chart" checked={(targetSeriesLabel.show ?? config.showDataLabels) && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
+                            <MenuItem label="No Label" checked={!pointLabelShown} onClick={() => setPointLabel({ show: false })} />
+                            <MenuItem label="Same as Series" checked={pointLabelShown && !targetPointLabel.position} onClick={() => setPointLabel({ show: true, position: undefined })} />
                             <MenuSeparator />
                             {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
                                 <MenuItem
                                     key={opt.value}
                                     label={opt.label}
-                                    checked={(targetSeriesLabel.show ?? config.showDataLabels) && targetSeriesLabel.position === opt.value}
+                                    checked={pointLabelShown && targetPointLabel.position === opt.value}
+                                    onClick={() => setPointLabel({ show: true, position: opt.value })}
+                                />
+                            ))}
+                        </RibbonDropdown>
+                        ) : (
+                        <RibbonDropdown
+                            title="Label Position: where this series' data labels sit"
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[170px]"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
+                                {!seriesLabelsShown ? "No Labels"
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                            </span>}
+                        >
+                            <MenuItem label="No Labels" checked={!seriesLabelsShown} onClick={() => setSeriesLabel({ show: false })} />
+                            <MenuItem label="Same as Chart" checked={seriesLabelsShown && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
+                            <MenuSeparator />
+                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
+                                <MenuItem
+                                    key={opt.value}
+                                    label={opt.label}
+                                    checked={seriesLabelsShown && targetSeriesLabel.position === opt.value}
                                     onClick={() => setSeriesLabel({ show: true, position: opt.value })}
                                 />
                             ))}
                         </RibbonDropdown>
+                        )}
                         <RibbonRow className="gap-0.5">
-                            <RibbonBtn title="Move labels left" onClick={() => nudgeSeriesLabel(-LABEL_NUDGE_STEP, 0)}><IconArrowLeft className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels up" onClick={() => nudgeSeriesLabel(0, -LABEL_NUDGE_STEP)}><IconArrowUp className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels down" onClick={() => nudgeSeriesLabel(0, LABEL_NUDGE_STEP)}><IconArrowDown className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels right" onClick={() => nudgeSeriesLabel(LABEL_NUDGE_STEP, 0)}><IconArrowRight className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label left" : "Move labels left"} onClick={() => nudgeLabel(-LABEL_NUDGE_STEP, 0)}><IconArrowLeft className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label up" : "Move labels up"} onClick={() => nudgeLabel(0, -LABEL_NUDGE_STEP)}><IconArrowUp className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label down" : "Move labels down"} onClick={() => nudgeLabel(0, LABEL_NUDGE_STEP)}><IconArrowDown className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label right" : "Move labels right"} onClick={() => nudgeLabel(LABEL_NUDGE_STEP, 0)}><IconArrowRight className="w-4 h-4" /></RibbonBtn>
                             <RibbonDivider />
                             <RibbonBtn
                                 className="px-1.5"
-                                title="Reset this series' labels to the chart's settings"
+                                title={activePoint !== null ? "Reset this label to its series' settings" : "Reset this series' labels to the chart's settings"}
                                 onClick={() => {
+                                    if (activePoint !== null) { clearPointLabel(); return; }
                                     const next = { ...config.seriesLabels };
                                     delete next[targetSeriesId];
-                                    applyConfig({ seriesLabels: next });
+                                    // The series' single-label settings go with it.
+                                    const nextPoints = { ...config.pointLabels };
+                                    delete nextPoints[targetSeriesId];
+                                    applyConfig({ seriesLabels: next, pointLabels: nextPoints });
                                 }}
                             >
                                 <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />

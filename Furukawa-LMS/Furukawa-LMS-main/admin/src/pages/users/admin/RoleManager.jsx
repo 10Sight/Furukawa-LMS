@@ -10,12 +10,16 @@ import { Switch } from "@/components/forms/primitives/switch.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 
 const LAYOUTS = ["admin", "trainer", "student", "cms", "dashboard", "custom"];
+// Page Access also lists the MIS Portal. It isn't a Target Layout: it has no
+// sidebar of its own, its pages are reached from the main menu tile.
+const PAGE_LAYOUTS = ["admin", "trainer", "student", "cms", "dashboard", "daily-meeting", "custom"];
 const LAYOUT_LABELS = {
     admin: "Admin Pages",
     trainer: "Trainer Pages",
     student: "Student Pages",
     cms: "CMS Pages",
     dashboard: "MPS Portal Pages",
+    "daily-meeting": "MIS Portal Pages",
     custom: "Custom Portal"
 };
 
@@ -71,6 +75,7 @@ const PageCheckbox = ({ page, checked, onChange, disabled }) => (
 export default function RoleManager() {
     const [roles, setRoles] = useState([]);
     const [systemPermissions, setSystemPermissions] = useState({});
+    const [pageRequirements, setPageRequirements] = useState({}); // page key -> the permission it needs to show anything
     const [selected, setSelected] = useState(null);
     const [editing, setEditing] = useState({
         name: "",
@@ -92,6 +97,11 @@ export default function RoleManager() {
             const res = await axiosInstance.get("/api/roles-permissions");
             setRoles(res.data.data.roles || []);
             setSystemPermissions(res.data.data.permissions || {});
+            const requirements = {};
+            for (const portal of res.data.data.portals || []) {
+                for (const page of portal.pages || []) if (page.requires) requirements[page.key] = page.requires;
+            }
+            setPageRequirements(requirements);
         } catch (e) {
             toast.error("Failed to load roles and permissions");
         } finally {
@@ -129,13 +139,15 @@ export default function RoleManager() {
         });
     };
 
+    // Granting a page also grants the permission it needs, so it doesn't open empty.
+    const withRequiredPermissions = (permissions, pageKeys) =>
+        [...new Set([...permissions, ...pageKeys.map(k => pageRequirements[k]).filter(Boolean)])];
+
     const togglePage = (key) => {
-        setEditing(prev => ({
-            ...prev,
-            allowedPages: prev.allowedPages.includes(key)
-                ? prev.allowedPages.filter(k => k !== key)
-                : [...prev.allowedPages, key],
-        }));
+        setEditing(prev => (prev.allowedPages.includes(key)
+            ? { ...prev, allowedPages: prev.allowedPages.filter(k => k !== key) }
+            : { ...prev, allowedPages: [...prev.allowedPages, key], permissions: withRequiredPermissions(prev.permissions, [key]) }
+        ));
     };
 
     const togglePermission = (id) => {
@@ -335,7 +347,7 @@ export default function RoleManager() {
                         <div className="flex-1 overflow-y-auto p-5">
                             {activeTab === "pages" ? (
                                 <div className="space-y-8">
-                                    {LAYOUTS.map(layout => (
+                                    {PAGE_LAYOUTS.map(layout => (
                                         <div key={layout} className="space-y-4">
                                             <div className="flex items-center justify-between">
                                                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{LAYOUT_LABELS[layout]}</h3>
@@ -345,12 +357,14 @@ export default function RoleManager() {
                                                         onClick={() => {
                                                             const keys = getPagesByLayout(layout).map(p => p.key);
                                                             const allChecked = keys.every(k => editing.allowedPages.includes(k));
-                                                            setEditing(prev => ({
-                                                                ...prev,
-                                                                allowedPages: allChecked
-                                                                    ? prev.allowedPages.filter(k => !keys.includes(k))
-                                                                    : [...new Set([...prev.allowedPages, ...keys])]
-                                                            }));
+                                                            setEditing(prev => (allChecked
+                                                                ? { ...prev, allowedPages: prev.allowedPages.filter(k => !keys.includes(k)) }
+                                                                : {
+                                                                    ...prev,
+                                                                    allowedPages: [...new Set([...prev.allowedPages, ...keys])],
+                                                                    permissions: withRequiredPermissions(prev.permissions, keys)
+                                                                }
+                                                            ));
                                                         }}
                                                     >
                                                         Toggle All

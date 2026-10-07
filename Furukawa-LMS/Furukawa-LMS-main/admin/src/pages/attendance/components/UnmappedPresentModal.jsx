@@ -88,15 +88,15 @@ const UnmappedPresentModal = ({ open, onOpenChange, initialDate }) => {
                                 <span className="p-1.5 rounded-lg bg-orange-50 text-orange-500">
                                     <UserMinus className="h-5 w-5" />
                                 </span>
-                                Unmapped Present (Not in Master)
+                                Unmapped / Excluded Present
                             </DialogTitle>
                             <p className="text-xs text-slate-500 mt-1">
-                                Present employees from the uploaded attendance file who are not found in the users/master database.
+                                Present employees from the uploaded attendance file who are not counted in Dashboard attendance. The Reason column shows exactly why each employee was excluded.
                             </p>
                         </div>
 
                         <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-3 py-1 rounded-full">
-                            Total unmapped present employees: {totalCount}
+                            Total excluded present employees: {totalCount}
                         </span>
                     </div>
                 </DialogHeader>
@@ -133,7 +133,7 @@ const UnmappedPresentModal = ({ open, onOpenChange, initialDate }) => {
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
 
                             <Input
-                                placeholder="Search by paycode, card no, name, department..."
+                                placeholder="Search by paycode, card no, name, department, reason..."
                                 value={search}
                                 onChange={(e) => {
                                     setSearch(e.target.value);
@@ -287,7 +287,7 @@ const UnmappedPresentModal = ({ open, onOpenChange, initialDate }) => {
 
                                             <td className="py-3 pl-3 pr-6 text-xs text-slate-600">
                                                 <span className="inline-block text-[11px] text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full font-medium">
-                                                    {emp.reason || 'User not found in master'}
+                                                    {emp.reason || 'Not eligible for Dashboard attendance'}
                                                 </span>
                                             </td>
                                         </tr>
@@ -301,11 +301,11 @@ const UnmappedPresentModal = ({ open, onOpenChange, initialDate }) => {
                                                 </div>
 
                                                 <p className="text-sm font-semibold text-slate-700">
-                                                    No unmapped present employees found.
+                                                    No excluded present employees found.
                                                 </p>
 
                                                 <p className="text-xs text-slate-400 mt-1">
-                                                    All Present employees match registered database users.
+                                                    All uploaded Present employees are eligible for Dashboard attendance.
                                                 </p>
                                             </div>
                                         </td>
@@ -324,7 +324,7 @@ const UnmappedPresentModal = ({ open, onOpenChange, initialDate }) => {
                                 <span className="font-semibold text-slate-600">
                                     {totalCount}
                                 </span>{" "}
-                                unmapped present employee
+                                excluded present employee
                                 {totalCount !== 1 ? 's' : ''} found
                             </div>
 

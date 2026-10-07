@@ -202,11 +202,11 @@ const Attendance = () => {
                     `Upload Successful!\n\n` +
                     `Date: ${summary.attendanceDate || "N/A"}\n` +
                     `Total rows in Excel: ${summary.totalRows || 0}\n` +
-                    `Matched rows saved (in master): ${summary.matchedRowsSaved || 0}\n` +
-                    `Unmapped rows saved (not in master): ${summary.unmappedRowsSaved || 0}\n` +
+                    `Matched rows saved (Dashboard eligible): ${summary.matchedRowsSaved || 0}\n` +
+                    `Unmapped/Excluded rows saved: ${summary.unmappedRowsSaved || 0}\n` +
                     `Skipped/Failed rows: ${summary.skippedRows || 0}\n\n` +
                     `Present count in Attendance logs: ${summary.presentInAttendanceLogs || 0}\n` +
-                    `Present count in Unmapped logs: ${summary.presentInUnmappedLogs || 0}\n` +
+                    `Present excluded from Dashboard: ${summary.presentInUnmappedLogs || 0}\n` +
                     `Total Present Uploaded: ${summary.totalPresentUploaded || 0}`
                 );
                 // Show the attendance date that was just uploaded.
@@ -407,7 +407,7 @@ const Attendance = () => {
                 if (!payload?.success) {
                     throw new Error(
                         payload?.message ||
-                        "Unable to fetch unmapped employees for download."
+                        "Unable to fetch excluded present employees for download."
                     );
                 }
 
@@ -427,8 +427,8 @@ const Attendance = () => {
 
             const exported = downloadExcelTable({
                 rows: exportRows,
-                fileName: `unmapped-present-${filters.date}.xls`,
-                title: `Unmapped Present Employees - ${filters.date}`,
+                fileName: `unmapped-excluded-present-${filters.date}.xls`,
+                title: `Unmapped / Excluded Present Employees - ${filters.date}`,
                 columns: [
                     { header: "Sr.No", value: (_row, index) => index + 1 },
                     { header: "Date", value: () => filters.date },
@@ -451,19 +451,19 @@ const Attendance = () => {
 
             if (!exported) {
                 alert(
-                    "No unmapped present employees available for the selected date."
+                    "No excluded present employees available for the selected date."
                 );
             }
         } catch (error) {
             console.error(
-                "Failed to download unmapped employees Excel",
+                "Failed to download excluded present employees Excel",
                 error
             );
 
             alert(
                 error?.response?.data?.message ||
                 error?.message ||
-                "Failed to download unmapped employees Excel file."
+                "Failed to download excluded present employees Excel file."
             );
         } finally {
             setUnmappedExporting(false);
@@ -585,7 +585,7 @@ const Attendance = () => {
                         onClick={() => setIsUnmappedModalOpen(true)}
                     >
                         <UserMinus className="w-3.5 h-3.5 text-orange-500" />
-                        Unmapped Present
+                        Unmapped / Excluded Present
                     </Button>
 
                     {/* Direct Unmapped Excel Download Button */}
@@ -603,7 +603,7 @@ const Attendance = () => {
                         )}
                         {unmappedExporting
                             ? "Downloading..."
-                            : "Download Unmapped"}
+                            : "Download Excluded"}
                     </Button>
 
                     {/* Upload Button */}

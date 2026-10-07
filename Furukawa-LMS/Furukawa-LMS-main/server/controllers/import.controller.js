@@ -1549,29 +1549,7 @@ export const importDojoUsers = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        // DEBUG: save the uploaded file and log info
-        try {
-            fs.writeFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/uploaded_debug.xlsx", req.file.buffer);
-            const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
-            const logContent = [
-                `Time: ${new Date().toISOString()}`,
-                `Sheets: ${JSON.stringify(workbook.SheetNames)}`
-            ];
-            workbook.SheetNames.forEach(name => {
-                const ws = workbook.Sheets[name];
-                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
-                logContent.push(`Sheet: ${name}, total rows: ${rows.length}`);
-                if (rows.length > 0) {
-                    logContent.push(`  Row 0: ${JSON.stringify(rows[0])}`);
-                }
-                if (rows.length > 1) {
-                    logContent.push(`  Row 1: ${JSON.stringify(rows[1])}`);
-                }
-            });
-            fs.appendFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/import_debug.log", logContent.join("\n") + "\n\n");
-        } catch (err) {
-            console.error("DEBUG error saving or logging:", err);
-        }
+
 
         // Read the Excel file
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });

@@ -1,4 +1,4 @@
-﻿# ========================
+# ========================
 # Dependencies
 # ========================
 node_modules/
@@ -92,4 +92,3 @@ dev-dist/
 .vercel
 .netlify
 
-Furukawa-LMS-main/

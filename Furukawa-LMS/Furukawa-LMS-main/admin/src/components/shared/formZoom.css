@@ -1,0 +1,6 @@
+.form-zoom-controls{margin-left:auto;display:inline-flex;align-items:center;flex-shrink:0;border:1px solid #cbd5e1;border-radius:8px;background:white;color:#334155;overflow:hidden;height:32px}.form-zoom-controls button{height:30px;min-width:30px;font-size:18px;font-weight:600;cursor:pointer}.form-zoom-controls button:hover{background:#eff6ff;color:#2563eb}.form-zoom-controls button:focus-visible{outline:2px solid #2563eb;outline-offset:-2px}.form-zoom-controls button:disabled{opacity:.35;cursor:default}.form-zoom-controls .form-zoom-reset{font-size:11px;min-width:44px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0}@media print{.form-zoom-controls{display:none}table,.form-zoom-surface{zoom:1!important}}@media(prefers-reduced-motion:no-preference){.form-zoom-controls button{transition:background-color .15s,color .15s}}
+
+@media(prefers-reduced-motion:no-preference){.form-zoom-surface,.ptm-zoom-surface,.pdca-form-root table,.nc-root table,.auditor-plan-root table{transition:zoom .15s ease}}
+@media print{.ptm-zoom-surface{zoom:1!important}}
+
+.nc-form td:last-child,.nc-root td:last-child{vertical-align:middle;text-align:center}.nc-form td:last-child textarea,.nc-root td:last-child textarea{text-align:center}

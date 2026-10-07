@@ -1,0 +1,30 @@
+.assembly-sheet { width: 100%; min-width: 1200px; color: #000; font-family: Arial, Calibri, sans-serif; background: #fff; }
+.assembly-audit-paper { position: relative; background: white; border: 2px solid #172bff; }
+.assembly-form-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8px; line-height: 1.1; }
+.assembly-form-table td { position: relative; padding: 0; border: 1px solid #555; vertical-align: middle; }
+.assembly-form-table textarea { display: block; position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 1px 2px; resize: none; border: 0; outline: 0; color: inherit; background: transparent; font: inherit; line-height: 1.1; overflow: auto; white-space: pre-wrap; }
+.assembly-form-table textarea:focus { outline: 2px solid #168443; outline-offset: -2px; background: #e8f3e833; }
+.assembly-form-table .assembly-heading textarea { text-align: center; font-weight: bold; }
+.assembly-audit-table tr:first-child td { font-size: 12px; }
+.assembly-audit-table tr:first-child td:first-child, .assembly-audit-table tr:first-child td:last-child { font-size: 9px; }
+.assembly-audit-table tr:first-child td:first-child textarea, .assembly-audit-table tr:first-child td:last-child textarea { text-align: left; }
+.assembly-form-table .assembly-vertical textarea { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; padding: 2px; }
+.assembly-form-table .assembly-check textarea { text-align: left; }
+.assembly-form-table .assembly-requirement textarea { font-size: 6px; line-height: 1.05; }
+.assembly-check-preview { position: absolute; inset: 0; padding: 1px 2px; white-space: pre-wrap; overflow: hidden; pointer-events: none; }
+.assembly-form-table .assembly-rich-check textarea { color: transparent; caret-color: #000; }
+.assembly-form-table .assembly-rich-check textarea:focus { z-index: 2; color: #000; background: white; }
+.assembly-form-table .assembly-completion textarea { text-align: center; }
+.assembly-form-table .assembly-number textarea { text-align: center; }
+.assembly-form-table .assembly-outside-legend, .assembly-form-table .assembly-outside-symbols { border-color: transparent; }
+.assembly-form-table .assembly-hide-overflow { display: none; }
+.assembly-form-table .assembly-gap td { border-color: transparent; }
+.assembly-form-table .assembly-legend-label textarea { font-weight: bold; }
+.assembly-form-table .assembly-horizontal { background: #eeece0; }
+.assembly-form-table .assembly-notes { border: 1px solid #168443; }
+.assembly-form-table .assembly-footer textarea { font-size: 7px; text-align: center; }
+.assembly-form-table .assembly-total textarea { font-size: 22px; font-weight: bold; text-align: left; }
+.assembly-pdca-table { background: #fff; }
+.assembly-pdca-table tr:first-child { font-size: 16px; }
+.assembly-pdca-table tr:last-child td { border-bottom-color: transparent; }
+.assembly-pdca-table .assembly-tail-blank td { border-color: transparent; }

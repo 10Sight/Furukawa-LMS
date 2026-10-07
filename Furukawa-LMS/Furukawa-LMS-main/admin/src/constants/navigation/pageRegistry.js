@@ -1,4 +1,5 @@
 import { getIcon } from "./IconRegistry.js";
+import { MAN_MACHINE_INTERLINK_URL } from "../../components/man-machine-interlink/integration.js";
 
 // Page registry — single source of truth for all assignable pages.
 // layout: which layout the page belongs to (determines which sidebar it appears in)
@@ -366,6 +367,8 @@ export const PAGE_REGISTRY = [
     { key: "cms-ptm", label: "PTM", layout: "cms", link: "/cms/ptm", icon: "IconClipboardList", newTab: true },
     { key: "cms-pdca", label: "PDCA", layout: "cms", link: "/cms/pdca", icon: "IconRepeat", newTab: true },
     { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck", newTab: true },
+    { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable", newTab: true },
+    { key: "cms-man-machine-interlink", label: "Man-Machine Interlink", layout: "cms", link: MAN_MACHINE_INTERLINK_URL, icon: "IconSettings", newTab: true },
     { key: "daily-meeting", label: "Management Information System", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
     { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

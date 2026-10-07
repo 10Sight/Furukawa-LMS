@@ -15,6 +15,7 @@ const Login = lazy(() => import("../pages/login/Login.jsx"));
 const LandingPage = lazy(() => import("../pages/home/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("../components/layout/DashboardLayout.jsx"));
 const FmeDashboardPage = lazy(() => import("../pages/cms/FmeDashboardPage.jsx"));
+const LpaPage = lazy(() => import("../pages/lpa/LpaPage.jsx"));
 const CmsLayout = lazy(() => import("../components/layout/CmsLayout.jsx").then(m => ({ default: m.CmsLayout })));
 const CustomRoleLayout = lazy(() => import("../components/layout/CustomRoleLayout.jsx").then(m => ({ default: m.CustomRoleLayout })));
 const DailyMeetingLayout = lazy(() => import("../components/layout/DailyMeetingLayout.jsx").then(m => ({ default: m.DailyMeetingLayout })));
@@ -392,6 +393,7 @@ const AppRoutes = () => {
             <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
             <Route path="pdca" element={<FmeDashboardPage key="pdca" page="pdca" />} />
             <Route path="process-audit" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
+            <Route path="lpa" element={<LpaPage />} />
           </Route>
 
           {/* Daily Meeting Layout Routes */}

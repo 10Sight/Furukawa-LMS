@@ -1,3 +1,4 @@
+import { demoModeEnabled } from "../../../shared/demoData.js";
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { toast } from 'sonner';
@@ -25,6 +26,12 @@ export const SocketProvider = ({ children }) => {
         // Only initialize socket if user is authenticated
         let cleanup;
         const init = async () => {
+            if (demoModeEnabled(import.meta.env)) {
+                setSocket(null);
+                setIsConnected(false);
+                setNotifications(isLoggedIn ? [{ id: "demo-notification", message: "Sample training and meeting data are ready to explore.", from: "Local demo", timestamp: new Date().toISOString(), type: "info", read: false }] : []);
+                return;
+            }
             if (isLoggedIn && user) {
                 const { io } = await import('socket.io-client');
                 // Prefer explicit env, fall back to API base URL, then localhost

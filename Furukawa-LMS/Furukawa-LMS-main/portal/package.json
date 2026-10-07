@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:structure": "node ../../scripts/validate-structure.cjs"
+    "check:structure": "node ../../scripts/validate-structure.cjs",
+    "dev:demo": "vite --mode demo"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

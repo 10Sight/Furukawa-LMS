@@ -1,3 +1,4 @@
+import { createDemoAdapter, demoModeEnabled } from "../../../../shared/demoData.js";
 import { authSession } from "@/utils/authSession.js";
 import axios from "axios";
 
@@ -52,5 +53,9 @@ axiosInstance.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+if (demoModeEnabled(import.meta.env)) {
+    axiosInstance.defaults.adapter = createDemoAdapter(() => authSession.getItem("token"));
+}
 
 export default axiosInstance;

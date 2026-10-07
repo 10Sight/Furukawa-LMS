@@ -21,7 +21,7 @@ import {
     IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
     IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
     IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid,
-    IconMessagePlus, IconMessage
+    IconMessagePlus, IconMessage, IconRotate2, IconRotateClockwise2
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
@@ -48,6 +48,7 @@ import CellCommentCard from "./CellCommentCard.jsx";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
 } from "../../../utils/spreadsheets/commentEngine.js";
+import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import {
@@ -625,22 +626,49 @@ const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_S
 // down on pointerup) so idle media items cost nothing, and commit back to the
 // sheet (via onUpdate) only once the gesture ends — keeping every intermediate
 // frame a cheap local re-render instead of an undo-history-producing update.
+//
+// A picture or shape can also be turned: `item.rotation` is whole degrees
+// clockwise about the centre of its box (see mediaGeometry.js), drawn as a CSS
+// transform on an inner layer. The box it is stored and positioned by stays
+// unrotated, so anchoring, dragging and row/column shifts are unaffected.
 const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect }) => {
     const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
     const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
     const [isCropping, setIsCropping] = useState(false);
     const [cropDraft, setCropDraft] = useState(null); // { x, y, w, h } fractions, only set while isCropping
+    const [rotateDraft, setRotateDraft] = useState(null); // degrees, while actively rotating
     const gestureRef = useRef(null);
+    const boxRef = useRef(null);
 
     const baseLeft = (colOffsets[item.col] ?? colOffsets[0]) + (item.offsetX || 0);
     const baseTop = (rowOffsets[item.row] ?? rowOffsets[0]) + (item.offsetY || 0);
     const baseWidth = item.width || 280;
     const baseHeight = item.height || 200;
 
-    const left = baseLeft + (dragOffset?.dx || 0);
-    const top = baseTop + (dragOffset?.dy || 0);
+    // A video's playback controls would turn with it, so videos stay upright.
+    const canRotate = item.type !== "video";
+    const savedRotation = canRotate ? normalizeAngle(item.rotation) : 0;
+    const rotation = rotateDraft ?? savedRotation;
+
     const width = Math.max(MEDIA_MIN_SIZE, baseWidth + (resizeDelta?.dw || 0));
     const height = Math.max(MEDIA_MIN_SIZE, baseHeight + (resizeDelta?.dh || 0));
+    // A rotated box turns about its centre, which a new size moves: its position
+    // follows so that the corner opposite the resize handle stays put.
+    const resizedBox = resizeDelta && savedRotation
+        ? resizeRotatedBox({ left: baseLeft, top: baseTop, width: baseWidth, height: baseHeight }, width, height, savedRotation)
+        : null;
+    const left = (resizedBox ? resizedBox.left : baseLeft) + (dragOffset?.dx || 0);
+    const top = (resizedBox ? resizedBox.top : baseTop) + (dragOffset?.dy || 0);
+
+    // A pixel position on the sheet the way an item stores it: the cell it falls
+    // in, and how far into that cell.
+    const anchorAt = useCallback((pxLeft, pxTop) => {
+        const newLeft = Math.max(colOffsets[0], pxLeft);
+        const newTop = Math.max(rowOffsets[0], pxTop);
+        const col = Math.min(columnCount - 1, bandIndexForPixel(colOffsets, newLeft));
+        const row = Math.min(rowCount - 1, bandIndexForPixel(rowOffsets, newTop));
+        return { row, col, offsetX: Math.max(0, newLeft - colOffsets[col]), offsetY: Math.max(0, newTop - rowOffsets[row]) };
+    }, [colOffsets, rowOffsets, columnCount, rowCount]);
 
     const startDrag = useCallback((e) => {
         e.stopPropagation();
@@ -659,37 +687,69 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
             gestureRef.current = null;
             setDragOffset(null);
             if (dx === 0 && dy === 0) return;
-            const newLeft = Math.max(colOffsets[0], baseLeft + dx);
-            const newTop = Math.max(rowOffsets[0], baseTop + dy);
-            const col = Math.min(columnCount - 1, bandIndexForPixel(colOffsets, newLeft));
-            const row = Math.min(rowCount - 1, bandIndexForPixel(rowOffsets, newTop));
-            onUpdate({ row, col, offsetX: Math.max(0, newLeft - colOffsets[col]), offsetY: Math.max(0, newTop - rowOffsets[row]) });
+            onUpdate(anchorAt(baseLeft + dx, baseTop + dy));
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, zoom, onSelect]);
+    }, [readOnly, baseLeft, baseTop, anchorAt, onUpdate, zoom, onSelect]);
 
     const startResize = useCallback((e) => {
         if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
-        gestureRef.current = { startX: e.clientX, startY: e.clientY };
-        const onMove = (ev) => {
-            setResizeDelta({ dw: (ev.clientX - gestureRef.current.startX) / zoom, dh: (ev.clientY - gestureRef.current.startY) / zoom });
+        const startX = e.clientX, startY = e.clientY;
+        // How far the handle has been pulled along the picture's own width and
+        // height — which, once it is rotated, aren't the screen's.
+        const deltaAt = (ev) => {
+            const local = toLocalDelta((ev.clientX - startX) / zoom, (ev.clientY - startY) / zoom, savedRotation);
+            return { dw: local.dx, dh: local.dy };
         };
+        const onMove = (ev) => setResizeDelta(deltaAt(ev));
         const onUp = (ev) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
-            const dw = (ev.clientX - gestureRef.current.startX) / zoom;
-            const dh = (ev.clientY - gestureRef.current.startY) / zoom;
-            gestureRef.current = null;
+            const { dw, dh } = deltaAt(ev);
             setResizeDelta(null);
             if (dw === 0 && dh === 0) return;
-            onUpdate({ width: Math.max(MEDIA_MIN_SIZE, baseWidth + dw), height: Math.max(MEDIA_MIN_SIZE, baseHeight + dh) });
+            const newWidth = Math.max(MEDIA_MIN_SIZE, baseWidth + dw), newHeight = Math.max(MEDIA_MIN_SIZE, baseHeight + dh);
+            if (!savedRotation) { onUpdate({ width: newWidth, height: newHeight }); return; }
+            const box = resizeRotatedBox({ left: baseLeft, top: baseTop, width: baseWidth, height: baseHeight }, newWidth, newHeight, savedRotation);
+            onUpdate({ width: newWidth, height: newHeight, ...anchorAt(box.left, box.top) });
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseWidth, baseHeight, onUpdate, zoom]);
+    }, [readOnly, baseLeft, baseTop, baseWidth, baseHeight, savedRotation, anchorAt, onUpdate, zoom]);
+
+    // Rotation follows the pointer around the centre of the box. What counts is
+    // how far the pointer has turned since the handle was grabbed, so the picture
+    // doesn't jump if it was grabbed slightly off-centre. Screen pixels throughout,
+    // so the grid's zoom doesn't come into it.
+    const startRotate = useCallback((e) => {
+        if (readOnly || !boxRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect?.();
+        const rect = boxRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
+        const grabbedAt = pointerAngle(centerX, centerY, e.clientX, e.clientY);
+        const angleAt = (ev) => snapAngle(savedRotation + pointerAngle(centerX, centerY, ev.clientX, ev.clientY) - grabbedAt, { step: ev.shiftKey });
+        const onMove = (ev) => setRotateDraft(angleAt(ev));
+        const onUp = (ev) => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            const next = angleAt(ev);
+            setRotateDraft(null);
+            // An unrotated item carries no `rotation` at all.
+            if (next !== savedRotation) onUpdate({ rotation: next || undefined });
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [readOnly, savedRotation, onUpdate, onSelect]);
+
+    const rotateBy = useCallback((degrees) => (e) => {
+        e.stopPropagation();
+        onUpdate({ rotation: normalizeAngle(savedRotation + degrees) || undefined });
+    }, [savedRotation, onUpdate]);
 
     const openCrop = useCallback((e) => {
         e.stopPropagation();
@@ -719,8 +779,9 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         const startX = e.clientX, startY = e.clientY;
         const startCrop = cropDraft;
         const onMove = (ev) => {
-            const dxFrac = (ev.clientX - startX) / (baseWidth * zoom);
-            const dyFrac = (ev.clientY - startY) / (baseHeight * zoom);
+            const moved = toLocalDelta(ev.clientX - startX, ev.clientY - startY, savedRotation);
+            const dxFrac = moved.dx / (baseWidth * zoom);
+            const dyFrac = moved.dy / (baseHeight * zoom);
             setCropDraft(() => {
                 let { x, y, w, h } = startCrop;
                 if (edge === "left") {
@@ -743,13 +804,20 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [cropDraft, baseWidth, baseHeight, zoom]);
+    }, [cropDraft, baseWidth, baseHeight, zoom, savedRotation]);
 
     return (
         <div
-            className="absolute group"
+            ref={boxRef}
+            // The box itself takes no clicks: once the picture is turned, its
+            // corners are empty and the cells under them must stay reachable.
+            className="absolute group pointer-events-none"
             style={{ left, top, width, height, zIndex: isCropping ? 50 : 15 }}
         >
+            {/* Everything that turns with the picture. The buttons further down sit
+                outside this layer, so they stay upright and in the same place
+                whatever the angle. */}
+            <div className="relative w-full h-full pointer-events-auto" style={rotation ? { transform: `rotate(${rotation}deg)` } : undefined}>
             <div
                 className={cn(
                     "relative w-full h-full border rounded",
@@ -829,42 +897,86 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                 )}
 
                 {!readOnly && !isCropping && (
-                    <>
-                        {item.type === "shape" ? (
-                            <input
-                                type="color"
-                                value={item.fill || SHAPE_DEFAULT_FILL}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onChange={(e) => onUpdate({ fill: e.target.value })}
-                                className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                                title="Shape color"
-                            />
-                        ) : (
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={openCrop}
-                                className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                                title="Crop"
-                            >
-                                <IconCrop className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-                        <button
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={onDelete}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                            title="Remove"
-                        >
-                            <IconX className="w-3.5 h-3.5" />
-                        </button>
-                        <div
-                            onMouseDown={startResize}
-                            className="absolute right-0 bottom-0 w-3 h-3 bg-indigo-600 cursor-nwse-resize opacity-0 group-hover:opacity-100 z-20"
-                            title="Drag to resize"
-                        />
-                    </>
+                    <div
+                        onMouseDown={startResize}
+                        className="absolute right-0 bottom-0 w-3 h-3 bg-indigo-600 cursor-nwse-resize opacity-0 group-hover:opacity-100 z-20"
+                        title="Drag to resize"
+                    />
                 )}
             </div>
+            {/* Rotate handle: a knob on a stem above the top edge, only on the
+                selected item. Outside the box above, which clips a picture to its
+                frame. */}
+            {isSelected && canRotate && !readOnly && !isCropping && (
+                <>
+                    <div className="absolute left-1/2 -top-5 w-px h-5 -translate-x-1/2 bg-indigo-500 pointer-events-none z-20" />
+                    <div
+                        onMouseDown={startRotate}
+                        onDoubleClick={(e) => { e.stopPropagation(); if (savedRotation) onUpdate({ rotation: undefined }); }}
+                        className="absolute left-1/2 -top-7 w-3 h-3 -translate-x-1/2 rounded-full bg-white border-2 border-indigo-600 cursor-grab active:cursor-grabbing z-20"
+                        title="Drag to rotate · hold Shift for 15° steps · double-click to reset"
+                    />
+                </>
+            )}
+            </div>
+
+            {rotateDraft !== null && (
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-slate-900/80 text-white text-[11px] leading-4 tabular-nums pointer-events-none z-30">
+                    {rotateDraft}°
+                </div>
+            )}
+
+            {!readOnly && !isCropping && (
+                <div className="contents pointer-events-auto">
+                    {canRotate && (
+                        <>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={rotateBy(-90)}
+                                className="absolute top-0.5 right-[68px] w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Rotate left 90°"
+                            >
+                                <IconRotate2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={rotateBy(90)}
+                                className="absolute top-0.5 right-[46px] w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Rotate right 90°"
+                            >
+                                <IconRotateClockwise2 className="w-3.5 h-3.5" />
+                            </button>
+                        </>
+                    )}
+                    {item.type === "shape" ? (
+                        <input
+                            type="color"
+                            value={item.fill || SHAPE_DEFAULT_FILL}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onChange={(e) => onUpdate({ fill: e.target.value })}
+                            className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Shape color"
+                        />
+                    ) : (
+                        <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={openCrop}
+                            className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Crop"
+                        >
+                            <IconCrop className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={onDelete}
+                        className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                        title="Remove"
+                    >
+                        <IconX className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
@@ -1149,12 +1261,13 @@ const canvasPng = (img, sx, sy, sw, sh) => {
 // letterboxed size and shifted by (dx, dy) to where it actually shows.
 // ExcelJS only embeds PNG/JPEG/GIF, so anything else is re-encoded as PNG.
 // Returns null for items that can't be exported (video, a remote image
-// without CORS, a broken src).
-const prepareImageForExport = async (item) => {
+// without CORS, a broken src). This is the item as it would look unrotated;
+// prepareImageForExport below applies its rotation.
+const prepareUprightImage = async (item) => {
     // A shape goes out as a picture of itself at its current size.
     if (item.type === "shape") {
         const width = item.width || SHAPE_DEFAULT_SIZE, height = item.height || SHAPE_DEFAULT_SIZE;
-        return prepareImageForExport({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
+        return prepareUprightImage({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
     }
     if (item.type !== "image" || !item.src) return null;
     try {
@@ -1176,6 +1289,42 @@ const prepareImageForExport = async (item) => {
         const base64 = directFormat ? item.src : canvasPng(img, 0, 0, naturalW, naturalH);
         const extension = directFormat ? directFormat[1].toLowerCase().replace("jpg", "jpeg") : "png";
         return { base64, extension, width, height, dx: (boxW - width) / 2, dy: (boxH - height) / 2 };
+    } catch {
+        return null;
+    }
+};
+
+// The longest side, in pixels, of the bitmap a rotated picture is redrawn into.
+const MAX_ROTATED_EXPORT_PX = 4096;
+
+// The exported file has no way (through ExcelJS) to say "this picture is turned
+// 30 degrees", so a rotated item goes out already turned: redrawn into the upright
+// rectangle that encloses it, transparent at the corners. It keeps the centre it
+// has on the sheet, and as much of the original's resolution as fits.
+const prepareImageForExport = async (item) => {
+    const upright = await prepareUprightImage(item);
+    const rotation = item.type === "video" ? 0 : normalizeAngle(item.rotation);
+    if (!upright || !rotation) return upright;
+    try {
+        const img = await loadImageElement(upright.base64);
+        const bounds = rotatedBounds(upright.width, upright.height, rotation);
+        const sourceScale = Math.max(1, (img.naturalWidth || upright.width) / upright.width);
+        const scale = Math.min(sourceScale, MAX_ROTATED_EXPORT_PX / Math.max(bounds.width, bounds.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(bounds.width * scale));
+        canvas.height = Math.max(1, Math.round(bounds.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(img, (-upright.width * scale) / 2, (-upright.height * scale) / 2, upright.width * scale, upright.height * scale);
+        return {
+            base64: canvas.toDataURL("image/png"),
+            extension: "png",
+            width: bounds.width,
+            height: bounds.height,
+            dx: upright.dx + (upright.width - bounds.width) / 2,
+            dy: upright.dy + (upright.height - bounds.height) / 2,
+        };
     } catch {
         return null;
     }

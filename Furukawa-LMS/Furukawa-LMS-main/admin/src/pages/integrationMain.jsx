@@ -25,7 +25,11 @@ window.addEventListener('message', event => {
 
 
 createRoot(document.getElementById('root')).render(
-  <Suspense fallback={<div className="p-6 text-slate-600">Loading {label}…</div>}>
+  <Suspense fallback={
+    <div className="grid min-h-screen w-full place-items-center" role="status" aria-label="Loading page">
+      <div aria-hidden="true" className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+    </div>
+  }>
     {page === 'pdca' ? <PDCAApp onFormViewChange={onFormViewChange} /> : label ? <PTMApp embedded cmsIntegration activeSection={page} onFormViewChange={onFormViewChange} /> : <p>Unknown CMS page.</p>}
   </Suspense>
 );

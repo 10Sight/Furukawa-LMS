@@ -380,10 +380,10 @@ export const PAGE_REGISTRY = [
     // { key: "cms-add-question", label: "Add Question Paper", layout: "cms", link: "/cms/add-question-paper", icon: "IconPlus" },
     { key: "cms-recording", label: "Daily 5M Recording", layout: "cms", link: "/cms/daily-5m-recording", icon: "IconTable" },
     { key: "abnormal-condition", label: "Abnormal Condition", labelKey: "nav.abnormalCondition", layout: "cms", link: "/cms/abnormal-condition", icon: "IconAlertTriangle" },
-    { key: "cms-ptm", label: "PTM", layout: "cms", link: "/cms/ptm", icon: "IconClipboardList", newTab: true },
-    { key: "cms-pdca", label: "PDCA", layout: "cms", link: "/cms/pdca", icon: "IconRepeat", newTab: true },
-    { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck", newTab: true },
-    { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable", newTab: true },
+    { key: "cms-ptm", label: "PTM", layout: "cms", link: "/cms/ptm", icon: "IconClipboardList" },
+    { key: "cms-pdca", label: "PDCA", layout: "cms", link: "/cms/pdca", icon: "IconRepeat" },
+    { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck" },
+    { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable" },
     { key: "cms-man-machine-interlink", label: "Man-Machine Interlink", layout: "cms", link: MAN_MACHINE_INTERLINK_URL, icon: "IconSettings", newTab: true },
 
     // MIS Portal layout

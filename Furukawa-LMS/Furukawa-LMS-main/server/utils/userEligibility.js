@@ -33,6 +33,42 @@ export const getEligibleUserCondition = (alias = "u") => `
 `;
 
 /**
+ * Operator population shown on the Students page (getAllStudents): employees
+ * plus CUSTOM-role users, never trainers. Dashboard manpower counts use this
+ * so both pages start from the same set of users before status is applied.
+ */
+export const getOperatorPopulationCondition = (alias = "u") => `
+    ISNULL(${alias}.isDeleted, 0) = 0
+    AND ISNULL(${alias}.isTemporary, 0) = 0
+    AND ISNULL(${alias}.isTrainer, 0) = 0
+    AND (ISNULL(${alias}.isEmployee, 0) = 1 OR ${alias}.role = 'CUSTOM')
+    AND ${alias}.empId IS NOT NULL
+    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
+    AND ${getDesignationShutterExclusionCondition(alias)}
+`;
+
+/**
+ * Employment statuses that take a user out of the active headcount. Anything
+ * else (PRESENT, NULL, '', or a value from an older import) counts as active,
+ * matching the Students page "Present Operators" card.
+ */
+export const INACTIVE_EMPLOYMENT_STATUSES = ["LEFT", "ON_LEAVE"];
+
+// Migrated statusHistory rows spell it "ON-LEAVE"; hyphens/spaces are folded to
+// underscores so every spelling is recognised.
+export const isEmploymentStatusActive = (status) =>
+    !INACTIVE_EMPLOYMENT_STATUSES.includes(
+        String(status ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_")
+    );
+
+/**
+ * SQL twin of isEmploymentStatusActive. statusSql must already be a non-null,
+ * trimmed, upper-cased expression.
+ */
+export const getActiveEmploymentStatusCondition = (statusSql) =>
+    `REPLACE(REPLACE(${statusSql}, '-', '_'), ' ', '_') NOT IN (${INACTIVE_EMPLOYMENT_STATUSES.map((s) => `'${s}'`).join(", ")})`;
+
+/**
  * WHERE-clause-ready fragments (leading AND) for appending directly after
  * an existing WHERE condition.
  */
@@ -41,6 +77,9 @@ export const getDesignationShutterExclusionSql = (alias = "u") =>
 
 export const getEligibleUserSql = (alias = "u") =>
     `AND ${getEligibleUserCondition(alias)}`;
+
+export const getOperatorPopulationSql = (alias = "u") =>
+    `AND ${getOperatorPopulationCondition(alias)}`;
 
 /**
  * SQL Server does not allow a subquery (e.g. NOT EXISTS) inside an aggregate

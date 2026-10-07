@@ -21,6 +21,7 @@ import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statu
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
+import { assertJoiningNotAfterLeaving, getJoiningLeavingDateError } from "../utils/dateValidation.js";
 
 // Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
 // A "reasonOfLeaving" filter value of "Other" means "any custom reason not in this list".
@@ -1042,6 +1043,8 @@ export const createUser = asyncHandler(async (req, res) => {
     throw new ApiError("Missing required fields (fullName, userName, password, unit)", 400);
   }
 
+  assertJoiningNotAfterLeaving(data.joiningDate, data.leavingDate);
+
   // Duplicate Check
   let dupQuery = "SELECT id FROM users WHERE userName = ?";
   let dupParams = [data.userName.toLowerCase()];
@@ -1359,7 +1362,15 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
+  // Checked against the *effective* post-update values (incoming value, else what is already
+  // on file) so editing only one of the two dates can't slip past, and placed after the
+  // auto-set/clear logic above so it sees the leavingDate that will actually be written.
+  assertJoiningNotAfterLeaving(
+    data.joiningDate !== undefined ? data.joiningDate : oldUser.joiningDate,
+    data.leavingDate !== undefined ? data.leavingDate : oldUser.leavingDate
+  );
+
+  const cleanId =(val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
 
   // Clean IDs in request data
   if (data.departmentId !== undefined) data.departmentId = cleanId(data.departmentId);
@@ -3645,7 +3656,22 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
   // the last entry in place rather than appending). Applied via a single set-based
   // UPDATE...FROM...JOIN(VALUES) statement -- still one round trip regardless of how many
   // users are selected.
-  const [existingRows] = await executeQuery(`SELECT id, status, joiningDate, statusHistory FROM users WHERE id IN (${placeholders})`, userIds);
+  const [fetchedRows] = await executeQuery(`SELECT id, empId, fullName, status, joiningDate, statusHistory FROM users WHERE id IN (${placeholders})`, userIds);
+
+  // One leavingDate is applied to every selected user, so it has to be checked against each
+  // user's own joiningDate. Offenders are skipped and reported back rather than failing the
+  // whole batch over a single bad row.
+  const skipped = [];
+  const existingRows = fetchedRows.filter(row => {
+    const reason = getJoiningLeavingDateError(row.joiningDate, leavingDate);
+    if (reason) skipped.push({ userId: row.id, empId: row.empId, fullName: row.fullName, reason });
+    return !reason;
+  });
+
+  if (existingRows.length === 0) {
+    if (skipped.length > 0) throw new ApiError(`Date of leaving is before the joining date of all ${skipped.length} selected user${skipped.length !== 1 ? "s" : ""}`, 400);
+    return res.json(new ApiResponse(200, { updated: 0, skipped }, "No users matched the criteria"));
+  }
 
   const historyValuesSql = existingRows.map(() => "(?, ?)").join(",");
   const historyValuesParams = existingRows.flatMap(row => {
@@ -3667,8 +3693,11 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
     [leavingDate, reasonOfLeaving, reasonOfLeaving, ...historyValuesParams]
   );
 
+  const updatedCount = existingRows.length;
+
   await logAudit(req.user.id, "BULK_UPDATE_STATUS_LEFT", {
-    count: userIds.length,
+    count: updatedCount,
+    skipped: skipped.length,
     isAllSelected: !!isAllSelected,
     leavingDate,
     reasonOfLeaving,
@@ -3678,5 +3707,6 @@ export const bulkUpdateStatusLeft = asyncHandler(async (req, res) => {
   // getUserHierarchySnapshot); kept fresh via the 30-min background sync in
   // UserHierarchySnapshot.init() instead of rebuilding on every mutation.
 
-  res.json(new ApiResponse(200, { updated: userIds.length }, `${userIds.length} user${userIds.length !== 1 ? "s" : ""} marked as left`));
+  const skippedNote = skipped.length > 0 ? `, ${skipped.length} skipped (date of leaving is before joining date)` : "";
+  res.json(new ApiResponse(200, { updated: updatedCount, skipped }, `${updatedCount} user${updatedCount !== 1 ? "s" : ""} marked as left${skippedNote}`));
 });

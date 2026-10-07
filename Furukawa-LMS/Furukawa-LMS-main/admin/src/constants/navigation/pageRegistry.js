@@ -1,6 +1,12 @@
 import { getIcon } from "./IconRegistry.js";
 import { MAN_MACHINE_INTERLINK_URL } from "../../components/man-machine-interlink/integration.js";
 
+// The MIS Portal ("daily-meeting" layout) and the pages inside it.
+export const MIS_PORTAL_KEY = "daily-meeting";
+export const MIS_MORNING_MEETING_KEY = "mis-morning-meeting";
+export const MIS_MONTHLY_REPORT_KEY = "mis-monthly-report";
+const MIS_PAGE_KEYS = [MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY];
+
 // Page registry — single source of truth for all assignable pages.
 // layout: which layout the page belongs to (determines which sidebar it appears in)
 // key: unique identifier used in customRole.allowedPages[]
@@ -18,10 +24,20 @@ const normalizeAllowedPages = (user) => {
     // page get folded into "revision-table" — its history tab covers the same
     // department/section-scoped logs.
     if (pages.includes('dept-revision-logs') && !pages.includes('revision-table')) {
-        return [...pages, 'revision-table'];
+        pages = [...pages, 'revision-table'];
+    }
+
+    // A role given the MIS Portal itself but none of its pages gets all of
+    // them — that's what the portal key meant before its pages could be
+    // assigned one by one.
+    if (pages.includes(MIS_PORTAL_KEY) && !MIS_PAGE_KEYS.some((key) => pages.includes(key))) {
+        pages = [...pages, ...MIS_PAGE_KEYS];
     }
     return pages;
 };
+
+// Whether a user may open the page with this registry key.
+export const canOpenPage = (key, user) => !hasRestrictions(user) || normalizeAllowedPages(user).includes(key);
 
 export const hasRestrictions = (user) => {
     if (!user) return false;
@@ -217,7 +233,7 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
             } else if (link.startsWith("/dashboard")) {
                 link = "/portal" + link.slice(10);
             } else if (link.startsWith("/daily-meeting")) {
-                link = "/portal/daily-meeting";
+                link = "/portal" + link;
             }
         }
         return {
@@ -369,6 +385,11 @@ export const PAGE_REGISTRY = [
     { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck", newTab: true },
     { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable", newTab: true },
     { key: "cms-man-machine-interlink", label: "Man-Machine Interlink", layout: "cms", link: MAN_MACHINE_INTERLINK_URL, icon: "IconSettings", newTab: true },
-    { key: "daily-meeting", label: "Management Information System", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
+
+    // MIS Portal layout
+    { key: MIS_PORTAL_KEY, label: "Management Information System", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
+    { key: MIS_MORNING_MEETING_KEY, label: "Daily Morning Meeting", labelKey: "misPortal.dailyMorningMeetingTitle", layout: "daily-meeting", link: "/daily-meeting/morning-meeting", icon: "IconCalendar" },
+    { key: MIS_MONTHLY_REPORT_KEY, label: "Monthly Meeting Report", labelKey: "misPortal.monthlyMeetingReportTitle", layout: "daily-meeting", link: "/daily-meeting/monthly-report", icon: "IconFileText" },
+
     { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

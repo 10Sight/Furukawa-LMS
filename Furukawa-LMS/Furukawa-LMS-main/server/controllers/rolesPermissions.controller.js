@@ -466,6 +466,39 @@ const DEFAULT_ROLES = {
   }
 };
 
+// Portals whose pages a custom role can be given (customRole.allowedPages).
+// Page keys match the frontend page registry (constants/navigation/pageRegistry.js).
+// `requires` is the permission a page needs to show anything: the page key lets
+// the user open it, the permission is what the page's own API checks.
+// A role holding only a portal's own key (no page keys) gets all of its pages.
+const ASSIGNABLE_PORTALS = [
+  {
+    key: "daily-meeting",
+    name: "MIS Portal",
+    description: "Management Information System",
+    pages: [
+      { key: "daily-meeting", name: "MIS Portal Home", description: "The MIS Portal tile on the main menu and its workspace chooser" },
+      { key: "mis-morning-meeting", name: "Daily Morning Meeting", description: "Section-wise standup spreadsheets and charts", requires: SYSTEM_PERMISSIONS.DAILY_MEETING_READ },
+      { key: "mis-monthly-report", name: "Monthly Meeting Report", description: "Monthly report folders and presentations", requires: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ }
+    ]
+  }
+];
+
+// `permissions` plus whatever the role's pages need to be usable. Without this
+// a role could be given a page that then opens empty for its users.
+const withPortalPagePermissions = (allowedPages, permissions) => {
+  const result = new Set(Array.isArray(permissions) ? permissions : []);
+  const pages = new Set(Array.isArray(allowedPages) ? allowedPages : []);
+  for (const portal of ASSIGNABLE_PORTALS) {
+    const subPages = portal.pages.filter(page => page.key !== portal.key);
+    const portalOnly = pages.has(portal.key) && !subPages.some(page => pages.has(page.key));
+    for (const page of subPages) {
+      if (page.requires && (portalOnly || pages.has(page.key))) result.add(page.requires);
+    }
+  }
+  return [...result];
+};
+
 // Get all roles and permissions
 export const getRolesAndPermissions = asyncHandler(async (req, res) => {
   try {
@@ -576,13 +609,13 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" }
       ],
-      "Daily Meeting": [
+      "MIS Portal - Daily Morning Meeting": [
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_READ, name: "View Daily Meetings", description: "View daily standup meetings and spreadsheet contents across all departments and sections" },
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_CREATE, name: "Create Daily Meetings", description: "Create new daily standup meetings for assigned departments and sections" },
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_UPDATE, name: "Edit Daily Meetings", description: "Edit daily standup meetings and spreadsheet contents for assigned departments and sections" },
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_DELETE, name: "Delete Daily Meetings", description: "Delete daily standup meetings for assigned departments and sections" }
       ],
-      "Monthly Meeting Report": [
+      "MIS Portal - Monthly Meeting Report": [
         { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ, name: "View Monthly Meeting Reports", description: "View monthly report folders and PowerPoint presentations across all departments and sections" },
         { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_CREATE, name: "Create Monthly Meeting Reports", description: "Create folders and upload presentations for assigned departments and sections" },
         { id: SYSTEM_PERMISSIONS.MONTHLY_REPORT_UPDATE, name: "Edit Monthly Meeting Reports", description: "Edit monthly report folders and presentations for assigned departments and sections" },
@@ -801,6 +834,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
 
     res.json(new ApiResponse(200, {
       permissions,
+      portals: ASSIGNABLE_PORTALS,
       roles: allRoles,
       systemPermissions: SYSTEM_PERMISSIONS
     }, "Roles and permissions fetched successfully"));
@@ -830,7 +864,10 @@ export const createCustomRole = asyncHandler(async (req, res) => {
     const invalidPermissions = permissions.filter(p => !validPermissions.includes(p));
     if (invalidPermissions.length > 0) throw new ApiError(`Invalid permissions: ${invalidPermissions.join(", ")}`, 400);
 
-    const newRole = await CustomRole.create({ name, description, color, permissions, allowedPages, generateManagementPage, targetLayout });
+    const newRole = await CustomRole.create({
+      name, description, color, allowedPages, generateManagementPage, targetLayout,
+      permissions: withPortalPagePermissions(allowedPages, permissions)
+    });
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
     await auditLogger(req.user.id, 'CREATE_ROLE',
@@ -862,8 +899,13 @@ export const updateRolePermissions = asyncHandler(async (req, res) => {
       if (invalid.length > 0) throw new ApiError(`Invalid permissions: ${invalid.join(", ")}`, 400);
     }
 
+    // Whichever of pages / permissions changed, the two are kept consistent.
+    const pagePermissions = (permissions !== undefined || allowedPages !== undefined)
+      ? withPortalPagePermissions(allowedPages ?? customRole.allowedPages, permissions ?? customRole.permissions)
+      : undefined;
+
     const updated = await CustomRole.update(roleId, {
-      name, description, color, permissions, targetLayout, allowedPages, generateManagementPage
+      name, description, color, permissions: pagePermissions, targetLayout, allowedPages, generateManagementPage
     });
 
     const auditLogger = (await import("../utils/auditLogger.js")).default;
@@ -1106,7 +1148,10 @@ export const createNewCustomRole = asyncHandler(async (req, res) => {
   const exists = await CustomRole.findByName(name);
   if (exists) throw new ApiError("A role with this name already exists", 409);
 
-  const role = await CustomRole.create({ name, description, color, allowedPages, permissions, generateManagementPage, targetLayout });
+  const role = await CustomRole.create({
+    name, description, color, allowedPages, generateManagementPage, targetLayout,
+    permissions: withPortalPagePermissions(allowedPages, permissions)
+  });
   res.status(201).json(new ApiResponse(201, role, "Custom role created successfully"));
 });
 
@@ -1118,7 +1163,13 @@ export const updateCustomRole = asyncHandler(async (req, res) => {
   // Allow editing system roles if they are in the custom_roles table
   // (Core roles like SUPERADMIN/ADMIN are not in this table)
 
-  const updated = await CustomRole.update(id, req.body);
+  const { allowedPages, permissions } = req.body;
+  const changes = { ...req.body };
+  if (permissions !== undefined || allowedPages !== undefined) {
+    changes.permissions = withPortalPagePermissions(allowedPages ?? role.allowedPages, permissions ?? role.permissions);
+  }
+
+  const updated = await CustomRole.update(id, changes);
   res.json(new ApiResponse(200, updated, "Custom role updated successfully"));
 });
 

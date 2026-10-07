@@ -14,12 +14,14 @@ import {
 } from "@tabler/icons-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
-    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart
+    PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ComposedChart,
+    Label as ChartLabel
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "../../../utils/spreadsheets/formulaEngine.js";
 import {
     parseNumericCell, parseRangeString, formatRangeString, chartRanges, naturalPlotBy,
     seriesIdsForRanges, seriesCountForRanges, MAX_CHART_SERIES, extractDisjointChartData, legacyConfigRanges,
+    blockChartRange, newChartRange,
 } from "../../../utils/spreadsheets/chartMatrixEngine.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
@@ -58,9 +60,10 @@ const CHART_TYPE_GROUPS = [
 let chartIdSeq = 0;
 const nextChartId = () => `chart-${Date.now().toString(36)}-${(chartIdSeq++).toString(36)}`;
 
-// `id` defaults to a fixed value rather than nextChartId() so the very first,
-// not-yet-saved chart keeps a stable identity across re-renders (which happen
-// on every keystroke in the grid, before the user has ever pressed "+").
+// The settings a chart starts from. `id` defaults to a fixed value rather than
+// nextChartId() for the callers that build one without inserting it — a sheet's
+// old singular `chartConfig`, and the Insert Chart dialog's previews — so it
+// keeps a stable identity across re-renders.
 const buildDefaultChart = (columnCount, rowCount, id = "chart-1", name = "Chart 1") => ({
     id,
     name,
@@ -84,9 +87,8 @@ const buildDefaultChart = (columnCount, rowCount, id = "chart-1", name = "Chart 
 // a `charts` array saved before the Design fields (title/labelPosition/
 // pointColors/legendPosition) existed — read-only migration: fill in defaults
 // for whatever's missing. Never written back until the user's next edit.
-// `Array.isArray` (not a truthy/length check) so a saved, deliberately-emptied
-// `charts: []` is respected instead of being treated as "never configured" and
-// regenerating a default chart every render.
+// A sheet with no `charts` at all (a new tab, an imported workbook) has none: a
+// chart appears only once the user inserts one, as in Excel.
 const withDesignDefaults = (chart) => ({
     title: "",
     labelPosition: "auto",
@@ -96,6 +98,7 @@ const withDesignDefaults = (chart) => ({
     legendPosition: chart.legendPosition || (chart.showLegend === false ? "none" : "bottom"),
 });
 
+const NO_CHARTS = Object.freeze([]);
 const getChartsForSheet = (activeSheet, columnCount, rowCount) => {
     if (Array.isArray(activeSheet?.charts)) return activeSheet.charts.map(withDesignDefaults);
     if (activeSheet?.chartConfig) {
@@ -106,7 +109,7 @@ const getChartsForSheet = (activeSheet, columnCount, rowCount) => {
             name: activeSheet.chartConfig.name || "Chart 1",
         })];
     }
-    return [buildDefaultChart(columnCount, rowCount)];
+    return NO_CHARTS;
 };
 
 // Series are keyed by column letter, or by row number when a chart plots by rows.
@@ -228,21 +231,29 @@ const LABEL_POSITION_OPTIONS_BY_TYPE = {
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     lineStacked: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     area: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     combo: [
         { value: "above", label: "Above" },
         { value: "below", label: "Below" },
         { value: "center", label: "Center" },
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
     ],
     pie: [
         { value: "outsideEnd", label: "Outside End" },
@@ -274,10 +285,10 @@ const RECHARTS_LABEL_POSITION = {
     columnStacked: { center: "center", insideEnd: "insideTop", insideBase: "insideBottom" },
     barGrouped: { outsideEnd: "right", insideEnd: "insideRight", center: "center", insideBase: "insideLeft" },
     barStacked: { center: "center", insideEnd: "insideRight", insideBase: "insideLeft" },
-    line: { above: "top", below: "bottom", center: "center" },
-    lineStacked: { above: "top", below: "bottom", center: "center" },
-    area: { above: "top", below: "bottom", center: "center" },
-    combo: { above: "top", below: "bottom", center: "center" },
+    line: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    lineStacked: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    area: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
+    combo: { above: "top", below: "bottom", center: "center", left: "left", right: "right" },
 };
 
 // Which label-position family one series belongs to: in a combo chart a column
@@ -286,8 +297,11 @@ const seriesLabelFamily = (config, seriesIndex) => {
     if (config.type !== "combo") return labelFamily(config.type);
     return getComboSeriesSettings(config, config.valueCols?.[seriesIndex], seriesIndex).type === "column" ? "columnGrouped" : "combo";
 };
-// Chart types whose data labels can be set series by series.
-const supportsSeriesLabels = (type) => !!RECHARTS_LABEL_POSITION[labelFamily(type)];
+const PIE_TYPES = new Set(["pie", "doughnut"]);
+// Chart types whose data labels can be set series by series, and label by label.
+const supportsSeriesLabels = (type) => !!RECHARTS_LABEL_POSITION[labelFamily(type)] || PIE_TYPES.has(type);
+// How a selected data label is marked on the chart.
+const SELECTED_LABEL_PROPS = { stroke: "#4f46e5", strokeWidth: 0.75, paintOrder: "stroke" };
 // px each click of a label nudge arrow moves a series' labels.
 const LABEL_NUDGE_STEP = 4;
 
@@ -297,6 +311,35 @@ const LABEL_NUDGE_STEP = 4;
 const resolvePieLabelPosition = (config) => (
     config.labelPosition && config.labelPosition !== "auto" ? config.labelPosition : AUTO_LABEL_POSITION[config.type]
 );
+
+// One data label of a bar/line/area series, drawn by recharts' own <Label> so
+// it sits exactly where a plain LabelList would put it. `resolveLabel(index)`
+// gives that point's { position, dx, dy, fill, selected }, or null to hide it —
+// which is what lets a single value's label be placed apart from its series.
+// `onPick(index)`, when given, makes the label clickable.
+function DataPointLabel({ viewBox, parentViewBox, value, index, resolveLabel, textProps, onPick }) {
+    const own = resolveLabel(index);
+    if (!own) return null;
+    const label = (
+        <ChartLabel
+            viewBox={viewBox}
+            parentViewBox={parentViewBox}
+            value={value}
+            position={own.position}
+            dx={own.dx}
+            dy={own.dy}
+            fill={own.fill}
+            {...textProps}
+            {...(own.selected ? SELECTED_LABEL_PROPS : null)}
+        />
+    );
+    if (!onPick) return label;
+    return (
+        <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPick(index); }}>
+            {label}
+        </g>
+    );
+}
 
 // --- Format tab: chart text ---
 // The pieces of chart text that can be styled, in the order Excel's "Chart
@@ -338,15 +381,25 @@ const RADIAN = Math.PI / 180;
 // recharts' Pie `label` render-prop: returning a plain string only supports
 // its own default (outside) placement, so inside/center positions need a
 // custom <text> computed from the slice's own radius/angle.
-function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position, labelText, labelFill) {
+function renderPieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }, position, labelText, labelFill, { dx = 0, dy = 0, selected = false, onPick = null } = {}) {
     const radius = position === "insideEnd" ? innerRadius + (outerRadius - innerRadius) * 0.88
         : position === "center" ? innerRadius + (outerRadius - innerRadius) * 0.5
         : outerRadius + 18; // outsideEnd
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    const x = cx + radius * Math.cos(-midAngle * RADIAN) + dx;
+    const y = cy + radius * Math.sin(-midAngle * RADIAN) + dy;
     const isOutside = position === "outsideEnd";
     return (
-        <text x={x} y={y} fill={labelFill(isOutside ? INK_SECONDARY : "#ffffff")} {...labelText} textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"} dominantBaseline="central">
+        <text
+            x={x}
+            y={y}
+            fill={labelFill(isOutside ? INK_SECONDARY : "#ffffff")}
+            {...labelText}
+            {...(selected ? SELECTED_LABEL_PROPS : null)}
+            textAnchor={isOutside ? (x > cx ? "start" : "end") : "middle"}
+            dominantBaseline="central"
+            style={onPick ? { cursor: "pointer" } : undefined}
+            onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}
+        >
             {`${Math.round(percent * 100)}%`}
         </text>
     );
@@ -805,7 +858,7 @@ function InsertChartDialog({ state, onClose, recommended, currentType, comboSeri
     );
 }
 
-function ExcelGraph({ excelData, onChartsChange }) {
+function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [draft, setDraft] = useState(null);
     const [designPopoverOpen, setDesignPopoverOpen] = useState(false);
@@ -818,7 +871,10 @@ function ExcelGraph({ excelData, onChartsChange }) {
     const [isFullScreen, setIsFullScreen] = useState(false);
     const exitFullScreen = useCallback(() => setIsFullScreen(false), []);
     const [ribbonTab, setRibbonTab] = useState("insert"); // "insert" | "design" | "format"
-    const [formatTarget, setFormatTarget] = useState("all"); // key of TEXT_ELEMENTS
+    const [formatTarget, setFormatTarget] = useState("all"); // key of TEXT_ELEMENTS, or "series:<id>"
+    // With a series selected: the one data label being formatted (its category
+    // name), or null for the series' labels as a whole.
+    const [targetPoint, setTargetPoint] = useState(null);
     const [lastFontColor, setLastFontColor] = useState("#FF0000");
     const [lastFillColor, setLastFillColor] = useState("#FFFF00");
     // Insert Chart dialog: the tab it opened on and the family shown under All Charts.
@@ -905,8 +961,20 @@ function ExcelGraph({ excelData, onChartsChange }) {
         applyConfig({ textStyles: styles });
     };
 
+    const selectionForNewChart = {
+        selection: excelData?.selection, ranges: excelData?.ranges, activeCell: excelData?.activeCell,
+        displayGrid, rowCount, columnCount,
+    };
+    // A new chart starts on what is selected in the grid (see newChartRange), unless
+    // the caller names its own range, as PivotChart does. `patch` may be a function
+    // of the chart so far, for settings that depend on which series it ends up with.
     const addChart = (patch = {}) => {
-        const newChart = { ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`), ...patch };
+        const ownRange = typeof patch !== "function" && (patch.xAxisCol || patch.rangeString);
+        const base = {
+            ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`),
+            ...(ownRange ? null : newChartRange(selectionForNewChart)),
+        };
+        const newChart = { ...base, ...(typeof patch === "function" ? patch(base) : patch) };
         setActiveChartId(newChart.id);
         onChartsChange?.([...charts, newChart]);
     };
@@ -924,7 +992,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
     // Picking a chart type changes the active chart (or inserts one when there is none).
     const applyVariant = (key, comboSettings) => {
         if (config) applyConfig(variantPatch(key, config, comboSettings));
-        else addChart(variantPatch(key, buildDefaultChart(columnCount, rowCount), comboSettings));
+        else addChart((base) => variantPatch(key, base, comboSettings));
     };
     // Opens the dialog on Combo > Custom Combination, with its series table.
     const openCustomCombo = () => setInsertDialog({ tab: "all", family: "combo", select: "combo" });
@@ -952,15 +1020,77 @@ function ExcelGraph({ excelData, onChartsChange }) {
     const prepared = useMemo(() => prepareChartData(activeSheet, displayGrid, config), [activeSheet, displayGrid, config]);
     const { data, seriesKeys, hadInvalid } = prepared;
 
+    // With no chart yet, the Insert Chart dialog works from the chart it would
+    // insert: its previews, recommendations and series table all describe that
+    // one. Only worked out while the dialog is open.
+    const insertDialogOpen = !!insertDialog;
+    const { selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell } = excelData || {};
+    const insertBase = useMemo(() => (insertDialogOpen && !config ? {
+        ...buildDefaultChart(columnCount, rowCount),
+        ...newChartRange({ selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell, displayGrid, rowCount, columnCount }),
+    } : null), [insertDialogOpen, config, gridSelection, gridRanges, gridActiveCell, displayGrid, rowCount, columnCount]);
+    const dialogChart = config || insertBase;
+    // The selection as the zero state names it: a block or a list of ranges. A lone
+    // cell, row or column isn't named, since the chart then takes the data around
+    // the active cell instead (see newChartRange).
+    const newChartSourceLabel = (() => {
+        if (Array.isArray(gridRanges) && gridRanges.length > 1) return formatRangeString(gridRanges);
+        const start = gridSelection && parseCellRef(gridSelection.start);
+        const end = gridSelection && parseCellRef(gridSelection.end);
+        return start && end && start.row !== end.row && start.col !== end.col ? `${gridSelection.start}:${gridSelection.end}` : null;
+    })();
+    const dialogPrepared = useMemo(
+        () => (insertBase ? prepareChartData(activeSheet, displayGrid, insertBase) : prepared),
+        [insertBase, activeSheet, displayGrid, prepared]
+    );
+
+    // --- One data label on its own (Excel: click a label twice) ---
+    // `config.pointLabels[seriesId][categoryName]` = { show, position, dx, dy }
+    // overrides that series' label settings for a single value.
+    useEffect(() => { setTargetPoint(null); }, [formatTarget, config?.id]);
+    const pointNames = useMemo(() => [...new Set(data.map((d) => d.name))], [data]);
+    const activePoint = targetSeriesId !== null && targetPoint !== null && pointNames.includes(targetPoint) ? targetPoint : null;
+    const targetPointLabel = (activePoint !== null && config?.pointLabels?.[targetSeriesId]?.[activePoint]) || {};
+    const seriesLabelsShown = targetSeriesLabel.show ?? config?.showDataLabels;
+    const pointLabelShown = targetPointLabel.show ?? seriesLabelsShown;
+    const setPointLabel = (patch) => {
+        if (!config || activePoint === null) return;
+        applyConfig({
+            pointLabels: {
+                ...config.pointLabels,
+                [targetSeriesId]: { ...config.pointLabels?.[targetSeriesId], [activePoint]: { ...targetPointLabel, ...patch } },
+            },
+        });
+    };
+    const clearPointLabel = () => {
+        if (!config || activePoint === null) return;
+        const forSeries = { ...config.pointLabels?.[targetSeriesId] };
+        delete forSeries[activePoint];
+        applyConfig({ pointLabels: { ...config.pointLabels, [targetSeriesId]: forSeries } });
+    };
+    // The arrows move whichever is selected: one label, or the whole series.
+    const nudgeLabel = (dx, dy) => (activePoint !== null
+        ? setPointLabel({ show: true, dx: (targetPointLabel.dx || 0) + dx, dy: (targetPointLabel.dy || 0) + dy })
+        : nudgeSeriesLabel(dx, dy));
+    // Clicking a data label on the chart selects its series' labels; clicking
+    // again within that series narrows to the one label, as in Excel.
+    const pickDataLabel = (seriesId, categoryName) => {
+        setRibbonTab("format");
+        setIsToolbarExpanded(true);
+        if (formatTarget === `series:${seriesId}`) setTargetPoint(categoryName);
+        else setFormatTarget(`series:${seriesId}`);
+    };
+
     // The chart's series with their current combo type/axis, for the Change
     // Chart Type dialog's series table.
-    const comboSeries = useMemo(() => (config ? seriesKeys.map((name, i) => {
-        const id = config.valueCols[i];
-        return { id, name, color: config.seriesColors?.[id] || CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length], ...getComboSeriesSettings(config, id, i) };
-    }) : []), [config, seriesKeys]);
+    const comboSeries = useMemo(() => (dialogChart ? dialogPrepared.seriesKeys.map((name, i) => {
+        const id = dialogChart.valueCols[i];
+        return { id, name, color: dialogChart.seriesColors?.[id] || CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length], ...getComboSeriesSettings(dialogChart, id, i) };
+    }) : []), [dialogChart, dialogPrepared]);
 
     // Excel's Recommended Charts: a short list suited to the data's shape.
     const recommendedVariants = useMemo(() => {
+        const { data, seriesKeys } = dialogPrepared;
         const n = seriesKeys.length, rows = data.length;
         const numericX = rows > 1 && data.every((row) => Number.isFinite(parseFloat(String(row.name).replace(/[$,%\s]/g, ""))));
         const allPositive = data.every((row) => seriesKeys.every((k) => (row[k] || 0) >= 0));
@@ -978,7 +1108,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
         }
         if (numericX) list.push("scatter");
         return [...new Set(list)].slice(0, 8);
-    }, [data, seriesKeys]);
+    }, [dialogPrepared]);
 
     const deleteChart = (id) => {
         const nextCharts = charts.filter((c) => c.id !== id);
@@ -1062,18 +1192,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
             return;
         }
 
-        const xAxisCol = indexToCol(minCol);
-        const valueCols = [];
-        for (let c = minCol + 1; c <= maxCol; c++) valueCols.push(indexToCol(c));
-
-        // Header auto-detect: the first selected row reads as a header if every
-        // value-column cell in it is non-numeric text rather than a number.
-        const hasHeaderRow = valueCols.every((col) => {
-            const raw = displayGrid[getCellId(minRow, colToIndex(col))];
-            return raw !== undefined && raw !== "" && parseNumericCell(raw) === null;
-        });
-
-        setDraft((d) => ({ ...d, xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow, rangeString: "", ranges: undefined, plotBy: undefined }));
+        const block = blockChartRange(displayGrid, { minRow, maxRow, minCol, maxCol });
+        setDraft((d) => ({ ...d, ...block, rangeString: "", ranges: undefined, plotBy: undefined }));
         toast.success("Range filled from your selection — review and Apply.");
     };
 
@@ -1173,27 +1293,56 @@ function ExcelGraph({ excelData, onChartsChange }) {
         // `cfg.seriesLabels[seriesId]` = { show, position, dx, dy } overrides the
         // chart-wide data-label settings for that one series.
         const seriesLabelOptions = (index) => cfg.seriesLabels?.[cfg.valueCols?.[index]] || {};
-        const showLabels = !mini && (cfg.showDataLabels || Object.values(cfg.seriesLabels || {}).some((o) => o?.show));
+        // `cfg.pointLabels[seriesId][categoryName]` does the same for one value's label.
+        const pointLabelOptions = (index) => cfg.pointLabels?.[cfg.valueCols?.[index]] || {};
+        const showsOwnLabel = (points) => Object.values(points || {}).some((o) => o?.show);
+        const showLabels = !mini && (cfg.showDataLabels
+            || Object.values(cfg.seriesLabels || {}).some((o) => o?.show)
+            || Object.values(cfg.pointLabels || {}).some(showsOwnLabel));
+        // Labels are clickable, and show which one is selected, only on the chart being edited.
+        const isActiveChart = !mini && cfg.id === config?.id;
+        const selectedPointOf = (seriesId) => (isActiveChart && ribbonTab === "format" && formatTarget === `series:${seriesId}` ? activePoint : null);
         const showGrid = !mini && cfg.showGridlines;
         // The data labels of series `index`, or null when that series shows none.
         const seriesLabel = (index) => {
             const options = seriesLabelOptions(index);
-            if (mini || !(options.show ?? cfg.showDataLabels)) return null;
+            const points = pointLabelOptions(index);
+            const seriesShown = options.show ?? cfg.showDataLabels;
+            if (mini || (!seriesShown && !showsOwnLabel(points))) return null;
+            const seriesId = cfg.valueCols?.[index];
             const family = seriesLabelFamily(cfg, index);
             const positions = RECHARTS_LABEL_POSITION[family] || {};
             const chartWide = cfg.labelPosition && cfg.labelPosition !== "auto" ? cfg.labelPosition : null;
-            const position = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
-            // White on a bar's own fill, dark anywhere else.
-            const insideMark = ["columnGrouped", "columnStacked", "barGrouped", "barStacked"].includes(family) && (position.startsWith("inside") || position === "center");
+            const seriesPosition = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
+            const onBar = ["columnGrouped", "columnStacked", "barGrouped", "barStacked"].includes(family);
+            const selectedPoint = selectedPointOf(seriesId);
+            // Each label takes its own value's settings where it has any, else the series'.
+            const resolveLabel = (dataIndex) => {
+                const categoryName = data[dataIndex]?.name;
+                const own = points[categoryName] || {};
+                if (!(own.show ?? seriesShown)) return null;
+                const position = positions[own.position] || seriesPosition;
+                // White on a bar's own fill, dark anywhere else.
+                const insideMark = onBar && (position.startsWith("inside") || position === "center");
+                return {
+                    position,
+                    dx: (options.dx || 0) + (own.dx || 0),
+                    dy: (options.dy || 0) + (own.dy || 0),
+                    fill: labelFill(insideMark ? "#ffffff" : INK_SECONDARY),
+                    selected: selectedPoint !== null && selectedPoint === categoryName,
+                };
+            };
             return (
                 <LabelList
                     key="ll"
                     dataKey={seriesKeys[index]}
-                    position={position}
-                    dx={options.dx || 0}
-                    dy={options.dy || 0}
-                    fill={labelFill(insideMark ? "#ffffff" : INK_SECONDARY)}
-                    {...labelText}
+                    content={
+                        <DataPointLabel
+                            resolveLabel={resolveLabel}
+                            textProps={labelText}
+                            onPick={isActiveChart ? (dataIndex) => pickDataLabel(seriesId, data[dataIndex]?.name) : null}
+                        />
+                    }
                 />
             );
         };
@@ -1386,7 +1535,23 @@ function ExcelGraph({ excelData, onChartsChange }) {
             case "pie":
             case "doughnut": {
                 const key = seriesKeys[0];
-                const piePos = resolvePieLabelPosition(cfg);
+                const pieSeriesId = cfg.valueCols?.[0];
+                const pieSeries = seriesLabelOptions(0);
+                const piePoints = pointLabelOptions(0);
+                const pieSeriesShown = pieSeries.show ?? cfg.showDataLabels;
+                const piePos = pieSeries.position || resolvePieLabelPosition(cfg);
+                const pieSelected = selectedPointOf(pieSeriesId);
+                // Each slice's label takes its own settings where it has any, else the series'.
+                const pieLabel = (labelProps) => {
+                    const own = piePoints[labelProps.name] || {};
+                    if (!(own.show ?? pieSeriesShown)) return null;
+                    return renderPieLabel(labelProps, own.position || piePos, labelText, labelFill, {
+                        dx: (pieSeries.dx || 0) + (own.dx || 0),
+                        dy: (pieSeries.dy || 0) + (own.dy || 0),
+                        selected: pieSelected !== null && pieSelected === labelProps.name,
+                        onPick: isActiveChart ? () => pickDataLabel(pieSeriesId, labelProps.name) : null,
+                    });
+                };
                 return (
                     <PieChart margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                         {!mini && <Tooltip content={<ChartTooltip />} />}
@@ -1406,8 +1571,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
                             stroke={CHART_SURFACE}
                             strokeWidth={2}
                             isAnimationActive={!mini}
-                            label={showLabels ? (labelProps) => renderPieLabel(labelProps, piePos, labelText, labelFill) : false}
-                            labelLine={showLabels && piePos === "outsideEnd"}
+                            label={showLabels ? pieLabel : false}
+                            labelLine={showLabels && pieSeriesShown && piePos === "outsideEnd"}
                         >
                             {data.map((row, i) => <Cell key={i} fill={pieCellColorFor(cfg, key, row.name, i)} />)}
                         </Pie>
@@ -1673,7 +1838,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                         <RibbonBtn
                             className="justify-start gap-1.5 px-1.5"
                             title="Reset to Match Style: clear this chart's custom fonts, fill, label placement and legend alignment"
-                            onClick={() => applyConfig({ textStyles: {}, chartFill: undefined, seriesLabels: {}, legendAlign: undefined })}
+                            onClick={() => applyConfig({ textStyles: {}, chartFill: undefined, seriesLabels: {}, pointLabels: {}, legendAlign: undefined })}
                         >
                             <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
                             <span className="text-xs">Reset to Match Style</span>
@@ -1725,42 +1890,82 @@ function ExcelGraph({ excelData, onChartsChange }) {
                     </RibbonStack>
                 </RibbonGroup>
                 {targetSeriesIndex >= 0 ? (
-                <RibbonGroup label="Series Data Labels">
-                    <RibbonStack className="gap-1.5 justify-start pt-1">
+                <RibbonGroup label={activePoint !== null ? "Data Label" : "Series Data Labels"}>
+                    <RibbonStack className="py-0">
                         <RibbonDropdown
-                            title="Label Position: where this series' data labels sit"
+                            title="Data Point: format every label of this series, or the label of one value. Clicking a label on the chart twice picks it too."
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[190px] max-h-72 overflow-y-auto"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">{activePoint !== null ? activePoint : "All Points"}</span>}
+                        >
+                            <MenuItem label="All Points" checked={activePoint === null} onClick={() => setTargetPoint(null)} />
+                            <MenuSeparator />
+                            {pointNames.map((name) => (
+                                <MenuItem key={name} label={name} checked={activePoint === name} onClick={() => setTargetPoint(name)} />
+                            ))}
+                        </RibbonDropdown>
+                        {activePoint !== null ? (
+                        <RibbonDropdown
+                            title="Label Position: where this one value's data label sits"
                             buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
                             contentClassName="w-[170px]"
                             trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
-                                {!(targetSeriesLabel.show ?? config.showDataLabels) ? "No Labels"
-                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                                {!pointLabelShown ? "No Label"
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetPointLabel.position)?.label || "Same as Series"}
                             </span>}
                         >
-                            <MenuItem label="No Labels" checked={!(targetSeriesLabel.show ?? config.showDataLabels)} onClick={() => setSeriesLabel({ show: false })} />
-                            <MenuItem label="Same as Chart" checked={(targetSeriesLabel.show ?? config.showDataLabels) && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
+                            <MenuItem label="No Label" checked={!pointLabelShown} onClick={() => setPointLabel({ show: false })} />
+                            <MenuItem label="Same as Series" checked={pointLabelShown && !targetPointLabel.position} onClick={() => setPointLabel({ show: true, position: undefined })} />
                             <MenuSeparator />
                             {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
                                 <MenuItem
                                     key={opt.value}
                                     label={opt.label}
-                                    checked={(targetSeriesLabel.show ?? config.showDataLabels) && targetSeriesLabel.position === opt.value}
+                                    checked={pointLabelShown && targetPointLabel.position === opt.value}
+                                    onClick={() => setPointLabel({ show: true, position: opt.value })}
+                                />
+                            ))}
+                        </RibbonDropdown>
+                        ) : (
+                        <RibbonDropdown
+                            title="Label Position: where this series' data labels sit"
+                            buttonClassName="w-[150px] h-6 border border-slate-300 rounded-sm bg-white justify-between"
+                            contentClassName="w-[170px]"
+                            trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
+                                {!seriesLabelsShown ? "No Labels"
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                            </span>}
+                        >
+                            <MenuItem label="No Labels" checked={!seriesLabelsShown} onClick={() => setSeriesLabel({ show: false })} />
+                            <MenuItem label="Same as Chart" checked={seriesLabelsShown && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
+                            <MenuSeparator />
+                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
+                                <MenuItem
+                                    key={opt.value}
+                                    label={opt.label}
+                                    checked={seriesLabelsShown && targetSeriesLabel.position === opt.value}
                                     onClick={() => setSeriesLabel({ show: true, position: opt.value })}
                                 />
                             ))}
                         </RibbonDropdown>
+                        )}
                         <RibbonRow className="gap-0.5">
-                            <RibbonBtn title="Move labels left" onClick={() => nudgeSeriesLabel(-LABEL_NUDGE_STEP, 0)}><IconArrowLeft className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels up" onClick={() => nudgeSeriesLabel(0, -LABEL_NUDGE_STEP)}><IconArrowUp className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels down" onClick={() => nudgeSeriesLabel(0, LABEL_NUDGE_STEP)}><IconArrowDown className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Move labels right" onClick={() => nudgeSeriesLabel(LABEL_NUDGE_STEP, 0)}><IconArrowRight className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label left" : "Move labels left"} onClick={() => nudgeLabel(-LABEL_NUDGE_STEP, 0)}><IconArrowLeft className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label up" : "Move labels up"} onClick={() => nudgeLabel(0, -LABEL_NUDGE_STEP)}><IconArrowUp className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label down" : "Move labels down"} onClick={() => nudgeLabel(0, LABEL_NUDGE_STEP)}><IconArrowDown className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title={activePoint !== null ? "Move this label right" : "Move labels right"} onClick={() => nudgeLabel(LABEL_NUDGE_STEP, 0)}><IconArrowRight className="w-4 h-4" /></RibbonBtn>
                             <RibbonDivider />
                             <RibbonBtn
                                 className="px-1.5"
-                                title="Reset this series' labels to the chart's settings"
+                                title={activePoint !== null ? "Reset this label to its series' settings" : "Reset this series' labels to the chart's settings"}
                                 onClick={() => {
+                                    if (activePoint !== null) { clearPointLabel(); return; }
                                     const next = { ...config.seriesLabels };
                                     delete next[targetSeriesId];
-                                    applyConfig({ seriesLabels: next });
+                                    // The series' single-label settings go with it.
+                                    const nextPoints = { ...config.pointLabels };
+                                    delete nextPoints[targetSeriesId];
+                                    applyConfig({ seriesLabels: next, pointLabels: nextPoints });
                                 }}
                             >
                                 <IconRestore className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
@@ -2216,8 +2421,23 @@ function ExcelGraph({ excelData, onChartsChange }) {
             </div>
 
             {!config ? (
-                <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">
-                    No charts yet. Pick a chart type from the Insert ribbon above, or click "+".
+                // Kept to one short row: most sheets have no chart, and this sits
+                // above the grid on every one of them.
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 px-4 py-4 text-sm text-slate-500">
+                    <IconChartBar className="w-5 h-5 text-slate-400 shrink-0" />
+                    <span>No charts on this sheet.</span>
+                    {!readOnly && (
+                        <>
+                            <Button size="sm" className="h-7 text-xs cursor-pointer bg-[#107C41] hover:bg-[#0d6635] text-white" onClick={() => addChart()}>
+                                <IconPlus className="w-3.5 h-3.5" /> Create chart
+                            </Button>
+                            <span className="text-xs text-slate-400">
+                                {newChartSourceLabel
+                                    ? <>from <span className="font-medium text-slate-600">{newChartSourceLabel}</span>, or pick a chart type above</>
+                                    : <>from the data around {gridActiveCell ? <span className="font-medium text-slate-600">{gridActiveCell}</span> : "the selected cell"}, or pick a chart type above</>}
+                            </span>
+                        </>
+                    )}
                 </div>
             ) : (
             <>
@@ -2250,7 +2470,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 currentType={config?.type}
                 comboSeries={comboSeries}
                 renderPreview={(key, mini, comboSettings) => {
-                    const base = config || buildDefaultChart(columnCount, rowCount);
+                    const base = dialogChart || buildDefaultChart(columnCount, rowCount);
                     const cfg = { ...base, ...variantPatch(key, base, comboSettings), title: "" };
                     return renderChartBody(cfg, prepareChartData(activeSheet, displayGrid, cfg), mini);
                 }}

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
+import { useSelector } from "react-redux";
 import { Button } from "@/components/common/ui/button.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/common/ui/context-menu.jsx";
@@ -19,20 +20,36 @@ import {
     IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconMaximize, IconMinimize,
     IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
     IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
-    IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid
+    IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid,
+    IconMessagePlus, IconMessage, IconRotate2, IconRotateClockwise2
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
-    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation
+    useGetDailyMorningMeetingDetailQuery, useSaveDailyMorningMeetingSheetMutation,
+    useSaveDailyMorningMeetingSheetPatchMutation
 } from "@/services/api/DepartmentApi.js";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
-    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula
+    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
+import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
+import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
+import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
+import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
+import { diffWorkbook } from "./workbookDiff.js";
+import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
+import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
+import { useSheetComments } from "./useSheetComments.js";
+import CellCommentCard from "./CellCommentCard.jsx";
+import {
+    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
+} from "../../../utils/spreadsheets/commentEngine.js";
+import { parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, MAX_PASTE_CELLS } from "../../../utils/spreadsheets/clipboardInterop.js";
+import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import {
@@ -52,6 +69,9 @@ const ROW_HEADER_WIDTH = 40;
 const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
 const MEDIA_MIN_SIZE = 40;
 const ROW_VIRTUALIZATION_BUFFER = 10;
+const COL_VIRTUALIZATION_BUFFER = 4;
+// Used for the visible-column window until the grid's width has been measured.
+const UNMEASURED_VIEWPORT_WIDTH = 2400;
 const IO_CHUNK_SIZE = 250; // rows processed per batch during import/export, between UI-yielding pauses
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 const DEFAULT_FONT_SIZE = 12; // the grid's text-xs
@@ -69,26 +89,29 @@ const ORIENTATION_OPTIONS = [
     { value: 90, label: "Rotate Text Up" },
     { value: -90, label: "Rotate Text Down" },
 ];
-const HISTORY_LIMIT = 30;
+// An undo step for an ordinary edit holds only the cells it changed (see
+// workbookUpdate.js). A bulk step — an import, a sort, a format applied to
+// thousands of cells, an inserted row — keeps the whole previous sheet, which
+// on a sheet with several hundred thousand cells is tens of MB; this cap
+// bounds how many of those can pile up.
+const HISTORY_LIMIT = 10;
 const DATA_BROADCAST_DEBOUNCE_MS = 120;
 const CHART_SAVE_DEBOUNCE_MS = 800;
-
-// Deep-clones the workbook's containers the way a JSON round-trip would
-// (undefined props dropped, non-finite numbers -> null), but strings are
-// carried over by reference — so base64 media payloads aren't duplicated into
-// every undo snapshot.
-const cloneWorkbook = (value) => {
-    if (value === null || typeof value !== "object") {
-        return typeof value === "number" && !Number.isFinite(value) ? null : value;
-    }
-    if (Array.isArray(value)) return value.map((v) => (v === undefined ? null : cloneWorkbook(v)));
-    const out = {};
-    for (const key of Object.keys(value)) {
-        const v = value[key];
-        if (v !== undefined && typeof v !== "function") out[key] = cloneWorkbook(v);
-    }
-    return out;
+// A patch bigger than this (as JSON) is sent as a full workbook save instead.
+const MAX_PATCH_CHARS = 1024 * 1024;
+// How many times a save that someone else's save got in ahead of is rebuilt on top of
+// theirs and sent again (live co-editing only) before it is reported as failed.
+const MAX_SAVE_RETRIES = 3;
+// True when `live` holds nothing that isn't already in `saved` (see workbookDiff.js).
+const isWorkbookSaved = (saved, live) => {
+    if (!saved || !live) return false;
+    if (saved === live) return true;
+    const pending = diffWorkbook(saved, live);
+    return !!pending && Object.keys(pending.sheets).length === 0;
 };
+// Above this many selected cells, the status-bar totals walk the sheet's
+// filled cells instead of every cell of the selection.
+const SELECTION_SCAN_LIMIT = 20000;
 const NUMBER_FORMATS = [
     { value: "general", label: "General" },
     { value: "number", label: "Number" },
@@ -164,7 +187,8 @@ const DRAG_GROW_ROWS = 10;
 const DRAG_GROW_COLUMNS = 5;
 const DRAG_GROW_INTERVAL_MS = 300;
 
-const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
+const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [], commentAnchors: {} });
+const EMPTY_ANCHORS = Object.freeze({}); // for sheets saved before comments existed
 const EMPTY_LIST = Object.freeze([]); // stable fallback for optional per-sheet arrays, so memo deps don't churn
 
 // Excel caps sheet names at 31 chars, forbids : \ / ? * [ ] and compares
@@ -333,6 +357,38 @@ const cellStyleFor = (cell) => ({
     ...(cell?.indent ? { [cell.align === "right" ? "paddingRight" : "paddingLeft"]: `${6 + cell.indent * 9}px` } : null),
     ...rotationStyleFor(cell?.rotation),
 });
+// A cell's own style with its conditional formatting laid over it: the rule's
+// font settings win, and an icon takes a strip on the left of the cell.
+const conditionalCellStyle = (cell, { style, icon }) => {
+    const base = cellStyleFor(cell);
+    if (style) {
+        if (style.color) base.color = style.color;
+        if (style.bold) base.fontWeight = "bold";
+        if (style.italic) base.fontStyle = "italic";
+        if (style.underline || style.strike) {
+            base.textDecoration = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
+        }
+    }
+    if (icon) base.paddingLeft = `${Math.max(22, parseInt(base.paddingLeft, 10) || 0)}px`;
+    return base;
+};
+
+// The same overlay as inline CSS declarations for the printed table. A data
+// bar prints as a hard-stopped gradient; icons aren't printed.
+const printConditionalCss = (conditional, cell) => {
+    if (!conditional) return [];
+    const { style, dataBar } = conditional;
+    const bar = dataBar && `linear-gradient(90deg, ${dataBar.color} ${dataBar.pct * 100}%, transparent ${dataBar.pct * 100}%)`;
+    return [
+        style?.bg && `background:${style.bg};`,
+        bar && `background-image:${bar};`,
+        style?.color && `color:${style.color};`,
+        style?.bold && "font-weight:bold;",
+        style?.italic && "font-style:italic;",
+        (style?.underline || style?.strike) && `text-decoration:${[(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ")};`,
+        style?.borderColor && `outline:1px solid ${style.borderColor};outline-offset:-1px;`,
+    ];
+};
 
 const BORDER_COLOR = "#334155";
 const borderWidthFor = (style) => (style === "thick" ? 3 : style === "double" ? 3 : 1);
@@ -571,22 +627,49 @@ const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_S
 // down on pointerup) so idle media items cost nothing, and commit back to the
 // sheet (via onUpdate) only once the gesture ends — keeping every intermediate
 // frame a cheap local re-render instead of an undo-history-producing update.
+//
+// A picture or shape can also be turned: `item.rotation` is whole degrees
+// clockwise about the centre of its box (see mediaGeometry.js), drawn as a CSS
+// transform on an inner layer. The box it is stored and positioned by stays
+// unrotated, so anchoring, dragging and row/column shifts are unaffected.
 const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect }) => {
     const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
     const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
     const [isCropping, setIsCropping] = useState(false);
     const [cropDraft, setCropDraft] = useState(null); // { x, y, w, h } fractions, only set while isCropping
+    const [rotateDraft, setRotateDraft] = useState(null); // degrees, while actively rotating
     const gestureRef = useRef(null);
+    const boxRef = useRef(null);
 
     const baseLeft = (colOffsets[item.col] ?? colOffsets[0]) + (item.offsetX || 0);
     const baseTop = (rowOffsets[item.row] ?? rowOffsets[0]) + (item.offsetY || 0);
     const baseWidth = item.width || 280;
     const baseHeight = item.height || 200;
 
-    const left = baseLeft + (dragOffset?.dx || 0);
-    const top = baseTop + (dragOffset?.dy || 0);
+    // A video's playback controls would turn with it, so videos stay upright.
+    const canRotate = item.type !== "video";
+    const savedRotation = canRotate ? normalizeAngle(item.rotation) : 0;
+    const rotation = rotateDraft ?? savedRotation;
+
     const width = Math.max(MEDIA_MIN_SIZE, baseWidth + (resizeDelta?.dw || 0));
     const height = Math.max(MEDIA_MIN_SIZE, baseHeight + (resizeDelta?.dh || 0));
+    // A rotated box turns about its centre, which a new size moves: its position
+    // follows so that the corner opposite the resize handle stays put.
+    const resizedBox = resizeDelta && savedRotation
+        ? resizeRotatedBox({ left: baseLeft, top: baseTop, width: baseWidth, height: baseHeight }, width, height, savedRotation)
+        : null;
+    const left = (resizedBox ? resizedBox.left : baseLeft) + (dragOffset?.dx || 0);
+    const top = (resizedBox ? resizedBox.top : baseTop) + (dragOffset?.dy || 0);
+
+    // A pixel position on the sheet the way an item stores it: the cell it falls
+    // in, and how far into that cell.
+    const anchorAt = useCallback((pxLeft, pxTop) => {
+        const newLeft = Math.max(colOffsets[0], pxLeft);
+        const newTop = Math.max(rowOffsets[0], pxTop);
+        const col = Math.min(columnCount - 1, bandIndexForPixel(colOffsets, newLeft));
+        const row = Math.min(rowCount - 1, bandIndexForPixel(rowOffsets, newTop));
+        return { row, col, offsetX: Math.max(0, newLeft - colOffsets[col]), offsetY: Math.max(0, newTop - rowOffsets[row]) };
+    }, [colOffsets, rowOffsets, columnCount, rowCount]);
 
     const startDrag = useCallback((e) => {
         e.stopPropagation();
@@ -605,37 +688,69 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
             gestureRef.current = null;
             setDragOffset(null);
             if (dx === 0 && dy === 0) return;
-            const newLeft = Math.max(colOffsets[0], baseLeft + dx);
-            const newTop = Math.max(rowOffsets[0], baseTop + dy);
-            const col = Math.min(columnCount - 1, bandIndexForPixel(colOffsets, newLeft));
-            const row = Math.min(rowCount - 1, bandIndexForPixel(rowOffsets, newTop));
-            onUpdate({ row, col, offsetX: Math.max(0, newLeft - colOffsets[col]), offsetY: Math.max(0, newTop - rowOffsets[row]) });
+            onUpdate(anchorAt(baseLeft + dx, baseTop + dy));
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseLeft, baseTop, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, zoom, onSelect]);
+    }, [readOnly, baseLeft, baseTop, anchorAt, onUpdate, zoom, onSelect]);
 
     const startResize = useCallback((e) => {
         if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
-        gestureRef.current = { startX: e.clientX, startY: e.clientY };
-        const onMove = (ev) => {
-            setResizeDelta({ dw: (ev.clientX - gestureRef.current.startX) / zoom, dh: (ev.clientY - gestureRef.current.startY) / zoom });
+        const startX = e.clientX, startY = e.clientY;
+        // How far the handle has been pulled along the picture's own width and
+        // height — which, once it is rotated, aren't the screen's.
+        const deltaAt = (ev) => {
+            const local = toLocalDelta((ev.clientX - startX) / zoom, (ev.clientY - startY) / zoom, savedRotation);
+            return { dw: local.dx, dh: local.dy };
         };
+        const onMove = (ev) => setResizeDelta(deltaAt(ev));
         const onUp = (ev) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
-            const dw = (ev.clientX - gestureRef.current.startX) / zoom;
-            const dh = (ev.clientY - gestureRef.current.startY) / zoom;
-            gestureRef.current = null;
+            const { dw, dh } = deltaAt(ev);
             setResizeDelta(null);
             if (dw === 0 && dh === 0) return;
-            onUpdate({ width: Math.max(MEDIA_MIN_SIZE, baseWidth + dw), height: Math.max(MEDIA_MIN_SIZE, baseHeight + dh) });
+            const newWidth = Math.max(MEDIA_MIN_SIZE, baseWidth + dw), newHeight = Math.max(MEDIA_MIN_SIZE, baseHeight + dh);
+            if (!savedRotation) { onUpdate({ width: newWidth, height: newHeight }); return; }
+            const box = resizeRotatedBox({ left: baseLeft, top: baseTop, width: baseWidth, height: baseHeight }, newWidth, newHeight, savedRotation);
+            onUpdate({ width: newWidth, height: newHeight, ...anchorAt(box.left, box.top) });
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [readOnly, baseWidth, baseHeight, onUpdate, zoom]);
+    }, [readOnly, baseLeft, baseTop, baseWidth, baseHeight, savedRotation, anchorAt, onUpdate, zoom]);
+
+    // Rotation follows the pointer around the centre of the box. What counts is
+    // how far the pointer has turned since the handle was grabbed, so the picture
+    // doesn't jump if it was grabbed slightly off-centre. Screen pixels throughout,
+    // so the grid's zoom doesn't come into it.
+    const startRotate = useCallback((e) => {
+        if (readOnly || !boxRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect?.();
+        const rect = boxRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
+        const grabbedAt = pointerAngle(centerX, centerY, e.clientX, e.clientY);
+        const angleAt = (ev) => snapAngle(savedRotation + pointerAngle(centerX, centerY, ev.clientX, ev.clientY) - grabbedAt, { step: ev.shiftKey });
+        const onMove = (ev) => setRotateDraft(angleAt(ev));
+        const onUp = (ev) => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            const next = angleAt(ev);
+            setRotateDraft(null);
+            // An unrotated item carries no `rotation` at all.
+            if (next !== savedRotation) onUpdate({ rotation: next || undefined });
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [readOnly, savedRotation, onUpdate, onSelect]);
+
+    const rotateBy = useCallback((degrees) => (e) => {
+        e.stopPropagation();
+        onUpdate({ rotation: normalizeAngle(savedRotation + degrees) || undefined });
+    }, [savedRotation, onUpdate]);
 
     const openCrop = useCallback((e) => {
         e.stopPropagation();
@@ -665,8 +780,9 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         const startX = e.clientX, startY = e.clientY;
         const startCrop = cropDraft;
         const onMove = (ev) => {
-            const dxFrac = (ev.clientX - startX) / (baseWidth * zoom);
-            const dyFrac = (ev.clientY - startY) / (baseHeight * zoom);
+            const moved = toLocalDelta(ev.clientX - startX, ev.clientY - startY, savedRotation);
+            const dxFrac = moved.dx / (baseWidth * zoom);
+            const dyFrac = moved.dy / (baseHeight * zoom);
             setCropDraft(() => {
                 let { x, y, w, h } = startCrop;
                 if (edge === "left") {
@@ -689,13 +805,20 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
         };
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-    }, [cropDraft, baseWidth, baseHeight, zoom]);
+    }, [cropDraft, baseWidth, baseHeight, zoom, savedRotation]);
 
     return (
         <div
-            className="absolute group"
+            ref={boxRef}
+            // The box itself takes no clicks: once the picture is turned, its
+            // corners are empty and the cells under them must stay reachable.
+            className="absolute group pointer-events-none"
             style={{ left, top, width, height, zIndex: isCropping ? 50 : 15 }}
         >
+            {/* Everything that turns with the picture. The buttons further down sit
+                outside this layer, so they stay upright and in the same place
+                whatever the angle. */}
+            <div className="relative w-full h-full pointer-events-auto" style={rotation ? { transform: `rotate(${rotation}deg)` } : undefined}>
             <div
                 className={cn(
                     "relative w-full h-full border rounded",
@@ -775,42 +898,86 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                 )}
 
                 {!readOnly && !isCropping && (
-                    <>
-                        {item.type === "shape" ? (
-                            <input
-                                type="color"
-                                value={item.fill || SHAPE_DEFAULT_FILL}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onChange={(e) => onUpdate({ fill: e.target.value })}
-                                className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                                title="Shape color"
-                            />
-                        ) : (
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={openCrop}
-                                className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                                title="Crop"
-                            >
-                                <IconCrop className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-                        <button
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={onDelete}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                            title="Remove"
-                        >
-                            <IconX className="w-3.5 h-3.5" />
-                        </button>
-                        <div
-                            onMouseDown={startResize}
-                            className="absolute right-0 bottom-0 w-3 h-3 bg-indigo-600 cursor-nwse-resize opacity-0 group-hover:opacity-100 z-20"
-                            title="Drag to resize"
-                        />
-                    </>
+                    <div
+                        onMouseDown={startResize}
+                        className="absolute right-0 bottom-0 w-3 h-3 bg-indigo-600 cursor-nwse-resize opacity-0 group-hover:opacity-100 z-20"
+                        title="Drag to resize"
+                    />
                 )}
             </div>
+            {/* Rotate handle: a knob on a stem above the top edge, only on the
+                selected item. Outside the box above, which clips a picture to its
+                frame. */}
+            {isSelected && canRotate && !readOnly && !isCropping && (
+                <>
+                    <div className="absolute left-1/2 -top-5 w-px h-5 -translate-x-1/2 bg-indigo-500 pointer-events-none z-20" />
+                    <div
+                        onMouseDown={startRotate}
+                        onDoubleClick={(e) => { e.stopPropagation(); if (savedRotation) onUpdate({ rotation: undefined }); }}
+                        className="absolute left-1/2 -top-7 w-3 h-3 -translate-x-1/2 rounded-full bg-white border-2 border-indigo-600 cursor-grab active:cursor-grabbing z-20"
+                        title="Drag to rotate · hold Shift for 15° steps · double-click to reset"
+                    />
+                </>
+            )}
+            </div>
+
+            {rotateDraft !== null && (
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-slate-900/80 text-white text-[11px] leading-4 tabular-nums pointer-events-none z-30">
+                    {rotateDraft}°
+                </div>
+            )}
+
+            {!readOnly && !isCropping && (
+                <div className="contents pointer-events-auto">
+                    {canRotate && (
+                        <>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={rotateBy(-90)}
+                                className="absolute top-0.5 right-[68px] w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Rotate left 90°"
+                            >
+                                <IconRotate2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={rotateBy(90)}
+                                className="absolute top-0.5 right-[46px] w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Rotate right 90°"
+                            >
+                                <IconRotateClockwise2 className="w-3.5 h-3.5" />
+                            </button>
+                        </>
+                    )}
+                    {item.type === "shape" ? (
+                        <input
+                            type="color"
+                            value={item.fill || SHAPE_DEFAULT_FILL}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onChange={(e) => onUpdate({ fill: e.target.value })}
+                            className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Shape color"
+                        />
+                    ) : (
+                        <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={openCrop}
+                            className="absolute top-0.5 right-6 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-indigo-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                            title="Crop"
+                        >
+                            <IconCrop className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={onDelete}
+                        className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-white/90 text-slate-500 hover:text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                        title="Remove"
+                    >
+                        <IconX className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
@@ -972,6 +1139,12 @@ const extractExcelCellStyle = (cell) => {
     return style;
 };
 
+// Whether an imported style holds anything beyond a font name/size.
+const hasOwnFormatting = (style) => {
+    for (const key in style) if (key !== "fontFamily" && key !== "fontSize") return true;
+    return false;
+};
+
 // --- Floating images <-> Excel pictures ---
 // Excel anchors a picture to a cell plus an offset in EMUs (English Metric
 // Units, 9525 per 96-dpi pixel); this app anchors media to a cell plus a
@@ -1064,6 +1237,29 @@ const extractWorksheetImages = async (workbook, worksheet, colWidthPx, rowHeight
     return { media, skippedUnsupported, skippedTooLarge, maxRow, maxCol };
 };
 
+// Puts a copy on the system clipboard from outside a copy event (a ribbon or menu
+// button). Best effort: this route needs a secure page and the browser's leave, and
+// resolves to whether it worked. Ctrl+C doesn't come through here — see the
+// clipboard effect in ExcelClone.
+const writeSystemClipboard = async ({ text, html }) => {
+    try {
+        if (html && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([new ClipboardItem({
+                "text/plain": new Blob([text], { type: "text/plain" }),
+                "text/html": new Blob([html], { type: "text/html" }),
+            })]);
+            return true;
+        }
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // Not allowed here: the copy still works inside the grid.
+    }
+    return false;
+};
+
 const loadImageElement = (src) => new Promise((resolve, reject) => {
     const img = new Image();
     // Remote URLs need CORS approval or the canvas below is tainted and
@@ -1089,12 +1285,13 @@ const canvasPng = (img, sx, sy, sw, sh) => {
 // letterboxed size and shifted by (dx, dy) to where it actually shows.
 // ExcelJS only embeds PNG/JPEG/GIF, so anything else is re-encoded as PNG.
 // Returns null for items that can't be exported (video, a remote image
-// without CORS, a broken src).
-const prepareImageForExport = async (item) => {
+// without CORS, a broken src). This is the item as it would look unrotated;
+// prepareImageForExport below applies its rotation.
+const prepareUprightImage = async (item) => {
     // A shape goes out as a picture of itself at its current size.
     if (item.type === "shape") {
         const width = item.width || SHAPE_DEFAULT_SIZE, height = item.height || SHAPE_DEFAULT_SIZE;
-        return prepareImageForExport({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
+        return prepareUprightImage({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
     }
     if (item.type !== "image" || !item.src) return null;
     try {
@@ -1121,21 +1318,62 @@ const prepareImageForExport = async (item) => {
     }
 };
 
+// The longest side, in pixels, of the bitmap a rotated picture is redrawn into.
+const MAX_ROTATED_EXPORT_PX = 4096;
+
+// The exported file has no way (through ExcelJS) to say "this picture is turned
+// 30 degrees", so a rotated item goes out already turned: redrawn into the upright
+// rectangle that encloses it, transparent at the corners. It keeps the centre it
+// has on the sheet, and as much of the original's resolution as fits.
+const prepareImageForExport = async (item) => {
+    const upright = await prepareUprightImage(item);
+    const rotation = item.type === "video" ? 0 : normalizeAngle(item.rotation);
+    if (!upright || !rotation) return upright;
+    try {
+        const img = await loadImageElement(upright.base64);
+        const bounds = rotatedBounds(upright.width, upright.height, rotation);
+        const sourceScale = Math.max(1, (img.naturalWidth || upright.width) / upright.width);
+        const scale = Math.min(sourceScale, MAX_ROTATED_EXPORT_PX / Math.max(bounds.width, bounds.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(bounds.width * scale));
+        canvas.height = Math.max(1, Math.round(bounds.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(img, (-upright.width * scale) / 2, (-upright.height * scale) / 2, upright.width * scale, upright.height * scale);
+        return {
+            base64: canvas.toDataURL("image/png"),
+            extension: "png",
+            width: bounds.width,
+            height: bounds.height,
+            dx: upright.dx + (upright.width - bounds.width) / 2,
+            dy: upright.dy + (upright.height - bounds.height) / 2,
+        };
+    } catch {
+        return null;
+    }
+};
+
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
-    const { data: meetingSheetData, isLoading: isMeetingLoading } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
+    const { data: meetingSheetData, isLoading: isMeetingLoading, refetch: refetchMeeting } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
     const [saveSectionSheet, { isLoading: isSavingSection }] = useSaveDailyMeetingSheetMutation();
-    const [saveMeetingSheet, { isLoading: isSavingMeeting }] = useSaveDailyMorningMeetingSheetMutation();
+    const [saveMeetingSheet, { isLoading: isSavingMeetingFull }] = useSaveDailyMorningMeetingSheetMutation();
+    const [saveMeetingSheetPatch, { isLoading: isSavingMeetingPatch }] = useSaveDailyMorningMeetingSheetPatchMutation();
+    const isSavingMeeting = isSavingMeetingFull || isSavingMeetingPatch;
 
     const sheetData = meetingId ? meetingSheetData : sectionSheetData;
     const isLoading = meetingId ? isMeetingLoading : isSectionLoading;
     const isSaving = meetingId ? isSavingMeeting : isSavingSection;
 
-    const [sheets, setSheets] = useState({ [DEFAULT_SHEET_NAME]: emptySheet() });
+    const [sheets, setSheetsState] = useState({ [DEFAULT_SHEET_NAME]: emptySheet() });
     const [activeSheetName, setActiveSheetName] = useState(DEFAULT_SHEET_NAME);
     const [isDirty, setIsDirty] = useState(false);
     const loadedRef = useRef(false);
     const prevIdsRef = useRef({ sectionId, meetingId });
+    // What the server offers for the meeting that is loaded (see the load effect).
+    const [sheetFeatures, setSheetFeatures] = useState({ liveSync: false });
+    const [reloadNonce, setReloadNonce] = useState(0); // bumped to load the workbook again
 
     const [activeCell, setActiveCell] = useState("A1");
     // `selection` is the active range (fill handle, paste target, bounds-based
@@ -1169,11 +1407,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [matchIndex, setMatchIndex] = useState(0);
 
     const [clipboard, setClipboard] = useState(null); // { cellsByRelPos, height, width, type, sourceBounds }
+    // The same copy as it went to the system clipboard — { id, text, written } — so a
+    // paste can tell whether it is still what's there (see isOwnClip).
+    const ownClipRef = useRef(null);
+    const pendingClipEvent = useRef(null); // "copy" | "cut": Ctrl+C/X pressed, the browser's event not yet seen
     const [formatPainterStyle, setFormatPainterStyle] = useState(null);
     const [borderWeight, setBorderWeight] = useState("thin");
-    const [condOperator, setCondOperator] = useState(">");
-    const [condThreshold, setCondThreshold] = useState("");
-    const [condColor, setCondColor] = useState("#fef08a");
+    // Conditional formatting dialogs.
+    const [cfQuickKind, setCfQuickKind] = useState(null); // "gt" | "top" | … (see QuickRuleDialog)
+    const [cfNewRule, setCfNewRule] = useState(null); // the rule the New Formatting Rule dialog starts from
+    const [cfManagerOpen, setCfManagerOpen] = useState(false);
 
     const [selectedTableStyleKey, setSelectedTableStyleKey] = useState(TABLE_STYLE_PRESETS[0].key);
     const [tableFiltersEnabled, setTableFiltersEnabled] = useState(true);
@@ -1228,6 +1471,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // so scrolling/resizing the container actually triggers a re-render.
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const [scrollLeft, setScrollLeft] = useState(0);
+    const [viewportWidth, setViewportWidth] = useState(0);
     const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
 
     // Import/export progress dialog. { title, label, current, total } | null —
@@ -1273,10 +1518,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // Latest values for the debounced chart save below, which fires from a
     // timer (or on unmount) and so can't rely on a render's closure.
+    // The one way `sheets` is ever changed, so sheetsRef always holds the latest
+    // workbook synchronously. Updates are computed from it on the spot instead
+    // of in a state-updater callback: that lets each update return its own undo
+    // record, and lets two updates in the same tick build on one another.
     const sheetsRef = useRef(sheets);
-    sheetsRef.current = sheets;
-    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet });
-    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet };
+    const setSheets = useCallback((next) => {
+        sheetsRef.current = next;
+        setSheetsState(next);
+    }, []);
+    const saveFnsRef = useRef({ saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch });
+    saveFnsRef.current = { saveSectionSheet, saveMeetingSheet, saveMeetingSheetPatch };
     const chartSaveRef = useRef(null); // { timer, meetingId, sectionId, activeSheet } | null
     const broadcastNowRef = useRef(false); // next onDataChange skips the debounce (chart edits)
 
@@ -1288,23 +1540,97 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // overwrite another tab's/user's newer copy (409). Saves run one at a time
     // so a queued chart save and a manual Save can't race each other and trip
     // that check against their own previous write.
+    //
+    // When the server offers it, a meeting save sends a patch — just the cells and
+    // sheet settings that differ from the workbook the server holds — instead of
+    // the whole workbook. That workbook is tracked per meeting next to its version:
+    // set when the sheet loads, moved forward by each successful save. Anything a
+    // patch can't express (sheets added/removed/renamed, a bulk rewrite) and any
+    // patch the server won't take is saved in full, exactly as before.
     const meetingVersionsRef = useRef({}); // meetingId -> last version seen from the server
+    // With live co-editing on (see useSheetLiveSync.js), other people's saves arrive
+    // while this grid is open and move that tracked workbook and version forward too.
+    // They go through the same queue as the saves here, so the two never interleave.
+    // And a save that finds someone else got in first is no longer simply refused: what
+    // they saved is fetched and taken in, the workbook being saved is carried over it
+    // (keeping this user's changes), and the save is sent again.
+    const savedWorkbooksRef = useRef({}); // meetingId -> { sheets, patchSave, liveSync }: the workbook at that version
     const saveQueueRef = useRef(Promise.resolve());
-    const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets: snapshot, activeSheet }) => {
-        const run = async () => {
-            if (!targetMeetingId) {
-                return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
-            }
-            const res = await saveFnsRef.current.saveMeetingSheet({
-                meetingId: targetMeetingId, sheets: snapshot, activeSheet, version: meetingVersionsRef.current[targetMeetingId]
-            }).unwrap();
-            if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
-            return res;
-        };
-        const result = saveQueueRef.current.then(run, run);
+    const clientIdRef = useRef(null); // names this grid in its saves; see useSheetLiveSync.js
+    if (!clientIdRef.current) clientIdRef.current = newClientId();
+    const catchUpRef = useRef(null); // set below, once the live-sync hook has run
+    const enqueueSaveTask = useCallback((task) => {
+        const result = saveQueueRef.current.then(task, task);
         saveQueueRef.current = result.catch(() => {});
         return result;
     }, []);
+    const saveWorkbook = useCallback(({ meetingId: targetMeetingId, sectionId: targetSectionId, sheets, activeSheet }) => {
+        const run = async () => {
+            let snapshot = sheets;
+            if (!targetMeetingId) {
+                return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
+            }
+            const clientId = clientIdRef.current;
+
+            let res = null;
+            for (let attempt = 0; ; attempt++) {
+                const version = meetingVersionsRef.current[targetMeetingId];
+                const saved = savedWorkbooksRef.current[targetMeetingId];
+                try {
+                    res = null;
+                    if (saved?.patchSave && version != null) {
+                        let patch = diffWorkbook(saved.sheets, snapshot, { activeSheet });
+                        // e.g. an embedded image: that's a full save's worth of bytes anyway.
+                        if (patch && JSON.stringify(patch).length > MAX_PATCH_CHARS) patch = null;
+                        if (patch) {
+                            try {
+                                res = await saveFnsRef.current.saveMeetingSheetPatch({
+                                    meetingId: targetMeetingId, patch, version, sheets: snapshot, activeSheet, clientId
+                                }).unwrap();
+                            } catch (err) {
+                                // Rejected as a patch (not as a save): send the whole workbook.
+                                // A version conflict or a network failure is a real failure.
+                                if (![400, 404, 413].includes(err?.status)) throw err;
+                            }
+                        }
+                    }
+                    if (!res) {
+                        res = await saveFnsRef.current.saveMeetingSheet({
+                            meetingId: targetMeetingId, sheets: snapshot, activeSheet, version, clientId
+                        }).unwrap();
+                    }
+                    break;
+                } catch (err) {
+                    // 409: someone else saved first. Take in what they saved and try
+                    // again on top of it — unless that isn't possible (live co-editing
+                    // is off, or they replaced the whole workbook), which is a failure
+                    // the user has to resolve by reloading, as it always was.
+                    if (err?.status !== 409 || !saved?.liveSync || !catchUpRef.current || attempt >= MAX_SAVE_RETRIES) throw err;
+                    let missed = null;
+                    try {
+                        missed = await catchUpRef.current(targetMeetingId);
+                    } catch {
+                        throw err;
+                    }
+                    if (!missed) throw err;
+                    snapshot = rebaseSnapshot(snapshot, saved.sheets, missed);
+                }
+            }
+            if (res?.data?.version != null) meetingVersionsRef.current[targetMeetingId] = res.data.version;
+            const tracked = savedWorkbooksRef.current[targetMeetingId];
+            if (tracked) savedWorkbooksRef.current[targetMeetingId] = { ...tracked, sheets: snapshot };
+            return res;
+        };
+        return enqueueSaveTask(run);
+    }, [enqueueSaveTask]);
+    // Whether everything in `snapshot` (a workbook that was just saved) is all there is
+    // to save: nothing was edited meanwhile. With live co-editing the workbook on
+    // screen can have moved on without any new edit — by taking in other people's
+    // saves — so for a meeting this compares against what the server now holds.
+    const nothingLeftToSave = useCallback((snapshot, targetMeetingId) => (
+        sheetsRef.current === snapshot
+        || (!!targetMeetingId && isWorkbookSaved(savedWorkbooksRef.current[targetMeetingId]?.sheets, sheetsRef.current))
+    ), []);
     const saveErrorMessage = (err, fallback) => (err?.status === 409 && err.message ? err.message : fallback);
 
     const flushChartSave = useCallback(async () => {
@@ -1316,11 +1642,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         try {
             await saveWorkbook({ meetingId: pending.meetingId, sectionId: pending.sectionId, sheets: snapshot, activeSheet: pending.activeSheet });
             // Edits made while the request was in flight are still unsaved.
-            if (sheetsRef.current === snapshot) setIsDirty(false);
+            if (nothingLeftToSave(snapshot, pending.meetingId)) setIsDirty(false);
         } catch (err) {
             toast.error(saveErrorMessage(err, "Failed to save chart settings."));
         }
-    }, [saveWorkbook]);
+    }, [saveWorkbook, nothingLeftToSave]);
 
     // Don't drop a queued chart save when the grid unmounts mid-debounce.
     useEffect(() => () => { flushChartSave(); }, [flushChartSave]);
@@ -1340,12 +1666,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             // Taken only at load: a later background refetch must not move the
             // version forward while the grid still holds the older sheets.
             if (meetingId && sheetData.data.version != null) meetingVersionsRef.current[meetingId] = sheetData.data.version;
+            // Likewise the workbook patches are diffed against: what the server holds at that version.
+            const capabilities = (meetingId && sheetData.data.capabilities) || {};
+            const patchSave = !!capabilities.patchSave;
+            // Builds on patch saves: without them every save is the whole workbook.
+            const liveSync = patchSave && !!capabilities.liveSync;
+            if (meetingId) savedWorkbooksRef.current[meetingId] = { sheets: sanitizedSheets, patchSave, liveSync };
+            setSheetFeatures({ liveSync });
             loadedRef.current = true;
             historyPast.current = [];
             historyFuture.current = [];
             bumpHistory();
         }
-    }, [sheetData, bumpHistory, meetingId]);
+    }, [sheetData, bumpHistory, meetingId, setSheets, reloadNonce]);
 
     // Reset load-guard and local state only when switching to a DIFFERENT
     // section's sheet/meeting on an already-mounted instance. Without the
@@ -1359,6 +1692,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (prev.sectionId !== sectionId || prev.meetingId !== meetingId) {
             flushChartSave();
             loadedRef.current = false;
+            setSheetFeatures({ liveSync: false });
             setIsDirty(false);
             setActiveCell("A1");
             setSelection({ start: "A1", end: "A1" });
@@ -1372,7 +1706,59 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             bumpHistory();
             prevIdsRef.current = { sectionId, meetingId };
         }
-    }, [sectionId, meetingId, bumpHistory, flushChartSave]);
+    }, [sectionId, meetingId, bumpHistory, flushChartSave, setSheets]);
+
+    // --- Live co-editing ---
+
+    // Someone replaced the whole workbook (or too much was missed to catch up on): it
+    // has to be loaded again. Done at once when nothing here is unsaved; otherwise the
+    // user decides, since reloading drops their unsaved edits.
+    const handleReloadNeeded = useCallback(({ userName } = {}) => {
+        const targetMeetingId = meetingId;
+        if (!targetMeetingId) return;
+        const reload = async () => {
+            try {
+                await refetchMeeting();
+            } catch {
+                return;
+            }
+            if (prevIdsRef.current.meetingId !== targetMeetingId) return; // moved on meanwhile
+            loadedRef.current = false;
+            setIsDirty(false);
+            setReloadNonce((n) => n + 1);
+        };
+        if (isWorkbookSaved(savedWorkbooksRef.current[targetMeetingId]?.sheets, sheetsRef.current)) {
+            reload();
+            return;
+        }
+        toast.warning(`${userName || "Someone"} saved changes that replaced this whole spreadsheet.`, {
+            id: `sheet-reload-${targetMeetingId}`,
+            description: "Reload to get them. Your unsaved edits here will be lost.",
+            duration: Infinity,
+            action: { label: "Reload", onClick: reload },
+        });
+    }, [meetingId, refetchMeeting]);
+
+    const livePosition = useMemo(
+        () => ({ sheet: activeSheetName, cell: activeCell, start: selection.start, end: selection.end }),
+        [activeSheetName, activeCell, selection]
+    );
+    const { peers: livePeers, catchUpNow } = useSheetLiveSync({
+        enabled: !!meetingId && sheetFeatures.liveSync,
+        meetingId,
+        clientId: clientIdRef.current,
+        meetingVersionsRef, savedWorkbooksRef, sheetsRef, setSheets,
+        enqueue: enqueueSaveTask,
+        onReloadNeeded: handleReloadNeeded,
+        position: livePosition,
+    });
+    catchUpRef.current = catchUpNow;
+
+    // What people wrote on this meeting's cells. Where each comment sits is part of
+    // the workbook (a sheet's `commentAnchors`); see useSheetComments.js.
+    const authUser = useSelector((state) => state.auth?.user);
+    const comments = useSheetComments({ meetingId });
+    const commentThreads = comments.threads;
 
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
@@ -1389,7 +1775,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const cells = activeSheet.cells;
     const rowCount = activeSheet.rowCount;
     const columnCount = activeSheet.columnCount;
-    const conditionalRules = activeSheet.conditionalRules || [];
+    const storedConditionalRules = activeSheet.conditionalRules;
+    const conditionalRules = useMemo(() => normalizeRules(storedConditionalRules), [storedConditionalRules]);
     const merges = activeSheet.merges || [];
     const columnWidths = activeSheet.columnWidths || {};
     const rowHeights = activeSheet.rowHeights || {};
@@ -1398,6 +1785,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const hiddenRows = activeSheet.hiddenRows || EMPTY_LIST; // manually hidden (Ctrl+9), unlike filter-hidden rows
     const hiddenCols = activeSheet.hiddenCols || EMPTY_LIST;
     const pivotConfig = activeSheet.pivotConfig || null;
+    const commentAnchors = activeSheet.commentAnchors || EMPTY_ANCHORS; // { cellId: thread id }
     // Pivot sheets are fully computed from their source — direct cell edits,
     // ribbon formatting, merges, sorting, and structural row/col changes are
     // all disabled on them, matching Excel's own pivot table protection.
@@ -1435,16 +1823,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => clearTimeout(timer);
     }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, extraRanges, activeCell, onDataChange]);
 
-    // Union of every selected range — a Set, so overlapping ranges count once.
-    const selectedCellIds = useMemo(() => {
-        const ids = new Set(expandRange(selection.start, selection.end));
-        for (const r of extraRanges) for (const id of expandRange(r.start, r.end)) ids.add(id);
-        return ids;
-    }, [selection, extraRanges]);
+    // The selection is kept as rectangles only — never expanded into a list of
+    // cell ids, which for a whole column or Ctrl+A on a large sheet would be
+    // hundreds of thousands of strings rebuilt on every drag tick.
     const selectionBounds = useMemo(() => rangeBounds(selection), [selection]);
     const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean), [extraRanges]);
     const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
     const hasMultipleRanges = extraRanges.length > 0;
+    const isCellSelected = (row, col) => {
+        for (const b of allSelectionBounds) {
+            if (row >= b.minRow && row <= b.maxRow && col >= b.minCol && col <= b.maxCol) return true;
+        }
+        return false;
+    };
 
     // Maps every cell id covered by a merge (anchor included) to that merge,
     // so rendering can skip non-anchor cells and navigation can redirect off
@@ -1526,48 +1917,42 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return map;
     }, [isEditingFormula, editValue]);
 
-    // Live conditional-formatting overlay: re-evaluated from the current display
-    // values every render, so edits to referenced cells update highlighting
-    // immediately instead of baking in a one-time static color.
-    const conditionalBgMap = useMemo(() => {
-        const map = {};
-        for (const rule of conditionalRules) {
-            for (const cellId of expandRange(rule.range[0], rule.range[1])) {
-                const raw = displayGrid[cellId];
-                const num = parseFloat(String(raw ?? "").replace(/[$,%]/g, ""));
-                if (isNaN(num)) continue;
-                const match = rule.operator === ">" ? num > rule.threshold
-                    : rule.operator === "<" ? num < rule.threshold
-                    : rule.operator === ">=" ? num >= rule.threshold
-                    : rule.operator === "<=" ? num <= rule.threshold
-                    : num === rule.threshold;
-                if (match) map[cellId] = rule.color;
-            }
-        }
-        return map;
-    }, [conditionalRules, displayGrid]);
+    // Live conditional-formatting overlay: re-evaluated from the current
+    // values whenever they change, so edits to referenced cells update
+    // highlighting immediately instead of baking in a one-time static color.
+    // cellId -> { style, dataBar, icon }.
+    const conditionalMap = useMemo(
+        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells, evaluateAt: evaluation.evaluateAt }),
+        [conditionalRules, displayGrid, rawGrid, cells, evaluation]
+    );
 
-    // Deep-clones the whole workbook before mutating, so the snapshot pushed
-    // onto the undo stack a moment ago can never be corrupted by an in-place
-    // edit to the "current" state that shares the same nested objects.
+    // The updater mutates a draft of the workbook; only what it actually touches
+    // is copied, and everything else is shared with the previous state — see
+    // workbookUpdate.js. An updater must make every change through the draft
+    // it is given, and must replace a cell (`cells[id] = {...}`) instead of
+    // editing one in place. The undo stack holds change records, not copies of
+    // the workbook.
     const updateSheets = useCallback((updater) => {
-        historyPast.current.push(sheets);
+        // Every commit — a source-sheet edit, a pivot config change, an
+        // import, a sheet rename — can affect a pivot sheet's output, so
+        // recompute all of them rather than trying to track which commits
+        // actually matter. Skipped outright when the workbook has none.
+        const recomputePivots = (workbook) => {
+            if (!Object.values(workbook).some((sheet) => sheet?.pivotConfig)) return workbook;
+            const withPivots = { ...workbook };
+            recomputePivotSheets(withPivots, buildRawValueGrid);
+            return withPivots;
+        };
+        const { next, undo: record } = applyWorkbookUpdate(sheetsRef.current, updater, recomputePivots);
+        if (!record) return; // the updater changed nothing
+
+        historyPast.current.push(record);
         if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
         historyFuture.current = [];
         bumpHistory();
-
-        setSheets((prev) => {
-            const next = cloneWorkbook(prev);
-            updater(next);
-            // Every commit — a source-sheet edit, a pivot config change, an
-            // import, a sheet rename — can affect a pivot sheet's output, so
-            // just recompute all of them unconditionally rather than trying
-            // to track which commits actually matter.
-            recomputePivotSheets(next, buildRawValueGrid);
-            return next;
-        });
+        setSheets(next);
         setIsDirty(true);
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const mutateActiveCells = useCallback((mutator) => {
         if (isSheetReadOnly) return;
@@ -1663,26 +2048,38 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return offsets;
     }, [rowCount, heightForRow]);
 
-    // Keeps scrollTop/viewportHeight in sync with the actual DOM so virtualization
-    // can compute which rows are visible. A plain scroll listener (not rAF-throttled)
-    // is fine here — each resulting re-render is cheap since it only re-renders the
-    // visible row slice, not the whole sheet.
+    // Keeps the scroll position and viewport size in sync with the actual DOM so
+    // virtualization can compute which rows and columns are visible. A plain scroll
+    // listener (not rAF-throttled) is fine here — each resulting re-render is cheap
+    // since it only re-renders the visible slice of rows and columns, not the whole
+    // sheet.
+    // Re-run when loading finishes: while the sheet is loading a spinner is rendered
+    // in place of the grid, so on a first open there is no grid element yet when this
+    // first runs — and with nothing listening, the visible window never moved.
     useEffect(() => {
         const el = gridContainerRef.current;
         if (!el) return;
-        const onScroll = () => setScrollTop(el.scrollTop);
+        const onScroll = () => {
+            setScrollTop(el.scrollTop);
+            setScrollLeft(el.scrollLeft);
+        };
         el.addEventListener("scroll", onScroll, { passive: true });
         setScrollTop(el.scrollTop);
+        setScrollLeft(el.scrollLeft);
         setViewportHeight(el.clientHeight);
+        setViewportWidth(el.clientWidth);
         const ro = new ResizeObserver((entries) => {
-            for (const entry of entries) setViewportHeight(entry.contentRect.height);
+            for (const entry of entries) {
+                setViewportHeight(entry.contentRect.height);
+                setViewportWidth(entry.contentRect.width);
+            }
         });
         ro.observe(el);
         return () => {
             el.removeEventListener("scroll", onScroll);
             ro.disconnect();
         };
-    }, []);
+    }, [isLoading]);
 
     // Visible row window for virtualization: the scroll-position -> row-index
     // binary search, padded by a buffer, then widened to fully contain any
@@ -1706,6 +2103,53 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         return { startRow, endRow };
     }, [scrollTop, viewportHeight, rowOffsets, rowCount, merges]);
+
+    // Visible column window, the same idea across: only these columns get a <th> and
+    // a <td> per row; the ones to either side are stood in for by a single spacer
+    // cell of their combined width. Without it every row drew every column, so a
+    // sheet's width — an imported file can claim thousands of columns — decided how
+    // long each keystroke took.
+    // Widened to fully contain any merge that reaches into the visible rows and
+    // columns: a merge's cells are drawn by its top-left cell alone, so that cell
+    // has to be among the ones rendered. Widening can bring a further merge into the
+    // window (unlike with rows alone), hence the loop.
+    const visibleColRange = useMemo(() => {
+        if (columnCount === 0) return { startCol: 0, endCol: -1 };
+        const viewLeft = scrollLeft;
+        const viewRight = scrollLeft + (viewportWidth || UNMEASURED_VIEWPORT_WIDTH);
+        let startCol = clamp(bandIndexForPixel(colOffsets, viewLeft) - COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
+        let endCol = clamp(bandIndexForPixel(colOffsets, viewRight) + COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
+        if (merges.length > 0) {
+            const { startRow, endRow } = visibleRowRange;
+            const inRows = [];
+            for (const m of merges) {
+                const s = parseCellRef(m.start), e = parseCellRef(m.end);
+                if (!s || !e) continue;
+                const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+                if (maxRow >= startRow && minRow <= endRow) inRows.push({ minCol: Math.min(s.col, e.col), maxCol: Math.max(s.col, e.col) });
+            }
+            for (let widened = true; widened;) {
+                widened = false;
+                for (const m of inRows) {
+                    if (m.maxCol < startCol || m.minCol > endCol) continue;
+                    if (m.minCol < startCol) { startCol = m.minCol; widened = true; }
+                    if (m.maxCol > endCol) { endCol = Math.min(m.maxCol, columnCount - 1); widened = true; }
+                }
+            }
+        }
+        return { startCol, endCol };
+    }, [scrollLeft, viewportWidth, colOffsets, columnCount, merges, visibleRowRange]);
+    // The column indexes to render (hidden ones left out), and the widths of the
+    // spacers standing in for the columns before and after them.
+    const visibleCols = useMemo(() => {
+        const list = [];
+        for (let c = visibleColRange.startCol; c <= visibleColRange.endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
+        return list;
+    }, [visibleColRange, hiddenColSet]);
+    const leftSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[visibleColRange.startCol] - colOffsets[0];
+    const rightSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[columnCount] - colOffsets[visibleColRange.endCol + 1];
+    // Cells in a full-width row: the row header, the rendered columns and the spacers.
+    const renderedColSpan = 1 + visibleCols.length + (leftSpacerWidth > 0 ? 1 : 0) + (rightSpacerWidth > 0 ? 1 : 0);
 
     // Keyboard navigation can move the active cell to a row/column that isn't
     // currently rendered at all (virtualized rows) or is just scrolled out of
@@ -1776,6 +2220,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const onMouseUp = () => {
             const r = resizeRef.current;
             if (!r) return;
+            // A click on the handle without dragging (each half of a
+            // double-click-to-fit) isn't a resize: leave the sheet untouched.
+            if (r.currentSize === r.startSize) {
+                resizeRef.current = null;
+                setResizePreview(null);
+                return;
+            }
             updateSheets((next) => {
                 const sheet = next[activeSheetName];
                 if (r.type === "col") {
@@ -1796,6 +2247,135 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             window.removeEventListener("mouseup", onMouseUp);
         };
     }, [updateSheets, activeSheetName, zoom]);
+
+    // --- Cell comments ---
+    // A commented cell only draws a corner marker. The thread itself is shown in one
+    // floating card for the whole grid (CellCommentCard); `commentCard` says which
+    // cell it is on. Hovering a commented cell shows it for as long as the mouse stays
+    // on the cell or the card; opening it on purpose (Shift+F2, the menus, a click on
+    // the card) pins it until it is closed.
+    const [commentCard, setCommentCard] = useState(null); // { sheet, cellId, pinned }
+    const commentHoverTimer = useRef(null);
+    const commentCardHovered = useRef(false);
+    const menuCommentCell = useRef(null); // the cell menu's "comment" was chosen for this cell
+    const [, relayoutCommentCard] = useState(0);
+    // Starting or removing a comment changes the sheet (its anchor), so it takes the
+    // right to edit; replying and resolving don't.
+    const canStartComment = !!meetingId && !readOnly;
+    const isCommentAdmin = authUser?.role === "SUPERADMIN" || authUser?.role === "ADMIN" || authUser?.isAdmin === 1 || authUser?.isAdmin === true;
+    const { refresh: refreshComments, createThread: createCommentThread, deleteThread: deleteCommentThread } = comments;
+
+    // A marker (and a card) needs both halves: the anchor in the workbook and the
+    // thread from the server. An anchor whose thread was deleted shows nothing.
+    const commentThreadAt = useCallback((cellId) => {
+        const threadId = commentAnchors[cellId];
+        return (threadId && commentThreads[threadId]) || null;
+    }, [commentAnchors, commentThreads]);
+
+    const closeCommentCard = useCallback(() => {
+        clearTimeout(commentHoverTimer.current);
+        commentCardHovered.current = false;
+        setCommentCard(null);
+    }, []);
+
+    // Opens the card on a cell, pinned. Returns whether it did.
+    const openComment = useCallback((cellId) => {
+        const anchorId = resolveToAnchor(cellId);
+        if (!meetingId) { toast.info("Comments are available on meeting sheets."); return false; }
+        if (!commentThreadAt(anchorId) && !canStartComment) { toast.info("You can reply to comments on this sheet, but not start one."); return false; }
+        clearTimeout(commentHoverTimer.current);
+        setCommentCard({ sheet: activeSheetName, cellId: anchorId, pinned: true });
+        // Without live co-editing nobody announces other people's replies.
+        if (!sheetFeatures.liveSync) refreshComments();
+        return true;
+    }, [resolveToAnchor, meetingId, commentThreadAt, canStartComment, activeSheetName, sheetFeatures.liveSync, refreshComments]);
+
+    // Hover: show the card after a moment on a commented cell, and take it away a
+    // moment after the mouse has left both the cell and the card.
+    const hoveredCellId = hoveredCell ? getCellId(hoveredCell.row, hoveredCell.col) : null;
+    useEffect(() => {
+        clearTimeout(commentHoverTimer.current);
+        if (commentCard?.pinned) return undefined;
+        if (hoveredCellId && commentThreadAt(hoveredCellId)) {
+            if (commentCard?.cellId === hoveredCellId) return undefined;
+            commentHoverTimer.current = setTimeout(() => {
+                // Not in the middle of dragging out a selection, or typing in a cell.
+                if (isSelecting.current || isFilling.current) return;
+                setCommentCard({ sheet: activeSheetName, cellId: hoveredCellId, pinned: false });
+            }, 350);
+        } else if (commentCard) {
+            commentHoverTimer.current = setTimeout(() => {
+                if (!commentCardHovered.current) setCommentCard((card) => (card && !card.pinned ? null : card));
+            }, 250);
+        }
+        return () => clearTimeout(commentHoverTimer.current);
+    }, [hoveredCellId, commentCard, commentThreadAt, activeSheetName]);
+
+    const holdCommentCard = useCallback(() => {
+        commentCardHovered.current = true;
+        clearTimeout(commentHoverTimer.current);
+    }, []);
+    const releaseCommentCard = useCallback(() => {
+        commentCardHovered.current = false;
+        clearTimeout(commentHoverTimer.current);
+        commentHoverTimer.current = setTimeout(() => setCommentCard((card) => (card && !card.pinned ? null : card)), 250);
+    }, []);
+    const pinCommentCard = useCallback(() => setCommentCard((card) => (card ? { ...card, pinned: true } : card)), []);
+    useEffect(() => () => clearTimeout(commentHoverTimer.current), []);
+
+    // The card belongs to one sheet.
+    useEffect(() => { setCommentCard((card) => (card && card.sheet !== activeSheetName ? null : card)); }, [activeSheetName]);
+
+    // The card is placed in screen pixels, so anything that moves the cell on screen
+    // without re-rendering the grid — the page scrolling, the window resizing — has
+    // to place it again. (Capture: scroll events don't bubble.)
+    const commentCardOpen = !!commentCard;
+    useEffect(() => {
+        if (!commentCardOpen) return undefined;
+        const relayout = () => relayoutCommentCard((n) => n + 1);
+        window.addEventListener("scroll", relayout, true);
+        window.addEventListener("resize", relayout);
+        return () => {
+            window.removeEventListener("scroll", relayout, true);
+            window.removeEventListener("resize", relayout);
+        };
+    }, [commentCardOpen]);
+
+    // The thread is created first and anchored only once the server has it, so a
+    // failed request leaves nothing behind on the sheet.
+    const createComment = useCallback(async (cellId, text) => {
+        const sheetName = activeSheetName;
+        const threadId = newThreadId();
+        const result = await createCommentThread({ threadId, sheetName, cellRef: cellId, text });
+        if (!result) return false;
+        updateSheets((next) => {
+            const sheet = next[sheetName];
+            if (!sheet) return;
+            if (!sheet.commentAnchors) sheet.commentAnchors = {};
+            sheet.commentAnchors[cellId] = threadId;
+        });
+        return true;
+    }, [activeSheetName, createCommentThread, updateSheets]);
+
+    const deleteComment = useCallback(async (cellId, threadId) => {
+        const sheetName = activeSheetName;
+        const result = await deleteCommentThread(threadId);
+        if (!result) return false;
+        updateSheets((next) => {
+            const sheet = next[sheetName];
+            if (sheet?.commentAnchors?.[cellId] === threadId) delete sheet.commentAnchors[cellId];
+        });
+        closeCommentCard();
+        gridContainerRef.current?.focus({ preventScroll: true });
+        return true;
+    }, [activeSheetName, deleteCommentThread, updateSheets, closeCommentCard]);
+
+    // Closed from inside the card (Escape, its close button), the keyboard goes back
+    // to the grid; closed by a click elsewhere, it stays wherever that click put it.
+    const handleCommentCardClose = useCallback((reason) => {
+        closeCommentCard();
+        if (reason !== "outside") gridContainerRef.current?.focus({ preventScroll: true });
+    }, [closeCommentCard]);
 
     // --- Floating media (images/video) ---
     // Anchored to whatever cell is active at insert time, like Excel dropping
@@ -1861,23 +2441,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const undo = useCallback(() => {
         if (historyPast.current.length === 0) return;
-        const prevSnapshot = historyPast.current.pop();
-        historyFuture.current.push(sheets);
+        const { next, inverse } = applyHistoryRecord(sheetsRef.current, historyPast.current.pop());
+        historyFuture.current.push(inverse);
         if (historyFuture.current.length > HISTORY_LIMIT) historyFuture.current.shift();
-        setSheets(prevSnapshot);
+        setSheets(next);
         setIsDirty(true);
         bumpHistory();
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const redo = useCallback(() => {
         if (historyFuture.current.length === 0) return;
-        const nextSnapshot = historyFuture.current.pop();
-        historyPast.current.push(sheets);
+        const { next, inverse } = applyHistoryRecord(sheetsRef.current, historyFuture.current.pop());
+        historyPast.current.push(inverse);
         if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
-        setSheets(nextSnapshot);
+        setSheets(next);
         setIsDirty(true);
         bumpHistory();
-    }, [sheets, bumpHistory]);
+    }, [bumpHistory, setSheets]);
 
     const commitEdit = useCallback(() => {
         // editSessionRef guards against the editor's onBlur re-committing (or
@@ -1965,17 +2545,27 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- Clipboard ---
 
-    const copySelection = useCallback((type) => {
-        if (!selectionBounds) return;
+    // Copies (or cuts) the active range. Inside the grid a paste works from
+    // `clipboard`, which keeps formulas and formatting. The cells also go to the
+    // system clipboard as text and a table, the way they are displayed, so they can
+    // be pasted into other programs: through `clipboardData` when this is answering
+    // the browser's own copy event, otherwise through the async clipboard API.
+    // Returns whether the event's clipboard was filled.
+    const copySelection = useCallback((type, clipboardData) => {
+        if (!selectionBounds) return false;
         if (hasMultipleRanges) toast.info("Copy works on one range at a time — only the active range was copied.");
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const cellsByRelPos = {};
         // Evaluated values as of the copy, for Paste Special > Values —
         // including spilled cells, which have no entry in `cells` at all.
         const valuesByRelPos = {};
+        const shownRows = [];
         for (let r = minRow; r <= maxRow; r++) {
+            const shownRow = [];
+            shownRows.push(shownRow);
             for (let c = minCol; c <= maxCol; c++) {
                 const id = getCellId(r, c);
+                shownRow.push(String(displayGrid[id] ?? ""));
                 if (cells[id]) cellsByRelPos[`${r - minRow},${c - minCol}`] = cells[id];
                 const hasValue = cells[id]?.value !== undefined && cells[id].value !== "";
                 if (rawGrid[id] !== undefined && (hasValue || evaluation.spillAnchors.has(id))) {
@@ -1984,7 +2574,25 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
         }
         setClipboard({ cellsByRelPos, valuesByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
-    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation]);
+
+        const payload = buildClipboardPayload(shownRows);
+        const own = { id: payload.id, text: payload.text, written: false };
+        ownClipRef.current = own;
+        if (clipboardData) {
+            try {
+                clipboardData.setData("text/plain", payload.text);
+                if (payload.html) clipboardData.setData("text/html", payload.html);
+                own.written = true;
+            } catch {
+                // Left unwritten: pasting inside the grid still works.
+            }
+            return own.written;
+        }
+        writeSystemClipboard(payload).then((ok) => { if (ok) own.written = true; });
+        return false;
+    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid]);
+    const copySelectionRef = useRef(copySelection);
+    copySelectionRef.current = copySelection;
 
     const handlePaste = useCallback(() => {
         if (!clipboard || !selectionBounds) return;
@@ -1993,7 +2601,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const rowOffset = targetRow - src.minRow;
         const colOffset = targetCol - src.minCol;
 
-        mutateActiveCells((next) => {
+        if (isSheetReadOnly) return;
+        updateSheets((workbook) => {
+            const sheet = workbook[activeSheetName];
+            if (!sheet) return;
+            const next = sheet.cells;
             for (let r = 0; r < clipboard.height; r++) {
                 for (let c = 0; c < clipboard.width; c++) {
                     const sourceCell = clipboard.cellsByRelPos[`${r},${c}`];
@@ -2010,6 +2622,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         delete next[getCellId(src.minRow + r, src.minCol + c)];
                     }
                 }
+                // A move takes the cells' comments along (a copy leaves them where they are).
+                const anchors = plainOf(sheet.commentAnchors);
+                const moved = anchors && moveCommentAnchorBlock(anchors, src, rowOffset, colOffset);
+                if (moved && moved !== anchors) sheet.commentAnchors = moved;
             }
         });
 
@@ -2018,41 +2634,153 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             end: getCellId(targetRow + clipboard.height - 1, targetCol + clipboard.width - 1)
         });
         if (clipboard.type === "cut") setClipboard(null);
-    }, [clipboard, selectionBounds, mutateActiveCells]);
+    }, [clipboard, selectionBounds, updateSheets, activeSheetName, isSheetReadOnly, setSelection]);
+
+    // Pastes cells copied in another program (Excel, Google Sheets, a text editor),
+    // read from the clipboard's text: one line per row, tabs between cells. Values go
+    // in exactly as if typed, so numbers, dates and formulas are understood the same
+    // way, and each cell keeps the formatting it already has. Starts at the top-left
+    // of the selection and grows the sheet if the block runs past its edge; a single
+    // value fills the whole selection, as in Excel. One undo step.
+    const pasteExternalText = useCallback((text) => {
+        if (!selectionBounds) return;
+        if (isSheetReadOnly) { if (!readOnly) toast.info("This is a PivotTable — edit the source data instead."); return; }
+        const rows = parseDelimitedText(text);
+        const { height, width } = gridSize(rows);
+        if (height === 0 || width === 0) return;
+        const single = height === 1 && width === 1;
+        const targetRow = selectionBounds.minRow, targetCol = selectionBounds.minCol;
+        const outHeight = single ? selectionBounds.maxRow - targetRow + 1 : height;
+        const outWidth = single ? selectionBounds.maxCol - targetCol + 1 : width;
+        if (outHeight * outWidth > MAX_PASTE_CELLS) {
+            toast.error(`That is ${(outHeight * outWidth).toLocaleString()} cells — too many to paste at once (the limit is ${MAX_PASTE_CELLS.toLocaleString()}). Paste it in smaller blocks, or import the file.`);
+            return;
+        }
+
+        updateSheets((workbook) => {
+            const sheet = workbook[activeSheetName];
+            if (!sheet) return;
+            if (targetRow + outHeight > sheet.rowCount) sheet.rowCount = targetRow + outHeight;
+            if (targetCol + outWidth > sheet.columnCount) sheet.columnCount = targetCol + outWidth;
+            const next = sheet.cells;
+            for (let r = 0; r < outHeight; r++) {
+                const sourceRow = single ? rows[0] : rows[r];
+                for (let c = 0; c < outWidth; c++) {
+                    const value = (single ? sourceRow[0] : sourceRow[c]) ?? "";
+                    const id = getCellId(targetRow + r, targetCol + c);
+                    const existing = next[id];
+                    if (!existing && value === "") continue;
+                    const merged = { ...existing, value };
+                    // A line break inside a value turns on Wrap Text, as typing one does.
+                    if (value.includes("\n") && !isFormula(value)) merged.wrap = true;
+                    if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
+                }
+            }
+        });
+
+        setSelectedMediaId(null);
+        setSelection({ start: getCellId(targetRow, targetCol), end: getCellId(targetRow + outHeight - 1, targetCol + outWidth - 1) });
+        // Something else has been copied since: a pending cut here is off.
+        setClipboard((c) => (c?.type === "cut" ? null : c));
+    }, [selectionBounds, isSheetReadOnly, readOnly, updateSheets, activeSheetName, setSelection]);
+
+    // The Paste buttons. There is no paste event to read from here, so: what was
+    // copied in the grid if anything was, otherwise the system clipboard's text where
+    // the browser lets a page read it.
+    const pasteFromButton = useCallback(async () => {
+        if (clipboard) { handlePaste(); return; }
+        let text = "";
+        try {
+            text = (await navigator.clipboard?.readText?.()) || "";
+        } catch {
+            text = "";
+        }
+        if (text !== "") pasteExternalText(text);
+        else toast.info("Nothing copied here yet. To paste from another program, press Ctrl+V.");
+    }, [clipboard, handlePaste, pasteExternalText]);
 
     const activateFormatPainter = useCallback(() => {
         const { value, ...styles } = cells[activeCell] || {};
         setFormatPainterStyle(styles);
     }, [cells, activeCell]);
 
+    // Copy, cut and paste, through the browser's own clipboard events — the one route
+    // to the system clipboard that works on any page without asking permission.
     useEffect(() => {
-        if (readOnly) return;
-        const onPaste = (e) => {
-            if (!e.clipboardData) return;
-            const items = e.clipboardData.items;
-            let hasImage = false;
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].type.indexOf("image") !== -1) {
-                    const file = items[i].getAsFile();
-                    if (file) {
-                        e.preventDefault();
-                        handleInsertMediaFile("image", file);
-                        hasImage = true;
-                        break;
-                    }
-                }
-            }
-            if (hasImage) return;
+        // Someone typing in a field — the formula bar, a ribbon box, a comment,
+        // another form on the page — is copying and pasting text there, not cells.
+        const inField = (el) => !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 
-            const tag = document.activeElement?.tagName;
-            if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        const onCopyOrCut = (e) => {
+            const active = document.activeElement;
+            if (inField(active) || !rootRef.current?.contains(active)) return;
+            const type = e.type === "cut" ? "cut" : "copy";
+            if (type === "cut" && readOnly) return;
+            pendingClipEvent.current = null;
+            if (copySelection(type, e.clipboardData)) e.preventDefault();
+        };
+
+        // What a paste is, in order:
+        //   1. the grid's own copy, still on the clipboard   formulas and formatting, as before
+        //   2. text from anywhere else                       cells, by rows and tabs
+        //   3. a picture and no text                         a floating image
+        // Text comes before pictures because a spreadsheet copies its cells as both:
+        // Excel puts a picture of them on the clipboard next to their text.
+        const onPaste = (e) => {
+            if (readOnly || !e.clipboardData) return;
+            const active = document.activeElement;
+            if (inField(active)) return;
+            if (active && active !== document.body && !rootRef.current?.contains(active)) return;
+
+            const text = e.clipboardData.getData("text/plain");
+            const html = e.clipboardData.getData("text/html");
+            if (clipboard && isOwnClip(ownClipRef.current, { text, html })) {
+                e.preventDefault();
+                handlePaste();
+                return;
+            }
+            if (text !== "") {
+                e.preventDefault();
+                pasteExternalText(text);
+                return;
+            }
+            const items = e.clipboardData.items || [];
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf("image") === -1) continue;
+                const file = items[i].getAsFile();
+                if (!file) continue;
+                e.preventDefault();
+                handleInsertMediaFile("image", file);
+                return;
+            }
+            // Nothing usable on the system clipboard: whatever was copied here.
+            if (clipboard) {
                 e.preventDefault();
                 handlePaste();
             }
         };
+
+        window.addEventListener("copy", onCopyOrCut);
+        window.addEventListener("cut", onCopyOrCut);
         window.addEventListener("paste", onPaste);
-        return () => window.removeEventListener("paste", onPaste);
-    }, [handlePaste, handleInsertMediaFile, readOnly]);
+        return () => {
+            window.removeEventListener("copy", onCopyOrCut);
+            window.removeEventListener("cut", onCopyOrCut);
+            window.removeEventListener("paste", onPaste);
+        };
+    }, [clipboard, copySelection, handlePaste, pasteExternalText, handleInsertMediaFile, readOnly]);
+
+    // Ctrl+C / Ctrl+X are left to the browser so that it raises the copy or cut event
+    // handled above. Should that event not come (a browser that only raises it for
+    // selected text), the copy is made anyway a moment later.
+    const expectClipboardEvent = useCallback((type) => {
+        pendingClipEvent.current = type;
+        setTimeout(() => {
+            if (pendingClipEvent.current !== type) return;
+            pendingClipEvent.current = null;
+            copySelectionRef.current(type);
+        }, 80);
+    }, []);
 
     const handleCellMouseDown = useCallback((cellId, e) => {
         // Point mode: while typing a formula, clicking another cell inserts its
@@ -2067,6 +2795,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
         if (editingCell && editingCell !== cellId) commitEdit();
+        // Right-click opens the cell menu. On a cell that is already selected it
+        // leaves the selection alone, so the menu acts on what was selected.
+        if (e?.button === 2) {
+            const ref = parseCellRef(cellId);
+            const inSelection = !!ref && allSelectionBounds.some((b) => ref.row >= b.minRow && ref.row <= b.maxRow && ref.col >= b.minCol && ref.col <= b.maxCol);
+            if (!inSelection) {
+                setSelectedMediaId(null);
+                setActiveCell(cellId);
+                setSelection({ start: cellId, end: cellId });
+            }
+            return;
+        }
         if (formatPainterStyle) {
             mutateActiveCells((next) => {
                 const merged = { ...(next[cellId] || {}), ...formatPainterStyle };
@@ -2109,7 +2849,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         setActiveCell(cellId);
         setSelection({ start: cellId, end: cellId });
-    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference, selection, extraRanges, setSelection]);
+    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference, selection, extraRanges, setSelection, allSelectionBounds]);
 
     const handleFillHandleMouseDown = useCallback((e) => {
         e.stopPropagation();
@@ -2391,13 +3131,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const applyToSelection = useCallback((mutator) => {
         mutateActiveCells((next) => {
-            for (const id of selectedCellIds) {
-                const merged = mutator({ ...(next[id] || {}) }, id);
-                if (isBlankCell(merged)) delete next[id];
-                else next[id] = merged;
-            }
+            const current = plainOf(next);
+            allSelectionBounds.forEach((b, i) => {
+                for (let r = b.minRow; r <= b.maxRow; r++) {
+                    for (let c = b.minCol; c <= b.maxCol; c++) {
+                        // A cell inside two overlapping ranges is handled once, by the first.
+                        let seen = false;
+                        for (let j = 0; j < i && !seen; j++) {
+                            const p = allSelectionBounds[j];
+                            seen = r >= p.minRow && r <= p.maxRow && c >= p.minCol && c <= p.maxCol;
+                        }
+                        if (seen) continue;
+                        const id = getCellId(r, c);
+                        const merged = mutator({ ...(current[id] || {}) }, id);
+                        if (isBlankCell(merged)) {
+                            if (current[id]) delete next[id];
+                            continue;
+                        }
+                        for (const key of Object.keys(merged)) if (merged[key] === undefined) delete merged[key];
+                        next[id] = merged;
+                    }
+                }
+            });
         });
-    }, [selectedCellIds, mutateActiveCells]);
+    }, [allSelectionBounds, mutateActiveCells]);
 
     // Excel's Delete/Backspace: clears cell contents but leaves formatting
     // (colors, borders, alignment, ...) in place, matching applyToSelection's
@@ -2449,16 +3206,26 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             if (!sheet.merges) sheet.merges = [];
-            const newIds = new Set(expandRange(rangeStart, rangeEnd));
-            sheet.merges = sheet.merges.filter((m) => !expandRange(m.start, m.end).some((id) => newIds.has(id)));
+            // Two rectangles share a cell exactly when they overlap on both axes.
+            sheet.merges = sheet.merges.filter((m) => {
+                const b = rangeBounds(m);
+                return !b || b.maxRow < minRow || b.minRow > maxRow || b.maxCol < minCol || b.minCol > maxCol;
+            });
             sheet.merges.push({ start: rangeStart, end: rangeEnd });
 
-            for (const id of newIds) {
-                if (id === rangeStart) continue;
-                delete sheet.cells[id];
+            const current = plainOf(sheet.cells);
+            for (let r = minRow; r <= maxRow; r++) {
+                for (let c = minCol; c <= maxCol; c++) {
+                    const id = getCellId(r, c);
+                    if (id !== rangeStart && current[id]) delete sheet.cells[id];
+                }
             }
             const anchor = { ...(sheet.cells[rangeStart] || {}), align: "center", valign: sheet.cells[rangeStart]?.valign || "middle" };
             sheet.cells[rangeStart] = anchor;
+            // Likewise only the top-left cell is left to carry a comment.
+            const anchors = plainOf(sheet.commentAnchors);
+            const kept = anchors && mergeCommentAnchors(anchors, selectionBounds);
+            if (kept && kept !== anchors) sheet.commentAnchors = kept;
         });
         setActiveCell(rangeStart);
         setSelection({ start: rangeStart, end: rangeEnd });
@@ -2647,18 +3414,43 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- Conditional formatting ---
 
-    const addConditionalRule = () => {
-        const threshold = parseFloat(condThreshold);
-        if (isNaN(threshold)) { toast.error("Enter a numeric threshold."); return; }
+    // The selected areas as rule ranges (every Ctrl-selected range, like Excel).
+    const selectionRuleRanges = () => allSelectionBounds.map(rangeOfBounds);
+
+    // A new rule goes to the top of the list, so it wins over older ones.
+    const addConditionalRule = (rule) => {
+        if (readOnly) return;
+        const ranges = rule.ranges?.length ? rule.ranges : selectionRuleRanges();
+        if (!ranges.length) { toast.info("Select the cells to format first."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
-            if (!sheet.conditionalRules) sheet.conditionalRules = [];
-            sheet.conditionalRules.push({ range: [selection.start, selection.end], operator: condOperator, threshold, color: condColor });
+            sheet.conditionalRules = [{ ...rule, id: rule.id || newRuleId(), ranges }, ...normalizeRules(plainOf(sheet.conditionalRules))];
         });
-        toast.success("Conditional formatting rule applied.");
     };
-    const clearConditionalRules = () => {
-        updateSheets((next) => { next[activeSheetName].conditionalRules = []; });
+    const clearConditionalRules = (scope) => {
+        if (readOnly) return;
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            sheet.conditionalRules = scope === "sheet" ? [] : clearRulesFromBounds(normalizeRules(plainOf(sheet.conditionalRules)), allSelectionBounds);
+        });
+    };
+    const openNewConditionalRule = (preset) => {
+        const ranges = selectionRuleRanges();
+        if (!ranges.length) { toast.info("Select the cells to format first."); return; }
+        setCfNewRule({ ...blankRule(preset), id: newRuleId(), ranges });
+    };
+    // Every sheet's rules, for the Rules Manager's "Show formatting rules for" list.
+    const conditionalRulesBySheet = useMemo(
+        () => (cfManagerOpen ? Object.fromEntries(Object.keys(sheets).map((name) => [name, normalizeRules(sheets[name]?.conditionalRules)])) : {}),
+        [cfManagerOpen, sheets]
+    );
+    const commitConditionalRules = (rulesBySheet) => {
+        if (readOnly) return;
+        const changed = Object.keys(rulesBySheet).filter((name) => sheets[name] && rulesBySheet[name] !== conditionalRulesBySheet[name]);
+        if (!changed.length) return;
+        updateSheets((next) => {
+            for (const name of changed) if (next[name]) next[name].conditionalRules = rulesBySheet[name];
+        });
     };
 
     // --- Insert / delete rows & columns ---
@@ -2718,13 +3510,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const newColumnCount = axis === "col" ? Math.max(1, columnCount + count) : columnCount;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
+            const oldCells = plainOf(sheet.cells);
             const newCells = {};
-            for (const id of Object.keys(sheet.cells)) {
+            for (const id of Object.keys(oldCells)) {
                 const ref = parseCellRef(id);
                 const pos = axis === "row" ? ref.row : ref.col;
                 if (count < 0 && pos >= at && pos < at - count) continue;
                 const shifted = pos >= at ? pos + count : pos;
-                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = sheet.cells[id];
+                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = oldCells[id];
             }
             sheet.cells = newCells;
             if (axis === "row") {
@@ -2752,11 +3545,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const filters = axis === "col" && t.filters ? shiftIndexMap(t.filters, at, count) : t.filters;
                 return [{ ...t, range: toIds(b), filters }];
             });
-            sheet.conditionalRules = (sheet.conditionalRules || []).flatMap((rule) => {
-                const b = shiftRange(rule.range[0], rule.range[1], axis, at, count);
-                if (!b) return [];
-                const ids = toIds(b);
-                return [{ ...rule, range: [ids.start, ids.end] }];
+            sheet.conditionalRules = normalizeRules(plainOf(sheet.conditionalRules)).flatMap((rule) => {
+                const ranges = (rule.ranges || []).flatMap((range) => {
+                    const b = shiftRange(range.start, range.end, axis, at, count);
+                    return b ? [toIds(b)] : [];
+                });
+                return ranges.length ? [{ ...rule, ranges }] : [];
             });
             const key = axis === "row" ? "row" : "col";
             const limit = (axis === "row" ? sheet.rowCount : sheet.columnCount) - 1;
@@ -2767,6 +3561,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const shifted = count < 0 && pos < at - count ? at : pos + count;
                 return { ...item, [key]: Math.max(0, Math.min(limit, shifted)) };
             });
+            const anchors = plainOf(sheet.commentAnchors);
+            const shiftedAnchors = anchors && shiftCommentAnchors(anchors, axis, at, count);
+            if (shiftedAnchors && shiftedAnchors !== anchors) sheet.commentAnchors = shiftedAnchors;
         });
 
         // Keep the cursor and selection inside the resized grid.
@@ -2813,13 +3610,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const sortCol = minCol;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
+            const current = plainOf(sheet.cells);
             const rowsData = [];
             for (let r = minRow; r <= maxRow; r++) {
                 const rowCells = {};
-                for (let c = minCol; c <= maxCol; c++) rowCells[c] = sheet.cells[getCellId(r, c)];
-                rowsData.push(rowCells);
+                for (let c = minCol; c <= maxCol; c++) rowCells[c] = current[getCellId(r, c)];
+                rowsData.push({ cells: rowCells, fromRow: r });
             }
-            const keyFor = (rowCells) => {
+            const keyFor = ({ cells: rowCells }) => {
                 const v = rowCells[sortCol]?.value;
                 const num = parseFloat(v);
                 return isNaN(num) ? String(v ?? "").toLowerCase() : num;
@@ -2829,13 +3627,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 if (typeof ka === "number" && typeof kb === "number") return direction === "asc" ? ka - kb : kb - ka;
                 return direction === "asc" ? String(ka).localeCompare(String(kb)) : String(kb).localeCompare(String(ka));
             });
-            rowsData.forEach((rowCells, i) => {
+            const movedRows = new Map(); // the row a moved row came from -> where it is now
+            rowsData.forEach(({ cells: rowCells, fromRow }, i) => {
                 const targetRow = minRow + i;
+                if (fromRow !== targetRow) movedRows.set(fromRow, targetRow);
                 for (let c = minCol; c <= maxCol; c++) {
                     const id = getCellId(targetRow, c);
+                    if (rowCells[c] === current[id]) continue; // already where it belongs
                     if (rowCells[c]) sheet.cells[id] = rowCells[c]; else delete sheet.cells[id];
                 }
             });
+            // Comments stay with the row they were written on.
+            const anchors = plainOf(sheet.commentAnchors);
+            const sortedAnchors = anchors && reorderCommentAnchorRows(anchors, { minCol, maxCol }, movedRows);
+            if (sortedAnchors && sortedAnchors !== anchors) sheet.commentAnchors = sortedAnchors;
         });
     };
 
@@ -2866,15 +3671,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setActiveSheetName(name);
     };
 
-    // updateSheets already deep-clones the whole workbook before handing it to
-    // the updater, so `next[name]` is a private copy — re-cloning it into
-    // `next[newName]` is what gives the duplicate and the original independent
-    // object graphs (editing one can never mutate the other).
+    // The duplicate starts out pointing at the very same (immutable) sheet
+    // object as the original; the two only diverge as each is edited, since
+    // an edit copies what it touches instead of changing it in place.
     const copySheet = (name) => {
         if (!sheets[name]) return;
         const newName = getDuplicateSheetName(name, Object.keys(sheets));
         updateSheets((next) => {
-            next[newName] = JSON.parse(JSON.stringify(next[name]));
+            // Comments aren't duplicated: a thread sits on one cell of one sheet.
+            const source = plainOf(next[name]);
+            next[newName] = source.commentAnchors && Object.keys(source.commentAnchors).length > 0
+                ? { ...source, commentAnchors: {} }
+                : source;
         });
         setActiveSheetName(newName);
         toast.success(`Sheet "${name}" duplicated as "${newName}"`);
@@ -3001,7 +3809,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         try {
             await saveWorkbook({ meetingId, sectionId, sheets, activeSheet: activeSheetName });
-            if (sheetsRef.current === sheets) setIsDirty(false);
+            if (nothingLeftToSave(sheets, meetingId)) setIsDirty(false);
             toast.success("Spreadsheet saved successfully!");
         } catch (err) {
             toast.error(saveErrorMessage(err, "Failed to save spreadsheet. Please try again."));
@@ -3018,12 +3826,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // sends one request instead of one per change.
     const persistCharts = useCallback((charts) => {
         if (readOnly) return;
-        if (!sheetsRef.current[activeSheetName]) return;
+        const current = sheetsRef.current;
+        if (!current[activeSheetName]) return;
         broadcastNowRef.current = true;
-        setSheets((prev) => (prev[activeSheetName] ? { ...prev, [activeSheetName]: { ...prev[activeSheetName], charts } } : prev));
+        setSheets({ ...current, [activeSheetName]: { ...current[activeSheetName], charts } });
         clearTimeout(chartSaveRef.current?.timer);
         chartSaveRef.current = { meetingId, sectionId, activeSheet: activeSheetName, timer: setTimeout(flushChartSave, CHART_SAVE_DEBOUNCE_MS) };
-    }, [activeSheetName, sectionId, meetingId, readOnly, flushChartSave]);
+    }, [activeSheetName, sectionId, meetingId, readOnly, flushChartSave, setSheets]);
 
     useImperativeHandle(ref, () => ({
         updateCharts: persistCharts,
@@ -3051,6 +3860,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const usedNames = new Set();
             let processedRows = 0;
             let skippedMedia = 0;
+            const stopIfTrueBySheetId = {}; // ExcelJS worksheet id -> rule priorities flagged Stop If True
 
             for (let sheetIdx = 0; sheetIdx < sheetEntries.length; sheetIdx++) {
                 const [sheetName, sheet] = sheetEntries[sheetIdx];
@@ -3138,9 +3948,22 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 for (const m of sheet.merges || []) {
                     try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
                 }
+                // Comment threads go out as plain cell notes, one message per paragraph
+                // (the file format's threaded comments aren't something ExcelJS writes).
+                for (const [cellId, threadId] of Object.entries(sheet.commentAnchors || {})) {
+                    const note = threadToNoteText(commentThreads[threadId]);
+                    if (!note || !parseCellRef(cellId)) continue;
+                    try { worksheet.getCell(cellId).note = note; } catch { /* a cell Excel's writer rejects — skip the note rather than fail the whole export */ }
+                }
                 for (const r of sheet.hiddenRows || []) worksheet.getRow(r + 1).hidden = true;
                 for (const c of sheet.hiddenCols || []) worksheet.getColumn(c + 1).hidden = true;
                 if (sheet.hidden) worksheet.state = "hidden";
+
+                const conditional = rulesToExcel(sheet.conditionalRules);
+                for (const block of conditional.blocks) {
+                    try { worksheet.addConditionalFormatting(block); } catch { /* a rule Excel's writer rejects — skip it rather than fail the whole export */ }
+                }
+                if (conditional.stopIfTrue.length) stopIfTrueBySheetId[worksheet.id] = conditional.stopIfTrue;
 
                 // Media is placed by absolute pixel position re-anchored against
                 // this sheet's own sizes, since a drag can leave an item's offset
@@ -3173,7 +3996,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             workbook.views = [{ activeTab, firstSheet: 0, visibility: "visible" }];
 
             setIoProgress({ title: "Exporting Spreadsheet", label: "Generating file…", current: 0, total: 0 });
-            const buffer = await workbook.xlsx.writeBuffer();
+            let buffer = await workbook.xlsx.writeBuffer();
+            // ExcelJS has no "Stop If True" for conditional formatting; it is set in the file's XML.
+            if (Object.keys(stopIfTrueBySheetId).length) {
+                try {
+                    const JSZip = (await import("jszip")).default;
+                    const zip = await JSZip.loadAsync(buffer);
+                    await writeStopIfTrue(zip, stopIfTrueBySheetId);
+                    buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+                } catch { /* the export is still good, just without the Stop If True flags */ }
+            }
             const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -3217,6 +4049,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const usedNames = new Set();
                 let processedRows = 0;
                 let importedImageCount = 0, skippedUnsupportedImages = 0, skippedLargeImages = 0;
+                let importedRuleCount = 0, skippedRuleCount = 0;
+                // ExcelJS doesn't read "Stop If True" on conditional formatting; it comes from the file's XML.
+                let stopIfTrueBySheet = {};
+                try {
+                    const JSZip = (await import("jszip")).default;
+                    stopIfTrueBySheet = await readStopIfTrue(await JSZip.loadAsync(evt.target.result));
+                } catch { /* the rules still import, without the flag */ }
 
                 for (let wsIdx = 0; wsIdx < worksheets.length; wsIdx++) {
                     const worksheet = worksheets[wsIdx];
@@ -3240,7 +4079,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             const cIdx = colNumber - 1;
                             const value = extractExcelCellValue(cell);
                             const style = extractExcelCellStyle(cell);
-                            if (value === "" && Object.keys(style).length === 0) return;
+                            // Sparse storage: an empty cell is kept only if it carries
+                            // formatting of its own. Nearly every Excel cell names the
+                            // workbook's default font, which on an empty cell shows
+                            // nothing — keeping those would store a blank object for
+                            // every cell of a large sheet's used range.
+                            if (value === "" && !hasOwnFormatting(style)) return;
                             importedCells[getCellId(rIdx, cIdx)] = { value, ...style };
                             maxRow = Math.max(maxRow, rIdx + 1);
                             maxCol = Math.max(maxCol, cIdx + 1);
@@ -3276,9 +4120,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     skippedLargeImages += images.skippedTooLarge;
                     importedImageCount += images.media.length;
 
+                    const conditional = rulesFromExcel(worksheet.conditionalFormattings, {
+                        resolveColor: parseExcelColor,
+                        stopIfTrue: stopIfTrueBySheet[worksheet.name],
+                    });
+                    importedRuleCount += conditional.rules.length;
+                    skippedRuleCount += conditional.skipped;
+
                     importedSheets[sheetName] = {
                         ...emptySheet(),
                         cells: importedCells,
+                        conditionalRules: conditional.rules,
                         // Grown to cover picture anchors too, since media is
                         // positioned off the grid's row/column offsets.
                         rowCount: Math.max(DEFAULT_ROW_COUNT, maxRow, images.maxRow),
@@ -3293,14 +4145,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     };
                 }
 
+                // A workbook always keeps at least one visible sheet. Settled
+                // before the commit below, which freezes the imported sheets.
+                const importedNames = Object.keys(importedSheets);
+                if (importedNames.every((name) => importedSheets[name].hidden)) delete importedSheets[importedNames[0]].hidden;
                 setEditingCell(null);
                 updateSheets((next) => {
                     for (const name of Object.keys(next)) delete next[name];
                     Object.assign(next, importedSheets);
                 });
-                // A workbook always keeps at least one visible sheet.
-                const importedNames = Object.keys(importedSheets);
-                if (importedNames.every((name) => importedSheets[name].hidden)) delete importedSheets[importedNames[0]].hidden;
                 setActiveSheetName(importedNames.find((name) => !importedSheets[name].hidden));
                 setActiveCell("A1");
                 setSelection({ start: "A1", end: "A1" });
@@ -3308,7 +4161,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
                 const count = worksheets.length;
                 const imageNote = importedImageCount > 0 ? ` and ${importedImageCount} image${importedImageCount === 1 ? "" : "s"}` : "";
-                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}. Click Save to persist ${count === 1 && !imageNote ? "it" : "them"}.`);
+                const ruleNote = importedRuleCount > 0 ? `${imageNote ? "," : " with"} ${importedRuleCount} conditional formatting rule${importedRuleCount === 1 ? "" : "s"}` : "";
+                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}${ruleNote}. Click Save to persist ${count === 1 && !imageNote && !ruleNote ? "it" : "them"}.`);
+                if (skippedRuleCount > 0) {
+                    toast.warning(`${skippedRuleCount} conditional formatting rule${skippedRuleCount === 1 ? " was" : "s were"} skipped — no equivalent here.`);
+                }
                 if (skippedUnsupportedImages > 0) {
                     toast.warning(`${skippedUnsupportedImages} image${skippedUnsupportedImages === 1 ? " was" : "s were"} skipped — format not supported in the browser (e.g. EMF/WMF/TIFF).`);
                 }
@@ -3358,6 +4215,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         el.scrollTop = saved.top;
         el.scrollLeft = saved.left;
         setScrollTop(el.scrollTop);
+        setScrollLeft(el.scrollLeft);
         savedGridScroll.current = null;
         el.focus({ preventScroll: true });
     }, [isFullScreen]);
@@ -3428,15 +4286,36 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
     };
 
+    // Calls `visit(id, row, col)` for every cell that can show something: one
+    // with a typed value or formula, or one a formula spills into. Position
+    // filters belong in `visit` ahead of any displayGrid read, so a pass over a
+    // large sheet only formats the cells it actually needs.
+    const forEachFilledCell = (visit) => {
+        const emit = (id) => {
+            const pos = cellPosOf(id);
+            if (pos >= 0) {
+                const col = pos % CELL_POS_STRIDE;
+                visit(id, (pos - col) / CELL_POS_STRIDE, col);
+                return;
+            }
+            const ref = parseCellRef(id);
+            if (ref) visit(id, ref.row, ref.col);
+        };
+        for (const id in cells) {
+            const v = cells[id]?.value;
+            if (v !== undefined && v !== null && v !== "") emit(id);
+        }
+        for (const id of evaluation.spillAnchors.keys()) emit(id);
+    };
+
     const lastUsedCell = () => {
         let maxRow = 0, maxCol = 0;
-        for (const [id, v] of Object.entries(displayGrid)) {
-            if (v === "" || v === undefined) continue;
-            const ref = parseCellRef(id);
-            if (!ref) continue;
-            if (ref.row > maxRow) maxRow = ref.row;
-            if (ref.col > maxCol) maxCol = ref.col;
-        }
+        forEachFilledCell((id, row, col) => {
+            if (row <= maxRow && col <= maxCol) return;
+            if (displayGrid[id] === "") return;
+            if (row > maxRow) maxRow = row;
+            if (col > maxCol) maxCol = col;
+        });
         return { row: Math.min(maxRow, rowCount - 1), col: Math.min(maxCol, columnCount - 1) };
     };
 
@@ -3611,16 +4490,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return Math.max(0, ...String(text).split("\n").map((line) => ctx.measureText(line).width));
     };
 
-    const autoFitColumns = () => {
-        if (readOnly || !selectionBounds) return;
-        const { minCol, maxCol } = selectionBounds;
+    const autoFitColumnRange = (minCol, maxCol) => {
+        if (readOnly) return;
         const widest = {};
-        for (const [id, text] of Object.entries(displayGrid)) {
-            if (text === "" || mergeMap[id]) continue;
-            const ref = parseCellRef(id);
-            if (!ref || ref.col < minCol || ref.col > maxCol || hiddenRowSet.has(ref.row)) continue;
-            widest[ref.col] = Math.max(widest[ref.col] || 0, measureTextWidth(text, cells[id]));
-        }
+        forEachFilledCell((id, row, col) => {
+            if (col < minCol || col > maxCol || hiddenRowSet.has(row) || mergeMap[id]) return;
+            const text = displayGrid[id];
+            if (text === "") return;
+            // Indent adds 9px of padding per level when the cell is drawn.
+            const indent = (cells[id]?.indent || 0) * 9;
+            widest[col] = Math.max(widest[col] || 0, measureTextWidth(text, cells[id]) + indent);
+        });
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             sheet.columnWidths = { ...(sheet.columnWidths || {}) };
@@ -3631,23 +4511,38 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     };
 
+    const autoFitColumns = () => {
+        if (!selectionBounds) return;
+        autoFitColumnRange(selectionBounds.minCol, selectionBounds.maxCol);
+    };
+
+    // Double-clicking a column's right border fits it to its contents, like
+    // Excel. When that column is part of a whole-column selection, every
+    // selected column is fitted.
+    const handleColumnBorderDoubleClick = (colIdx) => {
+        const b = selectionBounds;
+        const inColumnSelection = b && b.minRow === 0 && b.maxRow === rowCount - 1 && colIdx >= b.minCol && colIdx <= b.maxCol;
+        if (inColumnSelection) autoFitColumnRange(b.minCol, b.maxCol);
+        else autoFitColumnRange(colIdx, colIdx);
+    };
+
     const autoFitRows = () => {
         if (readOnly || !selectionBounds) return;
         const { minRow, maxRow } = selectionBounds;
         const tallest = {};
-        for (const [id, text] of Object.entries(displayGrid)) {
-            if (text === "" || mergeMap[id]) continue;
-            const ref = parseCellRef(id);
-            if (!ref || ref.row < minRow || ref.row > maxRow) continue;
+        forEachFilledCell((id, row, col) => {
+            if (row < minRow || row > maxRow || mergeMap[id]) return;
+            const text = displayGrid[id];
+            if (text === "") return;
             const cell = cells[id];
             const fontSize = cell?.fontSize || 12;
             let lines = 1;
             if (cell?.wrap) {
-                const available = Math.max(20, (columnWidths[ref.col] || DEFAULT_COLUMN_WIDTH) - 12);
+                const available = Math.max(20, (columnWidths[col] || DEFAULT_COLUMN_WIDTH) - 12);
                 lines = String(text).split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(measureTextWidth(line, cell) / available)), 0);
             }
-            tallest[ref.row] = Math.max(tallest[ref.row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
-        }
+            tallest[row] = Math.max(tallest[row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
+        });
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             sheet.rowHeights = { ...(sheet.rowHeights || {}) };
@@ -3930,6 +4825,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     `vertical-align:${cell?.valign || "middle"};`,
                     cell?.wrap ? "white-space:pre-wrap;" : "white-space:nowrap;",
                     ...["top", "bottom", "left", "right"].map((side) => borderCss(side, cell?.border?.[side])),
+                    // Conditional formatting goes last so it overrides the cell's own format.
+                    ...printConditionalCss(conditionalMap[id], cell),
                 ].filter(Boolean).join("");
                 const text = showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[id] ?? "");
                 html += `<td${spanAttrs} style="${style}">${escapeHtml(text)}</td>`;
@@ -4073,8 +4970,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (ctrl && alt && !shift && code === "KeyV") { handled(); if (edit) setPasteSpecialOpen(true); return; }
         if (ctrl && !alt) {
             switch (code) {
-                case "KeyC": if (!shift) { handled(); copySelection("copy"); return; } break;
-                case "KeyX": if (!shift && edit) { handled(); copySelection("cut"); return; } break;
+                // Not handled(): the default has to go ahead for the copy/cut event to fire.
+                case "KeyC": if (!shift) { expectClipboardEvent("copy"); return; } break;
+                case "KeyX": if (!shift && edit) { expectClipboardEvent("cut"); return; } break;
                 case "KeyZ": if (edit) { handled(); if (shift) redo(); else undo(); return; } break;
                 case "KeyY": if (!shift && edit) { handled(); redo(); return; } break;
                 case "KeyF": handled(); if (shift) { if (edit) setFormatCellsOpen(true); } else openFind(false); return;
@@ -4176,7 +5074,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 return;
             case "F2":
                 handled();
-                if (edit) startEditing(activeCell);
+                if (shift) openComment(activeCell); // Shift+F2: comment on this cell
+                else if (edit) startEditing(activeCell);
                 return;
             case "Escape":
                 handled();
@@ -4209,16 +5108,28 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     };
 
     // Status bar: quick totals for a multi-cell selection (visible cells only).
+    // Computed from a deferred copy of the selection, so totalling a very large
+    // range never holds up the selection highlight itself while dragging.
+    const statsBounds = useDeferredValue(allSelectionBounds);
     const selectionStats = useMemo(() => {
-        if (selectedCellIds.size < 2) return null;
+        const inEarlier = (row, col, upTo) => {
+            for (let j = 0; j < upTo; j++) {
+                const p = statsBounds[j];
+                if (row >= p.minRow && row <= p.maxRow && col >= p.minCol && col <= p.maxCol) return true;
+            }
+            return false;
+        };
+        let area = 0;
+        for (const b of statsBounds) area += (b.maxRow - b.minRow + 1) * (b.maxCol - b.minCol + 1);
+        if (area < 2) return null;
+
         let count = 0, numericCount = 0, sum = 0, min = Infinity, max = -Infinity;
-        for (const [id, v] of Object.entries(rawGrid)) {
-            if (!selectedCellIds.has(id)) continue;
-            const ref = parseCellRef(id);
-            if (!ref) continue;
-            if (hiddenRowSet.has(ref.row) || hiddenColSet.has(ref.col)) continue;
+        const add = (id, row, col) => {
+            if (hiddenRowSet.has(row) || hiddenColSet.has(col)) return;
             const typed = cells[id]?.value;
-            if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) continue;
+            if ((typed === undefined || typed === "") && !evaluation.spillAnchors.has(id)) return;
+            const v = rawGrid[id];
+            if (v === undefined) return;
             count++;
             if (typeof v === "number" && Number.isFinite(v)) {
                 numericCount++;
@@ -4226,10 +5137,28 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 if (v < min) min = v;
                 if (v > max) max = v;
             }
+        };
+        if (area <= SELECTION_SCAN_LIMIT) {
+            statsBounds.forEach((b, i) => {
+                for (let r = b.minRow; r <= b.maxRow; r++) {
+                    for (let c = b.minCol; c <= b.maxCol; c++) {
+                        if (!inEarlier(r, c, i)) add(getCellId(r, c), r, c); // overlapping ranges count once
+                    }
+                }
+            });
+        } else {
+            const visit = (id) => {
+                const pos = cellPosOf(id);
+                if (pos < 0) return;
+                const col = pos % CELL_POS_STRIDE, row = (pos - col) / CELL_POS_STRIDE;
+                if (inEarlier(row, col, statsBounds.length)) add(id, row, col);
+            };
+            for (const id in cells) visit(id);
+            for (const id of evaluation.spillAnchors.keys()) if (!Object.prototype.hasOwnProperty.call(cells, id)) visit(id);
         }
         if (!count) return null;
         return { count, numericCount, sum, min, max, average: numericCount ? sum / numericCount : null };
-    }, [selectedCellIds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
+    }, [statsBounds, rawGrid, cells, evaluation, hiddenRowSet, hiddenColSet]);
     const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 
@@ -4245,6 +5174,35 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         );
     }
 
+    // Where the comment card goes: the commented cell's box in screen pixels, worked
+    // out the same way a mouse position is turned into a cell (offsets are unzoomed).
+    // Nothing while that cell is scrolled out from under the grid's viewport.
+    const commentCardView = (() => {
+        const el = gridContainerRef.current;
+        if (!commentCard || commentCard.sheet !== activeSheetName || !el) return null;
+        const { cellId } = commentCard;
+        const start = parseCellRef(cellId);
+        if (!start || start.row >= rowCount || start.col >= columnCount) return null;
+        const thread = commentThreadAt(cellId);
+        // No thread: the box to start one, which only an opened (not hovered) card shows.
+        if (!thread && !(commentCard.pinned && canStartComment)) return null;
+        const merge = mergeMap[cellId];
+        const end = (merge && parseCellRef(merge.end)) || start;
+        const maxRow = Math.min(end.row, rowCount - 1), maxCol = Math.min(end.col, columnCount - 1);
+        const box = el.getBoundingClientRect();
+        const rect = {
+            left: box.left + (colOffsets[start.col] - el.scrollLeft) * zoom,
+            right: box.left + (colOffsets[maxCol + 1] - el.scrollLeft) * zoom,
+            top: box.top + (rowOffsets[start.row] - el.scrollTop) * zoom,
+            bottom: box.top + (rowOffsets[maxRow + 1] - el.scrollTop) * zoom,
+        };
+        if (rect.bottom <= box.top + HEADER_ROW_HEIGHT * zoom || rect.top >= box.bottom
+            || rect.right <= box.left + ROW_HEADER_WIDTH * zoom || rect.left >= box.right) return null;
+        // Its place on the sheet reaches other people with the next save.
+        const savedAnchor = savedWorkbooksRef.current[meetingId]?.sheets?.[activeSheetName]?.commentAnchors?.[cellId];
+        return { cellId, thread, rect, label: merge ? `${merge.start}:${merge.end}` : cellId, unsaved: !!thread && savedAnchor !== thread.id };
+    })();
+
     return (
         <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Spreadsheet" icon={IconTable}>
         <div
@@ -4254,18 +5212,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         >
             {!readOnly && (
             <>
-            {/* Save floats at the bottom-left of the window so it stays in reach
-                however far the sheet is scrolled. z-[45]: above the meeting
-                view, below dialogs and the chart's full-screen overlay. */}
-            <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                title="Save (Ctrl+S)"
-                className="fixed left-4 bottom-4 z-[45] h-10 px-4 rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
-            >
-                {isSaving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
-                {isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}
-            </Button>
             {/* Quick access row */}
             <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-slate-200 bg-white rounded-t-lg">
                 <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={undo} disabled={historyPast.current.length === 0} title="Undo (Ctrl+Z)">
@@ -4357,17 +5303,26 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             )}>
             {ribbonTab === "home" ? (
             <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {/* File */}
+                <RibbonGroup label="File">
+                    <RibbonBtn large title="Save (Ctrl+S)" onClick={handleSave} disabled={isSaving}>
+                        {isSaving
+                            ? <IconLoader2 className="w-8 h-8 animate-spin text-indigo-600" strokeWidth={1.4} />
+                            : <IconDeviceFloppy className="w-8 h-8 text-indigo-600" strokeWidth={1.4} />}
+                        <span className="text-xs">{isSaving ? "Saving…" : `Save${isDirty ? " *" : ""}`}</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+
                 {/* Clipboard */}
                 <RibbonGroup label="Clipboard" onLauncher={() => setPasteSpecialOpen(true)} launcherTitle="Paste Special (Ctrl+Alt+V)">
                     <RibbonSplit
                         large
                         title="Paste (Ctrl+V)"
-                        onClick={handlePaste}
-                        disabled={!clipboard}
+                        onClick={pasteFromButton}
                         face={<><IconClipboardText className="w-8 h-8 text-amber-700" strokeWidth={1.4} /><span className="text-xs">Paste</span></>}
                         menuTitle="Paste options"
                     >
-                        <MenuItem icon={IconClipboard} label="Paste" shortcut="Ctrl+V" onClick={handlePaste} disabled={!clipboard} />
+                        <MenuItem icon={IconClipboard} label="Paste" shortcut="Ctrl+V" onClick={pasteFromButton} />
                         <MenuItem icon={IconClipboardList} label="Paste Special..." shortcut="Ctrl+Alt+V" onClick={() => setPasteSpecialOpen(true)} disabled={!clipboard} />
                     </RibbonSplit>
                     <RibbonStack>
@@ -4539,27 +5494,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 {/* Styles */}
                 <RibbonGroup label="Styles">
                     <RibbonStack className="items-start">
-                        <RibbonDropdown title="Conditional Formatting" trigger={<><CondFormatIcon /><span className="text-xs">Conditional Formatting</span></>} contentClassName="w-64 p-2">
-                            <MenuClose>{(close) => (
-                                <div className="space-y-2">
-                                    <div className="text-[11px] font-semibold text-slate-600">Highlight Cells Rules — value is:</div>
-                                    <div className="flex items-center gap-1">
-                                        <select className="h-7 text-xs border border-slate-200 rounded px-1 cursor-pointer" value={condOperator} onChange={(e) => setCondOperator(e.target.value)}>
-                                            <option value=">">Greater Than</option>
-                                            <option value="<">Less Than</option>
-                                            <option value=">=">Greater or Equal</option>
-                                            <option value="<=">Less or Equal</option>
-                                            <option value="=">Equal To</option>
-                                        </select>
-                                        <input type="number" className="h-7 text-xs border border-slate-200 rounded px-1.5 w-16" value={condThreshold} onChange={(e) => setCondThreshold(e.target.value)} placeholder="value" />
-                                        <input type="color" className="w-6 h-6 cursor-pointer" value={condColor} onChange={(e) => setCondColor(e.target.value)} title="Highlight color" />
-                                    </div>
-                                    <div className="flex gap-1.5">
-                                        <Button size="sm" className="h-7 text-xs flex-1 cursor-pointer" onClick={() => { addConditionalRule(); close(); }}>Apply</Button>
-                                        <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={() => { clearConditionalRules(); close(); }}>Clear Rules</Button>
-                                    </div>
-                                </div>
-                            )}</MenuClose>
+                        <RibbonDropdown title="Conditional Formatting" trigger={<><CondFormatIcon /><span className="text-xs">Conditional Formatting</span></>} contentClassName="w-60">
+                            <ConditionalFormatMenu
+                                onQuick={setCfQuickKind}
+                                onAddRule={addConditionalRule}
+                                onNewRule={openNewConditionalRule}
+                                onClear={clearConditionalRules}
+                                onManage={() => setCfManagerOpen(true)}
+                            />
                         </RibbonDropdown>
                         <RibbonDropdown title="Format as Table (Ctrl+T)" trigger={<><FormatTableIcon /><span className="text-xs">Format as Table</span></>} contentClassName="w-64 p-2">
                             <MenuClose>{(close) => (
@@ -4707,6 +5649,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <RibbonBtn className="h-full flex-col px-2 gap-1" title="Table (Ctrl+T)" onClick={() => applyTable(selectedTableStyleKey, true, regionForCommand())}>
                         <FormatTableIcon className="w-7 h-7" />
                         <span className="text-xs">Table</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+                <RibbonGroup label="Comments">
+                    <RibbonBtn
+                        className="h-full flex-col px-2 gap-1"
+                        title={!meetingId ? "Comments are available on meeting sheets" : "Comment on the selected cell (Shift+F2)"}
+                        disabled={!meetingId}
+                        onClick={() => openComment(activeCell)}
+                    >
+                        <IconMessagePlus className="w-7 h-7 text-amber-600" strokeWidth={1.4} />
+                        <span className="text-xs">Comment</span>
                     </RibbonBtn>
                 </RibbonGroup>
                 <RibbonGroup label="Illustrations">
@@ -4930,6 +5883,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
             <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")}>
             <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 min-w-0">
+                {/* One menu for the whole grid rather than one per cell: a right-click
+                    first selects the cell under it (handleCellMouseDown), and the menu
+                    then acts on the active cell. While a cell is being edited the
+                    browser's own menu (spelling, paste) is left alone. */}
+                <ContextMenu>
+                <ContextMenuTrigger asChild disabled={!!editingCell}>
                 <div
                     ref={gridContainerRef}
                     className="overflow-auto outline-none select-none"
@@ -4938,6 +5897,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     onMouseLeave={() => setHoveredCell(null)}
                 >
                 <div className="relative">
+                {/* Where the other people editing this meeting are (live co-editing):
+                    their selection outlined in their colour, with their name. Below
+                    the sticky headers (z-10 and up), and never in the way of the mouse. */}
+                {livePeers.map((peer) => {
+                    if (peer.sheet !== activeSheetName) return null;
+                    const bounds = rangeBounds({ start: peer.start, end: peer.end });
+                    if (!bounds || bounds.minRow >= rowCount || bounds.minCol >= columnCount) return null;
+                    const maxRow = Math.min(bounds.maxRow, rowCount - 1);
+                    const maxCol = Math.min(bounds.maxCol, columnCount - 1);
+                    const top = rowOffsets[bounds.minRow];
+                    const left = colOffsets[bounds.minCol];
+                    return (
+                        <div
+                            key={peer.socketId}
+                            className="absolute pointer-events-none z-[5]"
+                            style={{
+                                top, left,
+                                width: colOffsets[maxCol + 1] - left,
+                                height: rowOffsets[maxRow + 1] - top,
+                                border: `2px solid ${peer.color}`,
+                            }}
+                        >
+                            <span
+                                className="absolute left-[-2px] px-1 text-[10px] leading-4 text-white whitespace-nowrap rounded-sm"
+                                style={{ background: peer.color, ...(bounds.minRow === 0 ? { top: "100%" } : { bottom: "100%" }) }}
+                            >
+                                {peer.userName}
+                            </span>
+                        </div>
+                    );
+                })}
                 {media.map((item) => (
                     <DraggableMedia
                         key={item.id}
@@ -4963,7 +5953,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 ))}
                 <table
                     className="border-collapse"
-                    style={{ tableLayout: "fixed", width: ROW_HEADER_WIDTH + columns.reduce((sum, _, colIdx) => sum + widthForCol(colIdx), 0) }}
+                    style={{ tableLayout: "fixed", width: colOffsets[columnCount] }}
                 >
                     <thead>
                         <tr>
@@ -4973,7 +5963,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 style={{ width: ROW_HEADER_WIDTH }}
                                 title="Select all cells"
                             />
-                            {columns.map((c, colIdx) => hiddenColSet.has(colIdx) ? null : (
+                            {/* In a fixed-layout table the first row sets every column's
+                                width, so the spacers get theirs here; the body rows'
+                                spacer cells just line up under them. */}
+                            {leftSpacerWidth > 0 && <th key="left-spacer" style={{ width: leftSpacerWidth, padding: 0, border: "none" }} />}
+                            {visibleCols.map((colIdx) => { const c = columns[colIdx]; return (
                                 <th
                                     key={c}
                                     onMouseDown={(e) => handleColHeaderMouseDown(colIdx, e)}
@@ -4993,17 +5987,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     <div
                                         onMouseDown={(e) => startColumnResize(e, colIdx)}
                                         onClick={(e) => e.stopPropagation()}
+                                        onDoubleClick={(e) => { e.stopPropagation(); handleColumnBorderDoubleClick(colIdx); }}
                                         className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-indigo-400/60 z-10"
-                                        title="Drag to resize column"
+                                        title="Drag to resize column · double-click to fit"
                                     />
                                 </th>
-                            ))}
+                            ); })}
+                            {rightSpacerWidth > 0 && <th key="right-spacer" style={{ width: rightSpacerWidth, padding: 0, border: "none" }} />}
                         </tr>
                     </thead>
                     <tbody>
                         {visibleRowRange.startRow > 0 && (
                             <tr key="top-spacer">
-                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
+                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
                             </tr>
                         )}
                         {rows.slice(visibleRowRange.startRow, visibleRowRange.endRow + 1).map((rowIdx) => {
@@ -5031,8 +6027,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         title="Drag to resize row"
                                     />
                                 </td>
-                                {columns.map((_, colIdx) => {
-                                    if (hiddenColSet.has(colIdx)) return null;
+                                {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
+                                {visibleCols.map((colIdx) => {
                                     const cellId = getCellId(rowIdx, colIdx);
                                     const merge = mergeMap[cellId];
                                     // Cells covered by a merge but not its anchor render nothing —
@@ -5041,11 +6037,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
                                     const cell = cells[cellId];
                                     const isActive = activeCell === cellId;
-                                    const isInRange = selectedCellIds.has(cellId);
+                                    const isInRange = isCellSelected(rowIdx, colIdx);
                                     const isEditing = editingCell === cellId;
                                     const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
                                     const isFillPreviewCell = fillPreviewCellIds.has(cellId);
-                                    const conditionalBg = conditionalBgMap[cellId];
+                                    const conditional = conditionalMap[cellId];
+                                    const conditionalStyle = conditional?.style;
                                     // Spans count only rendered rows/columns, so a merge that
                                     // covers hidden ones doesn't push the rest of the row over.
                                     const mergeSpan = merge ? (() => {
@@ -5082,6 +6079,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         }
                                     }
                                     const formulaRefEdges = formulaRefBorderMap[cellId];
+                                    const commentThreadId = commentAnchors[cellId];
+                                    const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
                                     // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
                                     const filterTable = tables.find((t) => {
                                         if (!t.filtersEnabled) return false;
@@ -5112,15 +6111,41 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                             style={{
                                                 height: heightForRow(rowIdx),
                                                 verticalAlign: cell?.valign || "middle",
-                                                backgroundColor: conditionalBg || cell?.bg
+                                                backgroundColor: conditionalStyle?.bg || cell?.bg
                                             }}
                                         >
+                                            {conditional?.dataBar && !isEditing && (
+                                                <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
+                                                    <div
+                                                        className="h-full"
+                                                        style={{
+                                                            width: `${conditional.dataBar.pct * 100}%`,
+                                                            background: conditional.dataBar.gradient
+                                                                ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
+                                                                : conditional.dataBar.color
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+                                            {conditionalStyle?.borderColor && (
+                                                <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
+                                            )}
                                             <CellBorderOverlay border={cell?.border} />
                                             {isInRange && !isActive && (
                                                 <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
                                             )}
                                             {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
                                             {formulaRefEdges && <SelectionRangeBorder {...formulaRefEdges} />}
+                                            {/* This cell has a comment: a corner triangle, nothing more.
+                                                The thread opens in the one shared card. */}
+                                            {commentThread && (
+                                                <span
+                                                    className={cn(
+                                                        "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
+                                                        commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
+                                                    )}
+                                                />
+                                            )}
                                             {filterTable && (
                                                 <Popover open={isFilterOpenHere} onOpenChange={(open) => { if (!open) { setFilterPopover(null); setFilterDraft(null); } }}>
                                                     <PopoverTrigger asChild>
@@ -5200,9 +6225,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                 </div>
                                             ) : (
                                                 <div
-                                                    className={cn("px-1.5 text-xs", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                                                    style={cellStyleFor(cell)}
+                                                    className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
+                                                    style={conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
                                                 >
+                                                    {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
                                                     {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
                                                 </div>
                                             )}
@@ -5216,18 +6242,75 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         </td>
                                     );
                                 })}
+                                {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
                             </tr>
                             );
                         })}
                         {visibleRowRange.endRow < rowCount - 1 && (
                             <tr key="bottom-spacer">
-                                <td colSpan={columnCount + 1} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
+                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
                             </tr>
                         )}
                     </tbody>
                 </table>
                 </div>
                 </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent
+                    className="w-56"
+                    onCloseAutoFocus={(e) => {
+                        // A comment is opened here, once the menu has let go of the
+                        // keyboard, so that the card's text box can take it — and the
+                        // grid isn't handed it back in the meantime.
+                        const cellId = menuCommentCell.current;
+                        if (!cellId) return;
+                        menuCommentCell.current = null;
+                        if (openComment(cellId)) e.preventDefault();
+                    }}
+                >
+                    {!readOnly && (
+                        <ContextMenuItem onClick={() => copySelection("cut")} className="cursor-pointer">
+                            <IconScissors className="w-3.5 h-3.5" /> Cut
+                        </ContextMenuItem>
+                    )}
+                    <ContextMenuItem onClick={() => copySelection("copy")} className="cursor-pointer">
+                        <IconCopy className="w-3.5 h-3.5" /> Copy
+                    </ContextMenuItem>
+                    {!readOnly && (
+                        <ContextMenuItem onClick={pasteFromButton} className="cursor-pointer">
+                            <IconClipboard className="w-3.5 h-3.5" /> Paste
+                        </ContextMenuItem>
+                    )}
+                    {!!meetingId && (() => {
+                        const cellId = resolveToAnchor(activeCell);
+                        const thread = commentThreadAt(cellId);
+                        const open = () => { menuCommentCell.current = cellId; };
+                        if (!thread) {
+                            return (
+                                <>
+                                    <ContextMenuSeparator />
+                                    <ContextMenuItem onClick={open} disabled={!canStartComment} className="cursor-pointer">
+                                        <IconMessagePlus className="w-3.5 h-3.5" /> New Comment
+                                    </ContextMenuItem>
+                                </>
+                            );
+                        }
+                        const resolved = thread.status === "resolved";
+                        return (
+                            <>
+                                <ContextMenuSeparator />
+                                <ContextMenuItem onClick={open} className="cursor-pointer">
+                                    <IconMessage className="w-3.5 h-3.5" /> Open Comment
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => comments.setStatus(thread.id, resolved ? "open" : "resolved")} className="cursor-pointer">
+                                    {resolved ? <IconArrowBackUp className="w-3.5 h-3.5" /> : <IconCheck className="w-3.5 h-3.5" />}
+                                    {resolved ? "Reopen Comment" : "Resolve Comment"}
+                                </ContextMenuItem>
+                            </>
+                        );
+                    })()}
+                </ContextMenuContent>
+                </ContextMenu>
             </div>
             {pivotConfig && pivotPanelOpen && (
                 <PivotPanel
@@ -5453,6 +6536,47 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 hiddenSheets={hiddenSheetNames}
                 onUnhide={unhideSheet}
             />
+            <QuickRuleDialog
+                kind={cfQuickKind}
+                onOpenChange={(open) => { if (!open) { setCfQuickKind(null); focusGrid(); } }}
+                onApply={addConditionalRule}
+            />
+            <NewRuleDialog
+                rule={cfNewRule}
+                onOpenChange={(open) => { if (!open) { setCfNewRule(null); focusGrid(); } }}
+                onApply={addConditionalRule}
+            />
+            <RulesManagerDialog
+                open={cfManagerOpen}
+                onOpenChange={(open) => { setCfManagerOpen(open); if (!open) focusGrid(); }}
+                rulesBySheet={conditionalRulesBySheet}
+                activeSheetName={activeSheetName}
+                selectionBounds={allSelectionBounds}
+                selectionRanges={allSelectionBounds.map(rangeOfBounds)}
+                onCommit={commitConditionalRules}
+            />
+            {commentCardView && (
+                <CellCommentCard
+                    rect={commentCardView.rect}
+                    cellLabel={commentCardView.label}
+                    thread={commentCardView.thread}
+                    pinned={commentCard.pinned}
+                    unsaved={commentCardView.unsaved}
+                    currentUserId={authUser?.id}
+                    isAdmin={isCommentAdmin}
+                    canRemoveThread={canStartComment}
+                    onCreate={(text) => createComment(commentCardView.cellId, text)}
+                    onReply={(text) => comments.addReply(commentCardView.thread.id, text)}
+                    onSetStatus={(status) => comments.setStatus(commentCardView.thread.id, status)}
+                    onEditMessage={(messageId, text) => comments.editMessage(commentCardView.thread.id, messageId, text)}
+                    onDeleteMessage={(messageId) => comments.deleteMessage(commentCardView.thread.id, messageId)}
+                    onDeleteThread={() => deleteComment(commentCardView.cellId, commentCardView.thread.id)}
+                    onClose={handleCommentCardClose}
+                    onPin={pinCommentCard}
+                    onPointerEnter={holdCommentCard}
+                    onPointerLeave={releaseCommentCard}
+                />
+            )}
         </div>
         </FullScreenFrame>
     );

@@ -103,6 +103,7 @@ const RolesPermissions = () => {
   // Computed values
   const rawRoles = rolesData?.data?.roles || [];
   const permissions = rolesData?.data?.permissions || {};
+  const portals = rolesData?.data?.portals || []; // portals (MIS Portal, …) whose pages a custom role can be given
   const users = usersData?.data?.users || [];
 
   const roles = useMemo(
@@ -317,6 +318,7 @@ const RolesPermissions = () => {
         open={modalsOpen.createRole}
         onClose={() => closeModal('createRole')}
         permissions={permissions}
+        portals={portals}
         onSuccess={() => {
           closeModal('createRole');
           refetchRoles();
@@ -328,6 +330,7 @@ const RolesPermissions = () => {
         onClose={() => closeModal('editRole')}
         role={selectedRole}
         permissions={permissions}
+        portals={portals}
         onSuccess={() => {
           closeModal('editRole');
           refetchRoles();

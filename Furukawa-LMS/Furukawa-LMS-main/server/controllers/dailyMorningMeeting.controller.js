@@ -1,37 +1,31 @@
+import { createHash } from "crypto";
 import ExcelJS from "exceljs";
 import DailyMorningMeeting from "../models/dailyMorningMeeting.model.js";
 import logger from "../logger/winston.logger.js";
 import { canModifyDailyMeetingSection } from "../utils/dailyMeetingAccess.util.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import microsoftGraphService from "../services/microsoftGraph.service.js";
+import ENV from "../configs/env.config.js";
+import { parseSheetData, normalizeWorkbook, validatePatch, cellKeyToPosition, cellExportValue, pendingPatchRun, withoutCommentAnchors } from "../utils/sheetWorkbook.js";
+import { decodeSheetPayload } from "../utils/sheetCodec.js";
+import { broadcastPatch, broadcastReplaced, liveSyncEnabled } from "../services/sheetLiveSync.js";
 
-const DEFAULT_ROW_COUNT = 30;
-const DEFAULT_COLUMN_COUNT = 15;
-const DEFAULT_SHEET_NAME = "Sheet 1";
+// What a client may do with a meeting's sheet beyond the baseline API, sent with the
+// meeting detail so a client only uses a feature the server it is talking to has on.
+const sheetCapabilities = () => ({
+    patchSave: ENV.SHEET_PATCH_SAVE,
+    autosave: ENV.SHEET_PATCH_SAVE && ENV.SHEET_AUTOSAVE,
+    liveSync: liveSyncEnabled()
+});
 
-const parseSheetData = (value) => {
-    try {
-        const parsed = typeof value === "string" ? JSON.parse(value) : (value || {});
-        return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (e) {
-        return {};
-    }
-};
-
-const normalizeWorkbook = (data) => {
-    if (data && data.sheets && typeof data.sheets === "object" && Object.keys(data.sheets).length > 0) {
-        const activeSheet = data.activeSheet && data.sheets[data.activeSheet]
-            ? data.activeSheet
-            : Object.keys(data.sheets)[0];
-        return { sheets: data.sheets, activeSheet };
-    }
-
-    return {
-        sheets: {
-            [DEFAULT_SHEET_NAME]: { cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT }
-        },
-        activeSheet: DEFAULT_SHEET_NAME
-    };
+// One line per save, so "saving is slow" can be answered from the log: which meeting,
+// who, whether it went as a patch or the whole workbook, how big and how long.
+const logSheetSave = (req, kind, startedAt, outcome, version) => {
+    const bytes = Number(req.headers["content-length"]) || 0;
+    logger.info(
+        `[SHEET SAVE] meeting=${req.params.id} user=${req.user?.id ?? "?"} kind=${kind} bytes=${bytes} ` +
+        `ms=${Date.now() - startedAt} outcome=${outcome}${version != null ? ` version=${version}` : ""}`
+    );
 };
 
 // MSSQL DATE/TIME columns come back as full JS Date objects (TIME anchored to
@@ -60,6 +54,17 @@ const formatMeetingRow = (row) => {
     };
 };
 
+// ETag for the meeting detail response, derived from the meeting's metadata alone.
+// Every workbook save bumps `version` and every other edit moves `updatedAt`, so the
+// metadata identifies the whole response — which lets a revalidation be answered
+// 304 without loading the workbook. Bump DETAIL_ETAG_SCHEMA whenever the shape of
+// the detail response changes, or browsers would keep reusing a body in the old shape.
+const DETAIL_ETAG_SCHEMA = 2;
+const meetingDetailETag = (row) => {
+    const hash = createHash("sha1").update(JSON.stringify([formatMeetingRow(row), sheetCapabilities()])).digest("base64url");
+    return `W/"dmm${DETAIL_ETAG_SCHEMA}-${hash}"`;
+};
+
 // Builds a real .xlsx buffer from the same { sheets, activeSheet } shape ExcelClone
 // persists, so a migrated meeting opens in Excel Online with its existing cell data
 // instead of a blank workbook. Only plain cell values/formulas are carried over —
@@ -72,11 +77,11 @@ const buildWorkbookBuffer = async (workbook) => {
         const ws = wb.addWorksheet(sheetName.slice(0, 31) || "Sheet 1");
         const cells = sheetData.cells || {};
         for (const [cellKey, cell] of Object.entries(cells)) {
-            // ExcelClone keys cells as "row,col" (0-indexed) — see formulaEngine.js.
-            const [r, c] = cellKey.split(",").map(Number);
-            if (Number.isNaN(r) || Number.isNaN(c)) continue;
-            const value = cell?.formula ? { formula: String(cell.formula).replace(/^=/, "") } : (cell?.value ?? "");
-            ws.getCell(r + 1, c + 1).value = value;
+            // ExcelClone keys cells by their A1-style id ("B7") — see formulaEngine.js.
+            const position = cellKeyToPosition(cellKey);
+            const value = cellExportValue(cell);
+            if (!position || value === null) continue;
+            ws.getCell(position.row, position.col).value = value;
         }
     }
     return wb.xlsx.writeBuffer();
@@ -122,13 +127,67 @@ export const getMeetingsForSection = async (req, res) => {
     }
 };
 
+// The meeting detail, with the workbook placed in the response as the JSON text it is
+// stored as — no parse and no re-serialise, which for a large workbook is around a
+// second during which the server answers nobody else. The workbook goes out under
+// `workbook` (exactly as stored, so the client applies normalizeWorkbook's rules
+// itself) instead of the usual `sheets` / `activeSheet`.
+// Only possible when the stored workbook is current, i.e. no patches are waiting to be
+// folded into it. Returns false, having sent nothing, when it isn't.
+const sendMeetingDetailRaw = async (res, id) => {
+    const stored = await DailyMorningMeeting.findStoredById(id);
+    if (!stored) return false;
+    const { sheetData, sheetDataGz, ...row } = stored.row;
+    if (pendingPatchRun(row.version, stored.patchRows).length > 0) return false;
+
+    const workbookJson = await decodeSheetPayload(sheetData, sheetDataGz);
+    // What is stored was written by JSON.stringify, but check the one thing that would
+    // otherwise produce a broken response: that it is a JSON object at all.
+    const trimmed = typeof workbookJson === "string" ? workbookJson.trim() : "";
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
+
+    const head = JSON.stringify({
+        success: true,
+        data: { ...formatMeetingRow(row), capabilities: sheetCapabilities() }
+    });
+    // head is {"success":true,"data":{...}} — the workbook goes in as the last field of data.
+    res.set("ETag", meetingDetailETag(row));
+    res.status(200).type("application/json");
+    res.write(head.slice(0, -2));
+    res.write(',"workbook":');
+    res.write(trimmed);
+    res.end("}}");
+    return true;
+};
+
 export const getMeetingDetail = async (req, res) => {
     try {
         const { id } = req.params;
+        // A browser reopening a meeting it already holds revalidates with If-None-Match.
+        // Answer that from the metadata row, before the workbook is read at all.
+        const meta = await DailyMorningMeeting.findMetaById(id);
+        if (!meta) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        // The copy must be revalidated on every use, and never stored by a shared cache.
+        res.set("Cache-Control", "private, no-cache");
+        res.set("ETag", meetingDetailETag(meta));
+        if (req.fresh) {
+            return res.status(304).end();
+        }
+
+        // A client that asks for it gets the stored workbook passed through as text
+        // (see sendMeetingDetailRaw) whenever that is possible.
+        if (ENV.SHEET_RAW_OPEN && req.query.workbook === "raw" && await sendMeetingDetailRaw(res, id)) {
+            return undefined;
+        }
+
         const meeting = await DailyMorningMeeting.findById(id);
         if (!meeting) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
+        // Tag the body with the row it was built from, in case a save landed in between.
+        res.set("ETag", meetingDetailETag(meeting));
         // Read access is permission-gated only (route middleware) — no department/section lock.
         // M365-backed meetings render via the embed iframe on the client, which reads the
         // live workbook straight from Excel Online — the sheetData column is only kept
@@ -140,11 +199,42 @@ export const getMeetingDetail = async (req, res) => {
             data: {
                 ...formatMeetingRow(meeting),
                 sheets: workbook.sheets,
-                activeSheet: workbook.activeSheet
+                activeSheet: workbook.activeSheet,
+                capabilities: sheetCapabilities()
             }
         });
     } catch (error) {
         logger.error("Error in getMeetingDetail:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// The saves a client has missed, so it can catch up without loading the workbook again:
+// every patch after the version it holds. 410 when that isn't possible any more — one
+// of them was a full save, or they have been folded into the stored workbook — and the
+// client has to reload.
+export const getMeetingPatchesAfter = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const after = /^\d{1,9}$/.test(String(req.query.after ?? "")) ? Number(req.query.after) : NaN;
+        if (!Number.isInteger(after)) {
+            return res.status(400).json({ success: false, message: "Invalid version" });
+        }
+        res.set("Cache-Control", "no-store");
+        const result = await DailyMorningMeeting.findPatchesAfter(id, after);
+        if (!result) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        if (!result.patches) {
+            return res.status(410).json({
+                success: false,
+                message: "This spreadsheet has changed too much to catch up. Reload to get the latest version.",
+                data: { version: result.version }
+            });
+        }
+        return res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        logger.error("Error in getMeetingPatchesAfter:", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -255,7 +345,7 @@ export const cloneMeeting = async (req, res) => {
                 // (the real cell content lives in the SharePoint workbook) — carry it
                 // over so the clone doesn't lose whatever charts were configured.
                 if (sourceMeeting.sheetData && sourceMeeting.sheetData !== "{}") {
-                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, sourceMeeting.sheetData);
+                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, withoutCommentAnchors(sourceMeeting.sheetData));
                 }
             } catch (dbError) {
                 // Compensating action: don't leave an orphaned SharePoint copy the DB has no record of.
@@ -270,7 +360,8 @@ export const cloneMeeting = async (req, res) => {
                 meetingDate,
                 meetingTime,
                 createdBy: req.user.id,
-                sheetData: sourceMeeting.sheetData
+                // Comments stay with the meeting they were written in.
+                sheetData: withoutCommentAnchors(sourceMeeting.sheetData)
             });
         }
 
@@ -282,7 +373,7 @@ export const cloneMeeting = async (req, res) => {
         return res.status(201).json({
             success: true,
             message: "Meeting cloned successfully",
-            data: { ...formatMeetingRow(newMeeting), sheets: workbook.sheets, activeSheet: workbook.activeSheet }
+            data: { ...formatMeetingRow(newMeeting), sheets: workbook.sheets, activeSheet: workbook.activeSheet, capabilities: sheetCapabilities() }
         });
     } catch (error) {
         logger.error("Error in cloneMeeting:", error);
@@ -297,7 +388,7 @@ export const updateMeeting = async (req, res) => {
         if (!agenda || !agenda.trim()) {
             return res.status(400).json({ success: false, message: "Agenda is required" });
         }
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -313,9 +404,10 @@ export const updateMeeting = async (req, res) => {
 };
 
 export const saveMeetingSheet = async (req, res) => {
+    const startedAt = Date.now();
     try {
         const { id } = req.params;
-        const { sheets, activeSheet, version } = req.body;
+        const { sheets, activeSheet, version, clientId } = req.body;
         // Optional so an already-open client that predates the version field can still save.
         const expectedVersion = version === undefined || version === null ? null : Number(version);
         if (expectedVersion !== null && !Number.isInteger(expectedVersion)) {
@@ -335,19 +427,87 @@ export const saveMeetingSheet = async (req, res) => {
         const workbook = normalizeWorkbook({ sheets: sheets || {}, activeSheet });
         const meeting = await DailyMorningMeeting.updateSheetData(id, workbook, expectedVersion, { withSheetData: false });
         if (!meeting) {
+            logSheetSave(req, "full", startedAt, "conflict");
             return res.status(409).json({
                 success: false,
                 message: "This spreadsheet was changed in another tab or by another user. Reload to get the latest version before saving."
             });
         }
 
+        // The row is read back after the write, and a save right behind this one may
+        // already have moved it on; this save is the version after the one it replaced.
+        const savedVersion = expectedVersion !== null ? expectedVersion + 1 : (meeting.version ?? 1);
+        logSheetSave(req, "full", startedAt, "saved", savedVersion);
+        broadcastReplaced(id, { version: savedVersion, user: req.user, clientId });
+
         return res.status(200).json({
             success: true,
             message: "Spreadsheet saved successfully",
-            data: { ...formatMeetingRow(meeting), activeSheet: workbook.activeSheet }
+            data: { ...formatMeetingRow(meeting), version: savedVersion, activeSheet: workbook.activeSheet }
         });
     } catch (error) {
+        logSheetSave(req, "full", startedAt, "error");
         logger.error("Error in saveMeetingSheet:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// Saves only what changed since the version the client loaded (see utils/sheetWorkbook.js
+// for the patch format) instead of the whole workbook. Same permission checks, same
+// version check and same response as saveMeetingSheet — the client falls back to that
+// one whenever a change can't be expressed as a patch.
+export const saveMeetingSheetPatch = async (req, res) => {
+    const startedAt = Date.now();
+    try {
+        // A client that loaded the meeting while patch saves were on may still send
+        // one after they've been turned off. 404 makes it save the whole workbook.
+        if (!ENV.SHEET_PATCH_SAVE) {
+            return res.status(404).json({ success: false, message: "Patch saves are not enabled" });
+        }
+        const { id } = req.params;
+        const { patch, version, clientId } = req.body;
+        // Required here, unlike the full save: a patch only means something against
+        // the exact version it was built from.
+        const expectedVersion = Number(version);
+        if (version === undefined || version === null || !Number.isInteger(expectedVersion)) {
+            return res.status(400).json({ success: false, message: "Invalid version" });
+        }
+        const patchError = validatePatch(patch);
+        if (patchError) {
+            return res.status(400).json({ success: false, message: `Invalid patch: ${patchError}` });
+        }
+
+        const existing = await DailyMorningMeeting.findMetaById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Meeting not found" });
+        }
+        if (!(await canModifyDailyMeetingSection(req.user, existing.sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+
+        const meeting = await DailyMorningMeeting.appendPatch(id, expectedVersion, patch, req.user.id);
+        if (!meeting) {
+            logSheetSave(req, "patch", startedAt, "conflict");
+            return res.status(409).json({
+                success: false,
+                message: "This spreadsheet was changed in another tab or by another user. Reload to get the latest version before saving."
+            });
+        }
+
+        // appendPatch returns the row as it is now, which a save right behind this one may
+        // already have moved on; this save is the version after the one it was built on.
+        const savedVersion = expectedVersion + 1;
+        logSheetSave(req, "patch", startedAt, "saved", savedVersion);
+        broadcastPatch(id, { version: savedVersion, patch, user: req.user, clientId });
+
+        return res.status(200).json({
+            success: true,
+            message: "Spreadsheet saved successfully",
+            data: { ...formatMeetingRow(meeting), version: savedVersion, ...(patch.activeSheet !== undefined && { activeSheet: patch.activeSheet }) }
+        });
+    } catch (error) {
+        logSheetSave(req, "patch", startedAt, "error");
+        logger.error("Error in saveMeetingSheetPatch:", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -431,7 +591,7 @@ export const openMeetingInM365 = async (req, res) => {
             });
         }
 
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -442,7 +602,12 @@ export const openMeetingInM365 = async (req, res) => {
         let itemId = existing.m365ItemId;
 
         if (!itemId) {
-            const workbook = normalizeWorkbook(parseSheetData(existing.sheetData));
+            // Only this first open needs the workbook itself, to build the file from.
+            const withSheet = await DailyMorningMeeting.findById(id);
+            if (!withSheet) {
+                return res.status(404).json({ success: false, message: "Meeting not found" });
+            }
+            const workbook = normalizeWorkbook(parseSheetData(withSheet.sheetData));
             const fileBuffer = await buildWorkbookBuffer(workbook);
             const { sectionName, departmentName } = await getSectionAndDepartmentNames(existing.sectionId);
 
@@ -585,7 +750,7 @@ export const syncSectionMeetingsFromM365 = async (req, res) => {
 export const refreshMeetingEmbedUrl = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -618,7 +783,7 @@ export const refreshMeetingEmbedUrl = async (req, res) => {
 export const getMeetingM365Snapshot = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }
@@ -637,7 +802,7 @@ export const getMeetingM365Snapshot = async (req, res) => {
 export const deleteMeeting = async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await DailyMorningMeeting.findById(id);
+        const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
             return res.status(404).json({ success: false, message: "Meeting not found" });
         }

@@ -136,3 +136,90 @@ export function legacyConfigRanges(config) {
         .sort((a, b) => colToIndex(a) - colToIndex(b))
         .map((col) => ({ start: `${col}${rowStart}`, end: `${col}${rowEnd}` }));
 }
+
+// --- The range a new chart starts on ---------------------------------------------------
+// Charts are only ever inserted by the user (ExcelGraph.jsx); these decide what a new
+// one plots from what is selected in the grid at that moment.
+
+const hasContent = (displayGrid, row, col) => {
+    const value = displayGrid[getCellId(row, col)];
+    return value !== undefined && value !== "";
+};
+
+// The block of filled cells around (row, col), grown outward until empty rows and
+// columns border it — Excel's "current region", which is what it charts when a single
+// cell is selected. The same walk as ExcelClone's currentRegion.
+export const dataRegionAround = (displayGrid, row, col, rowCount, columnCount) => {
+    let top = row, bottom = row, left = col, right = col;
+    const anyContent = (r1, r2, c1, c2) => {
+        for (let r = Math.max(0, r1); r <= Math.min(rowCount - 1, r2); r++) {
+            for (let c = Math.max(0, c1); c <= Math.min(columnCount - 1, c2); c++) if (hasContent(displayGrid, r, c)) return true;
+        }
+        return false;
+    };
+    for (let changed = true; changed;) {
+        changed = false;
+        if (top > 0 && anyContent(top - 1, top - 1, left - 1, right + 1)) { top--; changed = true; }
+        if (bottom < rowCount - 1 && anyContent(bottom + 1, bottom + 1, left - 1, right + 1)) { bottom++; changed = true; }
+        if (left > 0 && anyContent(top - 1, bottom + 1, left - 1, left - 1)) { left--; changed = true; }
+        if (right < columnCount - 1 && anyContent(top - 1, bottom + 1, right + 1, right + 1)) { right++; changed = true; }
+    }
+    return { minRow: top, maxRow: bottom, minCol: left, maxCol: right };
+};
+
+// `bounds` without the wholly empty rows and columns at its edges (the region around
+// an empty cell includes that cell's own row and column). Null when all of it is empty.
+const trimEmptyEdges = (displayGrid, bounds) => {
+    let { minRow, maxRow, minCol, maxCol } = bounds;
+    const rowEmpty = (r) => { for (let c = minCol; c <= maxCol; c++) if (hasContent(displayGrid, r, c)) return false; return true; };
+    const colEmpty = (c) => { for (let r = minRow; r <= maxRow; r++) if (hasContent(displayGrid, r, c)) return false; return true; };
+    while (minRow <= maxRow && rowEmpty(minRow)) minRow++;
+    while (maxRow >= minRow && rowEmpty(maxRow)) maxRow--;
+    if (minRow > maxRow) return null;
+    while (minCol < maxCol && colEmpty(minCol)) minCol++;
+    while (maxCol > minCol && colEmpty(maxCol)) maxCol--;
+    return { minRow, maxRow, minCol, maxCol };
+};
+
+// A rectangular block of cells as chart settings: its first column is the category
+// axis and the rest are the series (a block one column wide plots that column). The
+// first row reads as a header when every series cell in it is text, not a number.
+export const blockChartRange = (displayGrid, { minRow, maxRow, minCol, maxCol }) => {
+    const xAxisCol = indexToCol(minCol);
+    const valueCols = [];
+    for (let c = minCol + 1; c <= maxCol; c++) valueCols.push(indexToCol(c));
+    if (valueCols.length === 0) valueCols.push(xAxisCol);
+    const hasHeaderRow = valueCols.every((col) => {
+        const raw = displayGrid[getCellId(minRow, colToIndex(col))];
+        return raw !== undefined && raw !== "" && parseNumericCell(raw) === null;
+    });
+    return { xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow };
+};
+
+// What a new chart plots, going by what is selected in the grid:
+//   several Ctrl-selected ranges   those ranges, as a range list
+//   a block of cells               that block
+//   one cell, row or column        the block of data it sits in
+// Null when that leaves nothing to chart (an empty area), so the defaults apply.
+export const newChartRange = ({ selection, ranges, activeCell, displayGrid, rowCount, columnCount }) => {
+    if (Array.isArray(ranges) && ranges.length > 1) {
+        const list = parseRangeString(formatRangeString(ranges));
+        if (list) {
+            const plotBy = naturalPlotBy(list);
+            return { rangeString: formatRangeString(list), plotBy, hasHeaderRow: true, valueCols: seriesIdsForRanges(list, plotBy, true) };
+        }
+    }
+    const start = selection && parseCellRef(selection.start);
+    const end = selection && parseCellRef(selection.end);
+    let bounds = start && end ? {
+        minRow: Math.min(start.row, end.row), maxRow: Math.max(start.row, end.row),
+        minCol: Math.min(start.col, end.col), maxCol: Math.max(start.col, end.col),
+    } : null;
+    if (!bounds || bounds.minRow === bounds.maxRow || bounds.minCol === bounds.maxCol) {
+        const at = (activeCell && parseCellRef(activeCell)) || start;
+        if (!at) return null;
+        bounds = trimEmptyEdges(displayGrid, dataRegionAround(displayGrid, at.row, at.col, rowCount, columnCount));
+        if (!bounds || bounds.minRow === bounds.maxRow) return null;
+    }
+    return blockChartRange(displayGrid, bounds);
+};

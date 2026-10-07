@@ -220,6 +220,7 @@ export const SHORTCUT_CATALOG = [
     sc("Editing", "Ctrl+Alt+V", "Paste Special (values, formats, transpose, operations)"),
     sc("Editing", "Delete / Backspace", "Clear contents (formatting stays)"),
     sc("Editing", "F2", "Edit the active cell"),
+    sc("Editing", "Shift+F2", "Comment on the active cell"),
     sc("Editing", "Esc", "Cancel editing / collapse the selection"),
     sc("Editing", "Enter / Shift+Enter", "Commit and move down / up"),
     sc("Editing", "Tab / Shift+Tab", "Commit and move right / left"),

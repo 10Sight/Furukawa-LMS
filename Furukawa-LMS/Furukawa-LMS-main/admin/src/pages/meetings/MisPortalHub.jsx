@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import { Calendar, FileText } from "lucide-react";
 import PortalTile from "@/components/common/PortalTile.jsx";
 import useTranslate from "@/hooks/useTranslate.js";
+import { canOpenPage, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY } from "@/constants/navigation/pageRegistry.js";
 
 // Mirrors the admin check used across the Daily Meeting / Monthly Report
 // feature family (see server/utils/dailyMeetingAccess.util.js and
@@ -24,8 +25,10 @@ export default function MisPortalHub() {
     const { darkMode } = useSelector((state) => state.theme);
     const { t } = useTranslate();
 
-    const canSeeDailyMeeting = hasPermission(user, "daily_meeting:read");
-    const canSeeMonthlyReport = hasPermission(user, "monthly_report:read");
+    // A workspace needs both: the page assigned to the user's role, and the
+    // permission its data is served under.
+    const canSeeDailyMeeting = hasPermission(user, "daily_meeting:read") && canOpenPage(MIS_MORNING_MEETING_KEY, user);
+    const canSeeMonthlyReport = hasPermission(user, "monthly_report:read") && canOpenPage(MIS_MONTHLY_REPORT_KEY, user);
 
     return (
         <div className="max-w-3xl mx-auto py-8 px-3 sm:px-4">

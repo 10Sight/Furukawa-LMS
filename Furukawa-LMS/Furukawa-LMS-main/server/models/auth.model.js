@@ -6,6 +6,7 @@ import crypto from "crypto";
 import ENV from "../configs/env.config.js";
 import { slugify } from "../utils/slugify.js";
 import { buildStatusHistoryEntry } from "../utils/statusHistory.js";
+import { fixJoiningAfterLeavingDates } from "../utils/joiningLeavingDateFix.js";
 
 // Cascades NULLs down the section -> line -> subSection -> station hierarchy (and the
 // mirrored target* chain used for temporary users) on a plain object carrying those keys.
@@ -910,6 +911,19 @@ class User {
                 }
             } catch (statusHistoryLeftBackfillErr) {
                 console.error("Error during statusHistory LEFT-status backfill migration:", statusHistoryLeftBackfillErr);
+            }
+
+            // Self-healing correction: raise any leavingDate that falls before its joiningDate
+            // (rows saved before that rule was enforced, or on a DB server that was never
+            // validated). Idempotent -- a clean table is a no-op -- and the original values are
+            // kept in user_date_corrections. See utils/joiningLeavingDateFix.js for the rule.
+            try {
+                const { corrected } = await fixJoiningAfterLeavingDates({ apply: true });
+                if (corrected.length > 0) {
+                    console.log(`Corrected ${corrected.length} user(s) whose leavingDate was before their joiningDate (originals saved in user_date_corrections).`);
+                }
+            } catch (joiningLeavingFixErr) {
+                console.error("Error during joiningDate/leavingDate correction migration:", joiningLeavingFixErr);
             }
 
             console.log("Users table verified/created in MSSQL.");

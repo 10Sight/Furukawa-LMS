@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'react-toastify';
 import { useUpdateRoleMutation } from "@/services/api/SuperAdminApi.js";
+import PortalPageAccess from "./PortalPageAccess.jsx";
 
 const ROLE_COLORS = [
   '#3B82F6',
@@ -144,11 +145,12 @@ const PermissionCategory = ({ category, permissions, selectedPermissions, onPerm
   );
 };
 
-const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
+const EditRoleModal = ({ open, onClose, role, permissions, portals, onSuccess }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     permissions: [],
+    allowedPages: [],
     color: '#3B82F6',
     targetLayout: 'custom',
   });
@@ -167,6 +169,7 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
         name: role.name || '',
         description: role.description || '',
         permissions: sanitizedPerms,
+        allowedPages: Array.isArray(role.allowedPages) ? role.allowedPages : [],
         color: role.color || '#3B82F6',
         targetLayout: role.targetLayout || 'custom',
       });
@@ -175,6 +178,15 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // A page brings the permission it needs along with it.
+  const handlePagesChange = (allowedPages, requiredPermissions) => {
+    setFormData(prev => ({
+      ...prev,
+      allowedPages,
+      permissions: [...new Set([...prev.permissions, ...requiredPermissions])],
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -188,6 +200,7 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
         name: formData.name.trim(),
         description: formData.description.trim(),
         permissions: formData.permissions,
+        allowedPages: formData.allowedPages,
         color: formData.color,
         targetLayout: formData.targetLayout,
       }).unwrap();
@@ -353,6 +366,16 @@ const EditRoleModal = ({ open, onClose, role, permissions, onSuccess }) => {
 
           {/* Right Column — Permissions */}
           <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 min-w-0">
+            {/* System roles aren't limited to a page list, so there is nothing to pick for them. */}
+            {!isSystemRole && (
+              <PortalPageAccess
+                portals={portals}
+                allowedPages={formData.allowedPages}
+                onChange={handlePagesChange}
+                roleColor={selectedColor}
+              />
+            )}
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <IconKey size={18} className="text-gray-500" />

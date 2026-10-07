@@ -43,3 +43,4 @@ workbox-*.js.map
 *.local
 .vercel
 coverage/
+

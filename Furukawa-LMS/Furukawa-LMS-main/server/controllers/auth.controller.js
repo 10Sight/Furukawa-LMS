@@ -16,6 +16,7 @@ import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import { checkAndProcessLevelUpgrades, formatUser } from "./user.controller.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
+import { assertJoiningNotAfterLeaving } from "../utils/dateValidation.js";
 
 // Helper to sanitize user object
 const sanitizeUser = (user) => {
@@ -143,6 +144,8 @@ export const register = asyncHandler(async (req, res) => {
   if (!AvailableUnits.includes(unit)) {
     throw new ApiError("Invalid unit provided", 400);
   }
+
+  assertJoiningNotAfterLeaving(joiningDate, leavingDate);
 
   // If setAsPrimary is true, update flags based on custom role's targetLayout
   if (setAsPrimary && customRoleId) {

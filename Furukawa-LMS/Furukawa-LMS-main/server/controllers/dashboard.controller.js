@@ -2,7 +2,13 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
-import { getEligibleUserSql, getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+import {
+    getEligibleUserSql,
+    getDesignationShutterExclusionSql,
+    getOperatorPopulationSql,
+    isEmploymentStatusActive,
+    getActiveEmploymentStatusCondition,
+} from "../utils/userEligibility.js";
 import logger from "../logger/winston.logger.js";
 
 
@@ -306,29 +312,20 @@ const parseMultiParam = (value) => {
 const getDashboardDesignationShutterExclusionSql = (alias = "u") => getDesignationShutterExclusionSql(alias);
 
 // Base population shared by every Dashboard Total Manpower / Users Total query.
-// Keep this aligned with the SDP employee population before applying date-wise statusHistory.
-// Historical reconstruction needs PRESENT and LEFT users, but every other current status is excluded.
+// Same operator population as the Students page (userEligibility.js), so today's
+// Total Manpower matches its "Present Operators" card. Current status is not
+// restricted here: date-wise statusHistory reconstruction needs LEFT users too.
 const getTotalManpowerBaseEligibilitySql = (alias = "u") => `
-    AND ISNULL(${alias}.isDeleted, 0) = 0
-    AND ISNULL(${alias}.isTemporary, 0) = 0
-    AND ISNULL(${alias}.isEmployee, 0) = 1
-    AND ${alias}.empId IS NOT NULL
-    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
-    ${getDashboardDesignationShutterExclusionSql(alias)}
+    ${getOperatorPopulationSql(alias)}
 `;
 
 // Rejoining Trend uses the same employee/master exclusions as Total Manpower,
 // but current status is intentionally not restricted. Rejoin events are historical
 // statusHistory events and must remain visible even if the employee later became
 // LEFT, ON_LEAVE, or another employment status.
-const getRejoiningTrendBaseEligibilitySql = (alias = "u") => `
-    AND ISNULL(${alias}.isDeleted, 0) = 0
-    AND ISNULL(${alias}.isTemporary, 0) = 0
-    AND ISNULL(${alias}.isEmployee, 0) = 1
-    AND ${alias}.empId IS NOT NULL
-    AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), ${alias}.empId))) <> ''
-    ${getDashboardDesignationShutterExclusionSql(alias)}
-`;
+// Must stay identical to Total Manpower: Rejoining reuses its fetched rows.
+const getRejoiningTrendBaseEligibilitySql = (alias = "u") =>
+    getTotalManpowerBaseEligibilitySql(alias);
 
 // TENURE GRAPHS ONLY:
 // Keep their existing current-status population unchanged. Tenure calculations continue
@@ -1099,7 +1096,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Objects with the same joiningDate belong to the same employment period.
     // The period ends on the effective leavingDate (exclusive).
     // If no leavingDate exists for that joiningDate, the latest statusHistory object
-    // for that joiningDate must be PRESENT.
+    // for that joiningDate must not be LEFT / ON_LEAVE (blank falls back to users.status).
     // This supports repeated leave/rejoin cycles without counting the LEFT gap.
     const getStatusHistoryActiveConditionSql = (alias = "u", asOfDateSql) => {
         const historyJsonSql = `CASE
@@ -1156,7 +1153,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                         )
                         OR (
                             closeInfo.leavingDate IS NULL
-                            AND latestInfo.latestStatus = 'PRESENT'
+                            AND ${getActiveEmploymentStatusCondition(`ISNULL(NULLIF(latestInfo.latestStatus, ''), ${legacyStatusSql})`)}
                         )
                   )
             )
@@ -1171,7 +1168,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                 )
                 AND (
                     (
-                        ${legacyStatusSql} = 'PRESENT'
+                        ${getActiveEmploymentStatusCondition(legacyStatusSql)}
                         AND (
                             ${legacyJoiningDateSql} IS NULL
                             OR ${legacyJoiningDateSql} <= ${asOfDateSql}
@@ -1427,9 +1424,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     return asOfDateKey < period.leavingDateKey;
                 }
 
-                // Open employment period is controlled only by the latest
-                // statusHistory status for this joiningDate.
-                return period.latestStatus === 'PRESENT';
+                // Open employment period is controlled by the latest statusHistory
+                // status for this joiningDate; a history row with no status falls
+                // back to users.status. Active = anything except LEFT / ON_LEAVE.
+                return isEmploymentStatusActive(period.latestStatus || currentStatus);
             });
         }
 
@@ -1439,7 +1437,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
             || preparedUser.legacyJoiningDateKey <= asOfDateKey
         );
 
-        if (currentStatus === 'PRESENT') {
+        if (isEmploymentStatusActive(currentStatus)) {
             return joinedByDate;
         }
 
@@ -1932,7 +1930,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     let eligibleManpowerRowsForRejoining = null;
 
     // TOTAL MANPOWER — statusHistory DATE-WISE EMPLOYMENT INTERVAL LOGIC.
-    // Open/current periods count only when status is PRESENT.
+    // Open/current periods count unless status is LEFT / ON_LEAVE.
     // A closed LEFT period still counts its actual historical worked dates.
     // Example: LEFT interval ends 20-Jul and PRESENT interval starts 04-Aug:
     // count through 19-Jul, exclude 20-Jul to 03-Aug, count again from 04-Aug.
@@ -4132,7 +4130,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
               AND seed.joiningDate <= ${asOfDateSql}
               AND (
                     (closeInfo.leavingDate IS NOT NULL AND closeInfo.leavingDate > ${asOfDateSql})
-                    OR (closeInfo.leavingDate IS NULL AND latestInfo.latestStatus = 'PRESENT')
+                    OR (closeInfo.leavingDate IS NULL AND ${getActiveEmploymentStatusCondition(`ISNULL(NULLIF(latestInfo.latestStatus, ''), ${legacyStatusSql})`)})
               )
             )
             OR (
@@ -4146,7 +4144,7 @@ export const getDashboardAttendance = asyncHandler(async (req, res) => {
                 )
                 AND (
                     (
-                        ${legacyStatusSql} = 'PRESENT'
+                        ${getActiveEmploymentStatusCondition(legacyStatusSql)}
                         AND (
                             ${legacyJoiningDateSql} IS NULL
                             OR ${legacyJoiningDateSql} <= ${asOfDateSql}
@@ -4474,7 +4472,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
               AND seed.joiningDate <= ${asOfDateSql}
               AND (
                     (closeInfo.leavingDate IS NOT NULL AND closeInfo.leavingDate > ${asOfDateSql})
-                    OR (closeInfo.leavingDate IS NULL AND latestInfo.latestStatus = 'PRESENT')
+                    OR (closeInfo.leavingDate IS NULL AND ${getActiveEmploymentStatusCondition(`ISNULL(NULLIF(latestInfo.latestStatus, ''), ${legacyStatusSql})`)})
               )
             )
             OR (
@@ -4488,7 +4486,7 @@ export const getDashboardTenureStats = asyncHandler(async (req, res) => {
                 )
                 AND (
                     (
-                        ${legacyStatusSql} = 'PRESENT'
+                        ${getActiveEmploymentStatusCondition(legacyStatusSql)}
                         AND (
                             ${legacyJoiningDateSql} IS NULL
                             OR ${legacyJoiningDateSql} <= ${asOfDateSql}

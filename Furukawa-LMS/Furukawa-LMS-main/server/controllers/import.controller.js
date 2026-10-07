@@ -19,6 +19,7 @@ import {
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
 import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
 
@@ -764,6 +765,21 @@ const processSingleEmployeeRow = async ({
                 } else {
                     updatedData.joiningDate = rejoiningDate;
                 }
+            }
+
+            // validateImportDates above only compares the two dates within the Excel row. A row
+            // that fills in just one of them still has to agree with the other date already on
+            // file, so re-check the effective pair that this update would leave behind.
+            const effectiveDateError = getJoiningLeavingDateError(
+                updatedData.joiningDate !== undefined ? updatedData.joiningDate : existingUser.joiningDate,
+                updatedData.leavingDate !== undefined ? updatedData.leavingDate : existingUser.leavingDate
+            );
+            if (effectiveDateError) {
+                await executeQuery(
+                    "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
+                    [logId, rowNumber, JSON.stringify(row), "FAILED", effectiveDateError]
+                );
+                return { status: "FAILED", rowNumber, error: effectiveDateError };
             }
 
             // Compute the updated statusHistory array whenever this row's diff above touched
@@ -1533,29 +1549,7 @@ export const importDojoUsers = async (req, res) => {
             throw new ApiError(400, "No file uploaded");
         }
 
-        // DEBUG: save the uploaded file and log info
-        try {
-            fs.writeFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/uploaded_debug.xlsx", req.file.buffer);
-            const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
-            const logContent = [
-                `Time: ${new Date().toISOString()}`,
-                `Sheets: ${JSON.stringify(workbook.SheetNames)}`
-            ];
-            workbook.SheetNames.forEach(name => {
-                const ws = workbook.Sheets[name];
-                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
-                logContent.push(`Sheet: ${name}, total rows: ${rows.length}`);
-                if (rows.length > 0) {
-                    logContent.push(`  Row 0: ${JSON.stringify(rows[0])}`);
-                }
-                if (rows.length > 1) {
-                    logContent.push(`  Row 1: ${JSON.stringify(rows[1])}`);
-                }
-            });
-            fs.appendFileSync("d:/10Sight Agency/Sarvagaya Institute/FME/Furukawa-LMS/Furukawa-LMS-main/server/import_debug.log", logContent.join("\n") + "\n\n");
-        } catch (err) {
-            console.error("DEBUG error saving or logging:", err);
-        }
+
 
         // Read the Excel file
         const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });

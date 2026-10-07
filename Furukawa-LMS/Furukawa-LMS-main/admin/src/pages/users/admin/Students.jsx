@@ -877,6 +877,11 @@ const Students = () => {
       errors.password = "Password must be at least 6 characters long";
     }
 
+    // Leaving date can never fall before the joining date (same day is allowed)
+    if (formData.joiningDate && formData.leavingDate && formData.leavingDate < formData.joiningDate) {
+      errors.leavingDate = "Date of leaving cannot be before date of joining";
+    }
+
     // If there are validation errors, show them and return
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -966,6 +971,11 @@ const Students = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (formData.email?.trim() && !emailRegex.test(formData.email.trim())) {
       errors.email = "Please enter a valid email address";
+    }
+
+    // Leaving date can never fall before the joining date (same day is allowed)
+    if (formData.joiningDate && formData.leavingDate && formData.leavingDate < formData.joiningDate) {
+      errors.leavingDate = "Date of leaving cannot be before date of joining";
     }
 
     // If there are validation errors, show them and return
@@ -1732,7 +1742,7 @@ const Students = () => {
 
     if (newStatus === "LEFT") {
       if (canChangeStatus) {
-        setLeftConfirmTarget({ id: studentId, oldStatus });
+        setLeftConfirmTarget({ id: studentId, oldStatus, joiningDate: student.joiningDate });
         setLeftConfirmDate(format(new Date(), "yyyy-MM-dd"));
         setLeftConfirmReason("");
         setLeftConfirmCustomReason("");
@@ -1775,6 +1785,11 @@ const Students = () => {
 
     if (!leftConfirmDate) {
       showToast("error", "Please select a date of leaving");
+      return;
+    }
+    const leftTargetJoiningDate = safeDateToISO(leftConfirmTarget.joiningDate);
+    if (leftTargetJoiningDate && leftConfirmDate < leftTargetJoiningDate) {
+      showToast("error", "Date of leaving cannot be before date of joining");
       return;
     }
     if (!leftConfirmReason) {
@@ -3473,6 +3488,7 @@ const Students = () => {
                 id="joiningDate"
                 name="joiningDate"
                 type="date"
+                max={formData.leavingDate || undefined}
                 value={formData.joiningDate}
                 onChange={handleInputChange}
               />
@@ -3788,9 +3804,12 @@ const Students = () => {
                     id="leavingDate"
                     name="leavingDate"
                     type="date"
+                    min={formData.joiningDate || undefined}
                     value={formData.leavingDate}
                     onChange={handleInputChange}
+                    className={formErrors.leavingDate ? "border-red-500" : ""}
                   />
+                  {formErrors.leavingDate && <p className="text-xs text-red-600">{formErrors.leavingDate}</p>}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="reasonOfLeaving">Reason of Leaving</Label>
@@ -3985,6 +4004,7 @@ const Students = () => {
                 id="edit-joiningDate"
                 name="joiningDate"
                 type="date"
+                max={formData.leavingDate || undefined}
                 value={formData.joiningDate}
                 onChange={handleInputChange}
               />
@@ -4325,9 +4345,12 @@ const Students = () => {
                     id="edit-leavingDate"
                     name="leavingDate"
                     type="date"
+                    min={formData.joiningDate || undefined}
                     value={formData.leavingDate}
                     onChange={handleInputChange}
+                    className={formErrors.leavingDate ? "border-red-500" : ""}
                   />
+                  {formErrors.leavingDate && <p className="text-xs text-red-600">{formErrors.leavingDate}</p>}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="edit-reasonOfLeaving">Reason of Leaving</Label>
@@ -4559,6 +4582,7 @@ const Students = () => {
               <Input
                 id="leftConfirmDate"
                 type="date"
+                min={safeDateToISO(leftConfirmTarget?.joiningDate) || undefined}
                 value={leftConfirmDate}
                 onChange={(e) => setLeftConfirmDate(e.target.value)}
               />

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { toast } from 'sonner';
 import axiosInstance from "@/services/requests/axiosInstance.js";
+import { authSession } from "@/utils/authSession.js";
 
 export const SocketContext = createContext();
 
@@ -56,6 +57,9 @@ export const SocketProvider = ({ children }) => {
                     transports: ['websocket', 'polling'],
                     upgrade: true,
                     withCredentials: true,
+                    // The server works out who this socket belongs to from the access
+                    // token; read at each (re)connect so it is always the current one.
+                    auth: (cb) => cb({ token: authSession?.getItem('token') || undefined }),
                     autoConnect: true,
                     reconnection: true,
                     reconnectionAttempts: 5,

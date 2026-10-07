@@ -493,7 +493,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                             {isGraphVisible && (
                                 <div className="bg-slate-50/50 border-b border-slate-100 p-3">
                                     <ExcelErrorBoundary key={selectedMeeting.id} title="Charts failed to render" description="The chart area hit an unexpected error. The spreadsheet below is not affected.">
-                                        <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} />
+                                        <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} readOnly={mode === "view"} />
                                     </ExcelErrorBoundary>
                                 </div>
                             )}

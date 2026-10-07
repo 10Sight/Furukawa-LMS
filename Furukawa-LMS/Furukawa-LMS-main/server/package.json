@@ -9,7 +9,7 @@
     "dev": "nodemon index.js",
     "migrate:backfill-slides": "node scripts/backfillLessonSlides.js",
     "db:init": "node scripts/initializeTables.js",
-    "test:sheets": "node --test --experimental-test-module-mocks test/sheetCodec.test.js test/sheetWorkbook.test.js test/sheetServer.test.js test/sheetSync.test.js test/sheetLive.test.js test/sheetController.test.js test/sheetEngine.test.js test/sheetHistory.test.js test/sheetComments.test.js test/sheetCommentAnchors.test.js test/sheetChartRange.test.js test/sheetMediaGeometry.test.js"
+    "test:sheets": "node --test --experimental-test-module-mocks test/sheetCodec.test.js test/sheetWorkbook.test.js test/sheetServer.test.js test/sheetSync.test.js test/sheetLive.test.js test/sheetController.test.js test/sheetEngine.test.js test/sheetHistory.test.js test/sheetComments.test.js test/sheetCommentAnchors.test.js test/sheetChartRange.test.js test/sheetMediaGeometry.test.js test/sheetClipboard.test.js"
   },
   "author": "",
   "license": "ISC",

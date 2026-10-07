@@ -54,15 +54,19 @@ export const getOperatorPopulationCondition = (alias = "u") => `
  */
 export const INACTIVE_EMPLOYMENT_STATUSES = ["LEFT", "ON_LEAVE"];
 
+// Migrated statusHistory rows spell it "ON-LEAVE"; hyphens/spaces are folded to
+// underscores so every spelling is recognised.
 export const isEmploymentStatusActive = (status) =>
-    !INACTIVE_EMPLOYMENT_STATUSES.includes(String(status ?? "").trim().toUpperCase());
+    !INACTIVE_EMPLOYMENT_STATUSES.includes(
+        String(status ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_")
+    );
 
 /**
  * SQL twin of isEmploymentStatusActive. statusSql must already be a non-null,
  * trimmed, upper-cased expression.
  */
 export const getActiveEmploymentStatusCondition = (statusSql) =>
-    `${statusSql} NOT IN (${INACTIVE_EMPLOYMENT_STATUSES.map((s) => `'${s}'`).join(", ")})`;
+    `REPLACE(REPLACE(${statusSql}, '-', '_'), ' ', '_') NOT IN (${INACTIVE_EMPLOYMENT_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
 /**
  * WHERE-clause-ready fragments (leading AND) for appending directly after

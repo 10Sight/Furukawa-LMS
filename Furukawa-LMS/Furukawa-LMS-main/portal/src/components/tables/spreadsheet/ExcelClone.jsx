@@ -48,6 +48,7 @@ import CellCommentCard from "./CellCommentCard.jsx";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
 } from "../../../utils/spreadsheets/commentEngine.js";
+import { parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, MAX_PASTE_CELLS } from "../../../utils/spreadsheets/clipboardInterop.js";
 import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
@@ -1236,6 +1237,29 @@ const extractWorksheetImages = async (workbook, worksheet, colWidthPx, rowHeight
     return { media, skippedUnsupported, skippedTooLarge, maxRow, maxCol };
 };
 
+// Puts a copy on the system clipboard from outside a copy event (a ribbon or menu
+// button). Best effort: this route needs a secure page and the browser's leave, and
+// resolves to whether it worked. Ctrl+C doesn't come through here — see the
+// clipboard effect in ExcelClone.
+const writeSystemClipboard = async ({ text, html }) => {
+    try {
+        if (html && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([new ClipboardItem({
+                "text/plain": new Blob([text], { type: "text/plain" }),
+                "text/html": new Blob([html], { type: "text/html" }),
+            })]);
+            return true;
+        }
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // Not allowed here: the copy still works inside the grid.
+    }
+    return false;
+};
+
 const loadImageElement = (src) => new Promise((resolve, reject) => {
     const img = new Image();
     // Remote URLs need CORS approval or the canvas below is tainted and
@@ -1383,6 +1407,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [matchIndex, setMatchIndex] = useState(0);
 
     const [clipboard, setClipboard] = useState(null); // { cellsByRelPos, height, width, type, sourceBounds }
+    // The same copy as it went to the system clipboard — { id, text, written } — so a
+    // paste can tell whether it is still what's there (see isOwnClip).
+    const ownClipRef = useRef(null);
+    const pendingClipEvent = useRef(null); // "copy" | "cut": Ctrl+C/X pressed, the browser's event not yet seen
     const [formatPainterStyle, setFormatPainterStyle] = useState(null);
     const [borderWeight, setBorderWeight] = useState("thin");
     // Conditional formatting dialogs.
@@ -2517,17 +2545,27 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- Clipboard ---
 
-    const copySelection = useCallback((type) => {
-        if (!selectionBounds) return;
+    // Copies (or cuts) the active range. Inside the grid a paste works from
+    // `clipboard`, which keeps formulas and formatting. The cells also go to the
+    // system clipboard as text and a table, the way they are displayed, so they can
+    // be pasted into other programs: through `clipboardData` when this is answering
+    // the browser's own copy event, otherwise through the async clipboard API.
+    // Returns whether the event's clipboard was filled.
+    const copySelection = useCallback((type, clipboardData) => {
+        if (!selectionBounds) return false;
         if (hasMultipleRanges) toast.info("Copy works on one range at a time — only the active range was copied.");
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         const cellsByRelPos = {};
         // Evaluated values as of the copy, for Paste Special > Values —
         // including spilled cells, which have no entry in `cells` at all.
         const valuesByRelPos = {};
+        const shownRows = [];
         for (let r = minRow; r <= maxRow; r++) {
+            const shownRow = [];
+            shownRows.push(shownRow);
             for (let c = minCol; c <= maxCol; c++) {
                 const id = getCellId(r, c);
+                shownRow.push(String(displayGrid[id] ?? ""));
                 if (cells[id]) cellsByRelPos[`${r - minRow},${c - minCol}`] = cells[id];
                 const hasValue = cells[id]?.value !== undefined && cells[id].value !== "";
                 if (rawGrid[id] !== undefined && (hasValue || evaluation.spillAnchors.has(id))) {
@@ -2536,7 +2574,25 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
         }
         setClipboard({ cellsByRelPos, valuesByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
-    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation]);
+
+        const payload = buildClipboardPayload(shownRows);
+        const own = { id: payload.id, text: payload.text, written: false };
+        ownClipRef.current = own;
+        if (clipboardData) {
+            try {
+                clipboardData.setData("text/plain", payload.text);
+                if (payload.html) clipboardData.setData("text/html", payload.html);
+                own.written = true;
+            } catch {
+                // Left unwritten: pasting inside the grid still works.
+            }
+            return own.written;
+        }
+        writeSystemClipboard(payload).then((ok) => { if (ok) own.written = true; });
+        return false;
+    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid]);
+    const copySelectionRef = useRef(copySelection);
+    copySelectionRef.current = copySelection;
 
     const handlePaste = useCallback(() => {
         if (!clipboard || !selectionBounds) return;
@@ -2580,39 +2636,151 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (clipboard.type === "cut") setClipboard(null);
     }, [clipboard, selectionBounds, updateSheets, activeSheetName, isSheetReadOnly, setSelection]);
 
+    // Pastes cells copied in another program (Excel, Google Sheets, a text editor),
+    // read from the clipboard's text: one line per row, tabs between cells. Values go
+    // in exactly as if typed, so numbers, dates and formulas are understood the same
+    // way, and each cell keeps the formatting it already has. Starts at the top-left
+    // of the selection and grows the sheet if the block runs past its edge; a single
+    // value fills the whole selection, as in Excel. One undo step.
+    const pasteExternalText = useCallback((text) => {
+        if (!selectionBounds) return;
+        if (isSheetReadOnly) { if (!readOnly) toast.info("This is a PivotTable — edit the source data instead."); return; }
+        const rows = parseDelimitedText(text);
+        const { height, width } = gridSize(rows);
+        if (height === 0 || width === 0) return;
+        const single = height === 1 && width === 1;
+        const targetRow = selectionBounds.minRow, targetCol = selectionBounds.minCol;
+        const outHeight = single ? selectionBounds.maxRow - targetRow + 1 : height;
+        const outWidth = single ? selectionBounds.maxCol - targetCol + 1 : width;
+        if (outHeight * outWidth > MAX_PASTE_CELLS) {
+            toast.error(`That is ${(outHeight * outWidth).toLocaleString()} cells — too many to paste at once (the limit is ${MAX_PASTE_CELLS.toLocaleString()}). Paste it in smaller blocks, or import the file.`);
+            return;
+        }
+
+        updateSheets((workbook) => {
+            const sheet = workbook[activeSheetName];
+            if (!sheet) return;
+            if (targetRow + outHeight > sheet.rowCount) sheet.rowCount = targetRow + outHeight;
+            if (targetCol + outWidth > sheet.columnCount) sheet.columnCount = targetCol + outWidth;
+            const next = sheet.cells;
+            for (let r = 0; r < outHeight; r++) {
+                const sourceRow = single ? rows[0] : rows[r];
+                for (let c = 0; c < outWidth; c++) {
+                    const value = (single ? sourceRow[0] : sourceRow[c]) ?? "";
+                    const id = getCellId(targetRow + r, targetCol + c);
+                    const existing = next[id];
+                    if (!existing && value === "") continue;
+                    const merged = { ...existing, value };
+                    // A line break inside a value turns on Wrap Text, as typing one does.
+                    if (value.includes("\n") && !isFormula(value)) merged.wrap = true;
+                    if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
+                }
+            }
+        });
+
+        setSelectedMediaId(null);
+        setSelection({ start: getCellId(targetRow, targetCol), end: getCellId(targetRow + outHeight - 1, targetCol + outWidth - 1) });
+        // Something else has been copied since: a pending cut here is off.
+        setClipboard((c) => (c?.type === "cut" ? null : c));
+    }, [selectionBounds, isSheetReadOnly, readOnly, updateSheets, activeSheetName, setSelection]);
+
+    // The Paste buttons. There is no paste event to read from here, so: what was
+    // copied in the grid if anything was, otherwise the system clipboard's text where
+    // the browser lets a page read it.
+    const pasteFromButton = useCallback(async () => {
+        if (clipboard) { handlePaste(); return; }
+        let text = "";
+        try {
+            text = (await navigator.clipboard?.readText?.()) || "";
+        } catch {
+            text = "";
+        }
+        if (text !== "") pasteExternalText(text);
+        else toast.info("Nothing copied here yet. To paste from another program, press Ctrl+V.");
+    }, [clipboard, handlePaste, pasteExternalText]);
+
     const activateFormatPainter = useCallback(() => {
         const { value, ...styles } = cells[activeCell] || {};
         setFormatPainterStyle(styles);
     }, [cells, activeCell]);
 
+    // Copy, cut and paste, through the browser's own clipboard events — the one route
+    // to the system clipboard that works on any page without asking permission.
     useEffect(() => {
-        if (readOnly) return;
-        const onPaste = (e) => {
-            if (!e.clipboardData) return;
-            const items = e.clipboardData.items;
-            let hasImage = false;
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].type.indexOf("image") !== -1) {
-                    const file = items[i].getAsFile();
-                    if (file) {
-                        e.preventDefault();
-                        handleInsertMediaFile("image", file);
-                        hasImage = true;
-                        break;
-                    }
-                }
-            }
-            if (hasImage) return;
+        // Someone typing in a field — the formula bar, a ribbon box, a comment,
+        // another form on the page — is copying and pasting text there, not cells.
+        const inField = (el) => !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 
-            const tag = document.activeElement?.tagName;
-            if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        const onCopyOrCut = (e) => {
+            const active = document.activeElement;
+            if (inField(active) || !rootRef.current?.contains(active)) return;
+            const type = e.type === "cut" ? "cut" : "copy";
+            if (type === "cut" && readOnly) return;
+            pendingClipEvent.current = null;
+            if (copySelection(type, e.clipboardData)) e.preventDefault();
+        };
+
+        // What a paste is, in order:
+        //   1. the grid's own copy, still on the clipboard   formulas and formatting, as before
+        //   2. text from anywhere else                       cells, by rows and tabs
+        //   3. a picture and no text                         a floating image
+        // Text comes before pictures because a spreadsheet copies its cells as both:
+        // Excel puts a picture of them on the clipboard next to their text.
+        const onPaste = (e) => {
+            if (readOnly || !e.clipboardData) return;
+            const active = document.activeElement;
+            if (inField(active)) return;
+            if (active && active !== document.body && !rootRef.current?.contains(active)) return;
+
+            const text = e.clipboardData.getData("text/plain");
+            const html = e.clipboardData.getData("text/html");
+            if (clipboard && isOwnClip(ownClipRef.current, { text, html })) {
+                e.preventDefault();
+                handlePaste();
+                return;
+            }
+            if (text !== "") {
+                e.preventDefault();
+                pasteExternalText(text);
+                return;
+            }
+            const items = e.clipboardData.items || [];
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf("image") === -1) continue;
+                const file = items[i].getAsFile();
+                if (!file) continue;
+                e.preventDefault();
+                handleInsertMediaFile("image", file);
+                return;
+            }
+            // Nothing usable on the system clipboard: whatever was copied here.
+            if (clipboard) {
                 e.preventDefault();
                 handlePaste();
             }
         };
+
+        window.addEventListener("copy", onCopyOrCut);
+        window.addEventListener("cut", onCopyOrCut);
         window.addEventListener("paste", onPaste);
-        return () => window.removeEventListener("paste", onPaste);
-    }, [handlePaste, handleInsertMediaFile, readOnly]);
+        return () => {
+            window.removeEventListener("copy", onCopyOrCut);
+            window.removeEventListener("cut", onCopyOrCut);
+            window.removeEventListener("paste", onPaste);
+        };
+    }, [clipboard, copySelection, handlePaste, pasteExternalText, handleInsertMediaFile, readOnly]);
+
+    // Ctrl+C / Ctrl+X are left to the browser so that it raises the copy or cut event
+    // handled above. Should that event not come (a browser that only raises it for
+    // selected text), the copy is made anyway a moment later.
+    const expectClipboardEvent = useCallback((type) => {
+        pendingClipEvent.current = type;
+        setTimeout(() => {
+            if (pendingClipEvent.current !== type) return;
+            pendingClipEvent.current = null;
+            copySelectionRef.current(type);
+        }, 80);
+    }, []);
 
     const handleCellMouseDown = useCallback((cellId, e) => {
         // Point mode: while typing a formula, clicking another cell inserts its
@@ -4802,8 +4970,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (ctrl && alt && !shift && code === "KeyV") { handled(); if (edit) setPasteSpecialOpen(true); return; }
         if (ctrl && !alt) {
             switch (code) {
-                case "KeyC": if (!shift) { handled(); copySelection("copy"); return; } break;
-                case "KeyX": if (!shift && edit) { handled(); copySelection("cut"); return; } break;
+                // Not handled(): the default has to go ahead for the copy/cut event to fire.
+                case "KeyC": if (!shift) { expectClipboardEvent("copy"); return; } break;
+                case "KeyX": if (!shift && edit) { expectClipboardEvent("cut"); return; } break;
                 case "KeyZ": if (edit) { handled(); if (shift) redo(); else undo(); return; } break;
                 case "KeyY": if (!shift && edit) { handled(); redo(); return; } break;
                 case "KeyF": handled(); if (shift) { if (edit) setFormatCellsOpen(true); } else openFind(false); return;
@@ -5149,12 +5318,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     <RibbonSplit
                         large
                         title="Paste (Ctrl+V)"
-                        onClick={handlePaste}
-                        disabled={!clipboard}
+                        onClick={pasteFromButton}
                         face={<><IconClipboardText className="w-8 h-8 text-amber-700" strokeWidth={1.4} /><span className="text-xs">Paste</span></>}
                         menuTitle="Paste options"
                     >
-                        <MenuItem icon={IconClipboard} label="Paste" shortcut="Ctrl+V" onClick={handlePaste} disabled={!clipboard} />
+                        <MenuItem icon={IconClipboard} label="Paste" shortcut="Ctrl+V" onClick={pasteFromButton} />
                         <MenuItem icon={IconClipboardList} label="Paste Special..." shortcut="Ctrl+Alt+V" onClick={() => setPasteSpecialOpen(true)} disabled={!clipboard} />
                     </RibbonSplit>
                     <RibbonStack>
@@ -6109,7 +6277,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <IconCopy className="w-3.5 h-3.5" /> Copy
                     </ContextMenuItem>
                     {!readOnly && (
-                        <ContextMenuItem onClick={handlePaste} disabled={!clipboard} className="cursor-pointer">
+                        <ContextMenuItem onClick={pasteFromButton} className="cursor-pointer">
                             <IconClipboard className="w-3.5 h-3.5" /> Paste
                         </ContextMenuItem>
                     )}

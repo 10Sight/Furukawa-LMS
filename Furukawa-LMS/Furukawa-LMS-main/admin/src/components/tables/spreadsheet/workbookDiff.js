@@ -15,6 +15,7 @@
 export const MAX_PATCH_CELLS = 5000;
 
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+const EMPTY = Object.freeze({});
 
 /**
  * @param {Object<string, object>} base the workbook the server holds
@@ -61,12 +62,34 @@ export const diffWorkbook = (base, next, { activeSheet } = {}) => {
             if (del.length > 0) entry.del = del;
         }
 
+        // Comment anchors ({ cellId: thread id }) are sent cell by cell too: replacing the
+        // map whole would drop an anchor someone else saved to another cell meanwhile.
+        const beforeAnchors = before.commentAnchors || EMPTY;
+        const afterAnchors = after.commentAnchors || EMPTY;
+        if (beforeAnchors !== afterAnchors) {
+            const set = {};
+            const del = [];
+            for (const id in afterAnchors) {
+                if (afterAnchors[id] === beforeAnchors[id]) continue;
+                if (afterAnchors[id]) set[id] = afterAnchors[id];
+                else if (beforeAnchors[id]) del.push(id);
+            }
+            for (const id in beforeAnchors) {
+                if (beforeAnchors[id] && !hasOwn(afterAnchors, id)) del.push(id);
+            }
+            const anchors = {};
+            if (Object.keys(set).length > 0) anchors.set = set;
+            if (del.length > 0) anchors.del = del;
+            // An empty one says only that the sheet now has an anchor map, when it had none.
+            if (Object.keys(anchors).length > 0 || (!before.commentAnchors && after.commentAnchors)) entry.anchors = anchors;
+        }
+
         // Everything else on a sheet (row/column counts, merges, widths, charts, media…)
         // is small next to the cells and is replaced whole when it changes.
         const props = {};
         const unset = [];
         for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-            if (key === "cells" || before[key] === after[key]) continue;
+            if (key === "cells" || key === "commentAnchors" || before[key] === after[key]) continue;
             // JSON has no `undefined`: a setting that became undefined is one that's gone.
             if (after[key] === undefined) unset.push(key);
             else props[key] = after[key];

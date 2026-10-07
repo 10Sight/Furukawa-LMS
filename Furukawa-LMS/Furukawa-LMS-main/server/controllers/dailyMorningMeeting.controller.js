@@ -6,7 +6,7 @@ import { canModifyDailyMeetingSection } from "../utils/dailyMeetingAccess.util.j
 import { executeQuery } from "../db/mssqlHelper.js";
 import microsoftGraphService from "../services/microsoftGraph.service.js";
 import ENV from "../configs/env.config.js";
-import { parseSheetData, normalizeWorkbook, validatePatch, cellKeyToPosition, cellExportValue, pendingPatchRun } from "../utils/sheetWorkbook.js";
+import { parseSheetData, normalizeWorkbook, validatePatch, cellKeyToPosition, cellExportValue, pendingPatchRun, withoutCommentAnchors } from "../utils/sheetWorkbook.js";
 import { decodeSheetPayload } from "../utils/sheetCodec.js";
 import { broadcastPatch, broadcastReplaced, liveSyncEnabled } from "../services/sheetLiveSync.js";
 
@@ -345,7 +345,7 @@ export const cloneMeeting = async (req, res) => {
                 // (the real cell content lives in the SharePoint workbook) — carry it
                 // over so the clone doesn't lose whatever charts were configured.
                 if (sourceMeeting.sheetData && sourceMeeting.sheetData !== "{}") {
-                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, sourceMeeting.sheetData);
+                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, withoutCommentAnchors(sourceMeeting.sheetData));
                 }
             } catch (dbError) {
                 // Compensating action: don't leave an orphaned SharePoint copy the DB has no record of.
@@ -360,7 +360,8 @@ export const cloneMeeting = async (req, res) => {
                 meetingDate,
                 meetingTime,
                 createdBy: req.user.id,
-                sheetData: sourceMeeting.sheetData
+                // Comments stay with the meeting they were written in.
+                sheetData: withoutCommentAnchors(sourceMeeting.sheetData)
             });
         }
 

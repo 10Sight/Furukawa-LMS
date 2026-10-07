@@ -529,5 +529,7 @@ class DailyMorningMeeting {
 
 // Sheet writes name the sheetDataGz column, so they wait for the migration that adds it.
 const schemaReady = DailyMorningMeeting.init().catch(err => logger.error("Failed to initialize daily_morning_meetings table:", err));
+// For models whose tables reference this one (sheetComment.model.js).
+DailyMorningMeeting.schemaReady = schemaReady;
 
 export default DailyMorningMeeting;

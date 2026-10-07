@@ -11,7 +11,12 @@
 //         del:   ["C9"],                            // cells removed
 //         props: { rowCount: 40, merges: [...] },   // sheet settings replaced, whole values
 //         unset: ["pivotConfig"]                    // sheet settings removed
+//         anchors: { set: { "B4": "thread id" }, del: ["C2"] }   // comment anchors, cell by cell
 //     } } }
+//
+// `anchors` changes the sheet's `commentAnchors` map ({ cellId: comment thread id }) one
+// cell at a time rather than replacing it whole the way `props` would, so that two people
+// who each comment on a different cell don't undo one another.
 //
 // A patch never adds, removes, renames or reorders sheets — the client saves the whole
 // workbook for those. Every operation sets or removes a value outright, so applying
@@ -26,7 +31,8 @@ const DEFAULT_SHEET_NAME = "Sheet 1";
 const MAX_PATCH_CELLS = 20000;
 
 const CELL_ID_RE = /^[A-Z]{1,3}[1-9][0-9]{0,6}$/;
-const SHEET_ENTRY_KEYS = new Set(["set", "del", "props", "unset"]);
+const SHEET_ENTRY_KEYS = new Set(["set", "del", "props", "unset", "anchors"]);
+const MAX_THREAD_ID_LENGTH = 64;
 // Assigning to these on a plain object changes its prototype rather than storing a value.
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -57,6 +63,25 @@ export const normalizeWorkbook = (data) => {
         },
         activeSheet: DEFAULT_SHEET_NAME
     };
+};
+
+/**
+ * A stored workbook for a copy of its meeting: the same, minus the comment anchors.
+ * Comment threads belong to the meeting they were written in and are not copied, and an
+ * anchor without its thread would only be dead weight in the new workbook.
+ * @param {string|object} sheetData as the meeting model hands it over
+ * @returns {string|object} `sheetData` itself when it has no anchors
+ */
+export const withoutCommentAnchors = (sheetData) => {
+    const data = parseSheetData(sheetData);
+    if (!isPlainObject(data.sheets)) return sheetData;
+    let sheets = null;
+    for (const [name, sheet] of Object.entries(data.sheets)) {
+        if (!isPlainObject(sheet) || !hasOwn(sheet, "commentAnchors")) continue;
+        const { commentAnchors, ...rest } = sheet;
+        (sheets || (sheets = { ...data.sheets }))[name] = rest;
+    }
+    return sheets ? { ...data, sheets } : sheetData;
 };
 
 /**
@@ -106,6 +131,30 @@ export const validatePatch = (patch) => {
                 if (typeof key !== "string" || !isSettingKey(key)) return `Sheet "${name}": ${key} cannot be unset`;
             }
         }
+        if (entry.anchors !== undefined) {
+            const anchors = entry.anchors;
+            if (!isPlainObject(anchors)) return `Sheet "${name}": anchors must be an object`;
+            for (const key of Object.keys(anchors)) {
+                if (key !== "set" && key !== "del") return `Sheet "${name}": unknown anchors field ${key}`;
+            }
+            if (anchors.set !== undefined) {
+                if (!isPlainObject(anchors.set)) return `Sheet "${name}": anchors.set must be an object`;
+                for (const [id, threadId] of Object.entries(anchors.set)) {
+                    if (!CELL_ID_RE.test(id)) return `Sheet "${name}": invalid cell id ${id}`;
+                    if (typeof threadId !== "string" || !threadId || threadId.length > MAX_THREAD_ID_LENGTH) {
+                        return `Sheet "${name}": invalid comment thread for ${id}`;
+                    }
+                    cellCount++;
+                }
+            }
+            if (anchors.del !== undefined) {
+                if (!Array.isArray(anchors.del)) return `Sheet "${name}": anchors.del must be an array`;
+                for (const id of anchors.del) {
+                    if (typeof id !== "string" || !CELL_ID_RE.test(id)) return `Sheet "${name}": invalid cell id ${id}`;
+                    cellCount++;
+                }
+            }
+        }
         if (cellCount > MAX_PATCH_CELLS) return "Patch changes too many cells; save the whole workbook instead";
     }
     return null;
@@ -132,6 +181,11 @@ export const applyPatch = (workbook, patch) => {
         }
         if (entry.props) for (const [key, value] of Object.entries(entry.props)) sheet[key] = value;
         if (entry.unset) for (const key of entry.unset) delete sheet[key];
+        if (entry.anchors) {
+            if (!isPlainObject(sheet.commentAnchors)) sheet.commentAnchors = {};
+            if (entry.anchors.set) Object.assign(sheet.commentAnchors, entry.anchors.set);
+            if (entry.anchors.del) for (const id of entry.anchors.del) delete sheet.commentAnchors[id];
+        }
     }
     if (typeof patch.activeSheet === "string" && hasOwn(workbook.sheets, patch.activeSheet)) {
         workbook.activeSheet = patch.activeSheet;

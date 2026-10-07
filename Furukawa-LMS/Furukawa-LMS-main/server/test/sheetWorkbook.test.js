@@ -50,6 +50,34 @@ test("sheet settings: changed ones are replaced, removed ones are unset", () => 
     assert.deepEqual(viaServer(base, patch).sheets, asStored(next));
 });
 
+test("comment anchors are sent cell by cell, never as a whole setting", () => {
+    const base = { S: sheet({ A1: { value: "1" } }, { commentAnchors: { A1: "t1", B2: "t2", C3: "t3" } }), T: sheet({}) };
+    const next = {
+        S: { ...base.S, commentAnchors: { A1: "t1", B2: "t9", D4: "t4" } },   // B2 re-pointed, C3 removed, D4 added
+        T: { ...base.T, commentAnchors: { A1: "first" } }                     // a sheet that had none
+    };
+
+    const patch = diffWorkbook(base, next);
+    assert.deepEqual(patch.sheets.S, { anchors: { set: { B2: "t9", D4: "t4" }, del: ["C3"] } });
+    assert.deepEqual(patch.sheets.T, { anchors: { set: { A1: "first" } } });
+    assert.deepEqual(viaServer(base, patch).sheets, asStored(next));
+
+    // Same anchors in a new object: nothing to send.
+    assert.deepEqual(diffWorkbook(base, { S: { ...base.S, commentAnchors: { ...base.S.commentAnchors } }, T: base.T }), { v: 1, sheets: {} });
+    // The map going away altogether removes each anchor.
+    const { commentAnchors, ...bare } = base.S;
+    assert.deepEqual(diffWorkbook(base, { S: bare, T: base.T }).sheets.S, { anchors: { del: ["A1", "B2", "C3"] } });
+});
+
+test("anchors saved by two people to different cells both survive on the server", () => {
+    const base = { S: sheet({}, { commentAnchors: { A1: "t1" } }) };
+    const mine = diffWorkbook(base, { S: { ...base.S, commentAnchors: { A1: "t1", B2: "mine" } } });
+    const theirs = diffWorkbook(base, { S: { ...base.S, commentAnchors: { A1: "t1", C3: "theirs" } } });
+    const workbook = viaServer(base, mine);
+    assert.deepEqual(applyPatch(workbook, JSON.parse(JSON.stringify(theirs))), []);
+    assert.deepEqual(workbook.sheets.S.commentAnchors, { A1: "t1", B2: "mine", C3: "theirs" });
+});
+
 test("activeSheet is carried and applied", () => {
     const base = { S: sheet({}), T: sheet({}) };
     const patch = diffWorkbook(base, base, { activeSheet: "T" });
@@ -134,12 +162,23 @@ test("validatePatch rejects malformed and unsafe patches", () => {
         { v: 1, sheets: { S: { set: JSON.parse('{"__proto__": {"polluted": true}}') } } },
         { v: 1, sheets: { S: { unset: ["cells"] } } },
         { v: 1, sheets: { S: { unset: ["constructor"] } } },
+        { v: 1, sheets: { S: { anchors: [] } } },
+        { v: 1, sheets: { S: { anchors: { other: {} } } } },
+        { v: 1, sheets: { S: { anchors: { set: { a1: "t" } } } } },
+        { v: 1, sheets: { S: { anchors: { set: { A1: 7 } } } } },
+        { v: 1, sheets: { S: { anchors: { set: { A1: "" } } } } },
+        { v: 1, sheets: { S: { anchors: { set: { A1: "x".repeat(65) } } } } },
+        { v: 1, sheets: { S: { anchors: { set: JSON.parse('{"__proto__": "t"}') } } } },
+        { v: 1, sheets: { S: { anchors: { del: "A1" } } } },
+        { v: 1, sheets: { S: { anchors: { del: ["__proto__"] } } } },
     ];
     for (const patch of bad) assert.notEqual(validatePatch(patch), null, JSON.stringify(patch));
 
     assert.equal(validatePatch({ v: 1 }), null);
     assert.equal(validatePatch({ v: 1, sheets: {}, activeSheet: "S" }), null);
     assert.equal(validatePatch({ v: 1, sheets: { "__proto__x": { set: { XFD1048576: { value: 1 } }, del: [], props: { a: null }, unset: ["b"] } } }), null);
+    assert.equal(validatePatch({ v: 1, sheets: { S: { anchors: {} } } }), null);
+    assert.equal(validatePatch({ v: 1, sheets: { S: { anchors: { set: { A1: "x".repeat(64) }, del: ["B2"] } } } }), null);
     assert.equal({}.polluted, undefined);
 });
 

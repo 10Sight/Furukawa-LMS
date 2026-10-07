@@ -17,6 +17,15 @@ import {
     getMeetingM365Snapshot,
     deleteMeeting
 } from "../controllers/dailyMorningMeeting.controller.js";
+import {
+    getMeetingComments,
+    createCommentThread,
+    addCommentReply,
+    setCommentStatus,
+    editCommentMessage,
+    deleteCommentMessage,
+    deleteCommentThread
+} from "../controllers/sheetComment.controller.js";
 
 const router = Router();
 
@@ -47,5 +56,16 @@ router.post("/:id/refresh-embed-url", authorizeRoles("daily_meeting:update", "is
 // own canModifyDailyMeetingSection check), not merely read access.
 router.post("/section/:sectionId/sync-m365", authorizeRoles("daily_meeting:create", "isAdmin", "SUPERADMIN"), syncSectionMeetingsFromM365);
 router.delete("/:id", authorizeRoles("daily_meeting:delete", "isAdmin", "SUPERADMIN"), deleteMeeting);
+
+// Cell comments. Anyone who can open a meeting can read, reply to and resolve them.
+// Starting one takes the right to save the sheet, since that is what puts the comment
+// on a cell; editing and deleting are limited to the author in the controller.
+router.get("/:id/comments", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingComments);
+router.post("/:id/comments", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), createCommentThread);
+router.post("/:id/comments/:threadId/replies", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), addCommentReply);
+router.patch("/:id/comments/:threadId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), setCommentStatus);
+router.put("/:id/comments/:threadId/messages/:messageId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), editCommentMessage);
+router.delete("/:id/comments/:threadId/messages/:messageId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), deleteCommentMessage);
+router.delete("/:id/comments/:threadId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), deleteCommentThread);
 
 export default router;

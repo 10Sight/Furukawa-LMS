@@ -14,8 +14,13 @@
 //
 // The result shares every untouched sheet, cell map and cell with the previous
 // workbook. The undo record for an ordinary edit holds just the previous
-// values of the cells that changed, so the superseded cell map can be garbage
-// collected instead of being kept alive by the undo stack.
+// values of the cells and sheet settings that changed, so the superseded cell
+// map can be garbage collected instead of being kept alive by the undo stack —
+// and so undoing an edit puts back only what that edit changed. The workbook
+// also changes without a history entry, when someone else's save is taken in
+// (see workbookSync.js); whatever that brought to the rest of the sheet has to
+// survive the undo. For the same reason a sheet's comment anchors
+// (`commentAnchors`, { cellId: thread id }) are recorded cell by cell.
 
 import { createNextState, isDraft, original } from "@reduxjs/toolkit";
 import { deriveCellIndex } from "./formulaEngine.js";
@@ -75,9 +80,43 @@ export const plainOf = (value) => {
 
 const isSheetObject = (sheet) => !!sheet && typeof sheet === "object" && !Array.isArray(sheet);
 
-// A sheet's properties with the cell map dropped (so a record doesn't keep it
-// alive) but its key kept in place, so a rebuilt sheet has the same key order.
-const withoutCells = (sheet) => ({ ...sheet, cells: null });
+const isPlainMap = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+
+// What it takes to turn sheet `to`'s settings (everything but its cells) back
+// into sheet `from`'s: { set, unset, anchors }. `anchors` is a Map of cell id ->
+// the thread id `from` has there (undefined for none), for the comment anchors
+// that differ.
+const settingsDelta = (from, to) => {
+    const set = {};
+    const unset = [];
+    let anchors = null;
+    for (const key of Object.keys(from)) {
+        if (key === "cells" || (from[key] === to[key] && hasOwn(to, key))) continue;
+        if (key === "commentAnchors" && isPlainMap(from[key]) && isPlainMap(to[key])) {
+            anchors = new Map();
+            for (const id of Object.keys(from[key])) if (from[key][id] !== to[key][id]) anchors.set(id, from[key][id]);
+            for (const id of Object.keys(to[key])) if (!hasOwn(from[key], id)) anchors.set(id, undefined);
+            continue;
+        }
+        set[key] = from[key];
+    }
+    for (const key of Object.keys(to)) if (key !== "cells" && !hasOwn(from, key)) unset.push(key);
+    return { set, unset, anchors };
+};
+
+// `sheet` with a settingsDelta applied and `cells` as its cell map.
+const withSettings = (sheet, delta, cells) => {
+    const next = { ...sheet, ...delta.set, cells };
+    for (const key of delta.unset) delete next[key];
+    if (delta.anchors && delta.anchors.size) {
+        const anchors = { ...(isPlainMap(sheet.commentAnchors) ? sheet.commentAnchors : null) };
+        for (const [id, threadId] of delta.anchors) {
+            if (threadId === undefined) delete anchors[id]; else anchors[id] = threadId;
+        }
+        next.commentAnchors = anchors;
+    }
+    return next;
+};
 
 // Runs `updater` against a draft of `prev`. `postProcess(next)`, if given, may
 // return an adjusted workbook (e.g. with derived sheets recomputed). Returns
@@ -127,7 +166,7 @@ export const applyWorkbookUpdate = (prev, updater, postProcess) => {
                 cells = new Map();
                 for (const id of d.state.changed) cells.set(id, hasOwn(d.state.base, id) ? d.state.base[id] : undefined);
             }
-            sheets[name] = { props: withoutCells(prev[name]), cells };
+            sheets[name] = { props: settingsDelta(prev[name], next[name]), cells };
         } else {
             sheets[name] = { full: prev[name] };
         }
@@ -156,7 +195,7 @@ export const applyHistoryRecord = (current, record) => {
                 }
                 deriveCellIndex(cells, currentCells, entry.cells.keys());
             }
-            next[name] = { ...entry.props, cells };
+            next[name] = withSettings(current[name], entry.props, cells);
             patched.add(name);
         }
     }
@@ -173,7 +212,7 @@ export const applyHistoryRecord = (current, record) => {
                 cells = new Map();
                 for (const id of entry.cells.keys()) cells.set(id, hasOwn(currentCells, id) ? currentCells[id] : undefined);
             }
-            sheets[name] = { props: withoutCells(current[name]), cells };
+            sheets[name] = { props: settingsDelta(current[name], next[name]), cells };
         } else {
             sheets[name] = { full: current[name] };
         }

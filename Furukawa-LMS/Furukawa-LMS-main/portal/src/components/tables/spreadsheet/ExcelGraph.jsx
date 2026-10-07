@@ -21,6 +21,7 @@ import { getCellId, colToIndex, indexToCol, parseCellRef } from "../../../utils/
 import {
     parseNumericCell, parseRangeString, formatRangeString, chartRanges, naturalPlotBy,
     seriesIdsForRanges, seriesCountForRanges, MAX_CHART_SERIES, extractDisjointChartData, legacyConfigRanges,
+    blockChartRange, newChartRange,
 } from "../../../utils/spreadsheets/chartMatrixEngine.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
@@ -59,9 +60,10 @@ const CHART_TYPE_GROUPS = [
 let chartIdSeq = 0;
 const nextChartId = () => `chart-${Date.now().toString(36)}-${(chartIdSeq++).toString(36)}`;
 
-// `id` defaults to a fixed value rather than nextChartId() so the very first,
-// not-yet-saved chart keeps a stable identity across re-renders (which happen
-// on every keystroke in the grid, before the user has ever pressed "+").
+// The settings a chart starts from. `id` defaults to a fixed value rather than
+// nextChartId() for the callers that build one without inserting it — a sheet's
+// old singular `chartConfig`, and the Insert Chart dialog's previews — so it
+// keeps a stable identity across re-renders.
 const buildDefaultChart = (columnCount, rowCount, id = "chart-1", name = "Chart 1") => ({
     id,
     name,
@@ -85,9 +87,8 @@ const buildDefaultChart = (columnCount, rowCount, id = "chart-1", name = "Chart 
 // a `charts` array saved before the Design fields (title/labelPosition/
 // pointColors/legendPosition) existed — read-only migration: fill in defaults
 // for whatever's missing. Never written back until the user's next edit.
-// `Array.isArray` (not a truthy/length check) so a saved, deliberately-emptied
-// `charts: []` is respected instead of being treated as "never configured" and
-// regenerating a default chart every render.
+// A sheet with no `charts` at all (a new tab, an imported workbook) has none: a
+// chart appears only once the user inserts one, as in Excel.
 const withDesignDefaults = (chart) => ({
     title: "",
     labelPosition: "auto",
@@ -97,6 +98,7 @@ const withDesignDefaults = (chart) => ({
     legendPosition: chart.legendPosition || (chart.showLegend === false ? "none" : "bottom"),
 });
 
+const NO_CHARTS = Object.freeze([]);
 const getChartsForSheet = (activeSheet, columnCount, rowCount) => {
     if (Array.isArray(activeSheet?.charts)) return activeSheet.charts.map(withDesignDefaults);
     if (activeSheet?.chartConfig) {
@@ -107,7 +109,7 @@ const getChartsForSheet = (activeSheet, columnCount, rowCount) => {
             name: activeSheet.chartConfig.name || "Chart 1",
         })];
     }
-    return [buildDefaultChart(columnCount, rowCount)];
+    return NO_CHARTS;
 };
 
 // Series are keyed by column letter, or by row number when a chart plots by rows.
@@ -856,7 +858,7 @@ function InsertChartDialog({ state, onClose, recommended, currentType, comboSeri
     );
 }
 
-function ExcelGraph({ excelData, onChartsChange }) {
+function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [draft, setDraft] = useState(null);
     const [designPopoverOpen, setDesignPopoverOpen] = useState(false);
@@ -959,8 +961,20 @@ function ExcelGraph({ excelData, onChartsChange }) {
         applyConfig({ textStyles: styles });
     };
 
+    const selectionForNewChart = {
+        selection: excelData?.selection, ranges: excelData?.ranges, activeCell: excelData?.activeCell,
+        displayGrid, rowCount, columnCount,
+    };
+    // A new chart starts on what is selected in the grid (see newChartRange), unless
+    // the caller names its own range, as PivotChart does. `patch` may be a function
+    // of the chart so far, for settings that depend on which series it ends up with.
     const addChart = (patch = {}) => {
-        const newChart = { ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`), ...patch };
+        const ownRange = typeof patch !== "function" && (patch.xAxisCol || patch.rangeString);
+        const base = {
+            ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`),
+            ...(ownRange ? null : newChartRange(selectionForNewChart)),
+        };
+        const newChart = { ...base, ...(typeof patch === "function" ? patch(base) : patch) };
         setActiveChartId(newChart.id);
         onChartsChange?.([...charts, newChart]);
     };
@@ -978,7 +992,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
     // Picking a chart type changes the active chart (or inserts one when there is none).
     const applyVariant = (key, comboSettings) => {
         if (config) applyConfig(variantPatch(key, config, comboSettings));
-        else addChart(variantPatch(key, buildDefaultChart(columnCount, rowCount), comboSettings));
+        else addChart((base) => variantPatch(key, base, comboSettings));
     };
     // Opens the dialog on Combo > Custom Combination, with its series table.
     const openCustomCombo = () => setInsertDialog({ tab: "all", family: "combo", select: "combo" });
@@ -1005,6 +1019,30 @@ function ExcelGraph({ excelData, onChartsChange }) {
 
     const prepared = useMemo(() => prepareChartData(activeSheet, displayGrid, config), [activeSheet, displayGrid, config]);
     const { data, seriesKeys, hadInvalid } = prepared;
+
+    // With no chart yet, the Insert Chart dialog works from the chart it would
+    // insert: its previews, recommendations and series table all describe that
+    // one. Only worked out while the dialog is open.
+    const insertDialogOpen = !!insertDialog;
+    const { selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell } = excelData || {};
+    const insertBase = useMemo(() => (insertDialogOpen && !config ? {
+        ...buildDefaultChart(columnCount, rowCount),
+        ...newChartRange({ selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell, displayGrid, rowCount, columnCount }),
+    } : null), [insertDialogOpen, config, gridSelection, gridRanges, gridActiveCell, displayGrid, rowCount, columnCount]);
+    const dialogChart = config || insertBase;
+    // The selection as the zero state names it: a block or a list of ranges. A lone
+    // cell, row or column isn't named, since the chart then takes the data around
+    // the active cell instead (see newChartRange).
+    const newChartSourceLabel = (() => {
+        if (Array.isArray(gridRanges) && gridRanges.length > 1) return formatRangeString(gridRanges);
+        const start = gridSelection && parseCellRef(gridSelection.start);
+        const end = gridSelection && parseCellRef(gridSelection.end);
+        return start && end && start.row !== end.row && start.col !== end.col ? `${gridSelection.start}:${gridSelection.end}` : null;
+    })();
+    const dialogPrepared = useMemo(
+        () => (insertBase ? prepareChartData(activeSheet, displayGrid, insertBase) : prepared),
+        [insertBase, activeSheet, displayGrid, prepared]
+    );
 
     // --- One data label on its own (Excel: click a label twice) ---
     // `config.pointLabels[seriesId][categoryName]` = { show, position, dx, dy }
@@ -1045,13 +1083,14 @@ function ExcelGraph({ excelData, onChartsChange }) {
 
     // The chart's series with their current combo type/axis, for the Change
     // Chart Type dialog's series table.
-    const comboSeries = useMemo(() => (config ? seriesKeys.map((name, i) => {
-        const id = config.valueCols[i];
-        return { id, name, color: config.seriesColors?.[id] || CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length], ...getComboSeriesSettings(config, id, i) };
-    }) : []), [config, seriesKeys]);
+    const comboSeries = useMemo(() => (dialogChart ? dialogPrepared.seriesKeys.map((name, i) => {
+        const id = dialogChart.valueCols[i];
+        return { id, name, color: dialogChart.seriesColors?.[id] || CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length], ...getComboSeriesSettings(dialogChart, id, i) };
+    }) : []), [dialogChart, dialogPrepared]);
 
     // Excel's Recommended Charts: a short list suited to the data's shape.
     const recommendedVariants = useMemo(() => {
+        const { data, seriesKeys } = dialogPrepared;
         const n = seriesKeys.length, rows = data.length;
         const numericX = rows > 1 && data.every((row) => Number.isFinite(parseFloat(String(row.name).replace(/[$,%\s]/g, ""))));
         const allPositive = data.every((row) => seriesKeys.every((k) => (row[k] || 0) >= 0));
@@ -1069,7 +1108,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
         }
         if (numericX) list.push("scatter");
         return [...new Set(list)].slice(0, 8);
-    }, [data, seriesKeys]);
+    }, [dialogPrepared]);
 
     const deleteChart = (id) => {
         const nextCharts = charts.filter((c) => c.id !== id);
@@ -1153,18 +1192,8 @@ function ExcelGraph({ excelData, onChartsChange }) {
             return;
         }
 
-        const xAxisCol = indexToCol(minCol);
-        const valueCols = [];
-        for (let c = minCol + 1; c <= maxCol; c++) valueCols.push(indexToCol(c));
-
-        // Header auto-detect: the first selected row reads as a header if every
-        // value-column cell in it is non-numeric text rather than a number.
-        const hasHeaderRow = valueCols.every((col) => {
-            const raw = displayGrid[getCellId(minRow, colToIndex(col))];
-            return raw !== undefined && raw !== "" && parseNumericCell(raw) === null;
-        });
-
-        setDraft((d) => ({ ...d, xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow, rangeString: "", ranges: undefined, plotBy: undefined }));
+        const block = blockChartRange(displayGrid, { minRow, maxRow, minCol, maxCol });
+        setDraft((d) => ({ ...d, ...block, rangeString: "", ranges: undefined, plotBy: undefined }));
         toast.success("Range filled from your selection — review and Apply.");
     };
 
@@ -2392,8 +2421,23 @@ function ExcelGraph({ excelData, onChartsChange }) {
             </div>
 
             {!config ? (
-                <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">
-                    No charts yet. Pick a chart type from the Insert ribbon above, or click "+".
+                // Kept to one short row: most sheets have no chart, and this sits
+                // above the grid on every one of them.
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 px-4 py-4 text-sm text-slate-500">
+                    <IconChartBar className="w-5 h-5 text-slate-400 shrink-0" />
+                    <span>No charts on this sheet.</span>
+                    {!readOnly && (
+                        <>
+                            <Button size="sm" className="h-7 text-xs cursor-pointer bg-[#107C41] hover:bg-[#0d6635] text-white" onClick={() => addChart()}>
+                                <IconPlus className="w-3.5 h-3.5" /> Create chart
+                            </Button>
+                            <span className="text-xs text-slate-400">
+                                {newChartSourceLabel
+                                    ? <>from <span className="font-medium text-slate-600">{newChartSourceLabel}</span>, or pick a chart type above</>
+                                    : <>from the data around {gridActiveCell ? <span className="font-medium text-slate-600">{gridActiveCell}</span> : "the selected cell"}, or pick a chart type above</>}
+                            </span>
+                        </>
+                    )}
                 </div>
             ) : (
             <>
@@ -2426,7 +2470,7 @@ function ExcelGraph({ excelData, onChartsChange }) {
                 currentType={config?.type}
                 comboSeries={comboSeries}
                 renderPreview={(key, mini, comboSettings) => {
-                    const base = config || buildDefaultChart(columnCount, rowCount);
+                    const base = dialogChart || buildDefaultChart(columnCount, rowCount);
                     const cfg = { ...base, ...variantPatch(key, base, comboSettings), title: "" };
                     return renderChartBody(cfg, prepareChartData(activeSheet, displayGrid, cfg), mini);
                 }}

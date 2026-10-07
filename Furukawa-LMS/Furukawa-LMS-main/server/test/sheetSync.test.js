@@ -102,6 +102,33 @@ test("unsaved edits survive; everything else is taken", () => {
     assert.equal(live.S.cells.B2, nextSaved.S.cells.B2);
 });
 
+test("comment anchors: mine and theirs on different cells are both kept", () => {
+    const saved = { S: sheet({ A1: { value: "1" } }, { commentAnchors: { A1: "t1", B2: "t2", C3: "t3" } }) };
+    // Mine, unsaved: an anchor added at D4, the one at B2 removed.
+    const mine = { S: { ...saved.S, commentAnchors: { A1: "t1", C3: "t3", D4: "mine" } } };
+    assert.deepEqual(unsaved(saved, mine).sheets.S, { anchors: { set: { D4: "mine" }, del: ["B2"] } });
+    // Theirs, saved: E5 added, C3 removed, B2 re-pointed (which I removed), D4 added (which I added).
+    const patch = wire({ v: 1, sheets: { S: { anchors: { set: { E5: "theirs", B2: "theirs", D4: "theirs" }, del: ["C3"] } } } });
+
+    const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
+    assert.deepEqual(nextSaved, onServer(saved, patch));
+    assert.deepEqual(live.S.commentAnchors, { A1: "t1", D4: "mine", E5: "theirs" });
+    assert.deepEqual(unsaved(nextSaved, live).sheets.S, { anchors: { set: { D4: "mine" }, del: ["B2"] } });
+    assert.deepEqual(onServer(saved, patch, unsaved(nextSaved, live)), json(live));
+});
+
+test("comment anchors: with none of my own unsaved, the screen shares the server's map", () => {
+    const saved = { S: sheet({ A1: { value: "1" } }, { commentAnchors: { A1: "t1" } }), T: sheet({}) };
+    const mine = edit(saved, "S", { B2: { value: "mine" } });
+    const patch = wire({ v: 1, sheets: { S: { anchors: { set: { C3: "theirs" } } }, T: { anchors: { set: { A1: "first" } } } } });
+    const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
+    assert.deepEqual(nextSaved, onServer(saved, patch));
+    assert.equal(live.S.commentAnchors, nextSaved.S.commentAnchors);
+    assert.deepEqual(live.S.commentAnchors, { A1: "t1", C3: "theirs" });
+    assert.deepEqual(live.T.commentAnchors, { A1: "first" });
+    assert.deepEqual(unsaved(nextSaved, live), { v: 1, sheets: { S: { set: { B2: { value: "mine" } } } } });
+});
+
 test("a sheet with unsaved settings but no unsaved cells shares the server's cell map", () => {
     const saved = { S: sheet({ A1: { value: "1" } }) };
     const mine = { S: { ...saved.S, rowHeights: { 1: 40 } } };
@@ -170,6 +197,12 @@ const randomEdit = (workbook, random) => {
     if (random() < 0.3) {
         const key = SETTINGS[Math.floor(random() * SETTINGS.length)];
         props[key] = key === "rowCount" ? 30 + Math.floor(random() * 50) : { [Math.floor(random() * 5)]: Math.floor(random() * 200) };
+    }
+    if (random() < 0.3) {
+        const anchors = { ...workbook[name].commentAnchors };
+        const id = CELL_IDS[Math.floor(random() * CELL_IDS.length)];
+        if (random() < 0.3) delete anchors[id]; else anchors[id] = `t${Math.floor(random() * 1000)}`;
+        props.commentAnchors = anchors;
     }
     return edit(workbook, name, changes, props);
 };

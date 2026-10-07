@@ -63,6 +63,23 @@ const applyEntry = (sheet, entry, takes) => {
         }
         if (nextCells) writable().cells = nextCells;
     }
+    if (entry.anchors) {
+        const anchors = isPlainObject(sheet.commentAnchors) ? sheet.commentAnchors : EMPTY_CELLS;
+        let nextAnchors = null;
+        const writableAnchors = () => nextAnchors || (nextAnchors = { ...anchors });
+        if (entry.anchors.set) {
+            for (const id of Object.keys(entry.anchors.set)) {
+                if (anchors[id] !== entry.anchors.set[id] && takes("anchor", id)) writableAnchors()[id] = entry.anchors.set[id];
+            }
+        }
+        if (entry.anchors.del) {
+            for (const id of entry.anchors.del) {
+                if (hasOwn(nextAnchors || anchors, id) && takes("anchor", id)) delete writableAnchors()[id];
+            }
+        }
+        // As on the server, an anchors entry leaves the sheet with a map even if empty.
+        if (nextAnchors || !isPlainObject(sheet.commentAnchors)) writable().commentAnchors = nextAnchors || {};
+    }
     if (entry.props) {
         for (const key of Object.keys(entry.props)) {
             if (sheet[key] !== entry.props[key] && takes("prop", key)) writable()[key] = entry.props[key];
@@ -123,14 +140,23 @@ export const rebaseLive = (live, savedBefore, patch, savedAfter = applyPatchToSa
             const savedCells = isPlainObject(savedSheet.cells) ? savedSheet.cells : EMPTY_CELLS;
             // "Unsaved" is "not the object the server's copy has" — including a cell or
             // setting present in one and absent from the other.
-            const untouched = (kind, key) => (kind === "cell"
-                ? liveCells[key] === savedCells[key]
-                : liveSheet[key] === savedSheet[key]);
+            const liveAnchors = isPlainObject(liveSheet.commentAnchors) ? liveSheet.commentAnchors : EMPTY_CELLS;
+            const savedAnchors = isPlainObject(savedSheet.commentAnchors) ? savedSheet.commentAnchors : EMPTY_CELLS;
+            const untouched = (kind, key) => {
+                if (kind === "cell") return liveCells[key] === savedCells[key];
+                if (kind === "anchor") return liveAnchors[key] === savedAnchors[key];
+                return liveSheet[key] === savedSheet[key];
+            };
             sheet = applyEntry(liveSheet, entry, untouched);
             // No unsaved cell edits on this sheet: share the server's cell map outright,
             // so the next save doesn't have to compare the two cell by cell.
             if (liveSheet.cells === savedSheet.cells && sheet !== liveSheet && isPlainObject(savedAfter[name])) {
                 sheet.cells = savedAfter[name].cells;
+            }
+            // Likewise for comment anchors, so the two stay the same object.
+            if (entry.anchors && liveSheet.commentAnchors === savedSheet.commentAnchors && sheet !== liveSheet
+                && isPlainObject(savedAfter[name]?.commentAnchors)) {
+                sheet.commentAnchors = savedAfter[name].commentAnchors;
             }
         }
         if (sheet !== liveSheet) (next || (next = { ...live }))[name] = sheet;

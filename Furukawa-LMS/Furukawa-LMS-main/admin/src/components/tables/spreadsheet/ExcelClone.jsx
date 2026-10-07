@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
+import { useSelector } from "react-redux";
 import { Button } from "@/components/common/ui/button.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/common/ui/context-menu.jsx";
@@ -19,7 +20,8 @@ import {
     IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconMaximize, IconMinimize,
     IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
     IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
-    IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid
+    IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid,
+    IconMessagePlus, IconMessage
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingSheetQuery, useSaveDailyMeetingSheetMutation,
@@ -41,6 +43,11 @@ import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from ".
 import { diffWorkbook } from "./workbookDiff.js";
 import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
 import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
+import { useSheetComments } from "./useSheetComments.js";
+import CellCommentCard from "./CellCommentCard.jsx";
+import {
+    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
+} from "../../../utils/spreadsheets/commentEngine.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import {
@@ -178,7 +185,8 @@ const DRAG_GROW_ROWS = 10;
 const DRAG_GROW_COLUMNS = 5;
 const DRAG_GROW_INTERVAL_MS = 300;
 
-const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [] });
+const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [], commentAnchors: {} });
+const EMPTY_ANCHORS = Object.freeze({}); // for sheets saved before comments existed
 const EMPTY_LIST = Object.freeze([]); // stable fallback for optional per-sheet arrays, so memo deps don't churn
 
 // Excel caps sheet names at 31 chars, forbids : \ / ? * [ ] and compares
@@ -1569,6 +1577,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     });
     catchUpRef.current = catchUpNow;
 
+    // What people wrote on this meeting's cells. Where each comment sits is part of
+    // the workbook (a sheet's `commentAnchors`); see useSheetComments.js.
+    const authUser = useSelector((state) => state.auth?.user);
+    const comments = useSheetComments({ meetingId });
+    const commentThreads = comments.threads;
+
     // Undo/redo restore `sheets` but not `activeSheetName`, so undoing an
     // import, rename, or new sheet can leave the active name pointing at a
     // sheet that no longer exists — fall back to the first tab instead of
@@ -1594,6 +1608,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const hiddenRows = activeSheet.hiddenRows || EMPTY_LIST; // manually hidden (Ctrl+9), unlike filter-hidden rows
     const hiddenCols = activeSheet.hiddenCols || EMPTY_LIST;
     const pivotConfig = activeSheet.pivotConfig || null;
+    const commentAnchors = activeSheet.commentAnchors || EMPTY_ANCHORS; // { cellId: thread id }
     // Pivot sheets are fully computed from their source — direct cell edits,
     // ribbon formatting, merges, sorting, and structural row/col changes are
     // all disabled on them, matching Excel's own pivot table protection.
@@ -2056,6 +2071,135 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         };
     }, [updateSheets, activeSheetName, zoom]);
 
+    // --- Cell comments ---
+    // A commented cell only draws a corner marker. The thread itself is shown in one
+    // floating card for the whole grid (CellCommentCard); `commentCard` says which
+    // cell it is on. Hovering a commented cell shows it for as long as the mouse stays
+    // on the cell or the card; opening it on purpose (Shift+F2, the menus, a click on
+    // the card) pins it until it is closed.
+    const [commentCard, setCommentCard] = useState(null); // { sheet, cellId, pinned }
+    const commentHoverTimer = useRef(null);
+    const commentCardHovered = useRef(false);
+    const menuCommentCell = useRef(null); // the cell menu's "comment" was chosen for this cell
+    const [, relayoutCommentCard] = useState(0);
+    // Starting or removing a comment changes the sheet (its anchor), so it takes the
+    // right to edit; replying and resolving don't.
+    const canStartComment = !!meetingId && !readOnly;
+    const isCommentAdmin = authUser?.role === "SUPERADMIN" || authUser?.role === "ADMIN" || authUser?.isAdmin === 1 || authUser?.isAdmin === true;
+    const { refresh: refreshComments, createThread: createCommentThread, deleteThread: deleteCommentThread } = comments;
+
+    // A marker (and a card) needs both halves: the anchor in the workbook and the
+    // thread from the server. An anchor whose thread was deleted shows nothing.
+    const commentThreadAt = useCallback((cellId) => {
+        const threadId = commentAnchors[cellId];
+        return (threadId && commentThreads[threadId]) || null;
+    }, [commentAnchors, commentThreads]);
+
+    const closeCommentCard = useCallback(() => {
+        clearTimeout(commentHoverTimer.current);
+        commentCardHovered.current = false;
+        setCommentCard(null);
+    }, []);
+
+    // Opens the card on a cell, pinned. Returns whether it did.
+    const openComment = useCallback((cellId) => {
+        const anchorId = resolveToAnchor(cellId);
+        if (!meetingId) { toast.info("Comments are available on meeting sheets."); return false; }
+        if (!commentThreadAt(anchorId) && !canStartComment) { toast.info("You can reply to comments on this sheet, but not start one."); return false; }
+        clearTimeout(commentHoverTimer.current);
+        setCommentCard({ sheet: activeSheetName, cellId: anchorId, pinned: true });
+        // Without live co-editing nobody announces other people's replies.
+        if (!sheetFeatures.liveSync) refreshComments();
+        return true;
+    }, [resolveToAnchor, meetingId, commentThreadAt, canStartComment, activeSheetName, sheetFeatures.liveSync, refreshComments]);
+
+    // Hover: show the card after a moment on a commented cell, and take it away a
+    // moment after the mouse has left both the cell and the card.
+    const hoveredCellId = hoveredCell ? getCellId(hoveredCell.row, hoveredCell.col) : null;
+    useEffect(() => {
+        clearTimeout(commentHoverTimer.current);
+        if (commentCard?.pinned) return undefined;
+        if (hoveredCellId && commentThreadAt(hoveredCellId)) {
+            if (commentCard?.cellId === hoveredCellId) return undefined;
+            commentHoverTimer.current = setTimeout(() => {
+                // Not in the middle of dragging out a selection, or typing in a cell.
+                if (isSelecting.current || isFilling.current) return;
+                setCommentCard({ sheet: activeSheetName, cellId: hoveredCellId, pinned: false });
+            }, 350);
+        } else if (commentCard) {
+            commentHoverTimer.current = setTimeout(() => {
+                if (!commentCardHovered.current) setCommentCard((card) => (card && !card.pinned ? null : card));
+            }, 250);
+        }
+        return () => clearTimeout(commentHoverTimer.current);
+    }, [hoveredCellId, commentCard, commentThreadAt, activeSheetName]);
+
+    const holdCommentCard = useCallback(() => {
+        commentCardHovered.current = true;
+        clearTimeout(commentHoverTimer.current);
+    }, []);
+    const releaseCommentCard = useCallback(() => {
+        commentCardHovered.current = false;
+        clearTimeout(commentHoverTimer.current);
+        commentHoverTimer.current = setTimeout(() => setCommentCard((card) => (card && !card.pinned ? null : card)), 250);
+    }, []);
+    const pinCommentCard = useCallback(() => setCommentCard((card) => (card ? { ...card, pinned: true } : card)), []);
+    useEffect(() => () => clearTimeout(commentHoverTimer.current), []);
+
+    // The card belongs to one sheet.
+    useEffect(() => { setCommentCard((card) => (card && card.sheet !== activeSheetName ? null : card)); }, [activeSheetName]);
+
+    // The card is placed in screen pixels, so anything that moves the cell on screen
+    // without re-rendering the grid — the page scrolling, the window resizing — has
+    // to place it again. (Capture: scroll events don't bubble.)
+    const commentCardOpen = !!commentCard;
+    useEffect(() => {
+        if (!commentCardOpen) return undefined;
+        const relayout = () => relayoutCommentCard((n) => n + 1);
+        window.addEventListener("scroll", relayout, true);
+        window.addEventListener("resize", relayout);
+        return () => {
+            window.removeEventListener("scroll", relayout, true);
+            window.removeEventListener("resize", relayout);
+        };
+    }, [commentCardOpen]);
+
+    // The thread is created first and anchored only once the server has it, so a
+    // failed request leaves nothing behind on the sheet.
+    const createComment = useCallback(async (cellId, text) => {
+        const sheetName = activeSheetName;
+        const threadId = newThreadId();
+        const result = await createCommentThread({ threadId, sheetName, cellRef: cellId, text });
+        if (!result) return false;
+        updateSheets((next) => {
+            const sheet = next[sheetName];
+            if (!sheet) return;
+            if (!sheet.commentAnchors) sheet.commentAnchors = {};
+            sheet.commentAnchors[cellId] = threadId;
+        });
+        return true;
+    }, [activeSheetName, createCommentThread, updateSheets]);
+
+    const deleteComment = useCallback(async (cellId, threadId) => {
+        const sheetName = activeSheetName;
+        const result = await deleteCommentThread(threadId);
+        if (!result) return false;
+        updateSheets((next) => {
+            const sheet = next[sheetName];
+            if (sheet?.commentAnchors?.[cellId] === threadId) delete sheet.commentAnchors[cellId];
+        });
+        closeCommentCard();
+        gridContainerRef.current?.focus({ preventScroll: true });
+        return true;
+    }, [activeSheetName, deleteCommentThread, updateSheets, closeCommentCard]);
+
+    // Closed from inside the card (Escape, its close button), the keyboard goes back
+    // to the grid; closed by a click elsewhere, it stays wherever that click put it.
+    const handleCommentCardClose = useCallback((reason) => {
+        closeCommentCard();
+        if (reason !== "outside") gridContainerRef.current?.focus({ preventScroll: true });
+    }, [closeCommentCard]);
+
     // --- Floating media (images/video) ---
     // Anchored to whatever cell is active at insert time, like Excel dropping
     // a picture near the current selection. Position/size then live on the
@@ -2252,7 +2396,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const rowOffset = targetRow - src.minRow;
         const colOffset = targetCol - src.minCol;
 
-        mutateActiveCells((next) => {
+        if (isSheetReadOnly) return;
+        updateSheets((workbook) => {
+            const sheet = workbook[activeSheetName];
+            if (!sheet) return;
+            const next = sheet.cells;
             for (let r = 0; r < clipboard.height; r++) {
                 for (let c = 0; c < clipboard.width; c++) {
                     const sourceCell = clipboard.cellsByRelPos[`${r},${c}`];
@@ -2269,6 +2417,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         delete next[getCellId(src.minRow + r, src.minCol + c)];
                     }
                 }
+                // A move takes the cells' comments along (a copy leaves them where they are).
+                const anchors = plainOf(sheet.commentAnchors);
+                const moved = anchors && moveCommentAnchorBlock(anchors, src, rowOffset, colOffset);
+                if (moved && moved !== anchors) sheet.commentAnchors = moved;
             }
         });
 
@@ -2277,7 +2429,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             end: getCellId(targetRow + clipboard.height - 1, targetCol + clipboard.width - 1)
         });
         if (clipboard.type === "cut") setClipboard(null);
-    }, [clipboard, selectionBounds, mutateActiveCells]);
+    }, [clipboard, selectionBounds, updateSheets, activeSheetName, isSheetReadOnly, setSelection]);
 
     const activateFormatPainter = useCallback(() => {
         const { value, ...styles } = cells[activeCell] || {};
@@ -2326,6 +2478,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
         if (editingCell && editingCell !== cellId) commitEdit();
+        // Right-click opens the cell menu. On a cell that is already selected it
+        // leaves the selection alone, so the menu acts on what was selected.
+        if (e?.button === 2) {
+            const ref = parseCellRef(cellId);
+            const inSelection = !!ref && allSelectionBounds.some((b) => ref.row >= b.minRow && ref.row <= b.maxRow && ref.col >= b.minCol && ref.col <= b.maxCol);
+            if (!inSelection) {
+                setSelectedMediaId(null);
+                setActiveCell(cellId);
+                setSelection({ start: cellId, end: cellId });
+            }
+            return;
+        }
         if (formatPainterStyle) {
             mutateActiveCells((next) => {
                 const merged = { ...(next[cellId] || {}), ...formatPainterStyle };
@@ -2368,7 +2532,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         setActiveCell(cellId);
         setSelection({ start: cellId, end: cellId });
-    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference, selection, extraRanges, setSelection]);
+    }, [editingCell, editValue, commitEdit, formatPainterStyle, mutateActiveCells, insertFormulaReference, selection, extraRanges, setSelection, allSelectionBounds]);
 
     const handleFillHandleMouseDown = useCallback((e) => {
         e.stopPropagation();
@@ -2741,6 +2905,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
             const anchor = { ...(sheet.cells[rangeStart] || {}), align: "center", valign: sheet.cells[rangeStart]?.valign || "middle" };
             sheet.cells[rangeStart] = anchor;
+            // Likewise only the top-left cell is left to carry a comment.
+            const anchors = plainOf(sheet.commentAnchors);
+            const kept = anchors && mergeCommentAnchors(anchors, selectionBounds);
+            if (kept && kept !== anchors) sheet.commentAnchors = kept;
         });
         setActiveCell(rangeStart);
         setSelection({ start: rangeStart, end: rangeEnd });
@@ -3076,6 +3244,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const shifted = count < 0 && pos < at - count ? at : pos + count;
                 return { ...item, [key]: Math.max(0, Math.min(limit, shifted)) };
             });
+            const anchors = plainOf(sheet.commentAnchors);
+            const shiftedAnchors = anchors && shiftCommentAnchors(anchors, axis, at, count);
+            if (shiftedAnchors && shiftedAnchors !== anchors) sheet.commentAnchors = shiftedAnchors;
         });
 
         // Keep the cursor and selection inside the resized grid.
@@ -3127,9 +3298,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             for (let r = minRow; r <= maxRow; r++) {
                 const rowCells = {};
                 for (let c = minCol; c <= maxCol; c++) rowCells[c] = current[getCellId(r, c)];
-                rowsData.push(rowCells);
+                rowsData.push({ cells: rowCells, fromRow: r });
             }
-            const keyFor = (rowCells) => {
+            const keyFor = ({ cells: rowCells }) => {
                 const v = rowCells[sortCol]?.value;
                 const num = parseFloat(v);
                 return isNaN(num) ? String(v ?? "").toLowerCase() : num;
@@ -3139,14 +3310,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 if (typeof ka === "number" && typeof kb === "number") return direction === "asc" ? ka - kb : kb - ka;
                 return direction === "asc" ? String(ka).localeCompare(String(kb)) : String(kb).localeCompare(String(ka));
             });
-            rowsData.forEach((rowCells, i) => {
+            const movedRows = new Map(); // the row a moved row came from -> where it is now
+            rowsData.forEach(({ cells: rowCells, fromRow }, i) => {
                 const targetRow = minRow + i;
+                if (fromRow !== targetRow) movedRows.set(fromRow, targetRow);
                 for (let c = minCol; c <= maxCol; c++) {
                     const id = getCellId(targetRow, c);
                     if (rowCells[c] === current[id]) continue; // already where it belongs
                     if (rowCells[c]) sheet.cells[id] = rowCells[c]; else delete sheet.cells[id];
                 }
             });
+            // Comments stay with the row they were written on.
+            const anchors = plainOf(sheet.commentAnchors);
+            const sortedAnchors = anchors && reorderCommentAnchorRows(anchors, { minCol, maxCol }, movedRows);
+            if (sortedAnchors && sortedAnchors !== anchors) sheet.commentAnchors = sortedAnchors;
         });
     };
 
@@ -3184,7 +3361,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!sheets[name]) return;
         const newName = getDuplicateSheetName(name, Object.keys(sheets));
         updateSheets((next) => {
-            next[newName] = plainOf(next[name]);
+            // Comments aren't duplicated: a thread sits on one cell of one sheet.
+            const source = plainOf(next[name]);
+            next[newName] = source.commentAnchors && Object.keys(source.commentAnchors).length > 0
+                ? { ...source, commentAnchors: {} }
+                : source;
         });
         setActiveSheetName(newName);
         toast.success(`Sheet "${name}" duplicated as "${newName}"`);
@@ -3449,6 +3630,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 }
                 for (const m of sheet.merges || []) {
                     try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
+                }
+                // Comment threads go out as plain cell notes, one message per paragraph
+                // (the file format's threaded comments aren't something ExcelJS writes).
+                for (const [cellId, threadId] of Object.entries(sheet.commentAnchors || {})) {
+                    const note = threadToNoteText(commentThreads[threadId]);
+                    if (!note || !parseCellRef(cellId)) continue;
+                    try { worksheet.getCell(cellId).note = note; } catch { /* a cell Excel's writer rejects — skip the note rather than fail the whole export */ }
                 }
                 for (const r of sheet.hiddenRows || []) worksheet.getRow(r + 1).hidden = true;
                 for (const c of sheet.hiddenCols || []) worksheet.getColumn(c + 1).hidden = true;
@@ -4568,7 +4756,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 return;
             case "F2":
                 handled();
-                if (edit) startEditing(activeCell);
+                if (shift) openComment(activeCell); // Shift+F2: comment on this cell
+                else if (edit) startEditing(activeCell);
                 return;
             case "Escape":
                 handled();
@@ -4666,6 +4855,35 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             </div>
         );
     }
+
+    // Where the comment card goes: the commented cell's box in screen pixels, worked
+    // out the same way a mouse position is turned into a cell (offsets are unzoomed).
+    // Nothing while that cell is scrolled out from under the grid's viewport.
+    const commentCardView = (() => {
+        const el = gridContainerRef.current;
+        if (!commentCard || commentCard.sheet !== activeSheetName || !el) return null;
+        const { cellId } = commentCard;
+        const start = parseCellRef(cellId);
+        if (!start || start.row >= rowCount || start.col >= columnCount) return null;
+        const thread = commentThreadAt(cellId);
+        // No thread: the box to start one, which only an opened (not hovered) card shows.
+        if (!thread && !(commentCard.pinned && canStartComment)) return null;
+        const merge = mergeMap[cellId];
+        const end = (merge && parseCellRef(merge.end)) || start;
+        const maxRow = Math.min(end.row, rowCount - 1), maxCol = Math.min(end.col, columnCount - 1);
+        const box = el.getBoundingClientRect();
+        const rect = {
+            left: box.left + (colOffsets[start.col] - el.scrollLeft) * zoom,
+            right: box.left + (colOffsets[maxCol + 1] - el.scrollLeft) * zoom,
+            top: box.top + (rowOffsets[start.row] - el.scrollTop) * zoom,
+            bottom: box.top + (rowOffsets[maxRow + 1] - el.scrollTop) * zoom,
+        };
+        if (rect.bottom <= box.top + HEADER_ROW_HEIGHT * zoom || rect.top >= box.bottom
+            || rect.right <= box.left + ROW_HEADER_WIDTH * zoom || rect.left >= box.right) return null;
+        // Its place on the sheet reaches other people with the next save.
+        const savedAnchor = savedWorkbooksRef.current[meetingId]?.sheets?.[activeSheetName]?.commentAnchors?.[cellId];
+        return { cellId, thread, rect, label: merge ? `${merge.start}:${merge.end}` : cellId, unsaved: !!thread && savedAnchor !== thread.id };
+    })();
 
     return (
         <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Spreadsheet" icon={IconTable}>
@@ -5116,6 +5334,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <span className="text-xs">Table</span>
                     </RibbonBtn>
                 </RibbonGroup>
+                <RibbonGroup label="Comments">
+                    <RibbonBtn
+                        className="h-full flex-col px-2 gap-1"
+                        title={!meetingId ? "Comments are available on meeting sheets" : "Comment on the selected cell (Shift+F2)"}
+                        disabled={!meetingId}
+                        onClick={() => openComment(activeCell)}
+                    >
+                        <IconMessagePlus className="w-7 h-7 text-amber-600" strokeWidth={1.4} />
+                        <span className="text-xs">Comment</span>
+                    </RibbonBtn>
+                </RibbonGroup>
                 <RibbonGroup label="Illustrations">
                     <Popover open={imagePopoverOpen} onOpenChange={setImagePopoverOpen}>
                         <PopoverTrigger asChild>
@@ -5337,6 +5566,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
             <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")}>
             <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 min-w-0">
+                {/* One menu for the whole grid rather than one per cell: a right-click
+                    first selects the cell under it (handleCellMouseDown), and the menu
+                    then acts on the active cell. While a cell is being edited the
+                    browser's own menu (spelling, paste) is left alone. */}
+                <ContextMenu>
+                <ContextMenuTrigger asChild disabled={!!editingCell}>
                 <div
                     ref={gridContainerRef}
                     className="overflow-auto outline-none select-none"
@@ -5527,6 +5762,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         }
                                     }
                                     const formulaRefEdges = formulaRefBorderMap[cellId];
+                                    const commentThreadId = commentAnchors[cellId];
+                                    const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
                                     // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
                                     const filterTable = tables.find((t) => {
                                         if (!t.filtersEnabled) return false;
@@ -5582,6 +5819,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                             )}
                                             {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
                                             {formulaRefEdges && <SelectionRangeBorder {...formulaRefEdges} />}
+                                            {/* This cell has a comment: a corner triangle, nothing more.
+                                                The thread opens in the one shared card. */}
+                                            {commentThread && (
+                                                <span
+                                                    className={cn(
+                                                        "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
+                                                        commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
+                                                    )}
+                                                />
+                                            )}
                                             {filterTable && (
                                                 <Popover open={isFilterOpenHere} onOpenChange={(open) => { if (!open) { setFilterPopover(null); setFilterDraft(null); } }}>
                                                     <PopoverTrigger asChild>
@@ -5691,6 +5938,62 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 </table>
                 </div>
                 </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent
+                    className="w-56"
+                    onCloseAutoFocus={(e) => {
+                        // A comment is opened here, once the menu has let go of the
+                        // keyboard, so that the card's text box can take it — and the
+                        // grid isn't handed it back in the meantime.
+                        const cellId = menuCommentCell.current;
+                        if (!cellId) return;
+                        menuCommentCell.current = null;
+                        if (openComment(cellId)) e.preventDefault();
+                    }}
+                >
+                    {!readOnly && (
+                        <ContextMenuItem onClick={() => copySelection("cut")} className="cursor-pointer">
+                            <IconScissors className="w-3.5 h-3.5" /> Cut
+                        </ContextMenuItem>
+                    )}
+                    <ContextMenuItem onClick={() => copySelection("copy")} className="cursor-pointer">
+                        <IconCopy className="w-3.5 h-3.5" /> Copy
+                    </ContextMenuItem>
+                    {!readOnly && (
+                        <ContextMenuItem onClick={handlePaste} disabled={!clipboard} className="cursor-pointer">
+                            <IconClipboard className="w-3.5 h-3.5" /> Paste
+                        </ContextMenuItem>
+                    )}
+                    {!!meetingId && (() => {
+                        const cellId = resolveToAnchor(activeCell);
+                        const thread = commentThreadAt(cellId);
+                        const open = () => { menuCommentCell.current = cellId; };
+                        if (!thread) {
+                            return (
+                                <>
+                                    <ContextMenuSeparator />
+                                    <ContextMenuItem onClick={open} disabled={!canStartComment} className="cursor-pointer">
+                                        <IconMessagePlus className="w-3.5 h-3.5" /> New Comment
+                                    </ContextMenuItem>
+                                </>
+                            );
+                        }
+                        const resolved = thread.status === "resolved";
+                        return (
+                            <>
+                                <ContextMenuSeparator />
+                                <ContextMenuItem onClick={open} className="cursor-pointer">
+                                    <IconMessage className="w-3.5 h-3.5" /> Open Comment
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => comments.setStatus(thread.id, resolved ? "open" : "resolved")} className="cursor-pointer">
+                                    {resolved ? <IconArrowBackUp className="w-3.5 h-3.5" /> : <IconCheck className="w-3.5 h-3.5" />}
+                                    {resolved ? "Reopen Comment" : "Resolve Comment"}
+                                </ContextMenuItem>
+                            </>
+                        );
+                    })()}
+                </ContextMenuContent>
+                </ContextMenu>
             </div>
             {pivotConfig && pivotPanelOpen && (
                 <PivotPanel
@@ -5935,6 +6238,28 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 selectionRanges={allSelectionBounds.map(rangeOfBounds)}
                 onCommit={commitConditionalRules}
             />
+            {commentCardView && (
+                <CellCommentCard
+                    rect={commentCardView.rect}
+                    cellLabel={commentCardView.label}
+                    thread={commentCardView.thread}
+                    pinned={commentCard.pinned}
+                    unsaved={commentCardView.unsaved}
+                    currentUserId={authUser?.id}
+                    isAdmin={isCommentAdmin}
+                    canRemoveThread={canStartComment}
+                    onCreate={(text) => createComment(commentCardView.cellId, text)}
+                    onReply={(text) => comments.addReply(commentCardView.thread.id, text)}
+                    onSetStatus={(status) => comments.setStatus(commentCardView.thread.id, status)}
+                    onEditMessage={(messageId, text) => comments.editMessage(commentCardView.thread.id, messageId, text)}
+                    onDeleteMessage={(messageId) => comments.deleteMessage(commentCardView.thread.id, messageId)}
+                    onDeleteThread={() => deleteComment(commentCardView.cellId, commentCardView.thread.id)}
+                    onClose={handleCommentCardClose}
+                    onPin={pinCommentCard}
+                    onPointerEnter={holdCommentCard}
+                    onPointerLeave={releaseCommentCard}
+                />
+            )}
         </div>
         </FullScreenFrame>
     );

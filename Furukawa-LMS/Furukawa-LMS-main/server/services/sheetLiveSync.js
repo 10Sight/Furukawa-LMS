@@ -169,4 +169,12 @@ export const broadcastReplaced = (meetingId, { version, user, clientId }) =>
         version, userId: user?.id ?? null, userName: displayName(user), clientId: cleanClientId(clientId)
     });
 
+/**
+ * A comment thread changed (`thread`, whole, as it now is) or was removed (`threadId`).
+ * Comments are written through their own endpoints and never wait for a save, so this
+ * carries no version; it goes to everyone with the meeting open, its author included.
+ */
+export const broadcastComment = (meetingId, { thread = null, threadId = null }) =>
+    announce("sheet:comment", meetingId, thread ? { thread } : { threadId, deleted: true });
+
 export { isMeetingRoom } from "../utils/sheetLiveProtocol.js";

@@ -7,8 +7,11 @@ import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import FmeDashboardPage from '@components/shared/FmeDashboardPage';
 import { columnName, editLPACell, getLPAPDCASource, importLPAWorkbook } from './lpaWorkbook';
-import AssemblySheet, { isAssemblyCheckSheet } from '../../components/lpa/AssemblySheet';
+import AssemblySheet from '../../components/lpa/AssemblySheet';
+import { isAssemblyCheckSheet } from '../../components/lpa/assemblySheetUtils';
+import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
+import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord } from './ccTemplate';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -31,7 +34,7 @@ export default function LpaPage({ viewContext }) {
   const [zoom, setZoom] = useState(100);
   const [pdcaSource, setPdcaSource] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
-  const [selectedUnit, setSelectedUnit] = useState('Bawal');
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [activeSection, setActiveSection] = useState('assembly');
   const [searchQuery, setSearchQuery] = useState('');
   const uploadSection = useRef('assembly');
@@ -73,6 +76,11 @@ export default function LpaPage({ viewContext }) {
   }, [editor, dirty, draftKey]);
 
   const openSheet = async (record, index) => {
+    const needsTemplateUpgrade = Boolean(record._needsTemplateUpgrade);
+    if (needsTemplateUpgrade) {
+      record = { ...record };
+      delete record._needsTemplateUpgrade;
+    }
     if (!record.id) {
       if (requestInFlight.current) return;
       requestInFlight.current = true;
@@ -89,16 +97,19 @@ export default function LpaPage({ viewContext }) {
     try {
       const raw = localStorage.getItem(draftKey(record.id));
       if (raw && window.confirm('An unsaved draft exists for this workbook. Recover it?')) {
-        const draft = JSON.parse(raw);
+        const draftRecord = upgradeCcTemplateRecord(JSON.parse(raw));
+        const draft = { ...draftRecord };
+        delete draft._needsTemplateUpgrade;
         if (draft.id === record.id && draft.section === record.section && Array.isArray(draft.sheets)) {
           if (draft.version !== record.version) {
             setMessage({ error: true, text: 'The saved workbook changed after this draft. The draft is retained locally; open the latest saved workbook before applying your edits.' });
+            setDirty(false);
           } else { next = draft; setDirty(true); }
         }
-      } else setDirty(false);
-    } catch { setDirty(false); }
+      } else setDirty(needsTemplateUpgrade);
+    } catch { setDirty(needsTemplateUpgrade); }
     setSheetIndex(index);
-    setZoom(100);
+    setZoom(150);
     setEditor(next);
   };
   const saveEditor = async () => {
@@ -136,6 +147,9 @@ export default function LpaPage({ viewContext }) {
     setDirty(false);
   };
   const upload = async workbook => {
+    if (!selectedUnit) { setMessage({ error: true, text: 'Please select a unit before uploading a workbook.' }); return; }
+    if (workbook.unit && workbook.unit !== selectedUnit) { setMessage({ error: true, text: `Select ${workbook.unit} to retry this workbook upload.` }); return; }
+    workbook = { ...workbook, unit: workbook.unit || selectedUnit };
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setBusy(true);
@@ -149,7 +163,7 @@ export default function LpaPage({ viewContext }) {
       setDirty(false);
       setEditor(saved);
       setSheetIndex(0);
-      setZoom(100);
+      setZoom(150);
       setMessage({ text: 'Excel uploaded and saved. Existing workbooks were preserved.' });
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
     finally { requestInFlight.current = false; setBusy(false); }
@@ -159,6 +173,7 @@ export default function LpaPage({ viewContext }) {
     event.target.value = '';
     if (!file) return;
     try {
+      if (!selectedUnit) throw new Error('Please select a unit before uploading a workbook.');
       if (!/\.xlsx?$/i.test(file.name)) throw new Error('Please upload an .xlsx or .xls Excel file.');
       if (file.size > 20 * 1024 * 1024) throw new Error('The Excel file must be smaller than 20 MB.');
       const imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit };
@@ -166,7 +181,12 @@ export default function LpaPage({ viewContext }) {
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
   };
   const sheet = editor?.sheets?.[sheetIndex];
-  const displayRecords = records.some(record => record.section === 'assembly') ? records : [{ ...assemblyTemplate, unit: 'Bawal' }];
+  const matchingCcTemplate = records.find(record => record.section === 'cc' && record.unit === selectedUnit && record.name === ccTemplate.name);
+  const displayRecords = !selectedUnit ? [] : activeSection === 'assembly'
+    ? (records.some(record => record.section === 'assembly') ? records : [...records, { ...assemblyTemplate, unit: 'Bawal' }])
+    : matchingCcTemplate
+      ? records.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
+      : [...records, { ...ccTemplate, unit: selectedUnit }];
   const visibleRecords = displayRecords.filter(record => record.unit === selectedUnit && record.section === activeSection && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
   const exportAllRecords = () => {
     const rows = records.flatMap(record => record.sheets.map(current => ({
@@ -216,6 +236,10 @@ export default function LpaPage({ viewContext }) {
     <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
       {editor.section === 'assembly' && isAssemblyCheckSheet(sheet) ? <div style={{ zoom: `${zoom}%` }}>
         <AssemblySheet sheet={sheet} disabled={busy} onChange={changeCell} />
+      </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
+        <div style={{ zoom: `${zoom}%` }}>
+          <CcSheet sheet={sheet} disabled={busy} onChange={changeCell} />
+        </div>
       </div> : <div style={{ zoom: `${zoom}%` }} className="min-w-full w-max">
         <table className="border-collapse text-xs table-fixed bg-white" aria-label={`${sheet.name} editable LPA worksheet`}>
           <colgroup><col style={{ width: 40 }} />{Array.from({ length: sheet.columnCount }, (_, c) => <col key={c} style={{ width: Math.max(100, Math.min(380, (sheet.columns?.[c]?.wch || 20) * 7)) }} />)}</colgroup>
@@ -239,18 +263,19 @@ export default function LpaPage({ viewContext }) {
   </div>;
 
   return <div className="min-h-[calc(100vh-6rem)] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-slate-800">
-    <div className="min-h-[68vh] rounded-xl bg-slate-100/80 p-6 space-y-6">
+    <div className="min-h-[68vh] p-6 space-y-6">
     <div className="flex justify-end"><button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export All Records</button></div>
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <label className="relative inline-flex items-center"><select value={selectedUnit} onChange={event => setSelectedUnit(event.target.value)} className={`${button} appearance-none pr-9`} aria-label="Select unit">{UNITS.map(unit => <option key={unit}>{unit}</option>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3" /></label>
+      <label className="relative inline-flex items-center"><select value={selectedUnit} onChange={event => setSelectedUnit(event.target.value)} className={`${button} appearance-none pr-9`} aria-label="Select unit"><option value="">Select unit</option>{UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3" /></label>
     </div>
     <div className="inline-flex flex-wrap gap-1 rounded-2xl bg-white p-2 shadow-sm" role="tablist" aria-label="LPA sections">{SECTIONS.map(section => <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} onClick={() => setActiveSection(section.id)} className={`rounded-xl px-6 py-3 text-sm font-semibold ${activeSection === section.id ? 'border border-slate-200 bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>{section.label}</button>)}</div>
     {status}
-    {pendingUpload && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
+    {pendingUpload && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy || !selectedUnit || (pendingUpload.unit && pendingUpload.unit !== selectedUnit)} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
     <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />
     {loading ? <p role="status" className="text-sm text-slate-500">Loading saved LPA workbooks…</p> : <section className="rounded-2xl bg-white p-4 shadow-sm space-y-5">
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3"><label className="relative min-w-[240px] flex-1"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Search by form or worksheet name…" className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400" /></label><button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export Excel</button><button type="button" disabled={busy} onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }} className={primary}><Upload size={16} />Upload Excel</button><button type="button" onClick={() => setPdcaSource({ category: activeSection, workbookId: null, worksheet: '' })} className={button}><Repeat size={16} />PDCA</button></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3 text-left">S.No</th><th className="px-4 py-3 text-left">Form</th><th className="px-4 py-3 text-left">Worksheet</th><th className="px-4 py-3 text-left">Unit</th><th className="px-4 py-3 text-left">Rows</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleRecords.flatMap((record, recordIndex) => record.sheets.map((current, index) => <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50"><td className="px-4 py-4 text-slate-500">{recordIndex + 1}</td><td className="px-4 py-4 font-semibold text-blue-700">{record.name}</td><td className="px-4 py-4">{current.name}</td><td className="px-4 py-4">{record.unit || 'Bawal'}</td><td className="px-4 py-4">{current.rows.length}</td><td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={() => openSheet(record, index)} className={button}>Open</button><button type="button" onClick={() => setPdcaSource(getLPAPDCASource(record, index))} className={button}><Repeat size={15} />PDCA</button>{record.id && <button type="button" disabled={busy} onClick={() => deleteWorkbook(record)} className={`${button} border-red-200 text-red-700 hover:bg-red-50`} title="Delete form"><Trash2 size={15} /></button>}</div></td></tr>))}</tbody></table>{visibleRecords.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit}. Upload an Excel workbook to get started.</p>}</div>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3"><label className="relative min-w-[240px] flex-1"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Search by form or worksheet name…" className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400" /></label><button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export Excel</button><button type="button" disabled={busy || !selectedUnit} onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }} className={primary}><Upload size={16} />Upload Excel</button><button type="button" disabled={!selectedUnit} onClick={() => setPdcaSource({ category: activeSection, workbookId: null, worksheet: '' })} className={button}><Repeat size={16} />PDCA</button></div>
+      {!selectedUnit && <p className="p-8 text-center text-sm text-slate-500">Select a unit to view its LPA forms.</p>}
+      <div className={`overflow-x-auto ${!selectedUnit ? 'hidden' : ''}`}><table className="w-full min-w-[720px] text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3 text-left">S.No</th><th className="px-4 py-3 text-left">Form</th><th className="px-4 py-3 text-left">Worksheet</th><th className="px-4 py-3 text-left">Unit</th><th className="px-4 py-3 text-left">Rows</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleRecords.flatMap((record, recordIndex) => record.sheets.map((current, index) => <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50"><td className="px-4 py-4 text-slate-500">{recordIndex + 1}</td><td className="px-4 py-4 font-semibold text-blue-700">{record.name}</td><td className="px-4 py-4">{current.name}</td><td className="px-4 py-4">{record.unit || 'Bawal'}</td><td className="px-4 py-4">{current.rows.length}</td><td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={() => openSheet(record, index)} className={button}>Open</button><button type="button" onClick={() => setPdcaSource(getLPAPDCASource(record, index))} className={button}><Repeat size={15} />PDCA</button>{record.id && <button type="button" disabled={busy} onClick={() => deleteWorkbook(record)} className={`${button} border-red-200 text-red-700 hover:bg-red-50`} title="Delete form"><Trash2 size={15} /></button>}</div></td></tr>))}</tbody></table>{selectedUnit && visibleRecords.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit}. Upload an Excel workbook to get started.</p>}</div>
       <p className="text-xs text-slate-500">Supports .xlsx and .xls. Uploaded forms are saved separately.</p>
     </section>}
     {!loading && message?.error && <button type="button" onClick={load} className={button}>Reload Saved Workbooks</button>}

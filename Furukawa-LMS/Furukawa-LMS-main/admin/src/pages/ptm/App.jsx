@@ -1,5 +1,5 @@
 import { useSavedRecords, useFormAutosave } from '../../components/shared/formPersistence';
-import { confirmFormDeletion } from '../../components/shared/confirmFormDeletion';
+import FormDeletionDialog from '../../components/shared/FormDeletionDialog';
 import FormZoomControls from '../../components/shared/FormZoomControls';
 import React, { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import Sidebar from '../../components/ptm/PTM/Sidebar';
@@ -102,6 +102,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   /* ── 2. PTM Dashboard List State ── */
   const [listItems, setListItems] = useSavedRecords('ptm_dashboard_items', initialPTMData);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
 
   const [activeTab, setActiveTab] = useState(() => getStoredJson('ptm_active_scope', 'Company'));
   useEffect(() => { try { localStorage.setItem('ptm_active_scope', JSON.stringify(activeTab)); } catch { /* Form saving reports storage failures. */ } }, [activeTab]);
@@ -270,12 +272,27 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   const handleDeleteListItem = (id) => {
     const item = listItems.find(record => String(record.id) === String(id));
-    if (!item || !confirmFormDeletion(item.topic || item.title || `PTM form ${id}`)) return;
+    if (!item) return;
+    setDeleteError('');
+    setDeleteTarget(item);
+  };
+
+  const confirmDeleteListItem = () => {
+    if (!deleteTarget) return;
     try {
-      setListItems(items => items.filter(record => String(record.id) !== String(id)));
+      const stored = localStorage.getItem('ptm_dashboard_items');
+      const latestItems = stored === null ? initialPTMData : JSON.parse(stored);
+      if (!Array.isArray(latestItems)) throw new Error('Saved PTM records could not be read.');
+      const targetIndex = latestItems.findIndex(record => String(record.id) === String(deleteTarget.id));
+      if (targetIndex < 0) throw new Error('This PTM form no longer exists. Refresh the list and try again.');
+      const nextItems = latestItems.filter((_, index) => index !== targetIndex);
+      setListItems(nextItems);
+      setCurrentPage(page => Math.min(page, Math.max(1, Math.ceil((filteredListItems.length - 1) / itemsPerPage))));
+      setDeleteTarget(null);
+      setDeleteError('');
       showToast('✓ PTM item deleted');
     } catch (error) {
-      showToast(error?.message || 'PTM item could not be deleted.');
+      setDeleteError(error?.message || 'PTM form could not be deleted. Please try again.');
     }
   };
 
@@ -474,6 +491,12 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onAdd={handleAddListItem}
+      />
+      <FormDeletionDialog
+        formName={deleteTarget?.topic || deleteTarget?.title || (deleteTarget ? `PTM form ${deleteTarget.id}` : '')}
+        error={deleteError}
+        onCancel={() => { setDeleteTarget(null); setDeleteError(''); }}
+        onDelete={confirmDeleteListItem}
       />
 
       {/* Left Sidebar */}

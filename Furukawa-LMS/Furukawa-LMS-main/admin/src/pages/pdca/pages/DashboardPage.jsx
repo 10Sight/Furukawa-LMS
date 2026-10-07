@@ -10,6 +10,7 @@ import Pagination from '@components/pdca/Pagination';
 import AddPDCAModal from '@components/pdca/AddPDCAModal';
 import AddCFTModal from '@components/pdca/AddCFTModal';
 import AddMemberModal from '@components/pdca/AddMemberModal';
+import FormDeletionDialog from '@components/shared/FormDeletionDialog';
 import { usePDCA } from '../context/PDCAContext';
 
 export default function DashboardPage() {
@@ -18,7 +19,7 @@ export default function DashboardPage() {
 
   const lpaSource = userContext.lpaSource;
   const [activeTab, setActiveTab] = useState(() => readSaved('pdca_list_filters', {}).scope || 'Company');
-  const [selectedPlant, setSelectedPlant] = useState(() => readSaved('pdca_list_filters', {}).plant || 'Unit');
+  const [selectedPlant, setSelectedPlant] = useState('Unit');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -26,6 +27,8 @@ export default function DashboardPage() {
   const [modalMode, setModalMode] = useState(null); // 'add' or editData object
   const [isCFTModalOpen, setIsCFTModalOpen] = useState(false);
   const [targetItemForMemberModal, setTargetItemForMemberModal] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
 
   const itemsPerPage = 8;
 
@@ -52,6 +55,23 @@ export default function DashboardPage() {
   const updatePDCA = item => {
     handleUpdatePDCA(item);
     revealSavedForm(item);
+  };
+  const requestDeletePDCA = id => {
+    const item = data.find(record => String(record.id) === String(id));
+    if (!item) return;
+    setDeleteError('');
+    setDeleteTarget(item);
+  };
+  const confirmDeletePDCA = () => {
+    if (!deleteTarget) return;
+    try {
+      handleDeletePDCA(deleteTarget.id);
+      setCurrentPage(page => Math.min(page, Math.max(1, Math.ceil((filteredData.length - 1) / itemsPerPage))));
+      setDeleteTarget(null);
+      setDeleteError('');
+    } catch (error) {
+      setDeleteError(error?.message || 'PDCA form could not be deleted. Please try again.');
+    }
   };
 
   const paginatedData = useMemo(() => {
@@ -264,7 +284,7 @@ export default function DashboardPage() {
           selectedPlant={selectedPlant}
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
-          onDelete={handleDeletePDCA}
+          onDelete={requestDeletePDCA}
           onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={(item) => setModalMode(item)}
@@ -277,7 +297,7 @@ export default function DashboardPage() {
           selectedPlant={selectedPlant}
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
-          onDelete={handleDeletePDCA}
+          onDelete={requestDeletePDCA}
           onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
         />
@@ -318,6 +338,12 @@ export default function DashboardPage() {
         targetItem={targetItemForMemberModal}
         onClose={() => setTargetItemForMemberModal(null)}
         onSaveMembers={handleSaveMembers}
+      />
+      <FormDeletionDialog
+        formName={deleteTarget?.topic || deleteTarget?.title || (deleteTarget ? `PDCA form ${deleteTarget.id}` : '')}
+        error={deleteError}
+        onCancel={() => { setDeleteTarget(null); setDeleteError(''); }}
+        onDelete={confirmDeletePDCA}
       />
     </div>
   );

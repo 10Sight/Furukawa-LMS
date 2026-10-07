@@ -1545,9 +1545,9 @@ export default function PDCASheet({ topic, onBack }) {
           </div>{/* end main table wrapper */}
 
           {/* ── ACTIONS Side Panel ── */}
-          <div className="flex-shrink-0 w-[40px] border-l-2 border-[#B0BEC5] bg-[#F8FAFC] flex flex-col">
+          <div className="flex-shrink-0 w-[40px] bg-[#F8FAFC] flex flex-col">
             {/* Panel Header */}
-            <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white border-b-2 border-[#B0BEC5] px-2 py-[9px] flex items-center justify-center gap-1.5 select-none">
+            <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white px-2 py-[9px] flex items-center justify-center gap-1.5 select-none">
 
 
             </div>

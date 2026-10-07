@@ -1,5 +1,4 @@
 import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY } from '../data/pdcaStore';
-import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { initialPDCAData } from '../data/mockData';
 
@@ -53,14 +52,13 @@ export function PDCAProvider({ children }) {
   };
 
   const handleDeletePDCA = (id) => {
-    const item = data.find(record => String(record.id) === String(id));
-    if (!item || !confirmFormDeletion(item.topic || item.title || `PDCA form ${id}`)) return;
-    try {
-      setData(prev => prev.filter(record => String(record.id) !== String(id)));
-      showToast(`Deleted ${id}`);
-    } catch (error) {
-      showToast(error?.message || 'PDCA item could not be deleted.');
-    }
+    const nextData = setData(prev => {
+      const targetIndex = prev.findIndex(record => String(record.id) === String(id));
+      if (targetIndex < 0) throw new Error('This PDCA form no longer exists. Refresh the list and try again.');
+      return prev.filter((_, index) => index !== targetIndex);
+    });
+    showToast(`Deleted ${id}`);
+    return nextData;
   };
 
   const handleSaveMembers = (itemId, members) => {

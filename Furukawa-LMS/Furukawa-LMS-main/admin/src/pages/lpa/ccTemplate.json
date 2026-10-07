@@ -1,0 +1,4789 @@
+{
+  "section": "cc",
+  "name": "LPA CHECK SHEET LEVEL-3 C&C QA/Prod.",
+  "sheets": [
+    {
+      "name": "C&C",
+      "columnCount": 9,
+      "rows": [
+        [
+          {
+            "value": "LPA CHECK SHEET LEVEL-3 C&C QA/Prod.",
+            "formatted": "LPA CHECK SHEET LEVEL-3 C&C QA/Prod.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Date :-01.10.26",
+            "formatted": "Date :-01.10.26",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": ".",
+            "formatted": ".",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Focus",
+            "formatted": "Focus",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "CHECKS POINTS",
+            "formatted": "CHECKS POINTS",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Section",
+            "formatted": "Section",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Marks",
+            "formatted": "Marks",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "Observation",
+            "formatted": "Observation",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "Score",
+            "formatted": "Score",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Work Station Questions",
+            "formatted": "Work Station Questions",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is the operator working on specific workstation having specific authorization.",
+            "formatted": "Is the operator working on specific workstation having specific authorization.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "C&C",
+            "formatted": "C&C",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H5=\"O\",G5,IF(H5=\"△\",G5,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Charging area condition(5S, looping, cup attachment, ckt as per location)",
+            "formatted": "Charging area condition(5S, looping, cup attachment, ckt as per location)",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "△",
+            "formatted": "△",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H6=\"O\",G6,IF(H6=\"△\",G6,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is the operator following standard operating procedure.",
+            "formatted": "Is the operator following standard operating procedure.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H7=\"O\",G7,IF(H7=\"△\",G7,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 4,
+            "formatted": "4",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is the attendance board and hourly production board updated.",
+            "formatted": "Is the attendance board and hourly production board updated.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "formula": "IF(H8=\"O\",G8,IF(H8=\"△\",G8,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 5,
+            "formatted": "5",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is the attendance board and hourly production board updated.",
+            "formatted": "Is the attendance board and hourly production board updated.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H9=\"O\",G9,IF(H9=\"△\",G9,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 6,
+            "formatted": "6",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is SSGM terminal circuits having specific blue cup usage.",
+            "formatted": "Is SSGM terminal circuits having specific blue cup usage.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H10=\"O\",G10,IF(H10=\"△\",G10,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 7,
+            "formatted": "7",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is working ergonomics is OK for every person on shop floor.",
+            "formatted": "Is working ergonomics is OK for every person on shop floor.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H11=\"O\",G11,IF(H11=\"△\",G11,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 8,
+            "formatted": "8",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check NC Product handling understanding of concerned incharge.",
+            "formatted": "Check NC Product handling understanding of concerned incharge.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "△",
+            "formatted": "△",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H12=\"O\",G12,IF(H12=\"△\",G12,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 9,
+            "formatted": "9",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check Error proofing status on inspection process ",
+            "formatted": "Check Error proofing status on inspection process ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H13=\"O\",G13,IF(H13=\"△\",G13,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 10,
+            "formatted": "10",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check Online SFG confirmation status.",
+            "formatted": "Check Online SFG confirmation status.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H14=\"O\",G14,IF(H14=\"△\",G14,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 11,
+            "formatted": "11",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Daily assy lot status",
+            "formatted": "Daily assy lot status",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H15=\"O\",G15,IF(H15=\"△\",G15,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 12,
+            "formatted": "12",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "SPD, Events lot status",
+            "formatted": "SPD, Events lot status",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H16=\"O\",G16,IF(H16=\"△\",G16,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 13,
+            "formatted": "13",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Manufacturing System Focused",
+            "formatted": "Manufacturing System Focused",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check Wire & termnal condition in rack",
+            "formatted": "Check Wire & termnal condition in rack",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H17=\"O\",G17,IF(H17=\"△\",G17,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 14,
+            "formatted": "14",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Skill matrix of associates available and associates are working at defined station .",
+            "formatted": "Skill matrix of associates available and associates are working at defined station .",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H18=\"O\",G18,IF(H18=\"△\",G18,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 15,
+            "formatted": "15",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Availability of cloth, broom cleaning equipment on 5S trolley.",
+            "formatted": "Availability of cloth, broom cleaning equipment on 5S trolley.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "formula": "IF(H19=\"O\",G19,IF(H19=\"△\",G19,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 16,
+            "formatted": "16",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Rework to be done as per NC product handling & hanger should be clean or OK i.e harness and circuits not overlaoded on red hanger ",
+            "formatted": "Rework to be done as per NC product handling & hanger should be clean or OK i.e harness and circuits not overlaoded on red hanger ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H20=\"O\",G20,IF(H20=\"△\",G20,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 17,
+            "formatted": "17",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Setup Work instructions are available on shop floor for inspectors ?",
+            "formatted": "Setup Work instructions are available on shop floor for inspectors ?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "QA",
+            "formatted": "QA",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H21=\"O\",G21,IF(H21=\"△\",G21,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 18,
+            "formatted": "18",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check all setup on machine are checked by quality inspector & setup inspection format filled & 100% visual inspection of circuits is done by quality inspector with proper stamp/sign on Kanban?",
+            "formatted": "Check all setup on machine are checked by quality inspector & setup inspection format filled & 100% visual inspection of circuits is done by quality inspector with proper stamp/sign on Kanban?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H22=\"O\",G22,IF(H22=\"△\",G22,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 19,
+            "formatted": "19",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "is the 5M filled & setup done by QC inspector as per applicable 5M checksheet?",
+            "formatted": "is the 5M filled & setup done by QC inspector as per applicable 5M checksheet?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "△",
+            "formatted": "△",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H23=\"O\",G23,IF(H23=\"△\",G23,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 20,
+            "formatted": "20",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check Poka-yoke checksheet is filled by Leader & action against NG poka-yoke if any?",
+            "formatted": "Check Poka-yoke checksheet is filled by Leader & action against NG poka-yoke if any?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H24=\"O\",G24,IF(H24=\"△\",G24,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 21,
+            "formatted": "21",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "NC parts handling procedure is available, known, understood and followed by the operator & inspectors ",
+            "formatted": "NC parts handling procedure is available, known, understood and followed by the operator & inspectors ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H25=\"O\",G25,IF(H25=\"△\",G25,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 22,
+            "formatted": "22",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Work Station Questions",
+            "formatted": "Work Station Questions",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Inspector & Operator is trained as per training plan and all training records are available and Skill Up gradation is carried out at regular interval ( As per procedure)",
+            "formatted": "Inspector & Operator is trained as per training plan and all training records are available and Skill Up gradation is carried out at regular interval ( As per procedure)",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Common",
+            "formatted": "Common",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H26=\"O\",G26,IF(H26=\"△\",G26,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 23,
+            "formatted": "23",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Is the MSA plan available & adherence as per plan ?",
+            "formatted": "Is the MSA plan available & adherence as per plan ?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H27=\"O\",G27,IF(H27=\"△\",G27,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 24,
+            "formatted": "24",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Are the SPC formats on machine are filled daily wise on machine ?",
+            "formatted": "Are the SPC formats on machine are filled daily wise on machine ?",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "△",
+            "formatted": "△",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H28=\"O\",G28,IF(H28=\"△\",G28,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 25,
+            "formatted": "25",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check BLO value should be 50 on Komax 252 & 253 & ZONE Parameters should be as per Standard & All TRD Sensor should be in working condition (Strip sensor & CFM Sensor)",
+            "formatted": "Check BLO value should be 50 on Komax 252 & 253 & ZONE Parameters should be as per Standard & All TRD Sensor should be in working condition (Strip sensor & CFM Sensor)",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H29=\"O\",G29,IF(H29=\"△\",G29,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 26,
+            "formatted": "26",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Circuit handling should be appropriate on shop floor",
+            "formatted": "Circuit handling should be appropriate on shop floor",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "formula": "IF(H30=\"O\",G30,IF(H30=\"△\",G30,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 27,
+            "formatted": "27",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check applicator cleaning process adherence on shop floor during loading/unloading of applicators on machine.",
+            "formatted": "Check applicator cleaning process adherence on shop floor during loading/unloading of applicators on machine.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H31=\"O\",G31,IF(H31=\"△\",G31,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 28,
+            "formatted": "28",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check last Customer concerns are known to inspectors & operators and their action implementation",
+            "formatted": "Check last Customer concerns are known to inspectors & operators and their action implementation",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "formula": "IF(H32=\"O\",G32,IF(H32=\"△\",G32,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 29,
+            "formatted": "29",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Unique Quality Focused ",
+            "formatted": "Unique Quality Focused ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check 5S is maintained on shop floor",
+            "formatted": "Check 5S is maintained on shop floor",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "×",
+            "formatted": "×",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "0",
+            "formatted": "0",
+            "type": "s",
+            "formula": "IF(H33=\"O\",G33,IF(H33=\"△\",G33,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 30,
+            "formatted": "30",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check Inspectors are aware about 5S & Safety",
+            "formatted": "Check Inspectors are aware about 5S & Safety",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "formula": "IF(H34=\"O\",G34,IF(H34=\"△\",G34,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": 31,
+            "formatted": "31",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Check correct kanban colour for sikakari.",
+            "formatted": "Check correct kanban colour for sikakari.",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "O",
+            "formatted": "O",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "formula": "IF(H35=\"O\",G35,IF(H35=\"△\",G35,\"0\"))",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 69,
+            "formatted": "69",
+            "type": "n",
+            "formula": "SUM(G5:G35)",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 48,
+            "formatted": "48",
+            "type": "n",
+            "formula": "SUM(I5:I34)",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "%",
+            "formatted": "%",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 69.56521739130434,
+            "formatted": "70",
+            "type": "n",
+            "formula": "I36/G36*100",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "rgb": "FFFF00"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "rgb": "FFFF00"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "rgb": "FFFF00"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          }
+        ],
+        [
+          {
+            "value": "Legends",
+            "formatted": "Legends",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "During audit",
+            "formatted": "During audit",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Score Criteria ",
+            "formatted": "Score Criteria ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Requirement met \r\n",
+            "formatted": "Requirement met \r\n",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Ο",
+            "formatted": "Ο",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Ο",
+            "formatted": "Ο",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "If requirment meet &  corrected during the audit",
+            "formatted": "If requirment meet &  corrected during the audit",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Requirement not met corrected during the audit",
+            "formatted": "Requirement not met corrected during the audit",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Δ",
+            "formatted": "Δ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "X",
+            "formatted": "X",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "If requirment  not meet &  system not adhere ",
+            "formatted": "If requirment  not meet &  system not adhere ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Requirement not met not corrected during the audit",
+            "formatted": "Requirement not met not corrected during the audit",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Χ",
+            "formatted": "Χ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Χ",
+            "formatted": "Χ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 3,
+            "formatted": "3",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Critical or direct impact on quality ",
+            "formatted": "Critical or direct impact on quality ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Not Applicable",
+            "formatted": "Not Applicable",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "NA",
+            "formatted": "NA",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "NA",
+            "formatted": "NA",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 2,
+            "formatted": "2",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "No impact on product quality",
+            "formatted": "No impact on product quality",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "Horizontal development ",
+            "formatted": "Horizontal development ",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "NA",
+            "formatted": "NA",
+            "type": "s",
+            "style": {
+              "patternType": "solid",
+              "fgColor": {
+                "theme": 2,
+                "rgb": "E7E6E6"
+              },
+              "bgColor": {
+                "indexed": 64
+              }
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": 1,
+            "formatted": "1",
+            "type": "n",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Not impact on product but system requirment",
+            "formatted": "Not impact on product but system requirment",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ],
+        [
+          {
+            "value": "FRM-WH-QA-246                                                                                                                                                                                     Rev. No:-03               ",
+            "formatted": "FRM-WH-QA-246                                                                                                                                                                                     Rev. No:-03               ",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "Rev.Date:-.09.08.23",
+            "formatted": "Rev.Date:-.09.08.23",
+            "type": "s",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          },
+          {
+            "value": "",
+            "formatted": "",
+            "type": "z",
+            "style": {
+              "patternType": "none"
+            }
+          }
+        ]
+      ],
+      "merges": [
+        {
+          "s": {
+            "c": 0,
+            "r": 42
+          },
+          "e": {
+            "c": 2,
+            "r": 42
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 42
+          },
+          "e": {
+            "c": 8,
+            "r": 42
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 43
+          },
+          "e": {
+            "c": 2,
+            "r": 43
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 43
+          },
+          "e": {
+            "c": 8,
+            "r": 43
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 44
+          },
+          "e": {
+            "c": 5,
+            "r": 44
+          }
+        },
+        {
+          "s": {
+            "c": 6,
+            "r": 44
+          },
+          "e": {
+            "c": 8,
+            "r": 44
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 39
+          },
+          "e": {
+            "c": 2,
+            "r": 39
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 39
+          },
+          "e": {
+            "c": 8,
+            "r": 39
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 40
+          },
+          "e": {
+            "c": 2,
+            "r": 40
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 40
+          },
+          "e": {
+            "c": 8,
+            "r": 40
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 41
+          },
+          "e": {
+            "c": 2,
+            "r": 41
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 41
+          },
+          "e": {
+            "c": 8,
+            "r": 41
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 34
+          },
+          "e": {
+            "c": 4,
+            "r": 34
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 35
+          },
+          "e": {
+            "c": 4,
+            "r": 36
+          }
+        },
+        {
+          "s": {
+            "c": 6,
+            "r": 36
+          },
+          "e": {
+            "c": 8,
+            "r": 36
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 37
+          },
+          "e": {
+            "c": 2,
+            "r": 38
+          }
+        },
+        {
+          "s": {
+            "c": 3,
+            "r": 37
+          },
+          "e": {
+            "c": 3,
+            "r": 38
+          }
+        },
+        {
+          "s": {
+            "c": 4,
+            "r": 37
+          },
+          "e": {
+            "c": 8,
+            "r": 38
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 28
+          },
+          "e": {
+            "c": 4,
+            "r": 28
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 29
+          },
+          "e": {
+            "c": 4,
+            "r": 29
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 30
+          },
+          "e": {
+            "c": 4,
+            "r": 30
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 31
+          },
+          "e": {
+            "c": 4,
+            "r": 31
+          }
+        },
+        {
+          "s": {
+            "c": 1,
+            "r": 32
+          },
+          "e": {
+            "c": 1,
+            "r": 33
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 32
+          },
+          "e": {
+            "c": 4,
+            "r": 32
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 33
+          },
+          "e": {
+            "c": 4,
+            "r": 33
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 20
+          },
+          "e": {
+            "c": 5,
+            "r": 24
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 21
+          },
+          "e": {
+            "c": 4,
+            "r": 21
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 22
+          },
+          "e": {
+            "c": 4,
+            "r": 22
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 23
+          },
+          "e": {
+            "c": 4,
+            "r": 23
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 24
+          },
+          "e": {
+            "c": 4,
+            "r": 24
+          }
+        },
+        {
+          "s": {
+            "c": 1,
+            "r": 25
+          },
+          "e": {
+            "c": 1,
+            "r": 31
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 25
+          },
+          "e": {
+            "c": 4,
+            "r": 25
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 25
+          },
+          "e": {
+            "c": 5,
+            "r": 33
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 26
+          },
+          "e": {
+            "c": 4,
+            "r": 26
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 27
+          },
+          "e": {
+            "c": 4,
+            "r": 27
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 12
+          },
+          "e": {
+            "c": 4,
+            "r": 12
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 13
+          },
+          "e": {
+            "c": 4,
+            "r": 13
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 14
+          },
+          "e": {
+            "c": 4,
+            "r": 14
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 15
+          },
+          "e": {
+            "c": 4,
+            "r": 15
+          }
+        },
+        {
+          "s": {
+            "c": 1,
+            "r": 16
+          },
+          "e": {
+            "c": 1,
+            "r": 24
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 16
+          },
+          "e": {
+            "c": 4,
+            "r": 16
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 17
+          },
+          "e": {
+            "c": 4,
+            "r": 17
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 18
+          },
+          "e": {
+            "c": 4,
+            "r": 18
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 19
+          },
+          "e": {
+            "c": 4,
+            "r": 19
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 20
+          },
+          "e": {
+            "c": 4,
+            "r": 20
+          }
+        },
+        {
+          "s": {
+            "c": 1,
+            "r": 4
+          },
+          "e": {
+            "c": 1,
+            "r": 15
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 4
+          },
+          "e": {
+            "c": 4,
+            "r": 4
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 4
+          },
+          "e": {
+            "c": 5,
+            "r": 19
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 5
+          },
+          "e": {
+            "c": 4,
+            "r": 5
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 6
+          },
+          "e": {
+            "c": 4,
+            "r": 6
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 7
+          },
+          "e": {
+            "c": 4,
+            "r": 7
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 8
+          },
+          "e": {
+            "c": 4,
+            "r": 8
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 9
+          },
+          "e": {
+            "c": 4,
+            "r": 9
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 10
+          },
+          "e": {
+            "c": 4,
+            "r": 10
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 11
+          },
+          "e": {
+            "c": 4,
+            "r": 11
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 0
+          },
+          "e": {
+            "c": 8,
+            "r": 0
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 1
+          },
+          "e": {
+            "c": 8,
+            "r": 1
+          }
+        },
+        {
+          "s": {
+            "c": 0,
+            "r": 2
+          },
+          "e": {
+            "c": 0,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 1,
+            "r": 2
+          },
+          "e": {
+            "c": 1,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 2,
+            "r": 2
+          },
+          "e": {
+            "c": 4,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 5,
+            "r": 2
+          },
+          "e": {
+            "c": 5,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 6,
+            "r": 2
+          },
+          "e": {
+            "c": 6,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 7,
+            "r": 2
+          },
+          "e": {
+            "c": 7,
+            "r": 3
+          }
+        },
+        {
+          "s": {
+            "c": 8,
+            "r": 2
+          },
+          "e": {
+            "c": 8,
+            "r": 3
+          }
+        }
+      ],
+      "columns": [
+        {
+          "width": 10.7109375,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 75,
+          "wch": 10,
+          "MDW": 7
+        },
+        {
+          "width": 14.5703125,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 102,
+          "wch": 13.86,
+          "MDW": 7
+        },
+        {
+          "width": 65.140625,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 456,
+          "wch": 64.43,
+          "MDW": 7
+        },
+        {
+          "width": 57.85546875,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 405,
+          "wch": 57.14,
+          "MDW": 7
+        },
+        {
+          "width": 28.5703125,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 200,
+          "wch": 27.86,
+          "MDW": 7
+        },
+        {
+          "width": 36.85546875,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 258,
+          "wch": 36.14,
+          "MDW": 7
+        },
+        {
+          "width": 27.28515625,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 191,
+          "wch": 26.57,
+          "MDW": 7
+        },
+        {
+          "width": 28.140625,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 197,
+          "wch": 27.43,
+          "MDW": 7
+        },
+        {
+          "width": 39.5703125,
+          "style": "20",
+          "customwidth": "1",
+          "wpx": 277,
+          "wch": 38.86,
+          "MDW": 7
+        }
+      ],
+      "rowSizes": [
+        {
+          "hpt": 60,
+          "hpx": 60
+        },
+        {
+          "hpt": 60,
+          "hpx": 60
+        },
+        {
+          "hpt": 37.5,
+          "hpx": 37.5
+        },
+        {
+          "hpt": 37.5,
+          "hpx": 37.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 83.25,
+          "hpx": 83.25
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 76.7,
+          "hpx": 76.7
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 64.5,
+          "hpx": 64.5
+        },
+        {
+          "hpt": 51,
+          "hpx": 51
+        },
+        {
+          "hpt": 51,
+          "hpx": 51
+        },
+        {
+          "hpt": 24.75,
+          "hpx": 24.75
+        },
+        {
+          "hpt": 24.75,
+          "hpx": 24.75
+        },
+        {
+          "hpt": 49.7,
+          "hpx": 49.70000000000001
+        },
+        {
+          "hpt": 49.7,
+          "hpx": 49.70000000000001
+        },
+        {
+          "hpt": 49.7,
+          "hpx": 49.70000000000001
+        },
+        {
+          "hpt": 49.7,
+          "hpx": 49.70000000000001
+        },
+        {
+          "hpt": 49.7,
+          "hpx": 49.70000000000001
+        },
+        {
+          "hpt": 51.75,
+          "hpx": 51.75
+        }
+      ]
+    }
+  ]
+}

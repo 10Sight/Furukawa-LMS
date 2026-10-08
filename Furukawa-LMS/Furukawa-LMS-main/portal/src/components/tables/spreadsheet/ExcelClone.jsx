@@ -6446,14 +6446,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                     onClick={(e) => { e.stopPropagation(); openColumnFilter(filterTable, colIdx, e.currentTarget); }}
                                                     className={cn(
-                                                        "absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 z-10 cursor-pointer",
-                                                        // Plain AutoFilter ranges (Ctrl+Shift+L) keep the cell's own
-                                                        // header styling, so the icon can't assume a dark header.
-                                                        filterTable.styleKey ? "text-white/90" : "text-slate-500"
+                                                        "absolute right-0.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] flex items-center justify-center rounded z-10 cursor-pointer",
+                                                        // The header may be any colour — a styled table's dark band or a
+                                                        // plain AutoFilter range's own cell styling — so the button brings
+                                                        // its own backing rather than relying on the cell's. A column that
+                                                        // is being filtered gets a solid one, to stand out from the rest.
+                                                        columnHasActiveFilter
+                                                            ? "bg-indigo-600 text-white shadow-sm ring-1 ring-white hover:bg-indigo-700"
+                                                            : "bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-slate-900"
                                                     )}
-                                                    title="Sort and filter this column"
+                                                    title={columnHasActiveFilter ? "This column is filtered — sort and filter" : "Sort and filter this column"}
                                                 >
-                                                    {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" />}
+                                                    {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" strokeWidth={2.25} />}
                                                 </button>
                                             )}
                                             {isEditing ? (

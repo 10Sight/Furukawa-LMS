@@ -20,6 +20,7 @@ import {
     IconHelpCircle, IconMathFunction, IconEye, IconEyeOff, IconPrinter, IconClipboardList, IconMaximize, IconMinimize,
     IconScissors, IconClipboardText, IconBorderTop, IconBucketDroplet, IconTextOrientation, IconIndentDecrease, IconIndentIncrease,
     IconArrowAutofitWidth, IconCash, IconTablePlus, IconTableMinus, IconTableOptions, IconArrowBarToDown, IconArrowBarToRight,
+    IconArrowBarToLeft, IconArrowLeft, IconArrowRight,
     IconEraser, IconClearFormatting, IconReplace, IconArrowForward, IconLayoutGrid,
     IconMessagePlus, IconMessage, IconRotate2, IconRotateClockwise2
 } from "@tabler/icons-react";
@@ -37,7 +38,7 @@ import { patternWithDecimals } from "../../../constants/spreadsheets/numberForma
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
-import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils/spreadsheets/workbookUpdate.js";
+import { applyWorkbookUpdate, applyHistoryRecord, plainOf, reorderSheets, canOrderSheets, isIndexLikeName } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
 import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
@@ -1567,6 +1568,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const [fillPreview, setFillPreview] = useState(null); // { axis: 'vertical'|'horizontal', extraCount }
     const [renamingSheet, setRenamingSheet] = useState(null);
+    const [draggedSheet, setDraggedSheet] = useState(null); // the tab being dragged to a new place
+    const [sheetDropTarget, setSheetDropTarget] = useState(null); // { name, position: "before" | "after" } — where it would land
     const [renameValue, setRenameValue] = useState("");
 
     const [showFindReplace, setShowFindReplace] = useState(false);
@@ -3942,12 +3945,70 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setRenamingSheet(null);
         if (!oldName || !newName || newName === oldName) return;
         if (sheets[newName]) { toast.error("A sheet with that name already exists."); return; }
+        if (isIndexLikeName(newName)) { toast.error(`A sheet name can't be just a number — add a letter, like "Y${newName}".`); return; }
         updateSheets((next) => {
+            // Under its new name the sheet would otherwise go to the end of the tabs.
+            const order = Object.keys(next).map((name) => (name === oldName ? newName : name));
             next[newName] = next[oldName];
             delete next[oldName];
             renamePivotSourceReferences(next, oldName, newName);
+            if (canOrderSheets(order)) reorderSheets(next, order);
         });
         if (activeSheetName === oldName) setActiveSheetName(newName);
+    };
+
+    // --- Reordering the sheet tabs ---
+    // By dragging a tab, or from its menu (which is also how it is done by touch
+    // or keyboard). A reorder is one undo step, and is saved as a whole workbook.
+
+    // Puts `name` just before or after the sheet `target`.
+    const placeSheet = (name, target, position) => {
+        if (readOnly || name === target) return;
+        const current = Object.keys(sheets);
+        const order = current.filter((n) => n !== name);
+        const at = order.indexOf(target);
+        if (at === -1 || !current.includes(name)) return;
+        order.splice(position === "after" ? at + 1 : at, 0, name);
+        if (order.every((n, i) => n === current[i])) return;
+        if (!canOrderSheets(order)) {
+            const numbered = order.find(isIndexLikeName);
+            toast.error(`Sheet "${numbered}" has a number for a name, which fixes where it sits. Rename it to move the tabs around it.`);
+            return;
+        }
+        updateSheets((next) => reorderSheets(next, order));
+    };
+    // The tab menu's moves, counted in the tabs that are showing: a hidden sheet
+    // in between is stepped over.
+    const moveSheet = (name, where) => {
+        const at = visibleSheetNames.indexOf(name);
+        const last = visibleSheetNames.length - 1;
+        if (at === -1) return;
+        if (where === "left" && at > 0) placeSheet(name, visibleSheetNames[at - 1], "before");
+        else if (where === "right" && at < last) placeSheet(name, visibleSheetNames[at + 1], "after");
+        else if (where === "start" && at > 0) placeSheet(name, visibleSheetNames[0], "before");
+        else if (where === "end" && at < last) placeSheet(name, visibleSheetNames[last], "after");
+    };
+    const endSheetDrag = () => { setDraggedSheet(null); setSheetDropTarget(null); };
+    const handleSheetDragStart = (e, name) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", name); // Firefox starts no drag without data
+        setDraggedSheet(name);
+    };
+    // Over the left half of a tab the sheet would land before it, over the right half after.
+    const handleSheetDragOver = (e, name) => {
+        if (!draggedSheet) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (name === draggedSheet) { if (sheetDropTarget) setSheetDropTarget(null); return; }
+        const rect = e.currentTarget.getBoundingClientRect();
+        const position = e.clientX < rect.left + rect.width / 2 ? "before" : "after";
+        if (sheetDropTarget?.name !== name || sheetDropTarget.position !== position) setSheetDropTarget({ name, position });
+    };
+    const handleSheetDrop = (e, name) => {
+        if (!draggedSheet) return;
+        e.preventDefault();
+        if (sheetDropTarget?.name === name) placeSheet(draggedSheet, name, sheetDropTarget.position);
+        endSheetDrag();
     };
 
     const deleteSheet = (name) => {
@@ -6685,19 +6746,36 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
             {/* Sheet tabs + zoom controls */}
             <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none">
-            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+            <div
+                className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0"
+                // Out of the tab strip altogether: no tab is the landing place any more.
+                onDragLeave={(e) => { if (sheetDropTarget && !e.currentTarget.contains(e.relatedTarget)) setSheetDropTarget(null); }}
+            >
                 {visibleSheetNames.map((name) => {
+                    // Not while its name is being typed: dragging there selects text.
+                    const canDrag = !readOnly && visibleSheetNames.length > 1 && renamingSheet !== name;
+                    const dropSide = sheetDropTarget?.name === name ? sheetDropTarget.position : null;
                     const tabBadge = (
                         <div
                             className={cn(
-                                "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border shrink-0",
+                                "group relative flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border shrink-0",
                                 name === activeSheetName
                                     ? "bg-white border-slate-300 text-indigo-700 shadow-sm"
-                                    : "bg-transparent border-transparent text-slate-500 hover:bg-slate-100"
+                                    : "bg-transparent border-transparent text-slate-500 hover:bg-slate-100",
+                                draggedSheet === name && "opacity-40"
                             )}
                             onClick={() => switchSheet(name)}
                             onDoubleClick={readOnly ? undefined : () => startRenameSheet(name)}
+                            draggable={canDrag}
+                            onDragStart={canDrag ? (e) => handleSheetDragStart(e, name) : undefined}
+                            onDragOver={(e) => handleSheetDragOver(e, name)}
+                            onDrop={(e) => handleSheetDrop(e, name)}
+                            onDragEnd={endSheetDrag}
                         >
+                            {/* Where the dragged tab would land: a bar on that side of this one. */}
+                            {dropSide && (
+                                <span className={cn("absolute -top-0.5 -bottom-0.5 w-0.5 rounded bg-indigo-600 pointer-events-none", dropSide === "before" ? "left-0" : "right-0")} />
+                            )}
                             {renamingSheet === name ? (
                                 <input
                                     autoFocus
@@ -6748,6 +6826,27 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         <IconEye className="w-3.5 h-3.5" /> Unhide Sheet…
                                     </ContextMenuItem>
                                 )}
+                                {visibleSheetNames.length > 1 && (() => {
+                                    const isFirst = name === visibleSheetNames[0];
+                                    const isLast = name === visibleSheetNames[visibleSheetNames.length - 1];
+                                    return (
+                                        <>
+                                            <ContextMenuSeparator />
+                                            <ContextMenuItem onClick={() => moveSheet(name, "left")} disabled={isFirst} className="cursor-pointer">
+                                                <IconArrowLeft className="w-3.5 h-3.5" /> Move Left
+                                            </ContextMenuItem>
+                                            <ContextMenuItem onClick={() => moveSheet(name, "right")} disabled={isLast} className="cursor-pointer">
+                                                <IconArrowRight className="w-3.5 h-3.5" /> Move Right
+                                            </ContextMenuItem>
+                                            <ContextMenuItem onClick={() => moveSheet(name, "start")} disabled={isFirst} className="cursor-pointer">
+                                                <IconArrowBarToLeft className="w-3.5 h-3.5" /> Move to Start
+                                            </ContextMenuItem>
+                                            <ContextMenuItem onClick={() => moveSheet(name, "end")} disabled={isLast} className="cursor-pointer">
+                                                <IconArrowBarToRight className="w-3.5 h-3.5" /> Move to End
+                                            </ContextMenuItem>
+                                        </>
+                                    );
+                                })()}
                                 {Object.keys(sheets).length > 1 && (
                                     <>
                                         <ContextMenuSeparator />

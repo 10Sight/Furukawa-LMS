@@ -219,3 +219,22 @@ export const applyHistoryRecord = (current, record) => {
     }
     return { next, inverse: { names: currentNames, sheets } };
 };
+
+// --- Sheet order ---
+// The order of a workbook's tabs is the order of its keys.
+
+// A sheet name JavaScript would treat as an array index ("7", "2024"). An object
+// lists such keys first, in number order, whatever order they were added in — so
+// a sheet called that can't be given a place among the others.
+export const isIndexLikeName = (name) => /^(0|[1-9]\d*)$/.test(String(name)) && Number(name) < 4294967295;
+
+// Whether a workbook can hold its sheets in this order at all (see isIndexLikeName).
+export const canOrderSheets = (names) => Object.keys(Object.fromEntries(names.map((name) => [name, 0]))).every((name, i) => name === names[i]);
+
+// Inside an updater: puts the workbook's sheets in the order given, by taking
+// every one out and putting them back. `names` must be the workbook's own names.
+export const reorderSheets = (draft, names) => {
+    const sheets = names.map((name) => draft[name]);
+    for (const key of Object.keys(draft)) delete draft[key];
+    names.forEach((name, i) => { draft[name] = sheets[i]; });
+};

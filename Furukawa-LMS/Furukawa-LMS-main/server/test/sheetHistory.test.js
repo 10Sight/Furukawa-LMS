@@ -5,7 +5,7 @@
 // what someone else's save brought into the workbook in the meantime (workbookSync.js).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyWorkbookUpdate, applyHistoryRecord } from "../../portal/src/utils/spreadsheets/workbookUpdate.js";
+import { applyWorkbookUpdate, applyHistoryRecord, reorderSheets, canOrderSheets, isIndexLikeName } from "../../portal/src/utils/spreadsheets/workbookUpdate.js";
 import { diffWorkbook } from "../../portal/src/components/tables/spreadsheet/workbookDiff.js";
 import { rebaseRemotePatch } from "../../portal/src/utils/spreadsheets/workbookSync.js";
 
@@ -94,4 +94,46 @@ test("a sheet rebuilt wholesale is still restored whole", () => {
     const undone = applyHistoryRecord(next, undo);
     assert.equal(undone.next.S, start.S);
     assert.deepEqual(applyHistoryRecord(undone.next, undone.inverse).next, next);
+});
+
+test("reordering sheets moves the tabs and nothing else, and undoes and redoes", () => {
+    const start = { A: sheet({ A1: { value: "a" } }), B: sheet({ A1: { value: "b" } }), C: sheet({}) };
+    const { next, undo } = applyWorkbookUpdate(start, (draft) => reorderSheets(draft, ["C", "A", "B"]));
+    assert.deepEqual(Object.keys(next), ["C", "A", "B"]);
+    for (const name of ["A", "B", "C"]) assert.equal(next[name], start[name]); // the sheets themselves are the same objects
+    assert.deepEqual(undo.sheets, {}); // the record holds the old order and no sheet contents
+
+    const undone = applyHistoryRecord(next, undo);
+    assert.deepEqual(Object.keys(undone.next), ["A", "B", "C"]);
+    assert.equal(undone.next.A, start.A);
+    assert.deepEqual(Object.keys(applyHistoryRecord(undone.next, undone.inverse).next), ["C", "A", "B"]);
+
+    // The same order again is no change at all.
+    assert.equal(applyWorkbookUpdate(next, (draft) => reorderSheets(draft, ["C", "A", "B"])).undo, null);
+    // A reorder is not something a patch can carry: the whole workbook is saved.
+    assert.equal(diffWorkbook(start, next), null);
+});
+
+test("a renamed sheet can keep its place among the tabs", () => {
+    const start = { A: sheet({ A1: { value: "a" } }), B: sheet({}), C: sheet({}) };
+    const { next, undo } = applyWorkbookUpdate(start, (draft) => {
+        const order = Object.keys(draft).map((name) => (name === "A" ? "First" : name));
+        draft.First = draft.A;
+        delete draft.A;
+        reorderSheets(draft, order);
+    });
+    assert.deepEqual(Object.keys(next), ["First", "B", "C"]);
+    assert.deepEqual(next.First.cells, { A1: { value: "a" } });
+    assert.deepEqual(Object.keys(applyHistoryRecord(next, undo).next), ["A", "B", "C"]);
+});
+
+test("a sheet named with a number can't be placed, and is recognised as such", () => {
+    assert.equal(isIndexLikeName("2024"), true);
+    assert.equal(isIndexLikeName("0"), true);
+    assert.equal(isIndexLikeName("007"), false);
+    assert.equal(isIndexLikeName("Q1 2024"), false);
+    assert.equal(isIndexLikeName("1.5"), false);
+    assert.equal(canOrderSheets(["Plan", "Actuals"]), true);
+    assert.equal(canOrderSheets(["2024", "Plan"]), true); // where such a sheet sits anyway
+    assert.equal(canOrderSheets(["Plan", "2024"]), false);
 });

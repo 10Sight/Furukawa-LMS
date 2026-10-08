@@ -19,6 +19,7 @@ import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
+import { prepareManpowerUser, isUserActiveForManpowerDate } from "../utils/manpowerLifecycle.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import { assertJoiningNotAfterLeaving, getJoiningLeavingDateError } from "../utils/dateValidation.js";
@@ -762,34 +763,42 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     let end = dateTo || dateFrom || date;
 
     // Optimization: If filtering for 'PRESENT', push the filter into the subquery
-    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND status IN ('P', 'PRESENT', 'Present')" : "";
+    const subqueryStatusFilter = upperStatus === "PRESENT" ? "AND l.status IN ('P', 'PRESENT', 'Present')" : "";
 
     let subqueryWhere;
     if (start && end) {
-      subqueryWhere = `WHERE [date] BETWEEN ? AND ? ${subqueryStatusFilter}`;
+      subqueryWhere = `WHERE l.[date] BETWEEN ? AND ? ${subqueryStatusFilter}`;
       attendanceParams = [start, end];
     } else {
       subqueryWhere = `WHERE 1=1 ${subqueryStatusFilter}`;
       attendanceParams = [];
     }
 
+    // matchedPresentDaysCount mirrors the Dashboard Daily Manpower Trend's Present rule
+    // (a Present row only counts when attendance_logs.payCode = users.empId) and feeds the
+    // stat cards below; logStatus/presentDaysCount keep driving the table rows and filters.
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT userId,
-               MAX(status) as logStatus,
-               MAX(shift) as logShift,
-               MAX([date]) as logDate,
-               COUNT(CASE WHEN status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount
-        FROM attendance_logs
+        SELECT l.userId,
+               MAX(l.status) as logStatus,
+               MAX(l.shift) as logShift,
+               MAX(l.[date]) as logDate,
+               COUNT(CASE WHEN l.status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount,
+               COUNT(CASE WHEN l.status IN ('P', 'PRESENT', 'Present')
+                           AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), l.payCode))))
+                             = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), lu.empId))))
+                          THEN 1 END) as matchedPresentDaysCount
+        FROM attendance_logs l
+        LEFT JOIN users lu ON lu.id = l.userId
         ${subqueryWhere}
-        GROUP BY userId
+        GROUP BY l.userId
       ) al ON u.id = al.userId
     `;
   } else {
     // Ensure al alias exists even if no date filter is applied to avoid SQL errors in WHERE clause
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as userId
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, 0 as matchedPresentDaysCount, NULL as userId
       ) al ON 1=0
     `;
   }
@@ -878,41 +887,37 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       !c.includes("al.presentDaysCount") &&
       !c.includes("(al.userId IS NULL")
     );
-    // Scope the stat cards to employees only, matching the Headcount Report's population,
-    // without restricting the underlying user list/table (which still shows all roles).
+    // Scope the stat cards to the Dashboard Daily Manpower Trend's population
+    // (getOperatorPopulationCondition: employees plus CUSTOM-role users, never trainers, real
+    // empId), without restricting the underlying user list/table (which still shows all roles).
     if (req.query.isEmployee !== "true") {
-      countsWhereClauses.push("u.isEmployee = 1");
+      countsWhereClauses.push("(u.isEmployee = 1 OR u.role = 'CUSTOM')");
     }
-    // Match Report's eligibility definition (getEligibleUserSql): a real empId is required.
-    countsWhereClauses.push("u.empId IS NOT NULL AND u.empId != ''");
+    if (req.query.isTrainer !== "true") {
+      countsWhereClauses.push("ISNULL(u.isTrainer, 0) = 0");
+    }
+    countsWhereClauses.push("u.empId IS NOT NULL AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), u.empId))) <> ''");
     const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
-    // Date-aware "not yet left" check, mirroring Report's netHeadcountSql: a user who has
-    // since left should still count as present/absent on dates before their leavingDate,
-    // rather than being blanket-excluded from every date just because they're LEFT today.
-    // Built as a validated literal (not a `?` param) because the SELECT list's CASE
-    // expressions are textually before attendanceJoinSQL/countsWhereSQL in the query, and
-    // the existing [...attendanceParams, ...params] ordering assumes no `?` precedes them.
-    const rawRefDate = dateTo || date || dateFrom;
-    const countsRefDate = /^\d{4}-\d{2}-\d{2}$/.test(rawRefDate || "")
-      ? rawRefDate
-      : new Date().toISOString().split('T')[0];
-    const notLeftYetSQL = `(u.status IS NULL OR u.status != 'LEFT' OR TRY_CONVERT(date, ISNULL(u.leavingDate, u.updatedAt)) > '${countsRefDate}')`;
-
+    // Fetched as rows, not SQL aggregates: whether a user was on the rolls for the date is
+    // decided in Node by the same statusHistory lifecycle rule as the Dashboard
+    // (manpowerLifecycle.js), so both pages count the same people as Present/Absent.
     countsQueryPromise = executeQuery(`
-      SELECT
-        SUM(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as presentCount,
-        SUM(CASE WHEN (al.logStatus NOT IN ('P', 'PRESENT', 'Present') OR al.userId IS NULL) AND ${notLeftYetSQL} THEN 1 ELSE 0 END) as absentCount,
-        SUM(CASE WHEN u.status = 'LEFT' THEN 1 ELSE 0 END) as leftCount,
-        AVG(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as presentEfficiency,
-        AVG(CASE WHEN al.logStatus IN ('P', 'PRESENT', 'Present') AND ${notLeftYetSQL} THEN u.currentEffeciency WHEN u.currentEffeciency IS NOT NULL AND ${notLeftYetSQL} THEN 0 ELSE NULL END) as overallEfficiency,
-        AVG(CASE WHEN ${notLeftYetSQL} THEN u.currentEffeciency ELSE NULL END) as systemEfficiency
+      SELECT u.id, u.status, u.joiningDate, u.leavingDate, u.statusHistory, u.currentEffeciency,
+             al.matchedPresentDaysCount
       FROM users u
       ${getHierarchyFilterJoinSQL}
       ${attendanceJoinSQL}
       ${countsWhereSQL}
     `, [...attendanceParams, ...params], { label: "getAllUsers.counts" });
   }
+
+  // As-of date for the lifecycle check: the end of the attendance window above (dateFrom/dateTo
+  // win over the always-defaulted `date`), falling back to today.
+  const rawRefDate = dateTo || dateFrom || date;
+  const countsRefDate = /^\d{4}-\d{2}-\d{2}$/.test(rawRefDate || "")
+    ? rawRefDate
+    : formatLocalDate(new Date());
 
   const cntQueryPromise = executeQuery(`
     SELECT COUNT(*) as total
@@ -956,19 +961,41 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   // The 3 queries above share the same WHERE/params but not each other's results, so they
   // run concurrently instead of adding up sequentially (previously ~3x the wall-clock cost).
   const requestStartedAt = Date.now();
-  const [[countsData], [cnt], [users]] = await Promise.all([
+  const [[countRows], [cnt], [users]] = await Promise.all([
     countsQueryPromise,
     cntQueryPromise,
     usersQueryPromise,
   ]);
   logger.debug(`[getAllUsers] total=${Date.now() - requestStartedAt}ms rows=${users.length}/${cnt[0].total}`);
 
-  const presentCount = countsData[0]?.presentCount || 0;
-  const absentCount = countsData[0]?.absentCount || 0;
-  const leftCount = countsData[0]?.leftCount || 0;
-  const presentEfficiency = countsData[0]?.presentEfficiency || 0;
-  const overallEfficiency = countsData[0]?.overallEfficiency || 0;
-  const systemEfficiency = countsData[0]?.systemEfficiency || 0;
+  let presentCount = 0;
+  let absentCount = 0;
+  let leftCount = 0;
+  // [sum, count] pairs; a NULL efficiency is skipped, as SQL AVG() did.
+  const presentEff = [0, 0];
+  const overallEff = [0, 0];
+  const systemEff = [0, 0];
+  const addEff = (acc, value) => { acc[0] += value; acc[1] += 1; };
+
+  for (const row of countRows || []) {
+    if (String(row.status || "").trim().toUpperCase() === "LEFT") leftCount += 1;
+    if (!isUserActiveForManpowerDate(prepareManpowerUser(row), countsRefDate)) continue;
+
+    const isPresent = Number(row.matchedPresentDaysCount || 0) > 0;
+    if (isPresent) presentCount += 1;
+    else absentCount += 1;
+
+    if (row.currentEffeciency === null || row.currentEffeciency === undefined) continue;
+    const efficiency = Number(row.currentEffeciency) || 0;
+    addEff(systemEff, efficiency);
+    // Overall efficiency counts an absent employee's capacity as 0.
+    addEff(overallEff, isPresent ? efficiency : 0);
+    if (isPresent) addEff(presentEff, efficiency);
+  }
+
+  const presentEfficiency = presentEff[1] ? presentEff[0] / presentEff[1] : 0;
+  const overallEfficiency = overallEff[1] ? overallEff[0] / overallEff[1] : 0;
+  const systemEfficiency = systemEff[1] ? systemEff[0] / systemEff[1] : 0;
   const totalUsers = cnt[0].total;
 
   res.json(new ApiResponse(200, {

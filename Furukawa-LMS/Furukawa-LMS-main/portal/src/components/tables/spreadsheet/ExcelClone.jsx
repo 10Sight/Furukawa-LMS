@@ -10,7 +10,7 @@ import { Progress } from "@/components/common/ui/progress.jsx";
 import {
     IconBold, IconItalic, IconUnderline, IconStrikethrough,
     IconAlignLeft, IconAlignCenter, IconAlignRight, IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus, IconMinus,
-    IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll,
+    IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll, IconDropletOff,
     IconCopy, IconClipboard, IconBrush, IconPercentage,
     IconBorderOuter, IconSortAscending, IconSortDescending, IconRowInsertTop, IconRowInsertBottom,
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
@@ -46,6 +46,9 @@ import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
 import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
 import { useSheetComments } from "./useSheetComments.js";
 import CellCommentCard from "./CellCommentCard.jsx";
+import TableFilterPopover from "./TableFilterPopover.jsx";
+import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
+import { compileTableFilters, isFilterActive } from "../../../utils/spreadsheets/tableFilter.js";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
 } from "../../../utils/spreadsheets/commentEngine.js";
@@ -614,6 +617,50 @@ const SHAPE_GROUPS = [
 ];
 const SHAPES_BY_KEY = Object.fromEntries(SHAPE_GROUPS.flatMap((g) => g.shapes).map((shape) => [shape.key, shape]));
 
+// A shape can hold text (`item.text`, styled by `item.textStyle` — the same keys
+// a cell's font and alignment use, so the ribbon's buttons apply to either). It
+// is laid out in the part of the box the shape actually covers: these are the
+// margins to keep clear, as percentages of the box — top, right, bottom, left.
+const SHAPE_TEXT_INSET_DEFAULT = [6, 6, 6, 6];
+const SHAPE_TEXT_INSETS = {
+    rect: [4, 4, 4, 4],
+    ellipse: [16, 16, 16, 16],
+    triangle: [48, 26, 6, 26],
+    rightTriangle: [50, 50, 6, 6],
+    diamond: [27, 27, 27, 27],
+    parallelogram: [6, 24, 6, 24],
+    trapezoid: [8, 22, 6, 22],
+    pentagon: [32, 20, 6, 20],
+    hexagon: [8, 22, 8, 22],
+    octagon: [12, 12, 12, 12],
+    cross: [36, 6, 36, 6],
+    arrowRight: [32, 26, 32, 6],
+    arrowLeft: [32, 6, 32, 26],
+    arrowUp: [28, 32, 6, 32],
+    arrowDown: [6, 32, 28, 32],
+    arrowLeftRight: [34, 22, 34, 22],
+    chevron: [6, 30, 6, 30],
+    star4: [36, 36, 36, 36],
+    star5: [38, 32, 30, 32],
+    star8: [26, 26, 26, 26],
+    callout: [5, 5, 33, 5], // the tail hangs below the bubble
+};
+// Where a media item's text goes, or null if it takes none (pictures, videos, lines).
+const shapeTextInset = (item) => {
+    if (item?.type !== "shape") return null;
+    const shape = SHAPES_BY_KEY[item.shape] || SHAPES_BY_KEY.rect;
+    return shape.line ? null : SHAPE_TEXT_INSETS[shape.key] || SHAPE_TEXT_INSET_DEFAULT;
+};
+const SHAPE_TEXT_FONT_SIZE = 12; // text-xs, like a cell
+const SHAPE_TEXT_LINE_HEIGHT = 1.375; // leading-snug
+// A shape's text style with its defaults filled in: centred, in a colour that reads on the fill.
+const shapeTextStyleOf = (item) => ({
+    align: "center",
+    ...item.textStyle,
+    color: item.textStyle?.color || readableTextColor(item.fill || SHAPE_DEFAULT_FILL),
+});
+const SHAPE_TEXT_VALIGN = { top: "flex-start", middle: "center", bottom: "flex-end" };
+
 // The shape as an SVG image URL — used for the grid, the Shapes menu and the
 // Excel export alike. The outline keeps its thickness however the box is stretched.
 const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_SIZE) => {
@@ -639,7 +686,19 @@ const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_S
 // clockwise about the centre of its box (see mediaGeometry.js), drawn as a CSS
 // transform on an inner layer. The box it is stored and positioned by stays
 // unrotated, so anchoring, dragging and row/column shifts are unaffected.
-const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect }) => {
+//
+// A shape's text is edited in place (`isEditingText`, which ExcelClone holds so
+// the keyboard can start an edit as well as a double-click). Like a drag, the
+// typing stays local and reaches the sheet once, when the edit ends.
+const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect, isEditingText, onEditText }) => {
+    const [textDraft, setTextDraft] = useState(null); // the text being typed; null until the first keystroke of an edit
+    const textInset = shapeTextInset(item);
+    const draftText = textDraft ?? item.text ?? "";
+    const commitText = () => {
+        setTextDraft(null);
+        onEditText(false);
+        if (draftText !== (item.text || "")) onUpdate({ text: draftText.trim() ? draftText : undefined });
+    };
     const [dragOffset, setDragOffset] = useState(null); // { dx, dy } while actively dragging
     const [resizeDelta, setResizeDelta] = useState(null); // { dw, dh } while actively resizing
     const [isCropping, setIsCropping] = useState(false);
@@ -843,13 +902,55 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                     </>
                 )}
                 {!isCropping && (item.type === "shape" ? (
-                    <img
-                        src={shapeDataUrl(item)}
-                        alt=""
-                        draggable={false}
-                        className={cn("w-full h-full select-none", !readOnly && "cursor-move")}
-                        onMouseDown={startDrag}
-                    />
+                    <>
+                        <img
+                            src={shapeDataUrl(item)}
+                            alt=""
+                            draggable={false}
+                            className={cn("w-full h-full select-none", !readOnly && "cursor-move")}
+                            onMouseDown={startDrag}
+                            onDoubleClick={(e) => { e.stopPropagation(); if (!readOnly && textInset) onEditText(true); }}
+                        />
+                        {/* The text, inside the part of the box the shape covers. Idle, it
+                            lets the mouse through to the shape so that still drags. */}
+                        {textInset && (isEditingText || item.text || (isSelected && !readOnly)) && (() => {
+                            const style = shapeTextStyleOf(item);
+                            const css = { ...cellStyleFor(style), lineHeight: SHAPE_TEXT_LINE_HEIGHT };
+                            return (
+                                <div
+                                    className={cn("absolute flex overflow-hidden", isEditingText ? "z-10" : "pointer-events-none")}
+                                    style={{ top: `${textInset[0]}%`, right: `${textInset[1]}%`, bottom: `${textInset[2]}%`, left: `${textInset[3]}%`, alignItems: SHAPE_TEXT_VALIGN[style.valign] || "center" }}
+                                >
+                                    <div className="relative w-full text-xs whitespace-pre-wrap break-words" style={css}>
+                                        {isEditingText ? (
+                                            <>
+                                                {/* An unseen copy of the text gives the box its height, so
+                                                    the editor on top of it sits just where the text will. */}
+                                                <div className="invisible" aria-hidden="true">{draftText}{"\u200b"}</div>
+                                                <textarea
+                                                    autoFocus
+                                                    value={draftText}
+                                                    onChange={(e) => setTextDraft(e.target.value)}
+                                                    onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
+                                                    onBlur={commitText}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key !== "Escape") return;
+                                                        e.stopPropagation();
+                                                        e.currentTarget.blur(); // commits
+                                                        onSelect?.(); // and hands the keyboard back to the grid
+                                                    }}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onContextMenu={(e) => e.stopPropagation()}
+                                                    className="absolute inset-0 w-full h-full p-0 m-0 bg-transparent border-none outline-none resize-none overflow-hidden whitespace-pre-wrap break-words"
+                                                    style={{ ...css, font: "inherit", lineHeight: "inherit" }}
+                                                />
+                                            </>
+                                        ) : item.text || <span className="italic opacity-70">Double-click to add text</span>}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </>
                 ) : item.type === "image" ? (
                     <img
                         src={item.src}
@@ -957,14 +1058,32 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                         </>
                     )}
                     {item.type === "shape" ? (
-                        <input
-                            type="color"
-                            value={item.fill || SHAPE_DEFAULT_FILL}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onChange={(e) => onUpdate({ fill: e.target.value })}
-                            className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                            title="Shape color"
-                        />
+                        <>
+                            {/* The colour picker can only give a solid colour, so "no fill"
+                                (an outline with the cells showing through) has its own button.
+                                A line is all stroke, which takes the fill colour — it keeps one. */}
+                            {textInset && (
+                                <button
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={() => onUpdate({ fill: item.fill === "none" ? undefined : "none" })}
+                                    className={cn(
+                                        "absolute top-0.5 right-[90px] w-5 h-5 flex items-center justify-center rounded hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20",
+                                        item.fill === "none" ? "bg-indigo-100 text-indigo-600" : "bg-white/90 text-slate-500 hover:text-indigo-600"
+                                    )}
+                                    title={item.fill === "none" ? "No fill — click to fill again" : "No fill (transparent)"}
+                                >
+                                    <IconDropletOff className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                            <input
+                                type="color"
+                                value={item.fill && item.fill !== "none" ? item.fill : SHAPE_DEFAULT_FILL}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onChange={(e) => onUpdate({ fill: e.target.value })}
+                                className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                                title="Shape color"
+                            />
+                        </>
                     ) : (
                         <button
                             onMouseDown={(e) => e.stopPropagation()}
@@ -1285,6 +1404,62 @@ const canvasPng = (img, sx, sy, sw, sh) => {
     return canvas.toDataURL("image/png");
 };
 
+// The bitmap a shape's text is drawn into is this many times the shape's size, so
+// the letters stay sharp in the exported file.
+const SHAPE_TEXT_EXPORT_SCALE = 2;
+
+// A shape goes into the exported file as a picture, so its text has to be part of
+// that picture: drawn here over the shape, in the same box, font and alignment
+// the grid shows it in, clipped to that box as it is there.
+const drawShapeText = async (picture, item) => {
+    try {
+        const img = await loadImageElement(picture.base64);
+        const scale = SHAPE_TEXT_EXPORT_SCALE;
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(picture.width * scale));
+        canvas.height = Math.max(1, Math.round(picture.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+
+        const [top, right, bottom, left] = shapeTextInset(item);
+        const boxX = (picture.width * left) / 100, boxY = (picture.height * top) / 100;
+        const boxW = picture.width * (1 - (left + right) / 100), boxH = picture.height * (1 - (top + bottom) / 100);
+        ctx.beginPath();
+        ctx.rect(boxX, boxY, boxW, boxH);
+        ctx.clip();
+
+        const style = shapeTextStyleOf(item);
+        const fontSize = style.fontSize || SHAPE_TEXT_FONT_SIZE;
+        const lineHeight = fontSize * SHAPE_TEXT_LINE_HEIGHT;
+        const pageFont = getComputedStyle(document.body).fontFamily || "sans-serif";
+        ctx.font = `${style.italic ? "italic " : ""}${style.bold ? "bold " : ""}${fontSize}px ${style.fontFamily ? `"${style.fontFamily}", ` : ""}${pageFont}`;
+        ctx.fillStyle = ctx.strokeStyle = style.color;
+        ctx.lineWidth = Math.max(1, fontSize / 14);
+        ctx.textBaseline = "middle";
+        ctx.textAlign = style.align;
+        const anchorX = style.align === "left" ? boxX : style.align === "right" ? boxX + boxW : boxX + boxW / 2;
+
+        const lines = wrapTextLines((text) => ctx.measureText(text).width, item.text, boxW);
+        const textHeight = lines.length * lineHeight;
+        const firstTop = style.valign === "top" ? boxY : style.valign === "bottom" ? boxY + boxH - textHeight : boxY + (boxH - textHeight) / 2;
+        lines.forEach((line, i) => {
+            const middle = firstTop + i * lineHeight + lineHeight / 2;
+            ctx.fillText(line, anchorX, middle);
+            if (!line || !(style.underline || style.strike)) return;
+            const lineW = ctx.measureText(line).width;
+            const lineX = style.align === "left" ? anchorX : style.align === "right" ? anchorX - lineW : anchorX - lineW / 2;
+            const rule = (y) => { ctx.beginPath(); ctx.moveTo(lineX, y); ctx.lineTo(lineX + lineW, y); ctx.stroke(); };
+            if (style.strike) rule(middle);
+            if (style.underline) rule(middle + fontSize * 0.55);
+            if (style.underline === "double") rule(middle + fontSize * 0.55 + ctx.lineWidth * 2);
+        });
+        return { ...picture, base64: canvas.toDataURL("image/png"), extension: "png" };
+    } catch {
+        return picture; // the shape still goes out, without its text
+    }
+};
+
 // Turns an image media item into something ExcelJS can embed, matching how
 // the grid draws it: Excel stretches a picture to its box, so a cropped item
 // (which the grid stretches to fill the box) is cut down to its crop region
@@ -1298,7 +1473,8 @@ const prepareUprightImage = async (item) => {
     // A shape goes out as a picture of itself at its current size.
     if (item.type === "shape") {
         const width = item.width || SHAPE_DEFAULT_SIZE, height = item.height || SHAPE_DEFAULT_SIZE;
-        return prepareUprightImage({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
+        const picture = await prepareUprightImage({ ...item, type: "image", crop: undefined, width, height, src: shapeDataUrl(item, width, height) });
+        return picture && shapeTextInset(item) && item.text?.trim() ? drawShapeText(picture, item) : picture;
     }
     if (item.type !== "image" || !item.src) return null;
     try {
@@ -1395,6 +1571,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setSelectionRaw(value);
     }, []);
     const [selectedMediaId, setSelectedMediaId] = useState(null);
+    const [editingShapeId, setEditingShapeId] = useState(null); // the shape whose text is being typed
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState("");
     const [hoveredCell, setHoveredCell] = useState(null);
@@ -1427,8 +1604,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const [selectedTableStyleKey, setSelectedTableStyleKey] = useState(TABLE_STYLE_PRESETS[0].key);
     const [tableFiltersEnabled, setTableFiltersEnabled] = useState(true);
-    const [filterPopover, setFilterPopover] = useState(null); // { tableId, colIdx }
-    const [filterDraft, setFilterDraft] = useState(null); // { search, selected: Set<string>, allValues: string[] }
+    const [filterPopover, setFilterPopover] = useState(null); // { tableId, colIdx, anchorRect } — the open AutoFilter dropdown
 
     const [resizePreview, setResizePreview] = useState(null); // { type: 'col'|'row', index, size }
 
@@ -1875,31 +2051,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // A media selection is scoped to the sheet it was made on — deselect when
     // switching away so a stray Delete press can't reach into another sheet.
-    useEffect(() => { setSelectedMediaId(null); }, [activeSheetName]);
+    useEffect(() => { setSelectedMediaId(null); setEditingShapeId(null); }, [activeSheetName]);
 
     // Excel-style AutoFilter: a row is hidden if it sits in some table's data
     // range and fails at least one of that table's active column filters. Row
     // numbers aren't renumbered — the row is simply skipped when rendering,
     // same as Excel's filtered view.
-    const hiddenRowSet = useMemo(() => {
+    const filteredRows = useMemo(() => {
         const hidden = new Set(hiddenRows);
+        let total = 0, shown = 0; // data rows of the tables being filtered, and how many of them pass
         for (const table of tables) {
-            if (!table.filtersEnabled || !table.filters) continue;
-            const activeFilters = Object.entries(table.filters).filter(([, vals]) => Array.isArray(vals));
-            if (activeFilters.length === 0) continue;
+            const filters = compileTableFilters(table);
+            if (!filters) continue;
             const s = parseCellRef(table.range.start), e = parseCellRef(table.range.end);
             if (!s || !e) continue;
             const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
             for (let r = minRow + 1; r <= maxRow; r++) {
-                const isVisible = activeFilters.every(([colIdxStr, allowed]) => {
-                    const val = String(displayGrid[getCellId(r, Number(colIdxStr))] ?? "");
-                    return allowed.includes(val);
+                const isVisible = filters.every(({ col, test }) => {
+                    const id = getCellId(r, col);
+                    return test(String(displayGrid[id] ?? ""), rawGrid[id]);
                 });
-                if (!isVisible) hidden.add(r);
+                total++;
+                if (isVisible) shown++; else hidden.add(r);
             }
         }
-        return hidden;
-    }, [tables, displayGrid, hiddenRows]);
+        return { hidden, total, shown };
+    }, [tables, displayGrid, rawGrid, hiddenRows]);
+    const hiddenRowSet = filteredRows.hidden;
 
     // The header cells of filter-enabled tables, each mapped to its table — the
     // cells that get an AutoFilter dropdown. Looked up once per rendered cell.
@@ -3212,12 +3390,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const activeCellData = cells[activeCell];
 
-    const toggleStyle = (key) => {
-        const currentlyOn = !!activeCellData?.[key];
-        applyToSelection((cell) => ({ ...cell, [key]: !currentlyOn }));
+    // While a shape that holds text is selected, the ribbon's font and alignment
+    // controls show and change that text's style instead of the active cell's.
+    const selectedShape = selectedMediaId ? media.find((m) => m.id === selectedMediaId && shapeTextInset(m)) || null : null;
+    const textStyleSource = selectedShape ? { align: "center", ...selectedShape.textStyle } : activeCellData;
+    const applyTextStyle = (mutator) => {
+        if (!selectedShape) { applyToSelection(mutator); return; }
+        if (readOnly) return;
+        const set = Object.entries(mutator({ ...selectedShape.textStyle })).filter(([, value]) => value !== undefined && value !== false);
+        handleUpdateMedia(selectedShape.id, { textStyle: set.length ? Object.fromEntries(set) : undefined });
     };
-    const setAlign = (align) => applyToSelection((cell) => ({ ...cell, align }));
-    const setValign = (valign) => applyToSelection((cell) => ({ ...cell, valign }));
+
+    const toggleStyle = (key) => {
+        const currentlyOn = !!textStyleSource?.[key];
+        applyTextStyle((cell) => ({ ...cell, [key]: !currentlyOn }));
+    };
+    const setAlign = (align) => applyTextStyle((cell) => ({ ...cell, align }));
+    const setValign = (valign) => applyTextStyle((cell) => ({ ...cell, valign }));
     const toggleWrap = () => {
         const currentlyOn = !!activeCellData?.wrap;
         applyToSelection((cell) => ({ ...cell, wrap: !currentlyOn }));
@@ -3310,17 +3499,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const setFontSize = (fontSize) => {
         const n = Number(fontSize);
         if (fontSize !== "" && fontSize != null && !(n >= 1 && n <= 409)) { toast.error("Font size must be a number between 1 and 409."); return; }
-        applyToSelection((cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
+        applyTextStyle((cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
     };
     // Increase / Decrease Font Size step through the size list, like Excel.
     const stepFontSize = (dir) => {
-        const current = activeCellData?.fontSize || DEFAULT_FONT_SIZE;
+        const current = textStyleSource?.fontSize || DEFAULT_FONT_SIZE;
         const next = dir > 0 ? FONT_SIZES.find((sz) => sz > current) : [...FONT_SIZES].reverse().find((sz) => sz < current);
         if (next) setFontSize(next);
     };
     const setUnderlineStyle = (kind) => {
-        const on = activeCellData?.underline === kind || (kind === true && activeCellData?.underline === true);
-        applyToSelection((cell) => ({ ...cell, underline: on ? undefined : kind }));
+        const on = textStyleSource?.underline === kind || (kind === true && textStyleSource?.underline === true);
+        applyTextStyle((cell) => ({ ...cell, underline: on ? undefined : kind }));
     };
     const adjustIndent = (delta) => applyToSelection((cell) => {
         const indent = Math.max(0, Math.min(MAX_INDENT, (cell.indent || 0) + delta));
@@ -3333,9 +3522,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Home > Clear: formats keep only the value; all drops the cell entirely.
     const clearFormats = () => { if (guardEditable()) applyToSelection((cell) => ({ value: cell.value })); };
     const clearAll = () => { if (guardEditable()) applyToSelection(() => ({})); };
-    const setFontFamily = (fontFamily) => applyToSelection((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
+    const setFontFamily = (fontFamily) => applyTextStyle((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
     const setBg = (bg) => applyToSelection((cell) => ({ ...cell, bg }));
-    const setColor = (color) => applyToSelection((cell) => ({ ...cell, color }));
+    const setColor = (color) => applyTextStyle((cell) => ({ ...cell, color }));
     // The ribbon's quick formats replace any format code set through Format Cells.
     const setNumberFormat = (fmt) => applyToSelection((cell) => ({ ...cell, numberFormat: fmt === "general" ? undefined : fmt, numberPattern: undefined }));
     const adjustDecimals = (delta) => applyToSelection((cell) => {
@@ -3414,48 +3603,51 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- AutoFilter (per-table column filter dropdowns) ---
 
-    const getTableColumnValues = useCallback((table, colIdx) => {
+    // A column's distinct values as the filter list offers them — the text each
+    // cell shows — with how many rows show each.
+    const getTableColumnValues = (table, colIdx) => {
         const s = parseCellRef(table.range.start), e = parseCellRef(table.range.end);
         if (!s || !e) return [];
         const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
-        const values = new Set();
+        const counts = new Map();
         for (let r = minRow + 1; r <= maxRow; r++) {
-            values.add(String(displayGrid[getCellId(r, colIdx)] ?? ""));
+            const value = String(displayGrid[getCellId(r, colIdx)] ?? "");
+            counts.set(value, (counts.get(value) || 0) + 1);
         }
-        return Array.from(values).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    }, [displayGrid]);
-
-    const openColumnFilter = (table, colIdx) => {
-        const allValues = getTableColumnValues(table, colIdx);
-        const existing = table.filters?.[colIdx];
-        const selected = new Set(Array.isArray(existing) ? existing : allValues);
-        setFilterDraft({ search: "", selected, allValues });
-        setFilterPopover({ tableId: table.id, colIdx });
+        return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
     };
 
-    const toggleFilterValue = (val) => {
-        setFilterDraft((d) => {
-            const next = new Set(d.selected);
-            if (next.has(val)) next.delete(val); else next.add(val);
-            return { ...d, selected: next };
-        });
+    const openColumnFilter = (table, colIdx, button) => {
+        setFilterPopover({ tableId: table.id, colIdx, anchorRect: button.getBoundingClientRect() });
     };
-    const selectAllFilterValues = () => setFilterDraft((d) => ({ ...d, selected: new Set(d.allValues) }));
-    const clearAllFilterValues = () => setFilterDraft((d) => ({ ...d, selected: new Set() }));
+    const filterPopoverTable = filterPopover ? tables.find((t) => t.id === filterPopover.tableId) : null;
+    useEffect(() => { setFilterPopover(null); }, [activeSheetName]);
 
-    const applyColumnFilter = () => {
-        if (!filterPopover || !filterDraft) return;
+    // Stores the column's filter (see tableFilter.js); null removes it.
+    const applyColumnFilter = (filter) => {
+        if (!filterPopover) return;
         const { tableId, colIdx } = filterPopover;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const table = (sheet.tables || []).find((t) => t.id === tableId);
             if (!table) return;
             if (!table.filters) table.filters = {};
-            if (filterDraft.selected.size >= filterDraft.allValues.length) delete table.filters[colIdx];
-            else table.filters[colIdx] = Array.from(filterDraft.selected);
+            if (filter) table.filters[colIdx] = filter;
+            else delete table.filters[colIdx];
         });
         setFilterPopover(null);
-        setFilterDraft(null);
+    };
+
+    // The dropdown's Sort A to Z / Z to A: the table's data rows, header left in
+    // place, ordered by the column the dropdown belongs to.
+    const sortTableByColumn = (direction) => {
+        if (!filterPopover || !filterPopoverTable) return;
+        const s = parseCellRef(filterPopoverTable.range.start), e = parseCellRef(filterPopoverTable.range.end);
+        setFilterPopover(null);
+        if (!s || !e) return;
+        const minRow = Math.min(s.row, e.row) + 1, maxRow = Math.max(s.row, e.row);
+        if (minRow > maxRow) return;
+        sortRange({ minRow, maxRow, minCol: Math.min(s.col, e.col), maxCol: Math.max(s.col, e.col) }, filterPopover.colIdx, direction);
     };
 
     // --- Conditional formatting ---
@@ -3661,11 +3853,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // insert/delete — does not adjust formulas elsewhere that reference the
     // rows being reordered.
     const sortSelection = (direction) => {
-        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         if (!selectionBounds) return;
         if (hasMultipleRanges) { toast.error("Cannot sort multiple selections. Select a single block of cells."); return; }
-        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
-        const sortCol = minCol;
+        sortRange(selectionBounds, selectionBounds.minCol, direction);
+    };
+    // Reorders the rows of a block of cells by their values in `sortCol`.
+    const sortRange = ({ minRow, maxRow, minCol, maxCol }, sortCol, direction) => {
+        if (isSheetReadOnly) { toast.info("This is a PivotTable — edit the source data instead."); return; }
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const current = plainOf(sheet.cells);
@@ -5128,6 +5322,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         // ---- Grid-only keys (arrows, typing, Enter, Delete…) ----
         if (!onGrid) return;
 
+        // A selected shape takes Enter and F2 as "type in me", like Excel.
+        if (selectedShape && !ctrl && !alt && (key === "Enter" || key === "F2")) {
+            handled();
+            if (edit) setEditingShapeId(selectedShape.id);
+            return;
+        }
+
         const cursor = shift ? (parseCellRef(selection.end) || ref) : ref;
         const arrow = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[key];
         if (arrow && !alt) {
@@ -5434,7 +5635,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <RibbonCombo
                                 className="w-[140px]"
                                 title="Font"
-                                value={activeCellData?.fontFamily || ""}
+                                value={textStyleSource?.fontFamily || ""}
                                 placeholder="Aptos Narrow"
                                 options={FONT_FAMILIES}
                                 onCommit={setFontFamily}
@@ -5443,7 +5644,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <RibbonCombo
                                 className="w-[58px]"
                                 title="Font Size"
-                                value={activeCellData?.fontSize ?? DEFAULT_FONT_SIZE}
+                                value={textStyleSource?.fontSize ?? DEFAULT_FONT_SIZE}
                                 options={FONT_SIZES}
                                 onCommit={setFontSize}
                                 inputMode="numeric"
@@ -5456,19 +5657,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             </RibbonBtn>
                         </RibbonRow>
                         <RibbonRow className="gap-0.5">
-                            <RibbonBtn title="Bold (Ctrl+B)" active={!!activeCellData?.bold} onClick={() => toggleStyle("bold")}><IconBold className="w-4 h-4" /></RibbonBtn>
-                            <RibbonBtn title="Italic (Ctrl+I)" active={!!activeCellData?.italic} onClick={() => toggleStyle("italic")}><IconItalic className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Bold (Ctrl+B)" active={!!textStyleSource?.bold} onClick={() => toggleStyle("bold")}><IconBold className="w-4 h-4" /></RibbonBtn>
+                            <RibbonBtn title="Italic (Ctrl+I)" active={!!textStyleSource?.italic} onClick={() => toggleStyle("italic")}><IconItalic className="w-4 h-4" /></RibbonBtn>
                             <RibbonSplit
                                 title="Underline (Ctrl+U)"
-                                active={!!activeCellData?.underline}
+                                active={!!textStyleSource?.underline}
                                 onClick={() => setUnderlineStyle(true)}
                                 face={<IconUnderline className="w-4 h-4" />}
                                 contentClassName="w-48"
                             >
-                                <MenuItem label="Underline" checked={activeCellData?.underline === true} icon={IconUnderline} onClick={() => setUnderlineStyle(true)} />
-                                <MenuItem label="Double Underline" checked={activeCellData?.underline === "double"} onClick={() => setUnderlineStyle("double")} style={{ textDecoration: "underline double" }} />
+                                <MenuItem label="Underline" checked={textStyleSource?.underline === true} icon={IconUnderline} onClick={() => setUnderlineStyle(true)} />
+                                <MenuItem label="Double Underline" checked={textStyleSource?.underline === "double"} onClick={() => setUnderlineStyle("double")} style={{ textDecoration: "underline double" }} />
                                 <MenuSeparator />
-                                <MenuItem label="Strikethrough" checked={!!activeCellData?.strike} icon={IconStrikethrough} shortcut="Ctrl+5" onClick={() => toggleStyle("strike")} />
+                                <MenuItem label="Strikethrough" checked={!!textStyleSource?.strike} icon={IconStrikethrough} shortcut="Ctrl+5" onClick={() => toggleStyle("strike")} />
                             </RibbonSplit>
                             <RibbonDivider />
                             <RibbonSplit
@@ -5503,7 +5704,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 title="Font Color"
                                 icon={<span className="text-[14px] font-semibold leading-[14px] text-slate-800">A</span>}
                                 color={lastFontColor}
-                                value={activeCellData?.color}
+                                value={textStyleSource?.color}
                                 onApply={(c) => { setLastFontColor(c); setColor(c); }}
                                 autoLabel="Automatic"
                                 onAuto={() => setColor(undefined)}
@@ -5516,9 +5717,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 <RibbonGroup label="Alignment" onLauncher={() => { setFormatCellsTab("alignment"); setFormatCellsOpen(true); }} launcherTitle="Format Cells: Alignment">
                     <RibbonStack className="gap-1.5 justify-start pt-1">
                         <RibbonRow>
-                            <RibbonBtn title="Top Align" active={activeCellData?.valign === "top"} onClick={() => setValign("top")}><IconLayoutAlignTop className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
-                            <RibbonBtn title="Middle Align" active={!activeCellData?.valign || activeCellData?.valign === "middle"} onClick={() => setValign("middle")}><IconLayoutAlignMiddle className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
-                            <RibbonBtn title="Bottom Align" active={activeCellData?.valign === "bottom"} onClick={() => setValign("bottom")}><IconLayoutAlignBottom className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Top Align" active={textStyleSource?.valign === "top"} onClick={() => setValign("top")}><IconLayoutAlignTop className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Middle Align" active={!textStyleSource?.valign || textStyleSource?.valign === "middle"} onClick={() => setValign("middle")}><IconLayoutAlignMiddle className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Bottom Align" active={textStyleSource?.valign === "bottom"} onClick={() => setValign("bottom")}><IconLayoutAlignBottom className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
                             <RibbonDropdown title="Orientation" trigger={<IconTextOrientation className="w-4 h-4 text-slate-700" strokeWidth={1.5} />} contentClassName="w-60">
                                 {ORIENTATION_OPTIONS.map((o) => (
                                     <MenuItem key={o.value} label={o.label} checked={activeCellData?.rotation === o.value} onClick={() => setRotation(o.value)} />
@@ -5528,9 +5729,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             </RibbonDropdown>
                         </RibbonRow>
                         <RibbonRow>
-                            <RibbonBtn title="Align Left" active={activeCellData?.align === "left" || !activeCellData?.align} onClick={() => setAlign("left")}><IconAlignLeft className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
-                            <RibbonBtn title="Center" active={activeCellData?.align === "center"} onClick={() => setAlign("center")}><IconAlignCenter className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
-                            <RibbonBtn title="Align Right" active={activeCellData?.align === "right"} onClick={() => setAlign("right")}><IconAlignRight className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Align Left" active={textStyleSource?.align === "left" || !textStyleSource?.align} onClick={() => setAlign("left")}><IconAlignLeft className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Center" active={textStyleSource?.align === "center"} onClick={() => setAlign("center")}><IconAlignCenter className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
+                            <RibbonBtn title="Align Right" active={textStyleSource?.align === "right"} onClick={() => setAlign("right")}><IconAlignRight className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
                             <RibbonBtn title="Decrease Indent" disabled={!activeCellData?.indent} onClick={() => adjustIndent(-1)}><IconIndentDecrease className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
                             <RibbonBtn title="Increase Indent" onClick={() => adjustIndent(1)}><IconIndentIncrease className="w-4 h-4" strokeWidth={1.5} /></RibbonBtn>
                         </RibbonRow>
@@ -6039,6 +6240,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         }}
                         onUpdate={(patch) => handleUpdateMedia(item.id, patch)}
                         onDelete={() => handleDeleteMedia(item.id)}
+                        isEditingText={editingShapeId === item.id}
+                        onEditText={(on) => {
+                            if (on) setSelectedMediaId(item.id);
+                            setEditingShapeId((prev) => (on ? item.id : prev === item.id ? null : prev));
+                        }}
                     />
                 ))}
                 <table
@@ -6180,8 +6386,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
                                     // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
                                     const filterTable = filterHeaderTables[cellId];
-                                    const columnHasActiveFilter = filterTable && Array.isArray(filterTable.filters?.[colIdx]);
-                                    const isFilterOpenHere = filterPopover?.tableId === filterTable?.id && filterPopover?.colIdx === colIdx;
+                                    const columnHasActiveFilter = filterTable && isFilterActive(filterTable.filters?.[colIdx]);
 
                                     return (
                                         <td
@@ -6237,56 +6442,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                 />
                                             )}
                                             {filterTable && (
-                                                <Popover open={isFilterOpenHere} onOpenChange={(open) => { if (!open) { setFilterPopover(null); setFilterDraft(null); } }}>
-                                                    <PopoverTrigger asChild>
-                                                        <button
-                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                            onClick={(e) => { e.stopPropagation(); openColumnFilter(filterTable, colIdx); }}
-                                                            className={cn(
-                                                                "absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 z-10 cursor-pointer",
-                                                                // Plain AutoFilter ranges (Ctrl+Shift+L) keep the cell's own
-                                                                // header styling, so the icon can't assume a dark header.
-                                                                filterTable.styleKey ? "text-white/90" : "text-slate-500"
-                                                            )}
-                                                            title="Filter this column"
-                                                        >
-                                                            {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" />}
-                                                        </button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent className="w-56 p-2 bg-white border border-slate-200 shadow-md rounded-lg space-y-2" align="start" onMouseDown={(e) => e.stopPropagation()}>
-                                                        {filterDraft && (
-                                                            <>
-                                                                <input
-                                                                    className="w-full h-7 text-xs border border-slate-200 rounded px-2"
-                                                                    placeholder="Search values…"
-                                                                    value={filterDraft.search}
-                                                                    onChange={(e) => setFilterDraft((d) => ({ ...d, search: e.target.value }))}
-                                                                />
-                                                                <div className="flex items-center justify-between text-[11px] text-indigo-600 px-0.5">
-                                                                    <button className="hover:underline cursor-pointer" onClick={selectAllFilterValues}>Select All</button>
-                                                                    <button className="hover:underline cursor-pointer" onClick={clearAllFilterValues}>Clear</button>
-                                                                </div>
-                                                                <div className="max-h-40 overflow-y-auto space-y-1 border border-slate-100 rounded p-1.5">
-                                                                    {filterDraft.allValues
-                                                                        .filter((v) => v.toLowerCase().includes(filterDraft.search.toLowerCase()))
-                                                                        .map((val) => (
-                                                                            <div key={val} className="flex items-center gap-2">
-                                                                                <Checkbox checked={filterDraft.selected.has(val)} onCheckedChange={() => toggleFilterValue(val)} />
-                                                                                <span className="text-xs text-slate-700 truncate">{val === "" ? "(Blank)" : val}</span>
-                                                                            </div>
-                                                                        ))}
-                                                                    {filterDraft.allValues.filter((v) => v.toLowerCase().includes(filterDraft.search.toLowerCase())).length === 0 && (
-                                                                        <div className="text-[11px] text-slate-400 text-center py-2">No matches</div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex justify-end gap-1.5 pt-1">
-                                                                    <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer" onClick={() => { setFilterPopover(null); setFilterDraft(null); }}>Cancel</Button>
-                                                                    <Button size="sm" className="h-7 text-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white" onClick={applyColumnFilter}>Apply</Button>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </PopoverContent>
-                                                </Popover>
+                                                <button
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => { e.stopPropagation(); openColumnFilter(filterTable, colIdx, e.currentTarget); }}
+                                                    className={cn(
+                                                        "absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 z-10 cursor-pointer",
+                                                        // Plain AutoFilter ranges (Ctrl+Shift+L) keep the cell's own
+                                                        // header styling, so the icon can't assume a dark header.
+                                                        filterTable.styleKey ? "text-white/90" : "text-slate-500"
+                                                    )}
+                                                    title="Sort and filter this column"
+                                                >
+                                                    {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" />}
+                                                </button>
                                             )}
                                             {isEditing ? (
                                                 <div className="relative w-full h-full">
@@ -6541,6 +6709,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 )}
             </div>
 
+            {/* Status bar: how much of the filtered tables is showing */}
+            {filteredRows.total > 0 && (
+                <div className="hidden md:block shrink-0 text-[11px] text-slate-600 tabular-nums">
+                    <b className="font-semibold">{filteredRows.shown}</b> of <b className="font-semibold">{filteredRows.total}</b> rows shown
+                </div>
+            )}
+
             {/* Status bar: quick totals for a multi-cell selection */}
             {selectionStats && (
                 <div className="hidden md:flex items-center gap-3 shrink-0 text-[11px] text-slate-600 tabular-nums">
@@ -6664,6 +6839,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 onOpenChange={(open) => { if (!open) { setInsertDeleteMode(null); focusGrid(); } }}
                 onChoose={(kind) => runInsertDelete(insertDeleteMode, kind)}
             />
+            {filterPopover && filterPopoverTable && (() => {
+                const { colIdx, anchorRect } = filterPopover;
+                const headerRow = Math.min(parseCellRef(filterPopoverTable.range.start)?.row ?? 0, parseCellRef(filterPopoverTable.range.end)?.row ?? 0);
+                return (
+                    <TableFilterPopover
+                        key={`${filterPopoverTable.id}:${colIdx}`}
+                        anchorRect={anchorRect}
+                        title={String(displayGrid[getCellId(headerRow, colIdx)] ?? "").trim() || `Column ${columns[colIdx]}`}
+                        values={getTableColumnValues(filterPopoverTable, colIdx)}
+                        filter={filterPopoverTable.filters?.[colIdx]}
+                        canSort={!isSheetReadOnly}
+                        onSort={sortTableByColumn}
+                        onApply={applyColumnFilter}
+                        onClose={() => setFilterPopover(null)}
+                    />
+                );
+            })()}
             <UnhideSheetDialog
                 open={unhideSheetOpen}
                 onOpenChange={setUnhideSheetOpen}

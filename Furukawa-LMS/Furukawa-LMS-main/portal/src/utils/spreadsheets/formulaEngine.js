@@ -1008,6 +1008,76 @@ export const adjustFormula = (formula, rowOffset, colOffset) => {
     return formula.slice(0, eq + 1) + tokens.map((t) => shiftToken(t, rowOffset, colOffset)).join("");
 };
 
+// Shifts the 1-D span [lo, hi] for an insert (count > 0) or delete (count < 0)
+// of bands at `at`. An insert inside the span widens it; a delete trims the
+// overlapped part. Returns null when the whole span was deleted.
+export const shiftSpan = (lo, hi, at, count) => {
+    if (count > 0) {
+        if (lo >= at) return [lo + count, hi + count];
+        return [lo, hi >= at ? hi + count : hi];
+    }
+    const delEnd = at - count - 1;
+    const overlap = Math.max(0, Math.min(hi, delEnd) - Math.max(lo, at) + 1);
+    const remaining = hi - lo + 1 - overlap;
+    if (remaining <= 0) return null;
+    const newLo = lo < at ? lo : lo > delEnd ? lo + count : at;
+    return [newLo, newLo + remaining - 1];
+};
+
+// shiftSpan for the two ends of a reference as written, which may be back to
+// front ("B10:A1") — each end keeps its place, and so its own $ signs.
+const shiftEnds = (a, b, at, count) => {
+    const span = shiftSpan(Math.min(a, b), Math.max(a, b), at, count);
+    if (!span) return null;
+    return a <= b ? span : [span[1], span[0]];
+};
+
+const refPartsText = (p) => `${p.colAbs ? "$" : ""}${indexToCol(p.col)}${p.rowAbs ? "$" : ""}${p.row + 1}`;
+
+const shiftTokenBands = (tok, axis, at, count) => {
+    if (tok.type === "cell" || tok.type === "range") {
+        const parts = tok.text.split(":").map(parseRefParts);
+        if (parts.includes(null)) return tok.text;
+        const first = parts[0], last = parts[parts.length - 1];
+        const ends = shiftEnds(first[axis], last[axis], at, count);
+        if (!ends) return ERR.REF;
+        if (ends[0] === first[axis] && ends[1] === last[axis]) return tok.text;
+        first[axis] = ends[0];
+        last[axis] = ends[1];
+        return parts.map(refPartsText).join(":");
+    }
+    if ((tok.type === "colrange" && axis === "col") || (tok.type === "rowrange" && axis === "row")) {
+        const parts = tok.text.split(":").map((t) => {
+            const abs = t.startsWith("$");
+            const body = t.replace("$", "");
+            return { abs, index: axis === "col" ? colToIndex(body) : parseInt(body, 10) - 1 };
+        });
+        const ends = shiftEnds(parts[0].index, parts[1].index, at, count);
+        if (!ends) return ERR.REF;
+        if (ends[0] === parts[0].index && ends[1] === parts[1].index) return tok.text;
+        return parts.map((p, i) => `${p.abs ? "$" : ""}${axis === "col" ? indexToCol(ends[i]) : ends[i] + 1}`).join(":");
+    }
+    return tok.text;
+};
+
+// Repairs a formula's references after rows/columns (`axis` "row" | "col") are
+// inserted (count > 0) or deleted (count < 0) at `at`, so each still points at
+// the cells it did before. Unlike adjustFormula this moves $-anchored parts
+// too: $ pins a reference when the formula is copied, not when the cells it
+// names move. A range the change falls inside grows or shrinks; a reference
+// whose cells were all deleted becomes #REF!.
+export const shiftFormulaBands = (formula, axis, at, count) => {
+    if (!isFormula(formula) || !count) return formula;
+    const eq = formula.indexOf("=");
+    let tokens;
+    try {
+        tokens = lexFormula(formula.slice(eq + 1));
+    } catch {
+        return formula;
+    }
+    return formula.slice(0, eq + 1) + tokens.map((t) => shiftTokenBands(t, axis, at, count)).join("");
+};
+
 // Every cell/range reference in a formula with its position — drives the
 // colored reference highlighting while editing.
 export const extractFormulaReferences = (text) => {

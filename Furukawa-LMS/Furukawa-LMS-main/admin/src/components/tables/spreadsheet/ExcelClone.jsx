@@ -30,7 +30,8 @@ import {
 } from "@/services/api/DepartmentApi.js";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
-    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE
+    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE,
+    shiftSpan, shiftFormulaBands
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
@@ -3105,25 +3106,38 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         gridContainerRef.current?.focus();
     }, [rowCount, columnCount, editingCell, commitEdit]);
 
+    // Right-click on a header opens the grid menu for that row/column. On one
+    // that is already part of a whole-row/column selection it leaves the
+    // selection alone, so the menu acts on everything that was selected.
     const handleRowHeaderMouseDown = useCallback((rowIdx, e) => {
+        if (e.button === 2) {
+            const inSelection = allSelectionBounds.some((b) => b.minCol === 0 && b.maxCol === columnCount - 1 && rowIdx >= b.minRow && rowIdx <= b.maxRow);
+            if (!inSelection) selectRow(rowIdx);
+            return;
+        }
         if (e.button !== 0) return;
         e.preventDefault();
         headerSelectAnchor.current = rowIdx;
         isSelectingRowHeader.current = true;
         selectRow(rowIdx, false, e.ctrlKey || e.metaKey);
-    }, [selectRow]);
+    }, [selectRow, allSelectionBounds, columnCount]);
 
     const handleRowHeaderMouseEnter = useCallback((rowIdx) => {
         if (isSelectingRowHeader.current) selectRow(rowIdx, true);
     }, [selectRow]);
 
     const handleColHeaderMouseDown = useCallback((colIdx, e) => {
+        if (e.button === 2) {
+            const inSelection = allSelectionBounds.some((b) => b.minRow === 0 && b.maxRow === rowCount - 1 && colIdx >= b.minCol && colIdx <= b.maxCol);
+            if (!inSelection) selectColumn(colIdx);
+            return;
+        }
         if (e.button !== 0) return;
         e.preventDefault();
         headerSelectAnchor.current = colIdx;
         isSelectingColHeader.current = true;
         selectColumn(colIdx, false, e.ctrlKey || e.metaKey);
-    }, [selectColumn]);
+    }, [selectColumn, allSelectionBounds, rowCount]);
 
     const handleColHeaderMouseEnter = useCallback((colIdx) => {
         if (isSelectingColHeader.current) selectColumn(colIdx, true);
@@ -3454,10 +3468,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     };
 
     // --- Insert / delete rows & columns ---
-    // Note: shifts cell values, formatting, sizes and hidden flags correctly,
-    // but does not rewrite formulas elsewhere on the sheet that reference the
-    // shifted cells — matching a plain insert/delete, not Excel's full
-    // reference-repair.
+    // Shifts cell values, formatting, sizes and hidden flags, and repairs the
+    // references in the sheet's formulas (shiftFormulaBands) so they keep
+    // pointing at the cells they did before.
 
     // Re-keys a sparse { index: value } map / index list after inserting
     // (count > 0) or deleting (count < 0) bands at `at`.
@@ -3474,21 +3487,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!list) return list;
         const out = list.filter((i) => !(count < 0 && i >= at && i < at - count)).map((i) => (i >= at ? i + count : i));
         return out.length ? out : undefined;
-    };
-    // Shifts the 1-D span [lo, hi] for an insert/delete at `at`. An insert
-    // inside the span widens it; a delete trims the overlapped part. Returns
-    // null when the whole span was deleted.
-    const shiftSpan = (lo, hi, at, count) => {
-        if (count > 0) {
-            if (lo >= at) return [lo + count, hi + count];
-            return [lo, hi >= at ? hi + count : hi];
-        }
-        const delEnd = at - count - 1;
-        const overlap = Math.max(0, Math.min(hi, delEnd) - Math.max(lo, at) + 1);
-        const remaining = hi - lo + 1 - overlap;
-        if (remaining <= 0) return null;
-        const newLo = lo < at ? lo : lo > delEnd ? lo + count : at;
-        return [newLo, newLo + remaining - 1];
     };
     // Shifts a start/end cell-id range along `axis`; returns normalized
     // bounds or null when the range was deleted entirely.
@@ -3517,7 +3515,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const pos = axis === "row" ? ref.row : ref.col;
                 if (count < 0 && pos >= at && pos < at - count) continue;
                 const shifted = pos >= at ? pos + count : pos;
-                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = oldCells[id];
+                const cell = oldCells[id];
+                const value = shiftFormulaBands(cell.value, axis, at, count);
+                newCells[axis === "row" ? getCellId(shifted, ref.col) : getCellId(ref.row, shifted)] = value === cell.value ? cell : { ...cell, value };
             }
             sheet.cells = newCells;
             if (axis === "row") {
@@ -3550,8 +3550,34 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     const b = shiftRange(range.start, range.end, axis, at, count);
                     return b ? [toIds(b)] : [];
                 });
-                return ranges.length ? [{ ...rule, ranges }] : [];
+                if (!ranges.length) return [];
+                // A rule's formulas are written for the top-left cell of its first
+                // range. When that cell was deleted they are first re-read at the
+                // cell that takes its place, then repaired like any other formula.
+                const topLeft = (range) => {
+                    const s = parseCellRef(range.start), e = parseCellRef(range.end);
+                    return s && e ? { row: Math.min(s.row, e.row), col: Math.min(s.col, e.col) } : null;
+                };
+                const was = topLeft(rule.ranges[0]);
+                const now = topLeft(ranges[0]);
+                if (!was) return [{ ...rule, ranges }];
+                const before = (pos) => (count < 0 && pos >= at ? pos - count : pos);
+                const rowOffset = (axis === "row" ? before(now.row) : now.row) - was.row;
+                const colOffset = (axis === "col" ? before(now.col) : now.col) - was.col;
+                const formulas = {};
+                for (const field of ["formula", "value", "value2"]) {
+                    if (isFormula(rule[field])) formulas[field] = shiftFormulaBands(adjustFormula(rule[field], rowOffset, colOffset), axis, at, count);
+                }
+                return [{ ...rule, ...formulas, ranges }];
             });
+            // Pivot sheets built from this sheet keep reading the same source cells.
+            for (const other of Object.values(next)) {
+                const pivot = other?.pivotConfig;
+                if (!pivot || pivot.sourceSheet !== activeSheetName || typeof pivot.sourceRange !== "string") continue;
+                const [startId, endId = startId] = pivot.sourceRange.split(":");
+                const b = shiftRange(startId, endId, axis, at, count);
+                if (b) other.pivotConfig = { ...pivot, sourceRange: `${getCellId(b.minRow, b.minCol)}:${getCellId(b.maxRow, b.maxCol)}` };
+            }
             const key = axis === "row" ? "row" : "col";
             const limit = (axis === "row" ? sheet.rowCount : sheet.columnCount) - 1;
             sheet.media = (sheet.media || []).map((item) => {
@@ -4465,20 +4491,52 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const landing = remaining.find((c) => c > maxCol) ?? remaining[remaining.length - 1];
         moveTo({ row: parseCellRef(activeCell).row, col: landing }, false);
     };
-    // Unhides any hidden rows/columns inside the selection — select across
-    // the double-line marker (or the whole sheet) first, like Excel.
+    // The hidden rows/columns that the span min..max covers or sits right next
+    // to, each taken as a whole run — with rows 1–4 hidden and row 5 selected,
+    // all four come back, not just row 4.
+    const hiddenBandsTouching = (list, min, max) => {
+        const touching = [];
+        let run = [];
+        const flush = () => {
+            if (run.length && run[0] <= max + 1 && run[run.length - 1] >= min - 1) touching.push(...run);
+            run = [];
+        };
+        for (const i of [...list].sort((a, b) => a - b)) {
+            if (run.length && i !== run[run.length - 1] + 1) flush();
+            run.push(i);
+        }
+        flush();
+        return touching;
+    };
+    // Unhides any hidden rows/columns inside or next to the selection — select
+    // across the double-line marker (or the whole sheet) first, like Excel.
     const unhideSelectedRows = () => {
         if (!selectionBounds) return;
-        const inside = hiddenRows.filter((r) => r >= selectionBounds.minRow - 1 && r <= selectionBounds.maxRow + 1);
+        const inside = hiddenBandsTouching(hiddenRows, selectionBounds.minRow, selectionBounds.maxRow);
         if (!inside.length) { toast.info("Select the rows on both sides of the hidden ones, then unhide."); return; }
         setHiddenBands("hiddenRows", inside, false);
     };
     const unhideSelectedColumns = () => {
         if (!selectionBounds) return;
-        const inside = hiddenCols.filter((c) => c >= selectionBounds.minCol - 1 && c <= selectionBounds.maxCol + 1);
+        const inside = hiddenBandsTouching(hiddenCols, selectionBounds.minCol, selectionBounds.maxCol);
         if (!inside.length) { toast.info("Select the columns on both sides of the hidden ones, then unhide."); return; }
         setHiddenBands("hiddenCols", inside, false);
     };
+    // The header arrows: unhides the whole run of hidden rows/columns that `index` is in.
+    const unhideRun = (key, index) => {
+        setHiddenBands(key, hiddenBandsTouching(key === "hiddenRows" ? hiddenRows : hiddenCols, index, index), false);
+    };
+    const unhideExpander = (key, index, glyph, position, title) => (
+        <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); unhideRun(key, index); }}
+            className={cn("absolute z-20 flex items-center justify-center w-3 h-3 text-[7px] leading-none text-indigo-600 bg-indigo-50 hover:bg-indigo-200 rounded-sm cursor-pointer", position)}
+            title={title}
+        >
+            {glyph}
+        </button>
+    );
 
     // --- AutoFit ---
 
@@ -5959,6 +6017,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <tr>
                             <th
                                 onClick={selectAllCells}
+                                onMouseDown={(e) => { if (e.button === 2) selectAllCells(); }}
                                 className="sticky top-0 left-0 z-30 bg-slate-100 border border-slate-200 h-7 cursor-pointer hover:bg-slate-200 select-none"
                                 style={{ width: ROW_HEADER_WIDTH }}
                                 title="Select all cells"
@@ -5984,6 +6043,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     title={hiddenColSet.has(colIdx - 1) ? "Hidden column(s) to the left — select across them and press Ctrl+Shift+0 to unhide" : undefined}
                                 >
                                     {c}
+                                    {/* Google Sheets' arrows on either side of hidden columns: one click brings the run back. */}
+                                    {!readOnly && hiddenColSet.has(colIdx - 1) && unhideExpander("hiddenCols", colIdx - 1, "▶", "left-0 top-1/2 -translate-y-1/2", "Unhide column(s)")}
+                                    {!readOnly && hiddenColSet.has(colIdx + 1) && unhideExpander("hiddenCols", colIdx + 1, "◀", "right-0 top-1/2 -translate-y-1/2", "Unhide column(s)")}
                                     <div
                                         onMouseDown={(e) => startColumnResize(e, colIdx)}
                                         onClick={(e) => e.stopPropagation()}
@@ -6020,6 +6082,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
                                 >
                                     {rowIdx + 1}
+                                    {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
+                                    {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
+                                    {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
                                     <div
                                         onMouseDown={(e) => startRowResize(e, rowIdx)}
                                         onClick={(e) => e.stopPropagation()}
@@ -6281,6 +6346,50 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <IconClipboard className="w-3.5 h-3.5" /> Paste
                         </ContextMenuItem>
                     )}
+                    {!readOnly && selectionBounds && (() => {
+                        const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+                        const wholeRows = minCol === 0 && maxCol === columnCount - 1;
+                        const wholeCols = minRow === 0 && maxRow === rowCount - 1;
+                        // A row-header menu offers the row actions only and a column-header
+                        // menu the column ones; a cell range or the whole sheet gets both.
+                        const forRows = wholeRows || !wholeCols;
+                        const forCols = wholeCols || !wholeRows;
+                        const rowsNear = forRows ? hiddenBandsTouching(hiddenRows, minRow, maxRow) : [];
+                        const colsNear = forCols ? hiddenBandsTouching(hiddenCols, minCol, maxCol) : [];
+                        const item = (key, Icon, label, onClick) => (
+                            <ContextMenuItem key={key} onClick={onClick} className="cursor-pointer">
+                                <Icon className="w-3.5 h-3.5" /> {label}
+                            </ContextMenuItem>
+                        );
+                        const rowSpan = maxRow - minRow + 1, colSpan = maxCol - minCol + 1;
+                        const rowWord = rowSpan === 1 ? "1 row" : `${rowSpan} rows`;
+                        const colWord = colSpan === 1 ? "1 column" : `${colSpan} columns`;
+                        // As many rows/columns go in as are selected, like Excel and Sheets.
+                        const structure = [
+                            forRows && !wholeCols && item("insert-above", IconRowInsertTop, `Insert ${rowWord} above`, () => insertRows(minRow, rowSpan)),
+                            forRows && !wholeCols && item("insert-below", IconRowInsertBottom, `Insert ${rowWord} below`, () => insertRows(maxRow + 1, rowSpan)),
+                            forCols && !wholeRows && item("insert-left", IconColumnInsertLeft, `Insert ${colWord} left`, () => insertColumns(minCol, colSpan)),
+                            forCols && !wholeRows && item("insert-right", IconColumnInsertRight, `Insert ${colWord} right`, () => insertColumns(maxCol + 1, colSpan)),
+                            forRows && !wholeCols && rowSpan < rowCount && item("delete-rows", IconRowRemove, rowSpan === 1 ? `Delete row ${minRow + 1}` : `Delete rows ${minRow + 1}–${maxRow + 1}`, () => deleteRows(minRow, rowSpan)),
+                            forCols && !wholeRows && colSpan < columnCount && item("delete-cols", IconColumnRemove, colSpan === 1 ? `Delete column ${columns[minCol]}` : `Delete columns ${columns[minCol]}–${columns[maxCol]}`, () => deleteColumns(minCol, colSpan)),
+                        ].filter(Boolean);
+                        const items = [
+                            forRows && !wholeCols && item("hide-rows", IconEyeOff, minRow === maxRow ? `Hide row ${minRow + 1}` : `Hide rows ${minRow + 1}–${maxRow + 1}`, hideSelectedRows),
+                            forCols && !wholeRows && item("hide-cols", IconEyeOff, minCol === maxCol ? `Hide column ${columns[minCol]}` : `Hide columns ${columns[minCol]}–${columns[maxCol]}`, hideSelectedColumns),
+                            rowsNear.length > 0 && item("unhide-rows", IconEye, "Unhide rows", unhideSelectedRows),
+                            colsNear.length > 0 && item("unhide-cols", IconEye, "Unhide columns", unhideSelectedColumns),
+                            forRows && hiddenRows.length > rowsNear.length && item("unhide-all-rows", IconEye, "Unhide all rows", () => setHiddenBands("hiddenRows", hiddenRows, false)),
+                            forCols && hiddenCols.length > colsNear.length && item("unhide-all-cols", IconEye, "Unhide all columns", () => setHiddenBands("hiddenCols", hiddenCols, false)),
+                        ].filter(Boolean);
+                        return (
+                            <>
+                                {structure.length > 0 && <ContextMenuSeparator />}
+                                {structure}
+                                {items.length > 0 && <ContextMenuSeparator />}
+                                {items}
+                            </>
+                        );
+                    })()}
                     {!!meetingId && (() => {
                         const cellId = resolveToAnchor(activeCell);
                         const thread = commentThreadAt(cellId);

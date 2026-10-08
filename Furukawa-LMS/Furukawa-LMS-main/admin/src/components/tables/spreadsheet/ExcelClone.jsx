@@ -69,8 +69,14 @@ const MIN_ROW_HEIGHT = 20;
 const ROW_HEADER_WIDTH = 40;
 const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
 const MEDIA_MIN_SIZE = 40;
-const ROW_VIRTUALIZATION_BUFFER = 10;
+const ROW_VIRTUALIZATION_BUFFER = 16;
 const COL_VIRTUALIZATION_BUFFER = 4;
+// The scroll position is kept in state only to the nearest step below it, so the
+// grid re-renders once per step scrolled (about 7 rows / 3 columns) rather than
+// once per frame; the visible window is drawn a step longer to make up for it.
+const SCROLL_STEP_Y = 196;
+const SCROLL_STEP_X = 240;
+const snapScroll = (value, step) => Math.floor(value / step) * step;
 // Used for the visible-column window until the grid's width has been measured.
 const UNMEASURED_VIEWPORT_WIDTH = 2400;
 const IO_CHUNK_SIZE = 250; // rows processed per batch during import/export, between UI-yielding pauses
@@ -1469,11 +1475,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Row virtualization: only rows within [scrollTop, scrollTop+viewportHeight]
     // (plus a buffer) are rendered, so a 5000+-row sheet doesn't put 5000+ <tr>s
     // in the DOM. Tracked as state (not read straight off the DOM at render time)
-    // so scrolling/resizing the container actually triggers a re-render.
+    // so scrolling/resizing the container actually triggers a re-render. Both
+    // scroll offsets are held snapped (snapScroll), not to the pixel.
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
     const [viewportWidth, setViewportWidth] = useState(0);
+    const isScrollingRef = useRef(false); // true while the grid is being scrolled, and for a moment after
     const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
 
     // Import/export progress dialog. { title, label, current, total } | null —
@@ -1893,6 +1901,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return hidden;
     }, [tables, displayGrid, hiddenRows]);
 
+    // The header cells of filter-enabled tables, each mapped to its table — the
+    // cells that get an AutoFilter dropdown. Looked up once per rendered cell.
+    const filterHeaderTables = useMemo(() => {
+        const map = {};
+        for (const t of tables) {
+            if (!t.filtersEnabled) continue;
+            const ts = parseCellRef(t.range.start), te = parseCellRef(t.range.end);
+            if (!ts || !te) continue;
+            const minRow = Math.min(ts.row, te.row);
+            const minCol = Math.min(ts.col, te.col), maxCol = Math.max(ts.col, te.col);
+            for (let c = minCol; c <= maxCol; c++) map[getCellId(minRow, c)] ??= t;
+        }
+        return map;
+    }, [tables]);
+
     const isEditingFormula = !!editingCell && editValue.trim().startsWith("=");
 
     // Maps every cell covered by a reference in the formula currently being
@@ -2050,23 +2073,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [rowCount, heightForRow]);
 
     // Keeps the scroll position and viewport size in sync with the actual DOM so
-    // virtualization can compute which rows and columns are visible. A plain scroll
-    // listener (not rAF-throttled) is fine here — each resulting re-render is cheap
-    // since it only re-renders the visible slice of rows and columns, not the whole
-    // sheet.
+    // virtualization can compute which rows and columns are visible. The offsets
+    // are snapped before they reach state: a re-render here is of the whole
+    // component, and one per scroll event left the grid drawing behind the scroll —
+    // blank rows flashing in on a fast one.
+    // The hover highlight is dropped while scrolling, since cells sliding under a
+    // still pointer would otherwise each ask for a re-render of their own.
     // Re-run when loading finishes: while the sheet is loading a spinner is rendered
     // in place of the grid, so on a first open there is no grid element yet when this
     // first runs — and with nothing listening, the visible window never moved.
     useEffect(() => {
         const el = gridContainerRef.current;
         if (!el) return;
+        let scrollEndTimer = null;
         const onScroll = () => {
-            setScrollTop(el.scrollTop);
-            setScrollLeft(el.scrollLeft);
+            setScrollTop(snapScroll(el.scrollTop, SCROLL_STEP_Y));
+            setScrollLeft(snapScroll(el.scrollLeft, SCROLL_STEP_X));
+            isScrollingRef.current = true;
+            setHoveredCell(null);
+            clearTimeout(scrollEndTimer);
+            scrollEndTimer = setTimeout(() => { isScrollingRef.current = false; }, 150);
         };
         el.addEventListener("scroll", onScroll, { passive: true });
-        setScrollTop(el.scrollTop);
-        setScrollLeft(el.scrollLeft);
+        setScrollTop(snapScroll(el.scrollTop, SCROLL_STEP_Y));
+        setScrollLeft(snapScroll(el.scrollLeft, SCROLL_STEP_X));
         setViewportHeight(el.clientHeight);
         setViewportWidth(el.clientWidth);
         const ro = new ResizeObserver((entries) => {
@@ -2078,6 +2108,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         ro.observe(el);
         return () => {
             el.removeEventListener("scroll", onScroll);
+            clearTimeout(scrollEndTimer);
+            isScrollingRef.current = false;
             ro.disconnect();
         };
     }, [isLoading]);
@@ -2090,7 +2122,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const visibleRowRange = useMemo(() => {
         if (rowCount === 0) return { startRow: 0, endRow: -1 };
         const viewTop = scrollTop;
-        const viewBottom = scrollTop + viewportHeight;
+        const viewBottom = scrollTop + SCROLL_STEP_Y + viewportHeight;
         let startRow = clamp(bandIndexForPixel(rowOffsets, viewTop) - ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
         let endRow = clamp(bandIndexForPixel(rowOffsets, viewBottom) + ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
         for (const m of merges) {
@@ -2117,7 +2149,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const visibleColRange = useMemo(() => {
         if (columnCount === 0) return { startCol: 0, endCol: -1 };
         const viewLeft = scrollLeft;
-        const viewRight = scrollLeft + (viewportWidth || UNMEASURED_VIEWPORT_WIDTH);
+        const viewRight = scrollLeft + SCROLL_STEP_X + (viewportWidth || UNMEASURED_VIEWPORT_WIDTH);
         let startCol = clamp(bandIndexForPixel(colOffsets, viewLeft) - COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
         let endCol = clamp(bandIndexForPixel(colOffsets, viewRight) + COL_VIRTUALIZATION_BUFFER, 0, columnCount - 1);
         if (merges.length > 0) {
@@ -2864,7 +2896,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const handleCellMouseEnter = useCallback((cellId, e) => {
         const ref = parseCellRef(cellId);
-        setHoveredCell(ref);
+        if (!isScrollingRef.current) setHoveredCell(ref);
 
         if (isPointingFormula.current && e.buttons === 1 && pointModeAnchor.current) {
             const anchor = pointModeAnchor.current;
@@ -4240,8 +4272,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!el || !saved) return;
         el.scrollTop = saved.top;
         el.scrollLeft = saved.left;
-        setScrollTop(el.scrollTop);
-        setScrollLeft(el.scrollLeft);
+        setScrollTop(snapScroll(el.scrollTop, SCROLL_STEP_Y));
+        setScrollLeft(snapScroll(el.scrollLeft, SCROLL_STEP_X));
         savedGridScroll.current = null;
         el.focus({ preventScroll: true });
     }, [isFullScreen]);
@@ -6147,14 +6179,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                     const commentThreadId = commentAnchors[cellId];
                                     const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
                                     // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
-                                    const filterTable = tables.find((t) => {
-                                        if (!t.filtersEnabled) return false;
-                                        const ts = parseCellRef(t.range.start), te = parseCellRef(t.range.end);
-                                        if (!ts || !te) return false;
-                                        const tMinRow = Math.min(ts.row, te.row);
-                                        const tMinCol = Math.min(ts.col, te.col), tMaxCol = Math.max(ts.col, te.col);
-                                        return rowIdx === tMinRow && colIdx >= tMinCol && colIdx <= tMaxCol;
-                                    });
+                                    const filterTable = filterHeaderTables[cellId];
                                     const columnHasActiveFilter = filterTable && Array.isArray(filterTable.filters?.[colIdx]);
                                     const isFilterOpenHere = filterPopover?.tableId === filterTable?.id && filterPopover?.colIdx === colIdx;
 

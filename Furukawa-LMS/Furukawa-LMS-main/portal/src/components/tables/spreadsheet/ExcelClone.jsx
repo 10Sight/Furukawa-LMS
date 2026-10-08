@@ -41,6 +41,7 @@ import { applyWorkbookUpdate, applyHistoryRecord, plainOf } from "../../../utils
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
 import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
+import { parseExcelColor } from "../../../utils/spreadsheets/excelColorResolver.js";
 import { diffWorkbook } from "./workbookDiff.js";
 import { rebaseSnapshot } from "../../../utils/spreadsheets/workbookSync.js";
 import { useSheetLiveSync, newClientId } from "./useSheetLiveSync.js";
@@ -200,6 +201,7 @@ const DRAG_GROW_INTERVAL_MS = 300;
 const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [], commentAnchors: {} });
 const EMPTY_ANCHORS = Object.freeze({}); // for sheets saved before comments existed
 const EMPTY_LIST = Object.freeze([]); // stable fallback for optional per-sheet arrays, so memo deps don't churn
+const EMPTY_MAP = Object.freeze({}); // the same, for optional per-sheet maps
 
 // Excel caps sheet names at 31 chars, forbids : \ / ? * [ ] and compares
 // names case-insensitively. Used on both import (so a workbook's tab names
@@ -1114,35 +1116,6 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
 // ExcelJS exposes all of that per-cell, so import can approximate the source
 // file's look instead of dumping it as a bare grid of strings.
 
-// Modern Office theme palette (Background1/Text1/Background2/Text2/Accent1-6).
-// A themed cell color only carries a {theme, tint} pair — ExcelJS doesn't
-// surface the workbook's actual custom theme XML through the basic cell API —
-// so this approximates with the standard Office default palette, which is
-// right for the large majority of real files (those that don't customize it).
-const EXCEL_THEME_COLORS = ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"];
-
-// Blends a #RRGGBB color toward white (tint > 0) or black (tint < 0) using
-// Excel's own tint formula, so a themed color with a lighter/darker shade
-// applied in the source file still looks approximately right after import.
-const applyTint = (hex, tint) => {
-    if (!tint) return hex;
-    const num = parseInt(hex, 16);
-    const channels = [(num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff].map((c) => {
-        const blended = tint > 0 ? c * (1 - tint) + 255 * tint : c * (1 + tint);
-        return Math.max(0, Math.min(255, Math.round(blended)));
-    });
-    return channels.map((c) => c.toString(16).padStart(2, "0")).join("");
-};
-
-// Resolves an ExcelJS color object ({argb}, {theme, tint}, or unset) to a
-// "#RRGGBB" string, or null if the cell doesn't specify a color at all.
-const parseExcelColor = (colorObj) => {
-    if (!colorObj) return null;
-    if (colorObj.argb) return `#${colorObj.argb.slice(-6)}`;
-    if (colorObj.theme !== undefined) return `#${applyTint(EXCEL_THEME_COLORS[colorObj.theme] || "000000", colorObj.tint || 0)}`;
-    return null;
-};
-
 // Excel's richer border-style vocabulary collapses onto this app's three
 // weights: "double" stays "double", medium-and-bolder styles read as "thick",
 // everything else (thin, hair, dotted, dashed variants) reads as "thin".
@@ -1536,6 +1509,17 @@ const prepareImageForExport = async (item) => {
         return null;
     }
 };
+
+// One row of the grid. The grid redraws on every scroll step, selection change
+// and mouse move, and almost none of those change what most rows show, so a row
+// is redrawn only when one of its props has changed: `shared` (what every row
+// depends on — the sheet's cells, values, merges, the rendered columns…) or the
+// few things that differ row to row. `renderRow` is a ref to ExcelClone's own
+// row-drawing function, which is not a prop that changes; it reads the grid's
+// current state when called.
+const GridRow = React.memo(function GridRow({ rowIdx, renderRow }) {
+    return renderRow.current(rowIdx);
+});
 
 const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
@@ -1962,11 +1946,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const columnCount = activeSheet.columnCount;
     const storedConditionalRules = activeSheet.conditionalRules;
     const conditionalRules = useMemo(() => normalizeRules(storedConditionalRules), [storedConditionalRules]);
-    const merges = activeSheet.merges || [];
-    const columnWidths = activeSheet.columnWidths || {};
-    const rowHeights = activeSheet.rowHeights || {};
-    const tables = activeSheet.tables || [];
-    const media = activeSheet.media || [];
+    const merges = activeSheet.merges || EMPTY_LIST;
+    const columnWidths = activeSheet.columnWidths || EMPTY_MAP;
+    const rowHeights = activeSheet.rowHeights || EMPTY_MAP;
+    const tables = activeSheet.tables || EMPTY_LIST;
+    const media = activeSheet.media || EMPTY_LIST;
     const hiddenRows = activeSheet.hiddenRows || EMPTY_LIST; // manually hidden (Ctrl+9), unlike filter-hidden rows
     const hiddenCols = activeSheet.hiddenCols || EMPTY_LIST;
     const pivotConfig = activeSheet.pivotConfig || null;
@@ -2101,8 +2085,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Excel's "range finder" highlighting, kept in sync with tokenizeFormulaForDisplay
     // so the grid border and the colored formula text always agree.
     const formulaRefBorderMap = useMemo(() => {
+        if (!isEditingFormula) return EMPTY_MAP; // the same object while plain text is typed
         const map = {};
-        if (!isEditingFormula) return map;
         const { refColorMap } = tokenizeFormulaForDisplay(editValue);
         for (const [key, color] of Object.entries(refColorMap)) {
             const [startRef, endRef] = key.includes(":") ? key.split(":") : [key, key];
@@ -2352,11 +2336,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [scrollLeft, viewportWidth, colOffsets, columnCount, merges, visibleRowRange]);
     // The column indexes to render (hidden ones left out), and the widths of the
     // spacers standing in for the columns before and after them.
+    // Keyed on the two ends rather than the range object, which is rebuilt on every
+    // vertical scroll step: the list is a dependency of every rendered row.
+    const { startCol, endCol } = visibleColRange;
     const visibleCols = useMemo(() => {
         const list = [];
-        for (let c = visibleColRange.startCol; c <= visibleColRange.endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
+        for (let c = startCol; c <= endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
         return list;
-    }, [visibleColRange, hiddenColSet]);
+    }, [startCol, endCol, hiddenColSet]);
     const leftSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[visibleColRange.startCol] - colOffsets[0];
     const rightSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[columnCount] - colOffsets[visibleColRange.endCol + 1];
     // Cells in a full-width row: the row header, the rendered columns and the spacers.
@@ -4301,7 +4288,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const usedNames = new Set();
                 let processedRows = 0;
                 let importedImageCount = 0, skippedUnsupportedImages = 0, skippedLargeImages = 0;
-                let importedRuleCount = 0, skippedRuleCount = 0;
+                let importedRuleCount = 0, skippedRuleCount = 0, approximatedRuleCount = 0;
                 // ExcelJS doesn't read "Stop If True" on conditional formatting; it comes from the file's XML.
                 let stopIfTrueBySheet = {};
                 try {
@@ -4378,6 +4365,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     });
                     importedRuleCount += conditional.rules.length;
                     skippedRuleCount += conditional.skipped;
+                    approximatedRuleCount += conditional.approximated;
 
                     importedSheets[sheetName] = {
                         ...emptySheet(),
@@ -4417,6 +4405,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}${ruleNote}. Click Save to persist ${count === 1 && !imageNote && !ruleNote ? "it" : "them"}.`);
                 if (skippedRuleCount > 0) {
                     toast.warning(`${skippedRuleCount} conditional formatting rule${skippedRuleCount === 1 ? " was" : "s were"} skipped — no equivalent here.`);
+                }
+                if (approximatedRuleCount > 0) {
+                    toast.warning(`${approximatedRuleCount} conditional formatting rule${approximatedRuleCount === 1 ? " was" : "s were"} imported with a colour that couldn't be read from the file — check ${approximatedRuleCount === 1 ? "its" : "their"} formatting.`);
                 }
                 if (skippedUnsupportedImages > 0) {
                     toast.warning(`${skippedUnsupportedImages} image${skippedUnsupportedImages === 1 ? " was" : "s were"} skipped — format not supported in the browser (e.g. EMF/WMF/TIFF).`);
@@ -5453,6 +5444,259 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const formatStat = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 
+    // --- Drawing the rows ---
+    // Each row is a GridRow, which redraws only when its props change (see GridRow).
+    // What follows is what those props are made from, and the function that draws
+    // a row when one does.
+
+    // Rows holding the top-left cell of a merge that runs on below them: the
+    // bottom edge of such a cell's selection border depends on where the selection
+    // ends, not just on whether this row is its last.
+    const tallMergeRows = useMemo(() => {
+        const set = new Set();
+        for (const m of merges) {
+            const s = parseCellRef(m.start), e = parseCellRef(m.end);
+            if (s && e && s.row !== e.row) set.add(Math.min(s.row, e.row));
+        }
+        return set;
+    }, [merges]);
+    // Everything a row draws from that is the same for every row. Its identity is
+    // what matters — a new one means "redraw every row".
+    const hasLeftSpacer = leftSpacerWidth > 0, hasRightSpacer = rightSpacerWidth > 0, isPaintingFormat = !!formatPainterStyle;
+    const rowShared = useMemo(() => ({}), [ // eslint-disable-line react-hooks/exhaustive-deps
+        cells, displayGrid, mergeMap, conditionalMap, formulaRefBorderMap, commentAnchors, commentThreads, filterHeaderTables,
+        fillPreviewCellIds, hiddenRowSet, hiddenColSet, manualHiddenRowSet, visibleCols, hasLeftSpacer, hasRightSpacer,
+        gridlinesVisible, showFormulas, readOnly, isPaintingFormat,
+    ]);
+    // How the selection and the active cell fall on a row, as a string: the columns
+    // each selected range covers there and whether the row is that range's first or
+    // last, so that dragging a selection one row further changes it for two rows
+    // only. A row in tallMergeRows gets the ranges whole.
+    const activeCellRef = parseCellRef(activeCell);
+    const rowSelectionKey = (rowIdx) => {
+        let key = activeCellRef?.row === rowIdx ? `@${activeCellRef.col}` : "";
+        const whole = tallMergeRows.has(rowIdx);
+        for (const b of allSelectionBounds) {
+            if (rowIdx < b.minRow || rowIdx > b.maxRow) continue;
+            key += `|${b === selectionBounds ? "a" : "x"}${b.minCol}:${b.maxCol}`;
+            key += whole ? `:${b.minRow}:${b.maxRow}` : `${rowIdx === b.minRow ? "t" : ""}${rowIdx === b.maxRow ? "b" : ""}`;
+        }
+        return key;
+    };
+    const editingRow = editingCell ? parseCellRef(editingCell)?.row ?? -1 : -1;
+    // A row that was not redrawn keeps the handlers it was drawn with, which close
+    // over the selection as it was then. Reaching them through this ref instead
+    // means every row always calls the current ones.
+    const rowHandlers = useRef(null);
+    rowHandlers.current = {
+        handleRowHeaderMouseDown, handleRowHeaderMouseEnter, startRowResize, handleCellMouseDown, handleCellMouseEnter,
+        startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit,
+    };
+    const renderRowRef = useRef(null);
+    renderRowRef.current = (rowIdx) => (
+        <tr key={rowIdx}>
+            <td
+                onMouseDown={(e) => rowHandlers.current.handleRowHeaderMouseDown(rowIdx, e)}
+                onMouseEnter={() => rowHandlers.current.handleRowHeaderMouseEnter(rowIdx)}
+                className={cn(
+                    "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
+                    (hoveredCell?.row === rowIdx || allSelectionBounds.some((b) => rowIdx >= b.minRow && rowIdx <= b.maxRow))
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-slate-100 text-slate-500",
+                    manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
+                )}
+                style={{ width: ROW_HEADER_WIDTH, height: heightForRow(rowIdx) }}
+                title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
+            >
+                {rowIdx + 1}
+                {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
+                {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
+                {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
+                <div
+                    onMouseDown={(e) => rowHandlers.current.startRowResize(e, rowIdx)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-indigo-400/60 z-10"
+                    title="Drag to resize row"
+                />
+            </td>
+            {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
+            {visibleCols.map((colIdx) => {
+                const cellId = getCellId(rowIdx, colIdx);
+                const merge = mergeMap[cellId];
+                // Cells covered by a merge but not its anchor render nothing —
+                // the anchor's <td> below spans over them via colSpan/rowSpan.
+                if (merge && merge.start !== cellId) return null;
+
+                const cell = cells[cellId];
+                const isActive = activeCell === cellId;
+                const isInRange = isCellSelected(rowIdx, colIdx);
+                const isEditing = editingCell === cellId;
+                const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
+                const isFillPreviewCell = fillPreviewCellIds.has(cellId);
+                const conditional = conditionalMap[cellId];
+                const conditionalStyle = conditional?.style;
+                // Spans count only rendered rows/columns, so a merge that
+                // covers hidden ones doesn't push the rest of the row over.
+                const mergeSpan = merge ? (() => {
+                    const s = parseCellRef(merge.start), e = parseCellRef(merge.end);
+                    let rowSpan = 0, colSpan = 0;
+                    for (let r = s.row; r <= e.row; r++) if (!hiddenRowSet.has(r)) rowSpan++;
+                    for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
+                    return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
+                })() : null;
+                // Perimeter border for a multi-cell selection: only true on the
+                // outer-facing sides of the selection rectangle, accounting for
+                // this cell's merge span if it has one.
+                const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
+                const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
+                const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
+                const inActiveRange = rowIdx >= selectionBounds?.minRow && rowIdx <= selectionBounds?.maxRow
+                    && colIdx >= selectionBounds?.minCol && colIdx <= selectionBounds?.maxCol;
+                let selectionEdges = isMultiSelection && inActiveRange ? {
+                    top: rowIdx === selectionBounds.minRow,
+                    bottom: spanRowEnd === selectionBounds.maxRow,
+                    left: colIdx === selectionBounds.minCol,
+                    right: spanColEnd === selectionBounds.maxCol
+                } : null;
+                // The other Ctrl-selected ranges each get their own perimeter.
+                if (isInRange) {
+                    for (const b of extraBounds) {
+                        if (rowIdx < b.minRow || rowIdx > b.maxRow || colIdx < b.minCol || colIdx > b.maxCol) continue;
+                        selectionEdges = {
+                            top: selectionEdges?.top || rowIdx === b.minRow,
+                            bottom: selectionEdges?.bottom || spanRowEnd === b.maxRow,
+                            left: selectionEdges?.left || colIdx === b.minCol,
+                            right: selectionEdges?.right || spanColEnd === b.maxCol
+                        };
+                    }
+                }
+                const formulaRefEdges = formulaRefBorderMap[cellId];
+                const commentThreadId = commentAnchors[cellId];
+                const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
+                // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
+                const filterTable = filterHeaderTables[cellId];
+                const columnHasActiveFilter = filterTable && isFilterActive(filterTable.filters?.[colIdx]);
+
+                return (
+                    <td
+                        key={cellId}
+                        rowSpan={mergeSpan?.rowSpan}
+                        colSpan={mergeSpan?.colSpan}
+                        onMouseDown={(e) => rowHandlers.current.handleCellMouseDown(cellId, e)}
+                        onMouseEnter={(e) => rowHandlers.current.handleCellMouseEnter(cellId, e)}
+                        onDoubleClick={readOnly ? undefined : () => rowHandlers.current.startEditing(cellId)}
+                        className={cn(
+                            "p-0 relative",
+                            gridlinesVisible ? "border border-slate-200" : "border border-transparent",
+                            isActive && "outline outline-2 outline-indigo-500 -outline-offset-2",
+                            isFillPreviewCell && "outline outline-1 outline-dashed outline-indigo-400 -outline-offset-1",
+                            formatPainterStyle && "cursor-copy"
+                        )}
+                        style={{
+                            height: heightForRow(rowIdx),
+                            verticalAlign: cell?.valign || "middle",
+                            backgroundColor: conditionalStyle?.bg || cell?.bg
+                        }}
+                    >
+                        {conditional?.dataBar && !isEditing && (
+                            <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
+                                <div
+                                    className="h-full"
+                                    style={{
+                                        width: `${conditional.dataBar.pct * 100}%`,
+                                        background: conditional.dataBar.gradient
+                                            ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
+                                            : conditional.dataBar.color
+                                    }}
+                                />
+                            </div>
+                        )}
+                        {conditionalStyle?.borderColor && (
+                            <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
+                        )}
+                        <CellBorderOverlay border={cell?.border} />
+                        {isInRange && !isActive && (
+                            <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
+                        )}
+                        {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
+                        {formulaRefEdges && <SelectionRangeBorder {...formulaRefEdges} />}
+                        {/* This cell has a comment: a corner triangle, nothing more.
+                            The thread opens in the one shared card. */}
+                        {commentThread && (
+                            <span
+                                className={cn(
+                                    "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
+                                    commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
+                                )}
+                            />
+                        )}
+                        {filterTable && (
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); rowHandlers.current.openColumnFilter(filterTable, colIdx, e.currentTarget); }}
+                                className={cn(
+                                    "absolute right-0.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] flex items-center justify-center rounded z-10 cursor-pointer",
+                                    // The header may be any colour — a styled table's dark band or a
+                                    // plain AutoFilter range's own cell styling — so the button brings
+                                    // its own backing rather than relying on the cell's. A column that
+                                    // is being filtered gets a solid one, to stand out from the rest.
+                                    columnHasActiveFilter
+                                        ? "bg-indigo-600 text-white shadow-sm ring-1 ring-white hover:bg-indigo-700"
+                                        : "bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-slate-900"
+                                )}
+                                title={columnHasActiveFilter ? "This column is filtered — sort and filter" : "Sort and filter this column"}
+                            >
+                                {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" strokeWidth={2.25} />}
+                            </button>
+                        )}
+                        {isEditing ? (
+                            <div className="relative w-full h-full">
+                                {isEditingFormula && <FormulaTextOverlay text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
+                                {/* A textarea (not an input) so Alt+Enter can add a line
+                                    break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
+                                    sheet-level key handler (handleKeyDown). */}
+                                <textarea
+                                ref={cellEditInputRef}
+                                autoFocus={editOriginRef.current !== "bar"}
+                                rows={1}
+                                wrap="off"
+                                className={cn(
+                                    "block w-full h-full px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden",
+                                    // A solid background here would paint over the colored-reference
+                                    // overlay sitting behind this (otherwise text-transparent) input —
+                                    // the <td> beneath already supplies the white backdrop.
+                                    isEditingFormula ? "bg-transparent text-transparent caret-slate-900" : "bg-white"
+                                )}
+                                value={editValue}
+                                onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
+                                onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
+                                onFocus={(e) => { activeEditInputRef.current = e.target; }}
+                                onBlur={() => rowHandlers.current.commitEdit()}
+                                />
+                            </div>
+                        ) : (
+                            <div
+                                className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
+                                style={conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
+                            >
+                                {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
+                                {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
+                            </div>
+                        )}
+                        {isFillCorner && !isEditing && !readOnly && (
+                            <div
+                                onMouseDown={(e) => rowHandlers.current.handleFillHandleMouseDown(e)}
+                                className="absolute -right-[3px] -bottom-[3px] w-[7px] h-[7px] bg-indigo-600 border border-white cursor-crosshair z-20"
+                                title="Drag to fill"
+                            />
+                        )}
+                    </td>
+                );
+            })}
+            {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
+        </tr>
+    );
+
     const defaultPivotSourceRange = selectionBounds
         ? `${getCellId(selectionBounds.minRow, selectionBounds.minCol)}:${getCellId(selectionBounds.maxRow, selectionBounds.maxCol)}`
         : "";
@@ -6305,207 +6549,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         {rows.slice(visibleRowRange.startRow, visibleRowRange.endRow + 1).map((rowIdx) => {
                             if (hiddenRowSet.has(rowIdx)) return null;
                             return (
-                            <tr key={rowIdx}>
-                                <td
-                                    onMouseDown={(e) => handleRowHeaderMouseDown(rowIdx, e)}
-                                    onMouseEnter={() => handleRowHeaderMouseEnter(rowIdx)}
-                                    className={cn(
-                                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
-                                        (hoveredCell?.row === rowIdx || allSelectionBounds.some((b) => rowIdx >= b.minRow && rowIdx <= b.maxRow))
-                                            ? "bg-indigo-100 text-indigo-700"
-                                            : "bg-slate-100 text-slate-500",
-                                        manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
-                                    )}
-                                    style={{ width: ROW_HEADER_WIDTH, height: heightForRow(rowIdx) }}
-                                    title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
-                                >
-                                    {rowIdx + 1}
-                                    {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
-                                    {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
-                                    {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
-                                    <div
-                                        onMouseDown={(e) => startRowResize(e, rowIdx)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="absolute bottom-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-indigo-400/60 z-10"
-                                        title="Drag to resize row"
-                                    />
-                                </td>
-                                {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
-                                {visibleCols.map((colIdx) => {
-                                    const cellId = getCellId(rowIdx, colIdx);
-                                    const merge = mergeMap[cellId];
-                                    // Cells covered by a merge but not its anchor render nothing —
-                                    // the anchor's <td> below spans over them via colSpan/rowSpan.
-                                    if (merge && merge.start !== cellId) return null;
-
-                                    const cell = cells[cellId];
-                                    const isActive = activeCell === cellId;
-                                    const isInRange = isCellSelected(rowIdx, colIdx);
-                                    const isEditing = editingCell === cellId;
-                                    const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
-                                    const isFillPreviewCell = fillPreviewCellIds.has(cellId);
-                                    const conditional = conditionalMap[cellId];
-                                    const conditionalStyle = conditional?.style;
-                                    // Spans count only rendered rows/columns, so a merge that
-                                    // covers hidden ones doesn't push the rest of the row over.
-                                    const mergeSpan = merge ? (() => {
-                                        const s = parseCellRef(merge.start), e = parseCellRef(merge.end);
-                                        let rowSpan = 0, colSpan = 0;
-                                        for (let r = s.row; r <= e.row; r++) if (!hiddenRowSet.has(r)) rowSpan++;
-                                        for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
-                                        return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
-                                    })() : null;
-                                    // Perimeter border for a multi-cell selection: only true on the
-                                    // outer-facing sides of the selection rectangle, accounting for
-                                    // this cell's merge span if it has one.
-                                    const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
-                                    const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
-                                    const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
-                                    const inActiveRange = rowIdx >= selectionBounds?.minRow && rowIdx <= selectionBounds?.maxRow
-                                        && colIdx >= selectionBounds?.minCol && colIdx <= selectionBounds?.maxCol;
-                                    let selectionEdges = isMultiSelection && inActiveRange ? {
-                                        top: rowIdx === selectionBounds.minRow,
-                                        bottom: spanRowEnd === selectionBounds.maxRow,
-                                        left: colIdx === selectionBounds.minCol,
-                                        right: spanColEnd === selectionBounds.maxCol
-                                    } : null;
-                                    // The other Ctrl-selected ranges each get their own perimeter.
-                                    if (isInRange) {
-                                        for (const b of extraBounds) {
-                                            if (rowIdx < b.minRow || rowIdx > b.maxRow || colIdx < b.minCol || colIdx > b.maxCol) continue;
-                                            selectionEdges = {
-                                                top: selectionEdges?.top || rowIdx === b.minRow,
-                                                bottom: selectionEdges?.bottom || spanRowEnd === b.maxRow,
-                                                left: selectionEdges?.left || colIdx === b.minCol,
-                                                right: selectionEdges?.right || spanColEnd === b.maxCol
-                                            };
-                                        }
-                                    }
-                                    const formulaRefEdges = formulaRefBorderMap[cellId];
-                                    const commentThreadId = commentAnchors[cellId];
-                                    const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
-                                    // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
-                                    const filterTable = filterHeaderTables[cellId];
-                                    const columnHasActiveFilter = filterTable && isFilterActive(filterTable.filters?.[colIdx]);
-
-                                    return (
-                                        <td
-                                            key={cellId}
-                                            rowSpan={mergeSpan?.rowSpan}
-                                            colSpan={mergeSpan?.colSpan}
-                                            onMouseDown={(e) => handleCellMouseDown(cellId, e)}
-                                            onMouseEnter={(e) => handleCellMouseEnter(cellId, e)}
-                                            onDoubleClick={readOnly ? undefined : () => startEditing(cellId)}
-                                            className={cn(
-                                                "p-0 relative",
-                                                gridlinesVisible ? "border border-slate-200" : "border border-transparent",
-                                                isActive && "outline outline-2 outline-indigo-500 -outline-offset-2",
-                                                isFillPreviewCell && "outline outline-1 outline-dashed outline-indigo-400 -outline-offset-1",
-                                                formatPainterStyle && "cursor-copy"
-                                            )}
-                                            style={{
-                                                height: heightForRow(rowIdx),
-                                                verticalAlign: cell?.valign || "middle",
-                                                backgroundColor: conditionalStyle?.bg || cell?.bg
-                                            }}
-                                        >
-                                            {conditional?.dataBar && !isEditing && (
-                                                <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
-                                                    <div
-                                                        className="h-full"
-                                                        style={{
-                                                            width: `${conditional.dataBar.pct * 100}%`,
-                                                            background: conditional.dataBar.gradient
-                                                                ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
-                                                                : conditional.dataBar.color
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                            {conditionalStyle?.borderColor && (
-                                                <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
-                                            )}
-                                            <CellBorderOverlay border={cell?.border} />
-                                            {isInRange && !isActive && (
-                                                <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
-                                            )}
-                                            {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
-                                            {formulaRefEdges && <SelectionRangeBorder {...formulaRefEdges} />}
-                                            {/* This cell has a comment: a corner triangle, nothing more.
-                                                The thread opens in the one shared card. */}
-                                            {commentThread && (
-                                                <span
-                                                    className={cn(
-                                                        "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
-                                                        commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
-                                                    )}
-                                                />
-                                            )}
-                                            {filterTable && (
-                                                <button
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    onClick={(e) => { e.stopPropagation(); openColumnFilter(filterTable, colIdx, e.currentTarget); }}
-                                                    className={cn(
-                                                        "absolute right-0.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] flex items-center justify-center rounded z-10 cursor-pointer",
-                                                        // The header may be any colour — a styled table's dark band or a
-                                                        // plain AutoFilter range's own cell styling — so the button brings
-                                                        // its own backing rather than relying on the cell's. A column that
-                                                        // is being filtered gets a solid one, to stand out from the rest.
-                                                        columnHasActiveFilter
-                                                            ? "bg-indigo-600 text-white shadow-sm ring-1 ring-white hover:bg-indigo-700"
-                                                            : "bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-slate-900"
-                                                    )}
-                                                    title={columnHasActiveFilter ? "This column is filtered — sort and filter" : "Sort and filter this column"}
-                                                >
-                                                    {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" strokeWidth={2.25} />}
-                                                </button>
-                                            )}
-                                            {isEditing ? (
-                                                <div className="relative w-full h-full">
-                                                    {isEditingFormula && <FormulaTextOverlay text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
-                                                    {/* A textarea (not an input) so Alt+Enter can add a line
-                                                        break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
-                                                        sheet-level key handler (handleKeyDown). */}
-                                                    <textarea
-                                                    ref={cellEditInputRef}
-                                                    autoFocus={editOriginRef.current !== "bar"}
-                                                    rows={1}
-                                                    wrap="off"
-                                                    className={cn(
-                                                        "block w-full h-full px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden",
-                                                        // A solid background here would paint over the colored-reference
-                                                        // overlay sitting behind this (otherwise text-transparent) input —
-                                                        // the <td> beneath already supplies the white backdrop.
-                                                        isEditingFormula ? "bg-transparent text-transparent caret-slate-900" : "bg-white"
-                                                    )}
-                                                    value={editValue}
-                                                    onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
-                                                    onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
-                                                    onFocus={(e) => { activeEditInputRef.current = e.target; }}
-                                                    onBlur={commitEdit}
-                                                    />
-                                                </div>
-                                            ) : (
-                                                <div
-                                                    className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                                                    style={conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
-                                                >
-                                                    {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
-                                                    {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
-                                                </div>
-                                            )}
-                                            {isFillCorner && !isEditing && !readOnly && (
-                                                <div
-                                                    onMouseDown={handleFillHandleMouseDown}
-                                                    className="absolute -right-[3px] -bottom-[3px] w-[7px] h-[7px] bg-indigo-600 border border-white cursor-crosshair z-20"
-                                                    title="Drag to fill"
-                                                />
-                                            )}
-                                        </td>
-                                    );
-                                })}
-                                {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
-                            </tr>
+                                <GridRow
+                                    key={rowIdx}
+                                    rowIdx={rowIdx}
+                                    renderRow={renderRowRef}
+                                    shared={rowShared}
+                                    selectionKey={rowSelectionKey(rowIdx)}
+                                    isHovered={hoveredCell?.row === rowIdx}
+                                    height={heightForRow(rowIdx)}
+                                    editingCell={editingRow === rowIdx ? editingCell : null}
+                                    editValue={editingRow === rowIdx ? editValue : null}
+                                />
                             );
                         })}
                         {visibleRowRange.endRow < rowCount - 1 && (

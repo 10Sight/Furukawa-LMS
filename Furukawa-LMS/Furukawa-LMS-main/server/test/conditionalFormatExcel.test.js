@@ -140,3 +140,65 @@ test("rule kinds only Excel writes are read from the file", async () => {
     // A whole-column reference covers the column.
     assert.deepEqual(rules[1].ranges, [{ start: "B1", end: "B1048576" }]);
 });
+
+// A workbook whose rule styles are rewritten into the XML given, the way Excel
+// itself writes them (ExcelJS writes rgb colours and a pattern type throughout).
+const loadWithStyles = async (build, rewrite) => {
+    const workbook = new ExcelJS.Workbook();
+    build(workbook.addWorksheet("S"));
+    const zip = await JSZip.loadAsync(await workbook.xlsx.writeBuffer());
+    for (const path of ["xl/styles.xml", "xl/worksheets/sheet1.xml"]) zip.file(path, rewrite(path, await zip.file(path).async("string")));
+    const loaded = new ExcelJS.Workbook();
+    await loaded.xlsx.load(await zip.generateAsync({ type: "nodebuffer" }));
+    return rulesFromExcel(loaded.getWorksheet("S").conditionalFormattings);
+};
+const highlight = (ref, priority) => ({
+    ref,
+    rules: [{ type: "cellIs", operator: "greaterThan", formulae: [20], priority, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFFC7CE" } }, font: { color: { argb: "FF9C0006" } } } }],
+});
+
+test("a rule's colours are read however the file gives them", async () => {
+    const forms = [
+        '<dxf><font><color rgb="FF9C0006"/></font><fill><patternFill><bgColor rgb="FFFFC7CE"/></patternFill></fill></dxf>', // Excel's "Light Red Fill" preset: no pattern type
+        '<dxf><font><color indexed="10"/></font><fill><patternFill><bgColor indexed="13"/></patternFill></fill></dxf>',
+        '<dxf><font><color theme="0"/></font><fill><patternFill patternType="solid"><fgColor theme="4"/><bgColor theme="4"/></patternFill></fill></dxf>',
+    ];
+    const { rules, skipped, approximated } = await loadWithStyles(
+        (ws) => { ws.addConditionalFormatting(highlight("A1:A5", 1)); ws.addConditionalFormatting(highlight("B1:B5", 2)); ws.addConditionalFormatting(highlight("C1:C5", 3)); },
+        (path, xml) => {
+            if (!path.endsWith("styles.xml")) return xml;
+            let i = 0;
+            return xml.replace(/<dxf>.*?<\/dxf>/gs, () => forms[i++]);
+        }
+    );
+    assert.equal(skipped, 0);
+    assert.equal(approximated, 0);
+    assert.deepEqual(rules.map((r) => r.format), [
+        { bg: "#ffc7ce", color: "#9c0006" },
+        { bg: "#ffff00", color: "#ff0000" },
+        { bg: "#4472c4", color: "#ffffff" },
+    ]);
+});
+
+test("a colour scale keeps its rule when one stop is an indexed colour", async () => {
+    const { rules, skipped, approximated } = await loadWithStyles(
+        (ws) => ws.addConditionalFormatting({ ref: "A1:A5", rules: [{ type: "colorScale", priority: 1, cfvo: [{ type: "min" }, { type: "max" }], color: [{ argb: "FFF8696B" }, { argb: "FF63BE7B" }] }] }),
+        (path, xml) => xml.replace('<color rgb="FFF8696B"/>', '<color indexed="10"/>')
+    );
+    assert.deepEqual([skipped, approximated], [0, 0]);
+    assert.deepEqual(rules[0].colors, ["#ff0000", "#63be7b"]);
+});
+
+test("a colour the file doesn't give is stood in for, and the rule is counted as approximate", async () => {
+    const { rules, skipped, approximated } = await loadWithStyles(
+        (ws) => {
+            ws.addConditionalFormatting({ ref: "A1:A5", rules: [{ type: "colorScale", priority: 1, cfvo: [{ type: "min" }, { type: "max" }], color: [{ argb: "FFF8696B" }, { argb: "FF63BE7B" }] }] });
+            ws.addConditionalFormatting(highlight("B1:B5", 2));
+        },
+        (path, xml) => xml.replace('<color rgb="FF63BE7B"/>', '<color indexed="200"/>').replace('<bgColor rgb="FFFFC7CE"/>', '<bgColor indexed="200"/>')
+    );
+    assert.equal(skipped, 0);
+    assert.equal(approximated, 2);
+    assert.deepEqual(rules[0].colors, ["#f8696b", "#63be7b"]); // the second is Excel's default for that stop
+    assert.deepEqual(rules[1].format, { color: "#9c0006" }); // the text colour still came through
+});

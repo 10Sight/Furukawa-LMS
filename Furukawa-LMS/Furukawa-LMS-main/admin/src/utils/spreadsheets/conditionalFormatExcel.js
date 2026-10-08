@@ -8,6 +8,7 @@
 
 import { parseCellRef, getCellId, indexToCol } from "./formulaEngine.js";
 import { ICON_SETS, VISUAL_RULE_TYPES, boundsOfRange, rangeOfBounds, normalizeRules, newRuleId } from "./conditionalFormat.js";
+import { parseExcelColor } from "./excelColorResolver.js";
 
 const EXCEL_MAX_ROW = 1048575; // zero-based
 const EXCEL_MAX_COL = 16383;
@@ -60,33 +61,45 @@ const absoluteRef = (range) => {
 
 // --- Colours and formats ---
 
-const defaultColor = (colorObj) => (colorObj?.argb ? `#${String(colorObj.argb).slice(-6).toLowerCase()}` : null);
+// What a colour scale falls back on for a stop whose colour the file gives in
+// a way that can't be resolved — Excel's own red / yellow / green.
+const SCALE_FALLBACK = { 2: ["#f8696b", "#63be7b"], 3: ["#f8696b", "#ffeb84", "#63be7b"] };
 const argbOf = (hex) => {
     const h = String(hex || "").replace("#", "");
     const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h.padEnd(6, "0").slice(0, 6);
     return { argb: `FF${full.toUpperCase()}` };
 };
 
-const formatFromStyle = (style, resolveColor) => {
+// `notes.approximated` is set when the file names a colour that could not be
+// resolved, so the rule comes through without it (or with a stand-in).
+const formatFromStyle = (style, resolveColor, notes = {}) => {
     const format = {};
     if (!style) return format;
     const fill = style.fill;
+    // Excel writes a rule's fill with no pattern type at all, so anything but an
+    // explicit "none" counts as filled.
     if (fill && fill.type === "pattern" && fill.pattern !== "none") {
         // A differential fill keeps a solid colour in bgColor; fgColor is the fallback.
         const bg = resolveColor(fill.bgColor) || resolveColor(fill.fgColor);
         if (bg) format.bg = bg;
+        else if (fill.bgColor || fill.fgColor) notes.approximated = true;
     }
     const font = style.font;
     if (font) {
         const color = resolveColor(font.color);
         if (color) format.color = color;
+        else if (font.color) notes.approximated = true;
         if (font.bold) format.bold = true;
         if (font.italic) format.italic = true;
         if (font.underline && font.underline !== "none") format.underline = true;
         if (font.strike) format.strike = true;
     }
     const side = style.border && ["top", "bottom", "left", "right"].map((key) => style.border[key]).find((s) => s && s.style);
-    if (side) format.borderColor = resolveColor(side.color) || "#000000";
+    if (side) {
+        const color = resolveColor(side.color);
+        if (side.color && !color) notes.approximated = true;
+        format.borderColor = color || "#000000";
+    }
     return format;
 };
 
@@ -149,8 +162,8 @@ const defaultIconPoints = (count) => Array.from({ length: count }, (_, i) => ({ 
 
 // --- Excel -> app ---
 
-const ruleFromExcel = (excelRule, resolveColor) => {
-    const format = formatFromStyle(excelRule.style, resolveColor);
+const ruleFromExcel = (excelRule, resolveColor, notes = {}) => {
+    const format = formatFromStyle(excelRule.style, resolveColor, notes);
     switch (excelRule.type) {
         case "expression": {
             const body = String(excelRule.formulae?.[0] ?? "").trim();
@@ -189,8 +202,15 @@ const ruleFromExcel = (excelRule, resolveColor) => {
         case "duplicateValues": return { type: "duplicate", format };
         case "uniqueValues": return { type: "unique", format };
         case "colorScale": {
-            const colors = (excelRule.color || []).map(resolveColor);
-            if (colors.length < 2 || colors.length > 3 || colors.some((c) => !c)) return null;
+            const stops = excelRule.color || [];
+            if (stops.length < 2 || stops.length > 3) return null;
+            // A stop that can't be resolved takes Excel's default for its place
+            // rather than costing the sheet the whole rule.
+            const colors = stops.map((stop, i) => {
+                const color = resolveColor(stop);
+                if (!color) notes.approximated = true;
+                return color || SCALE_FALLBACK[stops.length][i];
+            });
             const points = pointsFromCfvo(excelRule.cfvo);
             const usePoints = points && points.length === colors.length;
             return { type: "colorScale", colors, ...(usePoints ? { points } : null) };
@@ -206,7 +226,9 @@ const ruleFromExcel = (excelRule, resolveColor) => {
         case "dataBar": {
             const points = pointsFromCfvo(excelRule.cfvo);
             const usePoints = points && points.length === 2 && !isPlainMinMax(points);
-            return { type: "dataBar", color: resolveColor(excelRule.color) || "#638ec6", gradient: excelRule.gradient !== false, ...(usePoints ? { points } : null) };
+            const color = resolveColor(excelRule.color);
+            if (excelRule.color && !color) notes.approximated = true;
+            return { type: "dataBar", color: color || "#638ec6", gradient: excelRule.gradient !== false, ...(usePoints ? { points } : null) };
         }
         default: return null;
     }
@@ -214,25 +236,28 @@ const ruleFromExcel = (excelRule, resolveColor) => {
 
 // A worksheet's conditional formatting as this app's rules, highest priority first.
 //   conditionalFormattings : ExcelJS's `worksheet.conditionalFormattings`
-//   resolveColor           : ExcelJS colour object -> "#rrggbb" (handles theme colours)
+//   resolveColor           : ExcelJS colour object -> "#rrggbb" (see excelColorResolver.js)
 //   stopIfTrue             : Set of rule priorities flagged Stop If True (see readStopIfTrue)
-// Returns { rules, skipped } — `skipped` counts rules with no equivalent here.
-export const rulesFromExcel = (conditionalFormattings, { resolveColor = defaultColor, stopIfTrue = null } = {}) => {
+// Returns { rules, skipped, approximated } — `skipped` counts rules with no
+// equivalent here, `approximated` those read with a colour missing or stood in for.
+export const rulesFromExcel = (conditionalFormattings, { resolveColor = parseExcelColor, stopIfTrue = null } = {}) => {
     const found = [];
-    let skipped = 0, order = 0;
+    let skipped = 0, approximated = 0, order = 0;
     for (const block of conditionalFormattings || []) {
         const ranges = rangesOfRef(block?.ref);
         for (const excelRule of block?.rules || []) {
             order += 1;
-            const rule = ranges.length ? ruleFromExcel(excelRule, resolveColor) : null;
+            const notes = {};
+            const rule = ranges.length ? ruleFromExcel(excelRule, resolveColor, notes) : null;
             if (!rule) { skipped += 1; continue; }
+            if (notes.approximated) approximated += 1;
             const priority = Number(excelRule.priority);
             if (stopIfTrue?.has(priority) && !VISUAL_RULE_TYPES.has(rule.type)) rule.stopIfTrue = true;
             found.push({ rule: { id: newRuleId(), ...rule, ranges }, priority: Number.isFinite(priority) ? priority : Infinity, order });
         }
     }
     found.sort((a, b) => a.priority - b.priority || a.order - b.order);
-    return { rules: found.map((f) => f.rule), skipped };
+    return { rules: found.map((f) => f.rule), skipped, approximated };
 };
 
 // --- App -> Excel ---

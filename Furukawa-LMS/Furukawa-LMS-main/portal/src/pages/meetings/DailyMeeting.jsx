@@ -759,9 +759,25 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 <h4 className="text-sm font-semibold text-slate-700">No Sections Active</h4>
                 <p className="text-xs text-slate-500 max-w-xs text-center mt-1">
                     {isPreview
-                        ? "Enable the shutter or select sections in the panel above to display them."
+                        ? "Enable the shutter or select sections in Settings Configuration to display them."
                         : "Management Information System spaces are not currently configured for this department's sections. Please contact an Administrator."}
                 </p>
+                {/* The settings panel is collapsed unless asked for (?config=1), so offer it here. */}
+                {isPreview && searchParams.get("config") !== "1" && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 cursor-pointer flex items-center gap-1.5"
+                        onClick={() => {
+                            const next = new URLSearchParams(searchParams);
+                            next.set("config", "1");
+                            setSearchParams(next, { replace: true });
+                        }}
+                    >
+                        <IconSettings className="w-4 h-4" />
+                        Open Settings Configuration
+                    </Button>
+                )}
             </div>
         );
     }
@@ -840,11 +856,17 @@ export default function DailyMeeting() {
     // charts and spreadsheet: page header, department sidebar and the admin
     // settings panel are hidden so the workspace gets the full width.
     const isMeetingOpen = !!searchParams.get("meeting");
-    // The department list and the admin settings panel start hidden so the
-    // sections get the full page; the header's department button shows or
-    // hides both together.
-    const [isDeptSidebarOpen, setIsDeptSidebarOpen] = useState(false);
-    const activeDeptName = departments.find((d) => String(d.id || d._id) === activeDeptId)?.name;
+    // The department list stays on screen the whole time departments and sections
+    // are being browsed; only an open meeting hides it. The admin settings panel
+    // is separate: collapsed until an admin asks for it from the header, and kept
+    // in the URL (?config=1) like the rest of this page's state, so it is still
+    // open after a refresh or a change of department.
+    const isAdminConfigOpen = searchParams.get("config") === "1";
+    const toggleAdminConfig = () => {
+        const next = new URLSearchParams(searchParams);
+        if (isAdminConfigOpen) next.delete("config"); else next.set("config", "1");
+        setSearchParams(next, { replace: true });
+    };
 
     useEffect(() => {
         if (departments.length === 0) return;
@@ -875,18 +897,18 @@ export default function DailyMeeting() {
                         <p className="text-sm text-slate-500 font-medium">Browse daily standup and metrics by department and section</p>
                     </div>
                 </div>
-                {departments.length > 0 && (
+                {isAdmin && departments.length > 0 && (
                     <Button
                         variant="outline"
                         size="sm"
-                        className="cursor-pointer flex items-center gap-1.5"
-                        aria-expanded={isDeptSidebarOpen}
-                        onClick={() => setIsDeptSidebarOpen((open) => !open)}
-                        title={isDeptSidebarOpen ? "Hide the department list and settings" : "Show the department list and settings"}
+                        className={cn("cursor-pointer flex items-center gap-1.5", isAdminConfigOpen && "bg-indigo-50 border-indigo-200 text-indigo-700")}
+                        aria-expanded={isAdminConfigOpen}
+                        onClick={toggleAdminConfig}
+                        title={isAdminConfigOpen ? "Hide the section settings" : "Choose which sections other roles see"}
                     >
-                        <IconFolder className="w-4 h-4 text-slate-500" />
-                        <span className="max-w-48 truncate">{activeDeptName || "Departments"}</span>
-                        {isDeptSidebarOpen ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
+                        <IconSettings className="w-4 h-4" />
+                        <span>Settings Configuration</span>
+                        {isAdminConfigOpen ? <IconChevronUp className="w-4 h-4 opacity-70" /> : <IconChevronDown className="w-4 h-4 opacity-70" />}
                     </Button>
                 )}
             </div>
@@ -935,7 +957,15 @@ export default function DailyMeeting() {
                     orientation="vertical"
                     className="w-full flex flex-col md:flex-row items-start gap-4"
                 >
-                    <TabsList className={cn("flex flex-col items-stretch gap-1 justify-start bg-slate-100/70 p-1.5 rounded-xl w-full md:w-56 shrink-0 h-auto", (isMeetingOpen || !isDeptSidebarOpen) && "hidden")}>
+                    {/* On a wide screen a column down the left that stays put while the
+                        page scrolls, with a scroll of its own for a long list. On a narrow
+                        one, where it sits above the sections, a single row to swipe along
+                        so it doesn't push them down the page. */}
+                    <TabsList className={cn(
+                        "flex flex-row md:flex-col items-stretch gap-1 justify-start bg-slate-100/70 p-1.5 rounded-xl w-full md:w-56 shrink-0 h-auto",
+                        "overflow-x-auto md:overflow-x-hidden md:overflow-y-auto md:sticky md:top-4 md:max-h-[calc(100vh-2rem)]",
+                        isMeetingOpen && "hidden"
+                    )}>
                         {departments.map((d) => {
                             const deptId = String(d.id || d._id);
                             return (
@@ -943,7 +973,7 @@ export default function DailyMeeting() {
                                     key={deptId}
                                     value={deptId}
                                     title={d.name}
-                                    className="flex-none w-full justify-start text-left px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 whitespace-normal cursor-pointer transition-all hover:bg-white/70 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm"
+                                    className="flex-none w-auto md:w-full justify-start text-left px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 whitespace-nowrap md:whitespace-normal cursor-pointer transition-all hover:bg-white/70 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm"
                                 >
                                     {d.name}
                                 </TabsTrigger>
@@ -958,7 +988,7 @@ export default function DailyMeeting() {
                                 <TabsContent key={deptId} value={deptId} className="space-y-6 mt-0">
                                     {isAdmin ? (
                                         <>
-                                            {!isMeetingOpen && isDeptSidebarOpen && (
+                                            {!isMeetingOpen && isAdminConfigOpen && (
                                                 <AdminConfigPanel
                                                     departmentId={deptId}
                                                     sections={sections}

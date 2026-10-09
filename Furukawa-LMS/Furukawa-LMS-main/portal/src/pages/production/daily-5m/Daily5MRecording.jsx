@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -1548,7 +1547,6 @@ const Daily5MRecording = () => {
             const tableHeight = tableRef.current.scrollHeight;
 
             // 2. Preload Logo for robustness
-            const logoUrl = brandLogoUrl;
             const logoImg = await new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => resolve(img);

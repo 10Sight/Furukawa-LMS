@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -118,7 +117,6 @@ const CertificateTemplates = () => {
                 <h2>THIS IS TO CERTIFY THAT</h2>
             </div>
             <div class="brand-logo">
-                <img src="${brandLogoUrl}" alt="Furukawa Minda Electric" />
             </div>
         </div>
     

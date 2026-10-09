@@ -83,7 +83,9 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
     if (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) throw new Error('Please select a unit before creating a form.');
 
     const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const dateStr = userContext.lpaSource?.date
+      ? new Date(`${userContext.lpaSource.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     if (isEditMode) {
@@ -114,6 +116,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         department: formData.department,
         section: sectionName,
         sectionId: editData?.sectionId || userContext.section?.id || '',
+        lpaSource: userContext.lpaSource ? { ...userContext.lpaSource } : undefined,
         date: dateStr,
         time: timeStr,
         createdBy: {

@@ -5,6 +5,43 @@ import { useOutletContext } from 'react-router-dom';
 
 const labels = { ptm: 'PTM', pdca: 'PDCA', 'process-audit': 'Process Audit', 'man-machine-interlink': 'Man–Machine Interlink' };
 
+const NOOP = () => {};
+
+/** Inner component used when FmeDashboardPage is rendered directly inside a route outlet. */
+function FmeDashboardPageWithOutlet({ page, lpaSource, frameRef, contextRef, publishUserContext }) {
+    const outletContext = useOutletContext();
+    const { isFormView = false, setIsFormView = NOOP } = outletContext || {};
+    useEffect(() => () => setIsFormView(false), [setIsFormView]);
+    useEffect(() => {
+        const syncFormView = event => {
+            if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || event.data?.page !== page) return;
+            if (event.data.type === 'fme-cms-user-context-request') publishUserContext();
+            if (event.data.type === 'fme-cms-form-view') setIsFormView(event.data.open === true);
+        };
+        window.addEventListener('message', syncFormView);
+        return () => window.removeEventListener('message', syncFormView);
+    }, [page, setIsFormView]);
+    const source = page === 'man-machine-interlink' ? MAN_MACHINE_INTERLINK_URL : `/cms-dashboard/index.html?page=${page}`;
+    return <iframe ref={frameRef} src={source} title={labels[page]} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" onLoad={() => { publishUserContext(); frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin); }} className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`} style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }} />;
+}
+
+/** Inner component used when FmeDashboardPage is embedded inside another page (viewContext passed explicitly). */
+function FmeDashboardPageWithContext({ page, lpaSource, frameRef, contextRef, publishUserContext, viewContext }) {
+    const { isFormView = false, setIsFormView = NOOP } = viewContext || {};
+    useEffect(() => () => setIsFormView(false), [setIsFormView]);
+    useEffect(() => {
+        const syncFormView = event => {
+            if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || event.data?.page !== page) return;
+            if (event.data.type === 'fme-cms-user-context-request') publishUserContext();
+            if (event.data.type === 'fme-cms-form-view') setIsFormView(event.data.open === true);
+        };
+        window.addEventListener('message', syncFormView);
+        return () => window.removeEventListener('message', syncFormView);
+    }, [page, setIsFormView]);
+    const source = page === 'man-machine-interlink' ? MAN_MACHINE_INTERLINK_URL : `/cms-dashboard/index.html?page=${page}`;
+    return <iframe ref={frameRef} src={source} title={labels[page]} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" onLoad={() => { publishUserContext(); frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin); }} className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`} style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }} />;
+}
+
 export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
     const frameRef = useRef(null);
     const user = useSelector(state => state.auth.user);
@@ -25,20 +62,11 @@ export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
         if (page === 'pdca') frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-user-context', ...contextRef.current }, window.location.origin);
     };
     useEffect(publishUserContext, [page, lpaSource, user]);
-    const outletContext = useOutletContext();
-    const { isFormView, setIsFormView } = viewContext || outletContext;
-    useEffect(() => () => setIsFormView(false), [setIsFormView]);
-    useEffect(() => {
-        const syncFormView = event => {
-            if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || event.data?.page !== page) return;
-            if (event.data.type === 'fme-cms-user-context-request') publishUserContext();
-            if (event.data.type === 'fme-cms-form-view') setIsFormView(event.data.open === true);
-        };
-        window.addEventListener('message', syncFormView);
-        return () => window.removeEventListener('message', syncFormView);
-    }, [page, setIsFormView]);
-    const source = page === 'man-machine-interlink'
-        ? MAN_MACHINE_INTERLINK_URL
-        : `/cms-dashboard/index.html?page=${page}`;
-    return <iframe ref={frameRef} src={source} title={labels[page]} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" onLoad={() => { publishUserContext(); frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin); }} className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`} style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }} />;
+
+    const sharedProps = { page, lpaSource, frameRef, contextRef, publishUserContext };
+
+    // If an explicit viewContext is provided (e.g. embedded inside LpaPage), use the context-based variant
+    // to avoid calling useOutletContext() outside a route outlet, which would crash.
+    if (viewContext) return <FmeDashboardPageWithContext {...sharedProps} viewContext={viewContext} />;
+    return <FmeDashboardPageWithOutlet {...sharedProps} />;
 }

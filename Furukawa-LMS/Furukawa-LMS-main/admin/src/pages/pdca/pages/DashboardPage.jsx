@@ -1,6 +1,6 @@
 import { filterPDCARecords, matchesPlant, PDCA_PLANTS } from '../data/recordFilters';
 import { readSaved } from '@components/shared/formPersistence';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FilterToolbar, { TableActionBar } from '@components/pdca/FilterToolbar';
 import TabNavigation from '@components/pdca/TabNavigation';
@@ -37,8 +37,50 @@ export default function DashboardPage() {
     try { localStorage.setItem('pdca_list_filters', JSON.stringify({ plant: selectedPlant, scope: activeTab })); }
     catch { /* Saving a form reports storage errors separately. */ }
   }, [selectedPlant, activeTab]);
+  useEffect(() => {
+    if (lpaSource?.unit) setSelectedPlant(lpaSource.unit);
+  }, [lpaSource?.unit]);
 
-  const sourceData = useMemo(() => data.filter(item => !lpaSource || (item.lpaSource?.category === lpaSource.category && (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) && (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet))), [data, lpaSource]);
+  const sourceData = useMemo(() => data.filter(item => !lpaSource || (
+    (!lpaSource.category || item.lpaSource?.category === lpaSource.category) &&
+    (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) &&
+    (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet) &&
+    (!lpaSource.unit || item.lpaSource?.unit === lpaSource.unit) &&
+    (!lpaSource.level || item.lpaSource?.level === lpaSource.level) &&
+    (!lpaSource.date || item.lpaSource?.date === lpaSource.date)
+  )), [data, lpaSource]);
+  const openLpaPdca = () => {
+    const linked = sourceData[0];
+    if (linked) {
+      navigate(`/sheet/${encodeURIComponent(linked.id)}`, { state: { returnTo: lpaSource.returnTo || '/' } });
+      return;
+    }
+    setSelectedPlant(lpaSource.unit || 'Bawal');
+    setActiveTab('Company');
+    setSearchQuery('');
+    setCurrentPage(1);
+    saveNewPDCA({
+      id: `PDCA-LPA-${Date.now()}`,
+      topic: `${lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'} LPA · ${lpaSource.date || ''}`.trim(),
+      description: (lpaSource.observations || []).join('\n'),
+      plant: lpaSource.unit || 'Bawal',
+      scope: 'Company',
+      department: '',
+      section: userContext.section?.name || '',
+      sectionId: userContext.section?.id || '',
+      date: lpaSource.date ? new Date(`${lpaSource.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      createdBy: userContext.user,
+      lpaSource,
+    });
+  };
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (lpaSource?.autoOpen && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      openLpaPdca();
+    }
+  }, [lpaSource]);
   const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery),
     [sourceData, activeTab, selectedPlant, searchQuery]);
 
@@ -51,6 +93,7 @@ export default function DashboardPage() {
   const saveNewPDCA = item => {
     handleAddPDCA(lpaSource ? { ...item, lpaSource } : item);
     revealSavedForm(item);
+    if (lpaSource) navigate(`/sheet/${encodeURIComponent(item.id)}`, { state: { returnTo: lpaSource.returnTo || '/' } });
   };
   const updatePDCA = item => {
     handleUpdatePDCA(item);
@@ -232,7 +275,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 w-full min-w-0">
-      {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p></div>}
+      {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p><button type="button" onClick={openLpaPdca} className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">{sourceData.length ? 'Open original PDCA form' : 'Create original PDCA record'}</button></div>}
       {/* 1. Unit Filter on Top */}
       <FilterToolbar
         selectedPlant={selectedPlant}

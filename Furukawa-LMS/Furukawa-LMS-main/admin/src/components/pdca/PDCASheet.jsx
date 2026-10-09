@@ -243,7 +243,7 @@ function CompactDateCell({ value, onChange }) {
   );
 }
 
-export default function PDCASheet({ topic, onBack }) {
+export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateChange }) {
   const { data, setData, showToast } = usePDCA();
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -275,11 +275,17 @@ export default function PDCASheet({ topic, onBack }) {
 
   const sheetSnapshot = useMemo(() => ({ rows, headerInfo }), [rows, headerInfo]);
   const persistSheet = (sheet) => {
-    if (!topic?.id) throw new Error('This PDCA could not be found. Return to the list and open it again.');
-    setData(items => {
-      if (!items.some(item => item.id === topic.id)) throw new Error('This PDCA no longer exists.');
-      return items.map(item => item.id === topic.id ? { ...item, sheet } : item);
-    });
+    if (onSave) {
+      try { onSave(sheet); } catch (e) { console.error(e); }
+    }
+    if (topic?.id) {
+      setData(items => {
+        if (!items || !items.some(item => item.id === topic.id)) {
+          return [{ ...topic, sheet }, ...(items || [])];
+        }
+        return items.map(item => item.id === topic.id ? { ...item, sheet } : item);
+      });
+    }
   };
   useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id), showToast);
   const saveSheet = () => {
@@ -934,6 +940,19 @@ export default function PDCASheet({ topic, onBack }) {
               <Save className="w-3.5 h-3.5" />
               <span>Save</span>
             </button>
+            {onDateChange && (
+              <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-700 cursor-pointer shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                <span className="font-semibold text-slate-600">Date:</span>
+                <input
+                  type="date"
+                  value={currentDate || ''}
+                  onChange={(e) => onDateChange(e.target.value)}
+                  className="bg-transparent border-0 outline-none text-xs font-semibold text-slate-800 cursor-pointer p-0"
+                  title="Choose date of data to view"
+                />
+              </label>
+            )}
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -982,7 +1001,7 @@ export default function PDCASheet({ topic, onBack }) {
                   colSpan={13}
                   className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
                 >
-                  PDCA - M Tanaka San Audit
+                  {topic?.topic || 'PDCA - M Tanaka San Audit'}
                 </th>
               </tr>
 

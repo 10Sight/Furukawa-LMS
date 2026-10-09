@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/common/ui/card.jsx";
 import { useGetAdminHomeTestPaperStatsQuery } from "@/services/api/AdminHomeApi.js";
@@ -495,11 +494,7 @@ const TestPaperPassChart = ({ departments: departmentsProp } = {}) => {
             <CardContent className="space-y-10">
                 {isLoading ? (
                     <div style={{ height: isTablet ? 500 : isMobile ? 400 : 360 }} className="flex flex-col items-center justify-center gap-4">
-                        <img
-                            src={brandLogoUrl}
-                            alt="FME"
-                            className="w-20 h-20 object-contain animate-pulse"
-                        />
+                        
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
                             {t('charts.loading')}
                         </p>

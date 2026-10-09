@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { columnName } from '@pages/lpa/lpaWorkbook';
+import { OBSERVATION_OPTIONS, normalizeObservationSymbol, getScoreForObservation } from '@pages/lpa/lpaPdcaUtils';
 import './ccSheet.css';
 
 const WIDTH_SCALE = 0.447;
@@ -15,6 +16,29 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     return Math.round((source?.wpx || (source?.wch || 10) * 7) * WIDTH_SCALE);
   }), [sheet.columnCount, sheet.columns]);
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
+  const observationColumn = useMemo(() => {
+    for (const row of sheet.rows.slice(0, 8)) {
+      const index = row.findIndex(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
+      if (index >= 0) return index;
+    }
+    return -1;
+  }, [sheet.rows]);
+  const scoreColumn = useMemo(() => {
+    for (const row of sheet.rows.slice(0, 8)) {
+      const index = row.findIndex(cell => /^score$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
+      if (index >= 0) return index;
+    }
+    return 8;
+  }, [sheet.rows]);
+
+  const handleObservationChange = (r, c, newVal) => {
+    const scoreVal = getScoreForObservation(newVal);
+    const extraUpdates = scoreColumn >= 0 ? [{ rowIndex: r, columnIndex: scoreColumn, value: scoreVal }] : [];
+    onChange(r, c, newVal, extraUpdates);
+    if (scoreColumn >= 0) {
+      onChange(r, scoreColumn, scoreVal);
+    }
+  };
   const merges = useMemo(() => {
     const anchors = new Map();
     const hidden = new Set();
@@ -64,6 +88,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                 const merge = merges.anchors.get(key);
                 const value = row[columnIndex]?.formatted ?? String(row[columnIndex]?.value ?? '');
                 const style = row[columnIndex]?.style;
+                const isObservation = columnIndex === observationColumn && rowIndex >= 4 && rowIndex <= 34;
                 const fill = style?.fgColor?.rgb;
                 const backgroundColor = fill && /^[0-9A-F]{6,8}$/i.test(fill) ? `#${fill.slice(-6)}` : undefined;
                 const classes = [
@@ -102,7 +127,17 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                         title={row[columnIndex]?.formula ? `Excel formula: =${row[columnIndex].formula}` : undefined}
                       />
                     </div>}
-                    {!isVertical && <textarea
+                    {!isVertical && isObservation && <select
+                      aria-label={`${sheet.name} Observation row ${rowIndex + 1}`}
+                      disabled={disabled}
+                      value={normalizeObservationSymbol(value)}
+                      onChange={event => handleObservationChange(rowIndex, columnIndex, event.target.value)}
+                      className="cc-observation-select"
+                    >
+                      <option value=""></option>
+                      {OBSERVATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                    </select>}
+                    {!isVertical && !isObservation && <textarea
                       aria-label={`${sheet.name} ${columnName(columnIndex)}${rowIndex + 1}`}
                       disabled={disabled}
                       value={value}

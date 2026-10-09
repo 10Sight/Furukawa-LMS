@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -228,11 +227,7 @@ const DashboardLayout = () => {
                     />
                     {!collapsed && (
                         <div className="ml-4 flex items-center gap-2">
-                            <img
-                                src={brandLogoUrl}
-                                alt="Furukawa Minda Electric"
-                                className="h-12 w-auto object-contain"
-                            />
+                            
                             {/* <span className="font-bold text-lg">FURUKAWA</span> */}
                         </div>
 

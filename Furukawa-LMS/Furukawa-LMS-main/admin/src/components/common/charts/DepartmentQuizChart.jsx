@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query/react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/common/ui/card.jsx";
@@ -579,11 +578,7 @@ const DepartmentQuizChart = ({ departments: departmentsProp }) => {
             <CardContent>
                 {isLoading ? (
                     <div style={{ height: isTablet ? 500 : isMobile ? 480 : 560 }} className="flex flex-col items-center justify-center gap-4">
-                        <img
-                            src={brandLogoUrl}
-                            alt="FME"
-                            className="w-20 h-20 object-contain animate-pulse"
-                        />
+                        
                         <p className="text-xs font-bold tracking-widest uppercase text-slate-400 animate-pulse">
                             {t('charts.loading')}
                         </p>

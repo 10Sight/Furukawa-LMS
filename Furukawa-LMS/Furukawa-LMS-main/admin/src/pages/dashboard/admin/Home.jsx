@@ -1,4 +1,3 @@
-import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { IconClock } from "@tabler/icons-react";
@@ -65,7 +64,7 @@ const Home = () => {
       {/* Dashboard Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <img src={brandLogoUrl} alt="FME" className="h-10 w-10 object-contain shrink-0" />
+          
           <div>
             <h1 className="text-lg font-bold text-gray-900 leading-tight">{t('home.dashboardTitle')}</h1>
             <p className="text-xs text-gray-500">{t('home.dashboardSubtitle')}</p>

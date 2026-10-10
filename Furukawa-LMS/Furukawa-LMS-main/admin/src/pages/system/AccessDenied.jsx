@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
@@ -35,7 +36,11 @@ const AccessDenied = () => {
       <div className="max-w-md w-full bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center relative z-10">
         {/* Furukawa Minda Electric Logo */}
         <div className="mb-8">
-          
+          <img
+            src={brandLogoUrl}
+            alt="Furukawa Minda Electric"
+            className="h-10 w-auto object-contain drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)]"
+          />
         </div>
 
         {/* High-Fidelity Access Denied Character SVG Illustration */}

@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters.js";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
@@ -723,7 +724,7 @@ const TakeQuiz = () => {
             {/* Logo box */}
             <div className="col-span-3 border-r-[3px] border-black flex flex-col items-center justify-center p-3 bg-white text-center">
               <span className="text-4xl font-extrabold italic tracking-tight text-black font-sans leading-none">
-                
+                <img src={brandLogoUrl} alt="Furukawa Minda Electric" height={"75px"} width={"110px"} />
               </span>
               <span className="text-[12px] font-black text-black mt-0 uppercase tracking-tight leading-none text-center">
                 FURUKAWA MINDA<br />ELECTRIC PVT. LTD.

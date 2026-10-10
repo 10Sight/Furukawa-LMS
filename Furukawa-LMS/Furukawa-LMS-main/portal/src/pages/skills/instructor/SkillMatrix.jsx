@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useRef, useState, useEffect } from 'react';
 import { Button } from "@/components/common/ui/button.jsx";
 import { IconPrinter, IconLoader, IconDeviceFloppy, IconDownload } from "@tabler/icons-react";
@@ -883,7 +884,7 @@ const InstructorSkillMatrix = () => {
                             {/* Header Section */}
                             <div className="flex border-b border-black">
                                 <div className="w-[150px] border-r border-black p-2 flex items-center justify-center">
-                                    
+                                    <img src={brandLogoUrl} alt="Logo" className="h-10" />
                                     <div className="flex flex-col ml-2">
                                         <span className="font-bold text-xs text-red-600">motherson</span>
                                         <span className="font-bold text-xs text-blue-600">Furukawa Minda Electric</span>

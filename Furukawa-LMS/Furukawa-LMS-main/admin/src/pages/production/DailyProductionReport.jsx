@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -1621,7 +1622,7 @@ const DailyProductionReport = () => {
                                 Daily Production Report ({departmentName})
                             </div>
                             <div>
-                                
+                                <img src={brandLogoUrl} alt="Logo" className="h-8 max-w-[150px] object-contain" />
                             </div>
                         </div>
 

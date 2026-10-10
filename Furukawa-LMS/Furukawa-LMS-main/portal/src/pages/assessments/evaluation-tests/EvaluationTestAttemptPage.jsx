@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
@@ -593,7 +594,7 @@ const EvaluationTestAttemptPage = ({
                     {/* Top metadata tags */}
                     <div className="flex justify-between items-start text-xs border-b border-black pb-2">
                         <div className="flex flex-col items-start gap-1">
-                            
+                            <img src={brandLogoUrl} alt="FME Logo" className="h-8 w-auto object-contain" />
                             <div className="font-semibold text-[10px] sm:text-xs">FURUKAWA ELECTRICAL INDIA PVT. LTD.</div>
                         </div>
                         <div className="text-right text-[10px] sm:text-xs leading-tight font-mono">

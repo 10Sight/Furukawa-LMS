@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
@@ -174,12 +175,20 @@ const LandingPage = () => {
 
                 {/* Floating logo circle — desktop only (lg and up) to avoid breaking tablet & mobile viewports */}
                 <div className={`hidden lg:flex absolute left-[-24px] xl:left-[-30px] top-0 -translate-y-1/2 w-[180px] xl:w-[210px] h-[160px] xl:h-[190px] rounded-full border shadow-[0_10px_30px_rgba(0,0,0,0.15)] items-end justify-center pb-3 xl:pb-4 z-[60] transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    
+                    <img
+                        src={brandLogoUrl}
+                        alt="FURUKAWA Logo"
+                        className="w-28 xl:w-32 h-12 xl:h-14 object-contain"
+                    />
                 </div>
 
                 {/* Left: brand label & mobile logo */}
                 <div className="flex items-center gap-2 sm:gap-2.5 lg:ml-44 xl:ml-52 min-w-0 whitespace-nowrap">
-                    
+                    <img
+                        src={brandLogoUrl}
+                        alt="FURUKAWA Logo"
+                        className="h-6 sm:h-7 w-auto lg:hidden object-contain"
+                    />
                     <div className={`h-4 sm:h-5 w-px lg:hidden ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
                     <span className={`text-xs sm:text-sm font-bold tracking-[0.1em] ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         DOJO 2.0
@@ -276,7 +285,11 @@ const LandingPage = () => {
                 {/* Hero / Header Section */}
                 <div className="text-center space-y-2 sm:space-y-3 md:space-y-4 mb-4 sm:mb-6 md:mb-8 animate-fade-in w-full shrink-0">
                     <div className={`w-40 h-16 sm:w-48 sm:h-20 md:w-56 md:h-24 rounded-xl shadow-sm border flex items-center justify-center p-2 sm:p-2.5 mx-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                        
+                        <img
+                            src={brandLogoUrl}
+                            alt="FURUKAWA Logo"
+                            className="w-full h-full object-contain"
+                        />
                     </div>
 
                     <div className="space-y-0.5 sm:space-y-1 px-2">

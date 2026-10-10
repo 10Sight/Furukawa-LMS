@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import { useRef, useState, useEffect } from "react";
 // import { useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/common/ui/card.jsx";
@@ -277,7 +278,7 @@ const OnJobTrainingTable = ({ ojtId, studentName = "Associate Name", model = "Mo
                         {/* Header Details */}
                         <div className="flex justify-between items-start mb-2 border-b-2 border-black pb-2">
                             <div className="flex items-center gap-4">
-                                
+                                <img src={brandLogoUrl} alt="Logo" className="h-8 md:h-10" />
                                 <h2 className="font-bold text-lg border-b border-black">{headerInfo.name || "Level-1 Practical Evaluation of On the Job Training"}</h2>
                             </div>
                             <div className="grid grid-cols-1 border border-black text-xs">

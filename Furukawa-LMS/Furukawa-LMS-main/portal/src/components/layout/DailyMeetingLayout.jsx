@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { Suspense, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -68,7 +69,11 @@ export function DailyMeetingLayout() {
                 className={`sticky top-0 z-30 h-16 ${theme.card} backdrop-blur-lg border-b ${theme.border} shadow-sm flex items-center justify-between px-4 sm:px-6`}
             >
                 <div className="flex items-center gap-3 sm:gap-4">
-                    
+                    <img
+                        src={brandLogoUrl}
+                        alt="FURUKAWA Logo"
+                        className="h-8 w-auto object-contain"
+                    />
                     <div className={`h-6 w-px ${theme.border} border-l hidden sm:block`} />
                     <Button
                         variant="ghost"

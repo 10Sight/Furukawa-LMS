@@ -1,4 +1,5 @@
 import plantPhotoUrl from "@/assets/images/furukawa-minda-plant.jpg";
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -79,7 +80,11 @@ const Login = () => {
             {/* Logo container */}
             <div className="flex justify-center">
               <div className="w-full h-32 rounded-2xl flex items-center justify-center p-3">
-                
+                <img
+                  src={brandLogoUrl}
+                  alt="FURUKAWA Logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
             </div>
 

@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -273,7 +274,11 @@ export function StudentLayout() {
             ariaLabel="Toggle sidebar"
           />
           {((!collapsed && !isMobile) || (isMobile && isMobileMenuOpen)) && (
-            
+            <img
+              src={brandLogoUrl}
+              alt="Furukawa Minda"
+              className="ml-4 h-8 w-auto object-contain"
+            />
           )}
         </div>
 

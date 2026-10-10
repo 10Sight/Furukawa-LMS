@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui/card.jsx";
@@ -919,6 +920,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
             const printableArea = tableRef.current;
             const tableWidth = printableArea.scrollWidth;
             const tableHeight = printableArea.scrollHeight;
+
+            const logoUrl = brandLogoUrl;
             const logoImg = await new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => resolve(img);
@@ -1056,7 +1059,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                         <div className="grid grid-cols-[1fr_2fr_1fr] items-start gap-4 py-4 min-h-[100px]">
                             <div className="flex items-center h-full">
                                 {/* Logo or empty space for symmetry */}
-                                
+                                <img src={brandLogoUrl} alt="FURUKAWA" className="h-12 w-auto object-contain" />
                             </div>
                             <CardTitle className="text-xl font-bold text-center uppercase self-center">
                                 List of Employees Handed Over to Shop Floor After Induction Training

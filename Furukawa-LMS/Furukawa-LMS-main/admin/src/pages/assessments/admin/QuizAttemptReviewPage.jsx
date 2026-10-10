@@ -1,3 +1,4 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useMemo, useState, useEffect } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters.js";
 import { useParams, useNavigate } from "react-router-dom";
@@ -228,7 +229,7 @@ const QuizAttemptReviewPage = () => {
             <div className="grid grid-cols-12 border-b-[3px] border-black">
               {/* Logo box */}
               <div className="col-span-3 border-r-[3px] border-black flex flex-col items-center justify-center p-3 bg-white text-center">
-                
+                <img src={brandLogoUrl} alt="FME Logo" className="h-10 w-auto object-contain" />
                 <span className="text-[8px] font-black text-black mt-1.5 uppercase tracking-tight leading-none text-center">
                   FURUKAWA MINDA<br />ELECTRIC PVT. LTD.
                 </span>

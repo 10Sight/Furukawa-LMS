@@ -84,7 +84,7 @@ const departmentEmployeesData = {
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
-  shift: customDefaults.shift || 'G',
+  shift: customDefaults.shift || '',
   lineArea: customDefaults.lineArea || '',
   status: customDefaults.status || 'Open',
   observation: customDefaults.observation || '',
@@ -256,6 +256,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   const [openCFTDropdown, setOpenCFTDropdown] = useState(null); // { rowIndex, top, left, width }
   const [expandedTopicId, setExpandedTopicId] = useState(null); // Which topic accordion is expanded in the dropdown
 
+  // Dropdown state for Staff column (search bar / dropdown)
+  const [openStaffDropdown, setOpenStaffDropdown] = useState(null); // { rowIndex, top, left, width }
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+
   // Initialize rows with 10 empty items
   const [rows, setRows] = useState(() => {
     return topic?.sheet?.rows || Array.from({ length: 10 }, () => createEmptyRow());
@@ -289,6 +293,39 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   };
   useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id), showToast);
   const saveSheet = () => {
+    // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const hasContent = Boolean(
+        r.date?.trim() ||
+        r.shift?.trim() ||
+        r.lineArea?.trim() ||
+        r.observation?.trim() ||
+        r.imageBefore ||
+        r.rootCause?.trim() ||
+        r.counterMeasure?.trim() ||
+        r.imageAfter ||
+        r.responseDate?.trim() ||
+        r.department?.trim() ||
+        r.staffEmployee?.trim() ||
+        r.cftTopic?.trim() ||
+        r.responsiblePersonConfirmation?.trim()
+      );
+      if (hasContent) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
+        if (!r.status?.trim()) missing.push('Status');
+        if (!r.lineArea?.trim()) missing.push('Line/Area');
+        if (!r.observation?.trim()) missing.push('Observation');
+
+        if (missing.length > 0) {
+          showToast(`Row ${i + 1}: Mandatory field${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required.`);
+          return false;
+        }
+      }
+    }
+
     try {
       persistSheet(sheetSnapshot);
       showToast('PDCA saved successfully.');
@@ -456,6 +493,91 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       window.removeEventListener('resize', handleScroll);
     };
   }, [openCFTDropdown]);
+
+  // Close Staff dropdown on outside click or scroll/resize
+  useEffect(() => {
+    if (!openStaffDropdown) return;
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.staff-dropdown-menu') && !e.target.closest('.staff-trigger-btn')) {
+        setOpenStaffDropdown(null);
+      }
+    };
+    const handleScroll = (e) => {
+      if (!e.target.closest?.('.staff-dropdown-menu')) {
+        setOpenStaffDropdown(null);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleScroll);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [openStaffDropdown]);
+
+  const handleToggleStaffDropdown = (rowIndex, e) => {
+    e.stopPropagation();
+    if (openStaffDropdown?.rowIndex === rowIndex) {
+      setOpenStaffDropdown(null);
+      return;
+    }
+    setStaffSearchQuery('');
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropdownWidth = 280;
+    let leftPos = rect.left + (rect.width / 2) - (dropdownWidth / 2);
+    if (leftPos + dropdownWidth > window.innerWidth - 12) {
+      leftPos = window.innerWidth - dropdownWidth - 12;
+    }
+    if (leftPos < 12) {
+      leftPos = 12;
+    }
+
+    let topPos = rect.bottom + 4;
+    const estimatedHeight = 320;
+    if (topPos + estimatedHeight > window.innerHeight - 12 && rect.top - estimatedHeight > 12) {
+      topPos = rect.top - estimatedHeight - 4;
+    }
+
+    setOpenStaffDropdown({
+      rowIndex,
+      top: topPos,
+      left: Math.max(12, leftPos),
+      width: dropdownWidth
+    });
+  };
+
+  const allStaffEmployees = useMemo(() => {
+    const set = new Set();
+    Object.values(departmentEmployeesData).forEach((list) => {
+      list.forEach((name) => set.add(name));
+    });
+    (topic?.assignedMembers || []).forEach((m) => {
+      if (m.name) set.add(m.code ? `${m.name} (${m.code})` : m.name);
+    });
+    rows.forEach((r) => {
+      if (r.staffEmployee?.trim()) set.add(r.staffEmployee.trim());
+    });
+    return Array.from(set);
+  }, [rows, topic?.assignedMembers]);
+
+  const getStaffOptionsForRow = (rowIndex) => {
+    const row = rows[rowIndex];
+    const deptEmployees = row?.department ? (departmentEmployeesData[row.department] || []) : [];
+    const query = staffSearchQuery.trim().toLowerCase();
+
+    if (query) {
+      return allStaffEmployees.filter((emp) => emp.toLowerCase().includes(query));
+    }
+
+    if (deptEmployees.length > 0) {
+      const otherEmployees = allStaffEmployees.filter((e) => !deptEmployees.includes(e));
+      return [...deptEmployees, ...otherEmployees];
+    }
+
+    return allStaffEmployees;
+  };
 
   const handleToggleCFTDropdown = (rowIndex, e, mode = 'auto') => {
     e.stopPropagation();
@@ -1136,22 +1258,22 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
               <tr className="bg-[#ECEFF1] text-slate-800 border-b border-[#B0BEC5] text-[11px] font-semibold select-none text-center">
                 <th className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#B0BEC5]">
-                  Date
+                  <span>Date</span> <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th className="py-1.5 px-0.5 w-[36px] min-w-[34px] text-center border-r border-[#B0BEC5]">
-                  Shift
+                  <span>Shift</span> <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-[#B0BEC5]">
                   S.No
                 </th>
                 <th className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#B0BEC5] text-[10.5px]">
-                  Status
+                  <span>Status</span> <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th className="py-1.5 px-1 w-[85px] min-w-[75px] text-center border-r border-[#B0BEC5] text-[10.5px]">
-                  Line/Area
+                  <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#B0BEC5] text-[10.5px]">
-                  Observation
+                  <span>Observation</span> <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th className="py-1.5 px-1 w-[85px] min-w-[80px] text-center border-r border-[#B0BEC5] text-[10.5px]">
                   Image Before
@@ -1205,14 +1327,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       />
                     </td>
 
-                    {/* 2. Shift (Decreased width for single letter A/B/C/G) */}
+                    {/* 2. Shift (Decreased width for single letter A/B/C/G, blank by default) */}
                     <td className="p-0 align-middle border-r border-[#CFD8DC] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
                       <div className="relative w-full h-full flex items-center justify-center">
                         <select
-                          value={row.shift === 'General' ? 'G' : row.shift}
+                          value={row.shift === 'General' ? 'G' : (row.shift || '')}
                           onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
                           className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer transition-colors appearance-none"
                         >
+                          <option value="">-</option>
                           <option value="A">A</option>
                           <option value="B">B</option>
                           <option value="C">C</option>
@@ -1437,15 +1560,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
 
-                        {/* 2nd Sub-column: Staff Employee Name (Empty by default, + button to add manually) */}
-                        <div className="relative w-full h-full flex items-center justify-center">
+                        {/* 2nd Sub-column: Staff Employee Name (Search bar / dropdown + bottom-right + button) */}
+                        <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
                           {row.staffEmployee ? (
-                            <div className="relative w-full h-full min-h-[42px] px-1 py-1 flex items-center justify-between gap-0.5 group">
+                            <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
                               <button
                                 type="button"
-                                onClick={() => handleOpenAddStaffModal(idx)}
-                                className="flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                                title={`Click to edit staff employee: ${row.staffEmployee}`}
+                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                                className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
+                                title={`Click to search/change staff: ${row.staffEmployee}`}
                               >
                                 <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
                                   {row.staffEmployee}
@@ -1458,7 +1581,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                   handleCellChange(idx, 'staffEmployee', '');
                                 }}
                                 className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0"
-                                title="Remove staff employee"
+                                title="Clear staff employee"
                               >
                                 <X className="w-3 h-3 stroke-[2.5]" />
                               </button>
@@ -1466,15 +1589,30 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleOpenAddStaffModal(idx)}
-                              className="w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer group"
-                              title="Click + to add employee manually"
+                              onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                              className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
+                              title="Click to search and select staff employee"
                             >
-                              <span className="w-5 h-5 rounded-full border border-dashed border-slate-300 group-hover:border-blue-500 group-hover:bg-blue-50 flex items-center justify-center transition-all">
-                                <Plus className="w-3 h-3 stroke-[2.5]" />
-                              </span>
+                              <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
+                                <Search className="w-2.5 h-2.5" />
+                                <span className="truncate">Staff...</span>
+                                <ChevronDown className="w-2.5 h-2.5" />
+                              </div>
                             </button>
                           )}
+
+                          {/* Down right side '+' option button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAddStaffModal(idx);
+                            }}
+                            className="absolute bottom-0.5 right-0.5 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
+                            title="Add custom staff manually (+)"
+                          >
+                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                          </button>
                         </div>
 
                         {/* 3rd Sub-column: CFT */}
@@ -2029,6 +2167,122 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               </div>
             </>
           )}
+        </div>,
+        document.body
+      )}
+
+      {/* Staff Dropdown Popover Portal */}
+      {openStaffDropdown && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: `${openStaffDropdown.top}px`,
+            left: `${openStaffDropdown.left}px`,
+            width: `${openStaffDropdown.width}px`,
+            zIndex: 9999
+          }}
+          className="staff-dropdown-menu bg-white rounded-xl shadow-2xl border border-slate-200 p-2.5 animate-in fade-in zoom-in-95 duration-100 select-none max-h-[85vh] flex flex-col"
+        >
+          {/* Header */}
+          <div className="px-2 py-1 pb-2 border-b border-slate-100 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                Select Staff Name
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenStaffDropdown(null)}
+              className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="pt-2 pb-1.5 px-0.5 shrink-0">
+            <div className="relative w-full">
+              <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                value={staffSearchQuery}
+                onChange={(e) => setStaffSearchQuery(e.target.value)}
+                placeholder="Search staff name or ID..."
+                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg pl-7 pr-7 py-1 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              />
+              {staffSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setStaffSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Staff Options List */}
+          <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[240px]">
+            {getStaffOptionsForRow(openStaffDropdown.rowIndex).length > 0 ? (
+              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empName, i) => {
+                const isSelected = rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
+                const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
+                  (departmentEmployeesData[rows[openStaffDropdown.rowIndex].department] || []).includes(empName);
+
+                return (
+                  <button
+                    key={`${empName}_${i}`}
+                    type="button"
+                    onClick={() => {
+                      handleCellChange(openStaffDropdown.rowIndex, 'staffEmployee', empName);
+                      setOpenStaffDropdown(null);
+                    }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${
+                      isSelected
+                        ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                        : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-1 truncate">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isSelected ? 'bg-blue-600' : 'bg-slate-300 group-hover:bg-blue-500'
+                        }`}
+                      />
+                      <span className="truncate">{empName}</span>
+                    </div>
+                    {isDeptMatch && (
+                      <span className="text-[9px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 py-0.2 shrink-0">
+                        Dept
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="py-4 text-center text-xs text-slate-400">
+                No matching staff found
+              </div>
+            )}
+          </div>
+
+          {/* Add custom staff button at bottom */}
+          <button
+            type="button"
+            onClick={() => {
+              const idx = openStaffDropdown.rowIndex;
+              setOpenStaffDropdown(null);
+              handleOpenAddStaffModal(idx);
+            }}
+            className="w-full mt-2 pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>+ Add / Enter Custom Staff Details</span>
+          </button>
         </div>,
         document.body
       )}

@@ -314,14 +314,14 @@ function LpaPageContent({ viewContext }) {
     const obs = extractObservationsFromSheet(sheet, record, record.auditDate || pdcaDate);
     const rows = obs.map(item => createEmptyPdcaRow({
       date: item.date || record.auditDate || pdcaDate,
-      shift: item.shift || 'G',
+      shift: item.shift || '',
       status: item.status || 'Open',
       lineArea: item.lineArea || '',
       observation: item.observation || '',
       department: item.department || (record.section === 'cc' ? 'Die Casting' : 'Wiring Harness')
     }));
     while (rows.length < 10) {
-      rows.push(createEmptyPdcaRow({ date: record.auditDate || pdcaDate, shift: 'G', status: 'Open' }));
+      rows.push(createEmptyPdcaRow({ date: record.auditDate || pdcaDate, shift: '', status: 'Open' }));
     }
     const recordTopicId = `PDCA-LPA-REC-${record.id || 'tpl'}-${worksheetIndex}-${record.auditDate || pdcaDate}`;
     let loadedSheet = { rows, headerInfo: { topicName: '', preparedBy: '', auditNo: '', attendees: '' } };

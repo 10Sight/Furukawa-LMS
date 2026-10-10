@@ -14,7 +14,6 @@ const DEFAULT_DEPARTMENTS = [
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
   const { userContext } = usePDCA();
   const isEditMode = Boolean(editData);
-  const sectionName = isEditMode ? editData.section || userContext.section?.name || '' : userContext.section?.name || '';
   const departmentOptions = [...new Set([...DEFAULT_DEPARTMENTS, ...(userContext.departments || []).map(item => item.name), editData?.department].filter(Boolean))];
   const draftKey = `pdca_draft_${editData?.id || `${defaultPlant}_${defaultScope}_${userContext.lpaSource?.category || 'general'}_${userContext.lpaSource?.workbookId || 'all'}_${userContext.lpaSource?.worksheet || ''}`}`;
 
@@ -23,6 +22,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
     description: userContext.lpaSource?.observations?.join('\n') || '',
     scope: defaultScope,
     department: '',
+    section: userContext.section?.name || '',
     createdBy: '',
     employeeId: '',
   };
@@ -37,13 +37,17 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         description: editData.description || '',
         scope: editData.scope || 'Company',
         department: editData.department || '',
+        section: editData.section || userContext.section?.name || '',
         createdBy: editData.createdBy?.name || '',
         employeeId: editData.createdBy?.code || '',
       }));
     } else {
-      setFormData(readSaved(draftKey, defaultForm));
+      setFormData(readSaved(draftKey, {
+        ...defaultForm,
+        section: userContext.section?.name || '',
+      }));
     }
-  }, [editData, isOpen, defaultScope, draftKey]);
+  }, [editData, isOpen, defaultScope, draftKey, userContext.section?.name]);
 
   useFormAutosave(formData, value => localStorage.setItem(draftKey, JSON.stringify(value)), isOpen, message => window.alert(message));
 
@@ -62,7 +66,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
   const randomAvatarBg = avatarColors[Math.floor(Math.random() * avatarColors.length)];
 
   const getInitials = (name) => {
-    return name
+    return (name || '')
       .trim()
       .split(' ')
       .filter(Boolean)
@@ -73,65 +77,95 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.topic.trim()) { window.alert('Please enter a topic.'); return; }
-    try {
-    if (!isEditMode && !userContext.user?.name) throw new Error('Your logged-in profile could not be loaded. Please try again.');
-    if (formData.department && !departmentOptions.includes(formData.department)) throw new Error('Please select a Department from the available options.');
-    const scope = editData?.scope || defaultScope;
-    const creatorName = isEditMode ? formData.createdBy : userContext.user.name;
-    const creatorCode = isEditMode ? formData.employeeId : userContext.user.code || '';
-    if (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) throw new Error('Please select a unit before creating a form.');
-
-    const now = new Date();
-    const dateStr = userContext.lpaSource?.date
-      ? new Date(`${userContext.lpaSource.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    if (isEditMode) {
-      onUpdate({
-        ...editData,
-        topic: formData.topic,
-        description: formData.description,
-        scope,
-        department: formData.department,
-        section: sectionName,
-        sectionId: editData?.sectionId || userContext.section?.id || '',
-        createdBy: {
-          name: creatorName.toUpperCase(),
-          code: creatorCode,
-          email: editData.createdBy?.email || `${creatorCode.toLowerCase()}@fme-minda.co.in`,
-          avatarBg: editData.createdBy?.avatarBg || randomAvatarBg,
-          initials: getInitials(creatorName || 'NA'),
-        },
-        isSelf: scope === 'Self PDCA',
-      });
-    } else {
-      onAdd({
-        id: `PDCA-${crypto.randomUUID()}`,
-        topic: formData.topic,
-        description: formData.description,
-        plant: defaultPlant,
-        scope,
-        department: formData.department,
-        section: sectionName,
-        sectionId: editData?.sectionId || userContext.section?.id || '',
-        lpaSource: userContext.lpaSource ? { ...userContext.lpaSource } : undefined,
-        date: dateStr,
-        time: timeStr,
-        createdBy: {
-          name: creatorName.toUpperCase(),
-          code: creatorCode,
-          email: userContext.user?.email || '',
-          avatarBg: randomAvatarBg,
-          initials: getInitials(creatorName || 'NA'),
-        },
-        isSelf: scope === 'Self PDCA',
-      });
+    if (!formData.topic.trim()) {
+      window.alert('Please enter a topic.');
+      return;
     }
+    if (!formData.section || !formData.section.trim()) {
+      window.alert('Please enter a Section. Section is mandatory.');
+      return;
+    }
+    try {
+      let activeUser = userContext.user;
+      if (!activeUser?.name) {
+        try {
+          const raw = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                      (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && (parsed.fullName || parsed.name || parsed.userName)) {
+              activeUser = {
+                name: parsed.fullName || parsed.name || parsed.userName,
+                code: parsed.employeeId || parsed.empId || parsed.empCode || parsed.userName || '',
+                email: parsed.email || ''
+              };
+            }
+          }
+        } catch {}
+      }
 
-    try { localStorage.removeItem(draftKey); } catch { /* Saved record is already durable. */ }
-    onClose();
+      const creatorName = (isEditMode ? formData.createdBy : activeUser?.name) || 'USER';
+      const creatorCode = (isEditMode ? formData.employeeId : activeUser?.code) || '';
+      const creatorEmail = activeUser?.email || editData?.createdBy?.email || (creatorCode ? `${creatorCode.toLowerCase()}@fme-minda.co.in` : '');
+
+      if (formData.department && !departmentOptions.includes(formData.department)) {
+        throw new Error('Please select a Department from the available options.');
+      }
+      const scope = editData?.scope || defaultScope;
+      const targetPlant = (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) ? 'Gujrat' : defaultPlant;
+
+      const now = new Date();
+      const dateStr = userContext.lpaSource?.date
+        ? new Date(`${userContext.lpaSource.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const sectionVal = formData.section.trim();
+
+      if (isEditMode) {
+        onUpdate({
+          ...editData,
+          topic: formData.topic.trim(),
+          description: formData.description,
+          scope,
+          department: formData.department,
+          section: sectionVal,
+          sectionId: editData?.sectionId || userContext.section?.id || '',
+          createdBy: {
+            name: creatorName.toUpperCase(),
+            code: creatorCode,
+            email: creatorEmail,
+            avatarBg: editData.createdBy?.avatarBg || randomAvatarBg,
+            initials: getInitials(creatorName || 'NA'),
+          },
+          isSelf: scope === 'Self PDCA',
+        });
+      } else {
+        onAdd({
+          id: `PDCA-${crypto.randomUUID()}`,
+          topic: formData.topic.trim(),
+          description: formData.description,
+          plant: targetPlant,
+          scope,
+          department: formData.department,
+          section: sectionVal,
+          sectionId: userContext.section?.id || '',
+          lpaSource: userContext.lpaSource ? { ...userContext.lpaSource } : undefined,
+          date: dateStr,
+          time: timeStr,
+          createdBy: {
+            name: creatorName.toUpperCase(),
+            code: creatorCode,
+            email: creatorEmail,
+            avatarBg: randomAvatarBg,
+            initials: getInitials(creatorName || 'NA'),
+          },
+          isSelf: scope === 'Self PDCA',
+        });
+      }
+
+      try { localStorage.removeItem(draftKey); } catch {}
+      onClose();
     } catch (error) {
       window.alert(error.message || 'Could not save the form. Please try again.');
     }
@@ -181,11 +215,12 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             />
           </div>
 
-          {/* Description */}
+          {/* Description (Optional) */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <AlignLeft className="w-3.5 h-3.5 text-blue-600" />
               <span>Description</span>
+              <span className="text-[11px] font-normal text-slate-400">(optional)</span>
             </label>
             <textarea
               rows={3}
@@ -201,15 +236,26 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
               <label htmlFor="pdca-department" className="block text-xs font-semibold text-slate-700 mb-1.5">Department</label>
               <div className="relative">
                 <select id="pdca-department" value={formData.department} onChange={e => setFormData({ ...formData, department: e.target.value })} className="w-full appearance-none text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none pr-10 shadow-2xs">
-                  <option value="">{userContext.loading ? 'Loading departments...' : 'Select Department'}</option>
+                  <option value="">{userContext.loading ? 'Select Department' : 'Select Department'}</option>
                   {departmentOptions.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
                 <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
             <div>
-              <label htmlFor="pdca-section" className="block text-xs font-semibold text-slate-700 mb-1.5">Section (optional)</label>
-              <input id="pdca-section" readOnly value={sectionName} placeholder={userContext.loading ? 'Loading section...' : 'Section not assigned'} className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-slate-50 text-slate-800 outline-none shadow-2xs" />
+              <label htmlFor="pdca-section" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Section *</span>
+                <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Required</span>
+              </label>
+              <input
+                id="pdca-section"
+                type="text"
+                required
+                value={formData.section}
+                onChange={e => setFormData({ ...formData, section: e.target.value })}
+                placeholder="Enter section name (e.g. Line 1, Press Shop)..."
+                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs transition-all"
+              />
             </div>
           </div>
 

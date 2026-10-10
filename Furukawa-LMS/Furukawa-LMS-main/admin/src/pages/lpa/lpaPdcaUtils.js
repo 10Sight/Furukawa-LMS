@@ -25,7 +25,7 @@ export function getScoreForObservation(val) {
 export function createEmptyPdcaRow(customDefaults = {}) {
   return {
     date: customDefaults.date || '',
-    shift: customDefaults.shift || 'G',
+    shift: customDefaults.shift || '',
     lineArea: customDefaults.lineArea || '',
     status: customDefaults.status || 'Open',
     observation: customDefaults.observation || '',
@@ -96,7 +96,7 @@ export function extractObservationsFromSheet(sheet, record, date) {
       const lineArea = currentArea || focusVal || sectionVal || (section === 'assembly' ? 'Assembly Area' : 'C&C Area');
       extracted.push({
         date: record?.auditDate || date || new Date().toISOString().slice(0, 10),
-        shift: 'G',
+        shift: '',
         status: isIssue ? 'Open' : 'Closed',
         lineArea,
         observation: checkText,
@@ -183,7 +183,7 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
   const finalRows = prioritized.map((item, idx) =>
     createEmptyPdcaRow({
       date: item.date || date,
-      shift: item.shift || 'G',
+      shift: item.shift || '',
       status: item.status || 'Open',
       lineArea: item.lineArea || '',
       observation: item.observation || '',
@@ -193,7 +193,7 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
 
   // Pad up to at least 10 rows (matching Screenshot 1)
   while (finalRows.length < 10) {
-    finalRows.push(createEmptyPdcaRow({ date, shift: 'G', status: 'Open' }));
+    finalRows.push(createEmptyPdcaRow({ date, shift: '', status: 'Open' }));
   }
 
   const defaultTopic = {

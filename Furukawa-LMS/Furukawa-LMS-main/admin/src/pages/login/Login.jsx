@@ -1,10 +1,9 @@
 import plantPhotoUrl from "@/assets/images/furukawa-minda-plant.jpg";
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigate } from 'react-router-dom';
 import { Loader2, User, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { login } from "@/context/state/slices/AuthSlice.js";
@@ -22,10 +21,8 @@ const loginSchema = z.object({
 
 const Login = () => {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
 
-
-  const { isLoading, isLoggedIn, user } = useSelector((state) => state.auth);
+  const { isLoading } = useSelector((state) => state.auth);
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -39,12 +36,6 @@ const Login = () => {
       password: ''
     }
   });
-
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      navigate('/', { replace: true });
-    }
-  }, [isLoggedIn, user, navigate]);
 
   const onSubmit = async (data) => {
     const loginData = {

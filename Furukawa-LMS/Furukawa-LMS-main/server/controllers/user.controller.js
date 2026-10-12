@@ -2692,6 +2692,144 @@ export const getMentorMentees = asyncHandler(async (req, res) => {
   }, "Mentor mentees fetched successfully"));
 });
 
+const MAX_MENTOR_ASSIGN_BATCH = 200;
+
+// Security filters shared by the "Assign Mentor" candidate list and the assign/unassign
+// writes, so a caller can never promote/demote a user the list would have refused to show
+// them: temporary (DOJO) candidates are never eligible, non-admin callers can't touch admin
+// accounts, and CUSTOM-role callers stay confined to their assigned departments/sections.
+// Requires the query to alias users as `u` and join getHierarchyFilterJoinSQL.
+const buildMentorAssignScope = (req) => {
+  const whereClauses = [
+    "(u.isDeleted = 0 OR u.isDeleted IS NULL)",
+    "(u.isTemporary = 0 OR u.isTemporary IS NULL)",
+  ];
+  const params = [];
+
+  const callerIsAdmin = ['SUPERADMIN', 'ADMIN'].includes(req.user?.role) || !!req.user?.isAdmin;
+  if (!callerIsAdmin) {
+    whereClauses.push("((u.isAdmin = 0 OR u.isAdmin IS NULL) AND (u.role IS NULL OR u.role NOT IN ('ADMIN', 'SUPERADMIN')))");
+  }
+
+  applyUserScopeRestriction(req, whereClauses, params);
+  return { whereClauses, params };
+};
+
+// Slim candidate list for the "Assign Mentor" dialog. Deliberately returns only what the
+// dialog renders (no contact/personal fields), so mentor:assign doesn't double as a way to
+// read full operator profiles the way GET /api/users would.
+export const getMentorCandidates = asyncHandler(async (req, res) => {
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+  const offset = (page - 1) * limit;
+
+  const { whereClauses, params } = buildMentorAssignScope(req);
+
+  whereClauses.push("(u.status IS NULL OR u.status != 'LEFT')");
+  whereClauses.push(`(u.designation IS NULL OR u.designation = '' OR ${getDesignationShutterExclusionCondition("u")})`);
+
+  if (req.query.search) {
+    const t = `%${req.query.search}%`;
+    whereClauses.push("(u.fullName LIKE ? OR u.userName LIKE ? OR u.empId LIKE ?)");
+    params.push(t, t, t);
+  }
+
+  // Same department/section matching as getAllUsers, so the dialog's filters keep returning
+  // the users they did when it was backed by that endpoint.
+  const deptIds = toIdList(req.query.departmentId);
+  const sectIds = toIdList(req.query.sectionId);
+  if (deptIds.length) {
+    const ph = deptIds.map(() => "?").join(",");
+    whereClauses.push(`(u.departmentId IN (${ph}) OR u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.departmentId IN (${ph})))`);
+    params.push(...deptIds, ...deptIds);
+  }
+  if (sectIds.length) {
+    const ph = sectIds.map(() => "?").join(",");
+    whereClauses.push(`u.id IN (SELECT DISTINCT CAST(u_inner.[value] AS INT) FROM [sections] s2 CROSS APPLY OPENJSON(ISNULL(s2.users, '[]')) u_inner WHERE s2.id IN (${ph}))`);
+    params.push(...sectIds);
+  }
+
+  const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+  const [[cnt], [users]] = await Promise.all([
+    executeQuery(`SELECT COUNT(*) as total FROM users u ${getHierarchyFilterJoinSQL} ${whereSQL}`, params, { label: "getMentorCandidates.count" }),
+    executeQuery(`
+      SELECT u.id, u.fullName, u.empId, u.designation, u.status, u.avatar, u.isMentor,
+             u.departmentId, u.department, u.section, d.id as actualDeptId, d.deptName, s_res.sectionName
+      FROM users u ${getHierarchyFilterJoinSQL} ${whereSQL}
+      ORDER BY u.createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `, [...params, offset, limit], { label: "getMentorCandidates.select" }),
+  ]);
+
+  res.json(new ApiResponse(200, {
+    users: users.map(u => ({
+      _id: u.id,
+      fullName: u.fullName,
+      empId: u.empId,
+      designation: u.designation,
+      status: u.status,
+      avatar: parseJSON(u.avatar),
+      isMentor: !!u.isMentor,
+      department: u.deptName
+        ? { _id: String(u.actualDeptId || u.departmentId), name: u.deptName }
+        : (sanitize(u.department) ? { _id: String(u.department), name: u.department } : null),
+      sectionName: u.sectionName || sanitize(u.section) || "",
+    })),
+    totalUsers: cnt[0].total,
+    totalPages: Math.ceil(cnt[0].total / limit),
+    currentPage: page,
+    limit,
+  }, "Mentor candidates fetched successfully"));
+});
+
+// Flips isMentor for a batch of users, touching nothing else on the record apart from
+// isEmployee = 1 (a mentor is an operator, and an un-assigned mentor goes back to the
+// Operators page rather than dropping out of user management). All-or-nothing: if any
+// requested id falls outside what the caller may assign, nothing is written.
+const setMentorFlag = async (req, res, makeMentor) => {
+  const rawIds = req.body?.userIds;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    throw new ApiError("userIds must be a non-empty array", 400);
+  }
+  if (rawIds.length > MAX_MENTOR_ASSIGN_BATCH) {
+    throw new ApiError(`Cannot update more than ${MAX_MENTOR_ASSIGN_BATCH} users at once`, 400);
+  }
+  const ids = [...new Set(rawIds.map(Number))];
+  if (ids.some(id => !Number.isInteger(id) || id <= 0)) {
+    throw new ApiError("userIds must contain valid user ids", 400);
+  }
+
+  const { whereClauses, params } = buildMentorAssignScope(req);
+  const idPlaceholders = ids.map(() => "?").join(",");
+  whereClauses.push(`u.id IN (${idPlaceholders})`);
+
+  const [rows] = await executeQuery(
+    `SELECT DISTINCT u.id, u.isMentor FROM users u ${getHierarchyFilterJoinSQL} WHERE ${whereClauses.join(' AND ')}`,
+    [...params, ...ids]
+  );
+  if (rows.length !== ids.length) {
+    throw new ApiError(
+      `One or more selected users cannot be ${makeMentor ? "assigned as" : "removed from"} Mentor with your permissions`,
+      403
+    );
+  }
+
+  const changedIds = rows.filter(r => !!r.isMentor !== makeMentor).map(r => r.id);
+  if (changedIds.length > 0) {
+    await executeQuery(
+      `UPDATE users SET isMentor = ?, isEmployee = 1, updatedAt = GETDATE() WHERE id IN (${changedIds.map(() => "?").join(",")})`,
+      [makeMentor ? 1 : 0, ...changedIds]
+    );
+    logAudit(req.user?.id, makeMentor ? "ASSIGN_MENTOR" : "UNASSIGN_MENTOR", { userIds: changedIds }, { resourceType: "User", req })
+      .catch(err => console.error("logAudit(mentor assignment) failed:", err.message));
+  }
+
+  res.json(new ApiResponse(200, { updatedCount: changedIds.length, userIds: changedIds },
+    makeMentor ? "Mentors assigned successfully" : "Mentors removed successfully"));
+};
+
+export const assignMentors = asyncHandler((req, res) => setMentorFlag(req, res, true));
+export const unassignMentors = asyncHandler((req, res) => setMentorFlag(req, res, false));
+
 export const getAllSupervisors = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page) || 1, 1);
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);

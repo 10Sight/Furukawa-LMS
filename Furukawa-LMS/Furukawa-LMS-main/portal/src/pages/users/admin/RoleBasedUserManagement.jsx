@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import {
   useUpdateUserMutation,
   useDeleteUserMutation,
+  useUnassignMentorsMutation,
 } from "@/services/api/UserApi.js";
 import { useUserRegisterMutation } from "@/services/api/AuthApi.js";
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
@@ -158,6 +159,11 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   // the other roles served here (Supervisor/Incharge - regular, non-temporary operators).
   const canUpdate = isMasterAdmin || userPermissions.includes(isMentorRole ? "mentor:update" : "user:update");
   const canDelete = isMasterAdmin || userPermissions.includes(isMentorRole ? "mentor:delete" : "user:delete");
+  // Assign / Remove-from-Mentor only flip the mentor flag, so they have their own narrower
+  // permission (mirrors MENTOR_ASSIGN_PERMISSIONS on the backend routes).
+  const canAssignMentor = isMentorRole && (
+    isMasterAdmin || ["mentor:assign", "mentor:update", "user:update"].some((p) => userPermissions.includes(p))
+  );
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -194,6 +200,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const [registerUser] = useUserRegisterMutation();
   const [updateUser] = useUpdateUserMutation();
   const [deleteUser] = useDeleteUserMutation();
+  const [unassignMentors] = useUnassignMentorsMutation();
 
   const { data: deptRes } = useGetAllDepartmentsQuery({ page: 1, limit: 100 });
   const { data: sectionRes } = useGetSectionsByDepartmentQuery(
@@ -342,10 +349,10 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   // Un-flags the user as a Mentor while keeping them as an Operator, so they don't
   // disappear from user management entirely -- just move back to the Operators page.
   const handleRemoveFromMentor = async (user) => {
-    if (!canUpdate) return;
+    if (!canAssignMentor) return;
     if (!window.confirm(`Remove ${user.fullName} from Mentors? They will remain as an Operator.`)) return;
     try {
-      await updateUser({ id: user._id, isMentor: false, isEmployee: true }).unwrap();
+      await unassignMentors([user._id]).unwrap();
       toast.success(`${user.fullName} removed from Mentors`);
       refetch();
     } catch (err) {
@@ -417,7 +424,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
               className="w-44"
             />
           )}
-          {isMentorRole && canUpdate && (
+          {canAssignMentor && (
             <Button variant="outline" onClick={() => setIsAssignDialogOpen(true)}>
               <IconUserPlus className="w-4 h-4 mr-2" />
               Assign Mentor
@@ -647,7 +654,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
                           <IconPencil className="w-4 h-4 text-blue-600" />
                         </Button>
                       )}
-                      {isMentorRole && canUpdate && (
+                      {canAssignMentor && (
                         <Button variant="ghost" size="icon" onClick={() => handleRemoveFromMentor(user)} title="Remove from Mentor">
                           <IconUserMinus className="w-4 h-4 text-amber-600" />
                         </Button>
@@ -889,7 +896,7 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
         </DialogContent>
       </Dialog>
 
-      {isMentorRole && (
+      {canAssignMentor && (
         <AssignMentorDialog
           open={isAssignDialogOpen}
           onOpenChange={setIsAssignDialogOpen}

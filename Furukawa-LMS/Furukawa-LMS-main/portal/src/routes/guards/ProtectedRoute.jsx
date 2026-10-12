@@ -1,5 +1,5 @@
 import { authSession } from "@/utils/authSession.js";
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { profile } from "@/context/state/slices/AuthSlice.js";
@@ -8,6 +8,8 @@ const ProtectedRoute = ({ children }) => {
   const dispatch = useDispatch();
   const location = useLocation();
   const { isLoggedIn, user } = useSelector((state) => state.auth);
+  const wasAuthenticated = useRef(false);
+  if (isLoggedIn && user) wasAuthenticated.current = true;
 
   // Check if user is authenticated on component mount
   useEffect(() => {
@@ -42,7 +44,9 @@ const ProtectedRoute = ({ children }) => {
 
   // If not authenticated, redirect to login with the current location
   if (!isLoggedIn || !user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Only remember the destination for visitors who arrived logged out (e.g. email links), not on logout.
+    const state = wasAuthenticated.current ? undefined : { from: location };
+    return <Navigate to="/login" state={state} replace />;
   }
 
   // If authenticated, render the protected component

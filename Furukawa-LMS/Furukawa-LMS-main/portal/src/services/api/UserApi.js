@@ -354,6 +354,35 @@ export const userApi = createApi({
             }),
             invalidatesTags: ['User'],
         }),
+
+        // Assign Mentor flow: slim candidate list plus dedicated assign/unassign writes,
+        // gated by mentor:assign (so no user:read / user:update is needed).
+        getMentorCandidates: builder.query({
+            query: ({ page = 1, limit = 10, search = "", departmentId = "", sectionId = "" } = {}) => ({
+                url: "/api/users/mentors/candidates",
+                method: "GET",
+                params: { page, limit, search, departmentId, sectionId }
+            }),
+            providesTags: ['User'],
+        }),
+
+        assignMentors: builder.mutation({
+            query: (userIds) => ({
+                url: "/api/users/mentors/assign",
+                method: "POST",
+                data: { userIds },
+            }),
+            invalidatesTags: ['User'],
+        }),
+
+        unassignMentors: builder.mutation({
+            query: (userIds) => ({
+                url: "/api/users/mentors/unassign",
+                method: "POST",
+                data: { userIds },
+            }),
+            invalidatesTags: ['User'],
+        }),
     }),
 });
 
@@ -392,4 +421,7 @@ export const {
     useDojoRegisterMutation,
     useBulkUpdateShiftScheduleMutation,
     useBulkUpdateStatusLeftMutation,
+    useGetMentorCandidatesQuery,
+    useAssignMentorsMutation,
+    useUnassignMentorsMutation,
 } = userApi;

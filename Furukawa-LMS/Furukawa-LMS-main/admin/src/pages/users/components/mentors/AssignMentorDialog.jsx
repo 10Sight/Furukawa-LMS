@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
-import { useGetAllUsersQuery, useUpdateUserMutation } from "@/services/api/UserApi.js";
+import { useGetMentorCandidatesQuery, useAssignMentorsMutation } from "@/services/api/UserApi.js";
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery, useGetAllSectionsQuery } from "@/services/api/SectionApi.js";
 import {
@@ -33,6 +33,8 @@ const CANDIDATE_PAGE_LIMIT = 10;
 // setting isEmployee=1 and isMentor=1 on each -- the same effect as the "Remove
 // from Mentor" action in reverse. This does not touch any user's `mentor` field
 // or the Handover-Sheet-driven mentee assignment/stats shown elsewhere.
+// Backed by the dedicated /api/users/mentors/{candidates,assign} endpoints, so it
+// works with mentor:assign alone (no user:read / user:update).
 const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
   const authUser = useSelector((state) => state.auth.user);
 
@@ -86,12 +88,11 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
     setSelectedUserIds(new Set());
   }, [search, departmentFilter, sectionFilter]);
 
-  const { data: usersRes, isLoading: usersLoading, isFetching: usersFetching } = useGetAllUsersQuery(
+  const { data: usersRes, isLoading: usersLoading, isFetching: usersFetching } = useGetMentorCandidatesQuery(
     {
       page,
       limit: CANDIDATE_PAGE_LIMIT,
       search,
-      includeTemporary: "false",
       departmentId: departmentFilter !== "ALL" ? departmentFilter : "",
       sectionId: sectionFilter !== "ALL" ? sectionFilter : "",
     },
@@ -146,7 +147,7 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
     if (!hasAssignedSections) setSectionFilter("ALL");
   };
 
-  const [updateUser] = useUpdateUserMutation();
+  const [assignMentors] = useAssignMentorsMutation();
 
   const toggleUser = (id, checked, alreadyMentor) => {
     if (alreadyMentor) return;
@@ -177,23 +178,19 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
     if (selectedUserIds.size === 0) return;
     setIsAssigning(true);
     const ids = Array.from(selectedUserIds);
-    const results = await Promise.allSettled(
-      ids.map((id) => updateUser({ id, isEmployee: true, isMentor: true }).unwrap())
-    );
-    const succeeded = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.length - succeeded;
-    setIsAssigning(false);
-
-    if (succeeded > 0) {
-      toast.success(`${succeeded} user${succeeded === 1 ? "" : "s"} assigned as Mentor`);
+    try {
+      // Single all-or-nothing request: the backend rejects the whole batch if any selected
+      // user is outside what this account may assign.
+      await assignMentors(ids).unwrap();
+      toast.success(`${ids.length} user${ids.length === 1 ? "" : "s"} assigned as Mentor`);
+      setSelectedUserIds(new Set());
+      onAssigned?.();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err?.data?.message || "Failed to assign Mentors");
+    } finally {
+      setIsAssigning(false);
     }
-    if (failed > 0) {
-      toast.error(`Failed to assign ${failed} user${failed === 1 ? "" : "s"}`);
-    }
-
-    setSelectedUserIds(new Set());
-    onAssigned?.();
-    if (failed === 0) onOpenChange(false);
   };
 
   return (
@@ -284,10 +281,7 @@ const AssignMentorDialog = ({ open, onOpenChange, onAssigned }) => {
                               <AvatarImage src={user.avatar?.url} />
                               <AvatarFallback>{user.fullName?.[0]}</AvatarFallback>
                             </Avatar>
-                            <div>
-                              <div className="font-medium">{user.fullName}</div>
-                              <div className="text-xs text-gray-500">{user.email}</div>
-                            </div>
+                            <div className="font-medium">{user.fullName}</div>
                           </div>
                         </TableCell>
                         <TableCell>{user.empId || "N/A"}</TableCell>

@@ -1434,8 +1434,8 @@ const Daily5MRecording = () => {
     useEffect(() => {
         // Priority 1: Check for recordId in URL search params
         if (urlRecordId) {
-            fetchRecordById(urlRecordId).then(() => {
-                setShowFormList(false);
+            fetchRecordById(urlRecordId).then((loaded) => {
+                if (loaded) setShowFormList(false);
             });
         }
         // Priority 2: If we have a recordId in location state (navigated from dashboard)
@@ -1949,10 +1949,17 @@ const Daily5MRecording = () => {
 
                 // Determine rowCount from existing data keys
                 updateRowCountFromData(recordData, record.formType || 'standard');
+                return true;
             }
+            toast.error("Unable to load the requested 5M sheet.");
         } catch (error) {
             console.error("Error fetching record by ID:", error);
+            toast.error(error.response?.data?.message || "Unable to load the requested 5M sheet.");
         }
+        // Drop the unusable recordId (URL or navigation state) and fall back to the list view.
+        navigate(location.pathname, { replace: true });
+        setShowFormList(true);
+        return false;
     };
 
     const updateRowCountFromData = (recordData, type = formType) => {

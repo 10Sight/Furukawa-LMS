@@ -283,6 +283,7 @@ const SYSTEM_PERMISSIONS = {
   MENTOR_READ: "mentor:read",
   MENTOR_UPDATE: "mentor:update",
   MENTOR_DELETE: "mentor:delete",
+  MENTOR_ASSIGN: "mentor:assign",
 
   // Revision Management
   REVISION_READ: "revision:read",
@@ -787,7 +788,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MENTOR_READ, name: "View Mentors", description: "Access and view the list of mentors, stats, and assigned mentees" },
         { id: SYSTEM_PERMISSIONS.MENTOR_CREATE, name: "Create Mentors", description: "Create new mentor records" },
         { id: SYSTEM_PERMISSIONS.MENTOR_UPDATE, name: "Update Mentors", description: "Edit mentor details and assignment limits" },
-        { id: SYSTEM_PERMISSIONS.MENTOR_DELETE, name: "Delete Mentors", description: "Delete or remove mentor records" }
+        { id: SYSTEM_PERMISSIONS.MENTOR_DELETE, name: "Delete Mentors", description: "Delete or remove mentor records" },
+        { id: SYSTEM_PERMISSIONS.MENTOR_ASSIGN, name: "Assign / Unassign Mentors", description: "Promote existing operators into the Mentor role and remove them from it, without needing User Management update permissions" }
       ]
     };
 

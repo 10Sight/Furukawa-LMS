@@ -22,6 +22,9 @@ import {
   getAllStudents,
   getAllMentors,
   getMentorMentees,
+  getMentorCandidates,
+  assignMentors,
+  unassignMentors,
   getAllSupervisors,
   getAllIncharges,
   getSoftDeletedUsers,
@@ -124,6 +127,15 @@ router.get("/mentors", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USE
 
 // Get a single mentor's assigned mentees (must come before the generic /:id route)
 router.get("/mentors/:id/mentees", verifyJWT, authorizeAnyPermission([SYSTEM_PERMISSIONS.USER_READ, SYSTEM_PERMISSIONS.MENTOR_READ]), getMentorMentees);
+
+// Assign / unassign the Mentor role. Dedicated endpoints (rather than PATCH /:id) so that
+// mentor:assign can promote a regular operator without authorizeUserMutation having to trust
+// the request body to decide which permission applies: these handlers only ever write the
+// mentor flag, and enforce the caller's department/section scope on every target.
+const MENTOR_ASSIGN_PERMISSIONS = [SYSTEM_PERMISSIONS.MENTOR_ASSIGN, SYSTEM_PERMISSIONS.MENTOR_UPDATE, SYSTEM_PERMISSIONS.USER_UPDATE];
+router.get("/mentors/candidates", verifyJWT, authorizeAnyPermission(MENTOR_ASSIGN_PERMISSIONS), getMentorCandidates);
+router.post("/mentors/assign", verifyJWT, authorizeAnyPermission(MENTOR_ASSIGN_PERMISSIONS), assignMentors);
+router.post("/mentors/unassign", verifyJWT, authorizeAnyPermission(MENTOR_ASSIGN_PERMISSIONS), unassignMentors);
 
 // Get all supervisors
 router.get("/supervisors", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.USER_READ]), getAllSupervisors);

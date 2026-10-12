@@ -1,8 +1,10 @@
 export const LPA_SECTIONS = ['assembly', 'cc'];
 export const LPA_UNITS = ['Bawal', 'Gujrat'];
+export const LPA_LEVELS = ['L1', 'L2', 'L3'];
 export function validateWorkbook(body) {
   if (!LPA_SECTIONS.includes(body?.section)) throw new Error('Select Assembly or C&C.');
   if (body?.unit != null && !LPA_UNITS.includes(body.unit)) throw new Error('Select Bawal or Gujrat.');
+  if (body?.level != null && !LPA_LEVELS.includes(body.level)) throw new Error('Select L1, L2 or L3.');
   if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 255) throw new Error('A workbook name is required.');
   if (!Array.isArray(body.sheets) || !body.sheets.length || body.sheets.length > 100) throw new Error('The workbook must contain worksheets.');
   for (const sheet of body.sheets) {
@@ -19,5 +21,6 @@ export function validateWorkbook(body) {
     }
   }
   if (new TextEncoder().encode(JSON.stringify(body.sheets)).byteLength > 20 * 1024 * 1024) throw new Error('Workbook data exceeds 20 MB.');
-  return { section: body.section, unit: body.unit || 'Bawal', name: body.name.trim(), sheets: body.sheets };
+  if (body?.auditDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(body.auditDate)) throw new Error('Select a valid audit date.');
+  return { section: body.section, ...(body.unit ? { unit: body.unit } : {}), ...(body.level ? { level: body.level } : {}), ...(body.auditDate ? { auditDate: body.auditDate } : {}), ...(body.sampleData ? { sampleData: true } : {}), name: body.name.trim(), sheets: body.sheets };
 }

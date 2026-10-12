@@ -4,16 +4,59 @@ import { initialPDCAData } from '../data/mockData';
 
 const PDCAContext = createContext(null);
 
+function getInitialUserContext() {
+  try {
+    const raw = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+    if (raw) {
+      const u = JSON.parse(raw);
+      if (u && (u.fullName || u.name || u.userName)) {
+        const departments = (Array.isArray(u.departments) ? u.departments : []).filter(item => item && typeof item === 'object');
+        const sections = Array.isArray(u.sections) ? u.sections : [];
+        const sectionId = u.sectionId?.id || u.sectionId?._id || u.sectionId || u.sections?.[0]?.id || u.sections?.[0]?._id || u.sections?.[0];
+        const section = (Array.isArray(sections) ? sections : []).find(item => String(item.id || item._id) === String(sectionId));
+        return {
+          loading: false,
+          user: {
+            name: u.fullName || u.name || u.userName || '',
+            code: u.employeeId || u.empId || u.empCode || u.userName || '',
+            email: u.email || ''
+          },
+          section: {
+            id: section?.id || section?._id || sectionId || '',
+            name: section?.name || u.section?.name || u.sectionName || u.sectionId?.name || u.sections?.[0]?.name || ''
+          },
+          departments: departments.map(item => ({ id: item.id || item._id, name: item.name })),
+          error: false
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed reading user from storage', e);
+  }
+  return { loading: true, departments: [], user: {}, section: {} };
+}
+
 export function PDCAProvider({ children }) {
-  const [userContext, setUserContext] = useState({ loading: true, departments: [], user: {}, section: {} });
+  const [userContext, setUserContext] = useState(getInitialUserContext);
+
   useEffect(() => {
     const receive = event => {
-      if (event.origin === window.location.origin && event.source === window.parent && event.data?.type === 'fme-cms-user-context') setUserContext(event.data);
+      if (event.origin === window.location.origin && event.source === window.parent && event.data?.type === 'fme-cms-user-context') {
+        setUserContext(prev => ({
+          ...prev,
+          ...event.data,
+          loading: false
+        }));
+      }
     };
     window.addEventListener('message', receive);
-    window.parent.postMessage({ type: 'fme-cms-user-context-request', page: 'pdca' }, window.location.origin);
+    try {
+      window.parent.postMessage({ type: 'fme-cms-user-context-request', page: 'pdca' }, window.location.origin);
+    } catch {}
     return () => window.removeEventListener('message', receive);
   }, []);
+
   const [data, publishData] = useState(() => {
     try { return loadPDCA(initialPDCAData); } catch { return initialPDCAData; }
   });

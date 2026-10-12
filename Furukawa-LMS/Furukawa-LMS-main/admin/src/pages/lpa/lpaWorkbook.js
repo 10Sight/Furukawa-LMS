@@ -26,9 +26,12 @@ export function importLPAWorkbook(buffer, name, section) {
 }
 
 export function editLPACell(cell, text) {
-  if (cell?.type === 'n' && text.trim() && Number.isFinite(Number(text))) return { value: Number(text), formatted: text, type: 'n', ...(cell.style ? { style: cell.style } : {}) };
+  const str = String(text ?? '');
+  if (cell?.type === 'n' && str.trim() !== '' && Number.isFinite(Number(str))) {
+    return { value: Number(str), formatted: str, type: 'n', ...(cell?.style ? { style: cell.style } : {}) };
+  }
   // Changing a calculated cell replaces its formula explicitly; untouched formulas remain intact.
-  return { value: text, formatted: text, type: 's', ...(cell?.style ? { style: cell.style } : {}) };
+  return { value: str, formatted: str, type: 's', ...(cell?.style ? { style: cell.style } : {}) };
 }
 export function getLPAPDCASource(workbook, sheetIndex = 0) {
   const sheet = workbook?.sheets?.[sheetIndex];

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { columnName } from '@pages/lpa/lpaWorkbook';
+import { OBSERVATION_OPTIONS, normalizeObservationSymbol, getScoreForObservation } from '@pages/lpa/lpaPdcaUtils';
 import './assemblySheet.css';
 
 // Column proportions and merged ranges follow the supplied Assembly form.
@@ -21,6 +22,29 @@ export default function AssemblySheet({ sheet, disabled, onChange }) {
     }
     return { anchors, hidden };
   }, [sheet.merges]);
+  const observationColumn = useMemo(() => {
+    for (const row of sheet.rows.slice(0, 8)) {
+      const index = row.findIndex(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
+      if (index >= 0) return index;
+    }
+    return -1;
+  }, [sheet.rows]);
+  const scoreColumn = useMemo(() => {
+    for (const row of sheet.rows.slice(0, 8)) {
+      const index = row.findIndex(cell => /^score$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
+      if (index >= 0) return index;
+    }
+    return 5;
+  }, [sheet.rows]);
+
+  const handleObservationChange = (r, c, newVal) => {
+    const scoreVal = getScoreForObservation(newVal);
+    const extraUpdates = scoreColumn >= 0 ? [{ rowIndex: r, columnIndex: scoreColumn, value: scoreVal }] : [];
+    onChange(r, c, newVal, extraUpdates);
+    if (scoreColumn >= 0) {
+      onChange(r, scoreColumn, scoreVal);
+    }
+  };
   const measureRow = useCallback(rowIndex => {
     const row = sheetRef.current?.querySelector(`tr[data-row-index="${rowIndex}"]`);
     if (!row) return;
@@ -67,11 +91,21 @@ export default function AssemblySheet({ sheet, disabled, onChange }) {
         const notes = r === 3 && c === 11;
         const footer = r === legendStart + 7 || (pdcaStart >= 0 && r === pdcaStart + 23);
         const richCheck = c === 2 && r >= 3 && r <= 7;
+        const isObservation = c === observationColumn && r >= 3 && r < legendStart;
         const lines = value.split('\n');
         const titleLine = lines.findIndex(line => line.trim());
         const classes = [heading ? 'assembly-heading' : '', vertical ? 'assembly-vertical' : '', notes ? 'assembly-notes' : '', footer ? 'assembly-footer' : '', r === 37 && c === 3 ? 'assembly-total' : '', r >= 3 && r < legendStart && c === 2 ? 'assembly-check' : '', r >= 3 && r < legendStart && [0, 3, 5].includes(c) && /^\d+$/.test(value.trim()) ? 'assembly-number' : '', r >= legendStart && r <= legendStart + 6 && c >= 9 ? 'assembly-outside-legend' : '', pdcaStart >= 0 && r > pdcaStart + 23 && (c < 5 || c > 7) ? 'assembly-outside-symbols' : '', pdcaStart >= 0 && r > pdcaStart + 23 && c >= 8 ? 'assembly-hide-overflow' : '', r === 1 && c >= 7 && c <= 10 ? 'assembly-requirement' : '', richCheck ? 'assembly-rich-check' : '', pdcaStart >= 0 && r > pdcaStart + 23 && c === 5 ? 'assembly-completion' : '', c === 0 && r >= legendStart + 2 && r <= legendStart + 6 ? 'assembly-legend-label' : '', c === 0 && r === legendStart + 6 ? 'assembly-horizontal' : ''].filter(Boolean).join(' ');
         return <td key={c} rowSpan={merge ? merge.e.r - r + 1 : 1} colSpan={merge ? merge.e.c - c + 1 : 1} className={classes}>
-          <textarea aria-label={`${sheet.name} ${columnName(c)}${r + 1}`} disabled={disabled} value={value}
+          {isObservation ? <select
+            aria-label={`${sheet.name} Observation row ${r + 1}`}
+            disabled={disabled}
+            value={normalizeObservationSymbol(value)}
+            onChange={event => handleObservationChange(r, c, event.target.value)}
+            className="assembly-observation-select"
+          >
+            <option value=""></option>
+            {OBSERVATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+          </select> : <textarea aria-label={`${sheet.name} ${columnName(c)}${r + 1}`} disabled={disabled} value={value}
             onKeyDown={event => {
               if ((event.key === 'Enter' && event.shiftKey) || event.key === 'Backspace') {
                 const textarea = event.currentTarget;
@@ -82,7 +116,7 @@ export default function AssemblySheet({ sheet, disabled, onChange }) {
               onChange(r, c, event.target.value);
               requestAnimationFrame(() => measureRow(r));
             }}
-            spellCheck={false} rows={1} />
+            spellCheck={false} rows={1} />}
           {richCheck && <div aria-hidden="true" className="assembly-check-preview">{lines.slice(0, titleLine).map((line, index) => <React.Fragment key={index}>{line}{'\n'}</React.Fragment>)}<strong><u>{lines[titleLine]}</u></strong>{'\n'}{lines.slice(titleLine + 1).join('\n')}</div>}
         </td>;
       })}

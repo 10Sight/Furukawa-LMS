@@ -14,7 +14,7 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.js',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'], 
         // Default 2 MiB limit is too tight for this app's largest shared vendor
         // chunk; raised with headroom so routine dependency growth doesn't
         // intermittently break the production build.

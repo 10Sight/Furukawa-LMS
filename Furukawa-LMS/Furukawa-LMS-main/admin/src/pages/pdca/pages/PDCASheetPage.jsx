@@ -1,11 +1,12 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import PDCASheet from '@components/pdca/PDCASheet';
 import { usePDCA } from '../context/PDCAContext';
 
 export default function PDCASheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data } = usePDCA();
 
   // Find the selected topic by route param ID, or fallback to the first item
@@ -17,7 +18,7 @@ export default function PDCASheetPage() {
         key={selectedTopic?.id}
         topic={selectedTopic}
         onBack={() => {
-          navigate('/', { replace: true });
+          navigate(location.state?.returnTo || '/', { replace: true });
         }}
       />
     </div>

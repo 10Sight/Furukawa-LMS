@@ -51,7 +51,7 @@ import CellCommentCard from "./CellCommentCard.jsx";
 import TableFilterPopover from "./TableFilterPopover.jsx";
 import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
 import {
-    lineArrowSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
+    lineArrowSvg, elbowConnectorSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
     LINE_STROKE_WIDTH, OUTLINE_STROKE_WIDTH, SHAPE_OUTLINE_WEIGHTS
 } from "../../../utils/spreadsheets/shapeGeometry.js";
 import { compileTableFilters, isFilterActive } from "../../../utils/spreadsheets/tableFilter.js";
@@ -610,6 +610,7 @@ const SHAPE_DEFAULT_FILL = "#4472C4";
 const SHAPE_STROKE = "#2F528F";
 const SHAPE_DEFAULT_SIZE = 120;
 const SHAPE_LINE_SIZE = [160, MEDIA_MIN_SIZE];
+const SHAPE_CONNECTOR_SIZE = [160, 80];
 const SHAPE_MENU_ICON_SIZE = 28;
 const shapePolygon = (points) => `<polygon points="${points}"/>`;
 const starPoints = (tips, innerRatio) => Array.from({ length: tips * 2 }, (_, i) => {
@@ -623,6 +624,8 @@ const SHAPE_GROUPS = [
         { key: "lineStraight", label: "Line: Straight", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { weight }) },
         { key: "lineArrow", label: "Line Arrow", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { end: true, weight }) },
         { key: "lineArrowDouble", label: "Line Arrow: Double", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { start: true, end: true, weight }) },
+        { key: "connectorElbow", label: "Connector: Elbow", line: true, size: SHAPE_CONNECTOR_SIZE, draw: (w, h, color, weight) => elbowConnectorSvg(w, h, color, { weight }) },
+        { key: "connectorElbowArrow", label: "Connector: Elbow Arrow", line: true, size: SHAPE_CONNECTOR_SIZE, draw: (w, h, color, weight) => elbowConnectorSvg(w, h, color, { end: true, weight }) },
     ] },
     { label: "Rectangles", shapes: [
         { key: "rect", label: "Rectangle", body: '<rect x="2" y="2" width="96" height="96"/>' },

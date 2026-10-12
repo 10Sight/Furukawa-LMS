@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    lineArrowGeometry, lineArrowSvg, shapeColor, shapeFillPatch, shapeOutlinePatch, shapeStrokeWidth, SHAPE_OUTLINE_WEIGHTS
+    lineArrowGeometry, lineArrowSvg, elbowConnectorGeometry, elbowConnectorSvg, shapeColor, shapeFillPatch, shapeOutlinePatch, shapeStrokeWidth, SHAPE_OUTLINE_WEIGHTS
 } from "../../portal/src/utils/spreadsheets/shapeGeometry.js";
 
 const headSize = ([tip, a, b]) => ({ length: Math.abs(tip[0] - a[0]), width: Math.abs(a[1] - b[1]) });
@@ -111,4 +111,44 @@ test("a thicker line gets a larger arrowhead, still inside its box", () => {
     assert.ok(headSize(thick.heads[0]).width > headSize(usual.heads[0]).width);
     for (const [, y] of thick.heads[0]) assert.ok(y >= 0 && y <= 40);
     assert.match(lineArrowSvg(160, 40, "#ff0000", { end: true, weight: 6 }), /^<line [^>]*\/><polygon /);
+});
+
+// --- Elbow connectors ---
+
+test("an elbow connector runs right, down the middle, and right again", () => {
+    const { points, heads } = elbowConnectorGeometry(160, 80);
+    assert.deepEqual(points, [[2, 3.25], [80, 3.25], [80, 76.75], [158, 76.75]]);
+    assert.deepEqual(heads, []);
+    // Each stretch is straight across or straight down.
+    for (let i = 1; i < points.length; i++) assert.ok(points[i][0] === points[i - 1][0] || points[i][1] === points[i - 1][1]);
+});
+
+test("an elbow arrow ends in a head pointing right, with the line stopping at its base", () => {
+    const { points, heads } = elbowConnectorGeometry(160, 80, { end: true });
+    assert.deepEqual(heads, [[[158, 73], [144, 67], [144, 79]]]);
+    assert.deepEqual(points, [[2, 7], [80, 7], [80, 73], [144, 73]]);
+});
+
+test("an elbow connector stays inside its box, whatever the box and the weight", () => {
+    for (const [width, height] of [[160, 80], [40, 40], [600, 40], [40, 600], [28, 28], [6, 6], [0, 0]]) {
+        for (const weight of [1, 2.5, 6]) {
+            for (const end of [false, true]) {
+                const { points, heads } = elbowConnectorGeometry(width, height, { end, weight });
+                for (const [x, y] of [...points, ...heads.flat()]) {
+                    assert.ok(Number.isFinite(x) && Number.isFinite(y), `${width}x${height}`);
+                    assert.ok(x >= 0 && x <= width && y >= 0 && y <= height, `${width}x${height} weight ${weight}: ${x},${y}`);
+                }
+                assert.ok(points[3][0] >= points[2][0], `${width}x${height}: the last stretch doesn't run backwards`);
+            }
+        }
+    }
+    assert.deepEqual(headSize(elbowConnectorGeometry(900, 300, { end: true }).heads[0]), { length: 14, width: 12 }, "the head keeps its size");
+});
+
+test("the elbow's markup is one polyline, and a filled head for the arrow", () => {
+    assert.equal(elbowConnectorSvg(160, 80, "#ff0000"), '<polyline points="2,3.25 80,3.25 80,76.75 158,76.75"/>');
+    assert.equal(
+        elbowConnectorSvg(160, 80, "#ff0000", { end: true }),
+        '<polyline points="2,7 80,7 80,73 144,73"/><polygon points="158,73 144,67 144,79" fill="#ff0000" stroke-width="1"/>'
+    );
 });

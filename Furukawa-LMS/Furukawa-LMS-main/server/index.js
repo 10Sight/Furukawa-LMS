@@ -89,6 +89,8 @@ import adminHomeRoutes from "./routes/adminHome.routes.js";
 import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 import contractorRoutes from "./routes/contractor.routes.js";
 import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
+import pdcaRoutes from "./routes/pdca/pdca.routes.js";
+import PDCAModel from "./models/pdca/pdca.model.js";
 import RevisionRecord from "./models/revisionRecord.model.js";
 import RevisionHistory from "./models/revisionHistory.model.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
@@ -364,6 +366,8 @@ app.use("/api/admin-home", adminHomeRoutes);
 app.use("/api/abnormal-conditions", abnormalConditionRoutes);
 app.use("/api/contractors", contractorRoutes);
 app.use("/api/revision-records", revisionRecordRoutes);
+app.use("/api/v1/pdca", pdcaRoutes);
+app.use("/api/pdca", pdcaRoutes);
 
 
 // Initialize Socket.IO service

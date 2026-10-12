@@ -1,0 +1,755 @@
+import {
+    executeQuery,
+    migrationHelper,
+    isDbConnected,
+    readPdcaStore as readFallbackStore,
+    writePdcaStore as writeFallbackStore
+} from "../../db/pdca/pdcaDb.js";
+import logger from "../../logger/winston.logger.js";
+
+export class PDCAModel {
+    static async init() {
+        try {
+            const dbActive = await isDbConnected();
+            if (dbActive) {
+                // 1. pdca_records table
+                if (!await migrationHelper.tableExists('pdca_records')) {
+                    await executeQuery(`
+                        CREATE TABLE pdca_records (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            recordId NVARCHAR(100) NOT NULL,
+                            topic NVARCHAR(500) NOT NULL,
+                            description NVARCHAR(MAX),
+                            plant NVARCHAR(100),
+                            scope NVARCHAR(100) DEFAULT 'Company',
+                            department NVARCHAR(255),
+                            section NVARCHAR(255),
+                            sectionId NVARCHAR(100),
+                            date NVARCHAR(50),
+                            time NVARCHAR(50),
+                            createdBy NVARCHAR(MAX),
+                            assignedMembers NVARCHAR(MAX),
+                            lpaSource NVARCHAR(MAX),
+                            isSelf BIT DEFAULT 0,
+                            isDeleted BIT DEFAULT 0,
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('pdca_records', 'idx_pdca_recordId',
+                        'CREATE UNIQUE INDEX idx_pdca_recordId ON pdca_records(recordId)');
+                    await migrationHelper.ensureIndexExists('pdca_records', 'idx_pdca_plant_scope',
+                        'CREATE INDEX idx_pdca_plant_scope ON pdca_records(plant, scope)');
+                } else {
+                    await migrationHelper.ensureColumnExists('pdca_records', 'recordId', 'NVARCHAR(100)');
+                    await migrationHelper.ensureColumnExists('pdca_records', 'assignedMembers', 'NVARCHAR(MAX)');
+                    await migrationHelper.ensureColumnExists('pdca_records', 'lpaSource', 'NVARCHAR(MAX)');
+                    await migrationHelper.ensureColumnExists('pdca_records', 'isDeleted', 'BIT DEFAULT 0');
+                }
+
+                // 2. pdca_sheets table
+                if (!await migrationHelper.tableExists('pdca_sheets')) {
+                    await executeQuery(`
+                        CREATE TABLE pdca_sheets (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            pdcaRecordId NVARCHAR(100) NOT NULL,
+                            headerInfo NVARCHAR(MAX),
+                            sheetData NVARCHAR(MAX),
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('pdca_sheets', 'idx_pdca_sheet_recordId',
+                        'CREATE UNIQUE INDEX idx_pdca_sheet_recordId ON pdca_sheets(pdcaRecordId)');
+                }
+
+                // 3. pdca_cft_topics table
+                if (!await migrationHelper.tableExists('pdca_cft_topics')) {
+                    await executeQuery(`
+                        CREATE TABLE pdca_cft_topics (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            topicId NVARCHAR(100) NOT NULL,
+                            name NVARCHAR(500) NOT NULL,
+                            description NVARCHAR(MAX),
+                            plant NVARCHAR(100),
+                            members NVARCHAR(MAX),
+                            assignedEmployees NVARCHAR(MAX),
+                            createdBy NVARCHAR(MAX),
+                            isDeleted BIT DEFAULT 0,
+                            createdAt DATETIME DEFAULT GETDATE(),
+                            updatedAt DATETIME DEFAULT GETDATE()
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('pdca_cft_topics', 'idx_pdca_cft_topicId',
+                        'CREATE UNIQUE INDEX idx_pdca_cft_topicId ON pdca_cft_topics(topicId)');
+                }
+
+                // 4. pdca_attachments table
+                if (!await migrationHelper.tableExists('pdca_attachments')) {
+                    await executeQuery(`
+                        CREATE TABLE pdca_attachments (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            pdcaRecordId NVARCHAR(100) NOT NULL,
+                            rowId NVARCHAR(100),
+                            fieldName NVARCHAR(100),
+                            filename NVARCHAR(255) NOT NULL,
+                            originalFilename NVARCHAR(255) NOT NULL,
+                            mimeType NVARCHAR(100),
+                            size BIGINT,
+                            url NVARCHAR(500),
+                            uploadedBy NVARCHAR(255),
+                            isDeleted BIT DEFAULT 0,
+                            createdAt DATETIME DEFAULT GETDATE()
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('pdca_attachments', 'idx_pdca_att_recordId',
+                        'CREATE INDEX idx_pdca_att_recordId ON pdca_attachments(pdcaRecordId)');
+                }
+
+                // 5. pdca_audit_logs table
+                if (!await migrationHelper.tableExists('pdca_audit_logs')) {
+                    await executeQuery(`
+                        CREATE TABLE pdca_audit_logs (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            pdcaRecordId NVARCHAR(100) NOT NULL,
+                            action NVARCHAR(100) NOT NULL,
+                            actor NVARCHAR(255),
+                            details NVARCHAR(MAX),
+                            createdAt DATETIME DEFAULT GETDATE()
+                        )
+                    `);
+                    await migrationHelper.ensureIndexExists('pdca_audit_logs', 'idx_pdca_audit_recordId',
+                        'CREATE INDEX idx_pdca_audit_recordId ON pdca_audit_logs(pdcaRecordId)');
+                }
+                logger.info("PDCA tables verified/created in MSSQL.");
+            }
+
+            // Ensure store has initial seed data
+            await PDCAModel.seedInitialDataIfEmpty();
+        } catch (error) {
+            logger.error("Failed to initialize PDCA tables", error);
+        }
+    }
+
+    static async seedInitialDataIfEmpty() {
+        try {
+            const dbActive = await isDbConnected();
+            const store = readFallbackStore();
+            let total = store.records.filter(r => !r.isDeleted).length;
+
+            if (dbActive) {
+                const [countRows] = await executeQuery(`SELECT COUNT(*) AS total FROM pdca_records WHERE isDeleted = 0`);
+                if (countRows && countRows[0]) total = countRows[0].total;
+            }
+
+            if (total === 0) {
+                logger.info("Seeding initial PDCA records...");
+                const seedItems = [
+                    {
+                        id: "PDCA-GJ-101",
+                        topic: "Reduction of Solder Bridge Defects in ECU Assembly",
+                        description: "Implement automated optical inspection (AOI) pre-wave soldering verification to reduce rework cycle time.",
+                        date: "23 Sep 2026",
+                        time: "09:45 AM",
+                        createdBy: { name: "YOGESH KUMAR", code: "AS081213", email: "aso81213@fme-minda.co.in", avatarBg: "bg-blue-100 text-blue-700", initials: "YK" },
+                        plant: "Gujrat",
+                        scope: "Company",
+                        department: "SRC Quality",
+                        isSelf: false
+                    },
+                    {
+                        id: "PDCA-BW-102",
+                        topic: "Die-Casting Cycle Time Optimization on Cell #4",
+                        description: "Hydraulic pressure recalibration and chilled water cooling channel upgrade for lower cycle duration.",
+                        date: "22 Sep 2026",
+                        time: "11:15 AM",
+                        createdBy: { name: "RAHUL SHARMA", code: "BW041920", email: "r.sharma@fme-minda.co.in", avatarBg: "bg-emerald-100 text-emerald-700", initials: "RS" },
+                        plant: "Bawal",
+                        scope: "Company",
+                        department: "Die Casting",
+                        isSelf: true
+                    },
+                    {
+                        id: "PDCA-GJ-103",
+                        topic: "Forklift Traffic Collision Prevention IoT Radar",
+                        description: "Install 360-degree proximity sensors and warning buzzers at blind intersections in main warehouse.",
+                        date: "20 Sep 2026",
+                        time: "02:30 PM",
+                        createdBy: { name: "AMIT PATEL", code: "GJ092311", email: "amit.patel@fme-minda.co.in", avatarBg: "bg-amber-100 text-amber-700", initials: "AP" },
+                        plant: "Gujrat",
+                        scope: "Company",
+                        department: "EHS Safety",
+                        isSelf: false
+                    },
+                    {
+                        id: "PDCA-BW-104",
+                        topic: "Air Compressor Energy Leakage Elimination",
+                        description: "Ultrasonic air leak survey across pneumatic piping network in press shop to reduce kWh consumption.",
+                        date: "18 Sep 2026",
+                        time: "10:00 AM",
+                        createdBy: { name: "PRIYA NAIR", code: "GJ018442", email: "priya.nair@fme-minda.co.in", avatarBg: "bg-rose-100 text-rose-700", initials: "PN" },
+                        plant: "Bawal",
+                        scope: "Company",
+                        department: "Plant Maintenance",
+                        isSelf: false
+                    },
+                    {
+                        id: "CFT-GJ-201",
+                        topic: "Team Composition & Role",
+                        description: "Cross-functional team operational charter defining roles for production engineering, quality assurance and maintenance leads.",
+                        date: "25 Sep 2026",
+                        time: "10:30 AM",
+                        createdBy: { name: "YOGESH KUMAR", code: "AS081213", email: "aso81213@fme-minda.co.in", avatarBg: "bg-blue-100 text-blue-700", initials: "YK" },
+                        plant: "Gujrat",
+                        scope: "CFT",
+                        department: "CFT",
+                        isSelf: false,
+                        assignedMembers: [
+                            { name: "AMIT PATEL", code: "GJ092311" },
+                            { name: "PRIYA NAIR", code: "GJ018442" }
+                        ]
+                    },
+                    {
+                        id: "CFT-BW-202",
+                        topic: "Alignment & Goal Setting",
+                        description: "Zero Lost Time Injury (LTI) milestone targets aligned across shift leaders and contractor teams.",
+                        date: "24 Sep 2026",
+                        time: "02:15 PM",
+                        createdBy: { name: "RAHUL SHARMA", code: "BW041920", email: "r.sharma@fme-minda.co.in", avatarBg: "bg-emerald-100 text-emerald-700", initials: "RS" },
+                        plant: "Bawal",
+                        scope: "CFT",
+                        department: "CFT",
+                        isSelf: false,
+                        assignedMembers: [
+                            { name: "DEEPAK MEHTA", code: "GJ045819" },
+                            { name: "YOGESH KUMAR", code: "AS081213" }
+                        ]
+                    }
+                ];
+
+                for (const item of seedItems) {
+                    await PDCAModel.create(item, 'SYSTEM_SEED');
+                }
+            }
+        } catch (e) {
+            logger.warn("Seeding PDCA initial records note:", e.message);
+        }
+    }
+
+    // --- Record CRUD ---
+    static async create(data, actor = 'System') {
+        const recordId = data.id || data.recordId || `PDCA-${Date.now()}`;
+        const topic = data.topic;
+        const description = data.description || '';
+        const plant = data.plant || 'Gujrat';
+        const scope = data.scope || 'Company';
+        const department = data.department || '';
+        const section = data.section || '';
+        const sectionId = data.sectionId || '';
+        const date = data.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const time = data.time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const createdByObj = typeof data.createdBy === 'object' ? data.createdBy : null;
+        const createdByStr = createdByObj ? JSON.stringify(createdByObj) : (data.createdBy || null);
+        const assignedMembersObj = Array.isArray(data.assignedMembers) ? data.assignedMembers : [];
+        const assignedMembersStr = JSON.stringify(assignedMembersObj);
+        const lpaSourceStr = typeof data.lpaSource === 'object' ? JSON.stringify(data.lpaSource) : (data.lpaSource || null);
+        const isSelf = data.isSelf ? 1 : 0;
+
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`
+                INSERT INTO pdca_records (
+                    recordId, topic, description, plant, scope, department, section, sectionId,
+                    date, time, createdBy, assignedMembers, lpaSource, isSelf, isDeleted, createdAt, updatedAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, GETDATE(), GETDATE())
+            `, [
+                recordId, topic, description, plant, scope, department, section, sectionId,
+                date, time, createdByStr, assignedMembersStr, lpaSourceStr, isSelf
+            ]);
+        }
+
+        // Mirror in persistent store
+        const store = readFallbackStore();
+        const existingIdx = store.records.findIndex(r => r.recordId === recordId || r.id === recordId);
+        const recordItem = {
+            id: recordId,
+            recordId,
+            topic,
+            description,
+            plant,
+            scope,
+            department,
+            section,
+            sectionId,
+            date,
+            time,
+            createdBy: createdByObj,
+            assignedMembers: assignedMembersObj,
+            lpaSource: data.lpaSource || null,
+            isSelf: Boolean(isSelf),
+            isDeleted: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        if (existingIdx >= 0) {
+            store.records[existingIdx] = recordItem;
+        } else {
+            store.records.unshift(recordItem);
+        }
+        writeFallbackStore(store);
+
+        // Audit log
+        await PDCAModel.logAudit(recordId, 'CREATE_RECORD', actor, `Created PDCA record: ${topic} (${recordId})`);
+
+        if (data.sheet) {
+            await PDCAModel.saveSheet(recordId, data.sheet, actor);
+        }
+
+        return await PDCAModel.findByRecordId(recordId);
+    }
+
+    static async findAll({ plant, scope, search, page = 1, limit = 100 } = {}) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            let whereClauses = ["isDeleted = 0"];
+            let params = [];
+
+            if (plant && plant !== 'Unit' && plant !== 'All Plants') {
+                whereClauses.push("plant = ?");
+                params.push(plant);
+            }
+            if (scope && scope !== 'All') {
+                whereClauses.push("scope = ?");
+                params.push(scope);
+            }
+            if (search && search.trim()) {
+                whereClauses.push("(recordId LIKE ? OR topic LIKE ? OR description LIKE ? OR department LIKE ? OR section LIKE ?)");
+                const s = `%${search.trim()}%`;
+                params.push(s, s, s, s, s);
+            }
+
+            const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
+            const countQuery = `SELECT COUNT(*) AS total FROM pdca_records ${whereSql}`;
+            const [countResult] = await executeQuery(countQuery, params);
+            const total = countResult && countResult[0] ? countResult[0].total : 0;
+
+            const offset = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
+            const query = `
+                SELECT r.*, s.headerInfo, s.sheetData
+                FROM pdca_records r
+                LEFT JOIN pdca_sheets s ON r.recordId = s.pdcaRecordId
+                ${whereSql}
+                ORDER BY r.id DESC
+                OFFSET ${offset} ROWS
+                FETCH NEXT ${parseInt(limit, 10)} ROWS ONLY
+            `;
+            const [rows] = await executeQuery(query, params);
+            if (rows && rows.length > 0) {
+                const records = rows.map(r => PDCAModel.formatRecord(r));
+                return { records, total, page: parseInt(page, 10), limit: parseInt(limit, 10) };
+            }
+        }
+
+        // Fallback / in-sync store read
+        const store = readFallbackStore();
+        let filtered = store.records.filter(r => !r.isDeleted);
+
+        if (plant && plant !== 'Unit' && plant !== 'All Plants') {
+            filtered = filtered.filter(r => r.plant === plant);
+        }
+        if (scope && scope !== 'All') {
+            filtered = filtered.filter(r => r.scope === scope);
+        }
+        if (search && search.trim()) {
+            const q = search.trim().toLowerCase();
+            filtered = filtered.filter(r =>
+                (r.recordId || r.id || '').toLowerCase().includes(q) ||
+                (r.topic || '').toLowerCase().includes(q) ||
+                (r.description || '').toLowerCase().includes(q) ||
+                (r.department || '').toLowerCase().includes(q) ||
+                (r.section || '').toLowerCase().includes(q)
+            );
+        }
+
+        const total = filtered.length;
+        const offset = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
+        const paginated = filtered.slice(offset, offset + parseInt(limit, 10));
+
+        // Attach sheets
+        const records = paginated.map(r => {
+            const sheet = store.sheets[r.recordId || r.id] || { headerInfo: null, rows: [] };
+            return {
+                ...r,
+                id: r.recordId || r.id,
+                sheet
+            };
+        });
+
+        return { records, total, page: parseInt(page, 10), limit: parseInt(limit, 10) };
+    }
+
+    static async findByRecordId(recordId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const query = `
+                SELECT r.*, s.headerInfo, s.sheetData
+                FROM pdca_records r
+                LEFT JOIN pdca_sheets s ON r.recordId = s.pdcaRecordId
+                WHERE (r.recordId = ? OR CAST(r.id AS NVARCHAR(100)) = ?) AND r.isDeleted = 0
+            `;
+            const [rows] = await executeQuery(query, [recordId, recordId]);
+            if (rows && rows.length > 0) {
+                return PDCAModel.formatRecord(rows[0]);
+            }
+        }
+
+        const store = readFallbackStore();
+        const found = store.records.find(r => (r.recordId === recordId || r.id === recordId) && !r.isDeleted);
+        if (!found) return null;
+
+        const sheet = store.sheets[found.recordId || found.id] || { headerInfo: null, rows: [] };
+        return {
+            ...found,
+            id: found.recordId || found.id,
+            sheet
+        };
+    }
+
+    static async update(recordId, data, actor = 'System') {
+        const existing = await PDCAModel.findByRecordId(recordId);
+        if (!existing) return null;
+
+        const topic = data.topic !== undefined ? data.topic : existing.topic;
+        const description = data.description !== undefined ? data.description : existing.description;
+        const plant = data.plant !== undefined ? data.plant : existing.plant;
+        const scope = data.scope !== undefined ? data.scope : existing.scope;
+        const department = data.department !== undefined ? data.department : existing.department;
+        const section = data.section !== undefined ? data.section : existing.section;
+        const sectionId = data.sectionId !== undefined ? data.sectionId : existing.sectionId;
+        const assignedMembers = data.assignedMembers !== undefined ? data.assignedMembers : existing.assignedMembers;
+
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`
+                UPDATE pdca_records
+                SET topic = ?, description = ?, plant = ?, scope = ?, department = ?,
+                    section = ?, sectionId = ?, assignedMembers = ?, updatedAt = GETDATE()
+                WHERE recordId = ?
+            `, [
+                topic, description, plant, scope, department,
+                section, sectionId, JSON.stringify(assignedMembers), existing.id
+            ]);
+        }
+
+        // Update in persistent store
+        const store = readFallbackStore();
+        const idx = store.records.findIndex(r => r.recordId === existing.id || r.id === existing.id);
+        if (idx >= 0) {
+            store.records[idx] = {
+                ...store.records[idx],
+                topic,
+                description,
+                plant,
+                scope,
+                department,
+                section,
+                sectionId,
+                assignedMembers,
+                updatedAt: new Date().toISOString()
+            };
+            writeFallbackStore(store);
+        }
+
+        await PDCAModel.logAudit(existing.id, 'UPDATE_RECORD', actor, `Updated record metadata: ${topic}`);
+
+        if (data.sheet) {
+            await PDCAModel.saveSheet(existing.id, data.sheet, actor);
+        }
+
+        return await PDCAModel.findByRecordId(existing.id);
+    }
+
+    static async delete(recordId, actor = 'System') {
+        const existing = await PDCAModel.findByRecordId(recordId);
+        if (!existing) return false;
+
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`
+                UPDATE pdca_records
+                SET isDeleted = 1, updatedAt = GETDATE()
+                WHERE recordId = ?
+            `, [existing.id]);
+        }
+
+        // Update in store
+        const store = readFallbackStore();
+        const idx = store.records.findIndex(r => r.recordId === existing.id || r.id === existing.id);
+        if (idx >= 0) {
+            store.records[idx].isDeleted = true;
+            writeFallbackStore(store);
+        }
+
+        await PDCAModel.logAudit(existing.id, 'DELETE_RECORD', actor, `Marked record ${existing.id} as deleted`);
+        return true;
+    }
+
+    // --- Sheet Management ---
+    static async getSheet(recordId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const [rows] = await executeQuery(`SELECT headerInfo, sheetData FROM pdca_sheets WHERE pdcaRecordId = ?`, [recordId]);
+            if (rows && rows.length > 0) {
+                let headerInfo = null;
+                let sheetRows = [];
+                try { headerInfo = rows[0].headerInfo ? JSON.parse(rows[0].headerInfo) : null; } catch {}
+                try { sheetRows = rows[0].sheetData ? JSON.parse(rows[0].sheetData) : []; } catch {}
+                return { headerInfo, rows: sheetRows };
+            }
+        }
+
+        const store = readFallbackStore();
+        return store.sheets[recordId] || { headerInfo: null, rows: [] };
+    }
+
+    static async saveSheet(recordId, sheet, actor = 'System') {
+        const headerInfo = sheet.headerInfo || null;
+        const rows = Array.isArray(sheet.rows) ? sheet.rows : (sheet.sheetData || []);
+
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const headerInfoStr = typeof headerInfo === 'object' ? JSON.stringify(headerInfo) : headerInfo;
+            const rowsStr = JSON.stringify(rows);
+            const [existing] = await executeQuery(`SELECT id FROM pdca_sheets WHERE pdcaRecordId = ?`, [recordId]);
+            if (existing && existing.length > 0) {
+                await executeQuery(`
+                    UPDATE pdca_sheets
+                    SET headerInfo = ?, sheetData = ?, updatedAt = GETDATE()
+                    WHERE pdcaRecordId = ?
+                `, [headerInfoStr, rowsStr, recordId]);
+            } else {
+                await executeQuery(`
+                    INSERT INTO pdca_sheets (pdcaRecordId, headerInfo, sheetData, createdAt, updatedAt)
+                    VALUES (?, ?, ?, GETDATE(), GETDATE())
+                `, [recordId, headerInfoStr, rowsStr]);
+            }
+        }
+
+        // Save in store
+        const store = readFallbackStore();
+        store.sheets[recordId] = {
+            headerInfo,
+            rows
+        };
+        writeFallbackStore(store);
+
+        await PDCAModel.logAudit(recordId, 'SAVE_SHEET', actor, `Saved sheet with ${rows.length} rows`);
+        return { headerInfo, rows };
+    }
+
+    // --- CFT Management ---
+    static async createCft(data, actor = 'System') {
+        const topicId = data.id || data.topicId || `CFT-${Date.now()}`;
+        const name = data.name || data.topic;
+        const description = data.description || '';
+        const plant = data.plant || 'Gujrat';
+        const assignedEmployees = data.assignedEmployees || data.assignedMembers || [];
+
+        return await PDCAModel.create({
+            id: topicId,
+            topic: name,
+            description,
+            plant,
+            scope: 'CFT',
+            department: 'CFT',
+            createdBy: data.createdBy,
+            assignedMembers: assignedEmployees,
+            isSelf: false
+        }, actor);
+    }
+
+    static async getCftMembers(recordId) {
+        const record = await PDCAModel.findByRecordId(recordId);
+        if (!record) return [];
+        return record.assignedMembers || [];
+    }
+
+    static async updateCftMembers(recordId, members, actor = 'System') {
+        const membersList = Array.isArray(members) ? members : [];
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`
+                UPDATE pdca_records
+                SET assignedMembers = ?, updatedAt = GETDATE()
+                WHERE recordId = ?
+            `, [JSON.stringify(membersList), recordId]);
+        }
+
+        const store = readFallbackStore();
+        const idx = store.records.findIndex(r => r.recordId === recordId || r.id === recordId);
+        if (idx >= 0) {
+            store.records[idx].assignedMembers = membersList;
+            writeFallbackStore(store);
+        }
+
+        await PDCAModel.logAudit(recordId, 'UPDATE_CFT_MEMBERS', actor, `Updated assigned team members`);
+        return membersList;
+    }
+
+    // --- Attachment Management ---
+    static async createAttachment({ pdcaRecordId, rowId, fieldName, filename, originalFilename, mimeType, size, url, uploadedBy }) {
+        const attItem = {
+            id: Date.now(),
+            pdcaRecordId,
+            rowId: rowId || '',
+            fieldName: fieldName || '',
+            filename,
+            originalFilename,
+            mimeType,
+            size: size || 0,
+            url,
+            uploadedBy: uploadedBy || 'User',
+            createdAt: new Date().toISOString()
+        };
+
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`
+                INSERT INTO pdca_attachments (
+                    pdcaRecordId, rowId, fieldName, filename, originalFilename,
+                    mimeType, size, url, uploadedBy, isDeleted, createdAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, GETDATE())
+            `, [
+                pdcaRecordId, rowId || '', fieldName || '', filename, originalFilename,
+                mimeType, size || 0, url, uploadedBy || 'User'
+            ]);
+        }
+
+        const store = readFallbackStore();
+        store.attachments.push(attItem);
+        writeFallbackStore(store);
+
+        return attItem;
+    }
+
+    static async getAttachmentById(attachmentId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const [rows] = await executeQuery(`SELECT * FROM pdca_attachments WHERE id = ? AND isDeleted = 0`, [attachmentId]);
+            if (rows && rows.length > 0) return rows[0];
+        }
+
+        const store = readFallbackStore();
+        return store.attachments.find(a => String(a.id) === String(attachmentId) && !a.isDeleted) || null;
+    }
+
+    static async getAttachmentsByRecordId(pdcaRecordId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const [rows] = await executeQuery(`SELECT * FROM pdca_attachments WHERE pdcaRecordId = ? AND isDeleted = 0 ORDER BY id DESC`, [pdcaRecordId]);
+            if (rows && rows.length > 0) return rows;
+        }
+
+        const store = readFallbackStore();
+        return store.attachments.filter(a => a.pdcaRecordId === pdcaRecordId && !a.isDeleted);
+    }
+
+    static async deleteAttachment(attachmentId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            await executeQuery(`UPDATE pdca_attachments SET isDeleted = 1 WHERE id = ?`, [attachmentId]);
+        }
+
+        const store = readFallbackStore();
+        const att = store.attachments.find(a => String(a.id) === String(attachmentId));
+        if (att) att.isDeleted = true;
+        writeFallbackStore(store);
+        return true;
+    }
+
+    // --- Audit Logging ---
+    static async logAudit(pdcaRecordId, action, actor, details) {
+        try {
+            const dbActive = await isDbConnected();
+            if (dbActive) {
+                await executeQuery(`
+                    INSERT INTO pdca_audit_logs (pdcaRecordId, action, actor, details, createdAt)
+                    VALUES (?, ?, ?, ?, GETDATE())
+                `, [pdcaRecordId, action, actor || 'System', details || '']);
+            }
+
+            const store = readFallbackStore();
+            store.auditLogs.unshift({
+                id: Date.now(),
+                pdcaRecordId,
+                action,
+                actor: actor || 'System',
+                details: details || '',
+                createdAt: new Date().toISOString()
+            });
+            writeFallbackStore(store);
+        } catch (e) {
+            logger.warn("Failed writing PDCA audit log:", e.message);
+        }
+    }
+
+    static async getHistory(pdcaRecordId) {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            const [rows] = await executeQuery(`
+                SELECT * FROM pdca_audit_logs
+                WHERE pdcaRecordId = ?
+                ORDER BY createdAt DESC
+            `, [pdcaRecordId]);
+            if (rows && rows.length > 0) return rows;
+        }
+
+        const store = readFallbackStore();
+        return store.auditLogs.filter(a => a.pdcaRecordId === pdcaRecordId);
+    }
+
+    // Helper formatter
+    static formatRecord(row) {
+        let createdBy = null;
+        let assignedMembers = [];
+        let lpaSource = null;
+        let headerInfo = null;
+        let rows = [];
+
+        try { createdBy = row.createdBy ? (typeof row.createdBy === 'string' ? JSON.parse(row.createdBy) : row.createdBy) : null; } catch {}
+        try { assignedMembers = row.assignedMembers ? (typeof row.assignedMembers === 'string' ? JSON.parse(row.assignedMembers) : row.assignedMembers) : []; } catch {}
+        try { lpaSource = row.lpaSource ? (typeof row.lpaSource === 'string' ? JSON.parse(row.lpaSource) : row.lpaSource) : null; } catch {}
+        try { headerInfo = row.headerInfo ? (typeof row.headerInfo === 'string' ? JSON.parse(row.headerInfo) : row.headerInfo) : null; } catch {}
+        try { rows = row.sheetData ? (typeof row.sheetData === 'string' ? JSON.parse(row.sheetData) : row.sheetData) : []; } catch {}
+
+        return {
+            id: row.recordId || String(row.id),
+            dbId: row.id,
+            topic: row.topic,
+            description: row.description,
+            plant: row.plant,
+            scope: row.scope,
+            department: row.department,
+            section: row.section,
+            sectionId: row.sectionId,
+            date: row.date,
+            time: row.time,
+            createdBy,
+            assignedMembers,
+            lpaSource,
+            isSelf: Boolean(row.isSelf),
+            sheet: {
+                headerInfo,
+                rows
+            },
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+        };
+    }
+}
+
+// Auto-initialize when loaded
+PDCAModel.init().catch(err => logger.error("Failed to initialize pdca model:", err));
+
+export default PDCAModel;

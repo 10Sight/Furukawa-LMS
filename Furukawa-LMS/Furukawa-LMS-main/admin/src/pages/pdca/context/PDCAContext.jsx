@@ -1,8 +1,9 @@
 import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY } from '../data/pdcaStore';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { initialPDCAData } from '../data/mockData';
+import pdcaApi from '@/services/api/pdcaApi.js';
 
-const PDCAContext = createContext(null);
+export const PDCAContext = createContext(null);
 
 function getInitialUserContext() {
   try {
@@ -39,6 +40,7 @@ function getInitialUserContext() {
 
 export function PDCAProvider({ children }) {
   const [userContext, setUserContext] = useState(getInitialUserContext);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const receive = event => {
@@ -60,11 +62,34 @@ export function PDCAProvider({ children }) {
   const [data, publishData] = useState(() => {
     try { return loadPDCA(initialPDCAData); } catch { return initialPDCAData; }
   });
+
   const setData = useCallback(update => {
     const saved = commitPDCA(update, initialPDCAData);
     publishData(saved);
     return saved;
   }, []);
+
+  // Fetch real data from backend API
+  const refreshData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await pdcaApi.getRecords();
+      const records = res?.records || (Array.isArray(res) ? res : null);
+      if (Array.isArray(records) && records.length > 0) {
+        publishData(records);
+        try { commitPDCA(records, initialPDCAData); } catch {}
+      }
+    } catch (err) {
+      console.warn('Could not fetch records from backend, using cached records:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
   useEffect(() => {
     const sync = event => {
       if (event.key !== PDCA_STORAGE_KEY) return;
@@ -74,37 +99,59 @@ export function PDCAProvider({ children }) {
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
   }, []);
-  const [toastMessage, setToastMessage] = useState(() => {
-    try { loadPDCA(initialPDCAData); return null; }
-    catch { return 'Saved PDCA data could not be loaded. It has been preserved; please recover it before saving.'; }
-  });
+
+  const [toastMessage, setToastMessage] = useState(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleAddPDCA = (newItem) => {
-    setData(records => addPDCA(records, newItem));
-    showToast(`✓ Created: ${newItem.id}`);
+  const handleAddPDCA = async (newItem) => {
+    try {
+      const created = await pdcaApi.createRecord(newItem);
+      const savedRecord = created || newItem;
+      setData(records => addPDCA(records, savedRecord));
+      showToast(`✓ Created: ${savedRecord.id}`);
+      return savedRecord;
+    } catch (err) {
+      setData(records => addPDCA(records, newItem));
+      showToast(`✓ Created: ${newItem.id}`);
+      return newItem;
+    }
   };
 
-  const handleUpdatePDCA = (updated) => {
+  const handleUpdatePDCA = async (updated) => {
+    try {
+      await pdcaApi.updateRecord(updated.id, updated);
+    } catch (err) {
+      console.warn('Backend update error, saving locally:', err);
+    }
     setData(records => updatePDCA(records, updated));
     showToast(`✓ Updated: ${updated.id}`);
   };
 
-  const handleDeletePDCA = (id) => {
+  const handleDeletePDCA = async (id) => {
+    try {
+      await pdcaApi.deleteRecord(id);
+    } catch (err) {
+      console.warn('Backend delete error:', err);
+    }
     const nextData = setData(prev => {
       const targetIndex = prev.findIndex(record => String(record.id) === String(id));
-      if (targetIndex < 0) throw new Error('This PDCA form no longer exists. Refresh the list and try again.');
+      if (targetIndex < 0) return prev;
       return prev.filter((_, index) => index !== targetIndex);
     });
     showToast(`Deleted ${id}`);
     return nextData;
   };
 
-  const handleSaveMembers = (itemId, members) => {
+  const handleSaveMembers = async (itemId, members) => {
+    try {
+      await pdcaApi.updateCftMembers(itemId, members);
+    } catch (err) {
+      console.warn('Backend member update error:', err);
+    }
     setData((prev) =>
       prev.map((d) => (d.id === itemId ? { ...d, assignedMembers: members } : d))
     );
@@ -113,8 +160,10 @@ export function PDCAProvider({ children }) {
 
   const value = {
     userContext,
+    loading,
     data,
     setData,
+    refreshData,
     toastMessage,
     showToast,
     handleAddPDCA,

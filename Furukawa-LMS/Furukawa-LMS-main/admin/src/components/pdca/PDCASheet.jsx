@@ -1,4 +1,4 @@
-import { useFormAutosave } from '@components/shared/formPersistence';
+import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.js';
 import FormZoomControls from '@components/shared/FormZoomControls';
 import React, { useState, useRef, useLayoutEffect, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -28,7 +28,8 @@ import {
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
-import { usePDCA } from '@pages/pdca/context/PDCAContext';
+import { usePDCA } from '@hooks/pdca/usePDCA.js';
+import pdcaApi from '@/services/api/pdcaApi.js';
 
 // Department to Employees mapping
 const departmentEmployeesData = {
@@ -277,6 +278,26 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     attendees: ''
   });
 
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load saved sheet from backend on mount or when topic changes
+  useEffect(() => {
+    if (!topic?.id) return;
+    let active = true;
+    pdcaApi.getSheet(topic.id).then(savedSheet => {
+      if (!active || !savedSheet) return;
+      if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
+        setHeaderInfo(prev => ({ ...prev, ...savedSheet.headerInfo }));
+      }
+      if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+        setRows(savedSheet.rows);
+      }
+    }).catch(err => {
+      console.warn('Could not fetch sheet from backend:', err);
+    });
+    return () => { active = false; };
+  }, [topic?.id]);
+
   const sheetSnapshot = useMemo(() => ({ rows, headerInfo }), [rows, headerInfo]);
   const persistSheet = (sheet) => {
     if (onSave) {
@@ -292,7 +313,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     }
   };
   useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id), showToast);
-  const saveSheet = () => {
+
+  const saveSheet = async () => {
+    if (isSaving) return false;
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -327,17 +350,25 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     }
 
     try {
+      setIsSaving(true);
+      if (topic?.id) {
+        await pdcaApi.saveSheet(topic.id, sheetSnapshot);
+      }
       persistSheet(sheetSnapshot);
       showToast('PDCA saved successfully.');
       return true;
     } catch (error) {
       showToast(error.message || 'Could not save PDCA. Keep the form open and try again.');
       return false;
+    } finally {
+      setIsSaving(false);
     }
   };
-  const handleBack = () => {
+
+  const handleBack = async () => {
     // Flush the current snapshot before navigation, including the last focused cell.
-    if (saveSheet()) onBack?.();
+    const saved = await saveSheet();
+    if (saved) onBack?.();
   };
 
   const topicName = headerInfo.topicName || topic?.topic || 'Quality Inspection & Line Audit';
@@ -863,22 +894,40 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   };
 
   // Upload file selected from the 4-box modal
-  const handleFileUploadFromModal = (uploadTypeId, file) => {
+  const handleFileUploadFromModal = async (uploadTypeId, file) => {
     const { rowIndex, field, nameField, typeField } = uploadSelectionModal;
     if (rowIndex === null || !file) return;
 
     // Detect file type
     const detectedType = getFileType(file.name, file.type) || uploadTypeId;
     const finalType = ['image', 'pdf', 'excel', 'ppt'].includes(uploadTypeId) ? uploadTypeId : detectedType;
-    const reader = new FileReader();
 
+    let serverUrl = null;
+    if (topic?.id) {
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('fieldName', field);
+        fd.append('rowId', `row-${rowIndex + 1}`);
+        const uploadRes = await pdcaApi.uploadAttachment(topic.id, fd);
+        if (uploadRes?.url) {
+          serverUrl = uploadRes.url;
+        }
+      } catch (err) {
+        console.warn('Backend attachment upload failed, using local fallback:', err);
+      }
+    }
+
+    const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target.result;
+      const fileSrc = serverUrl || dataUrl;
+
       setRows((prev) => {
         const updated = [...prev];
         updated[rowIndex] = {
           ...updated[rowIndex],
-          [field]: dataUrl,
+          [field]: fileSrc,
           [nameField]: file.name,
           [typeField]: finalType
         };
@@ -895,7 +944,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         nameField,
         typeField,
         title: field === 'imageBefore' ? 'Image (Before)' : 'Image (After)',
-        imageSrc: dataUrl,
+        imageSrc: fileSrc,
         imageName: file.name,
         fileType: finalType
       });
@@ -1058,9 +1107,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <button type="button" onClick={saveSheet} title="Save all PDCA form changes" className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-xs shadow-xs cursor-pointer">
-              <Save className="w-3.5 h-3.5" />
-              <span>Save</span>
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={saveSheet}
+              title="Save all PDCA form changes"
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-opacity ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin' : ''}`} />
+              <span>{isSaving ? 'Saving...' : 'Save'}</span>
             </button>
             {onDateChange && (
               <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-700 cursor-pointer shadow-2xs">

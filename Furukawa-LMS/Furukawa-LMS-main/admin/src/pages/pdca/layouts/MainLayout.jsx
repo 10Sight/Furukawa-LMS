@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from '@components/pdca/Sidebar';
 import TopHeader from '@components/pdca/TopHeader';
-import { usePDCA } from '../context/PDCAContext';
+import { usePDCA } from '@hooks/pdca/usePDCA.js';
 
 export default function MainLayout({ embedded = false, cmsIntegration = false, onFormViewChange }) {
   // Mobile (< 768px) is collapsed by default; desktop (>= 768px) is open by default

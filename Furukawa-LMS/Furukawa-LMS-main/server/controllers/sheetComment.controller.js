@@ -22,6 +22,8 @@ const THREAD_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const CELL_ID_RE = /^[A-Z]{1,3}[1-9][0-9]{0,6}$/;
 const MAX_SHEET_NAME_LENGTH = 255;
 const MAX_COMMENT_LENGTH = 4000;
+// How many threads one request may start (the grid copies no more comments per paste).
+const MAX_BATCH_THREADS = 200;
 
 const displayName = (user) => user?.fullName || user?.userName || "User";
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
@@ -88,6 +90,52 @@ export const createCommentThread = async (req, res) => {
         return res.status(201).json({ success: true, data: { thread } });
     } catch (error) {
         logger.error("Error in createCommentThread:", error);
+        return fail(res, 500, "Internal server error");
+    }
+};
+
+// Several threads started at once: the comments that came along with pasted cells, one
+// per cell. Either every one of them is well-formed or none is started. A thread whose
+// id is already taken is left out of the answer; the others are still started.
+export const createCommentThreads = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const list = req.body?.threads;
+        if (!Array.isArray(list) || list.length === 0 || list.length > MAX_BATCH_THREADS) {
+            return fail(res, 400, `Between 1 and ${MAX_BATCH_THREADS} comments can be copied at once`);
+        }
+        const wanted = [];
+        const ids = new Set();
+        for (const item of list) {
+            const threadId = String(item?.threadId ?? "");
+            const text = cleanText(item?.text);
+            if (!THREAD_ID_RE.test(threadId) || ids.has(threadId)) return fail(res, 400, "Invalid comment id");
+            if (typeof item.sheetName !== "string" || !item.sheetName || item.sheetName.length > MAX_SHEET_NAME_LENGTH) return fail(res, 400, "Invalid sheet");
+            if (typeof item.cellRef !== "string" || !CELL_ID_RE.test(item.cellRef)) return fail(res, 400, "Invalid cell");
+            if (!text) return invalidText(res);
+            ids.add(threadId);
+            wanted.push({ threadId, sheetName: item.sheetName, cellRef: item.cellRef, text });
+        }
+
+        const meeting = await DailyMorningMeeting.findMetaById(id);
+        if (!meeting) return fail(res, 404, "Meeting not found");
+        if (!(await canModifyDailyMeetingSection(req.user, meeting.sectionId))) {
+            return fail(res, 403, "You are not assigned to this department/section");
+        }
+
+        const threads = [];
+        for (const { threadId, sheetName, cellRef, text } of wanted) {
+            const thread = await SheetComment.createThread({
+                id: threadId, meetingId: meeting.id, sheetName, cellRef,
+                authorId: req.user.id, authorName: displayName(req.user), text
+            });
+            if (!thread) continue;
+            threads.push(thread);
+            broadcastComment(meeting.id, { thread });
+        }
+        return res.status(201).json({ success: true, data: { threads } });
+    } catch (error) {
+        logger.error("Error in createCommentThreads:", error);
         return fail(res, 500, "Internal server error");
     }
 };

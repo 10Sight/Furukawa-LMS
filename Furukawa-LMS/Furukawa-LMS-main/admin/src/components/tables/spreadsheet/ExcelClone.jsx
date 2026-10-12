@@ -40,7 +40,7 @@ import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, In
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf, reorderSheets, canOrderSheets, isIndexLikeName } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
-import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
+import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, stampRules, subtractBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
 import { parseExcelColor } from "../../../utils/spreadsheets/excelColorResolver.js";
 import { diffWorkbook } from "./workbookDiff.js";
@@ -52,9 +52,13 @@ import TableFilterPopover from "./TableFilterPopover.jsx";
 import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
 import { compileTableFilters, isFilterActive } from "../../../utils/spreadsheets/tableFilter.js";
 import {
-    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
+    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText,
+    commentAnchorsInBlock, dropCommentAnchorBlock, threadToCopyText, MAX_COPIED_COMMENTS
 } from "../../../utils/spreadsheets/commentEngine.js";
-import { parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, MAX_PASTE_CELLS } from "../../../utils/spreadsheets/clipboardInterop.js";
+import {
+    parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, usedBoundsWithin, clearCellBlock, readClipboardHtmlStyles,
+    MAX_PASTE_CELLS, DENSE_WALK_CELLS, MAX_STYLED_PASTE_CELLS
+} from "../../../utils/spreadsheets/clipboardInterop.js";
 import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
@@ -402,6 +406,25 @@ const printConditionalCss = (conditional, cell) => {
         style?.borderColor && `outline:1px solid ${style.borderColor};outline-offset:-1px;`,
     ];
 };
+
+const borderInlineCss = (side, weight) => (weight ? `border-${side}:${weight === "thick" ? 2 : 1}px ${weight === "double" ? "double" : "solid"} #334155;` : "");
+
+// A cell's formatting as inline CSS, for HTML that leaves the grid: the printed sheet
+// and the table a copy puts on the clipboard. `layout` adds what a table standing on
+// its own needs said of every cell — how it is aligned and whether it wraps — where
+// the clipboard only says what the cell was given.
+const cellInlineCss = (cell, conditional, { numeric = false, layout = false } = {}) => [
+    cell?.bold && "font-weight:bold;", cell?.italic && "font-style:italic;",
+    (cell?.underline || cell?.strike) && `text-decoration:${[cell.underline && "underline", cell.strike && "line-through"].filter(Boolean).join(" ")};`,
+    cell?.color && `color:${cell.color};`, cell?.bg && `background:${cell.bg};`,
+    cell?.fontSize && `font-size:${cell.fontSize}px;`, cell?.fontFamily && `font-family:${cell.fontFamily};`,
+    (layout || cell?.align) && `text-align:${cell?.align || (numeric ? "right" : "left")};`,
+    (layout || cell?.valign) && `vertical-align:${cell?.valign || "middle"};`,
+    layout && (cell?.wrap ? "white-space:pre-wrap;" : "white-space:nowrap;"),
+    ...["top", "bottom", "left", "right"].map((side) => borderInlineCss(side, cell?.border?.[side])),
+    // Conditional formatting goes last so it overrides the cell's own format.
+    ...printConditionalCss(conditional, cell),
+].filter(Boolean).join("");
 
 const BORDER_COLOR = "#334155";
 const borderWidthFor = (style) => (style === "thick" ? 3 : style === "double" ? 3 : 1);
@@ -2464,7 +2487,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // right to edit; replying and resolving don't.
     const canStartComment = !!meetingId && !readOnly;
     const isCommentAdmin = authUser?.role === "SUPERADMIN" || authUser?.role === "ADMIN" || authUser?.isAdmin === 1 || authUser?.isAdmin === true;
-    const { refresh: refreshComments, createThread: createCommentThread, deleteThread: deleteCommentThread } = comments;
+    const { refresh: refreshComments, createThread: createCommentThread, createThreads: createCommentThreads, deleteThread: deleteCommentThread } = comments;
 
     // A marker (and a card) needs both halves: the anchor in the workbook and the
     // thread from the server. An anchor whose thread was deleted shows nothing.
@@ -2752,21 +2775,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // be pasted into other programs: through `clipboardData` when this is answering
     // the browser's own copy event, otherwise through the async clipboard API.
     // Returns whether the event's clipboard was filled.
+    //
+    // Whole rows or columns, and any block too large to walk cell by cell, are read
+    // off the part of them that holds anything. `clipboard` still stands for the
+    // whole selection (a paste empties the cells its blank part lands on); only what
+    // goes to other programs stops at the last used row and column of whole rows or
+    // columns, as it does out of Excel.
     const copySelection = useCallback((type, clipboardData) => {
         if (!selectionBounds) return false;
         if (hasMultipleRanges) toast.info("Copy works on one range at a time — only the active range was copied.");
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+        const height = maxRow - minRow + 1, width = maxCol - minCol + 1;
+        const wholeLines = (minRow === 0 && maxRow === rowCount - 1) || (minCol === 0 && maxCol === columnCount - 1);
+        const used = wholeLines || height * width > DENSE_WALK_CELLS
+            ? usedBoundsWithin(selectionBounds, Object.keys(cells), evaluation.spillAnchors.keys())
+            : selectionBounds;
+        const lastShownRow = wholeLines ? (used ? used.maxRow : minRow) : maxRow;
+        const lastShownCol = wholeLines ? (used ? used.maxCol : minCol) : maxCol;
+
         const cellsByRelPos = {};
         // Evaluated values as of the copy, for Paste Special > Values —
         // including spilled cells, which have no entry in `cells` at all.
         const valuesByRelPos = {};
+        const blankRow = new Array(lastShownCol - minCol + 1).fill("");
         const shownRows = [];
-        for (let r = minRow; r <= maxRow; r++) {
-            const shownRow = [];
+        for (let r = minRow; r <= lastShownRow; r++) {
+            if (!used || r < used.minRow || r > used.maxRow) { shownRows.push(blankRow); continue; }
+            const shownRow = blankRow.slice();
             shownRows.push(shownRow);
-            for (let c = minCol; c <= maxCol; c++) {
+            for (let c = used.minCol; c <= used.maxCol; c++) {
                 const id = getCellId(r, c);
-                shownRow.push(String(displayGrid[id] ?? ""));
+                shownRow[c - minCol] = String(displayGrid[id] ?? "");
                 if (cells[id]) cellsByRelPos[`${r - minRow},${c - minCol}`] = cells[id];
                 const hasValue = cells[id]?.value !== undefined && cells[id].value !== "";
                 if (rawGrid[id] !== undefined && (hasValue || evaluation.spillAnchors.has(id))) {
@@ -2774,9 +2813,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 }
             }
         }
-        setClipboard({ cellsByRelPos, valuesByRelPos, height: maxRow - minRow + 1, width: maxCol - minCol + 1, type, sourceBounds: selectionBounds });
+        setClipboard({
+            cellsByRelPos, valuesByRelPos, height, width, type, sourceBounds: selectionBounds, sourceSheetName: activeSheetName,
+            // The comment threads on the copied cells; a paste gives each cell one of its own.
+            commentsByRelPos: commentAnchorsInBlock(commentAnchors, selectionBounds),
+        });
 
-        const payload = buildClipboardPayload(shownRows);
+        // The table carries each cell's formatting as it looks now, conditional
+        // formatting included, since no rule goes with it to another program.
+        const payload = buildClipboardPayload(shownRows, (r, c) => {
+            const id = getCellId(minRow + r, minCol + c);
+            return cells[id] || conditionalMap[id] ? cellInlineCss(cells[id], conditionalMap[id]) : "";
+        });
         const own = { id: payload.id, text: payload.text, written: false };
         ownClipRef.current = own;
         if (clipboardData) {
@@ -2791,51 +2839,129 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         writeSystemClipboard(payload).then((ok) => { if (ok) own.written = true; });
         return false;
-    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid]);
+    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid, rowCount, columnCount, activeSheetName, commentAnchors, conditionalMap]);
     const copySelectionRef = useRef(copySelection);
     copySelectionRef.current = copySelection;
 
+    // The comments on copied cells come along as threads of their own, each starting
+    // with what the original said (see threadToCopyText). As with a comment typed in,
+    // a thread is started on the server first and anchored once it is there — the
+    // cells themselves don't wait for that, so the anchors are an undo step of their
+    // own. A cell that no longer holds what was pasted by then gets no comment.
+    const pasteCopiedComments = useCallback(async (sheetName, targetRow, targetCol, commentsByRelPos) => {
+        if (!canStartComment) return;
+        const wanted = [];
+        for (const key of Object.keys(commentsByRelPos || {})) {
+            const text = threadToCopyText(commentThreads[commentsByRelPos[key]]);
+            if (!text) continue;
+            const comma = key.indexOf(",");
+            const cellRef = getCellId(targetRow + Number(key.slice(0, comma)), targetCol + Number(key.slice(comma + 1)));
+            wanted.push({ threadId: newThreadId(), sheetName, cellRef, text });
+        }
+        if (!wanted.length) return;
+        if (wanted.length > MAX_COPIED_COMMENTS) toast.info(`Only the first ${MAX_COPIED_COMMENTS} comments were copied along with the cells.`);
+        const batch = wanted.slice(0, MAX_COPIED_COMMENTS);
+        const forMeetingId = meetingId;
+        const pastedCells = sheetsRef.current[sheetName]?.cells || {};
+        const pasted = new Map(batch.map((item) => [item.threadId, { cellRef: item.cellRef, cell: pastedCells[item.cellRef] }]));
+
+        const result = await createCommentThreads(batch);
+        if (!result?.threads?.length || prevIdsRef.current.meetingId !== forMeetingId) return;
+        updateSheets((next) => {
+            const sheet = next[sheetName];
+            if (!sheet) return;
+            const now = plainOf(sheet.cells);
+            for (const thread of result.threads) {
+                const at = pasted.get(thread.id);
+                if (!at || now[at.cellRef] !== at.cell) continue;
+                if (!sheet.commentAnchors) sheet.commentAnchors = {};
+                sheet.commentAnchors[at.cellRef] = thread.id;
+            }
+        });
+    }, [canStartComment, commentThreads, meetingId, createCommentThreads, updateSheets]);
+
+    // Pastes what was copied in the grid, formulas and formatting and all, with its
+    // top-left cell on the selection's. The cells it lands on become what was copied,
+    // blank where that was blank, and take its conditional formatting; a cut also
+    // empties where it came from and takes the comments along. Only the cells that
+    // exist are visited, so whole rows and columns cost what they hold.
     const handlePaste = useCallback(() => {
         if (!clipboard || !selectionBounds) return;
         const targetRow = selectionBounds.minRow, targetCol = selectionBounds.minCol;
         const src = clipboard.sourceBounds;
         const rowOffset = targetRow - src.minRow;
         const colOffset = targetCol - src.minCol;
+        const target = { minRow: targetRow, maxRow: targetRow + clipboard.height - 1, minCol: targetCol, maxCol: targetCol + clipboard.width - 1 };
+        const cut = clipboard.type === "cut";
+        const sameSheet = clipboard.sourceSheetName === activeSheetName;
 
         if (isSheetReadOnly) return;
         updateSheets((workbook) => {
             const sheet = workbook[activeSheetName];
             if (!sheet) return;
+            // The sheet the cells were copied on — another one by now, perhaps, or gone.
+            const fromSheet = sameSheet ? sheet : workbook[clipboard.sourceSheetName];
+            const moveFrom = cut && fromSheet && !fromSheet.pivotConfig ? fromSheet : null;
             const next = sheet.cells;
-            for (let r = 0; r < clipboard.height; r++) {
-                for (let c = 0; c < clipboard.width; c++) {
-                    const sourceCell = clipboard.cellsByRelPos[`${r},${c}`];
-                    const targetId = getCellId(targetRow + r, targetCol + c);
-                    if (!sourceCell) { delete next[targetId]; continue; }
-                    const sourceIsFormula = typeof sourceCell.value === "string" && sourceCell.value.trim().startsWith("=");
-                    const newValue = sourceIsFormula ? adjustFormula(sourceCell.value, rowOffset, colOffset) : sourceCell.value;
-                    next[targetId] = { ...sourceCell, value: newValue };
-                }
+            // The source is emptied before anything is written, since a cut may land
+            // partly on itself.
+            if (moveFrom) clearCellBlock(moveFrom.cells, plainOf(moveFrom.cells), src);
+            clearCellBlock(next, plainOf(next), target);
+            for (const key of Object.keys(clipboard.cellsByRelPos)) {
+                const sourceCell = clipboard.cellsByRelPos[key];
+                const comma = key.indexOf(",");
+                const targetId = getCellId(targetRow + Number(key.slice(0, comma)), targetCol + Number(key.slice(comma + 1)));
+                const sourceIsFormula = typeof sourceCell.value === "string" && sourceCell.value.trim().startsWith("=");
+                const newValue = sourceIsFormula ? adjustFormula(sourceCell.value, rowOffset, colOffset) : sourceCell.value;
+                next[targetId] = { ...sourceCell, value: newValue };
             }
-            if (clipboard.type === "cut") {
-                for (let r = 0; r < clipboard.height; r++) {
-                    for (let c = 0; c < clipboard.width; c++) {
-                        delete next[getCellId(src.minRow + r, src.minCol + c)];
-                    }
-                }
-                // A move takes the cells' comments along (a copy leaves them where they are).
-                const anchors = plainOf(sheet.commentAnchors);
+
+            // Conditional formatting goes where the cells go: stretched over them on
+            // the same sheet, copied as rules of its own on another.
+            const rules = normalizeRules(plainOf(sheet.conditionalRules));
+            if (sameSheet) {
+                let stamped = stampRules(rules, src, target);
+                if (moveFrom && stamped.length) stamped = clearRulesFromBounds(stamped, subtractBounds(src, target));
+                if (stamped !== rules) sheet.conditionalRules = stamped;
+            } else if (fromSheet) {
+                const fromRules = normalizeRules(plainOf(fromSheet.conditionalRules));
+                const stamped = stampRules(rules, src, target, fromRules);
+                if (stamped !== rules) sheet.conditionalRules = stamped;
+                if (moveFrom && fromRules.length) moveFrom.conditionalRules = clearRulesFromBounds(fromRules, [src]);
+            }
+
+            // A move takes the cells' comments along (a copy gives the new cells
+            // comments of their own — see pasteCopiedComments).
+            if (!moveFrom) return;
+            const anchors = plainOf(moveFrom.commentAnchors);
+            if (sameSheet) {
                 const moved = anchors && moveCommentAnchorBlock(anchors, src, rowOffset, colOffset);
                 if (moved && moved !== anchors) sheet.commentAnchors = moved;
+                return;
             }
+            const moving = commentAnchorsInBlock(anchors, src);
+            const there = plainOf(sheet.commentAnchors);
+            const landed = dropCommentAnchorBlock(there, target);
+            if (Object.keys(moving).length === 0) {
+                if (there && landed !== there) sheet.commentAnchors = landed;
+                return;
+            }
+            moveFrom.commentAnchors = dropCommentAnchorBlock(anchors, src);
+            const withMoved = { ...landed };
+            for (const key of Object.keys(moving)) {
+                const comma = key.indexOf(",");
+                withMoved[getCellId(targetRow + Number(key.slice(0, comma)), targetCol + Number(key.slice(comma + 1)))] = moving[key];
+            }
+            sheet.commentAnchors = withMoved;
         });
 
         setSelection({
             start: getCellId(targetRow, targetCol),
             end: getCellId(targetRow + clipboard.height - 1, targetCol + clipboard.width - 1)
         });
-        if (clipboard.type === "cut") setClipboard(null);
-    }, [clipboard, selectionBounds, updateSheets, activeSheetName, isSheetReadOnly, setSelection]);
+        if (cut) setClipboard(null);
+        else pasteCopiedComments(activeSheetName, targetRow, targetCol, clipboard.commentsByRelPos);
+    }, [clipboard, selectionBounds, updateSheets, activeSheetName, isSheetReadOnly, setSelection, pasteCopiedComments]);
 
     // Pastes cells copied in another program (Excel, Google Sheets, a text editor),
     // read from the clipboard's text: one line per row, tabs between cells. Values go
@@ -2843,7 +2969,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // way, and each cell keeps the formatting it already has. Starts at the top-left
     // of the selection and grows the sheet if the block runs past its edge; a single
     // value fills the whole selection, as in Excel. One undo step.
-    const pasteExternalText = useCallback((text) => {
+    //
+    // `html` is the table the same copy put on the clipboard, if it did. The cells'
+    // colours, bold, italic, underline and alignment are taken from it, on top of the
+    // formatting each cell has — provided it has exactly the rows and columns the text
+    // has. Anything else about it is ignored: the values always come from the text.
+    const pasteExternalText = useCallback((text, html = "") => {
         if (!selectionBounds) return;
         if (isSheetReadOnly) { if (!readOnly) toast.info("This is a PivotTable — edit the source data instead."); return; }
         const rows = parseDelimitedText(text);
@@ -2857,6 +2988,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             toast.error(`That is ${(outHeight * outWidth).toLocaleString()} cells — too many to paste at once (the limit is ${MAX_PASTE_CELLS.toLocaleString()}). Paste it in smaller blocks, or import the file.`);
             return;
         }
+        const read = html && height * width <= MAX_STYLED_PASTE_CELLS ? readClipboardHtmlStyles(html) : null;
+        const styles = read && read.height === height && read.width === width ? read.styles : null;
 
         updateSheets((workbook) => {
             const sheet = workbook[activeSheetName];
@@ -2868,10 +3001,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const sourceRow = single ? rows[0] : rows[r];
                 for (let c = 0; c < outWidth; c++) {
                     const value = (single ? sourceRow[0] : sourceRow[c]) ?? "";
+                    const style = styles ? styles[single ? 0 : r][single ? 0 : c] : null;
                     const id = getCellId(targetRow + r, targetCol + c);
                     const existing = next[id];
-                    if (!existing && value === "") continue;
-                    const merged = { ...existing, value };
+                    if (!existing && !style && value === "") continue;
+                    const merged = { ...existing, ...style, value };
                     // A line break inside a value turns on Wrap Text, as typing one does.
                     if (value.includes("\n") && !isFormula(value)) merged.wrap = true;
                     if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
@@ -2923,7 +3057,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
         // What a paste is, in order:
         //   1. the grid's own copy, still on the clipboard   formulas and formatting, as before
-        //   2. text from anywhere else                       cells, by rows and tabs
+        //   2. text from anywhere else                       cells, by rows and tabs, with the
+        //                                                    colours of its HTML table if it has one
         //   3. a picture and no text                         a floating image
         // Text comes before pictures because a spreadsheet copies its cells as both:
         // Excel puts a picture of them on the clipboard next to their text.
@@ -2942,7 +3077,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             }
             if (text !== "") {
                 e.preventDefault();
-                pasteExternalText(text);
+                pasteExternalText(text, html);
                 return;
             }
             const items = e.clipboardData.items || [];
@@ -3099,8 +3234,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!src) { setFillPreview(null); return; }
         const { minRow, maxRow, minCol, maxCol } = src;
         const { axis, extraCount } = fillPreview;
+        const filled = axis === "vertical"
+            ? { minRow: maxRow + 1, maxRow: maxRow + extraCount, minCol, maxCol }
+            : { minRow, maxRow, minCol: maxCol + 1, maxCol: maxCol + extraCount };
 
-        mutateActiveCells((sheetCells) => {
+        if (!isSheetReadOnly) updateSheets((workbook) => {
+            const sheet = workbook[activeSheetName];
+            if (!sheet) return;
+            const sheetCells = sheet.cells;
             const isNumericSource = (sourceCells) => sourceCells.length > 0 && sourceCells.every((c) => {
                 const v = c?.value;
                 return v !== undefined && v !== null && v !== "" && !isNaN(Number(v)) && !(typeof v === "string" && v.trim().startsWith("="));
@@ -3155,6 +3296,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     }
                 }
             }
+
+            // The filled cells take the conditional formatting of the cells they
+            // were filled from, as they take everything else.
+            const rules = normalizeRules(plainOf(sheet.conditionalRules));
+            const stamped = stampRules(rules, src, filled);
+            if (stamped !== rules) sheet.conditionalRules = stamped;
         });
 
         setSelection(
@@ -3163,7 +3310,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 : { start: getCellId(minRow, minCol), end: getCellId(maxRow, maxCol + extraCount) }
         );
         setFillPreview(null);
-    }, [fillPreview, mutateActiveCells]);
+    }, [fillPreview, updateSheets, activeSheetName, isSheetReadOnly]);
 
     const applyFillRef = useRef(applyFill);
     useEffect(() => { applyFillRef.current = applyFill; }, [applyFill]);
@@ -5134,7 +5281,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     const printActiveSheet = () => {
         const { row: lastRow, col: lastCol } = lastUsedCell();
-        const borderCss = (side, weight) => (weight ? `border-${side}:${weight === "thick" ? 2 : 1}px ${weight === "double" ? "double" : "solid"} #334155;` : "");
         let html = "<table><colgroup>";
         for (let c = 0; c <= lastCol; c++) if (!hiddenColSet.has(c)) html += `<col style="width:${widthForCol(c)}px">`;
         html += "</colgroup><tbody>";
@@ -5152,18 +5298,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     const ms = parseCellRef(merge.start), me = parseCellRef(merge.end);
                     spanAttrs = ` rowspan="${me.row - ms.row + 1}" colspan="${me.col - ms.col + 1}"`;
                 }
-                const style = [
-                    cell?.bold && "font-weight:bold;", cell?.italic && "font-style:italic;",
-                    (cell?.underline || cell?.strike) && `text-decoration:${[cell.underline && "underline", cell.strike && "line-through"].filter(Boolean).join(" ")};`,
-                    cell?.color && `color:${cell.color};`, cell?.bg && `background:${cell.bg};`,
-                    cell?.fontSize && `font-size:${cell.fontSize}px;`, cell?.fontFamily && `font-family:${cell.fontFamily};`,
-                    `text-align:${cell?.align || (typeof rawGrid[id] === "number" ? "right" : "left")};`,
-                    `vertical-align:${cell?.valign || "middle"};`,
-                    cell?.wrap ? "white-space:pre-wrap;" : "white-space:nowrap;",
-                    ...["top", "bottom", "left", "right"].map((side) => borderCss(side, cell?.border?.[side])),
-                    // Conditional formatting goes last so it overrides the cell's own format.
-                    ...printConditionalCss(conditionalMap[id], cell),
-                ].filter(Boolean).join("");
+                const style = cellInlineCss(cell, conditionalMap[id], { numeric: typeof rawGrid[id] === "number", layout: true });
                 const text = showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[id] ?? "");
                 html += `<td${spanAttrs} style="${style}">${escapeHtml(text)}</td>`;
             }

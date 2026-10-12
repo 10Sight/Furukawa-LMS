@@ -134,8 +134,8 @@ export const ruleTouchesBounds = (rule, boundsList) =>
         return rb && boundsList.some((b) => intersects(rb, b));
     });
 
-// `a` with `cut` removed, as up to four rectangles.
-const subtractBounds = (a, cut) => {
+// `a` with `cut` removed, as up to four rectangles (`a` itself when they don't meet).
+export const subtractBounds = (a, cut) => {
     if (!intersects(a, cut)) return [a];
     const out = [];
     if (cut.minRow > a.minRow) out.push({ ...a, maxRow: cut.minRow - 1 });
@@ -146,13 +146,118 @@ const subtractBounds = (a, cut) => {
     return out;
 };
 
+const FORMULA_FIELDS = ["formula", "value", "value2"];
+const isFormulaText = (value) => typeof value === "string" && value.trim().length > 1 && value.trim().startsWith("=");
+
+// `rule` covering `pieces` instead of its own ranges, or null when there are none.
+// A rule's formulas are written for the top-left cell of its first range: when that
+// cell is no longer the same one they are re-read at the new one, so that every cell
+// the rule still covers is tested exactly as before.
+const ruleOverBounds = (rule, pieces) => {
+    if (!pieces.length) return null;
+    const next = { ...rule, ranges: pieces.map(rangeOfBounds) };
+    const was = (rule.ranges || []).map(boundsOfRange).find(Boolean);
+    const rowOffset = was ? pieces[0].minRow - was.minRow : 0;
+    const colOffset = was ? pieces[0].minCol - was.minCol : 0;
+    if (rowOffset || colOffset) {
+        for (const field of FORMULA_FIELDS) {
+            if (isFormulaText(rule[field])) next[field] = adjustFormula(rule[field], rowOffset, colOffset);
+        }
+    }
+    return next;
+};
+
 // Removes the given areas from every rule; a rule left with no cells is dropped.
 export const clearRulesFromBounds = (rules, boundsList) =>
     rules.flatMap((rule) => {
         let pieces = (rule.ranges || []).map(boundsOfRange).filter(Boolean);
         for (const cut of boundsList) pieces = pieces.flatMap((p) => subtractBounds(p, cut));
-        return pieces.length ? [{ ...rule, ranges: pieces.map(rangeOfBounds) }] : [];
+        const kept = ruleOverBounds(rule, pieces);
+        return kept ? [kept] : [];
     });
+
+// Rectangles joined up where two of them make one: side by side over the same rows,
+// one above the other over the same columns, or one inside another. A joined
+// rectangle keeps the place of the earlier of the two.
+const joinBounds = (list) => {
+    const out = list.slice();
+    const within = (a, b) => a.minRow >= b.minRow && a.maxRow <= b.maxRow && a.minCol >= b.minCol && a.maxCol <= b.maxCol;
+    for (let again = true; again;) {
+        again = false;
+        for (let i = 0; i < out.length; i++) {
+            for (let j = i + 1; j < out.length; j++) {
+                const a = out[i], b = out[j];
+                const stacked = a.minCol === b.minCol && a.maxCol === b.maxCol && a.minRow <= b.maxRow + 1 && b.minRow <= a.maxRow + 1;
+                const beside = a.minRow === b.minRow && a.maxRow === b.maxRow && a.minCol <= b.maxCol + 1 && b.minCol <= a.maxCol + 1;
+                if (!stacked && !beside && !within(a, b) && !within(b, a)) continue;
+                out[i] = {
+                    minRow: Math.min(a.minRow, b.minRow), maxRow: Math.max(a.maxRow, b.maxRow),
+                    minCol: Math.min(a.minCol, b.minCol), maxCol: Math.max(a.maxCol, b.maxCol),
+                };
+                out.splice(j, 1);
+                again = true;
+                j = i; // the grown rectangle may now reach ones it passed over
+            }
+        }
+    }
+    return out;
+};
+
+// Along one axis: where the stretch lo..hi of a source running srcLo..srcHi lands when
+// that source is repeated end to end from dstLo up to dstHi.
+const repeatAlong = (lo, hi, srcLo, srcHi, dstLo, dstHi) => {
+    if (lo === srcLo && hi === srcHi) return [[dstLo, dstHi]];
+    const spans = [];
+    for (let base = dstLo; base + (lo - srcLo) <= dstHi; base += srcHi - srcLo + 1) {
+        spans.push([base + (lo - srcLo), Math.min(base + (hi - srcLo), dstHi)]);
+    }
+    return spans;
+};
+
+const sameRanges = (a, b) => a.length === b.length && a.every((range, i) => range.start === b[i].start && range.end === b[i].end);
+
+/**
+ * Conditional formatting carried along by a fill or a paste: each cell of `dst` takes
+ * the rules of the `src` cell it is a copy of, in place of the rules it had. `src` is
+ * repeated across `dst` from its top-left corner, the way a fill repeats its pattern.
+ * A rule is stretched over the new cells rather than duplicated, so "A1:A5" filled
+ * down to row 20 reads "A1:A20".
+ * @param {object[]} rules the rules of the sheet `dst` is on (already normalizeRules'd)
+ * @param {object[]} [from] the rules of the sheet `src` is on, when that is another
+ *   sheet; those that reach `src` are then copied to this one as rules of its own
+ * @returns {object[]} `rules` itself when nothing changes
+ */
+export const stampRules = (rules, src, dst, from = rules) => {
+    const copiesOf = (rule) => (rule.ranges || []).map(boundsOfRange).filter(Boolean).flatMap((b) => {
+        if (!intersects(b, src)) return [];
+        const rows = repeatAlong(Math.max(b.minRow, src.minRow), Math.min(b.maxRow, src.maxRow), src.minRow, src.maxRow, dst.minRow, dst.maxRow);
+        const cols = repeatAlong(Math.max(b.minCol, src.minCol), Math.min(b.maxCol, src.maxCol), src.minCol, src.maxCol, dst.minCol, dst.maxCol);
+        return rows.flatMap(([minRow, maxRow]) => cols.map(([minCol, maxCol]) => ({ minRow, maxRow, minCol, maxCol })));
+    });
+
+    const without = (pieces, cuts) => cuts.reduce((left, cut) => left.flatMap((piece) => subtractBounds(piece, cut)), pieces);
+
+    let changed = false;
+    const next = rules.flatMap((rule) => {
+        const own = (rule.ranges || []).map(boundsOfRange).filter(Boolean);
+        const copies = from === rules ? copiesOf(rule) : [];
+        // The rule leaves the cells of `dst` it isn't copied to, and its ranges are
+        // otherwise left as they were, with only what the copies add put after them.
+        const kept = without(own, without([dst], copies));
+        if (!copies.length && kept.length === own.length && kept.every((piece, i) => piece === own[i])) return [rule];
+        const result = ruleOverBounds(rule, joinBounds([...kept, ...without(copies, kept)]));
+        if (result && sameRanges(result.ranges, rule.ranges || [])) return [rule];
+        changed = true;
+        return result ? [result] : [];
+    });
+    if (from === rules) return changed ? next : rules;
+
+    const brought = from.flatMap((rule) => {
+        const copy = ruleOverBounds(rule, joinBounds(copiesOf(rule)));
+        return copy ? [{ ...copy, id: newRuleId() }] : [];
+    });
+    return brought.length || changed ? [...brought, ...next] : rules;
+};
 
 // "A1:B5, D2" (Excel's "=$A$1:$B$5" is accepted too) -> ranges, or null when unreadable.
 export const parseRangesText = (text) => {

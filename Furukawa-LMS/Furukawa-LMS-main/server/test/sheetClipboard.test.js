@@ -5,10 +5,16 @@
 // the grid's own copy from someone else's.
 import test from "node:test";
 import assert from "node:assert/strict";
+// jsdom comes in with another of the server's packages rather than as one of its own;
+// where it is missing, the tests that read HTML are skipped.
+const { JSDOM } = await import("jsdom").catch(() => ({}));
+const domTest = JSDOM ? test : test.skip;
 import {
     parseDelimitedText, gridSize, serializeCellsToText, serializeCellsToHtml, readClipMarker,
-    buildClipboardPayload, isOwnClip, normalizeNewlines, newClipId
+    buildClipboardPayload, isOwnClip, normalizeNewlines, newClipId, usedBoundsWithin, clearCellBlock, DENSE_WALK_CELLS,
+    parseClipboardHtmlStyles
 } from "../../portal/src/utils/spreadsheets/clipboardInterop.js";
+import { applyWorkbookUpdate, plainOf } from "../../portal/src/utils/spreadsheets/workbookUpdate.js";
 
 test("rows and columns as Excel copies them", () => {
     // Excel on Windows: tabs between cells, \r\n after every row including the last.
@@ -112,4 +118,184 @@ test("the grid's own copy is recognised, and so is its being replaced", () => {
     // The copy never reached the system clipboard: nothing there can have replaced it.
     assert.equal(isOwnClip({ ...own, written: false }, { text: "stale text from earlier", html: "" }), true);
     assert.equal(isOwnClip(null, { text: payload.text, html: payload.html }), false);
+});
+
+test("the HTML table carries each cell's formatting, where it has any", () => {
+    const styles = [["background:#fde047;color:#1e3a8a;", ""], ['font-family:"Courier New";', "font-weight:bold;"]];
+    const html = serializeCellsToHtml([["a", "b"], ["c", "d"]], "abc123", (r, c) => styles[r][c]);
+    assert.equal(html, '<table data-sheet-clip="abc123"><tbody>'
+        + '<tr><td style="background:#fde047;color:#1e3a8a;">a</td><td>b</td></tr>'
+        + '<tr><td style="font-family:&quot;Courier New&quot;;">c</td><td style="font-weight:bold;">d</td></tr>'
+        + "</tbody></table>");
+    assert.equal(readClipMarker(html), "abc123");
+
+    assert.match(buildClipboardPayload([["a"]], () => "color:#f00;").html, /<td style="color:#f00;">a<\/td>/);
+    // Too many cells for a table: the formatting isn't even asked for.
+    const big = Array.from({ length: 201 }, () => Array(100).fill("x"));
+    assert.equal(buildClipboardPayload(big, () => { throw new Error("not needed"); }).html, null);
+});
+
+// Rows and columns are 0-based, as in the grid: C5 is row 4, col 2.
+const block = (minRow, maxRow, minCol, maxCol) => ({ minRow, maxRow, minCol, maxCol });
+
+test("the used part of a selection is found from the cells that exist", () => {
+    const wholeColumns = block(0, 99999, 0, 2); // A:C
+    assert.deepEqual(usedBoundsWithin(wholeColumns, ["B2", "C5", "A3", "D1", "E90000", "junk"]), block(1, 4, 0, 2));
+    assert.deepEqual(usedBoundsWithin(wholeColumns, ["B2"], new Map([["C7", "C5"]]).keys()), block(1, 6, 1, 2), "several lists of ids");
+    assert.equal(usedBoundsWithin(wholeColumns, ["D1", "Z9"], []), null);
+    assert.equal(usedBoundsWithin(wholeColumns), null);
+});
+
+test("emptying a block removes its cells and no others, however large it is", () => {
+    const workbook = { S: { cells: { A1: { value: "1" }, B2: { value: "2" }, B500: { value: "3" }, D2: { value: "4" } }, rowCount: 100000 } };
+    for (const [bounds, left] of [
+        [block(0, 9, 0, 1), ["B500", "D2"]],
+        [block(1, 99999, 1, 1), ["A1", "D2"]], // column B from row 2 down
+        [block(5, 8, 5, 8), ["A1", "B2", "B500", "D2"]],
+    ]) {
+        const large = (bounds.maxRow - bounds.minRow + 1) * (bounds.maxCol - bounds.minCol + 1) > DENSE_WALK_CELLS;
+        const { next, undo } = applyWorkbookUpdate(workbook, (draft) => {
+            clearCellBlock(draft.S.cells, plainOf(draft.S.cells), bounds);
+        });
+        assert.deepEqual(Object.keys(next.S.cells), left, `${large ? "large" : "small"} block`);
+        assert.equal(undo === null, left.length === 4, "nothing removed is no change at all");
+    }
+    assert.deepEqual(Object.keys(workbook.S.cells), ["A1", "B2", "B500", "D2"], "the workbook it started from is untouched");
+
+    // Cells written earlier in the same update are seen too.
+    const { next } = applyWorkbookUpdate(workbook, (draft) => {
+        draft.S.cells.C70000 = { value: "new" };
+        clearCellBlock(draft.S.cells, plainOf(draft.S.cells), block(0, 99999, 2, 2));
+    });
+    assert.equal(next.S.cells.C70000, undefined);
+});
+
+// --- Formatting read from another program's HTML table ---
+//
+// The samples below are written to the shape of what each program puts on the
+// clipboard (Excel: classes in a commented-out <style> block, defaults on `td`;
+// Google Sheets: everything in each cell's style attribute), cut down to a few cells.
+
+const stylesOf = (html) => parseClipboardHtmlStyles(new JSDOM(html).window.document);
+
+const EXCEL_HTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+<style>
+<!--table
+	{mso-displayed-decimal-separator:"\\.";
+	mso-displayed-thousand-separator:"\\,";}
+@page
+	{margin:.75in .7in .75in .7in;}
+tr
+	{mso-height-source:auto;}
+br
+	{mso-data-placement:same-cell;}
+td
+	{padding-top:1px;
+	mso-ignore:padding;
+	color:black;
+	font-size:11.0pt;
+	font-weight:400;
+	font-style:normal;
+	text-decoration:none;
+	font-family:Calibri, sans-serif;
+	text-align:general;
+	vertical-align:bottom;
+	border:none;
+	white-space:nowrap;}
+.xl65
+	{color:#1E3A8A;
+	font-weight:700;
+	background:#FDE047;
+	mso-pattern:black none;}
+.xl66
+	{color:red;
+	font-style:italic;
+	text-decoration:underline;
+	text-underline-style:single;
+	text-align:center;}
+.xl67
+	{background:yellow;
+	mso-pattern:black none;}
+-->
+</style>
+</head>
+<body link="#0563C1" vlink="#954F72">
+<table border=0 cellpadding=0 cellspacing=0 width=192 style='border-collapse:
+ collapse;width:144pt'>
+<!--StartFragment-->
+ <col width=64 span=3 style='width:48pt'>
+ <tr height=20 style='height:15.0pt'>
+  <td height=20 class=xl65 width=64 style='height:15.0pt;width:48pt'>Line</td>
+  <td class=xl65 width=64 style='width:48pt'>Target</td>
+  <td width=64 style='width:48pt'>Actual</td>
+ </tr>
+ <tr height=20 style='height:15.0pt'>
+  <td height=20 style='height:15.0pt'>L1</td>
+  <td class=xl66 align=right>100</td>
+  <td class=xl67 align=right>96</td>
+ </tr>
+<!--EndFragment-->
+</table>
+</body>
+</html>`;
+
+const SHEETS_HTML = `<meta charset='utf-8'><google-sheets-html-origin><style type="text/css"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}--></style>`
+    + `<table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout:fixed;font-size:10pt;font-family:Arial;width:0px;border-collapse:collapse;border:none" data-sheets-root="1"><colgroup><col width="100"/><col width="100"/></colgroup><tbody>`
+    + `<tr style="height:21px;"><td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;background-color:#ffff00;font-weight:bold;color:#ff0000;" data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Line&quot;}">Line</td>`
+    + `<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;text-align:right;text-decoration:line-through;" data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:100}">100</td></tr>`
+    + `<tr style="height:21px;"><td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;"></td>`
+    + `<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;background-color:rgb(0, 255, 0);font-style:italic;">ok</td></tr>`
+    + `</tbody></table>`;
+
+domTest("Excel's table gives its cells' colours through their classes", () => {
+    const read = stylesOf(EXCEL_HTML);
+    assert.deepEqual([read.height, read.width], [2, 3]);
+    assert.deepEqual(read.styles, [
+        [{ bg: "#fde047", color: "#1e3a8a", bold: true }, { bg: "#fde047", color: "#1e3a8a", bold: true }, null],
+        [null, { color: "#ff0000", italic: true, underline: true, align: "center" }, { bg: "#ffff00" }],
+    ]);
+});
+
+domTest("Google Sheets' table gives them in each cell's own style", () => {
+    assert.deepEqual(stylesOf(SHEETS_HTML), {
+        height: 2, width: 2,
+        styles: [
+            [{ bg: "#ffff00", color: "#ff0000", bold: true }, { strike: true, align: "right" }],
+            [null, { bg: "#00ff00", italic: true }],
+        ],
+    });
+});
+
+domTest("a cell the grid copied reads back with the colours it was written with", () => {
+    const html = serializeCellsToHtml([["a", "b"]], "abc123", (r, c) => (c === 0 ? "font-weight:bold;color:#1e3a8a;background:#fde047;text-align:center;" : ""));
+    assert.deepEqual(stylesOf(html).styles, [[{ bg: "#fde047", color: "#1e3a8a", bold: true, align: "center" }, null]]);
+});
+
+domTest("merged cells, plain tags and odd colours", () => {
+    const read = stylesOf(`<table>
+        <tr><td colspan="2" rowspan="2" style="background: #abc none">wide</td><td><b>bold</b></td></tr>
+        <tr><td><em>slanted</em> and not</td></tr>
+        <tr><td style="color: windowtext; background-color: transparent">x</td><td style="color: rgba(255, 0, 0, 0.5)">y</td><td style="background:rgba(0,0,0,0)">z</td></tr>
+    </table>`);
+    assert.deepEqual(read.styles, [
+        [{ bg: "#aabbcc" }, { bg: "#aabbcc" }, { bold: true }],
+        [{ bg: "#aabbcc" }, { bg: "#aabbcc" }, null],
+        [null, { color: "#ff0000" }, null],
+    ]);
+});
+
+domTest("nothing is read where there is no table, or no formatting in it", () => {
+    assert.equal(stylesOf("<p>Just <b>some</b> text</p>"), null);
+    assert.equal(stylesOf("<table><tr><td>a</td><td>b</td></tr></table>"), null);
+    assert.equal(stylesOf('<span style="font-weight:bold">one cell out of Sheets</span>'), null);
+    assert.equal(parseClipboardHtmlStyles(null), null);
+    // A table inside a cell doesn't add rows to the one it is in.
+    const nested = stylesOf('<table><tr><td style="color:red">a<table><tr><td>x</td></tr><tr><td>y</td></tr></table></td></tr></table>');
+    assert.deepEqual([nested.height, nested.width], [1, 1]);
+    // Scripts in clipboard HTML are never run, only read past.
+    assert.deepEqual(stylesOf('<table><tr><td style="color:red" onclick="x()">a<script>throw new Error("ran")</script></td></tr></table>').styles, [[{ color: "#ff0000" }]]);
 });

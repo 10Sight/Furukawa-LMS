@@ -23,13 +23,15 @@ const errorMessage = (error, fallback) => error?.response?.data?.message || fall
  * @returns {{
  *   threads: Object<string, object>, loaded: boolean, refresh: () => Promise<void>,
  *   createThread: (thread: { threadId, sheetName, cellRef, text }) => Promise<object|null>,
+ *   createThreads: (threads: { threadId, sheetName, cellRef, text }[]) => Promise<object|null>,
  *   addReply: (threadId, text) => Promise<object|null>,
  *   setStatus: (threadId, status: "open"|"resolved") => Promise<object|null>,
  *   editMessage: (threadId, messageId, text) => Promise<object|null>,
  *   deleteMessage: (threadId, messageId) => Promise<object|null>,
  *   deleteThread: (threadId) => Promise<object|null>
- * }} Every action resolves to what the server answered ({ thread } or { threadId,
- *   deleted }), or to null when it failed — the failure has then been shown already.
+ * }} Every action resolves to what the server answered ({ thread }, { threads } or
+ *   { threadId, deleted }), or to null when it failed — the failure has then been shown
+ *   already.
  */
 export const useSheetComments = ({ meetingId }) => {
     const socketContext = useContext(SocketContext);
@@ -39,11 +41,17 @@ export const useSheetComments = ({ meetingId }) => {
     const meetingIdRef = useRef(meetingId);
     meetingIdRef.current = meetingId;
 
-    // Takes what the server said about one thread, if it is about the meeting on screen.
-    const take = useCallback((forMeetingId, { thread, threadId, deleted }) => {
+    // Takes what the server said about one thread (or several started together), if it
+    // is about the meeting on screen.
+    const take = useCallback((forMeetingId, { thread, threads: several, threadId, deleted }) => {
         setState((prev) => {
             if (String(prev.meetingId) !== String(forMeetingId)) return prev;
             if (thread) return { ...prev, threads: { ...prev.threads, [thread.id]: thread } };
+            if (Array.isArray(several) && several.length) {
+                const threads = { ...prev.threads };
+                for (const one of several) threads[one.id] = one;
+                return { ...prev, threads };
+            }
             if (deleted && prev.threads[threadId]) {
                 const threads = { ...prev.threads };
                 delete threads[threadId];
@@ -112,6 +120,7 @@ export const useSheetComments = ({ meetingId }) => {
         return {
             createThread: ({ threadId, sheetName, cellRef, text }) =>
                 send("post", "", { threadId, sheetName, cellRef, text }, "Could not add the comment."),
+            createThreads: (threads) => send("post", "/batch", { threads }, "Could not copy the comments."),
             addReply: (threadId, text) => send("post", `${at(threadId)}/replies`, { text }, "Could not add the reply."),
             setStatus: (threadId, status) => send("patch", at(threadId), { status }, "Could not update the comment."),
             editMessage: (threadId, messageId, text) =>

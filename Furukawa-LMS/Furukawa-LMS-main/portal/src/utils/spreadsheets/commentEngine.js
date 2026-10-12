@@ -77,6 +77,24 @@ export const moveCommentAnchorBlock = (anchors, { minRow, maxRow, minCol, maxCol
     return changed ? next : source;
 };
 
+const inBlock = (ref, { minRow, maxRow, minCol, maxCol }) => ref.row >= minRow && ref.row <= maxRow && ref.col >= minCol && ref.col <= maxCol;
+
+/**
+ * The anchors inside a block of cells, by where in the block each one is:
+ * { "row,col": thread id }, counted from the block's top-left cell.
+ */
+export const commentAnchorsInBlock = (anchors, bounds) => {
+    const found = {};
+    for (const id of Object.keys(anchors || EMPTY)) {
+        const ref = parseCellRef(id);
+        if (ref && inBlock(ref, bounds)) found[`${ref.row - bounds.minRow},${ref.col - bounds.minCol}`] = anchors[id];
+    }
+    return found;
+};
+
+/** The anchors without those inside a block of cells. */
+export const dropCommentAnchorBlock = (anchors, bounds) => remap(anchors, (ref, id) => (inBlock(ref, bounds) ? null : id));
+
 /**
  * Cells merged into one: only the top-left cell is left to hold a comment. It keeps its
  * own; otherwise the first one found in the range (reading across, then down) moves
@@ -104,4 +122,19 @@ export const threadToNoteText = (thread) => {
     const lines = (thread?.messages || []).map((message) => `${message.authorName || "User"}: ${message.text}`);
     if (thread?.status === "resolved") lines.push(`(Resolved${thread.resolvedByName ? ` by ${thread.resolvedByName}` : ""})`);
     return lines.join("\n\n");
+};
+
+// The server takes a comment of up to this many characters.
+export const MAX_COMMENT_LENGTH = 4000;
+// How many comments one paste copies; the server takes no more in one request.
+export const MAX_COPIED_COMMENTS = 200;
+
+/**
+ * What the comment on a copied cell starts with: the thread it was copied from, as
+ * text. The copy is a thread of its own, written by whoever pasted it, so who said
+ * what in the original is kept in the text itself. "" when there is nothing to copy.
+ */
+export const threadToCopyText = (thread) => {
+    const text = threadToNoteText(thread).trim();
+    return text.length > MAX_COMMENT_LENGTH ? `${text.slice(0, MAX_COMMENT_LENGTH - 1)}…` : text;
 };

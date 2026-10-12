@@ -20,6 +20,7 @@ import {
 import {
     getMeetingComments,
     createCommentThread,
+    createCommentThreads,
     addCommentReply,
     setCommentStatus,
     editCommentMessage,
@@ -62,6 +63,7 @@ router.delete("/:id", authorizeRoles("daily_meeting:delete", "isAdmin", "SUPERAD
 // on a cell; editing and deleting are limited to the author in the controller.
 router.get("/:id/comments", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingComments);
 router.post("/:id/comments", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), createCommentThread);
+router.post("/:id/comments/batch", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), createCommentThreads);
 router.post("/:id/comments/:threadId/replies", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), addCommentReply);
 router.patch("/:id/comments/:threadId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), setCommentStatus);
 router.put("/:id/comments/:threadId/messages/:messageId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), editCommentMessage);

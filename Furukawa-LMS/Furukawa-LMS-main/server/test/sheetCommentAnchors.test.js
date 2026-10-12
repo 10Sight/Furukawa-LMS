@@ -6,7 +6,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText
+    newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText,
+    commentAnchorsInBlock, dropCommentAnchorBlock, threadToCopyText, MAX_COMMENT_LENGTH
 } from "../../portal/src/utils/spreadsheets/commentEngine.js";
 
 // Rows and columns are 0-based throughout, as in the grid: B4 is row 3, col 1.
@@ -77,4 +78,27 @@ test("a thread becomes a readable note", () => {
     assert.equal(threadToNoteText(thread), "Asha: Check this\n\nUser: Done");
     assert.equal(threadToNoteText({ ...thread, status: "resolved", resolvedByName: "Ravi" }), "Asha: Check this\n\nUser: Done\n\n(Resolved by Ravi)");
     assert.equal(threadToNoteText(null), "");
+});
+
+test("the anchors of a copied block are read by their place in it", () => {
+    const b4ToD10 = { minRow: 3, maxRow: 9, minCol: 1, maxCol: 3 };
+    assert.deepEqual(commentAnchorsInBlock(anchors, b4ToD10), { "0,0": "b", "0,1": "c", "6,2": "d" });
+    assert.deepEqual(commentAnchorsInBlock(anchors, { minRow: 20, maxRow: 30, minCol: 0, maxCol: 9 }), {});
+    assert.deepEqual(commentAnchorsInBlock(undefined, b4ToD10), {});
+
+    assert.deepEqual(dropCommentAnchorBlock(anchors, b4ToD10), { A1: "a" });
+    assert.equal(dropCommentAnchorBlock(anchors, { minRow: 20, maxRow: 30, minCol: 0, maxCol: 9 }), anchors, "none inside: the same map");
+    assert.deepEqual(dropCommentAnchorBlock(undefined, b4ToD10), {});
+});
+
+test("a copied cell's comment starts with what the original said", () => {
+    const thread = { status: "open", messages: [{ authorName: "Asha", text: "Check this" }, { authorName: "Ravi", text: "Done" }] };
+    assert.equal(threadToCopyText(thread), "Asha: Check this\n\nRavi: Done");
+    // A thread that was deleted, or hasn't loaded, has nothing to copy.
+    assert.equal(threadToCopyText(undefined), "");
+    assert.equal(threadToCopyText({ status: "open", messages: [] }), "");
+    // Never longer than the server takes.
+    const long = threadToCopyText({ status: "open", messages: [{ authorName: "Asha", text: "x".repeat(5000) }] });
+    assert.equal(long.length, MAX_COMMENT_LENGTH);
+    assert.ok(long.endsWith("…"));
 });

@@ -210,3 +210,54 @@ test("a cloned meeting's workbook carries no comment anchors", () => {
     assert.equal(withoutCommentAnchors(plain), plain);
     for (const empty of ["{}", {}, null, "not json"]) assert.equal(withoutCommentAnchors(empty), empty);
 });
+
+// --- Several threads at once: the comments of pasted cells ---
+
+const startSeveral = (user, threads, params) => call(controller.createCommentThreads, user, { params, body: { threads } });
+const copied = (n, extra = {}) => ({ threadId: `thread-copy-${String(n).padStart(3, "0")}`, sheetName: "Sheet 1", cellRef: `D${n}`, text: `Asha: note ${n}`, ...extra });
+
+test("pasted cells' comments are started together, each announced, under whoever pasted", async () => {
+    reset();
+    const res = await startSeveral(EDITOR, [copied(1), copied(2, { authorName: "Someone Else" }), copied(3)]);
+    assert.equal(res.status, 201);
+    const { threads } = res.body.data;
+    assert.deepEqual(threads.map((t) => [t.id, t.cellRef, t.createdByName, t.messages[0].text]), [
+        ["thread-copy-001", "D1", "Esha Editor", "Asha: note 1"],
+        ["thread-copy-002", "D2", "Esha Editor", "Asha: note 2"],
+        ["thread-copy-003", "D3", "Esha Editor", "Asha: note 3"],
+    ]);
+    assert.deepEqual(announced, threads.map((thread) => ({ meetingId: 19, thread })));
+
+    // An id that is already taken is left out; the rest still go in.
+    announced.length = 0;
+    const again = await startSeveral(ADMIN, [copied(3), copied(4)]);
+    assert.equal(again.status, 201);
+    assert.deepEqual(again.body.data.threads.map((t) => t.id), ["thread-copy-004"]);
+    assert.equal(db.threads.get("thread-copy-003").createdByName, "Esha Editor");
+    assert.equal(announced.length, 1);
+});
+
+test("starting several threads is all or nothing on bad input, and takes the right to save", async () => {
+    reset();
+    for (const threads of [
+        undefined, "nope", [],
+        Array.from({ length: 201 }, (_, i) => copied(i + 1)),
+        [copied(1), null],
+        [copied(1), copied(1)],
+        [copied(1), copied(2, { threadId: "short" })],
+        [copied(1), copied(2, { sheetName: "" })],
+        [copied(1), copied(2, { cellRef: "__proto__" })],
+        [copied(1), copied(2, { text: "   " })],
+        [copied(1), copied(2, { text: "x".repeat(4001) })],
+    ]) {
+        assert.equal((await startSeveral(EDITOR, threads)).status, 400, JSON.stringify(threads)?.slice(0, 80));
+    }
+    db.canModify = false;
+    assert.equal((await startSeveral(EDITOR, [copied(1)])).status, 403);
+    db.canModify = true;
+    assert.equal((await startSeveral(EDITOR, [copied(1)], { id: "404" })).status, 404);
+    assert.equal(db.threads.size, 0);
+    assert.equal(announced.length, 0);
+
+    assert.equal((await startSeveral(EDITOR, Array.from({ length: 200 }, (_, i) => copied(i + 1)))).body.data.threads.length, 200);
+});

@@ -56,7 +56,42 @@ export const lineArrowSvg = (width, height, color, ends) => {
         + heads.map((head) => `<polygon points="${head.map((point) => point.join(",")).join(" ")}" fill="${color}" stroke-width="1"/>`).join("");
 };
 
-const SHAPE_COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+/**
+ * An elbow connector across a `width` x `height` box: from the top-left it runs right
+ * to the middle, down, and right again to the bottom-right, where it has an arrowhead
+ * if `end` is set.
+ * @returns {{ points: number[][], heads: number[][][] }} the corners of the line, which
+ *   stops at the base of the head, and the head as for lineArrowGeometry. The line is
+ *   kept far enough from the top and bottom edges for the head (or its own thickness)
+ *   to stay inside the box.
+ */
+export const elbowConnectorGeometry = (width, height, { end = false, weight = LINE_STROKE_WIDTH } = {}) => {
+    const left = Math.min(END_MARGIN, Math.max(0, width) / 2);
+    const right = Math.max(left, width - END_MARGIN);
+    const middle = round((left + right) / 2);
+    const scale = Math.max(1, weight / LINE_STROKE_WIDTH);
+    // The head sits on the last stretch, and takes no more than two thirds of it.
+    const headLength = end ? Math.min(HEAD_LENGTH * scale, ((right - middle) * 2) / 3) : 0;
+    const halfWidth = HEAD_HALF_WIDTH * (headLength / HEAD_LENGTH);
+    const inset = Math.min(Math.max(END_MARGIN + weight / 2, halfWidth + 1), Math.max(0, height) / 2);
+    const top = round(inset), bottom = round(Math.max(inset, height - inset));
+    const heads = headLength > 0
+        ? [[[round(right), bottom], [round(right - headLength), round(bottom - halfWidth)], [round(right - headLength), round(bottom + halfWidth)]]]
+        : [];
+    return {
+        points: [[round(left), top], [middle, top], [middle, bottom], [round(right - headLength), bottom]],
+        heads,
+    };
+};
+
+/** elbowConnectorGeometry as SVG markup, in `color`. */
+export const elbowConnectorSvg = (width, height, color, options) => {
+    const { points, heads } = elbowConnectorGeometry(width, height, options);
+    return `<polyline points="${points.map((point) => point.join(",")).join(" ")}"/>`
+        + heads.map((head) => `<polygon points="${head.map((point) => point.join(",")).join(" ")}" fill="${color}" stroke-width="1"/>`).join("");
+};
+
+const SHAPE_COLOR_RE =/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /**
  * A colour a shape was given, as it can be written into the shape's drawing: a hex

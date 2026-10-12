@@ -40,7 +40,24 @@ mock.module("../models/dailyMorningMeeting.model.js", {
         },
         findPatchesAfter: async () => db.patchesAfter,
         appendPatch: async () => db.appendResult,
-        updateSheetData: async () => db.updateResult,
+        updateSheetData: async (id, sheetData) => {
+            db.rewritten = { id, sheetData };
+            return db.rewriteResult ? db.rewriteResult(sheetData) : db.updateResult;
+        },
+        // A copy of a meeting: stored as given, under the next id.
+        createWithSheetData: async (input) => {
+            db.created = input;
+            return metaRow({ id: 20, agenda: input.agenda, sheetData: typeof input.sheetData === "string" ? input.sheetData : JSON.stringify(input.sheetData) });
+        },
+    }
+});
+mock.module("../models/sheetComment.model.js", {
+    defaultExport: {
+        copyThreads: async (meetingId, copies) => {
+            if (db.copyThreadsFails) throw new Error("database is down");
+            db.copiedThreads = { meetingId, copies };
+            return copies.length;
+        },
     }
 });
 mock.module("../services/sheetLiveSync.js", {
@@ -198,4 +215,64 @@ test("a full save reports and announces its version the same way", async () => {
     announced.length = 0;
     assert.equal((await call(controller.saveMeetingSheet, { body: { ...workbook, version: 7 } })).status, 409);
     assert.deepEqual(announced, []);
+});
+
+// --- Save As: a copy of a meeting ---
+
+const commented = {
+    activeSheet: "S",
+    sheets: {
+        S: { cells: { A1: { value: "1" } }, rowCount: 30, columnCount: 15, commentAnchors: { A1: "thread-0001", C3: "thread-0002" } },
+        T: { cells: {}, rowCount: 30, columnCount: 15, commentAnchors: { B2: "thread-0003" } },
+        U: { cells: {}, rowCount: 30, columnCount: 15 },
+    }
+};
+const clone = () => {
+    Object.assign(db, { created: null, copiedThreads: null, rewritten: null, rewriteResult: null, copyThreadsFails: false });
+    return call(controller.cloneMeeting, { body: { agenda: " Copy of Daily " } });
+};
+
+test("a copy of a meeting takes its comments along, as threads of its own", async () => {
+    storedAs({ json: JSON.stringify(commented) });
+    const res = await clone();
+    assert.equal(res.status, 201);
+    assert.equal(db.created.agenda, "Copy of Daily");
+
+    // Every anchored thread is copied into the new meeting under a new id...
+    const { meetingId, copies } = db.copiedThreads;
+    assert.equal(meetingId, 20);
+    assert.deepEqual(copies.map((c) => c.from).sort(), ["thread-0001", "thread-0002", "thread-0003"]);
+    const newId = Object.fromEntries(copies.map((c) => [c.from, c.to]));
+    assert.equal(new Set(Object.values(newId)).size, 3);
+    for (const id of Object.values(newId)) assert.match(id, /^[A-Za-z0-9_-]{8,64}$/, "an id the comment endpoints accept");
+
+    // ...and the copy's workbook is anchored to those, on the same cells.
+    const stored = db.created.sheetData;
+    assert.deepEqual(stored.sheets.S.commentAnchors, { A1: newId["thread-0001"], C3: newId["thread-0002"] });
+    assert.deepEqual(stored.sheets.T.commentAnchors, { B2: newId["thread-0003"] });
+    assert.equal(stored.sheets.U.commentAnchors, undefined);
+    assert.deepEqual(stored.sheets.S.cells, commented.sheets.S.cells);
+    assert.deepEqual(res.body.data.sheets.S.commentAnchors, stored.sheets.S.commentAnchors, "the response opens with them");
+    assert.equal(db.rewritten, null);
+});
+
+test("a meeting without comments is copied as it is, with nothing to copy after", async () => {
+    storedAs();
+    const res = await clone();
+    assert.equal(res.status, 201);
+    assert.equal(db.created.sheetData, JSON.stringify(workbook));
+    assert.equal(db.copiedThreads, null);
+});
+
+test("when the comments can't be copied the meeting still is, without anchors to nothing", async () => {
+    storedAs({ json: JSON.stringify(commented) });
+    Object.assign(db, { created: null, copiedThreads: null, rewritten: null, copyThreadsFails: true });
+    db.rewriteResult = (sheetData) => metaRow({ id: 20, sheetData: JSON.stringify(sheetData) });
+    const res = await call(controller.cloneMeeting, { body: { agenda: "Copy" } });
+    Object.assign(db, { copyThreadsFails: false, rewriteResult: null });
+    assert.equal(res.status, 201);
+    assert.equal(db.rewritten.id, 20);
+    for (const sheet of Object.values(db.rewritten.sheetData.sheets)) assert.equal(sheet.commentAnchors, undefined);
+    for (const sheet of Object.values(res.body.data.sheets)) assert.ok(!sheet.commentAnchors || Object.keys(sheet.commentAnchors).length === 0);
+    assert.deepEqual(res.body.data.sheets.S.cells, commented.sheets.S.cells);
 });

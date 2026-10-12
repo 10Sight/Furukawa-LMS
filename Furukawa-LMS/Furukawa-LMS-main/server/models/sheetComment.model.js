@@ -14,7 +14,8 @@ import DailyMorningMeeting from "./dailyMorningMeeting.model.js";
 // for display and audit only.
 //
 // A thread whose anchor never reached the workbook (its author didn't save) is simply
-// never shown. Threads go when their meeting does.
+// never shown. Threads go when their meeting does, and a copy of a meeting ("Save As")
+// gets copies of its threads, under ids of their own (copyThreads).
 //
 // Author ids are deliberately not foreign keys, and the name is kept alongside: a
 // comment should outlive, and not block, the removal of the user who wrote it.
@@ -154,6 +155,36 @@ class SheetComment {
             [id, authorId, authorName, text]
         );
         return SheetComment.findThreadById(id);
+    }
+
+    // Copies threads into another meeting (a copy of the one they are in), each under
+    // a new id: `copies` is [{ from, to }]. A copy is the thread as it stands — who
+    // started it, every message with its author and time, resolved or not. One whose
+    // new id is taken, or whose original is gone, is skipped. Returns how many were copied.
+    static async copyThreads(meetingId, copies) {
+        await schemaReady;
+        let copied = 0;
+        for (const { from, to } of copies) {
+            const [inserted] = await executeQuery(
+                `INSERT INTO sheet_comment_threads
+                    (id, meetingId, sheetName, cellRef, status, createdBy, createdByName, createdAt, resolvedBy, resolvedByName, resolvedAt)
+                 OUTPUT INSERTED.id
+                 SELECT ?, ?, sheetName, cellRef, status, createdBy, createdByName, createdAt, resolvedBy, resolvedByName, resolvedAt
+                 FROM sheet_comment_threads
+                 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM sheet_comment_threads WHERE id = ?)`,
+                [to, meetingId, from, to]
+            );
+            if (!inserted || inserted.length === 0) continue;
+            // In the order they were written, so the copies' own ids keep that order.
+            await executeQuery(
+                `INSERT INTO sheet_comment_messages (threadId, authorId, authorName, body, createdAt, editedAt)
+                 SELECT ?, authorId, authorName, body, createdAt, editedAt
+                 FROM sheet_comment_messages WHERE threadId = ? ORDER BY id`,
+                [to, from]
+            );
+            copied++;
+        }
+        return copied;
     }
 
     static async addMessage(threadId, { authorId, authorName, text }) {

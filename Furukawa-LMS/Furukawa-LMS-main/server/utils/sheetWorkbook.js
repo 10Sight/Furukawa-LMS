@@ -66,9 +66,9 @@ export const normalizeWorkbook = (data) => {
 };
 
 /**
- * A stored workbook for a copy of its meeting: the same, minus the comment anchors.
- * Comment threads belong to the meeting they were written in and are not copied, and an
- * anchor without its thread would only be dead weight in the new workbook.
+ * A stored workbook without its comment anchors: what a copy of a meeting is left with
+ * when its comment threads could not be copied (see withCopiedCommentAnchors for when
+ * they are). An anchor without its thread would only be dead weight in the workbook.
  * @param {string|object} sheetData as the meeting model hands it over
  * @returns {string|object} `sheetData` itself when it has no anchors
  */
@@ -80,6 +80,41 @@ export const withoutCommentAnchors = (sheetData) => {
         if (!isPlainObject(sheet) || !hasOwn(sheet, "commentAnchors")) continue;
         const { commentAnchors, ...rest } = sheet;
         (sheets || (sheets = { ...data.sheets }))[name] = rest;
+    }
+    return sheets ? { ...data, sheets } : sheetData;
+};
+
+/** The ids of every comment thread a stored workbook has anchored on a cell. */
+export const commentThreadIdsOf = (sheetData) => {
+    const ids = new Set();
+    const data = parseSheetData(sheetData);
+    if (!isPlainObject(data.sheets)) return ids;
+    for (const sheet of Object.values(data.sheets)) {
+        if (!isPlainObject(sheet) || !isPlainObject(sheet.commentAnchors)) continue;
+        for (const threadId of Object.values(sheet.commentAnchors)) if (typeof threadId === "string") ids.add(threadId);
+    }
+    return ids;
+};
+
+/**
+ * A stored workbook for a copy of its meeting whose comments are copied too: every
+ * anchor points at the copy of its thread. `threadIds` is a Map of a thread's id -> the
+ * id of its copy. An anchor whose thread has no copy (the thread was deleted, say) is
+ * dropped, as it showed nothing in the original either.
+ * @param {string|object} sheetData as the meeting model hands it over
+ * @returns {string|object} `sheetData` itself when it has no anchors
+ */
+export const withCopiedCommentAnchors = (sheetData, threadIds) => {
+    const data = parseSheetData(sheetData);
+    if (!isPlainObject(data.sheets)) return sheetData;
+    let sheets = null;
+    for (const [name, sheet] of Object.entries(data.sheets)) {
+        if (!isPlainObject(sheet) || !hasOwn(sheet, "commentAnchors")) continue;
+        const commentAnchors = {};
+        for (const [cellId, threadId] of Object.entries(isPlainObject(sheet.commentAnchors) ? sheet.commentAnchors : {})) {
+            if (threadIds.has(threadId)) commentAnchors[cellId] = threadIds.get(threadId);
+        }
+        (sheets || (sheets = { ...data.sheets }))[name] = { ...sheet, commentAnchors };
     }
     return sheets ? { ...data, sheets } : sheetData;
 };

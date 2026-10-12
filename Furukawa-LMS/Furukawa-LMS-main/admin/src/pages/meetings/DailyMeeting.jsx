@@ -213,7 +213,7 @@ function CloneMeetingDialog({ meeting, onOpenChange, onClone, isCloning }) {
             <DialogContent className="max-w-lg">
                 <DialogHeader>
                     <DialogTitle>Save As New Meeting</DialogTitle>
-                    <DialogDescription>Creates a copy of "{meeting?.agenda}" — same spreadsheet and charts, timestamped to right now.</DialogDescription>
+                    <DialogDescription>Creates a copy of "{meeting?.agenda}" — same spreadsheet, charts and cell comments, timestamped to right now.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">

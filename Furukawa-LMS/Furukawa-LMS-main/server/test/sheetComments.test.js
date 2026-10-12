@@ -8,7 +8,7 @@ process.env.JWT_REFRESH_SECRET = "test-refresh-secret";
 
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
-import { withoutCommentAnchors } from "../utils/sheetWorkbook.js";
+import { withoutCommentAnchors, commentThreadIdsOf, withCopiedCommentAnchors } from "../utils/sheetWorkbook.js";
 
 const ADMIN = { id: 1, fullName: "Asha Admin", role: "ADMIN", isAdmin: true };
 const EDITOR = { id: 2, fullName: "Esha Editor", role: "CUSTOM" };
@@ -192,7 +192,7 @@ test("a thread is deleted by whoever started it, or an admin", async () => {
     assert.equal(db.threads.size, 0);
 });
 
-test("a cloned meeting's workbook carries no comment anchors", () => {
+test("a workbook can be stripped of its comment anchors", () => {
     const workbook = {
         activeSheet: "S",
         sheets: {
@@ -260,4 +260,27 @@ test("starting several threads is all or nothing on bad input, and takes the rig
     assert.equal(announced.length, 0);
 
     assert.equal((await startSeveral(EDITOR, Array.from({ length: 200 }, (_, i) => copied(i + 1)))).body.data.threads.length, 200);
+});
+
+test("a copied meeting's workbook is anchored to the copies of its threads", () => {
+    const workbook = {
+        activeSheet: "S",
+        sheets: {
+            S: { cells: { A1: { value: "1" } }, rowCount: 30, commentAnchors: { A1: "thread-0001", B2: "thread-gone" } },
+            T: { cells: {}, rowCount: 30 }
+        }
+    };
+    assert.deepEqual([...commentThreadIdsOf(workbook)], ["thread-0001", "thread-gone"]);
+    assert.deepEqual([...commentThreadIdsOf(JSON.stringify(workbook))], ["thread-0001", "thread-gone"]);
+    for (const none of ["{}", {}, null, "not json", { sheets: { S: { cells: {} } } }]) assert.equal(commentThreadIdsOf(none).size, 0);
+
+    const copied = withCopiedCommentAnchors(workbook, new Map([["thread-0001", "thread-9001"]]));
+    // The anchor follows its thread's copy; one whose thread has no copy is dropped.
+    assert.deepEqual(copied.sheets.S.commentAnchors, { A1: "thread-9001" });
+    assert.deepEqual(copied.sheets.S.cells, workbook.sheets.S.cells);
+    assert.equal(copied.sheets.T, workbook.sheets.T);
+    assert.deepEqual(workbook.sheets.S.commentAnchors, { A1: "thread-0001", B2: "thread-gone" }, "the source is left as it was");
+    assert.deepEqual(withCopiedCommentAnchors(JSON.stringify(workbook), new Map([["thread-0001", "thread-9001"]])), copied);
+    const plain = JSON.stringify({ sheets: { S: { cells: {} } }, activeSheet: "S" });
+    assert.equal(withCopiedCommentAnchors(plain, new Map()), plain);
 });

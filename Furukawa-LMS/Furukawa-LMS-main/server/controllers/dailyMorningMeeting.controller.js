@@ -1,12 +1,13 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import ExcelJS from "exceljs";
 import DailyMorningMeeting from "../models/dailyMorningMeeting.model.js";
+import SheetComment from "../models/sheetComment.model.js";
 import logger from "../logger/winston.logger.js";
 import { canModifyDailyMeetingSection } from "../utils/dailyMeetingAccess.util.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import microsoftGraphService from "../services/microsoftGraph.service.js";
 import ENV from "../configs/env.config.js";
-import { parseSheetData, normalizeWorkbook, validatePatch, cellKeyToPosition, cellExportValue, pendingPatchRun, withoutCommentAnchors } from "../utils/sheetWorkbook.js";
+import { parseSheetData, normalizeWorkbook, validatePatch, cellKeyToPosition, cellExportValue, pendingPatchRun, withoutCommentAnchors, commentThreadIdsOf, withCopiedCommentAnchors } from "../utils/sheetWorkbook.js";
 import { decodeSheetPayload } from "../utils/sheetCodec.js";
 import { broadcastPatch, broadcastReplaced, liveSyncEnabled } from "../services/sheetLiveSync.js";
 
@@ -270,9 +271,38 @@ export const createMeeting = async (req, res) => {
     }
 };
 
-// Clones a meeting's metadata and full sheet (cells, charts, media — whatever
-// lives under sheetData) into a brand new row, timestamped to right now on
-// the server so a client can't backdate/forge the clone's meeting date/time.
+// A copy of a meeting takes the comments on its cells along. A thread belongs to one
+// meeting and is found by its id, so the copy can't share the original's: each thread
+// anchored in the workbook is copied under a new id, and the copy's workbook is
+// anchored to those. This is the workbook to store for the copy, and the threads to
+// copy once the copy exists ([{ from, to }], see SheetComment.copyThreads).
+const planCommentCopies = (sheetData) => {
+    const copies = [...commentThreadIdsOf(sheetData)].map((from) => ({ from, to: `c_${randomUUID().replace(/-/g, "")}` }));
+    if (copies.length === 0) return { sheetData, copies };
+    return { sheetData: withCopiedCommentAnchors(sheetData, new Map(copies.map(({ from, to }) => [from, to]))), copies };
+};
+
+// Copies the threads planned above into the new meeting. Should that fail, the meeting
+// is still copied — without its comments, and without anchors left pointing at nothing.
+const copyMeetingComments = async (newMeeting, copies, sourceSheetData) => {
+    if (copies.length === 0) return newMeeting;
+    try {
+        await SheetComment.copyThreads(newMeeting.id, copies);
+        return newMeeting;
+    } catch (error) {
+        logger.error("Copying a cloned meeting's comments failed; the copy has none:", error);
+        try {
+            return await DailyMorningMeeting.updateSheetData(newMeeting.id, withoutCommentAnchors(sourceSheetData));
+        } catch (cleanupError) {
+            logger.error("Could not clear the comment anchors of a cloned meeting:", cleanupError);
+            return newMeeting;
+        }
+    }
+};
+
+// Clones a meeting's metadata and full sheet (cells, charts, media, the comments on
+// its cells — whatever lives under sheetData) into a brand new row, timestamped to
+// right now on the server so a client can't backdate/forge the clone's meeting date/time.
 export const cloneMeeting = async (req, res) => {
     try {
         const { id } = req.params;
@@ -295,6 +325,8 @@ export const cloneMeeting = async (req, res) => {
         const pad = (n) => String(n).padStart(2, "0");
         const meetingDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
         const meetingTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+        const copy = planCommentCopies(sourceMeeting.sheetData);
 
         let newMeeting;
         if (sourceMeeting.fileProvider === "M365_SHAREPOINT" && sourceMeeting.m365ItemId) {
@@ -345,7 +377,7 @@ export const cloneMeeting = async (req, res) => {
                 // (the real cell content lives in the SharePoint workbook) — carry it
                 // over so the clone doesn't lose whatever charts were configured.
                 if (sourceMeeting.sheetData && sourceMeeting.sheetData !== "{}") {
-                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, withoutCommentAnchors(sourceMeeting.sheetData));
+                    newMeeting = await DailyMorningMeeting.updateSheetData(newMeeting.id, copy.sheetData);
                 }
             } catch (dbError) {
                 // Compensating action: don't leave an orphaned SharePoint copy the DB has no record of.
@@ -360,10 +392,10 @@ export const cloneMeeting = async (req, res) => {
                 meetingDate,
                 meetingTime,
                 createdBy: req.user.id,
-                // Comments stay with the meeting they were written in.
-                sheetData: withoutCommentAnchors(sourceMeeting.sheetData)
+                sheetData: copy.sheetData
             });
         }
+        newMeeting = await copyMeetingComments(newMeeting, copy.copies, sourceMeeting.sheetData);
 
         // Include the parsed sheets/activeSheet (same shape getMeetingDetail returns) so
         // the client can seed the detail query's cache directly from this response,

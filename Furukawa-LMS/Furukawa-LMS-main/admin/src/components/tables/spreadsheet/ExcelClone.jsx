@@ -7025,15 +7025,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             ) : (
                                 <span>{name}</span>
                             )}
-                            {!readOnly && visibleSheetNames.length > 1 && renamingSheet !== name && (
-                                <button
-                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
-                                    onClick={(e) => { e.stopPropagation(); deleteSheet(name); }}
-                                    title="Delete sheet"
-                                >
-                                    <IconX className="w-3 h-3" />
-                                </button>
-                            )}
                         </div>
                     );
 

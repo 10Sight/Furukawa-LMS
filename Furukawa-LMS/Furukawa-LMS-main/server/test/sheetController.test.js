@@ -68,7 +68,7 @@ mock.module("../services/sheetLiveSync.js", {
     }
 });
 mock.module("../utils/dailyMeetingAccess.util.js", { namedExports: { canModifyDailyMeetingSection: async () => true } });
-mock.module("../db/mssqlHelper.js", { namedExports: { executeQuery: async () => [[], {}] } });
+mock.module("../db/mssqlHelper.js", { namedExports: { executeQuery: async (sql, params) => (db.query ? db.query(sql, params) : [[], {}]) } });
 mock.module("../services/microsoftGraph.service.js", { defaultExport: { isConfigured: () => false } });
 
 const controller = await import("../controllers/dailyMorningMeeting.controller.js");
@@ -275,4 +275,45 @@ test("when the comments can't be copied the meeting still is, without anchors to
     for (const sheet of Object.values(db.rewritten.sheetData.sheets)) assert.equal(sheet.commentAnchors, undefined);
     for (const sheet of Object.values(res.body.data.sheets)) assert.ok(!sheet.commentAnchors || Object.keys(sheet.commentAnchors).length === 0);
     assert.deepEqual(res.body.data.sheets.S.cells, commented.sheets.S.cells);
+});
+
+// --- The page's department and section tabs ---
+
+test("the department tabs are every department, as an id and a name only", async () => {
+    const queries = [];
+    db.query = async (sql, params) => {
+        queries.push({ sql, params });
+        return [[
+            { id: 3, name: "Assembly", instructor: 9, students: "[1,2]", isDeleted: 0 },
+            { id: 1, name: "Quality", instructor: null, students: "[]", isDeleted: null },
+        ], {}];
+    };
+    // Whoever asks: the answer doesn't depend on where the user is assigned.
+    const res = await call(controller.getMeetingDepartments, { params: {} });
+    db.query = null;
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data.departments, [{ id: 3, name: "Assembly" }, { id: 1, name: "Quality" }]);
+    assert.equal(queries.length, 1);
+    assert.match(queries[0].sql, /isDeleted IS NULL OR isDeleted = 0/, "deleted departments are left out");
+    assert.equal(queries[0].params, undefined, "nothing about the user goes into the query");
+});
+
+test("the section tabs are every section of the department asked for", async () => {
+    const queries = [];
+    db.query = async (sql, params) => {
+        queries.push({ sql, params });
+        return [[{ id: 7, name: "Line A", departmentId: 3, uniCode: "LA", description: "x" }, { id: 8, name: "Line B", departmentId: 3 }], {}];
+    };
+    const res = await call(controller.getMeetingDepartmentSections, { params: { departmentId: "3" } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data, [{ id: 7, name: "Line A", departmentId: 3 }, { id: 8, name: "Line B", departmentId: 3 }]);
+    assert.deepEqual(queries[0].params, [3]);
+
+    // Only a department id gets as far as the database.
+    queries.length = 0;
+    for (const departmentId of ["abc", "0", "-4", "3,4", "1 OR 1=1", "2.5", ""]) {
+        assert.equal((await call(controller.getMeetingDepartmentSections, { params: { departmentId } })).status, 400, departmentId);
+    }
+    db.query = null;
+    assert.equal(queries.length, 0);
 });

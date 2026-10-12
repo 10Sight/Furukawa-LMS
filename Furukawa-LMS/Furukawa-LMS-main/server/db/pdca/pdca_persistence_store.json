@@ -239,8 +239,8 @@
       "lpaSource": null,
       "isSelf": true,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.106Z",
-      "updatedAt": "2026-10-12T08:12:58.106Z"
+      "createdAt": "2026-10-12T10:13:59.329Z",
+      "updatedAt": "2026-10-12T10:13:59.329Z"
     },
     {
       "id": "PDCA-GJ-101",
@@ -265,8 +265,8 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.086Z",
-      "updatedAt": "2026-10-12T08:12:58.086Z"
+      "createdAt": "2026-10-12T10:13:58.918Z",
+      "updatedAt": "2026-10-12T10:13:58.919Z"
     }
   ],
   "sheets": {
@@ -322,6 +322,14 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": 1791800039033,
+      "pdcaRecordId": "PDCA-GJ-101",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Reduction of Solder Bridge Defects in ECU Assembly (PDCA-GJ-101)",
+      "createdAt": "2026-10-12T10:13:59.033Z"
+    },
     {
       "id": 1791795145050,
       "pdcaRecordId": "PDCA-1791795145020",

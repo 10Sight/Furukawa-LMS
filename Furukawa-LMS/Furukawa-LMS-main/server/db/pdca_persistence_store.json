@@ -1,0 +1,362 @@
+{
+  "records": [
+    {
+      "id": "CFT-1791792844703",
+      "recordId": "CFT-1791792844703",
+      "topic": "Zero Defect Assembly CFT",
+      "description": "",
+      "plant": "Gujrat",
+      "scope": "CFT",
+      "department": "CFT",
+      "section": "",
+      "sectionId": "",
+      "date": "12 Oct 2026",
+      "time": "01:44 PM",
+      "createdBy": null,
+      "assignedMembers": [
+        {
+          "name": "PRIYA NAIR",
+          "code": "GJ018442"
+        },
+        {
+          "name": "RAHUL SHARMA",
+          "code": "BW041920"
+        }
+      ],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:14:04.703Z",
+      "updatedAt": "2026-10-12T08:14:04.703Z"
+    },
+    {
+      "id": "PDCA-1791792844657",
+      "recordId": "PDCA-1791792844657",
+      "topic": "Automated Line Solder Inspection Updated",
+      "description": "Audit test record for automated inspection",
+      "plant": "Gujrat",
+      "scope": "Company",
+      "department": "SRC Quality",
+      "section": "Assembly Line 1",
+      "sectionId": "",
+      "date": "12 Oct 2026",
+      "time": "01:44 PM",
+      "createdBy": null,
+      "assignedMembers": [],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": true,
+      "createdAt": "2026-10-12T08:14:04.658Z",
+      "updatedAt": "2026-10-12T08:14:04.680Z"
+    },
+    {
+      "id": "CFT-BW-202",
+      "recordId": "CFT-BW-202",
+      "topic": "Alignment & Goal Setting",
+      "description": "Zero Lost Time Injury (LTI) milestone targets aligned across shift leaders and contractor teams.",
+      "plant": "Bawal",
+      "scope": "CFT",
+      "department": "CFT",
+      "section": "",
+      "sectionId": "",
+      "date": "24 Sep 2026",
+      "time": "02:15 PM",
+      "createdBy": {
+        "name": "RAHUL SHARMA",
+        "code": "BW041920",
+        "email": "r.sharma@fme-minda.co.in",
+        "avatarBg": "bg-emerald-100 text-emerald-700",
+        "initials": "RS"
+      },
+      "assignedMembers": [
+        {
+          "name": "DEEPAK MEHTA",
+          "code": "GJ045819"
+        },
+        {
+          "name": "YOGESH KUMAR",
+          "code": "AS081213"
+        }
+      ],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.113Z",
+      "updatedAt": "2026-10-12T08:12:58.113Z"
+    },
+    {
+      "id": "CFT-GJ-201",
+      "recordId": "CFT-GJ-201",
+      "topic": "Team Composition & Role",
+      "description": "Cross-functional team operational charter defining roles for production engineering, quality assurance and maintenance leads.",
+      "plant": "Gujrat",
+      "scope": "CFT",
+      "department": "CFT",
+      "section": "",
+      "sectionId": "",
+      "date": "25 Sep 2026",
+      "time": "10:30 AM",
+      "createdBy": {
+        "name": "YOGESH KUMAR",
+        "code": "AS081213",
+        "email": "aso81213@fme-minda.co.in",
+        "avatarBg": "bg-blue-100 text-blue-700",
+        "initials": "YK"
+      },
+      "assignedMembers": [
+        {
+          "name": "AMIT PATEL",
+          "code": "GJ092311"
+        },
+        {
+          "name": "PRIYA NAIR",
+          "code": "GJ018442"
+        }
+      ],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.112Z",
+      "updatedAt": "2026-10-12T08:12:58.112Z"
+    },
+    {
+      "id": "PDCA-BW-104",
+      "recordId": "PDCA-BW-104",
+      "topic": "Air Compressor Energy Leakage Elimination",
+      "description": "Ultrasonic air leak survey across pneumatic piping network in press shop to reduce kWh consumption.",
+      "plant": "Bawal",
+      "scope": "Company",
+      "department": "Plant Maintenance",
+      "section": "",
+      "sectionId": "",
+      "date": "18 Sep 2026",
+      "time": "10:00 AM",
+      "createdBy": {
+        "name": "PRIYA NAIR",
+        "code": "GJ018442",
+        "email": "priya.nair@fme-minda.co.in",
+        "avatarBg": "bg-rose-100 text-rose-700",
+        "initials": "PN"
+      },
+      "assignedMembers": [],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.111Z",
+      "updatedAt": "2026-10-12T08:12:58.111Z"
+    },
+    {
+      "id": "PDCA-GJ-103",
+      "recordId": "PDCA-GJ-103",
+      "topic": "Forklift Traffic Collision Prevention IoT Radar",
+      "description": "Install 360-degree proximity sensors and warning buzzers at blind intersections in main warehouse.",
+      "plant": "Gujrat",
+      "scope": "Company",
+      "department": "EHS Safety",
+      "section": "",
+      "sectionId": "",
+      "date": "20 Sep 2026",
+      "time": "02:30 PM",
+      "createdBy": {
+        "name": "AMIT PATEL",
+        "code": "GJ092311",
+        "email": "amit.patel@fme-minda.co.in",
+        "avatarBg": "bg-amber-100 text-amber-700",
+        "initials": "AP"
+      },
+      "assignedMembers": [],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.109Z",
+      "updatedAt": "2026-10-12T08:12:58.109Z"
+    },
+    {
+      "id": "PDCA-BW-102",
+      "recordId": "PDCA-BW-102",
+      "topic": "Die-Casting Cycle Time Optimization on Cell #4",
+      "description": "Hydraulic pressure recalibration and chilled water cooling channel upgrade for lower cycle duration.",
+      "plant": "Bawal",
+      "scope": "Company",
+      "department": "Die Casting",
+      "section": "",
+      "sectionId": "",
+      "date": "22 Sep 2026",
+      "time": "11:15 AM",
+      "createdBy": {
+        "name": "RAHUL SHARMA",
+        "code": "BW041920",
+        "email": "r.sharma@fme-minda.co.in",
+        "avatarBg": "bg-emerald-100 text-emerald-700",
+        "initials": "RS"
+      },
+      "assignedMembers": [],
+      "lpaSource": null,
+      "isSelf": true,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.106Z",
+      "updatedAt": "2026-10-12T08:12:58.106Z"
+    },
+    {
+      "id": "PDCA-GJ-101",
+      "recordId": "PDCA-GJ-101",
+      "topic": "Reduction of Solder Bridge Defects in ECU Assembly",
+      "description": "Implement automated optical inspection (AOI) pre-wave soldering verification to reduce rework cycle time.",
+      "plant": "Gujrat",
+      "scope": "Company",
+      "department": "SRC Quality",
+      "section": "",
+      "sectionId": "",
+      "date": "23 Sep 2026",
+      "time": "09:45 AM",
+      "createdBy": {
+        "name": "YOGESH KUMAR",
+        "code": "AS081213",
+        "email": "aso81213@fme-minda.co.in",
+        "avatarBg": "bg-blue-100 text-blue-700",
+        "initials": "YK"
+      },
+      "assignedMembers": [],
+      "lpaSource": null,
+      "isSelf": false,
+      "isDeleted": false,
+      "createdAt": "2026-10-12T08:12:58.086Z",
+      "updatedAt": "2026-10-12T08:12:58.086Z"
+    }
+  ],
+  "sheets": {
+    "PDCA-1791792844657": {
+      "headerInfo": {
+        "topicName": "Line Audit",
+        "preparedBy": "Pooja Verma",
+        "auditNo": "AUD-001",
+        "attendees": "Team QA"
+      },
+      "rows": [
+        {
+          "sNo": 1,
+          "date": "12/10/2026",
+          "shift": "Day",
+          "lineArea": "Line A",
+          "observation": "Multiline observation\nLine 2 text",
+          "status": "Open"
+        }
+      ]
+    }
+  },
+  "cftTopics": [],
+  "attachments": [
+    {
+      "id": 1791792879182,
+      "pdcaRecordId": "PDCA-GJ-101",
+      "rowId": "row-1",
+      "fieldName": "imageBefore",
+      "filename": "1791792879179-221458496.png",
+      "originalFilename": "audit_photo.png",
+      "mimeType": "image/png",
+      "size": 18,
+      "url": "/uploads/1791792879179-221458496.png",
+      "uploadedBy": "System User",
+      "createdAt": "2026-10-12T08:14:39.182Z",
+      "isDeleted": true
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": 1791792844753,
+      "pdcaRecordId": "PDCA-1791792844657",
+      "action": "DELETE_RECORD",
+      "actor": "System User",
+      "details": "Marked record PDCA-1791792844657 as deleted",
+      "createdAt": "2026-10-12T08:14:04.753Z"
+    },
+    {
+      "id": 1791792844748,
+      "pdcaRecordId": "CFT-1791792844703",
+      "action": "UPDATE_CFT_MEMBERS",
+      "actor": "System User",
+      "details": "Updated assigned team members",
+      "createdAt": "2026-10-12T08:14:04.748Z"
+    },
+    {
+      "id": 1791792844704,
+      "pdcaRecordId": "CFT-1791792844703",
+      "action": "CREATE_RECORD",
+      "actor": "System User",
+      "details": "Created PDCA record: Zero Defect Assembly CFT (CFT-1791792844703)",
+      "createdAt": "2026-10-12T08:14:04.704Z"
+    },
+    {
+      "id": 1791792844686,
+      "pdcaRecordId": "PDCA-1791792844657",
+      "action": "SAVE_SHEET",
+      "actor": "System User",
+      "details": "Saved sheet with 1 rows",
+      "createdAt": "2026-10-12T08:14:04.686Z"
+    },
+    {
+      "id": 1791792844680,
+      "pdcaRecordId": "PDCA-1791792844657",
+      "action": "UPDATE_RECORD",
+      "actor": "System User",
+      "details": "Updated record metadata: Automated Line Solder Inspection Updated",
+      "createdAt": "2026-10-12T08:14:04.680Z"
+    },
+    {
+      "id": 1791792844659,
+      "pdcaRecordId": "PDCA-1791792844657",
+      "action": "CREATE_RECORD",
+      "actor": "System User",
+      "details": "Created PDCA record: Automated Line Solder Inspection (PDCA-1791792844657)",
+      "createdAt": "2026-10-12T08:14:04.659Z"
+    },
+    {
+      "id": 1791792778114,
+      "pdcaRecordId": "CFT-BW-202",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Alignment & Goal Setting (CFT-BW-202)",
+      "createdAt": "2026-10-12T08:12:58.114Z"
+    },
+    {
+      "id": 1791792778112,
+      "pdcaRecordId": "CFT-GJ-201",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Team Composition & Role (CFT-GJ-201)",
+      "createdAt": "2026-10-12T08:12:58.112Z"
+    },
+    {
+      "id": 1791792778111,
+      "pdcaRecordId": "PDCA-BW-104",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Air Compressor Energy Leakage Elimination (PDCA-BW-104)",
+      "createdAt": "2026-10-12T08:12:58.111Z"
+    },
+    {
+      "id": 1791792778110,
+      "pdcaRecordId": "PDCA-GJ-103",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Forklift Traffic Collision Prevention IoT Radar (PDCA-GJ-103)",
+      "createdAt": "2026-10-12T08:12:58.110Z"
+    },
+    {
+      "id": 1791792778107,
+      "pdcaRecordId": "PDCA-BW-102",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Die-Casting Cycle Time Optimization on Cell #4 (PDCA-BW-102)",
+      "createdAt": "2026-10-12T08:12:58.107Z"
+    },
+    {
+      "id": 1791792778098,
+      "pdcaRecordId": "PDCA-GJ-101",
+      "action": "CREATE_RECORD",
+      "actor": "SYSTEM_SEED",
+      "details": "Created PDCA record: Reduction of Solder Bridge Defects in ECU Assembly (PDCA-GJ-101)",
+      "createdAt": "2026-10-12T08:12:58.099Z"
+    }
+  ]
+}

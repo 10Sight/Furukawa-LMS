@@ -11,7 +11,7 @@ import AddPDCAModal from '@components/pdca/AddPDCAModal';
 import AddCFTModal from '@components/pdca/AddCFTModal';
 import AddMemberModal from '@components/pdca/AddMemberModal';
 import FormDeletionDialog from '@components/shared/FormDeletionDialog';
-import { usePDCA } from '../context/PDCAContext';
+import { usePDCA } from '@hooks/pdca/usePDCA.js';
 
 export default function DashboardPage() {
   const navigate = useNavigate();

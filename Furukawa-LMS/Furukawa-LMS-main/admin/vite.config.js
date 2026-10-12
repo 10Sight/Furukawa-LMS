@@ -61,6 +61,7 @@ export default defineConfig({
       "@constants": path.resolve(__dirname, "./src/constants"),
       "@styles": path.resolve(__dirname, "./src/styles"),
       "@hooks": path.resolve(__dirname, "./src/hooks"),
+      "hooks": path.resolve(__dirname, "./hooks"),
       "@assets": path.resolve(__dirname, "./src/assets"),
       "@utils": path.resolve(__dirname, "./src/utils"),
       "@emotion/styled": path.resolve(__dirname, "node_modules/@emotion/styled"),

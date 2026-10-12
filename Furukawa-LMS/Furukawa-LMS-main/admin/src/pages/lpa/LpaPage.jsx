@@ -11,7 +11,7 @@ import { isAssemblyCheckSheet } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord } from './ccTemplate';
-import PDCASheet from '@components/pdca/PDCASheet';
+import LpaPdcaSheet from '../../components/lpa/LpaPdcaSheet';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow } from './lpaPdcaUtils';
 
@@ -306,6 +306,9 @@ function LpaPageContent({ viewContext }) {
   const handleSavePDCA = (sheetSnapshot) => {
     if (!pdcaTopic?.id) return;
     saveLpaPdcaSnapshot(pdcaTopic.id, sheetSnapshot);
+    if (customPdcaTopic) {
+      setCustomPdcaTopic(prev => prev ? { ...prev, sheet: sheetSnapshot } : null);
+    }
     setMessage({ text: 'PDCA form saved successfully.' });
   };
 
@@ -343,7 +346,7 @@ function LpaPageContent({ viewContext }) {
   };
 
   if (isPdcaFormOpen && pdcaTopic) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-auto p-2 sm:p-4">
-    <PDCASheet
+    <LpaPdcaSheet
       key={`${pdcaTopic.id}-${pdcaDate}`}
       topic={pdcaTopic}
       onBack={handleBackFromPDCA}

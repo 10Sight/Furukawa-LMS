@@ -610,6 +610,7 @@ const SHAPE_DEFAULT_FILL = "#4472C4";
 const SHAPE_STROKE = "#2F528F";
 const SHAPE_DEFAULT_SIZE = 120;
 const SHAPE_LINE_SIZE = [160, MEDIA_MIN_SIZE];
+const SHAPE_MENU_ICON_SIZE = 28;
 const shapePolygon = (points) => `<polygon points="${points}"/>`;
 const starPoints = (tips, innerRatio) => Array.from({ length: tips * 2 }, (_, i) => {
     const radius = i % 2 === 0 ? 48 : 48 * innerRatio;
@@ -6542,7 +6543,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                     setShapeTabOpen(true);
                                                 }}
                                             >
-                                                <img src={shapeDataUrl({ shape: shape.key })} alt="" className="w-full h-full" />
+                                                {/* A line or arrow is drawn in real pixels, so its menu picture is drawn
+                                                    at about the size shown; at the usual size its head would shrink to a dot. */}
+                                                <img src={shape.draw ? shapeDataUrl({ shape: shape.key }, SHAPE_MENU_ICON_SIZE, SHAPE_MENU_ICON_SIZE) : shapeDataUrl({ shape: shape.key })} alt="" className="w-full h-full" />
                                             </button>
                                         ))}
                                     </div>

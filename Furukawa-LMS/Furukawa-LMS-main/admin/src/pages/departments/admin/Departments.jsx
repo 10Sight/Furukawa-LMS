@@ -1,13 +1,6 @@
 // src/pages/Admin/Departments.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/common/ui/dropdown-menu.jsx";
-import {
   useGetAllDepartmentsQuery,
   useCreateDepartmentMutation,
   useUpdateDepartmentMutation,
@@ -60,7 +53,6 @@ import {
   IconRefresh,
   IconExternalLink,
   IconUser,
-  IconBook,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -1274,81 +1266,9 @@ const Departments = () => {
     );
   };
 
-  const getInstructorInfo = (department) => {
-    if (!department.instructor) {
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1">
-          No Trainer
-        </Badge>
-      );
-    }
-
-    const instructor = department.instructor;
-    return (
-      <div className="flex items-center gap-2">
-        <Avatar className="h-6 w-6">
-          <AvatarImage src={instructor.avatar?.url} alt={instructor.fullName} />
-          <AvatarFallback className="text-xs">
-            {instructor.fullName
-              ?.split(" ")
-              .map((n) => n[0])
-              .join("")}
-          </AvatarFallback>
-        </Avatar>
-        <span className="text-sm">{instructor.fullName}</span>
-      </div>
-    );
-  };
-
   const getStudentCount = (department) => {
     if (!department) return 0;
     return department.studentCount || department.students?.length || 0;
-  };
-
-  const getCourseInfo = (department) => {
-    const courses = department.courses && department.courses.length > 0
-      ? department.courses
-      : (department.course ? [department.course] : []);
-
-    if (courses.length === 0) {
-      return (
-        <Badge variant="outline" className="text-muted-foreground">
-          No Course
-        </Badge>
-      );
-    }
-
-    if (courses.length === 1) {
-      const courseName = courses[0].title || courses[0].name || "Unnamed Course";
-      return (
-        <div className="flex items-center gap-2">
-          <IconBook className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">{courseName}</span>
-        </div>
-      );
-    }
-
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger>
-            <div className="flex items-center gap-2">
-              <IconBook className="h-4 w-4 text-muted-foreground" />
-              <Badge variant="secondary" className="text-xs">
-                {courses.length} Courses
-              </Badge>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>
-            <div className="flex flex-col gap-1">
-              {courses.map(c => (
-                <span key={c._id || Math.random()}>{c.title || c.name}</span>
-              ))}
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
   };
 
   const handleDepartmentClick = (department) => {
@@ -1653,8 +1573,6 @@ const Departments = () => {
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="w-[220px]">Department Name</TableHead>
-                  <TableHead>Course</TableHead>
-                  <TableHead>Trainer</TableHead>
                   <TableHead>Operators</TableHead>
                   <TableHead>5M Approver</TableHead>
                   <TableHead>Skill Matrix Approver</TableHead>
@@ -1689,95 +1607,14 @@ const Departments = () => {
                             <IconExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </TableCell>
-                        <TableCell>{getCourseInfo(department)}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getInstructorInfo(department)}
-                            {canUpdate && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openAssignInstructorDialog(department);
-                                      }}
-                                      className="h-7 w-7 p-0"
-                                    >
-                                      <IconPencil className="h-3 w-3" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Assign trainer</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className="flex items-center gap-1"
-                            >
-                              <IconUsers className="h-3 w-3" />
-                              {getStudentCount(department)}
-                              {department.capacity ? ` / ${department.capacity}` : ""}
-                            </Badge>
-
-                            {canManageStudents && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                    }}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                  >
-                                    <IconUserPlus className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openManageStudentsDialog(department);
-                                    }}
-                                  >
-                                    <IconUserPlus className="h-4 w-4 mr-2" />
-                                    Manage Operators
-                                  </DropdownMenuItem>
-
-                                  {department.students && department.students.length > 0 && (
-                                    <>
-                                      <DropdownMenuSeparator />
-                                      <div className="max-h-48 overflow-y-auto">
-                                        {department.students.slice(0, 5).map((student) => (
-                                          <DropdownMenuItem
-                                            key={student._id}
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              handleRemoveStudent({ departmentId: department._id, studentId: student._id, studentName: student.fullName });
-                                            }}
-                                            className="text-red-600 focus:text-red-600"
-                                          >
-                                            <IconTrash className="h-4 w-4 mr-2" />
-                                            Remove {student.fullName}
-                                          </DropdownMenuItem>
-                                        ))}
-                                      </div>
-                                    </>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                          </div>
+                          <Badge
+                            variant="outline"
+                            className="flex items-center gap-1 w-fit"
+                          >
+                            <IconUsers className="h-3 w-3" />
+                            {getStudentCount(department)}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <Daily5MRoutingBadge department={department} allDepartments={allDepartmentsForRouting} />
@@ -1872,7 +1709,7 @@ const Departments = () => {
                     ))}
                     {page < totalPages && (
                       <TableRow ref={scrollSentinelRef}>
-                        <TableCell colSpan={8} className="text-center py-4">
+                        <TableCell colSpan={6} className="text-center py-4">
                           {isFetchingNextPage ? (
                             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                               <IconLoader className="h-4 w-4 animate-spin" />
@@ -1887,7 +1724,7 @@ const Departments = () => {
                   </>
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10">
+                    <TableCell colSpan={6} className="text-center py-10">
                       <div className="flex flex-col items-center space-y-3">
                         <IconSchool className="h-12 w-12 text-muted-foreground/60" />
                         <p className="text-muted-foreground font-medium">

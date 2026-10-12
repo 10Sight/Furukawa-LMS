@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function TabNavigation({ activeTab, setActiveTab, counts }) {
   const tabs = [
-    { id: 'Company', label: 'Company' },
+    { id: 'Company', label: 'Plant' },
     { id: 'Department', label: 'Department' },
     { id: 'Self PDCA', label: 'Self PDCA' },
     { id: 'CFT', label: 'CFT' },

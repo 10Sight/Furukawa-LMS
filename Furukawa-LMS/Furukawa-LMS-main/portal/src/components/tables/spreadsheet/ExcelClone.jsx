@@ -10,7 +10,7 @@ import { Progress } from "@/components/common/ui/progress.jsx";
 import {
     IconBold, IconItalic, IconUnderline, IconStrikethrough,
     IconAlignLeft, IconAlignCenter, IconAlignRight, IconDownload, IconUpload, IconDeviceFloppy, IconLoader2, IconTable, IconPlus, IconMinus,
-    IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll, IconDropletOff,
+    IconArrowBackUp, IconArrowForwardUp, IconSearch, IconX, IconBorderAll, IconSquare,
     IconCopy, IconClipboard, IconBrush, IconPercentage,
     IconBorderOuter, IconSortAscending, IconSortDescending, IconRowInsertTop, IconRowInsertBottom,
     IconColumnInsertLeft, IconColumnInsertRight, IconRowRemove, IconColumnRemove, IconTrash,
@@ -50,6 +50,10 @@ import { useSheetComments } from "./useSheetComments.js";
 import CellCommentCard from "./CellCommentCard.jsx";
 import TableFilterPopover from "./TableFilterPopover.jsx";
 import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
+import {
+    lineArrowSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
+    LINE_STROKE_WIDTH, OUTLINE_STROKE_WIDTH, SHAPE_OUTLINE_WEIGHTS
+} from "../../../utils/spreadsheets/shapeGeometry.js";
 import { compileTableFilters, isFilterActive } from "../../../utils/spreadsheets/tableFilter.js";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText,
@@ -64,7 +68,7 @@ import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import {
     RibbonGroup, RibbonStack, RibbonRow, RibbonDivider, RibbonBtn, RibbonDropdown, RibbonSplit,
-    MenuItem, MenuSeparator, MenuHeader, MenuClose, ColorSplitButton, RibbonCombo,
+    MenuItem, MenuSub, MenuSeparator, MenuHeader, MenuClose, ColorSplitButton, ColorPalette, RibbonCombo,
     CondFormatIcon, FormatTableIcon, CellStylesIcon, SortFilterIcon, DecimalIcon,
 } from "./ribbonParts.jsx";
 
@@ -594,10 +598,18 @@ const mediaCropStyle = (crop) => ({
 // --- Insert > Shapes ---
 // A shape is a floating media item (`type: "shape"`) drawn from the SVG
 // markup below on a 100x100 canvas that stretches to the item's box, so it
-// moves, resizes and deletes exactly like a picture.
+// moves, resizes and deletes exactly like a picture. A shape with `draw` is
+// drawn to the box's own size instead (see shapeGeometry.js), and `size` is the
+// box it starts with when that isn't the usual square.
+//
+// Its colours are `item.fill` and `item.stroke` (the outline): a hex colour,
+// "none", or nothing for the defaults below. A line has only the one colour,
+// which is its `fill`. `item.strokeWidth` is how thick the outline (or the line)
+// is, in pixels. All three are set from the Shape Format tab.
 const SHAPE_DEFAULT_FILL = "#4472C4";
 const SHAPE_STROKE = "#2F528F";
 const SHAPE_DEFAULT_SIZE = 120;
+const SHAPE_LINE_SIZE = [160, MEDIA_MIN_SIZE];
 const shapePolygon = (points) => `<polygon points="${points}"/>`;
 const starPoints = (tips, innerRatio) => Array.from({ length: tips * 2 }, (_, i) => {
     const radius = i % 2 === 0 ? 48 : 48 * innerRatio;
@@ -607,6 +619,9 @@ const starPoints = (tips, innerRatio) => Array.from({ length: tips * 2 }, (_, i)
 const SHAPE_GROUPS = [
     { label: "Lines", shapes: [
         { key: "line", label: "Line", line: true, body: '<line x1="3" y1="3" x2="97" y2="97"/>' },
+        { key: "lineStraight", label: "Line: Straight", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { weight }) },
+        { key: "lineArrow", label: "Line Arrow", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { end: true, weight }) },
+        { key: "lineArrowDouble", label: "Line Arrow: Double", line: true, size: SHAPE_LINE_SIZE, draw: (w, h, color, weight) => lineArrowSvg(w, h, color, { start: true, end: true, weight }) },
     ] },
     { label: "Rectangles", shapes: [
         { key: "rect", label: "Rectangle", body: '<rect x="2" y="2" width="96" height="96"/>' },
@@ -683,7 +698,7 @@ const SHAPE_TEXT_LINE_HEIGHT = 1.375; // leading-snug
 const shapeTextStyleOf = (item) => ({
     align: "center",
     ...item.textStyle,
-    color: item.textStyle?.color || readableTextColor(item.fill || SHAPE_DEFAULT_FILL),
+    color: item.textStyle?.color || readableTextColor(shapeColor(item.fill, SHAPE_DEFAULT_FILL)),
 });
 const SHAPE_TEXT_VALIGN = { top: "flex-start", middle: "center", bottom: "flex-end" };
 
@@ -691,12 +706,16 @@ const SHAPE_TEXT_VALIGN = { top: "flex-start", middle: "center", bottom: "flex-e
 // Excel export alike. The outline keeps its thickness however the box is stretched.
 const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_SIZE) => {
     const shape = SHAPES_BY_KEY[item.shape] || SHAPES_BY_KEY.rect;
-    const fill = item.fill || SHAPE_DEFAULT_FILL;
+    const fill = shapeColor(item.fill, SHAPE_DEFAULT_FILL);
+    const weight = shapeStrokeWidth(item.strokeWidth, shape.line ? LINE_STROKE_WIDTH : OUTLINE_STROKE_WIDTH);
     const paint = shape.line
-        ? `fill="none" stroke="${fill}" stroke-width="2.5" stroke-linecap="round"`
-        : `fill="${fill}" stroke="${SHAPE_STROKE}" stroke-width="1.5" stroke-linejoin="round"`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" width="${width}" height="${height}">`
-        + `<style>*{vector-effect:non-scaling-stroke}</style><g ${paint}>${shape.body}</g></svg>`;
+        ? `fill="none" stroke="${fill}" stroke-width="${weight}" stroke-linecap="round" stroke-linejoin="round"`
+        : `fill="${fill}" stroke="${shapeColor(item.stroke, SHAPE_STROKE)}" stroke-width="${weight}" stroke-linejoin="round"`;
+    const svg = shape.draw
+        ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`
+            + `<g ${paint}>${shape.draw(width, height, fill, weight)}</g></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" width="${width}" height="${height}">`
+            + `<style>*{vector-effect:non-scaling-stroke}</style><g ${paint}>${shape.body}</g></svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
@@ -716,7 +735,7 @@ const shapeDataUrl = (item, width = SHAPE_DEFAULT_SIZE, height = SHAPE_DEFAULT_S
 // A shape's text is edited in place (`isEditingText`, which ExcelClone holds so
 // the keyboard can start an edit as well as a double-click). Like a drag, the
 // typing stays local and reaches the sheet once, when the edit ends.
-const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect, isEditingText, onEditText }) => {
+const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, onUpdate, onDelete, readOnly, zoom, isSelected, onSelect, isEditingText, onEditText, onOpenFormat }) => {
     const [textDraft, setTextDraft] = useState(null); // the text being typed; null until the first keystroke of an edit
     const textInset = shapeTextInset(item);
     const draftText = textDraft ?? item.text ?? "";
@@ -930,12 +949,12 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                 {!isCropping && (item.type === "shape" ? (
                     <>
                         <img
-                            src={shapeDataUrl(item)}
+                            src={shapeDataUrl(item, width, height)}
                             alt=""
                             draggable={false}
                             className={cn("w-full h-full select-none", !readOnly && "cursor-move")}
                             onMouseDown={startDrag}
-                            onDoubleClick={(e) => { e.stopPropagation(); if (!readOnly && textInset) onEditText(true); }}
+                            onDoubleClick={(e) => { e.stopPropagation(); if (readOnly) return; onOpenFormat?.(); if (textInset) onEditText(true); }}
                         />
                         {/* The text, inside the part of the box the shape covers. Idle, it
                             lets the mouse through to the shape so that still drags. */}
@@ -1083,34 +1102,8 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                             </button>
                         </>
                     )}
-                    {item.type === "shape" ? (
-                        <>
-                            {/* The colour picker can only give a solid colour, so "no fill"
-                                (an outline with the cells showing through) has its own button.
-                                A line is all stroke, which takes the fill colour — it keeps one. */}
-                            {textInset && (
-                                <button
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onClick={() => onUpdate({ fill: item.fill === "none" ? undefined : "none" })}
-                                    className={cn(
-                                        "absolute top-0.5 right-[90px] w-5 h-5 flex items-center justify-center rounded hover:bg-white opacity-0 group-hover:opacity-100 cursor-pointer z-20",
-                                        item.fill === "none" ? "bg-indigo-100 text-indigo-600" : "bg-white/90 text-slate-500 hover:text-indigo-600"
-                                    )}
-                                    title={item.fill === "none" ? "No fill — click to fill again" : "No fill (transparent)"}
-                                >
-                                    <IconDropletOff className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                            <input
-                                type="color"
-                                value={item.fill && item.fill !== "none" ? item.fill : SHAPE_DEFAULT_FILL}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onChange={(e) => onUpdate({ fill: e.target.value })}
-                                className="absolute top-0.5 right-6 w-5 h-5 p-0 border-0 rounded bg-white/90 opacity-0 group-hover:opacity-100 cursor-pointer z-20"
-                                title="Shape color"
-                            />
-                        </>
-                    ) : (
+                    {/* A shape's colours are set from the Shape Format tab, not here. */}
+                    {item.type !== "shape" && (
                         <button
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={openCrop}
@@ -1628,6 +1621,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [formatCellsOpen, setFormatCellsOpen] = useState(false);
     const [formatCellsTab, setFormatCellsTab] = useState(null);
     const [ribbonTab, setRibbonTab] = useState("home"); // "home" | "insert"
+    // The Shape Format tab is there only while a shape is selected; this is whether
+    // it is the tab in front. Home or Insert, whichever was, comes back when it goes.
+    const [shapeTabOpen, setShapeTabOpen] = useState(false);
+    const [lastShapeFill, setLastShapeFill] = useState(SHAPE_DEFAULT_FILL);
+    const [lastShapeOutline, setLastShapeOutline] = useState(SHAPE_STROKE);
     // Last colours picked, applied by the split buttons' faces (Excel starts with yellow fill / red font).
     const [lastFillColor, setLastFillColor] = useState("#FFFF00");
     const [lastFontColor, setLastFontColor] = useState("#FF0000");
@@ -3526,6 +3524,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [applyToSelection]);
 
     const activeCellData = cells[activeCell];
+
+    // The selected shape, of any kind: what the Shape Format tab is for, and shows
+    // for. Leaving the shape leaves the tab; selecting another one stays on it.
+    const formatShape = selectedMediaId && !readOnly ? media.find((m) => m.id === selectedMediaId && m.type === "shape") || null : null;
+    const hasFormatShape = !!formatShape;
+    useEffect(() => { if (!hasFormatShape) setShapeTabOpen(false); }, [hasFormatShape]);
+    const shownRibbonTab = shapeTabOpen && hasFormatShape ? "shape" : ribbonTab;
+    const formatShapeIsLine = !!formatShape && !!(SHAPES_BY_KEY[formatShape.shape] || SHAPES_BY_KEY.rect).line;
+    const applyShapeFormat = (patch) => {
+        if (!formatShape) return;
+        if (patch) handleUpdateMedia(formatShape.id, patch);
+        else toast.info("A line is all outline: it has no fill, and can't go without its color.");
+        focusGrid();
+    };
 
     // While a shape that holds text is selected, the ribbon's font and alignment
     // controls show and change that text's style instead of the active cell's.
@@ -6011,18 +6023,24 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
             {/* Ribbon tabs — Home mirrors Excel's Home tab; Insert holds PivotTable / media */}
             <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
-                {[["home", "Home"], ["insert", "Insert"]].map(([key, label]) => (
+                {[["home", "Home"], ["insert", "Insert"], ...(hasFormatShape ? [["shape", "Shape Format"]] : [])].map(([key, label]) => (
                     <button
                         key={key}
                         type="button"
-                        onClick={() => { setRibbonTab(key); setIsToolbarExpanded(true); }}
+                        onClick={() => {
+                            if (key === "shape") setShapeTabOpen(true);
+                            else { setRibbonTab(key); setShapeTabOpen(false); }
+                            setIsToolbarExpanded(true);
+                        }}
                         className={cn(
                             "relative px-3 pt-1.5 pb-2 text-[13px] cursor-pointer rounded-t-sm hover:bg-slate-100",
-                            ribbonTab === key && isToolbarExpanded ? "text-[#107C41] font-semibold" : "text-slate-600"
+                            shownRibbonTab === key && isToolbarExpanded ? "text-[#107C41] font-semibold" : "text-slate-600",
+                            // A tab that comes and goes with what is selected is set apart from the fixed ones.
+                            key === "shape" && "bg-amber-50 hover:bg-amber-100"
                         )}
                     >
                         {label}
-                        {ribbonTab === key && isToolbarExpanded && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-[#107C41]" />}
+                        {shownRibbonTab === key && isToolbarExpanded && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-[#107C41]" />}
                     </button>
                 ))}
             </div>
@@ -6032,7 +6050,79 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 "transition-all duration-300 ease-in-out overflow-hidden",
                 isToolbarExpanded ? "max-h-[160px] opacity-100" : "max-h-0 opacity-0"
             )}>
-            {ribbonTab === "home" ? (
+            {shownRibbonTab === "shape" ? (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                {/* Shape Format: the selected shape's colours, as Excel has them. The face
+                    of each button puts on the colour last picked; the arrow opens the rest. */}
+                <RibbonGroup label="Shape Styles">
+                    <RibbonStack className="justify-center gap-1.5">
+                        <RibbonRow>
+                            <RibbonSplit
+                                title={formatShapeIsLine ? "Shape Fill (a line has no fill)" : "Shape Fill"}
+                                disabled={formatShapeIsLine}
+                                onClick={() => applyShapeFormat(shapeFillPatch(formatShape, lastShapeFill, formatShapeIsLine))}
+                                face={
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="flex flex-col items-center leading-none">
+                                            <IconBucketDroplet className="w-4 h-4" strokeWidth={1.5} />
+                                            <span className="block w-4 h-[4px] -mt-px" style={{ backgroundColor: lastShapeFill }} />
+                                        </span>
+                                        <span className="text-xs">Shape Fill</span>
+                                    </span>
+                                }
+                                contentClassName="w-auto p-1"
+                            >
+                                <ColorPalette
+                                    onPick={(c) => { setLastShapeFill(c); applyShapeFormat(shapeFillPatch(formatShape, c, formatShapeIsLine)); }}
+                                    autoLabel="No Fill"
+                                    autoIcon={IconX}
+                                    onAuto={() => applyShapeFormat(shapeFillPatch(formatShape, "none", formatShapeIsLine))}
+                                    value={/^#[0-9a-f]{6}$/i.test(formatShape?.fill || "") ? formatShape.fill : SHAPE_DEFAULT_FILL}
+                                />
+                            </RibbonSplit>
+                        </RibbonRow>
+                        <RibbonRow>
+                            <RibbonSplit
+                                title={formatShapeIsLine ? "Shape Outline (the line's color and weight)" : "Shape Outline"}
+                                onClick={() => applyShapeFormat(shapeOutlinePatch(formatShape, lastShapeOutline, formatShapeIsLine))}
+                                face={
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="flex flex-col items-center leading-none">
+                                            <IconSquare className="w-4 h-4" strokeWidth={1.5} />
+                                            <span className="block w-4 h-[4px] -mt-px" style={{ backgroundColor: lastShapeOutline }} />
+                                        </span>
+                                        <span className="text-xs">Shape Outline</span>
+                                    </span>
+                                }
+                                contentClassName="w-auto p-1"
+                            >
+                                <ColorPalette
+                                    onPick={(c) => { setLastShapeOutline(c); applyShapeFormat(shapeOutlinePatch(formatShape, c, formatShapeIsLine)); }}
+                                    autoLabel="No Outline"
+                                    autoIcon={IconX}
+                                    onAuto={() => applyShapeFormat(shapeOutlinePatch(formatShape, "none", formatShapeIsLine))}
+                                    value={(() => {
+                                        const current = formatShapeIsLine ? formatShape?.fill : formatShape?.stroke;
+                                        return /^#[0-9a-f]{6}$/i.test(current || "") ? current : formatShapeIsLine ? SHAPE_DEFAULT_FILL : SHAPE_STROKE;
+                                    })()}
+                                />
+                                <MenuSeparator />
+                                <MenuSub label="Weight" contentClassName="w-36">
+                                    {SHAPE_OUTLINE_WEIGHTS.map((w) => (
+                                        <MenuItem
+                                            key={w.value}
+                                            label={w.label}
+                                            checked={formatShape?.strokeWidth === w.value}
+                                            onClick={() => applyShapeFormat({ strokeWidth: w.value })}
+                                        />
+                                    ))}
+                                </MenuSub>
+                            </RibbonSplit>
+                        </RibbonRow>
+                    </RibbonStack>
+                </RibbonGroup>
+            </div>
+            ) : ribbonTab === "home" ? (
             <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
                 {/* File */}
                 <RibbonGroup label="File">
@@ -6447,8 +6537,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                                 className="w-7 h-7 p-1 rounded-sm border border-transparent hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer"
                                                 onClick={() => {
                                                     if (!guardEditable()) return;
-                                                    handleInsertMedia("shape", null, { shape: shape.key, width: SHAPE_DEFAULT_SIZE, height: SHAPE_DEFAULT_SIZE });
+                                                    handleInsertMedia("shape", null, { shape: shape.key, width: shape.size?.[0] || SHAPE_DEFAULT_SIZE, height: shape.size?.[1] || SHAPE_DEFAULT_SIZE });
                                                     setShapesPopoverOpen(false);
+                                                    setShapeTabOpen(true);
                                                 }}
                                             >
                                                 <img src={shapeDataUrl({ shape: shape.key })} alt="" className="w-full h-full" />
@@ -6681,6 +6772,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         onUpdate={(patch) => handleUpdateMedia(item.id, patch)}
                         onDelete={() => handleDeleteMedia(item.id)}
                         isEditingText={editingShapeId === item.id}
+                        onOpenFormat={() => { setSelectedMediaId(item.id); setShapeTabOpen(true); setIsToolbarExpanded(true); }}
                         onEditText={(on) => {
                             if (on) setSelectedMediaId(item.id);
                             setEditingShapeId((prev) => (on ? item.id : prev === item.id ? null : prev));

@@ -152,9 +152,9 @@ const RoleBasedUserManagement = ({ roleName, roleField, useQueryHook }) => {
   const isMentorRole = roleField === MENTOR_ROLE_FIELD;
   const columnCount = isMentorRole ? 9 : 7;
 
-  // Granular Mentor permissions (only enforced for the Mentor page; other
-  // roles served by this component fall back to the previous always-shown behavior)
-  const canCreate = !isMentorRole || isMasterAdmin || userPermissions.includes("mentor:create");
+  // The Mentor page has no "Add Mentor" button: mentors are only ever promoted from
+  // existing users via "Assign Mentor". Other roles served by this component keep it.
+  const canCreate = !isMentorRole;
   // Update/Delete are always gated: mentor:{action} for the Mentor page, user:{action} for
   // the other roles served here (Supervisor/Incharge - regular, non-temporary operators).
   const canUpdate = isMasterAdmin || userPermissions.includes(isMentorRole ? "mentor:update" : "user:update");

@@ -1295,6 +1295,9 @@ const Daily5MRecording = () => {
     const [currentRecordId, setCurrentRecordId] = useState(null);
     const [sessionId, setSessionId] = useState(null);
     const [recordStatus, setRecordStatus] = useState('PENDING');
+    // Source department/section of a sheet opened through approval routing by a user outside
+    // that department (see get5MRecordById) - it is missing from their own dept/section lists.
+    const [routedSource, setRoutedSource] = useState(null);
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1320,12 +1323,18 @@ const Daily5MRecording = () => {
     // applies) may approve/reject its rows. Delegates to the same canActOnRow the server enforces
     // at save time (shared/daily5mRouting.js) so this button-visibility check can never drift from
     // what the server actually allows.
+    const routedDepartment = routedSource?.department && String(routedSource.department.id) === String(selectedDepartment)
+        ? routedSource.department
+        : null;
+    const routedSection = routedSource?.section && String(routedSource.section.id) === String(selectedSection)
+        ? routedSource.section
+        : null;
     const currentDepartmentObj = departmentsData?.data?.departments?.find(
         d => String(d._id || d.id) === String(selectedDepartment)
-    );
+    ) || routedDepartment;
     const currentSectionObj = sections.find(
         s => String(s._id || s.id) === String(selectedSection)
-    );
+    ) || routedSection;
     const matchesApprovalRouting = authUser
         ? canActOnRowShared(authUser, null, currentDepartmentObj, currentSectionObj).allowed
         : false;
@@ -1395,8 +1404,8 @@ const Daily5MRecording = () => {
         authUser.sectionId
     );
 
-    const selectedDeptName = assignableDepartments.find(d => String(d._id || d.id) === String(selectedDepartment))?.name || (isLoadingDepts ? "Loading..." : "Department");
-    const section = sections.find(s => String(s._id || s.id) === String(selectedSection));
+    const selectedDeptName = assignableDepartments.find(d => String(d._id || d.id) === String(selectedDepartment))?.name || routedDepartment?.name || (isLoadingDepts ? "Loading..." : "Department");
+    const section = sections.find(s => String(s._id || s.id) === String(selectedSection)) || routedSection;
     const selectedSectionName = section ? `${section.name}${section.category ? ` (${section.category})` : ''}` : (isLoadingSections ? "Loading..." : "Section");
 
     // Auto-select department and section if only one is available for restricted users
@@ -1412,6 +1421,16 @@ const Daily5MRecording = () => {
             }
         }
     }, [isRestricted, assignableDepartments, assignableSections, selectedDepartment, selectedSection]);
+
+    // Back on the list after a routed (cross-department) sheet: the source department isn't one
+    // this user can list records for, so return the filters to their own scope.
+    useEffect(() => {
+        if (showFormList && routedSource) {
+            setRoutedSource(null);
+            setSelectedDepartment('');
+            setSelectedSection('');
+        }
+    }, [showFormList, routedSource]);
 
     useEffect(() => {
         if (selectedDepartment) {
@@ -1726,6 +1745,8 @@ const Daily5MRecording = () => {
     }, [location.state]);
 
     const fetchTodayRecords = async (deptId, sectionId, queryDate) => {
+        // A routed approver can open the source department's sheet but not list its records.
+        if (routedSource) return;
         try {
             // Use the same get5MRecords endpoint but with groupBySession=true
             const response = await axiosInstance.get(`/api/daily-5m/records/${deptId}?sectionId=${sectionId}&startDate=${queryDate}&endDate=${queryDate}&groupBySession=true`);
@@ -1931,6 +1952,7 @@ const Daily5MRecording = () => {
                 const deptId = record.departmentId;
                 const sectId = record.sectionId;
 
+                setRoutedSource(response.data.routedAccess || null);
                 setSelectedDepartment(deptId);
                 setSelectedSection(sectId);
                 setSelectedDate(record.date ? new Date(record.date).toLocaleDateString('en-CA') : new Date().toLocaleDateString('en-CA'));

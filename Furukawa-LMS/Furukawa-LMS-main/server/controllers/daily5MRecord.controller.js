@@ -5,7 +5,7 @@ import { ApiError } from "../utils/ApiError.js";
 import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
-import { canActOnRow } from "../../shared/daily5mRouting.js";
+import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
 import { scope5MRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
 
 // Create a new record
@@ -170,8 +170,27 @@ export const get5MRecordById = async (req, res, next) => {
             return next(new ApiError("Record not found", 404));
         }
 
+        // Users outside the record's own department/section may still open it when that source
+        // department (or section) routes its approvals to them. Their department/section lists
+        // don't include the source, so send what the sheet needs to label it and check routing.
+        let routedAccess = null;
         if (!canView5MRecord(req.user, record)) {
-            return next(new ApiError("You do not have access to this record", 403));
+            const [sourceDepartment, sourceSection] = await Promise.all([
+                Department.findById(record.departmentId),
+                record.sectionId ? Section.findById(record.sectionId) : Promise.resolve(null)
+            ]);
+            if (!matchesDaily5MRouting(req.user, sourceDepartment, sourceSection)) {
+                return next(new ApiError("You do not have access to this record", 403));
+            }
+            const routingSource = (source) => source && {
+                id: source.id,
+                name: source.name,
+                category: source.category || null,
+                daily5mApproverDeptId: source.daily5mApproverDeptId || null,
+                daily5mApproverSectionId: source.daily5mApproverSectionId || null,
+                daily5mApproverLineId: source.daily5mApproverLineId || null
+            };
+            routedAccess = { department: routingSource(sourceDepartment), section: routingSource(sourceSection) };
         }
 
         logAudit(req.user?.id, "VIEW_DAILY_5M_RECORD_DETAILS", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
@@ -180,7 +199,8 @@ export const get5MRecordById = async (req, res, next) => {
         res.status(200).json({
             success: true,
             message: "Record fetched successfully",
-            data: record
+            data: record,
+            routedAccess
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));

@@ -39,25 +39,43 @@ export function canActOnRow(actingUser, rowSubmitterId, department, section) {
     if (routing) {
         if (actingUser.isAdmin) return { allowed: true };
 
-        const userDepts = [actingUser.departmentId, ...(Array.isArray(actingUser.departments) ? actingUser.departments : [])].map(String);
-        if (!userDepts.includes(String(routing.deptId))) {
-            return { allowed: false, reason: "You are not authorized to approve or reject records for this department" };
-        }
-
-        if (routing.sectionId) {
-            const userSections = [actingUser.sectionId, ...(Array.isArray(actingUser.sections) ? actingUser.sections : [])].map(String);
-            if (!userSections.includes(String(routing.sectionId))) {
-                return { allowed: false, reason: "You are not authorized to approve or reject records for this section" };
-            }
-        }
-
-        if (routing.lineId) {
-            const userLines = [actingUser.lineId, ...(Array.isArray(actingUser.lines) ? actingUser.lines : [])].map(String);
-            if (!userLines.includes(String(routing.lineId))) {
-                return { allowed: false, reason: "You are not authorized to approve or reject records for this line" };
-            }
-        }
+        const reason = routingMismatchReason(actingUser, routing);
+        if (reason) return { allowed: false, reason };
     }
 
     return { allowed: true };
+}
+
+// Why `user` is outside the resolved routing target (dept, then optional section/line), or null
+// when they belong to it.
+function routingMismatchReason(user, routing) {
+    const userDepts = [user.departmentId, ...(Array.isArray(user.departments) ? user.departments : [])].map(String);
+    if (!userDepts.includes(String(routing.deptId))) {
+        return "You are not authorized to approve or reject records for this department";
+    }
+
+    if (routing.sectionId) {
+        const userSections = [user.sectionId, ...(Array.isArray(user.sections) ? user.sections : [])].map(String);
+        if (!userSections.includes(String(routing.sectionId))) {
+            return "You are not authorized to approve or reject records for this section";
+        }
+    }
+
+    if (routing.lineId) {
+        const userLines = [user.lineId, ...(Array.isArray(user.lines) ? user.lines : [])].map(String);
+        if (!userLines.includes(String(routing.lineId))) {
+            return "You are not authorized to approve or reject records for this line";
+        }
+    }
+
+    return null;
+}
+
+// True only when `department` / `section` has approval routing configured AND `user` belongs to
+// the routed dept/section/line. Unlike canActOnRow (which allows everyone when nothing is
+// configured), this is safe to use for granting a routed approver read access to a source
+// department's records they could not otherwise see.
+export function matchesDaily5MRouting(user, department, section) {
+    const routing = resolveDaily5MRouting(department, section);
+    return Boolean(user && routing) && routingMismatchReason(user, routing) === null;
 }

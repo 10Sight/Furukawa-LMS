@@ -18,7 +18,7 @@ import {
     syncStudentSkillProgress,
     getPeriodFromDate,
 } from "../utils/skillMatrix.util.js";
-import { getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { getUpdatedStatusHistory, resolveRejoiningDate } from "../utils/statusHistory.js";
 import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
@@ -759,7 +759,12 @@ const processSingleEmployeeRow = async ({
             let rejoiningDate = null;
             const isRejoining = existingUser.status === "LEFT" && updatedData.status !== undefined && updatedData.status !== "LEFT";
             if (isRejoining) {
-                rejoiningDate = updatedData.joiningDate || new Date().toISOString().split('T')[0];
+                rejoiningDate = await resolveRejoiningDate({
+                    userId: existingUser.id,
+                    requestedDate: updatedData.joiningDate,
+                    oldJoiningDate: existingUser.joiningDate,
+                    oldLeavingDate: existingUser.leavingDate,
+                });
                 if (existingUser.joiningDate) {
                     delete updatedData.joiningDate; // preserve the original joining date already on file
                 } else {

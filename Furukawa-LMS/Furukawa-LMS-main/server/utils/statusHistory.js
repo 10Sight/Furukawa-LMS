@@ -1,3 +1,6 @@
+import { executeQuery } from "../db/mssqlHelper.js";
+import { parseManpowerDateKey } from "./manpowerLifecycle.js";
+
 // Shared logic for tracking status/joiningDate/leavingDate changes on the users table.
 
 // joiningDate/leavingDate reach these functions in two different shapes: a plain
@@ -19,6 +22,46 @@ const formatDateStr = (val) => {
         return val.split('T')[0];
     }
     return val;
+};
+
+const dateKeyToStr = (dateKey) => {
+    const text = String(dateKey);
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+};
+
+// Date a LEFT user's new employment period starts on when they are moved back to an active
+// status. In order:
+//   1. The date sent with the request, unless it only echoes the original joining date (the
+//      edit forms always send that field) or falls before the leaving date. A history entry
+//      carrying such a date merges back into the closed period and the user stays uncounted.
+//   2. The first Present punch after the leaving date: the user was already working while
+//      still marked LEFT, so manpower counts from the day they actually came back.
+//   3. Today.
+export const resolveRejoiningDate = async ({ userId, requestedDate, oldJoiningDate, oldLeavingDate }) => {
+    const requestedKey = parseManpowerDateKey(requestedDate);
+    const joiningKey = parseManpowerDateKey(oldJoiningDate);
+    const leavingKey = parseManpowerDateKey(oldLeavingDate);
+
+    if (
+        requestedKey !== null
+        && requestedKey !== joiningKey
+        && (leavingKey === null || requestedKey >= leavingKey)
+    ) {
+        return dateKeyToStr(requestedKey);
+    }
+
+    if (leavingKey !== null) {
+        const [rows] = await executeQuery(`
+            SELECT CONVERT(VARCHAR(10), MIN(CONVERT(DATE, al.[date])), 23) AS firstPunch
+            FROM attendance_logs al
+            WHERE al.userId = ?
+              AND CONVERT(DATE, al.[date]) > CONVERT(DATE, ?, 23)
+              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(100))))) IN ('P', 'PRESENT')
+        `, [userId, dateKeyToStr(leavingKey)]);
+        if (rows?.[0]?.firstPunch) return rows[0].firstPunch;
+    }
+
+    return new Date().toISOString().split('T')[0];
 };
 
 // Builds the JSON string for a single, brand-new history entry. Used only when a user is

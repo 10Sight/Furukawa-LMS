@@ -17,7 +17,7 @@ import { generateWelcomeEmail } from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
-import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
+import { buildStatusHistoryEntry, getUpdatedStatusHistory, resolveRejoiningDate } from "../utils/statusHistory.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { prepareManpowerUser, isUserActiveForManpowerDate, getManpowerInactiveReason } from "../utils/manpowerLifecycle.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
@@ -1420,9 +1420,12 @@ export const updateUser = asyncHandler(async (req, res) => {
     data.reasonOfLeavingByDept = null;
     data.leftDepartmentName = null;
 
-    rejoiningDate = (data.joiningDate !== undefined && data.joiningDate)
-      ? data.joiningDate
-      : new Date().toISOString().split('T')[0];
+    rejoiningDate = await resolveRejoiningDate({
+      userId: oldUser.id,
+      requestedDate: data.rejoiningDate || data.joiningDate,
+      oldJoiningDate: oldUser.joiningDate,
+      oldLeavingDate: oldUser.leavingDate,
+    });
 
     if (oldUser.joiningDate) {
       delete data.joiningDate; // preserve the original joining date already on file

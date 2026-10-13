@@ -787,9 +787,12 @@ const FORM_TYPE_META = [
     }
 ];
 
-const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate }) => {
+const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate, recordStatus, canEditApprovedDate, dateMin, dateMax }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
+    // The Date of an approved row is governed by its own permission, independent of the row lock
+    const isDateApproved = rowStatus === 'APPROVED' || (recordStatus === 'APPROVED' && !!initialFormData[`rec_${recIndex}_Date`]);
+    const isDateLocked = isReview || !hasEditPermission || (isDateApproved ? !canEditApprovedDate : isLocked);
     // Helper to determine if a specific containment field is locked
     const isFieldLocked = (field, isCheckField = false) => {
         if (isReview || !hasEditPermission) return true;
@@ -807,7 +810,7 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
             {/* Row 1: Common fields and first parameter */}
             <tr className="hover:bg-slate-50">
                 <td rowSpan="5" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} max={todayStr} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0"><input type="date" disabled={isDateLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={dateMin} max={dateMax} /></td>
                 <td rowSpan="5" className="border border-black py-0.5 px-0">
                     <SubSectionSelect
                         recIndex={recIndex}
@@ -1312,6 +1315,12 @@ const Daily5MRecording = () => {
     const canEditSubmitted5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:edit_submitted');
     const isSessionLocked = recordStatus && String(recordStatus).toUpperCase() !== 'PENDING';
     const hasEditPermission = isAdmin || canEdit5M || canEditSubmitted5M;
+    const canSelectPastDate = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:select_past_date');
+    const canEditApprovedDate = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:edit_approved_date');
+    // Shadows the module-level todayStr so it is re-evaluated on every render: a page left
+    // open past midnight must offer the date the server accepts.
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const dateMin = canSelectPastDate ? undefined : todayStr;
 
     // Segregation of Duties: User who filled/submitted the form CANNOT approve/reject it.
     // Even Admins are restricted from approving their own entries for audit integrity.
@@ -1767,6 +1776,9 @@ const Daily5MRecording = () => {
             return;
         }
 
+        // Only users allowed to backdate can pick the session date; everyone else gets today
+        const sessionDate = (canSelectPastDate && addDialogDate) ? addDialogDate : todayStr;
+
         // Initialize the session locally only. Nothing is written to the database
         // here — a record is only persisted once the user actually saves data
         // (see handleSaveRecord), so simply opening and abandoning a sheet no
@@ -1777,8 +1789,8 @@ const Daily5MRecording = () => {
                 const user = playUserData;
                 const recIndex = 0;
 
-                // Use passed date if available, otherwise default to today
-                const targetDate = user.date || new Date().toLocaleDateString('en-CA');
+                // Use passed date if available, otherwise default to the session date
+                const targetDate = user.date || sessionDate;
                 initialRecordData[`rec_${recIndex}_Date`] = targetDate;
 
                 if (user.shift || user.logShift) {
@@ -1842,7 +1854,7 @@ const Daily5MRecording = () => {
             setFormData(initialRecordData);
             setInitialFormData({});
             setFormType(activeType);
-            setSelectedDate(addDialogDate);
+            setSelectedDate(sessionDate);
             setSubmittedBy(null);
             setSubmittedById(null);
             setCurrentRecordId(null);
@@ -2134,15 +2146,21 @@ const Daily5MRecording = () => {
         // Intercept: admin editing a submitted or approved session must provide a remark
         const isAdminUser = isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
         const lockedStatuses = ['APPROVED', 'SUBMITTED'];
-        if (isAdminUser && lockedStatuses.includes(String(recordStatus).toUpperCase()) && !options.adminRemarks) {
+        const isEvent = currentData && (currentData.nativeEvent || currentData.target);
+        const dataToSave = (currentData && !isEvent) ? currentData : formData;
+        // Changing the date of an approved row needs a remark from anyone (enforced by the server too)
+        const approvedDateChanged = [...Array(rowCount)].some((_, i) => {
+            const prevDate = initialFormData[`rec_${i}_Date`] || "";
+            const wasApproved = initialFormData[`rec_${i}_RowStatus`] === 'APPROVED' || (!!prevDate && String(recordStatus).toUpperCase() === 'APPROVED');
+            return wasApproved && (dataToSave[`rec_${i}_Date`] || "") !== prevDate;
+        });
+        if (((isAdminUser && lockedStatuses.includes(String(recordStatus).toUpperCase())) || approvedDateChanged) && !options.adminRemarks) {
             setPendingSaveParams({ currentData, options });
             setAdminRemarkText('');
             setIsAdminRemarkDialogOpen(true);
             return;
         }
 
-        const isEvent = currentData && (currentData.nativeEvent || currentData.target);
-        const dataToSave = (currentData && !isEvent) ? currentData : formData;
         const skipNavigate = options?.skipNavigate || false;
         const showPreview = options?.showPreview || false;
 
@@ -2198,8 +2216,14 @@ const Daily5MRecording = () => {
             };
 
             const response = await axiosInstance.post('/api/daily-5m/record/create', payload);
+            // The server decides the session date (it follows row 0's date), so list under what was saved
+            let listDate = selectedDate;
             if (response.data.success && response.data.data) {
                 const saved = response.data.data;
+                if (saved.date) {
+                    listDate = new Date(saved.date).toLocaleDateString('en-CA');
+                    setSelectedDate(listDate);
+                }
                 setCurrentRecordId(saved.id);
                 setSessionId(saved.sessionId);
                 setSavedRevisionInfo({ docNo: saved.docNo, revNo: saved.revNo, revDate: saved.revDate });
@@ -2213,9 +2237,9 @@ const Daily5MRecording = () => {
             } else if (!skipNavigate) {
                 navigate(location.pathname, { replace: true });
                 setShowFormList(true);
-                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+                fetchTodayRecords(selectedDepartment, selectedSection, listDate);
             } else {
-                fetchTodayRecords(selectedDepartment, selectedSection, selectedDate);
+                fetchTodayRecords(selectedDepartment, selectedSection, listDate);
             }
         } catch (error) {
             console.error("Save error:", error);
@@ -2487,6 +2511,10 @@ const Daily5MRecording = () => {
                                         hasEditPermission={hasEditPermission}
                                         isReview={isReview}
                                         selectedDate={selectedDate}
+                                        recordStatus={recordStatus}
+                                        canEditApprovedDate={canEditApprovedDate}
+                                        dateMin={dateMin}
+                                        dateMax={todayStr}
                                     />
                                     :
                                     <React.Fragment key={recIndex}>
@@ -2494,6 +2522,9 @@ const Daily5MRecording = () => {
                                             const rowStatus = formData[`rec_${recIndex}_RowStatus`];
                                             const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
                                             const isLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
+                                            // The Date of an approved row is governed by its own permission, independent of the row lock
+                                            const isDateApproved = rowStatus === 'APPROVED' || (recordStatus === 'APPROVED' && !!initialFormData[`rec_${recIndex}_Date`]);
+                                            const isDateLocked = isReview || !hasEditPermission || (isDateApproved ? !canEditApprovedDate : isLocked);
                                             const isRetroLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || (rowStatus && !canEditSubmitted5M);
                                             // Containment Action fields stay editable after the row is approved
                                             const isContainmentLocked = isReview || !hasEditPermission;
@@ -2502,7 +2533,7 @@ const Daily5MRecording = () => {
                                                     {/* Row 1 of Record */}
                                                     <tr className="hover:bg-slate-50">
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><input type="date" disabled={isLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={todayStr} max={todayStr} /></td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><input type="date" disabled={isDateLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={dateMin} max={todayStr} /></td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <select
                                                                 className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
@@ -3612,10 +3643,11 @@ const Daily5MRecording = () => {
                                     <Input
                                         id="create-date"
                                         type="date"
-                                        value={addDialogDate}
-                                        disabled
-                                        className="bg-slate-50"
-                                        min={todayStr}
+                                        value={canSelectPastDate ? addDialogDate : todayStr}
+                                        onChange={(e) => setAddDialogDate(e.target.value)}
+                                        disabled={!canSelectPastDate}
+                                        className={canSelectPastDate ? "" : "bg-slate-50"}
+                                        min={dateMin}
                                         max={todayStr}
                                     />
                                 </div>
@@ -3822,7 +3854,7 @@ const Daily5MRecording = () => {
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         <p className="text-sm text-slate-600">
-                            This sheet has already been <span className="font-semibold text-green-700">Approved</span>. Please provide a remark explaining what you changed and why. This will be logged for audit purposes.
+                            This sheet or row has already been <span className="font-semibold text-green-700">Approved</span>. Please provide a remark explaining what you changed and why. This will be logged for audit purposes.
                         </p>
                         <div className="space-y-2">
                             <Label htmlFor="admin-remark-input" className="text-sm font-semibold text-slate-700">

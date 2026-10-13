@@ -112,6 +112,8 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_UPDATE: "daily5m:update",
   DAILY_5M_EDIT_SUBMITTED: "daily5m:edit_submitted",
   DAILY_5M_DELETE: "daily5m:delete",
+  DAILY_5M_SELECT_PAST_DATE: "daily5m:select_past_date",
+  DAILY_5M_EDIT_APPROVED_DATE: "daily5m:edit_approved_date",
 
   // Daily Meeting Management
   DAILY_MEETING_READ: "daily_meeting:read",
@@ -608,7 +610,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_READ, name: "View Daily 5M", description: "View daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_UPDATE, name: "Update Daily 5M", description: "Edit daily 5M recording data" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" }
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in daily 5M row entries and session creation (backdating). Requires Update Daily 5M" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_APPROVED_DATE, name: "Edit Approved Date", description: "Edit the Date column of a daily 5M row after it has been approved (a remark is required). Requires Update Daily 5M" }
       ],
       "MIS Portal - Daily Morning Meeting": [
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_READ, name: "View Daily Meetings", description: "View daily standup meetings and spreadsheet contents across all departments and sections" },

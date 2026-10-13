@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/forms/primitives/checkbox.jsx";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/common/ui/popover.jsx";
 import { IconSortAscending, IconSortDescending, IconFilterOff } from "@tabler/icons-react";
 import { cn } from "@/utils/classNames.js";
-import { FILTER_CONDITIONS, isFilterActive, shownValuesOf, valueFilterFor } from "../../../utils/spreadsheets/tableFilter.js";
+import { FILTER_CONDITIONS, isFilterActive, shownValuesOf, valueFilterFor, valuesToShow } from "../../../utils/spreadsheets/tableFilter.js";
 
 // A column of names or ids can hold thousands of different values; past this
 // many the list asks to be narrowed by search rather than drawing them all.
@@ -20,7 +20,11 @@ const MAX_LISTED_VALUES = 200;
 const TableFilterPopover = ({ anchorRect, title, values, filter, canSort, onSort, onApply, onClose }) => {
     const allValues = useMemo(() => values.map((v) => v.value), [values]);
     const [search, setSearch] = useState("");
-    const [selected, setSelected] = useState(() => new Set(shownValuesOf(filter, allValues)));
+    // What the column's filter shows as the list opens; every value, when it has none.
+    const alreadyShown = useMemo(() => shownValuesOf(filter, allValues), [filter, allValues]);
+    const [selected, setSelected] = useState(() => new Set(alreadyShown));
+    // With a search: keep what the filter already shows as well as what was found.
+    const [addToFilter, setAddToFilter] = useState(false);
     const [conditionType, setConditionType] = useState(filter?.condition?.type ?? "none");
     const [conditionValue, setConditionValue] = useState(filter?.condition?.value ?? "");
     const anchorRef = useMemo(() => ({ current: { getBoundingClientRect: () => anchorRect } }), [anchorRect]);
@@ -47,10 +51,18 @@ const TableFilterPopover = ({ anchorRect, title, values, filter, canSort, onSort
         return next;
     });
 
-    const canApply = conditionFilter ? conditionReady : selected.size > 0;
+    // What Apply would leave showing (see valuesToShow): with a search, what it found.
+    const searching = search.trim() !== "";
+    const toShow = useMemo(
+        () => valuesToShow({ ticked: selected, matches: searching ? matches.map((v) => v.value) : null, add: addToFilter, alreadyShown }),
+        [selected, searching, matches, addToFilter, alreadyShown]
+    );
+    const tickedMatches = searching ? matches.reduce((n, v) => n + (selected.has(v.value) ? 1 : 0), 0) : selected.size;
+
+    const canApply = conditionFilter ? conditionReady : toShow.size > 0;
     const apply = () => {
         if (!canApply) return;
-        onApply(conditionFilter ?? valueFilterFor(allValues, selected));
+        onApply(conditionFilter ?? valueFilterFor(allValues, toShow));
     };
     const applyOnEnter = (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } };
 
@@ -130,6 +142,19 @@ const TableFilterPopover = ({ anchorRect, title, values, filter, canSort, onSort
                                 </div>
                             )}
                         </div>
+                        {/* What Apply is about to do, said outright: with every value ticked
+                            it filters nothing, and in a long list that can't be seen. */}
+                        <div className="px-0.5 text-[11px] text-slate-500">
+                            {searching
+                                ? `${tickedMatches.toLocaleString()} of ${matches.length.toLocaleString()} found selected — Apply shows ${addToFilter ? "these as well" : "only these"}`
+                                : `${tickedMatches.toLocaleString()} of ${allValues.length.toLocaleString()} values selected`}
+                        </div>
+                        {searching && isFilterActive(filter) && (
+                            <label className="flex items-center gap-2 px-0.5 cursor-pointer">
+                                <Checkbox checked={addToFilter} onCheckedChange={(checked) => setAddToFilter(checked === true)} />
+                                <span className="text-[11px] text-slate-600">Add current selection to filter</span>
+                            </label>
+                        )}
                     </div>
                 )}
                 <div className="flex items-center gap-1.5 pt-1">

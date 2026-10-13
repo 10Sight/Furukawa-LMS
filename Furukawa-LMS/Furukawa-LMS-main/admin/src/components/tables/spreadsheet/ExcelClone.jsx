@@ -54,7 +54,10 @@ import {
     lineArrowSvg, elbowConnectorSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
     LINE_STROKE_WIDTH, OUTLINE_STROKE_WIDTH, SHAPE_OUTLINE_WEIGHTS
 } from "../../../utils/spreadsheets/shapeGeometry.js";
-import { compileTableFilters, isFilterActive } from "../../../utils/spreadsheets/tableFilter.js";
+import {
+    cellRuns, runSegments, shiftRunsForEdit, withRunStyle, withoutRunKeys, isRunStyleOn
+} from "../../../utils/spreadsheets/richText.js";
+import { compileTableFilters, isFilterActive, columnValueCounts } from "../../../utils/spreadsheets/tableFilter.js";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText,
     commentAnchorsInBlock, dropCommentAnchorBlock, threadToCopyText, MAX_COPIED_COMMENTS
@@ -380,6 +383,26 @@ const cellStyleFor = (cell) => ({
 });
 // A cell's own style with its conditional formatting laid over it: the rule's
 // font settings win, and an icon takes a strip on the left of the cell.
+// A stretch of a cell's text that has a style of its own (see richText.js), as the
+// CSS for its <span>. A cell with such runs draws no underline or strikethrough
+// itself — a part of the text couldn't take those off again — so every stretch says
+// its own, the cell's where the run has none.
+const runSpanStyle = (run, cell) => {
+    const pick = (key) => (run && run[key] !== undefined ? run[key] : cell?.[key]);
+    const underline = pick("underline"), strike = pick("strike");
+    const css = {
+        textDecoration: [underline && "underline", strike && "line-through"].filter(Boolean).join(" ") || "none",
+        textDecorationStyle: underline === "double" ? "double" : undefined,
+    };
+    if (!run) return css;
+    if (run.bold !== undefined) css.fontWeight = run.bold ? "bold" : "normal";
+    if (run.italic !== undefined) css.fontStyle = run.italic ? "italic" : "normal";
+    if (run.color) css.color = run.color;
+    if (run.fontSize) css.fontSize = `${run.fontSize}px`;
+    if (run.fontFamily) css.fontFamily = `${run.fontFamily}, sans-serif`;
+    return css;
+};
+
 const conditionalCellStyle = (cell, { style, icon }) => {
     const base = cellStyleFor(cell);
     if (style) {
@@ -1702,6 +1725,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const formulaBarInputRef = useRef(null);
     const activeEditInputRef = useRef(null); // whichever of the two above last had focus
     const cursorPosRef = useRef({ start: 0, end: 0 });
+    // Part of a cell's text can have a style of its own (richText.js). While a cell
+    // is edited, `editRichRef` is its runs for the text as typed so far:
+    // { text, runs } | null. `richRangeRef` is the text that was selected in the
+    // editor when a ribbon control took the focus from it — the characters the next
+    // font change is meant for, instead of the whole cell:
+    // { sheet, cellId, start, end, text } | null.
+    const editRichRef = useRef(null);
+    const richRangeRef = useRef(null);
     const isPointingFormula = useRef(false);
     const pointModeAnchor = useRef(null); // cellId the point-mode drag started from
     const formulaInsertRange = useRef(null); // { start, end } in editValue currently occupied by the last-inserted reference
@@ -2311,8 +2342,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // window newly overlap a second one it didn't already touch).
     const visibleRowRange = useMemo(() => {
         if (rowCount === 0) return { startRow: 0, endRow: -1 };
-        const viewTop = scrollTop;
-        const viewBottom = scrollTop + SCROLL_STEP_Y + viewportHeight;
+        // Never from further down than the sheet goes. A filter can take most of a
+        // long sheet's height away at once, and until the browser has reported
+        // where that left the scroll, the last position known is past the end —
+        // where there is nothing to draw.
+        const viewTop = Math.min(scrollTop, Math.max(0, rowOffsets[rowCount] - viewportHeight));
+        const viewBottom = viewTop + SCROLL_STEP_Y + viewportHeight;
         let startRow = clamp(bandIndexForPixel(rowOffsets, viewTop) - ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
         let endRow = clamp(bandIndexForPixel(rowOffsets, viewBottom) + ROW_VIRTUALIZATION_BUFFER, 0, rowCount - 1);
         for (const m of merges) {
@@ -2694,8 +2729,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         editSessionRef.current = null;
         const cellId = editingCell;
         const value = editValue;
+        // The styled parts of the text, moved along with what was typed. A formula
+        // has none: what it shows is not what was typed.
+        const editRich = editRichRef.current;
+        editRichRef.current = null;
+        const runs = editRich && typeof value === "string" && value !== "" && !isFormula(value)
+            ? shiftRunsForEdit(editRich.runs, editRich.text, value)
+            : undefined;
         mutateActiveCells((next) => {
-            const merged = { ...(next[cellId] || {}), value };
+            const { rich: _stale, ...kept } = next[cellId] || {};
+            const merged = { ...kept, value };
+            if (runs) merged.rich = { t: value, runs };
             // An Alt+Enter line break turns on Wrap Text, as in Excel, so the
             // second line is actually visible.
             if (typeof value === "string" && value.includes("\n") && !isFormula(value)) merged.wrap = true;
@@ -2706,6 +2750,44 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setEditValue("");
         formulaInsertRange.current = null;
     }, [editingCell, editValue, mutateActiveCells]);
+
+    // The editor losing focus ends the edit. When what took the focus is a control
+    // outside the grid (a ribbon button, the font size box) and some of the text was
+    // selected, that selection is remembered: the control is about to be used on it.
+    const handleEditorBlur = useCallback((e) => {
+        const el = e.target, to = e.relatedTarget;
+        if (editingCell && editSessionRef.current === editingCell
+            && to && to !== cellEditInputRef.current && to !== formulaBarInputRef.current && !gridContainerRef.current?.contains(to)
+            && el.selectionStart !== el.selectionEnd && typeof editValue === "string" && editValue !== "" && !isFormula(editValue)) {
+            richRangeRef.current = {
+                sheet: activeSheetName, cellId: editingCell, text: editValue,
+                start: Math.min(el.selectionStart, el.selectionEnd), end: Math.max(el.selectionStart, el.selectionEnd),
+            };
+        }
+        commitEdit();
+    }, [editingCell, editValue, activeSheetName, commitEdit]);
+
+    // As the text is typed, the runs follow it: each change is carried across while
+    // it is still a single change (see shiftRunsForEdit).
+    useEffect(() => {
+        const editRich = editRichRef.current;
+        if (!editingCell || !editRich || editRich.text === editValue) return;
+        const runs = typeof editValue === "string" ? shiftRunsForEdit(editRich.runs, editRich.text, editValue) : undefined;
+        editRichRef.current = runs ? { text: editValue, runs } : null;
+    }, [editingCell, editValue]);
+
+    // The remembered selection is for the very next thing done with the ribbon. Any
+    // click or key in the grid, or moving to another cell or sheet, lets go of it.
+    useEffect(() => {
+        const forget = (e) => { if (gridContainerRef.current?.contains(e.target)) richRangeRef.current = null; };
+        document.addEventListener("mousedown", forget, true);
+        document.addEventListener("keydown", forget, true);
+        return () => {
+            document.removeEventListener("mousedown", forget, true);
+            document.removeEventListener("keydown", forget, true);
+        };
+    }, []);
+    useEffect(() => { richRangeRef.current = null; }, [activeCell, activeSheetName]);
 
     // `origin` "bar" = started by focusing the formula bar, which must keep
     // focus (the in-cell editor skips its autoFocus in that case).
@@ -2726,6 +2808,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         editSessionRef.current = cellId;
         setEditingCell(cellId);
         setEditValue(initialValue !== undefined ? initialValue : (cells[cellId]?.value ?? ""));
+        // Editing what is there keeps its styled parts; typing over it starts plain.
+        const existingRuns = initialValue === undefined ? cellRuns(cells[cellId]) : undefined;
+        editRichRef.current = existingRuns ? { text: cells[cellId].value, runs: existingRuns } : null;
+        richRangeRef.current = null;
         formulaInsertRange.current = null;
     }, [cells, isSheetReadOnly, selectionBounds]);
 
@@ -2742,6 +2828,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const cancelEdit = useCallback(() => {
         editSessionRef.current = null;
+        editRichRef.current = null;
         setEditingCell(null);
         setEditValue("");
         formulaInsertRange.current = null;
@@ -3554,9 +3641,52 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         handleUpdateMedia(selectedShape.id, { textStyle: set.length ? Object.fromEntries(set) : undefined });
     };
 
+    // The characters a font change is for, when it is for part of a cell's text and
+    // not the whole cell: the text that was selected in the editor when the ribbon
+    // was reached for (richRangeRef), or that is selected in it right now (a
+    // keyboard shortcut, which leaves the editor focused — the edit is ended first,
+    // so the change shows). null when the change is for the selected cells as ever.
+    const richTextTarget = () => {
+        if (selectedShape || readOnly || isSheetReadOnly) return null;
+        if (editingCell) {
+            const el = activeEditInputRef.current;
+            if (isEditingFormula || !el || document.activeElement !== el || el.selectionStart === el.selectionEnd || editValue === "") return null;
+            const target = {
+                sheet: activeSheetName, cellId: editingCell, text: editValue,
+                start: Math.min(el.selectionStart, el.selectionEnd), end: Math.max(el.selectionStart, el.selectionEnd),
+            };
+            commitEdit();
+            focusGrid();
+            richRangeRef.current = target;
+            return target;
+        }
+        const target = richRangeRef.current;
+        if (!target || target.sheet !== activeSheetName || target.cellId !== activeCell || isMultiSelection) return null;
+        return cells[target.cellId]?.value === target.text ? target : null;
+    };
+    // Applies a font change to those characters. `change` is the keys to set, or a
+    // function of (the cell, its runs) that gives them — for a toggle, which has to
+    // look at what the characters are now.
+    const applyRichTextStyle = (target, change) => {
+        mutateActiveCells((next) => {
+            const cell = next[target.cellId];
+            if (!cell || cell.value !== target.text) return;
+            const patch = typeof change === "function" ? change(cell, cellRuns(cell)) : change;
+            next[target.cellId] = withRunStyle(cell, target.start, target.end, patch);
+        });
+    };
+    // A font change for the whole of each selected cell (or the selected shape's
+    // text): parts of a cell's text that had their own setting for `keys` give it up.
+    const applyFontStyle = (keys, mutator) => applyTextStyle((cell) => withoutRunKeys(mutator(cell), keys));
+
     const toggleStyle = (key) => {
+        const target = richTextTarget();
+        if (target) {
+            applyRichTextStyle(target, (cell, runs) => ({ [key]: !isRunStyleOn(runs, target.text.length, target.start, target.end, key, cell) }));
+            return;
+        }
         const currentlyOn = !!textStyleSource?.[key];
-        applyTextStyle((cell) => ({ ...cell, [key]: !currentlyOn }));
+        applyFontStyle([key], (cell) => ({ ...cell, [key]: !currentlyOn }));
     };
     const setAlign = (align) => applyTextStyle((cell) => ({ ...cell, align }));
     const setValign = (valign) => applyTextStyle((cell) => ({ ...cell, valign }));
@@ -3652,7 +3782,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const setFontSize = (fontSize) => {
         const n = Number(fontSize);
         if (fontSize !== "" && fontSize != null && !(n >= 1 && n <= 409)) { toast.error("Font size must be a number between 1 and 409."); return; }
-        applyTextStyle((cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
+        const target = richTextTarget();
+        if (target) { applyRichTextStyle(target, { fontSize: fontSize ? n : undefined }); return; }
+        applyFontStyle(["fontSize"], (cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
     };
     // Increase / Decrease Font Size step through the size list, like Excel.
     const stepFontSize = (dir) => {
@@ -3661,8 +3793,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (next) setFontSize(next);
     };
     const setUnderlineStyle = (kind) => {
+        const target = richTextTarget();
+        if (target) {
+            applyRichTextStyle(target, (cell, runs) => ({ underline: isRunStyleOn(runs, target.text.length, target.start, target.end, "underline", cell) ? false : kind }));
+            return;
+        }
         const on = textStyleSource?.underline === kind || (kind === true && textStyleSource?.underline === true);
-        applyTextStyle((cell) => ({ ...cell, underline: on ? undefined : kind }));
+        applyFontStyle(["underline"], (cell) => ({ ...cell, underline: on ? undefined : kind }));
     };
     const adjustIndent = (delta) => applyToSelection((cell) => {
         const indent = Math.max(0, Math.min(MAX_INDENT, (cell.indent || 0) + delta));
@@ -3675,9 +3812,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Home > Clear: formats keep only the value; all drops the cell entirely.
     const clearFormats = () => { if (guardEditable()) applyToSelection((cell) => ({ value: cell.value })); };
     const clearAll = () => { if (guardEditable()) applyToSelection(() => ({})); };
-    const setFontFamily = (fontFamily) => applyTextStyle((cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
+    const setFontFamily = (fontFamily) => {
+        const target = richTextTarget();
+        if (target) { applyRichTextStyle(target, { fontFamily: fontFamily || undefined }); return; }
+        applyFontStyle(["fontFamily"], (cell) => ({ ...cell, fontFamily: fontFamily || undefined }));
+    };
     const setBg = (bg) => applyToSelection((cell) => ({ ...cell, bg }));
-    const setColor = (color) => applyTextStyle((cell) => ({ ...cell, color }));
+    const setColor = (color) => {
+        const target = richTextTarget();
+        if (target) { applyRichTextStyle(target, { color }); return; }
+        applyFontStyle(["color"], (cell) => ({ ...cell, color }));
+    };
     // The ribbon's quick formats replace any format code set through Format Cells.
     const setNumberFormat = (fmt) => applyToSelection((cell) => ({ ...cell, numberFormat: fmt === "general" ? undefined : fmt, numberPattern: undefined }));
     const adjustDecimals = (delta) => applyToSelection((cell) => {
@@ -3756,24 +3901,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- AutoFilter (per-table column filter dropdowns) ---
 
-    // A column's distinct values as the filter list offers them — the text each
-    // cell shows — with how many rows show each.
-    const getTableColumnValues = (table, colIdx) => {
-        const s = parseCellRef(table.range.start), e = parseCellRef(table.range.end);
-        if (!s || !e) return [];
-        const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
-        const counts = new Map();
-        for (let r = minRow + 1; r <= maxRow; r++) {
-            const value = String(displayGrid[getCellId(r, colIdx)] ?? "");
-            counts.set(value, (counts.get(value) || 0) + 1);
-        }
-        return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
-    };
-
     const openColumnFilter = (table, colIdx, button) => {
         setFilterPopover({ tableId: table.id, colIdx, anchorRect: button.getBoundingClientRect() });
     };
     const filterPopoverTable = filterPopover ? tables.find((t) => t.id === filterPopover.tableId) : null;
+    // The open dropdown's list of values. Worked out when it opens (and when the
+    // sheet's values change), not on every render of the grid behind it: a long
+    // column is thousands of cells to read and sort.
+    const filterPopoverColIdx = filterPopover ? filterPopover.colIdx : null;
+    const filterPopoverValues = useMemo(
+        () => (filterPopoverTable && filterPopoverColIdx !== null ? columnValueCounts(filterPopoverTable, filterPopoverColIdx, displayGrid) : EMPTY_LIST),
+        [filterPopoverTable, filterPopoverColIdx, displayGrid]
+    );
     useEffect(() => { setFilterPopover(null); }, [activeSheetName]);
 
     // Stores the column's filter (see tableFilter.js); null removes it.
@@ -5702,7 +5841,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const rowHandlers = useRef(null);
     rowHandlers.current = {
         handleRowHeaderMouseDown, handleRowHeaderMouseEnter, startRowResize, handleCellMouseDown, handleCellMouseEnter,
-        startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit,
+        startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit, handleEditorBlur,
     };
     const renderRowRef = useRef(null);
     renderRowRef.current = (rowIdx) => (
@@ -5747,6 +5886,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const isFillPreviewCell = fillPreviewCellIds.has(cellId);
                 const conditional = conditionalMap[cellId];
                 const conditionalStyle = conditional?.style;
+                // Parts of the text in a style of their own — only where the cell
+                // shows its text as typed (not a number or date shown in a format).
+                const richRuns = cell?.rich && displayGrid[cellId] === cell.value ? cellRuns(cell) : undefined;
                 // Spans count only rendered rows/columns, so a merge that
                 // covers hidden ones doesn't push the rest of the row over.
                 const mergeSpan = merge ? (() => {
@@ -5883,16 +6025,20 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                                 onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
                                 onFocus={(e) => { activeEditInputRef.current = e.target; }}
-                                onBlur={() => rowHandlers.current.commitEdit()}
+                                onBlur={(e) => rowHandlers.current.handleEditorBlur(e)}
                                 />
                             </div>
                         ) : (
                             <div
                                 className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                                style={conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
+                                style={richRuns
+                                    ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecoration: "none" }
+                                    : conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
                             >
                                 {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
-                                {showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
+                                {richRuns
+                                    ? runSegments(cell.value, richRuns).map((segment, i) => <span key={i} style={runSpanStyle(segment.style, cell)}>{segment.text}</span>)
+                                    : showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
                             </div>
                         )}
                         {isFillCorner && !isEditing && !readOnly && (
@@ -6677,7 +6823,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
                         onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                         onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
-                        onBlur={commitEdit}
+                        onBlur={handleEditorBlur}
                         placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                     />
                 ) : (
@@ -6698,7 +6844,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
                             onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
                             onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
-                            onBlur={commitEdit}
+                            onBlur={handleEditorBlur}
                             placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                         />
                     </div>
@@ -7228,7 +7374,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         key={`${filterPopoverTable.id}:${colIdx}`}
                         anchorRect={anchorRect}
                         title={String(displayGrid[getCellId(headerRow, colIdx)] ?? "").trim() || `Column ${columns[colIdx]}`}
-                        values={getTableColumnValues(filterPopoverTable, colIdx)}
+                        values={filterPopoverValues}
                         filter={filterPopoverTable.filters?.[colIdx]}
                         canSort={!isSheetReadOnly}
                         onSort={sortTableByColumn}

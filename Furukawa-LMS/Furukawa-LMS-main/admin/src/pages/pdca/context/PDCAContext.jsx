@@ -76,8 +76,11 @@ export function PDCAProvider({ children }) {
       const res = await pdcaApi.getRecords();
       const records = res?.records || (Array.isArray(res) ? res : null);
       if (Array.isArray(records) && records.length > 0) {
-        publishData(records);
-        try { commitPDCA(records, initialPDCAData); } catch {}
+        const existingIds = new Set(records.map(r => r.id || r.recordId));
+        const missing = (initialPDCAData || []).filter(f => !existingIds.has(f.id && f.recordId ? f.id : (f.id || f.recordId)));
+        const combined = missing.length > 0 ? [...records, ...missing] : records;
+        publishData(combined);
+        try { commitPDCA(combined, initialPDCAData); } catch {}
       }
     } catch (err) {
       console.warn('Could not fetch records from backend, using cached records:', err);

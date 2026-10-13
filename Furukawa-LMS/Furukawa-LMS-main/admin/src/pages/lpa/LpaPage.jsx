@@ -12,13 +12,24 @@ import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord } from './ccTemplate';
 import LpaPdcaSheet from '../../components/lpa/LpaPdcaSheet';
+import LpaPdcaTableView from '../../components/lpa/LpaPdcaTableView';
+import AddPDCAModal from '../../components/pdca/AddPDCAModal';
+import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow } from './lpaPdcaUtils';
 
-const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }, { id: 'pdca', label: 'All PDCA' }];
+const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
 const LEVELS = ['L1', 'L2', 'L3'];
-const SAMPLE_DATES = ['2026-10-06', '2026-10-07', '2026-10-08'];
+const todayIso = new Date().toISOString().slice(0, 10);
+const SAMPLE_DATES = [
+  todayIso,
+  '2026-10-12',
+  '2026-10-10',
+  '2026-10-08',
+  '2026-10-07',
+  '2026-10-06'
+];
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 const primary = button.replace('border-slate-200', 'border-blue-600').replace('bg-white', 'bg-blue-600').replace('text-slate-700', 'text-white').replace('hover:bg-slate-50', 'hover:bg-blue-700');
 const errorText = error => error.message || 'Could not save LPA data. Your edits have been retained.';
@@ -28,6 +39,8 @@ function LpaPageContent({ viewContext }) {
   const layout = viewContext || outlet || {};
   const { setIsFormView = () => {} } = layout;
   const userId = useSelector(state => state.auth.user?.id || state.auth.user?._id || 'current');
+  const { handleAddPDCA, handleUpdatePDCA, showToast, refreshData } = usePDCA();
+  const [pdcaModalMode, setPdcaModalMode] = useState(null);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -107,7 +120,7 @@ function LpaPageContent({ viewContext }) {
     })();
   }, [loading, selectedUnit, selectedLevel, activeSection, userId, records]);
   const isEditorOpen = Boolean(editor);
-  const isPdcaFormOpen = Boolean(customPdcaTopic) || activeSection === 'pdca' || (['assembly', 'cc'].includes(activeSection) && activeSubTab === 'pdca');
+  const isPdcaFormOpen = Boolean(customPdcaTopic);
   const isFormViewActive = isEditorOpen || isPdcaFormOpen;
   useEffect(() => {
     setIsFormView(isFormViewActive);
@@ -225,7 +238,7 @@ function LpaPageContent({ viewContext }) {
     try {
       if (!selectedUnit || !selectedLevel) throw new Error('Please select Unit and Level before uploading a workbook.');
       if (!/\.xlsx?$/i.test(file.name)) throw new Error('Please upload an .xlsx or .xls Excel file.');
-      if (file.size > 20 * 1024 * 1024) throw new Error('The Excel file must be smaller than 20 MB.');
+      if (file.size > 15 * 1024 * 1024) throw new Error('The Excel file must be smaller than 15 MB.');
     const imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate };
       await upload(imported);
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
@@ -234,12 +247,19 @@ function LpaPageContent({ viewContext }) {
   const scopedRecords = records.filter(record => record.unit === selectedUnit && (record.level || 'L1') === selectedLevel);
   const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
   const sectionRecords = scopedRecords.filter(record => record.section === activeSection);
-  const displayRecords = !selectedUnit || !selectedLevel || activeSection === 'pdca' ? [] : activeSection === 'assembly'
+  const displayRecords = !selectedUnit || !selectedLevel ? [] : activeSection === 'assembly'
     ? (sectionRecords.length ? sectionRecords : [...sectionRecords, { ...assemblyTemplate, unit: selectedUnit, level: selectedLevel }])
     : matchingCcTemplate
       ? sectionRecords.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
       : [...sectionRecords, { ...ccTemplate, unit: selectedUnit, level: selectedLevel }];
-  const visibleRecords = displayRecords.filter(record => record.unit === selectedUnit && (record.level || 'L1') === selectedLevel && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
+  const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && (record.level || 'L1') === selectedLevel && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
+  const visibleRecords = baseVisibleRecords.length > 0 ? baseVisibleRecords : (
+    !selectedUnit || !selectedLevel ? [] : [
+      activeSection === 'assembly'
+        ? { ...assemblyTemplate, unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate, name: `${assemblyTemplate.name} · ${pdcaDate}` }
+        : { ...ccTemplate, unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
+    ]
+  );
   const exportAllRecords = () => {
     const rows = records.flatMap(record => record.sheets.map(current => ({
       Unit: record.unit || 'Bawal', Level: record.level || 'L1', Section: record.section === 'assembly' ? 'Assembly' : 'C&C',
@@ -283,9 +303,8 @@ function LpaPageContent({ viewContext }) {
   const pdcaTopic = useMemo(() => {
     if (customPdcaTopic) return customPdcaTopic;
     if (!selectedUnit || !selectedLevel) return null;
-    const targetSection = activeSection === 'pdca' ? 'all' : activeSection;
     return getLpaPdcaTopic({
-      section: targetSection,
+      section: activeSection,
       unit: selectedUnit,
       level: selectedLevel,
       date: pdcaDate,
@@ -296,11 +315,44 @@ function LpaPageContent({ viewContext }) {
 
   const handleBackFromPDCA = () => {
     setCustomPdcaTopic(null);
-    setActiveSubTab('lpa');
-    if (activeSection === 'pdca') {
-      setActiveSection('assembly');
-    }
     setIsFormView(false);
+  };
+
+  const handleOpenPdcaRecord = (row) => {
+    setCustomPdcaTopic(row);
+  };
+
+  const handleEditPdcaRecord = (row) => {
+    setPdcaModalMode(row);
+  };
+
+  const handleCreateNewPdca = () => {
+    setPdcaModalMode('add');
+  };
+
+  const handleSaveNewPdca = (newRecord) => {
+    const recordToSave = {
+      ...newRecord,
+      category: activeSection,
+      lpaCategory: activeSection,
+      department: newRecord.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      lpaSource: {
+        category: activeSection,
+        unit: selectedUnit,
+        date: pdcaDate
+      }
+    };
+    handleAddPDCA(recordToSave);
+    setPdcaModalMode(null);
+    showToast?.('✓ PDCA record created successfully');
+    refreshData?.();
+  };
+
+  const handleUpdatePdca = (updatedRecord) => {
+    handleUpdatePDCA(updatedRecord);
+    setPdcaModalMode(null);
+    showToast?.('✓ PDCA record updated successfully');
+    refreshData?.();
   };
 
   const handleSavePDCA = (sheetSnapshot) => {
@@ -313,21 +365,16 @@ function LpaPageContent({ viewContext }) {
   };
 
   const openRecordPDCA = (record, worksheetIndex) => {
-    const sheet = record.sheets?.[worksheetIndex];
-    const obs = extractObservationsFromSheet(sheet, record, record.auditDate || pdcaDate);
-    const rows = obs.map(item => createEmptyPdcaRow({
-      date: item.date || record.auditDate || pdcaDate,
-      shift: item.shift || '',
-      status: item.status || 'Open',
-      lineArea: item.lineArea || '',
-      observation: item.observation || '',
-      department: item.department || (record.section === 'cc' ? 'Die Casting' : 'Wiring Harness')
-    }));
-    while (rows.length < 10) {
-      rows.push(createEmptyPdcaRow({ date: record.auditDate || pdcaDate, shift: '', status: 'Open' }));
-    }
+    const baseTopic = getLpaPdcaTopic({
+      section: record.section || activeSection,
+      unit: record.unit || selectedUnit,
+      level: record.level || selectedLevel,
+      date: record.auditDate || pdcaDate,
+      records: [record],
+      templates: { assemblyTemplate, ccTemplate }
+    });
     const recordTopicId = `PDCA-LPA-REC-${record.id || 'tpl'}-${worksheetIndex}-${record.auditDate || pdcaDate}`;
-    let loadedSheet = { rows, headerInfo: { topicName: '', preparedBy: '', auditNo: '', attendees: '' } };
+    let loadedSheet = baseTopic.sheet;
     try {
       const saved = localStorage.getItem(`lpa_pdca_saved_${recordTopicId}`);
       if (saved) {
@@ -471,7 +518,11 @@ function LpaPageContent({ viewContext }) {
       <div className="space-y-5">
         {['assembly', 'cc'].includes(activeSection) && (
           <div className="flex gap-1 border-b border-slate-200" role="tablist" aria-label={`${activeSection === 'assembly' ? 'Assembly' : 'C&C'} form views`}>
-            {[{ id: 'lpa', label: 'LPA' }, { id: 'pdca', label: 'LPA Observation (PDCA)' }].map(tab => (
+            {[
+              { id: 'lpa', label: 'LPA' },
+              { id: 'pdca', label: 'LPA Observation (PDCA)' },
+              { id: 'all_pdca', label: 'All PDCA' }
+            ].map(tab => (
               <button
                 key={tab.id}
                 type="button"
@@ -489,103 +540,137 @@ function LpaPageContent({ viewContext }) {
           </div>
         )}
 
-        <div>
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              <CalendarDays size={17} />
-              <span>Audit date</span>
-              <input
-                type="date"
-                value={pdcaDate}
-                onChange={event => setPdcaDate(event.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
-            </label>
-            <label className="relative min-w-[240px] flex-1">
-              <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchQuery}
-                onChange={event => setSearchQuery(event.target.value)}
-                placeholder="Search by form or worksheet name…"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
-              />
-            </label>
-            <button type="button" onClick={exportAllRecords} className={button}>
-              <Download size={16} />Export Excel
-            </button>
-            <button
-              type="button"
-              disabled={busy || !selectedUnit || !selectedLevel}
-              onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
-              className={primary}
-            >
-              <Upload size={16} />Upload Excel
-            </button>
-            <button
-              type="button"
-              disabled={busy || !selectedUnit || !selectedLevel}
-              onClick={() => {
-                setActiveSubTab('pdca');
-                setCustomPdcaTopic(null);
-              }}
-              className={button}
-            >
-              LPA Observation (PDCA)
-            </button>
-          </div>
+        {['assembly', 'cc'].includes(activeSection) && activeSubTab === 'pdca' ? (
+          <LpaPdcaTableView
+            section={activeSection}
+            sectionLabel={activeSection === 'assembly' ? 'Assembly' : 'C&C'}
+            selectedUnit={selectedUnit}
+            mode="observations"
+            pdcaDate={pdcaDate}
+            onOpenRecord={handleOpenPdcaRecord}
+            onEditRecord={handleEditPdcaRecord}
+            onCreateNew={handleCreateNewPdca}
+          />
+        ) : ['assembly', 'cc'].includes(activeSection) && activeSubTab === 'all_pdca' ? (
+          <LpaPdcaTableView
+            section={activeSection}
+            sectionLabel={activeSection === 'assembly' ? 'Assembly' : 'C&C'}
+            selectedUnit={selectedUnit}
+            mode="all"
+            onOpenRecord={handleOpenPdcaRecord}
+            onEditRecord={handleEditPdcaRecord}
+            onCreateNew={handleCreateNewPdca}
+          />
+        ) : (
+          <div>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                <CalendarDays size={17} />
+                <span>Audit date</span>
+                <input
+                  type="date"
+                  value={pdcaDate}
+                  onChange={event => setPdcaDate(event.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="relative min-w-[240px] flex-1">
+                <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={event => setSearchQuery(event.target.value)}
+                  placeholder="Search by form or worksheet name…"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <button type="button" onClick={exportAllRecords} className={button}>
+                <Download size={16} />Export Excel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !selectedUnit || !selectedLevel}
+                onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
+                className={primary}
+              >
+                <Upload size={16} />Upload Excel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !selectedUnit || !selectedLevel}
+                onClick={() => {
+                  setActiveSubTab('pdca');
+                  setCustomPdcaTopic(null);
+                }}
+                className={button}
+              >
+                LPA Observation (PDCA)
+              </button>
+            </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">S.No</th>
-                      <th className="px-4 py-3 text-left">Form</th>
-                      <th className="px-4 py-3 text-left">Worksheet</th>
-                      <th className="px-4 py-3 text-left">Audit date</th>
-                      <th className="px-4 py-3 text-left">Unit</th>
-                      <th className="px-4 py-3 text-left">Level</th>
-                      <th className="px-4 py-3 text-left">Rows</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left">S.No</th>
+                    <th className="px-4 py-3 text-left">Form</th>
+                    <th className="px-4 py-3 text-left">Worksheet</th>
+                    <th className="px-4 py-3 text-left">Audit date</th>
+                    <th className="px-4 py-3 text-left">Unit</th>
+                    <th className="px-4 py-3 text-left">Level</th>
+                    <th className="px-4 py-3 text-left">Rows</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleRecords.flatMap((record, recordIndex) => record.sheets.map((current, index) => (
+                    <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-4 text-slate-500">{recordIndex + 1}</td>
+                      <td className="px-4 py-4 font-semibold text-blue-700">{record.name}</td>
+                      <td className="px-4 py-4">{current.name}</td>
+                      <td className="px-4 py-4">{record.auditDate || 'Legacy workbook'}</td>
+                      <td className="px-4 py-4">{record.unit || 'Bawal'}</td>
+                      <td className="px-4 py-4">{record.level || 'L1'}</td>
+                      <td className="px-4 py-4">{current.rows.length}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => openSheet(record, index)} className={button}>Open</button>
+                          <button type="button" onClick={() => openRecordPDCA(record, index)} className={button}>PDCA</button>
+                          {record.id && (
+                            <button type="button" disabled={busy} onClick={() => deleteWorkbook(record)} className={`${button} border-red-200 text-red-700 hover:bg-red-50`} title="Delete form">
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleRecords.flatMap((record, recordIndex) => record.sheets.map((current, index) => (
-                      <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
-                        <td className="px-4 py-4 text-slate-500">{recordIndex + 1}</td>
-                        <td className="px-4 py-4 font-semibold text-blue-700">{record.name}</td>
-                        <td className="px-4 py-4">{current.name}</td>
-                        <td className="px-4 py-4">{record.auditDate || 'Legacy workbook'}</td>
-                        <td className="px-4 py-4">{record.unit || 'Bawal'}</td>
-                        <td className="px-4 py-4">{record.level || 'L1'}</td>
-                        <td className="px-4 py-4">{current.rows.length}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
-                            <button type="button" onClick={() => openSheet(record, index)} className={button}>Open</button>
-                            <button type="button" onClick={() => openRecordPDCA(record, index)} className={button}>PDCA</button>
-                            {record.id && (
-                              <button type="button" disabled={busy} onClick={() => deleteWorkbook(record)} className={`${button} border-red-200 text-red-700 hover:bg-red-50`} title="Delete form">
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )))}
-                  </tbody>
-                </table>
-                {visibleRecords.length === 0 && (
-                  <p className="p-8 text-center text-sm text-slate-500">
-                    No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} · {selectedLevel} on {pdcaDate}. Upload an Excel workbook to get started.
-                  </p>
-                )}
-              </div>
+                  )))}
+                </tbody>
+              </table>
+              {visibleRecords.length === 0 && (
+                <p className="p-8 text-center text-sm text-slate-500">
+                  No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} · {selectedLevel} on {pdcaDate}. Upload an Excel workbook to get started.
+                </p>
+              )}
             </div>
           </div>
-        </>}
-        <p className="text-xs text-slate-500">Supports .xlsx and .xls. Uploaded forms are saved separately.</p>
-      </section>}
-      {!loading && message?.error && <button type="button" onClick={load} className={button}>Reload Saved Workbooks</button>}
-    </div>
+        )}
+      </div>
+    </>}
+    <p className="text-xs text-slate-500">Supports .xlsx and .xls. Uploaded forms are saved separately.</p>
+  </section>}
+  {!loading && message?.error && <button type="button" onClick={load} className={button}>Reload Saved Workbooks</button>}
+
+  {/* Add / Edit PDCA Modal */}
+  <AddPDCAModal
+    isOpen={pdcaModalMode !== null}
+    onClose={() => setPdcaModalMode(null)}
+    defaultPlant={selectedUnit}
+    defaultScope="Company"
+    onAdd={handleSaveNewPdca}
+    editData={pdcaModalMode !== 'add' ? pdcaModalMode : null}
+    onUpdate={handleUpdatePdca}
+  />
+</div>
   </div>;
 }
 

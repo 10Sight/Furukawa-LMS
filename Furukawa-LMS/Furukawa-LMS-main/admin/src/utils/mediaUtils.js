@@ -8,14 +8,17 @@ import { BASE_URL } from "../services/requests/axiosInstance.js";
 export const getMediaUrl = (url) => {
     if (!url) return "";
     
-    // If it's already an absolute URL (Cloudinary, external link)
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    // If it's already an absolute URL (Cloudinary, external link) or inline data/blob
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
         return url;
     }
     
-    // If it's a local storage path (starting with /uploads)
+    // If it's a local storage path (starting with /uploads or uploads/)
     if (url.startsWith('/uploads')) {
         return `${BASE_URL}${url}`;
+    }
+    if (url.startsWith('uploads/')) {
+        return `${BASE_URL}/${url}`;
     }
 
     return url;

@@ -1,7 +1,7 @@
 import { filterPDCARecords, matchesPlant, PDCA_PLANTS } from '../data/recordFilters';
 import { readSaved } from '@components/shared/formPersistence';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import FilterToolbar, { TableActionBar } from '@components/pdca/FilterToolbar';
 import TabNavigation from '@components/pdca/TabNavigation';
 import PDCATable from '@components/pdca/PDCATable';
@@ -15,11 +15,14 @@ import { usePDCA } from '@hooks/pdca/usePDCA.js';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const outletContext = useOutletContext();
+  const onExportAll = outletContext?.onExportAll;
   const { userContext, data, handleAddPDCA, handleUpdatePDCA, handleDeletePDCA, handleSaveMembers, showToast } = usePDCA();
 
   const lpaSource = userContext.lpaSource;
   const [activeTab, setActiveTab] = useState(() => readSaved('pdca_list_filters', {}).scope || 'Company');
   const [selectedPlant, setSelectedPlant] = useState('Unit');
+  const [selectedDepartment, setSelectedDepartment] = useState(() => readSaved('pdca_list_filters', {}).department || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -34,9 +37,9 @@ export default function DashboardPage() {
 
   /* ── Filter Logic ───────────────────────────────────────── */
   useEffect(() => {
-    try { localStorage.setItem('pdca_list_filters', JSON.stringify({ plant: selectedPlant, scope: activeTab })); }
+    try { localStorage.setItem('pdca_list_filters', JSON.stringify({ plant: selectedPlant, scope: activeTab, department: selectedDepartment })); }
     catch { /* Saving a form reports storage errors separately. */ }
-  }, [selectedPlant, activeTab]);
+  }, [selectedPlant, activeTab, selectedDepartment]);
   useEffect(() => {
     if (lpaSource?.unit) setSelectedPlant(lpaSource.unit);
   }, [lpaSource?.unit]);
@@ -81,12 +84,13 @@ export default function DashboardPage() {
       openLpaPdca();
     }
   }, [lpaSource]);
-  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery),
-    [sourceData, activeTab, selectedPlant, searchQuery]);
+  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, selectedDepartment),
+    [sourceData, activeTab, selectedPlant, searchQuery, selectedDepartment]);
 
   const revealSavedForm = item => {
     if (PDCA_PLANTS.includes(item.plant)) setSelectedPlant(item.plant);
     setActiveTab(item.scope);
+    if (item.department) setSelectedDepartment(item.department);
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -235,8 +239,8 @@ export default function DashboardPage() {
       const responseDate = '';
       const department = idx === 0 ? (row.department || 'SRC Quality') : '';
       const staffEmployee = idx === 0 ? (row.createdBy?.name ? `${row.createdBy.name} (${row.createdBy.code || 'EMP'})` : '') : '';
-      const assignedEmpStr = idx === 0 && row.assignedMembers?.length 
-        ? row.assignedMembers.map(e => `${e.name} (${e.code})`).join('; ') 
+      const assignedEmpStr = idx === 0 && row.assignedMembers?.length
+        ? row.assignedMembers.map(e => `${e.name} (${e.code})`).join('; ')
         : '';
       const remarks = '';
 
@@ -274,7 +278,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6 w-full min-w-0">
+    <div className="space-y-3.5 w-full min-w-0">
       {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p><button type="button" onClick={openLpaPdca} className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">{sourceData.length ? 'Open original PDCA form' : 'Create original PDCA record'}</button></div>}
       {/* 1. Unit Filter on Top */}
       <FilterToolbar
@@ -283,6 +287,7 @@ export default function DashboardPage() {
           setSelectedPlant(p);
           setCurrentPage(1);
         }}
+        onExportAll={onExportAll || handleExportExcel}
       />
 
       {/* 2. Tabs below Unit Filter */}
@@ -343,6 +348,7 @@ export default function DashboardPage() {
           onDelete={requestDeletePDCA}
           onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
+          onEdit={(item) => setModalMode(item)}
         />
       )}
 

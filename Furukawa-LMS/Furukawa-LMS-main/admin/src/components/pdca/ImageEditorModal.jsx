@@ -14,6 +14,7 @@ import {
   Move,
   Plus
 } from 'lucide-react';
+import { getMediaUrl } from '@/utils/mediaUtils.js';
 
 export default function ImageEditorModal({ 
   isOpen, 
@@ -61,7 +62,10 @@ export default function ImageEditorModal({
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = imageSrc;
+    img.src = getMediaUrl(imageSrc);
+    img.onerror = (err) => {
+      console.warn('Failed to load image in ImageEditorModal:', err);
+    };
     img.onload = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;

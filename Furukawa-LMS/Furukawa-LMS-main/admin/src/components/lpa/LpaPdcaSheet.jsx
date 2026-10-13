@@ -29,9 +29,68 @@ import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
 import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
+import pdcaApi from '@/services/api/pdcaApi.js';
+import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import SearchableLineAreaSelect from '../pdca/SearchableLineAreaSelect';
 
 // Department to Employees mapping
 const departmentEmployeesData = {
+  'PE': [
+    'Yogesh Kumar (AS081213)',
+    'Vikram Singh (GJ034112)'
+  ],
+  'IT': [
+    'Yogesh Kumar (AS081213)',
+    'Deepak Mehta (GJ045819)'
+  ],
+  'Quality': [
+    'Deepak Mehta (GJ045819)',
+    'Yogesh Kumar (AS081213)',
+    'Sunil Kumar (GJ082711)'
+  ],
+  'Assembly': [
+    'Rahul Sharma (BW041920)',
+    'Priya Nair (GJ018442)',
+    'Dinesh Rao (BW028371)'
+  ],
+  'SRC': [
+    'Yogesh Kumar (AS081213)',
+    'Ramesh Patel (GJ021944)'
+  ],
+  'Store': [
+    'Naveen Yadav (GJ019482)',
+    'Yogesh Kumar (AS081213)'
+  ],
+  'HR': [
+    'Amit Patel (GJ092311)',
+    'Kavita Joshi (GJ019283)'
+  ],
+  'Safety': [
+    'Amit Patel (GJ092311)',
+    'Kavita Joshi (GJ019283)'
+  ],
+  'FG': [
+    'Naveen Yadav (GJ019482)',
+    'Brijesh Sharma (BW029384)'
+  ],
+  'PPC': [
+    'Sandeep Verma (BW071562)',
+    'Rajesh Kumar (BW081290)'
+  ],
+  'Maintenance': [
+    'Sandeep Verma (BW071562)',
+    'Rajesh Kumar (BW081290)',
+    'Pooja Nair (BW039182)'
+  ],
+  'D&D': [
+    'Manish Joshi (BW092301)',
+    'Ajay Verma (BW012398)'
+  ],
+  'C&C': [
+    'Anil Gupta (BW038291)',
+    'Karan Malhotra (BW091823)'
+  ],
+  // Legacy department mappings for backwards compatibility with older saved records
   'SRC Quality': [
     'Yogesh Kumar (AS081213)',
     'Ramesh Patel (GJ021944)',
@@ -279,6 +338,24 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     attendees: ''
   });
 
+  // Load saved sheet from backend on mount or when topic changes
+  useEffect(() => {
+    if (!topic?.id) return;
+    let active = true;
+    pdcaApi.getSheet(topic.id).then(savedSheet => {
+      if (!active || !savedSheet) return;
+      if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
+        setHeaderInfo(prev => ({ ...prev, ...savedSheet.headerInfo }));
+      }
+      if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+        setRows(savedSheet.rows);
+      }
+    }).catch(err => {
+      console.warn('Could not fetch sheet from backend:', err);
+    });
+    return () => { active = false; };
+  }, [topic?.id]);
+
   const sheetSnapshot = useMemo(() => ({ rows, headerInfo }), [rows, headerInfo]);
 
   const persistSheet = (sheet) => {
@@ -337,6 +414,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
     setIsSaving(true);
     try {
+      if (topic?.id) {
+        await pdcaApi.saveSheet(topic.id, sheetSnapshot);
+      }
       persistSheet(sheetSnapshot);
       notify('PDCA form saved successfully.', 'success');
       return true;
@@ -824,7 +904,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     }
   };
 
-  const departmentsList = Object.keys(departmentEmployeesData);
+  const departmentsList = PDCA_DEPARTMENTS;
 
   // Filter rows by search
   const filteredRows = useMemo(() => {
@@ -1080,37 +1160,37 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                   </th>
 
                   {/* 4. Status */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#475569]">
                     <span>Status</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
                   {/* 5. Line/Area */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[110px] min-w-[100px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569]">
                     <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
                   {/* 6. Observation */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[210px] min-w-[180px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[210px] min-w-[180px] text-center border-r border-[#475569]">
                     <span>Observation</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
                   {/* 7. Image Before */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[85px] min-w-[80px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569] text-[10.5px]">
                     Image Before
                   </th>
 
                   {/* 8. Root Cause */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[125px] min-w-[110px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[125px] min-w-[110px] text-center border-r border-[#475569]">
                     Root Cause
                   </th>
 
                   {/* 9. Counter Measure */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[140px] min-w-[120px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[140px] min-w-[120px] text-center border-r border-[#475569]">
                     Counter Measure
                   </th>
 
                   {/* 10. Image After */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[85px] min-w-[80px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[105px] text-center border-r border-[#475569] text-[10.5px]">
                     Image After
                   </th>
 
@@ -1157,10 +1237,10 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     <tr
                       key={idx}
                       ref={(el) => registerTrRef(idx, el)}
-                      className="border-b border-[#CFD8DC] hover:bg-[#F8FAFC] transition-colors"
+                      className="border-b border-[#64748B] hover:bg-[#F8FAFC] transition-colors"
                     >
                       {/* 1. Date */}
-                      <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[56px] min-w-[52px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                         <CompactDateCell
                           value={row.date}
                           onChange={(val) => handleCellChange(idx, 'date', val)}
@@ -1168,7 +1248,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 2. Shift */}
-                      <td className="p-0 align-middle border-r border-[#CFD8DC] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
+                      <td className="p-0 align-middle border-r border-[#64748B] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
                         <div className="relative w-full h-full flex items-center justify-center">
                           <select
                             value={row.shift === 'General' ? 'G' : (row.shift || '')}
@@ -1186,12 +1266,12 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 3. S.No */}
-                      <td className="p-0.5 align-middle text-center border-r border-[#CFD8DC] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
+                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
                         {sNo}
                       </td>
 
                       {/* 4. Status */}
-                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#CFD8DC] w-[78px] min-w-[78px]">
+                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[78px] min-w-[78px]">
                         <select
                           aria-label={`Status for row ${sNo}`}
                           value={row.status || 'Open'}
@@ -1208,20 +1288,17 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         </select>
                       </td>
 
-                      {/* 5. Line/Area */}
-                      <td className="p-0.5 align-middle border-r border-[#CFD8DC] w-[110px] min-w-[100px] focus-within:bg-blue-50/30 text-center">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'lineArea', el)}
+                      {/* 5. Line/Area (Searchable dropdown with search bar) */}
+                      <td className="p-1 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
+                        <SearchableLineAreaSelect
                           value={row.lineArea}
-                          onChange={(e) => handleCellChange(idx, 'lineArea', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'lineArea')}
-                          placeholder=""
-                          className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block whitespace-pre-wrap break-words"
+                          onChange={(val) => handleCellChange(idx, 'lineArea', val)}
+                          placeholder="Line/Area..."
                         />
                       </td>
 
                       {/* 6. Observation */}
-                      <td className="p-0.5 align-middle border-r border-[#CFD8DC] w-[210px] min-w-[180px] focus-within:bg-blue-50/30 text-center">
+                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[210px] min-w-[180px] focus-within:bg-blue-50/30 text-center">
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'observation', el)}
                           value={row.observation}
@@ -1232,80 +1309,65 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         />
                       </td>
 
-                      {/* 7. Image Before */}
-                      <td className="p-1 align-middle text-center border-r border-[#CFD8DC] w-[85px] min-w-[80px]">
+                      {/* 7. Image Before - High visibility preview with preserved aspect ratio */}
+                      <td className="p-1.5 align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px]">
                         {row.imageBefore ? (
-                          <div className="relative group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
-                            {row.fileTypeBefore === 'excel' ? (
-                              <div
-                                onClick={() => setSelectedImageAction({
-                                  type: 'before',
-                                  rowIndex: idx,
-                                  preview: row.imageBefore,
-                                  fileType: row.fileTypeBefore,
-                                  fileName: row.imageBeforeName
-                                })}
-                                className="w-full h-full bg-emerald-50 flex flex-col items-center justify-center p-0.5 cursor-pointer hover:bg-emerald-100 transition-colors"
-                              >
-                                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                <span className="text-[7.5px] font-bold text-emerald-800 truncate w-full text-center px-0.5 mt-0.5">
-                                  {row.imageBeforeName || 'Excel'}
-                                </span>
-                              </div>
-                            ) : row.fileTypeBefore === 'pdf' ? (
-                              <div
-                                onClick={() => setSelectedImageAction({
-                                  type: 'before',
-                                  rowIndex: idx,
-                                  preview: row.imageBefore,
-                                  fileType: row.fileTypeBefore,
-                                  fileName: row.imageBeforeName
-                                })}
-                                className="w-full h-full bg-rose-50 flex flex-col items-center justify-center p-0.5 cursor-pointer hover:bg-rose-100 transition-colors"
-                              >
-                                <FileText className="w-5 h-5 text-rose-600" />
-                                <span className="text-[7.5px] font-bold text-rose-800 truncate w-full text-center px-0.5 mt-0.5">
-                                  {row.imageBeforeName || 'PDF'}
-                                </span>
-                              </div>
-                            ) : row.fileTypeBefore === 'ppt' ? (
-                              <div
-                                onClick={() => setSelectedImageAction({
-                                  type: 'before',
-                                  rowIndex: idx,
-                                  preview: row.imageBefore,
-                                  fileType: row.fileTypeBefore,
-                                  fileName: row.imageBeforeName
-                                })}
-                                className="w-full h-full bg-orange-50 flex flex-col items-center justify-center p-0.5 cursor-pointer hover:bg-orange-100 transition-colors"
-                              >
-                                <Presentation className="w-5 h-5 text-orange-600" />
-                                <span className="text-[7.5px] font-bold text-orange-800 truncate w-full text-center px-0.5 mt-0.5">
-                                  {row.imageBeforeName || 'PPT'}
-                                </span>
-                              </div>
-                            ) : (
-                              <img
-                                src={row.imageBefore}
-                                alt="Before"
-                                onClick={() => setSelectedImageAction({
-                                  type: 'before',
-                                  rowIndex: idx,
-                                  preview: row.imageBefore,
-                                  fileType: 'image'
-                                })}
-                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                              />
-                            )}
+                          <div className="flex items-center justify-center w-full min-h-[90px] py-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedImageAction({
+                                type: 'before',
+                                rowIndex: idx,
+                                preview: row.imageBefore,
+                                fileType: row.fileTypeBefore,
+                                fileName: row.imageBeforeName
+                              })}
+                              className="group relative inline-flex items-center justify-center p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-sm overflow-hidden max-w-full"
+                              title={`Click to view ${row.imageBeforeName || 'file'}, edit or delete`}
+                            >
+                              {row.fileTypeBefore === 'excel' ? (
+                                <div className="h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                  <span className="text-[10px] font-bold truncate max-w-[100px]">
+                                    {row.imageBeforeName || 'Excel'}
+                                  </span>
+                                </div>
+                              ) : row.fileTypeBefore === 'pdf' ? (
+                                <div className="h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer bg-rose-50 text-rose-800 border border-rose-300">
+                                  <FileText className="w-4 h-4 text-rose-600" />
+                                  <span className="text-[10px] font-bold truncate max-w-[100px]">
+                                    {row.imageBeforeName || 'PDF'}
+                                  </span>
+                                </div>
+                              ) : row.fileTypeBefore === 'ppt' ? (
+                                <div className="h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer bg-amber-50 text-amber-800 border border-amber-300">
+                                  <Presentation className="w-4 h-4 text-amber-600" />
+                                  <span className="text-[10px] font-bold truncate max-w-[100px]">
+                                    {row.imageBeforeName || 'PPT'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="relative flex items-center justify-center">
+                                  <img
+                                    src={row.imageBefore}
+                                    alt="Before"
+                                    className="h-20 w-auto max-w-[110px] max-h-[85px] object-contain rounded transition-transform group-hover:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                    <Eye className="w-4 h-4 drop-shadow" />
+                                  </div>
+                                </div>
+                              )}
+                            </button>
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center">
                             <button
                               type="button"
                               onClick={() => setSelectedImageAction({ type: 'before', rowIndex: idx, isNew: true })}
-                              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-600 border border-slate-300 rounded text-[10px] font-medium transition-colors flex items-center gap-1 shadow-2xs cursor-pointer border-dashed"
+                              className="px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-dashed border-[#64748B] hover:border-blue-600 rounded text-[10.5px] font-semibold transition-colors flex items-center gap-1 shadow-2xs cursor-pointer w-full justify-center"
                             >
-                              <Upload className="w-2.5 h-2.5" />
+                              <Upload className="w-3.5 h-3.5 text-slate-500" />
                               <span>Upload</span>
                             </button>
                           </div>
@@ -1313,7 +1375,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 8. Root Cause */}
-                      <td className="p-0 align-middle border-r border-[#CFD8DC] w-[125px] min-w-[110px] focus-within:bg-blue-50/30 text-center">
+                      <td className="p-0 align-middle border-r border-[#64748B] w-[125px] min-w-[110px] focus-within:bg-blue-50/30 text-center">
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'rootCause', el)}
                           value={row.rootCause}
@@ -1325,7 +1387,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 9. Counter Measure */}
-                      <td className="p-0.5 align-middle border-r border-[#CFD8DC] w-[140px] min-w-[120px] focus-within:bg-blue-50/30 text-center">
+                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[140px] min-w-[120px] focus-within:bg-blue-50/30 text-center">
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                           value={row.counterMeasure}
@@ -1337,7 +1399,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 10. Image After */}
-                      <td className="p-1 align-middle text-center border-r border-[#CFD8DC] w-[85px] min-w-[80px]">
+                      <td className="p-1 align-middle text-center border-r border-[#64748B] w-[85px] min-w-[80px]">
                         {row.imageAfter ? (
                           <div className="relative group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
                             {row.fileTypeAfter === 'excel' ? (
@@ -1417,7 +1479,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 11. Response Date */}
-                      <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[56px] min-w-[52px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                         <CompactDateCell
                           value={row.responseDate}
                           onChange={(val) => handleCellChange(idx, 'responseDate', val)}
@@ -1425,7 +1487,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 12. Dept (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[82px] min-w-[75px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[75px]">
                         <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
                           <select
                             value={row.department || ''}
@@ -1434,6 +1496,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             title={row.department || 'Select Department'}
                           >
                             <option value="">Dept...</option>
+                            {row.department && !departmentsList.includes(row.department) && (
+                              <option value={row.department}>{row.department}</option>
+                            )}
                             {departmentsList.map((d) => (
                               <option key={d} value={d}>
                                 {d}
@@ -1445,7 +1510,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 13. Staff Name (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[88px] min-w-[80px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[88px] min-w-[80px]">
                         <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
                           {row.staffEmployee ? (
                             <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
@@ -1502,7 +1567,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 14. CFT (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[70px] min-w-[65px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[70px] min-w-[65px]">
                         <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
                           {row.cftTopic ? (
                             <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
@@ -1567,7 +1632,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 15. Instructions */}
-                      <td className="p-0.5 align-middle border-r border-[#CFD8DC] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
+                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
                           value={row.responsiblePersonConfirmation}
@@ -1596,7 +1661,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                 <div
                   key={idx}
                   style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
-                  className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#CFD8DC] group hover:bg-blue-50/20 transition-colors"
+                  className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
                 >
                   <button
                     type="button"

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Copy, Trash2, Building2, UserPlus, Users } from 'lucide-react';
+import { Download, Copy, Trash2, Building2, UserPlus, Users, Edit3 } from 'lucide-react';
 
 export default function PDCATable({
   items,
@@ -8,6 +8,7 @@ export default function PDCATable({
   onDelete,
   onTopicClick,
   onOpenAddMember,
+  onEdit,
   activeTab = 'Company',
   pageStartIndex = 0,
   selectedPlant = 'Unit',
@@ -164,6 +165,15 @@ export default function PDCATable({
                 {/* Actions: Download, Copy, Delete */}
                 <td className="py-4 px-4 whitespace-nowrap">
                   <div className="flex items-center justify-center gap-1.5">
+                    {/* Edit PDCA Record */}
+                    <button
+                      onClick={() => onEdit?.(row)}
+                      title="Edit PDCA record"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+
                     {/* Download PDCA Sheet */}
                     <button
                       onClick={() => onDownload?.(row)}

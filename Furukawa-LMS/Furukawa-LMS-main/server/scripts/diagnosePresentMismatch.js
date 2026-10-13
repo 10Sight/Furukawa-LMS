@@ -90,6 +90,31 @@ async function run() {
             });
         }
 
+        // Punch history around the leaving date, to tell "marked LEFT by mistake" (no gap in
+        // punches) apart from "rejoined, but the rejoin was never entered" (gap, then punches).
+        if (excluded.length) {
+            const [punchRows] = await executeQuery(`
+                SELECT DISTINCT al.userId, CONVERT(VARCHAR(10), CONVERT(DATE, al.[date]), 23) AS punchDate
+                FROM attendance_logs al
+                WHERE al.userId IN (${excluded.map(() => "?").join(",")})
+                  AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(100))))) IN ('P', 'PRESENT')
+            `, excluded.map((row) => row.id));
+
+            for (const row of excluded) {
+                const leavingKey = parseManpowerDateKey(row.leavingDate);
+                if (leavingKey === null) continue;
+                const dates = (punchRows || [])
+                    .filter((punch) => Number(punch.userId) === Number(row.id))
+                    .map((punch) => punch.punchDate)
+                    .sort();
+                const before = dates.filter((d) => parseManpowerDateKey(d) < leavingKey);
+                const after = dates.filter((d) => parseManpowerDateKey(d) >= leavingKey);
+                row.lastPunchBeforeLeaving = before[before.length - 1] || "-";
+                row.firstPunchFromLeaving = after[0] || "-";
+                row.presentDaysFromLeaving = after.length;
+            }
+        }
+
         console.log(`${targetDate}: Excel Present = ${byUser.size}, Dashboard Present = ${byUser.size - excluded.length}`);
         console.log(`${excluded.length} employee(s) in the Excel but not counted on the Dashboard:`);
         console.table(excluded);

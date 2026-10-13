@@ -27,8 +27,10 @@ import {
     IconEye
 } from "@tabler/icons-react";
 import SkillUpgradationPlan from "@/pages/skills/components/departments/SkillUpgradationPlan.jsx";
+import SkillUpgradationDueList from "@/pages/skills/components/departments/SkillUpgradationDueList.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
 import { Badge } from "@/components/common/ui/badge.jsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/common/ui/tabs.jsx";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/common/ui/dialog.jsx";
 import { toast } from "sonner";
 import axiosInstance from "@/services/requests/axiosInstance.js";
@@ -63,6 +65,7 @@ const SkillUpgradationWrapper = () => {
     const [isReadOnly, setIsReadOnly] = useState(false);
     const [plansList, setPlansList] = useState([]);
     const [loadingPlans, setLoadingPlans] = useState(false);
+    const [activeTab, setActiveTab] = useState("plans");
 
     // Create Plan dialog states
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -249,6 +252,13 @@ const SkillUpgradationWrapper = () => {
         }
     };
 
+    // The upcoming list is derived from the plans list, so re-fetch it on entry to avoid
+    // showing dates that were changed since the list was last loaded.
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        if (tab === "upcoming") fetchPlansList();
+    };
+
     const handleBackToPlans = () => {
         setSelectedPlan(null);
         setIsReadOnly(false);
@@ -393,98 +403,127 @@ const SkillUpgradationWrapper = () => {
             {/* Training Plan Sheet */}
             {dept && section ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
-                    <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
-                        <CardHeader className="pb-3 border-b bg-slate-50/50">
-                            <CardTitle className="text-base flex items-center justify-between font-semibold text-slate-800">
-                                <span className="flex items-center gap-2">
-                                    <IconCalendarTime className="w-4 h-4 text-blue-600" />
-                                    Saved Training Plans
-                                </span>
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            {loadingPlans ? (
-                                <div className="flex flex-col items-center justify-center py-12">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4" />
-                                    <p className="text-sm text-slate-500">Loading saved plans...</p>
-                                </div>
-                            ) : plansList.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-center">
-                                    <div className="p-4 bg-blue-50 rounded-full mb-4">
-                                        <IconCalendar className="w-10 h-10 text-blue-300" />
-                                    </div>
-                                    <h4 className="text-md font-bold text-slate-700">No Saved Plans</h4>
-                                    <p className="text-xs text-slate-500 max-w-xs mt-2">
-                                        There are no skill upgradation plans created for this department and section yet. Click the "Create Plan" button above to get started.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="w-full overflow-x-auto rounded-lg border border-slate-200">
-                                    <table className="w-full border-collapse text-sm text-left">
-                                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase text-xs font-bold">
-                                            <tr>
-                                                <th className="p-3 pl-4">Department</th>
-                                                <th className="p-3">Section</th>
-                                                <th className="p-3">Line</th>
-                                                <th className="p-3">Year</th>
-                                                <th className="p-3">Document No</th>
-                                                <th className="p-3">Created By</th>
-                                                <th className="p-3">Last Updated By</th>
-                                                {(canUpdate || canDelete) && (
-                                                    <th className="p-3 pr-4 text-center">Actions</th>
-                                                )}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                                            {plansList.map((plan) => (
-                                                <tr
-                                                    key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
-                                                    onClick={() => { setIsReadOnly(true); setSelectedPlan(plan); }}
-                                                    className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                                                >
-                                                    <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
-                                                    <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
-                                                    <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
-                                                    <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
-                                                    <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
-                                                    <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
-                                                    <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
-                                                    {(canUpdate || canDelete) && (
-                                                        <td className="p-3 pr-4" onClick={(e) => e.stopPropagation()}>
-                                                            <div className="flex items-center justify-center gap-1.5">
-                                                                {canUpdate && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => { setIsReadOnly(false); setSelectedPlan(plan); }}
-                                                                        className="h-8 px-2.5 text-slate-600 hover:text-green-700 hover:bg-green-50"
-                                                                        title="Edit"
-                                                                    >
-                                                                        <IconEdit className="w-4 h-4" />
-                                                                    </Button>
-                                                                )}
-                                                                {canDelete && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => setDeleteTarget(plan)}
-                                                                        className="h-8 px-2.5 text-slate-600 hover:text-red-700 hover:bg-red-50"
-                                                                        title="Delete"
-                                                                    >
-                                                                        <IconTrash className="w-4 h-4" />
-                                                                    </Button>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                    )}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                    <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-4">
+                        <TabsList className="flex gap-2 w-fit bg-gray-100 p-1 rounded-md h-auto">
+                            <TabsTrigger value="plans" className="text-xs font-bold px-4 py-2">Skill Upgradation Plans</TabsTrigger>
+                            <TabsTrigger value="upcoming" className="text-xs font-bold px-4 py-2">Upcoming Upgradations</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="plans">
+                            <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                                <CardHeader className="pb-3 border-b bg-slate-50/50">
+                                    <CardTitle className="text-base flex items-center justify-between font-semibold text-slate-800">
+                                        <span className="flex items-center gap-2">
+                                            <IconCalendarTime className="w-4 h-4 text-blue-600" />
+                                            Saved Training Plans
+                                        </span>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6">
+                                    {loadingPlans ? (
+                                        <div className="flex flex-col items-center justify-center py-12">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4" />
+                                            <p className="text-sm text-slate-500">Loading saved plans...</p>
+                                        </div>
+                                    ) : plansList.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                                            <div className="p-4 bg-blue-50 rounded-full mb-4">
+                                                <IconCalendar className="w-10 h-10 text-blue-300" />
+                                            </div>
+                                            <h4 className="text-md font-bold text-slate-700">No Saved Plans</h4>
+                                            <p className="text-xs text-slate-500 max-w-xs mt-2">
+                                                There are no skill upgradation plans created for this department and section yet. Click the "Create Plan" button above to get started.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="w-full overflow-x-auto rounded-lg border border-slate-200">
+                                            <table className="w-full border-collapse text-sm text-left">
+                                                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase text-xs font-bold">
+                                                    <tr>
+                                                        <th className="p-3 pl-4">Department</th>
+                                                        <th className="p-3">Section</th>
+                                                        <th className="p-3">Line</th>
+                                                        <th className="p-3">Year</th>
+                                                        <th className="p-3">Document No</th>
+                                                        <th className="p-3">Created By</th>
+                                                        <th className="p-3">Last Updated By</th>
+                                                        {(canUpdate || canDelete) && (
+                                                            <th className="p-3 pr-4 text-center">Actions</th>
+                                                        )}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                    {plansList.map((plan) => (
+                                                        <tr
+                                                            key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
+                                                            onClick={() => { setIsReadOnly(true); setSelectedPlan(plan); }}
+                                                            className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                                                        >
+                                                            <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
+                                                            <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
+                                                            <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
+                                                            <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
+                                                            <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
+                                                            <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
+                                                            <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                            {(canUpdate || canDelete) && (
+                                                                <td className="p-3 pr-4" onClick={(e) => e.stopPropagation()}>
+                                                                    <div className="flex items-center justify-center gap-1.5">
+                                                                        {canUpdate && (
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => { setIsReadOnly(false); setSelectedPlan(plan); }}
+                                                                                className="h-8 px-2.5 text-slate-600 hover:text-green-700 hover:bg-green-50"
+                                                                                title="Edit"
+                                                                            >
+                                                                                <IconEdit className="w-4 h-4" />
+                                                                            </Button>
+                                                                        )}
+                                                                        {canDelete && (
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => setDeleteTarget(plan)}
+                                                                                className="h-8 px-2.5 text-slate-600 hover:text-red-700 hover:bg-red-50"
+                                                                                title="Delete"
+                                                                            >
+                                                                                <IconTrash className="w-4 h-4" />
+                                                                            </Button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            )}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        {/* Associates whose next skill level is planned in the chosen year / month / day */}
+                        <TabsContent value="upcoming">
+                            <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                                <CardHeader className="pb-3 border-b bg-slate-50/50">
+                                    <CardTitle className="text-base flex items-center gap-2 font-semibold text-slate-800">
+                                        <IconCalendarTime className="w-4 h-4 text-blue-600" />
+                                        Upcoming Skill Upgradations
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6">
+                                    <SkillUpgradationDueList
+                                        plans={plansList}
+                                        lineName={(line && line !== "all") ? selectedLineName : ""}
+                                        loading={loadingPlans}
+                                        onOpenPlan={(plan) => { setIsReadOnly(true); setSelectedPlan(plan); }}
+                                    />
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+                    </Tabs>
                 </div>
             ) : (
                 <div className="flex flex-col items-center justify-center py-32 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">

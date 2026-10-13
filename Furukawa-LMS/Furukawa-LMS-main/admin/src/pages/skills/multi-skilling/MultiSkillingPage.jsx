@@ -25,6 +25,7 @@ import {
     IconLoader
 } from "@tabler/icons-react";
 import MultiSkillingPlan from "@/components/common/departments/MultiSkillingPlan.jsx";
+import SkillUpgradationDueList from "@/pages/skills/components/departments/SkillUpgradationDueList.jsx";
 
 // New Imports for Tabbed Navigation & Operator Finder
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/common/ui/tabs.jsx";
@@ -99,6 +100,7 @@ const MultiSkilling = () => {
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [plansList, setPlansList] = useState([]);
     const [loadingPlans, setLoadingPlans] = useState(false);
+    const [planView, setPlanView] = useState("plans");
 
     // Create Plan dialog states
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -310,6 +312,13 @@ const MultiSkilling = () => {
     // Full-screen Plan Calander sheet: open whenever a plan is selected on the Plan Calander tab.
     const isFullScreenPlan = Boolean(selectedPlan && dept && section && activeTab === "planCalendar");
     const handleBackToPlans = () => setSelectedPlan(null);
+
+    // The upcoming list is derived from the plans list, so re-fetch it on entry to avoid
+    // showing dates that were changed since the list was last loaded.
+    const handlePlanViewChange = (view) => {
+        setPlanView(view);
+        if (view === "upcoming") fetchPlansList();
+    };
 
     // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
     // (Escape is closing that instead) or while the user is typing in a cell.
@@ -581,81 +590,111 @@ const MultiSkilling = () => {
                     {/* Training Plan Sheet / List Table */}
                     {dept && section ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4 w-full max-w-full overflow-hidden">
-                            <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
-                                <CardHeader className="pb-3 border-b bg-slate-50/50">
-                                    <CardTitle className="text-base flex items-center justify-between font-semibold text-slate-800">
-                                        <span className="flex items-center gap-2">
-                                            <IconCalendarTime className="w-4 h-4 text-amber-500" />
-                                            Saved Training Plans
-                                        </span>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="pt-6">
-                                    {loadingPlans ? (
-                                        <div className="flex flex-col items-center justify-center py-12">
-                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4" />
-                                            <p className="text-sm text-slate-500">Loading saved plans...</p>
-                                        </div>
-                                    ) : plansList.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                                            <div className="p-4 bg-amber-50 rounded-full mb-4">
-                                                <IconCalendar className="w-10 h-10 text-amber-300" />
-                                            </div>
-                                            <h4 className="text-md font-bold text-slate-700">No Saved Plans</h4>
-                                            <p className="text-xs text-slate-500 max-w-xs mt-2">
-                                                There are no multi-skilling plans created for this department and section yet. Click the "Create Plan" button above to get started.
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="w-full overflow-x-auto rounded-lg border border-slate-200">
-                                            <table className="w-full border-collapse text-sm text-left">
-                                                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase text-xs font-bold">
-                                                    <tr>
-                                                        <th className="p-3 pl-4">Department</th>
-                                                        <th className="p-3">Section</th>
-                                                        <th className="p-3">Line</th>
-                                                        <th className="p-3">Year</th>
-                                                        <th className="p-3">Document No</th>
-                                                        <th className="p-3">Created By</th>
-                                                        <th className="p-3">Last Updated By</th>
-                                                        {isAdmin && <th className="p-3 pr-4 text-center">Action</th>}
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 text-slate-700">
-                                                    {plansList.map((plan) => (
-                                                        <tr
-                                                            key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
-                                                            onClick={() => setSelectedPlan(plan)}
-                                                            className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                                                        >
-                                                            <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
-                                                            <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
-                                                            <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
-                                                            <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
-                                                            <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
-                                                            <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
-                                                            <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
-                                                            {isAdmin && (
-                                                                <td className="p-3 pr-4 text-center" onClick={(e) => e.stopPropagation()}>
-                                                                    <Button
-                                                                        size="xs"
-                                                                        variant="outline"
-                                                                        className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
-                                                                        title="Delete Plan"
-                                                                        onClick={() => setDeletePlanConfirmId(plan.id)}
-                                                                    >
-                                                                        <Trash2 className="h-3 w-3" /> Delete
-                                                                    </Button>
-                                                                </td>
-                                                            )}
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
+                            <Tabs value={planView} onValueChange={handlePlanViewChange} className="gap-4">
+                                <TabsList className="flex gap-2 w-fit bg-gray-100 p-1 rounded-md h-auto">
+                                    <TabsTrigger value="plans" className="text-xs font-bold px-4 py-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white">Multi-Skilling Plans</TabsTrigger>
+                                    <TabsTrigger value="upcoming" className="text-xs font-bold px-4 py-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white">Upcoming Upgradations</TabsTrigger>
+                                </TabsList>
+
+                                <TabsContent value="plans">
+                                    <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                                        <CardHeader className="pb-3 border-b bg-slate-50/50">
+                                            <CardTitle className="text-base flex items-center justify-between font-semibold text-slate-800">
+                                                <span className="flex items-center gap-2">
+                                                    <IconCalendarTime className="w-4 h-4 text-amber-500" />
+                                                    Saved Training Plans
+                                                </span>
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="pt-6">
+                                            {loadingPlans ? (
+                                                <div className="flex flex-col items-center justify-center py-12">
+                                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4" />
+                                                    <p className="text-sm text-slate-500">Loading saved plans...</p>
+                                                </div>
+                                            ) : plansList.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                                    <div className="p-4 bg-amber-50 rounded-full mb-4">
+                                                        <IconCalendar className="w-10 h-10 text-amber-300" />
+                                                    </div>
+                                                    <h4 className="text-md font-bold text-slate-700">No Saved Plans</h4>
+                                                    <p className="text-xs text-slate-500 max-w-xs mt-2">
+                                                        There are no multi-skilling plans created for this department and section yet. Click the "Create Plan" button above to get started.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="w-full overflow-x-auto rounded-lg border border-slate-200">
+                                                    <table className="w-full border-collapse text-sm text-left">
+                                                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase text-xs font-bold">
+                                                            <tr>
+                                                                <th className="p-3 pl-4">Department</th>
+                                                                <th className="p-3">Section</th>
+                                                                <th className="p-3">Line</th>
+                                                                <th className="p-3">Year</th>
+                                                                <th className="p-3">Document No</th>
+                                                                <th className="p-3">Created By</th>
+                                                                <th className="p-3">Last Updated By</th>
+                                                                {isAdmin && <th className="p-3 pr-4 text-center">Action</th>}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                            {plansList.map((plan) => (
+                                                                <tr
+                                                                    key={plan.id || `${plan.departmentId}-${plan.sectionId}-${plan.year}`}
+                                                                    onClick={() => setSelectedPlan(plan)}
+                                                                    className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                                                                >
+                                                                    <td className="p-3 pl-4 font-semibold text-slate-900">{plan.departmentName || "N/A"}</td>
+                                                                    <td className="p-3 text-slate-600 font-medium">{plan.sectionName || "N/A"}</td>
+                                                                    <td className="p-3 text-slate-600 font-medium">{selectedLineName || "N/A"}</td>
+                                                                    <td className="p-3 text-slate-700 font-bold">{plan.year}</td>
+                                                                    <td className="p-3 text-slate-600 font-mono text-xs">{DOCUMENT_NO}</td>
+                                                                    <td className="p-3 text-slate-600">{plan.createdBy || "System"}</td>
+                                                                    <td className="p-3 text-slate-600">{plan.updatedBy || plan.createdBy || "System"}</td>
+                                                                    {isAdmin && (
+                                                                        <td className="p-3 pr-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                            <Button
+                                                                                size="xs"
+                                                                                variant="outline"
+                                                                                className="h-7 text-xs font-semibold px-2 gap-1 border-red-400 text-red-600 hover:bg-red-50"
+                                                                                title="Delete Plan"
+                                                                                onClick={() => setDeletePlanConfirmId(plan.id)}
+                                                                            >
+                                                                                <Trash2 className="h-3 w-3" /> Delete
+                                                                            </Button>
+                                                                        </td>
+                                                                    )}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
+
+                                {/* Associates whose next skill level is planned in the chosen year / month / day */}
+                                <TabsContent value="upcoming">
+                                    <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                                        <CardHeader className="pb-3 border-b bg-slate-50/50">
+                                            <CardTitle className="text-base flex items-center gap-2 font-semibold text-slate-800">
+                                                <IconCalendarTime className="w-4 h-4 text-amber-500" />
+                                                Upcoming Multi-Skilling Upgradations
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="pt-6">
+                                            <SkillUpgradationDueList
+                                                plans={plansList}
+                                                lineName={selectedLineName}
+                                                loading={loadingPlans}
+                                                onOpenPlan={setSelectedPlan}
+                                                accent="amber"
+                                            />
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
+                            </Tabs>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-32 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">
@@ -1197,7 +1236,7 @@ const MultiSkilling = () => {
                 stacking/overflow contexts and covers the sidebar and top navbar; Radix popovers
                 portal in after it and still sit on top. */}
             {isFullScreenPlan && createPortal(
-                <div className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 w-screen h-screen flex flex-col overflow-hidden animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:block print:overflow-visible print:bg-white">
+                <div className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 w-screen h-screen flex flex-col overflow-hidden print:static print:w-auto print:h-auto print:block print:overflow-visible print:bg-white">
                     <div className="shrink-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
                         {/* Row 1: navigation + hierarchy | shortcut hint */}
                         <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -1250,6 +1289,7 @@ const MultiSkilling = () => {
                             lineId={(line && line !== "all") ? line : ""}
                             lineName={selectedLineName}
                             year={selectedPlan.year}
+                            isFullScreen
                             headerActionsContainer={planHeaderActionsEl}
                         />
                     </div>

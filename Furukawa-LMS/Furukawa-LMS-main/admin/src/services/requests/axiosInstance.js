@@ -1,5 +1,5 @@
 import { createDemoAdapter, demoModeEnabled } from "../../../../shared/demoData.js";
-import { authSession } from "@/utils/authSession.js";
+import { authSession } from "../../utils/authSession.js";
 import axios from "axios";
 
 const ENV_BASE = import.meta?.env?.VITE_BASE_URL;

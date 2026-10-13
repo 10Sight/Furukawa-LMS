@@ -126,6 +126,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000
   },
   server: {
+    proxy: {
+      '/uploads': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      }
+    },
     // Hot reload optimization
     hmr: {
       overlay: false // Disable error overlay for better performance

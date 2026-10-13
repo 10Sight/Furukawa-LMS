@@ -1,3 +1,5 @@
+import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
+export { PDCA_DEPARTMENTS };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
 export function matchesPlant(item, plant) {
   if (!PDCA_PLANTS.includes(plant)) return false;
@@ -5,10 +7,13 @@ export function matchesPlant(item, plant) {
   // Previously created forms used All Plants; retain access without moving them.
   return savedPlant === plant.toLowerCase() || savedPlant === 'all plants';
 }
-export function filterPDCARecords(data, plant, scope, search = '') {
+export function filterPDCARecords(data, plant, scope, search = '', department = '') {
   const query = search.toLowerCase().trim();
+  const deptFilter = (department || '').toLowerCase().trim();
   return data.filter(item => matchesPlant(item, plant) &&
     (scope === 'Self PDCA' ? item.isSelf || item.scope === scope : item.scope === scope) &&
-    (!query || [item.topic, item.description, item.id, item.createdBy?.name, item.createdBy?.code]
+    (!deptFilter || (item.department || '').toLowerCase() === deptFilter) &&
+    (!query || [item.topic, item.description, item.id, item.department, item.createdBy?.name, item.createdBy?.code]
       .some(value => String(value || '').toLowerCase().includes(query))));
 }
+

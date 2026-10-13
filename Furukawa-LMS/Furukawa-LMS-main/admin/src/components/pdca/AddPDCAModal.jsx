@@ -5,17 +5,16 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Layers, Check, ChevronDown, AlignLeft } from 'lucide-react';
 
-const DEFAULT_DEPARTMENTS = [
-  'Production', 'SRC Quality', 'IQC Quality', 'Die Casting',
-  'Wiring Harness', 'Press & Stamping', 'Robotics', 'Tool Room',
-  'Plant Maintenance', 'EHS Safety', 'Logistics',
-  'Engineering', 'Human Resources', 'Finance & Accounts', 'Purchase', 'IT',
-];
+import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import SearchableLineAreaSelect from './SearchableLineAreaSelect';
 
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
   const { userContext } = usePDCA();
   const isEditMode = Boolean(editData);
-  const departmentOptions = [...new Set([...DEFAULT_DEPARTMENTS, ...(userContext.departments || []).map(item => item.name), editData?.department].filter(Boolean))];
+  const departmentOptions = [
+    ...PDCA_DEPARTMENTS,
+    ...(editData?.department && !PDCA_DEPARTMENTS.includes(editData.department) ? [editData.department] : [])
+  ];
   const draftKey = `pdca_draft_${editData?.id || `${defaultPlant}_${defaultScope}_${userContext.lpaSource?.category || 'general'}_${userContext.lpaSource?.workbookId || 'all'}_${userContext.lpaSource?.worksheet || ''}`}`;
 
   const defaultForm = {
@@ -245,17 +244,14 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             </div>
             <div>
               <label htmlFor="pdca-section" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                <span>Section *</span>
+                <span>Line / Area / Section *</span>
                 <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Required</span>
               </label>
-              <input
-                id="pdca-section"
-                type="text"
-                required
+              <SearchableLineAreaSelect
                 value={formData.section}
-                onChange={e => setFormData({ ...formData, section: e.target.value })}
-                placeholder="Enter section name (e.g. Line 1, Press Shop)..."
-                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs transition-all"
+                onChange={(val) => setFormData({ ...formData, section: val })}
+                placeholder="Search or select Line / Area / Section..."
+                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none shadow-2xs transition-all"
               />
             </div>
           </div>

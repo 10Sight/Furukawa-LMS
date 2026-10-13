@@ -76,16 +76,9 @@ export default function MainLayout({ embedded = false, cmsIntegration = false, o
         )}
 
         <main className={`flex-1 w-full min-w-0 mx-auto overflow-x-hidden ${
-          isSheetPage ? 'p-2 sm:p-3 max-w-full' : 'p-3 sm:p-4 md:p-6 space-y-5 max-w-[1280px]'
+          isSheetPage ? 'p-2 sm:p-3 max-w-full' : 'px-3 sm:px-4 md:px-6 pt-2 pb-6 space-y-3 max-w-[1280px]'
         }`}>
-          {cmsIntegration && !isSheetPage && (
-            <div className="flex justify-end">
-              <button type="button" onClick={handleExportExcelAll} title="Download PDCA Report" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                Export All Records
-              </button>
-            </div>
-          )}
-          <Outlet />
+          <Outlet context={{ onExportAll: handleExportExcelAll }} />
         </main>
       </div>
     </div>

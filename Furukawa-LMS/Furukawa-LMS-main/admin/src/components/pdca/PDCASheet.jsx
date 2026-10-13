@@ -30,58 +30,13 @@ import FileUploadSelectionModal from './FileUploadSelectionModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-
-// Department to Employees mapping
-const departmentEmployeesData = {
-  'SRC Quality': [
-    'Yogesh Kumar (AS081213)',
-    'Ramesh Patel (GJ021944)',
-    'Vikram Singh (GJ034112)'
-  ],
-  'Die Casting': [
-    'Rahul Sharma (BW041920)',
-    'Dinesh Rao (BW028371)',
-    'Mukesh Verma (BW051289)'
-  ],
-  'EHS Safety': [
-    'Amit Patel (GJ092311)',
-    'Kavita Joshi (GJ019283)'
-  ],
-  'Plant Maintenance': [
-    'Sandeep Verma (BW071562)',
-    'Rajesh Kumar (BW081290)',
-    'Pooja Nair (BW039182)'
-  ],
-  'Wiring Harness': [
-    'Priya Nair (GJ018442)',
-    'Suresh Yadav (GJ047219)'
-  ],
-  'Press & Stamping': [
-    'Manish Joshi (BW092301)',
-    'Ajay Verma (BW012398)'
-  ],
-  'IQC Quality': [
-    'Deepak Mehta (GJ045819)',
-    'Sunil Kumar (GJ082711)'
-  ],
-  'Robotics': [
-    'Anil Gupta (BW038291)',
-    'Karan Malhotra (BW091823)'
-  ],
-  'Logistics': [
-    'Yogesh Kumar (AS081213)',
-    'Naveen Yadav (GJ019482)'
-  ],
-  'Tool Room': [
-    'Yogesh Kumar (AS081213)',
-    'Brijesh Sharma (BW029384)'
-  ],
-  'Production': [
-    'Arun Sharma (PR019283)',
-    'Mahesh Rao (PR029381)',
-    'Sanjay Gupta (PR039182)'
-  ]
-};
+import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import {
+  findEmployeeDepartment,
+  VERIFIED_EMPLOYEE_MASTER
+} from '../../pages/pdca/data/pdcaEmployees.js';
+import SearchableLineAreaSelect from './SearchableLineAreaSelect';
+import { getMediaUrl } from '@/utils/mediaUtils.js';
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
@@ -279,6 +234,23 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   });
 
   const [isSaving, setIsSaving] = useState(false);
+
+  // Database-backed employee master records
+  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+
+  // Fetch verified employee records from database via metadata API
+  useEffect(() => {
+    let active = true;
+    pdcaApi.getMetadata().then(meta => {
+      if (!active || !meta) return;
+      if (Array.isArray(meta.employees) && meta.employees.length > 0) {
+        setDbEmployees(meta.employees);
+      }
+    }).catch(err => {
+      console.warn('Could not fetch employee metadata from database:', err);
+    });
+    return () => { active = false; };
+  }, []);
 
   // Load saved sheet from backend on mount or when topic changes
   useEffect(() => {
@@ -579,35 +551,81 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     });
   };
 
-  const allStaffEmployees = useMemo(() => {
-    const set = new Set();
-    Object.values(departmentEmployeesData).forEach((list) => {
-      list.forEach((name) => set.add(name));
+  // Formatted employee options derived from verified database employee records
+  const employeeOptionList = useMemo(() => {
+    const map = new Map();
+    // 1. From database employee records
+    dbEmployees.forEach((emp) => {
+      const label = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+      map.set(label, {
+        label,
+        name: emp.name,
+        code: emp.code || '',
+        department: emp.department || ''
+      });
     });
+
+    // 2. From CFT topic assigned members if any
     (topic?.assignedMembers || []).forEach((m) => {
-      if (m.name) set.add(m.code ? `${m.name} (${m.code})` : m.name);
+      if (m.name) {
+        const label = m.code ? `${m.name} (${m.code})` : m.name;
+        if (!map.has(label)) {
+          const dept = findEmployeeDepartment(label, dbEmployees);
+          map.set(label, {
+            label,
+            name: m.name,
+            code: m.code || '',
+            department: dept || ''
+          });
+        }
+      }
     });
+
+    // 3. From any existing rows loaded from saved sheet (so historical entries remain visible)
     rows.forEach((r) => {
-      if (r.staffEmployee?.trim()) set.add(r.staffEmployee.trim());
+      if (r.staffEmployee?.trim()) {
+        const label = r.staffEmployee.trim();
+        if (!map.has(label)) {
+          const dept = findEmployeeDepartment(label, dbEmployees);
+          map.set(label, {
+            label,
+            name: label,
+            code: '',
+            department: dept || r.department || ''
+          });
+        }
+      }
     });
-    return Array.from(set);
-  }, [rows, topic?.assignedMembers]);
+
+    return Array.from(map.values());
+  }, [dbEmployees, topic?.assignedMembers, rows]);
 
   const getStaffOptionsForRow = (rowIndex) => {
     const row = rows[rowIndex];
-    const deptEmployees = row?.department ? (departmentEmployeesData[row.department] || []) : [];
+    const currentDept = row?.department?.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
 
+    let list = employeeOptionList;
     if (query) {
-      return allStaffEmployees.filter((emp) => emp.toLowerCase().includes(query));
+      list = list.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          (item.department && item.department.toLowerCase().includes(query))
+      );
     }
 
-    if (deptEmployees.length > 0) {
-      const otherEmployees = allStaffEmployees.filter((e) => !deptEmployees.includes(e));
-      return [...deptEmployees, ...otherEmployees];
+    if (currentDept) {
+      // Prioritize staff belonging to the selected department at the top
+      const deptMatches = list.filter(
+        (item) => item.department && item.department.toLowerCase() === currentDept
+      );
+      const others = list.filter(
+        (item) => !item.department || item.department.toLowerCase() !== currentDept
+      );
+      return [...deptMatches, ...others];
     }
 
-    return allStaffEmployees;
+    return list;
   };
 
   const handleToggleCFTDropdown = (rowIndex, e, mode = 'auto') => {
@@ -760,7 +778,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   };
 
   const handleSaveStaffEmployee = (rowIndex, formattedValue) => {
-    handleCellChange(rowIndex, 'staffEmployee', formattedValue);
+    handleSelectStaffMember(rowIndex, formattedValue);
   };
 
   // Focus navigation refs grid: cellRefs.current[`${rowIndex}_${colName}`]
@@ -852,15 +870,68 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     });
   };
 
+  // Scenario B & D: When department is manually changed or selected
   const handleDepartmentChange = (rowIndex, dept) => {
     setRows((prev) => {
       const updated = [...prev];
+      const prevDept = updated[rowIndex]?.department || '';
+      // If department changed: clear staffEmployee so previous employee is not retained (Scenario D)
+      // If selecting department first: staffEmployee remains blank (Scenario B)
+      const shouldClearStaff = prevDept !== dept;
       updated[rowIndex] = {
         ...updated[rowIndex],
-        department: dept
+        department: dept,
+        staffEmployee: shouldClearStaff ? '' : (updated[rowIndex]?.staffEmployee || '')
       };
       return updated;
     });
+  };
+
+  // Scenarios A, C & E: When staff member is selected
+  const handleSelectStaffMember = (rowIndex, staffValue) => {
+    if (!staffValue || !staffValue.trim()) {
+      setRows((prev) => {
+        const updated = [...prev];
+        updated[rowIndex] = {
+          ...updated[rowIndex],
+          staffEmployee: ''
+        };
+        return updated;
+      });
+      return;
+    }
+
+    const trimmedStaff = staffValue.trim();
+    // Match against verified employee records in database using Staff ID and Staff Name
+    const matchedDept = findEmployeeDepartment(trimmedStaff, dbEmployees);
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+
+      if (matchedDept) {
+        // Scenarios A & C: Auto-populate employee's verified database department
+        updated[rowIndex] = {
+          ...currentRow,
+          staffEmployee: trimmedStaff,
+          department: matchedDept
+        };
+      } else {
+        // Scenario E: Missing or ambiguous employee record in DB.
+        // Do not guess or assign an arbitrary department. Keep existing department or empty.
+        updated[rowIndex] = {
+          ...currentRow,
+          staffEmployee: trimmedStaff
+        };
+      }
+      return updated;
+    });
+
+    if (!matchedDept) {
+      showToast(
+        `Staff member "${trimmedStaff}" could not be matched to a verified database department. Please select department manually.`
+      );
+    }
   };
 
   // Detect file category from file extension or mime type
@@ -897,6 +968,13 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   const handleFileUploadFromModal = async (uploadTypeId, file) => {
     const { rowIndex, field, nameField, typeField } = uploadSelectionModal;
     if (rowIndex === null || !file) return;
+
+    const MAX_SIZE = 15 * 1024 * 1024; // 15 MB limit
+    if (file.size > MAX_SIZE) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      window.alert(`The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`);
+      return;
+    }
 
     // Detect file type
     const detectedType = getFileType(file.name, file.type) || uploadTypeId;
@@ -944,7 +1022,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         nameField,
         typeField,
         title: field === 'imageBefore' ? 'Image (Before)' : 'Image (After)',
-        imageSrc: fileSrc,
+        imageSrc: dataUrl || getMediaUrl(fileSrc),
         imageName: file.name,
         fileType: finalType
       });
@@ -963,7 +1041,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       rowIndex,
       field,
       nameField,
-      imageSrc: targetFile,
+      imageSrc: getMediaUrl(targetFile),
       title: `Edit Image - Row ${rowIndex + 1}`
     });
   };
@@ -1013,12 +1091,13 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   // Open/view/download uploaded file (image in lightbox, doc in new tab or download)
   const handleViewFile = (fileData, fileName, fileType) => {
     if (!fileData) return;
+    const resolvedUrl = getMediaUrl(fileData);
     if (fileType === 'image') {
-      setActivePreviewImage(fileData);
+      setActivePreviewImage(resolvedUrl);
     } else {
       // For PDF, Excel, PPT: trigger download or open
       const link = document.createElement('a');
-      link.href = fileData;
+      link.href = resolvedUrl;
       link.download = fileName || 'download';
       document.body.appendChild(link);
       link.click();
@@ -1038,7 +1117,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       nameField,
       typeField,
       title: isBefore ? 'Image (Before)' : 'Image (After)',
-      imageSrc: row[field],
+      imageSrc: getMediaUrl(row[field]),
       imageName: row[nameField] || (isBefore ? 'Before Image' : 'After Image'),
       fileType: row[typeField] || 'image',
     });
@@ -1089,7 +1168,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     }
   };
 
-  const departmentsList = Object.keys(departmentEmployeesData);
+  const departmentsList = PDCA_DEPARTMENTS;
 
   return (
     <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
@@ -1175,7 +1254,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               {/* Title Row: Centered Page Title */}
               <tr className="bg-white border-b border-[#94A3B8]">
                 <th
-                  colSpan={13}
+                  colSpan={15}
                   className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
                 >
                   {topic?.topic || 'PDCA - M Tanaka San Audit'}
@@ -1193,7 +1272,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   会議名
                 </th>
                 <th
-                  colSpan={6}
+                  colSpan={7}
                   className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                 >
                   <input
@@ -1212,7 +1291,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   作成者 :
                 </th>
                 <th
-                  colSpan={3}
+                  colSpan={4}
                   className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                 >
                   <input
@@ -1235,7 +1314,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   出席者
                 </th>
                 <th
-                  colSpan={6}
+                  colSpan={7}
                   className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                 >
                   <input
@@ -1254,7 +1333,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   議事録No
                 </th>
                 <th
-                  colSpan={3}
+                  colSpan={4}
                   className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                 >
                   <input
@@ -1294,7 +1373,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
                 {/* C: Check - Above Responsible Person Confirmation (Dept / Staff / CFT) */}
                 <th
-                  colSpan={1}
+                  colSpan={3}
                   className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
                   title="Check (C)"
                 >
@@ -1311,53 +1390,60 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                 </th>
               </tr>
 
-              <tr className="bg-[#ECEFF1] text-slate-800 border-b border-[#B0BEC5] text-[11px] font-semibold select-none text-center">
-                <th className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#B0BEC5]">
+              <tr className="bg-[#ECEFF1] text-slate-800 border-b border-[#475569] text-[11px] font-semibold select-none text-center">
+                <th rowSpan={2} className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#475569]">
                   <span>Date</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th className="py-1.5 px-0.5 w-[36px] min-w-[34px] text-center border-r border-[#B0BEC5]">
+                <th rowSpan={2} className="py-1.5 px-0.5 w-[36px] min-w-[34px] text-center border-r border-[#475569]">
                   <span>Shift</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-[#B0BEC5]">
+                <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-[#475569]">
                   S.No
                 </th>
-                <th className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#475569] text-[10.5px]">
                   <span>Status</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th className="py-1.5 px-1 w-[85px] min-w-[75px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569] text-[10.5px]">
                   <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] text-[10.5px]">
                   <span>Observation</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th className="py-1.5 px-1 w-[85px] min-w-[80px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569] text-[10.5px]">
                   Image Before
                 </th>
-                <th className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] text-[10.5px]">
                   Root Cause
                 </th>
-                <th className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#B0BEC5] leading-tight text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] leading-tight text-[10.5px]">
                   Counter Measure
                 </th>
-                <th className="py-1.5 px-1 w-[85px] min-w-[80px] text-center border-r border-[#B0BEC5] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[105px] text-center border-r border-[#475569] text-[10.5px]">
                   Image After
                 </th>
-                <th className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#B0BEC5] leading-tight">
+                <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#475569] leading-tight">
                   <div className="text-[10px] leading-tight font-semibold">Response</div>
                   <div className="text-[10px] leading-tight font-semibold">Date</div>
                 </th>
-                <th className="py-1 px-0 border-r border-[#B0BEC5] text-center w-[240px] min-w-[240px]">
-                  <div className="text-center font-bold text-[9.5px] pb-0.5 border-b border-[#CFD8DC] text-slate-700 px-1">
+                <th colSpan={3} className="py-1 px-0 border-r border-[#475569] text-center">
+                  <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
                     Responsible Person Confirmation
                   </div>
-                  <div className="grid grid-cols-3 divide-x divide-[#CFD8DC] text-[9.5px] text-slate-600 pt-0.5 font-semibold">
-                    <span className="text-center px-0.5 flex items-center justify-center">Dept</span>
-                    <span className="text-center px-0.5 flex items-center justify-center">Staff Name</span>
-                    <span className="text-center px-0.5 flex items-center justify-center">CFT</span>
-                  </div>
                 </th>
-                <th className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-[#B0BEC5] leading-tight text-[9.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-[#475569] leading-tight text-[9.5px]">
                   (Responsible person instructions, etc.)
+                </th>
+              </tr>
+
+              <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[9.5px] border-b-2 border-[#475569] select-none text-center">
+                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[82px] min-w-[75px]">
+                  Dept
+                </th>
+                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[88px] min-w-[80px]">
+                  Staff Name
+                </th>
+                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[70px] min-w-[65px]">
+                  CFT
                 </th>
               </tr>
             </thead>
@@ -1366,16 +1452,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
             <tbody className="bg-white">
               {rows.map((row, idx) => {
                 const sNo = idx + 1;
-                const availableEmployees = row.department ? (departmentEmployeesData[row.department] || []) : [];
 
                 return (
                   <tr
                     key={idx}
                     ref={(el) => registerTrRef(idx, el)}
-                    className="border-b border-[#CFD8DC] hover:bg-[#F8FAFC] transition-colors"
+                    className="border-b border-[#64748B] hover:bg-[#F8FAFC] transition-colors"
                   >
                     {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[56px] min-w-[52px]">
+                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                       <CompactDateCell
                         value={row.date}
                         onChange={(val) => handleCellChange(idx, 'date', val)}
@@ -1383,7 +1468,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </td>
 
                     {/* 2. Shift (Decreased width for single letter A/B/C/G, blank by default) */}
-                    <td className="p-0 align-middle border-r border-[#CFD8DC] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
+                    <td className="p-0 align-middle border-r border-[#64748B] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
                       <div className="relative w-full h-full flex items-center justify-center">
                         <select
                           value={row.shift === 'General' ? 'G' : (row.shift || '')}
@@ -1401,11 +1486,11 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </td>
 
                     {/* 3. S.No (Clean uneditable number) */}
-                    <td className="p-0.5 align-middle text-center border-r border-[#CFD8DC] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
+                    <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
                       {sNo}
                     </td>
 
-                    <td className="px-0.5 py-1 align-middle text-center border-r border-[#CFD8DC] w-[78px] min-w-[78px]">
+                    <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[78px] min-w-[78px]">
                       <select
                         aria-label={`Status for row ${sNo}`}
                         value={row.status || 'Open'}
@@ -1424,20 +1509,17 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       </select>
                     </td>
 
-                    {/* 4. Line/Area (Auto-expanding on Shift+Enter / multiline, center aligned, editable like observation) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[85px] min-w-[75px] focus-within:bg-blue-50/30 text-center">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'lineArea', el)}
+                    {/* 4. Line/Area (Searchable Dropdown with search bar) */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
+                      <SearchableLineAreaSelect
                         value={row.lineArea}
-                        onChange={(e) => handleCellChange(idx, 'lineArea', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'lineArea')}
+                        onChange={(val) => handleCellChange(idx, 'lineArea', val)}
                         placeholder="Line/Area..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </td>
 
                     {/* 5. Observation (Auto-expanding on Shift+Enter / multiline, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'observation', el)}
                         value={row.observation}
@@ -1448,44 +1530,44 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       />
                     </td>
 
-                    {/* 5. Image (Before) - Clean image-only preview */}
-                    <td className="p-1 align-middle border-r border-[#CFD8DC] w-[85px] min-w-[80px]">
+                    {/* 5. Image (Before) - Clean high-visibility preview with increased dimensions and aspect ratio preservation */}
+                    <td className="p-1.5 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
                       {row.imageBefore ? (
-                        <div className="flex items-center justify-center w-full">
+                        <div className="flex items-center justify-center w-full min-h-[90px] py-1">
                           <button
                             type="button"
                             onClick={() => handleOpenImageActions(idx, 'imageBefore')}
-                            className="group relative inline-flex items-center justify-center p-0.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-2xs overflow-hidden max-w-full"
+                            className="group relative inline-flex items-center justify-center p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-sm overflow-hidden max-w-full"
                             title={`Click to view ${row.imageBeforeName || 'file'}, edit or delete`}
                           >
                             {row.fileTypeBefore === 'image' ? (
-                              <div className="relative">
+                              <div className="relative flex items-center justify-center">
                                 <img
-                                  src={row.imageBefore}
+                                  src={getMediaUrl(row.imageBefore)}
                                   alt={row.imageBeforeName || `Row ${sNo} Before`}
-                                  className="h-8 w-auto max-w-[70px] object-cover rounded transition-transform group-hover:scale-105"
+                                  className="h-20 w-auto max-w-[110px] max-h-[85px] object-contain rounded transition-transform group-hover:scale-105"
                                 />
-                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                  <Eye className="w-3.5 h-3.5 drop-shadow" />
+                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                  <Eye className="w-4 h-4 drop-shadow" />
                                 </div>
                               </div>
                             ) : (
                               <div
-                                className={`h-8 px-1.5 rounded flex items-center gap-1 cursor-pointer ${
+                                className={`h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer ${
                                   row.fileTypeBefore === 'pdf'
-                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-300'
                                     : row.fileTypeBefore === 'excel'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
                                       : row.fileTypeBefore === 'ppt'
-                                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        ? 'bg-amber-50 text-amber-700 border border-amber-300'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-300'
                                 }`}
                               >
-                                {row.fileTypeBefore === 'pdf' && <FileText className="w-3.5 h-3.5 text-rose-600" />}
-                                {row.fileTypeBefore === 'excel' && <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
-                                {row.fileTypeBefore === 'ppt' && <Presentation className="w-3.5 h-3.5 text-amber-600" />}
-                                {row.fileTypeBefore === 'document' && <File className="w-3.5 h-3.5 text-blue-600" />}
-                                <span className="text-[9.5px] font-bold uppercase tracking-tight">
+                                {row.fileTypeBefore === 'pdf' && <FileText className="w-4 h-4 text-rose-600" />}
+                                {row.fileTypeBefore === 'excel' && <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+                                {row.fileTypeBefore === 'ppt' && <Presentation className="w-4 h-4 text-amber-600" />}
+                                {row.fileTypeBefore === 'document' && <File className="w-4 h-4 text-blue-600" />}
+                                <span className="text-[10px] font-bold uppercase tracking-tight">
                                   {row.fileTypeBefore}
                                 </span>
                               </div>
@@ -1496,17 +1578,17 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                         <button
                           type="button"
                           onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
-                          className="flex items-center justify-center gap-1 border border-dashed border-[#94A3B8] hover:border-blue-600 bg-white hover:bg-blue-50/40 rounded px-1 py-1 cursor-pointer text-slate-600 hover:text-blue-700 transition-colors w-full"
+                          className="flex items-center justify-center gap-1 border border-dashed border-[#64748B] hover:border-blue-600 bg-white hover:bg-blue-50/40 rounded px-1.5 py-2 cursor-pointer text-slate-700 hover:text-blue-700 transition-colors w-full font-semibold"
                           title="Click to choose: Upload Image, PDF, PPT, or Excel"
                         >
-                          <Upload className="w-3 h-3 text-slate-400" />
-                          <span className="text-[10px] font-medium whitespace-nowrap">Upload</span>
+                          <Upload className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="text-[10.5px] whitespace-nowrap">Upload</span>
                         </button>
                       )}
                     </td>
 
                     {/* 6. Root Cause (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'rootCause', el)}
                         value={row.rootCause}
@@ -1518,7 +1600,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </td>
 
                     {/* 7. Counter Measure (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                         value={row.counterMeasure}
@@ -1530,7 +1612,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </td>
 
                     {/* 8. Image After - Clean image-only preview */}
-                    <td className="p-1 align-middle border-r border-[#CFD8DC] w-[85px] min-w-[80px]">
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[85px] min-w-[80px]">
                       {row.imageAfter ? (
                         <div className="flex items-center justify-center w-full">
                           <button
@@ -1542,7 +1624,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                             {row.fileTypeAfter === 'image' ? (
                               <div className="relative">
                                 <img
-                                  src={row.imageAfter}
+                                  src={getMediaUrl(row.imageAfter)}
                                   alt={row.imageAfterName || `Row ${sNo} After`}
                                   className="h-8 w-auto max-w-[70px] object-cover rounded transition-transform group-hover:scale-105"
                                 />
@@ -1587,158 +1669,162 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </td>
 
                     {/* 9. Response Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-0 align-middle text-center border-r border-[#CFD8DC] w-[56px] min-w-[52px]">
+                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                       <CompactDateCell
                         value={row.responseDate}
                         onChange={(val) => handleCellChange(idx, 'responseDate', val)}
                       />
                     </td>
 
-                    {/* 10. Responsible Person Confirmation (Department, Staff Employee & CFT Topic Dropdown) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[240px] min-w-[240px]">
-                      <div className="grid grid-cols-3 divide-x divide-[#CFD8DC] min-h-[42px] h-full items-stretch">
-                        {/* Department Dropdown */}
-                        <div className="relative w-full h-full flex items-center justify-center focus-within:bg-blue-50/30">
-                          <select
-                            value={row.department}
-                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
-                            title={row.department || 'Select Department'}
-                          >
-                            <option value="">Dept...</option>
-                            {departmentsList.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
+                    {/* 10. Department Dropdown (Native Table Cell - Fully responsive height) */}
+                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[75px]">
+                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
+                        <select
+                          value={row.department || ''}
+                          onChange={(e) => handleDepartmentChange(idx, e.target.value)}
+                          className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                          title={row.department || 'Select Department'}
+                        >
+                          <option value="">Dept...</option>
+                          {row.department && !departmentsList.includes(row.department) && (
+                            <option value={row.department}>{row.department}</option>
+                          )}
+                          {departmentsList.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    </td>
 
-                        {/* 2nd Sub-column: Staff Employee Name (Search bar / dropdown + bottom-right + button) */}
-                        <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
-                          {row.staffEmployee ? (
-                            <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                                className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                                title={`Click to search/change staff: ${row.staffEmployee}`}
-                              >
-                                <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
-                                  {row.staffEmployee}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCellChange(idx, 'staffEmployee', '');
-                                }}
-                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0"
-                                title="Clear staff employee"
-                              >
-                                <X className="w-3 h-3 stroke-[2.5]" />
-                              </button>
-                            </div>
-                          ) : (
+                    {/* 11. Staff Name (Native Table Cell - Fully responsive height) */}
+                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[88px] min-w-[80px]">
+                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
+                        {row.staffEmployee ? (
+                          <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
                             <button
                               type="button"
                               onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                              className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
-                              title="Click to search and select staff employee"
+                              className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
+                              title={`Click to search/change staff: ${row.staffEmployee}`}
                             >
-                              <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
-                                <Search className="w-2.5 h-2.5" />
-                                <span className="truncate">Staff...</span>
-                                <ChevronDown className="w-2.5 h-2.5" />
-                              </div>
+                              <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
+                                {row.staffEmployee}
+                              </span>
                             </button>
-                          )}
-
-                          {/* Down right side '+' option button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAddStaffModal(idx);
-                            }}
-                            className="absolute bottom-0.5 right-0.5 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                            title="Add custom staff manually (+)"
-                          >
-                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                          </button>
-                        </div>
-
-                        {/* 3rd Sub-column: CFT */}
-                        <div className="relative w-full h-full flex items-center justify-center">
-                          {row.cftTopic ? (
-                            <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                              {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggleCFTDropdown(idx, e, 'members')}
-                                className="cft-trigger-btn flex-1 min-w-0 text-left cursor-pointer flex flex-col justify-center py-0.5 hover:opacity-85 transition-opacity"
-                                title="Click to view and select Members / Assigned Employees for this topic"
-                              >
-                                <span
-                                  className="text-[10px] font-semibold truncate max-w-[65px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                  title={row.cftTopic}
-                                >
-                                  {row.cftTopic}
-                                </span>
-                                {row.cftSelectedName && (
-                                  <div className="flex items-center gap-0.5 mt-0.5">
-                                    <span
-                                      className={`text-[8.5px] font-medium truncate max-w-[60px] px-0.5 py-0.2 rounded leading-tight ${
-                                        row.cftSelectedType === 'member'
-                                          ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                          : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                      }`}
-                                      title={row.cftSelectedName}
-                                    >
-                                      {row.cftSelectedName}
-                                    </span>
-                                  </div>
-                                )}
-                              </button>
-
-                              {/* Right: Edit & Delete buttons */}
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleEditCFTTopic(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                  title="Change CFT Topic"
-                                >
-                                  <Edit3 className="w-2.5 h-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteCFT(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Delete CFT Topic & Member"
-                                >
-                                  <Trash2 className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
                             <button
                               type="button"
-                              onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
-                              className="cft-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
-                              title="Click to select CFT Topic"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectStaffMember(idx, '');
+                              }}
+                              className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0"
+                              title="Clear staff employee"
                             >
-                              <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
+                              <X className="w-3 h-3 stroke-[2.5]" />
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                            className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
+                            title="Click to search and select staff employee"
+                          >
+                            <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
+                              <Search className="w-2.5 h-2.5" />
+                              <span className="truncate">Staff...</span>
+                              <ChevronDown className="w-2.5 h-2.5" />
+                            </div>
+                          </button>
+                        )}
+
+                        {/* Down right side '+' option button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAddStaffModal(idx);
+                          }}
+                          className="absolute bottom-0.5 right-0.5 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
+                          title="Add custom staff manually (+)"
+                        >
+                          <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* 12. CFT (Native Table Cell - Fully responsive height) */}
+                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[70px] min-w-[65px]">
+                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
+                        {row.cftTopic ? (
+                          <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                            {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleCFTDropdown(idx, e, 'members')}
+                              className="cft-trigger-btn flex-1 min-w-0 text-left cursor-pointer flex flex-col justify-center py-0.5 hover:opacity-85 transition-opacity"
+                              title="Click to view and select Members / Assigned Employees for this topic"
+                            >
+                              <span
+                                className="text-[10px] font-semibold truncate max-w-[65px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                title={row.cftTopic}
+                              >
+                                {row.cftTopic}
+                              </span>
+                              {row.cftSelectedName && (
+                                <div className="flex items-center gap-0.5 mt-0.5">
+                                  <span
+                                    className={`text-[8.5px] font-medium truncate max-w-[60px] px-0.5 py-0.2 rounded leading-tight ${
+                                      row.cftSelectedType === 'member'
+                                        ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                        : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                    }`}
+                                    title={row.cftSelectedName}
+                                  >
+                                    {row.cftSelectedName}
+                                  </span>
+                                </div>
+                              )}
+                            </button>
+
+                            {/* Right: Edit & Delete buttons */}
+                            <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={(e) => handleEditCFTTopic(idx, e)}
+                                className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                title="Change CFT Topic"
+                              >
+                                <Edit3 className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteCFT(idx, e)}
+                                className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Delete CFT Topic & Member"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
+                            className="cft-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                            title="Click to select CFT Topic"
+                          >
+                            <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
+                          </button>
+                        )}
                       </div>
                     </td>
 
                     {/* 11. (Responsible person instructions, etc.) (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#CFD8DC] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
+                    <td className="p-0 align-top border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
                         value={row.responsiblePersonConfirmation}
@@ -1772,7 +1858,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               <div
                 key={idx}
                 style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
-                className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#CFD8DC] group hover:bg-blue-50/20 transition-colors"
+                className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
               >
                 {/* Insert Row Above – icon only */}
                 <button
@@ -1833,7 +1919,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               <X className="w-5 h-5" />
             </button>
             <img
-              src={activePreviewImage}
+              src={getMediaUrl(activePreviewImage)}
               alt="Enlarged preview"
               className="max-h-[80vh] w-auto rounded-lg object-contain mx-auto"
             />
@@ -1920,7 +2006,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   type="button"
                   onClick={() => {
                     const link = document.createElement('a');
-                    link.href = selectedImageAction.imageSrc;
+                    link.href = getMediaUrl(selectedImageAction.imageSrc);
                     link.download = selectedImageAction.imageName || 'download';
                     document.body.appendChild(link);
                     link.click();
@@ -1966,7 +2052,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
             <div className="flex-1 min-h-[320px] max-h-[75vh] bg-slate-900/95 flex items-center justify-center p-3 sm:p-5 overflow-auto">
               {selectedImageAction.fileType === 'image' ? (
                 <img
-                  src={selectedImageAction.imageSrc}
+                  src={getMediaUrl(selectedImageAction.imageSrc)}
                   alt={selectedImageAction.imageName}
                   className="max-h-[70vh] max-w-full w-auto h-auto rounded-lg object-contain shadow-2xl mx-auto"
                 />
@@ -2283,17 +2369,20 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
           {/* Staff Options List */}
           <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[240px]">
             {getStaffOptionsForRow(openStaffDropdown.rowIndex).length > 0 ? (
-              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empName, i) => {
+              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empItem, i) => {
+                const empName = empItem.label;
+                const empDept = empItem.department;
                 const isSelected = rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
                 const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
-                  (departmentEmployeesData[rows[openStaffDropdown.rowIndex].department] || []).includes(empName);
+                  empDept &&
+                  empDept.toLowerCase() === rows[openStaffDropdown.rowIndex].department.toLowerCase();
 
                 return (
                   <button
                     key={`${empName}_${i}`}
                     type="button"
                     onClick={() => {
-                      handleCellChange(openStaffDropdown.rowIndex, 'staffEmployee', empName);
+                      handleSelectStaffMember(openStaffDropdown.rowIndex, empName);
                       setOpenStaffDropdown(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${
@@ -2310,9 +2399,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       />
                       <span className="truncate">{empName}</span>
                     </div>
-                    {isDeptMatch && (
-                      <span className="text-[9px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 py-0.2 shrink-0">
-                        Dept
+                    {empDept && (
+                      <span
+                        className={`text-[9.5px] font-medium px-1.5 py-0.5 rounded shrink-0 border ${
+                          isDeptMatch
+                            ? 'bg-blue-100/80 text-blue-800 border-blue-300 font-semibold'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        {empDept}
                       </span>
                     )}
                   </button>

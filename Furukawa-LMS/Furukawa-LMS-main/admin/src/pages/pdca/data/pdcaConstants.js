@@ -1,0 +1,41 @@
+export const PDCA_DEPARTMENTS = [
+  'PE',
+  'IT',
+  'Quality',
+  'Assembly',
+  'SRC',
+  'Store',
+  'HR',
+  'Safety',
+  'FG',
+  'PPC',
+  'Maintenance',
+  'D&D',
+  'C&C'
+];
+
+export const DEFAULT_LINE_AREAS = [
+  'Assembly Area',
+  'Assembly Line 1',
+  'Assembly Line 2',
+  'Assembly Line 3',
+  'Line 1',
+  'Line 2',
+  'Line 3',
+  'Line 4',
+  'Line 5',
+  'Line A',
+  'Line B',
+  'Line C',
+  'Line D',
+  'C&C Area',
+  'Die Casting Area',
+  'Press Shop',
+  'Wiring Harness Area',
+  'Quality Lab',
+  'Stores / Warehouse',
+  'Pre-Inspection Rework',
+  'Final Inspection Area',
+  'Packaging Area',
+  'Maintenance Area'
+];

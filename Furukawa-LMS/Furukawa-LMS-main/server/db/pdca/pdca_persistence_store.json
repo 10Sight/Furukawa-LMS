@@ -1,98 +1,24 @@
 {
   "records": [
     {
-      "id": "CFT-1791795145045",
-      "recordId": "CFT-1791795145045",
-      "topic": "Dedicated Folder CFT",
-      "description": "",
-      "plant": "Gujrat",
-      "scope": "CFT",
-      "department": "CFT",
-      "section": "",
-      "sectionId": "",
-      "date": "12 Oct 2026",
-      "time": "02:22 PM",
-      "createdBy": null,
-      "assignedMembers": [
-        {
-          "name": "AMIT PATEL",
-          "code": "GJ092311"
-        }
-      ],
-      "lpaSource": null,
-      "isSelf": false,
-      "isDeleted": false,
-      "createdAt": "2026-10-12T08:52:25.046Z",
-      "updatedAt": "2026-10-12T08:52:25.046Z"
-    },
-    {
-      "id": "PDCA-1791795145020",
-      "recordId": "PDCA-1791795145020",
-      "topic": "Dedicated Folder Test Record",
+      "id": "PDCA-ASY-BW-103",
+      "recordId": "PDCA-ASY-BW-103",
+      "topic": "Assembly Line 3 - Pneumatic Crimper Pressure Drop Detection Alarm",
       "description": "",
       "plant": "Gujrat",
       "scope": "Company",
       "department": "",
       "section": "",
       "sectionId": "",
-      "date": "12 Oct 2026",
-      "time": "02:22 PM",
+      "date": "13 Oct 2026",
+      "time": "03:42 PM",
       "createdBy": null,
       "assignedMembers": [],
-      "lpaSource": null,
-      "isSelf": false,
-      "isDeleted": true,
-      "createdAt": "2026-10-12T08:52:25.020Z",
-      "updatedAt": "2026-10-12T08:52:25.020Z"
-    },
-    {
-      "id": "CFT-1791792844703",
-      "recordId": "CFT-1791792844703",
-      "topic": "Zero Defect Assembly CFT",
-      "description": "",
-      "plant": "Gujrat",
-      "scope": "CFT",
-      "department": "CFT",
-      "section": "",
-      "sectionId": "",
-      "date": "12 Oct 2026",
-      "time": "01:44 PM",
-      "createdBy": null,
-      "assignedMembers": [
-        {
-          "name": "PRIYA NAIR",
-          "code": "GJ018442"
-        },
-        {
-          "name": "RAHUL SHARMA",
-          "code": "BW041920"
-        }
-      ],
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:14:04.703Z",
-      "updatedAt": "2026-10-12T08:14:04.703Z"
-    },
-    {
-      "id": "PDCA-1791792844657",
-      "recordId": "PDCA-1791792844657",
-      "topic": "Automated Line Solder Inspection Updated",
-      "description": "Audit test record for automated inspection",
-      "plant": "Gujrat",
-      "scope": "Company",
-      "department": "SRC Quality",
-      "section": "Assembly Line 1",
-      "sectionId": "",
-      "date": "12 Oct 2026",
-      "time": "01:44 PM",
-      "createdBy": null,
-      "assignedMembers": [],
-      "lpaSource": null,
-      "isSelf": false,
-      "isDeleted": true,
-      "createdAt": "2026-10-12T08:14:04.658Z",
-      "updatedAt": "2026-10-12T08:14:04.680Z"
+      "createdAt": "2026-10-13T10:12:41.549Z",
+      "updatedAt": "2026-10-13T10:12:41.549Z"
     },
     {
       "id": "CFT-BW-202",
@@ -126,8 +52,8 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.113Z",
-      "updatedAt": "2026-10-12T08:12:58.113Z"
+      "createdAt": "2026-10-13T10:08:56.984Z",
+      "updatedAt": "2026-10-13T10:08:56.984Z"
     },
     {
       "id": "CFT-GJ-201",
@@ -161,8 +87,8 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.112Z",
-      "updatedAt": "2026-10-12T08:12:58.112Z"
+      "createdAt": "2026-10-13T10:08:56.983Z",
+      "updatedAt": "2026-10-13T10:08:56.983Z"
     },
     {
       "id": "PDCA-BW-104",
@@ -187,8 +113,8 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.111Z",
-      "updatedAt": "2026-10-12T08:12:58.111Z"
+      "createdAt": "2026-10-13T10:08:56.982Z",
+      "updatedAt": "2026-10-13T10:08:56.982Z"
     },
     {
       "id": "PDCA-GJ-103",
@@ -213,8 +139,8 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T08:12:58.109Z",
-      "updatedAt": "2026-10-12T08:12:58.109Z"
+      "createdAt": "2026-10-13T10:08:56.980Z",
+      "updatedAt": "2026-10-13T10:08:56.980Z"
     },
     {
       "id": "PDCA-BW-102",
@@ -239,8 +165,8 @@
       "lpaSource": null,
       "isSelf": true,
       "isDeleted": false,
-      "createdAt": "2026-10-12T10:13:59.329Z",
-      "updatedAt": "2026-10-12T10:13:59.329Z"
+      "createdAt": "2026-10-13T10:08:56.978Z",
+      "updatedAt": "2026-10-13T10:08:56.978Z"
     },
     {
       "id": "PDCA-GJ-101",
@@ -265,198 +191,338 @@
       "lpaSource": null,
       "isSelf": false,
       "isDeleted": false,
-      "createdAt": "2026-10-12T10:13:58.918Z",
-      "updatedAt": "2026-10-12T10:13:58.919Z"
+      "createdAt": "2026-10-13T10:08:56.967Z",
+      "updatedAt": "2026-10-13T10:08:56.967Z"
     }
   ],
   "sheets": {
-    "PDCA-1791792844657": {
+    "PDCA-ASY-BW-103": {
       "headerInfo": {
-        "topicName": "Line Audit",
-        "preparedBy": "Pooja Verma",
-        "auditNo": "AUD-001",
-        "attendees": "Team QA"
+        "topicName": "Assembly Line 3 - Pneumatic Crimper Pressure Drop Detection Alarm",
+        "preparedBy": "RAHUL SHARMA",
+        "auditNo": "AUD-ASY-BW-103",
+        "attendees": "RAHUL SHARMA, Production Supv, QA Auditor"
       },
       "rows": [
         {
-          "sNo": 1,
-          "date": "12/10/2026",
-          "shift": "Day",
-          "lineArea": "Line A",
-          "observation": "Multiline observation\nLine 2 text",
-          "status": "Open"
-        }
-      ]
-    },
-    "PDCA-1791795145020": {
-      "headerInfo": {
-        "topicName": "Line Audit"
-      },
-      "rows": [
+          "date": "2026-10-13",
+          "shift": "A",
+          "lineArea": "Assembly Line 3",
+          "status": "In Progress",
+          "observation": "Secondary lock on 16-pin connector cavity #3 not seating flush with housing.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Guide rib flash burr on molding batch #B24.",
+          "counterMeasure": "Trimmed molding flash and adjusted jig insertion guide from 15° to 22°.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
         {
-          "sNo": 1,
-          "date": "12/10/2026",
-          "shift": "Day",
-          "lineArea": "Line A",
-          "observation": "Dedicated folder structure observation",
-          "status": "Open"
+          "date": "2026-10-13",
+          "shift": "B",
+          "lineArea": "Assembly Line 3",
+          "status": "Completed",
+          "observation": "Barcode sticker placement on fuse cover shifted by 4mm beyond boundary mark.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Locator dowel pin on pneumatic label applicator had 0.5mm axial play.",
+          "counterMeasure": "Tightened locator dowel pin and installed reference laser positioning line.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "PE",
+          "staffEmployee": "Vikram Singh (GJ034112)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "A",
+          "lineArea": "Assembly Line 3",
+          "status": "Closed",
+          "observation": "Terminal pin insertion click sound not audible during high-speed cycle.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Operator wearing dual-layer work gloves dampening tactile feedback.",
+          "counterMeasure": "Standardized single-layer ergonomic gloves and installed acoustic sensor buzzer.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "B",
+          "lineArea": "Assembly Line 3",
+          "status": "Completed",
+          "observation": "Grommet sealing tape wrapping overlap pitch inconsistent on Station 2.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Manual tape dispenser tension spool spring worn out.",
+          "counterMeasure": "Replaced tension spool with preset constant-torque dispenser mechanism.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "A",
+          "lineArea": "Assembly Line 3",
+          "status": "In Progress",
+          "observation": "Ground terminal eyelet screw torque lower than 4.5 Nm specification.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Pneumatic air line pressure fluctuation during simultaneous air blower use.",
+          "counterMeasure": "Installed dedicated auxiliary pressure regulator tank on pneumatic circuit.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "B",
+          "lineArea": "Assembly Line 3",
+          "status": "Closed",
+          "observation": "Continuity buzzer latency over 400ms on multi-meter testing harness.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Test probe pogo-pin tip oxidation and high contact resistance.",
+          "counterMeasure": "Instituted daily gold-plated pogo pin cleaning cycle with isopropyl alcohol.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "A",
+          "lineArea": "Assembly Line 3",
+          "status": "Completed",
+          "observation": "Protective corrugated tube sleeve end slippage before connector boot.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Cable tie tension setting on handheld gun calibrated too loose (level 3).",
+          "counterMeasure": "Locked cable tie tension setting to level 5 with tamper-evident seal.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "B",
+          "lineArea": "Assembly Line 3",
+          "status": "Closed",
+          "observation": "Work station illumination level under 450 Lux at crimping junction.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "LED overhead diffuser cover covered in ambient airborne dust.",
+          "counterMeasure": "Cleaned diffuser and replaced standard LED tube with 800 Lux high-CRI fixture.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "A",
+          "lineArea": "Assembly Line 3",
+          "status": "Completed",
+          "observation": "Pre-sorting tray part partition label faded and difficult to read.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Solvent wipe cleaning removed thermal printed text.",
+          "counterMeasure": "Applied laminated acrylic barcode label covers with UV solvent resistance.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
+        },
+        {
+          "date": "2026-10-13",
+          "shift": "B",
+          "lineArea": "Assembly Line 3",
+          "status": "Closed",
+          "observation": "Visual inspection board sample reference harness missing current rev stamp.",
+          "imageBefore": null,
+          "imageBeforeName": "",
+          "fileTypeBefore": "image",
+          "rootCause": "Engineering change notice (ECN #108) update was not posted on line display.",
+          "counterMeasure": "Audited line display boards and affixed current revision master sample tag.",
+          "imageAfter": null,
+          "imageAfterName": "",
+          "fileTypeAfter": "image",
+          "responseDate": "2026-10-25",
+          "department": "Maintenance",
+          "staffEmployee": "RAHUL SHARMA (BW041920)",
+          "assignedEmployee": "RAHUL SHARMA (BW041920)",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "Verified on site"
         }
       ]
     }
   },
   "cftTopics": [],
-  "attachments": [
-    {
-      "id": 1791792879182,
-      "pdcaRecordId": "PDCA-GJ-101",
-      "rowId": "row-1",
-      "fieldName": "imageBefore",
-      "filename": "1791792879179-221458496.png",
-      "originalFilename": "audit_photo.png",
-      "mimeType": "image/png",
-      "size": 18,
-      "url": "/uploads/1791792879179-221458496.png",
-      "uploadedBy": "System User",
-      "createdAt": "2026-10-12T08:14:39.182Z",
-      "isDeleted": true
-    }
-  ],
+  "attachments": [],
   "auditLogs": [
     {
-      "id": 1791800039033,
-      "pdcaRecordId": "PDCA-GJ-101",
-      "action": "CREATE_RECORD",
-      "actor": "SYSTEM_SEED",
-      "details": "Created PDCA record: Reduction of Solder Bridge Defects in ECU Assembly (PDCA-GJ-101)",
-      "createdAt": "2026-10-12T10:13:59.033Z"
-    },
-    {
-      "id": 1791795145050,
-      "pdcaRecordId": "PDCA-1791795145020",
-      "action": "DELETE_RECORD",
-      "actor": "System User",
-      "details": "Marked record PDCA-1791795145020 as deleted",
-      "createdAt": "2026-10-12T08:52:25.050Z"
-    },
-    {
-      "id": 1791795145046,
-      "pdcaRecordId": "CFT-1791795145045",
-      "action": "CREATE_RECORD",
-      "actor": "System User",
-      "details": "Created PDCA record: Dedicated Folder CFT (CFT-1791795145045)",
-      "createdAt": "2026-10-12T08:52:25.046Z"
-    },
-    {
-      "id": 1791795145041,
-      "pdcaRecordId": "PDCA-1791795145020",
+      "id": 1791886361568,
+      "pdcaRecordId": "PDCA-ASY-BW-103",
       "action": "SAVE_SHEET",
       "actor": "System User",
-      "details": "Saved sheet with 1 rows",
-      "createdAt": "2026-10-12T08:52:25.041Z"
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-10-13T10:12:41.568Z"
     },
     {
-      "id": 1791795145021,
-      "pdcaRecordId": "PDCA-1791795145020",
+      "id": 1791886361552,
+      "pdcaRecordId": "PDCA-ASY-BW-103",
       "action": "CREATE_RECORD",
       "actor": "System User",
-      "details": "Created PDCA record: Dedicated Folder Test Record (PDCA-1791795145020)",
-      "createdAt": "2026-10-12T08:52:25.021Z"
+      "details": "Created PDCA record: Assembly Line 3 - Pneumatic Crimper Pressure Drop Detection Alarm (PDCA-ASY-BW-103)",
+      "createdAt": "2026-10-13T10:12:41.552Z"
     },
     {
-      "id": 1791792844753,
-      "pdcaRecordId": "PDCA-1791792844657",
-      "action": "DELETE_RECORD",
-      "actor": "System User",
-      "details": "Marked record PDCA-1791792844657 as deleted",
-      "createdAt": "2026-10-12T08:14:04.753Z"
-    },
-    {
-      "id": 1791792844748,
-      "pdcaRecordId": "CFT-1791792844703",
-      "action": "UPDATE_CFT_MEMBERS",
-      "actor": "System User",
-      "details": "Updated assigned team members",
-      "createdAt": "2026-10-12T08:14:04.748Z"
-    },
-    {
-      "id": 1791792844704,
-      "pdcaRecordId": "CFT-1791792844703",
-      "action": "CREATE_RECORD",
-      "actor": "System User",
-      "details": "Created PDCA record: Zero Defect Assembly CFT (CFT-1791792844703)",
-      "createdAt": "2026-10-12T08:14:04.704Z"
-    },
-    {
-      "id": 1791792844686,
-      "pdcaRecordId": "PDCA-1791792844657",
-      "action": "SAVE_SHEET",
-      "actor": "System User",
-      "details": "Saved sheet with 1 rows",
-      "createdAt": "2026-10-12T08:14:04.686Z"
-    },
-    {
-      "id": 1791792844680,
-      "pdcaRecordId": "PDCA-1791792844657",
-      "action": "UPDATE_RECORD",
-      "actor": "System User",
-      "details": "Updated record metadata: Automated Line Solder Inspection Updated",
-      "createdAt": "2026-10-12T08:14:04.680Z"
-    },
-    {
-      "id": 1791792844659,
-      "pdcaRecordId": "PDCA-1791792844657",
-      "action": "CREATE_RECORD",
-      "actor": "System User",
-      "details": "Created PDCA record: Automated Line Solder Inspection (PDCA-1791792844657)",
-      "createdAt": "2026-10-12T08:14:04.659Z"
-    },
-    {
-      "id": 1791792778114,
+      "id": 1791886136984,
       "pdcaRecordId": "CFT-BW-202",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Alignment & Goal Setting (CFT-BW-202)",
-      "createdAt": "2026-10-12T08:12:58.114Z"
+      "createdAt": "2026-10-13T10:08:56.984Z"
     },
     {
-      "id": 1791792778112,
+      "id": 1791886136983,
       "pdcaRecordId": "CFT-GJ-201",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Team Composition & Role (CFT-GJ-201)",
-      "createdAt": "2026-10-12T08:12:58.112Z"
+      "createdAt": "2026-10-13T10:08:56.983Z"
     },
     {
-      "id": 1791792778111,
+      "id": 1791886136982,
       "pdcaRecordId": "PDCA-BW-104",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Air Compressor Energy Leakage Elimination (PDCA-BW-104)",
-      "createdAt": "2026-10-12T08:12:58.111Z"
+      "createdAt": "2026-10-13T10:08:56.982Z"
     },
     {
-      "id": 1791792778110,
+      "id": 1791886136981,
       "pdcaRecordId": "PDCA-GJ-103",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Forklift Traffic Collision Prevention IoT Radar (PDCA-GJ-103)",
-      "createdAt": "2026-10-12T08:12:58.110Z"
+      "createdAt": "2026-10-13T10:08:56.981Z"
     },
     {
-      "id": 1791792778107,
+      "id": 1791886136978,
       "pdcaRecordId": "PDCA-BW-102",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Die-Casting Cycle Time Optimization on Cell #4 (PDCA-BW-102)",
-      "createdAt": "2026-10-12T08:12:58.107Z"
+      "createdAt": "2026-10-13T10:08:56.978Z"
     },
     {
-      "id": 1791792778098,
+      "id": 1791886136971,
       "pdcaRecordId": "PDCA-GJ-101",
       "action": "CREATE_RECORD",
       "actor": "SYSTEM_SEED",
       "details": "Created PDCA record: Reduction of Solder Bridge Defects in ECU Assembly (PDCA-GJ-101)",
-      "createdAt": "2026-10-12T08:12:58.099Z"
+      "createdAt": "2026-10-13T10:08:56.971Z"
     }
   ]
 }

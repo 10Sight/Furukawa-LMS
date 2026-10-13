@@ -126,6 +126,13 @@ export default function FileUploadSelectionModal({
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
+                        const MAX_SIZE = 15 * 1024 * 1024; // 15 MB
+                        if (file.size > MAX_SIZE) {
+                          const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                          window.alert(`The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`);
+                          e.target.value = '';
+                          return;
+                        }
                         onSelectType(opt.id, file);
                         e.target.value = '';
                       }

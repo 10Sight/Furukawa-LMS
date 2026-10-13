@@ -3,6 +3,7 @@ import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, Plus } from 'lucide-react';
+import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 
 export const CFT_TOPICS = [
   'Team Composition & Role',
@@ -36,6 +37,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
   const [memberNameInput, setMemberNameInput] = useState('');
   const [memberCodeInput, setMemberCodeInput] = useState('');
   const [plant, setPlant] = useState(defaultPlant === 'Unit' ? 'Gujrat' : defaultPlant);
+  const [department, setDepartment] = useState('');
   const [assignedEmployees, setAssignedEmployees] = useState([]);
   const [showAddEmpForm, setShowAddEmpForm] = useState(false);
   const [empNameInput, setEmpNameInput] = useState('');
@@ -51,6 +53,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
       setMemberNameInput(draft.memberNameInput || '');
       setMemberCodeInput(draft.memberCodeInput || '');
       setPlant(draft.plant || defaultPlant);
+      setDepartment(draft.department || '');
       setAssignedEmployees(draft.assignedEmployees || []);
       setShowAddEmpForm(false);
       setEmpNameInput(draft.empNameInput || '');
@@ -58,7 +61,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
     }
   }, [isOpen, defaultPlant]);
 
-  const draft = React.useMemo(() => ({ topic, membersList, selectedMemberCode, plant, assignedEmployees, memberNameInput, memberCodeInput, empNameInput, empCodeInput }), [topic, membersList, selectedMemberCode, plant, assignedEmployees, memberNameInput, memberCodeInput, empNameInput, empCodeInput]);
+  const draft = React.useMemo(() => ({ topic, membersList, selectedMemberCode, plant, department, assignedEmployees, memberNameInput, memberCodeInput, empNameInput, empCodeInput }), [topic, membersList, selectedMemberCode, plant, department, assignedEmployees, memberNameInput, memberCodeInput, empNameInput, empCodeInput]);
   useFormAutosave(draft, value => localStorage.setItem(`pdca_cft_draft_${defaultPlant}`, JSON.stringify(value)), isOpen, message => window.alert(message));
 
   if (!isOpen) return null;
@@ -124,7 +127,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
       description: `CFT guidelines and protocol compliance for: ${topic}`,
       plant: plant === 'Unit' ? 'Gujrat' : plant,
       scope: 'CFT',
-      department: 'CFT',
+      department: department || '',
       date: dateStr,
       time: timeStr,
       createdBy: {
@@ -408,6 +411,33 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
               >
                 <option value="Gujrat">Gujrat</option>
                 <option value="Bawal">Bawal</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Department Selection */}
+          <div>
+            <label htmlFor="cft-department" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Department</span>
+            </label>
+            <div className="relative">
+              <select
+                id="cft-department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full appearance-none text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none pr-10 shadow-2xs"
+              >
+                <option value="">Select Department</option>
+                {department && !PDCA_DEPARTMENTS.includes(department) && (
+                  <option value={department}>{department}</option>
+                )}
+                {PDCA_DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>

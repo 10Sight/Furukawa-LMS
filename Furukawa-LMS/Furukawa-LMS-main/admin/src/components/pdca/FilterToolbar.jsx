@@ -13,7 +13,8 @@ export default function FilterToolbar({
   searchQuery,
   setSearchQuery,
   onExport,
-  onOpenAddModal
+  onOpenAddModal,
+  onExportAll
 }) {
   const plants = [
     { value: 'Unit', label: 'Unit' },
@@ -22,24 +23,39 @@ export default function FilterToolbar({
   ];
 
   return (
-    <div className="space-y-4">
-      {/* 1. Unit Filter Row (On Top) */}
-      <div className="flex items-center justify-between">
-        <div className="relative">
-          <select
-            value={selectedPlant}
-            onChange={(e) => setSelectedPlant(e.target.value)}
-            className="appearance-none bg-white border border-[#D1D5DB] text-slate-700 text-sm font-semibold rounded-xl pl-4 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer shadow-sm hover:border-slate-400 transition-colors"
-            id="plant-filter-select"
-          >
-            {plants.map((plant) => (
-              <option key={plant.value} value={plant.value}>
-                {plant.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+    <div className="w-full">
+      {/* 1. Unit Filter Row (Positioned in Top-Left Corner) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Unit Filter */}
+          <div className="relative">
+            <select
+              value={selectedPlant}
+              onChange={(e) => setSelectedPlant(e.target.value)}
+              className="appearance-none bg-white border border-[#D1D5DB] text-slate-700 text-sm font-semibold rounded-xl pl-4 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer shadow-sm hover:border-slate-400 transition-colors"
+              id="plant-filter-select"
+            >
+              {plants.map((plant) => (
+                <option key={plant.value} value={plant.value}>
+                  {plant.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
+
+        {/* Top-Right Action Button */}
+        {onExportAll && (
+          <button
+            type="button"
+            onClick={onExportAll}
+            title="Download all PDCA records"
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
+          >
+            Export All Records
+          </button>
+        )}
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ import logger from "../logger/winston.logger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { buildStatusHistoryEntry, getUpdatedStatusHistory } from "../utils/statusHistory.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
-import { prepareManpowerUser, isUserActiveForManpowerDate } from "../utils/manpowerLifecycle.js";
+import { prepareManpowerUser, isUserActiveForManpowerDate, getManpowerInactiveReason } from "../utils/manpowerLifecycle.js";
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import { assertJoiningNotAfterLeaving, getJoiningLeavingDateError } from "../utils/dateValidation.js";
@@ -784,6 +784,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
                MAX(l.shift) as logShift,
                MAX(l.[date]) as logDate,
                COUNT(CASE WHEN l.status IN ('P', 'PRESENT', 'Present') THEN 1 END) as presentDaysCount,
+               MAX(CASE WHEN l.status IN ('P', 'PRESENT', 'Present')
+                        THEN CONVERT(NVARCHAR(510), l.payCode) END) as presentPayCode,
                COUNT(CASE WHEN l.status IN ('P', 'PRESENT', 'Present')
                            AND UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), l.payCode))))
                              = UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(510), lu.empId))))
@@ -798,7 +800,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     // Ensure al alias exists even if no date filter is applied to avoid SQL errors in WHERE clause
     attendanceJoinSQL = `
       LEFT JOIN (
-        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, 0 as matchedPresentDaysCount, NULL as userId
+        SELECT NULL as logStatus, NULL as logShift, NULL as logDate, 0 as presentDaysCount, NULL as presentPayCode, 0 as matchedPresentDaysCount, NULL as userId
       ) al ON 1=0
     `;
   }
@@ -890,21 +892,26 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     // Scope the stat cards to the Dashboard Daily Manpower Trend's population
     // (getOperatorPopulationCondition: employees plus CUSTOM-role users, never trainers, real
     // empId), without restricting the underlying user list/table (which still shows all roles).
+    // That population is a flag rather than a WHERE condition, so users outside it who still
+    // have a Present punch can be reported (notCountedPresent) instead of silently dropped.
+    const populationClauses = [];
     if (req.query.isEmployee !== "true") {
-      countsWhereClauses.push("(u.isEmployee = 1 OR u.role = 'CUSTOM')");
+      populationClauses.push("(u.isEmployee = 1 OR u.role = 'CUSTOM')");
     }
     if (req.query.isTrainer !== "true") {
-      countsWhereClauses.push("ISNULL(u.isTrainer, 0) = 0");
+      populationClauses.push("ISNULL(u.isTrainer, 0) = 0");
     }
-    countsWhereClauses.push("u.empId IS NOT NULL AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), u.empId))) <> ''");
+    populationClauses.push("u.empId IS NOT NULL AND LTRIM(RTRIM(CONVERT(NVARCHAR(510), u.empId))) <> ''");
     const countsWhereSQL = `WHERE ${countsWhereClauses.join(' AND ')}`;
 
     // Fetched as rows, not SQL aggregates: whether a user was on the rolls for the date is
     // decided in Node by the same statusHistory lifecycle rule as the Dashboard
     // (manpowerLifecycle.js), so both pages count the same people as Present/Absent.
     countsQueryPromise = executeQuery(`
-      SELECT u.id, u.status, u.joiningDate, u.leavingDate, u.statusHistory, u.currentEffeciency,
-             al.matchedPresentDaysCount
+      SELECT u.id, u.empId, u.fullName, u.role, u.isTrainer,
+             u.status, u.joiningDate, u.leavingDate, u.statusHistory, u.currentEffeciency,
+             al.matchedPresentDaysCount, al.presentDaysCount, al.presentPayCode,
+             CASE WHEN ${populationClauses.join(' AND ')} THEN 1 ELSE 0 END AS inManpowerPopulation
       FROM users u
       ${getHierarchyFilterJoinSQL}
       ${attendanceJoinSQL}
@@ -977,13 +984,46 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   const systemEff = [0, 0];
   const addEff = (acc, value) => { acc[0] += value; acc[1] += 1; };
 
+  // Users with a Present punch (so they show as Present in the Excel export) that the Present
+  // card does not count, with the reason.
+  const notCountedPresent = [];
+  const addNotCounted = (row, reason) => {
+    if (Number(row.presentDaysCount || 0) <= 0) return;
+    notCountedPresent.push({
+      id: row.id,
+      empId: row.empId,
+      fullName: row.fullName,
+      status: row.status,
+      leavingDate: row.leavingDate,
+      payCode: row.presentPayCode,
+      reason,
+    });
+  };
+
   for (const row of countRows || []) {
+    if (!row.inManpowerPopulation) {
+      const hasEmpId = String(row.empId ?? "").trim() !== "";
+      addNotCounted(row, !hasEmpId
+        ? "No Emp ID on the user"
+        : (row.isTrainer && req.query.isTrainer !== "true")
+          ? "Trainer - not counted in manpower"
+          : `Not an operator (role ${row.role || "-"})`);
+      continue;
+    }
+
     if (String(row.status || "").trim().toUpperCase() === "LEFT") leftCount += 1;
-    if (!isUserActiveForManpowerDate(prepareManpowerUser(row), countsRefDate)) continue;
+    const preparedUser = prepareManpowerUser(row);
+    if (!isUserActiveForManpowerDate(preparedUser, countsRefDate)) {
+      addNotCounted(row, getManpowerInactiveReason(preparedUser, countsRefDate));
+      continue;
+    }
 
     const isPresent = Number(row.matchedPresentDaysCount || 0) > 0;
     if (isPresent) presentCount += 1;
-    else absentCount += 1;
+    else {
+      absentCount += 1;
+      addNotCounted(row, `Attendance pay code "${row.presentPayCode ?? ""}" does not match Emp ID "${row.empId}"`);
+    }
 
     if (row.currentEffeciency === null || row.currentEffeciency === undefined) continue;
     const efficiency = Number(row.currentEffeciency) || 0;
@@ -1004,6 +1044,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
     presentCount,
     absentCount,
     leftCount,
+    notCountedPresentCount: notCountedPresent.length,
+    notCountedPresent: notCountedPresent.slice(0, 500),
     presentEfficiency: Math.round(presentEfficiency * 100) / 100,
     overallEfficiency: Math.round(overallEfficiency * 100) / 100,
     systemEfficiency: Math.round(systemEfficiency * 100) / 100,

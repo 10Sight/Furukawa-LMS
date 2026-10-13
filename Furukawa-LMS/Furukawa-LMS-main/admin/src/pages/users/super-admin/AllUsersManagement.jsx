@@ -1136,8 +1136,8 @@ const AllUsersManagement = () => {
       </div>
 
       {/* Present in Excel but not counted - details */}
-      <Dialog open={showNotCountedModal} onOpenChange={setShowNotCountedModal}>
-        <DialogContent className="sm:max-w-[820px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={showNotCountedModal} onOpenChange={setShowNotCountedModal} className="max-w-5xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconAlertTriangle className="w-5 h-5 text-amber-500" />

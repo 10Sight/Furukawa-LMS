@@ -60,6 +60,7 @@ import dailyMeetingSheetRoutes from "./routes/dailyMeetingSheet.routes.js";
 import dailyMorningMeetingRoutes from "./routes/dailyMorningMeeting.routes.js";
 import monthlyReportFolderRoutes from "./routes/monthlyReportFolder.routes.js";
 import monthlyReportRecordRoutes from "./routes/monthlyReportRecord.routes.js";
+import monthlyReportConfigRoutes from "./routes/monthlyReportConfig.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import User from "./models/auth.model.js";
 import timelineScheduler from "./services/timelineScheduler.js";
@@ -358,6 +359,7 @@ app.use("/api/daily-meeting-sheets", dailyMeetingSheetRoutes);
 app.use("/api/daily-morning-meetings", dailyMorningMeetingRoutes);
 app.use("/api/monthly-report-folders", monthlyReportFolderRoutes);
 app.use("/api/monthly-report-records", monthlyReportRecordRoutes);
+app.use("/api/monthly-report-configs", monthlyReportConfigRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 app.use("/api/learning-comparisons", learningComparisonRoutes);

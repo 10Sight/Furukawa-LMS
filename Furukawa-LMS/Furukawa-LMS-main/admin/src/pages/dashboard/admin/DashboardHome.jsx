@@ -44,6 +44,7 @@ import {
     CalendarPlus,
     Trash2,
     Save,
+    AlertTriangle,
 } from 'lucide-react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -3257,9 +3258,132 @@ const HolidayManagementDialog = ({ open, onOpenChange, onSaved }) => {
     );
 };
 
+// Employees who are Present in the Attendance Excel for a date but are not counted in the
+// Daily Manpower Trend's Actual Present bar, with the reason.
+const PresentNotCountedDialog = ({ open, onOpenChange, defaultDate }) => {
+    const [date, setDate] = useState(defaultDate || getLocalTodayForInput());
+    const [result, setResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState("");
+
+    useEffect(() => {
+        if (open) setDate(defaultDate || getLocalTodayForInput());
+    }, [open, defaultDate]);
+
+    useEffect(() => {
+        if (!open || !date) return;
+
+        let cancelled = false;
+        setLoading(true);
+        setMessage("");
+
+        axiosInstance
+            .get('/api/attendance/present-not-counted', { params: { date } })
+            .then((response) => {
+                if (cancelled) return;
+                // Handles both wrapped and interceptor-unwrapped axios responses.
+                const payload = [response?.data?.data, response?.data, response]
+                    .find(item => item && Array.isArray(item.notCounted));
+                setResult(payload || null);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                setResult(null);
+                setMessage(error?.response?.data?.message || "Unable to load the difference");
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [open, date]);
+
+    const rows = result?.notCounted || [];
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange} className="max-w-5xl">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-amber-500" />
+                        Present in Excel, not counted in graph
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+                    <div className="flex items-center gap-2">
+                        <label className="text-sm font-semibold text-slate-700">Date</label>
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="h-10 rounded-md border border-slate-300 px-3 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                        {loading && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+                    </div>
+
+                    {result && (
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                            <span className="rounded bg-slate-100 text-slate-700 px-2 py-1">Excel: {result.excelPresent}</span>
+                            <span className="rounded bg-blue-100 text-blue-700 px-2 py-1">Graph: {result.dashboardPresent}</span>
+                            <span className="rounded bg-amber-100 text-amber-700 px-2 py-1">Difference: {rows.length}</span>
+                        </div>
+                    )}
+                </div>
+
+                <p className="text-xs text-slate-500 mb-3">
+                    Whole plant for the selected date; the graph's department, section, line and shift filters are not applied here.
+                </p>
+
+                {message && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                        {message}
+                    </div>
+                )}
+
+                {!loading && !message && rows.length === 0 && (
+                    <div className="text-sm text-slate-400 py-6 text-center">
+                        No difference for this date. The Excel and the graph match.
+                    </div>
+                )}
+
+                {rows.length > 0 && (
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-slate-600">
+                                <tr>
+                                    <th className="px-3 py-2 font-semibold">Emp ID</th>
+                                    <th className="px-3 py-2 font-semibold">Name</th>
+                                    <th className="px-3 py-2 font-semibold">Department</th>
+                                    <th className="px-3 py-2 font-semibold">Status</th>
+                                    <th className="px-3 py-2 font-semibold">Leaving Date</th>
+                                    <th className="px-3 py-2 font-semibold">Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map(row => (
+                                    <tr key={row.id} className="border-t border-slate-100">
+                                        <td className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">{row.empId || "-"}</td>
+                                        <td className="px-3 py-2 whitespace-nowrap">{row.fullName || "-"}</td>
+                                        <td className="px-3 py-2">{row.department || "-"}</td>
+                                        <td className="px-3 py-2">{row.status || "-"}</td>
+                                        <td className="px-3 py-2 whitespace-nowrap">{row.leavingDate ? String(row.leavingDate).substring(0, 10) : "-"}</td>
+                                        <td className="px-3 py-2 text-amber-700">{row.reason}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 const DashboardHome = () => {
     const [departments, setDepartments] = useState([]);
     const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+    const [notCountedDialogOpen, setNotCountedDialogOpen] = useState(false);
     const [holidayRevision, setHolidayRevision] = useState(0);
 
     const getDashboardQueryParams = (filter, extra = {}) =>
@@ -3776,6 +3900,12 @@ const DashboardHome = () => {
                 onSaved={() => setHolidayRevision(prev => prev + 1)}
             />
 
+            <PresentNotCountedDialog
+                open={notCountedDialogOpen}
+                onOpenChange={setNotCountedDialogOpen}
+                defaultDate={formatDateLocal(manpowerFilter?.dateRange?.to)}
+            />
+
             <Card className="border-slate-200 shadow-sm bg-white w-full">
                 <CardHeader className="pb-1 pt-5 px-6 space-y-3">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -3804,6 +3934,17 @@ const DashboardHome = () => {
                                 value={chartTypes.manpower}
                                 onChange={(value) => setChartType("manpower", value)}
                             />
+
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="text-amber-600 border-amber-200 hover:bg-amber-50 hover:text-amber-700"
+                                onClick={() => setNotCountedDialogOpen(true)}
+                                title="Present in Excel but not counted in this graph"
+                            >
+                                <AlertTriangle className="w-4 h-4" />
+                            </Button>
                         </div>
                     </div>
                 </CardHeader>

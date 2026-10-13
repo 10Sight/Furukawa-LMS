@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import logger from "../logger/winston.logger.js";
+import { executeQuery } from "../db/mssqlHelper.js";
 import MonthlyReportFolder from "../models/monthlyReportFolder.model.js";
 import MonthlyReportRecord from "../models/monthlyReportRecord.model.js";
 import { deleteFromLocal } from "../utils/fileStorage.util.js";
@@ -17,6 +18,46 @@ const formatFolderRow = (row) => ({
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
 });
+
+// The department and section tabs of the Monthly Meeting Report page: every
+// department and section as { id, name }, for anyone holding monthly_report:read.
+// The general lists (/api/departments, /api/sections) can't serve these tabs — they
+// give a custom role only its own and need permissions of their own. Mirrors
+// getMeetingDepartments / getMeetingDepartmentSections in dailyMorningMeeting.controller.js.
+export const getReportDepartments = async (req, res) => {
+    try {
+        const [rows] = await executeQuery(
+            "SELECT id, name FROM departments WHERE (isDeleted IS NULL OR isDeleted = 0) ORDER BY createdAt DESC"
+        );
+        return res.status(200).json({
+            success: true,
+            data: { departments: rows.map((row) => ({ id: row.id, name: row.name })) }
+        });
+    } catch (error) {
+        logger.error("Error in getReportDepartments:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const getReportDepartmentSections = async (req, res) => {
+    try {
+        const departmentId = Number(req.params.departmentId);
+        if (!Number.isInteger(departmentId) || departmentId <= 0) {
+            return res.status(400).json({ success: false, message: "Department ID is required" });
+        }
+        const [rows] = await executeQuery(
+            "SELECT id, name, departmentId FROM [sections] WHERE departmentId = ? ORDER BY createdAt DESC",
+            [departmentId]
+        );
+        return res.status(200).json({
+            success: true,
+            data: rows.map((row) => ({ id: row.id, name: row.name, departmentId: row.departmentId }))
+        });
+    } catch (error) {
+        logger.error("Error in getReportDepartmentSections:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
 
 export const getFoldersForSection = async (req, res) => {
     try {

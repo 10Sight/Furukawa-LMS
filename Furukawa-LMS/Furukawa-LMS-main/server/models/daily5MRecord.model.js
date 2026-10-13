@@ -284,19 +284,11 @@ class Daily5MRecord {
                 sql += " AND r.formType = ?";
                 params.push(formType);
             }
-            if (startDate) {
-                sql += " AND r.date >= ?";
-                params.push(startDate);
-            }
-            if (endDate) {
-                sql += " AND r.date <= ?";
-                params.push(endDate);
-            }
             if (search) {
                 sql += ` AND (
-                    r.line LIKE ? OR 
-                    s.name LIKE ? OR 
-                    d.name LIKE ? OR 
+                    r.line LIKE ? OR
+                    s.name LIKE ? OR
+                    d.name LIKE ? OR
                     CAST(r.id AS NVARCHAR) LIKE ? OR
                     u.fullName LIKE ?
                 )`;
@@ -304,10 +296,23 @@ class Daily5MRecord {
                 params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
             }
 
+            // The date range is applied to each session's latest row (rn = 1), not to the
+            // raw rows: a session whose date was edited keeps its older rows under the old
+            // date, and filtering those first would list the session under both dates.
+            let dateClause = "";
+            if (startDate) {
+                dateClause += " AND date >= ?";
+                params.push(startDate);
+            }
+            if (endDate) {
+                dateClause += " AND date <= ?";
+                params.push(endDate);
+            }
+
             sql += `
                 ),
                 FinalSessions AS (
-                    SELECT *, COUNT(*) OVER() as totalCount FROM LatestSessions WHERE rn = 1
+                    SELECT *, COUNT(*) OVER() as totalCount FROM LatestSessions WHERE rn = 1${dateClause}
                 )
                 SELECT * FROM FinalSessions
             `;
@@ -431,6 +436,10 @@ class Daily5MRecord {
             FROM daily_5m_records r
             LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
             WHERE r.departmentId = ? AND r.date = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM daily_5m_records n
+                  WHERE n.sessionId = r.sessionId AND n.createdAt > r.createdAt
+              )
         `;
         const params = [departmentId, date];
 
@@ -487,12 +496,14 @@ class Daily5MRecord {
             whereClauses += " AND formType = ?";
             params.push(formType);
         }
+        // Date range is applied after picking each session's latest row (see findAll)
+        let dateClause = "";
         if (startDate) {
-            whereClauses += " AND date >= ?";
+            dateClause += " AND date >= ?";
             params.push(startDate);
         }
         if (endDate) {
-            whereClauses += " AND date <= ?";
+            dateClause += " AND date <= ?";
             params.push(endDate);
         }
 
@@ -505,7 +516,7 @@ class Daily5MRecord {
             )
             SELECT date, status, recordData
             FROM LatestSessions
-            WHERE rn = 1
+            WHERE rn = 1${dateClause}
             ORDER BY date ASC
         `;
 
@@ -601,18 +612,20 @@ class Daily5MRecord {
             whereClauses += " AND r.sectionId = ?";
             params.push(sectionId);
         }
+        // Date range is applied after picking each session's latest row (see findAll)
+        let dateClause = "";
         if (startDate) {
-            whereClauses += " AND r.date >= ?";
+            dateClause += " AND ls.date >= ?";
             params.push(startDate);
         }
         if (endDate) {
-            whereClauses += " AND r.date <= ?";
+            dateClause += " AND ls.date <= ?";
             params.push(endDate);
         }
 
         const sql = `
             WITH LatestSessions AS (
-                SELECT r.departmentId, r.recordData, r.sessionId,
+                SELECT r.departmentId, r.recordData, r.sessionId, r.date,
                        ROW_NUMBER() OVER (PARTITION BY r.sessionId ORDER BY r.createdAt DESC) AS rn
                 FROM daily_5m_records r
                 ${whereClauses}
@@ -620,7 +633,7 @@ class Daily5MRecord {
             SELECT ls.departmentId, d.name AS departmentName, ls.recordData
             FROM LatestSessions ls
             LEFT JOIN departments d ON ls.departmentId = CAST(d.id AS NVARCHAR(255))
-            WHERE ls.rn = 1
+            WHERE ls.rn = 1${dateClause}
         `;
 
         const [records] = await executeQuery(sql, params);

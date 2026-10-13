@@ -623,7 +623,7 @@ const SkillUpgradationWrapper = () => {
                 stacking/overflow contexts and covers the sidebar and top navbar; Radix popovers
                 portal in after it and still sit on top. */}
             {selectedPlan && dept && section && createPortal(
-                <div className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 w-screen h-screen flex flex-col overflow-hidden animate-in fade-in duration-200 print:static print:w-auto print:h-auto print:block print:overflow-visible print:bg-white">
+                <div className="sheet-fullscreen-portal print-visible fixed inset-0 z-50 bg-slate-100 w-screen h-screen flex flex-col overflow-hidden print:static print:w-auto print:h-auto print:block print:overflow-visible print:bg-white">
                     <div className="shrink-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm print:hidden">
                         {/* Row 1: navigation + hierarchy | mode | shortcut hint */}
                         <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
@@ -710,6 +710,7 @@ const SkillUpgradationWrapper = () => {
                             setSearch={setStudentsSearch}
                             totalUsers={totalStudents}
                             totalPages={totalStudentPages}
+                            isFullScreen
                             headerActionsContainer={headerActionsEl}
                         />
                     </div>

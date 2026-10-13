@@ -7,6 +7,7 @@ import logger from "../logger/winston.logger.js";
 import { poolPromise, mssql as sql } from "../db/connectDB.js";
 import { getEligibleUserSql } from "../utils/userEligibility.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import { prepareManpowerUser, isUserActiveForManpowerDate, getManpowerInactiveReason } from "../utils/manpowerLifecycle.js";
 
 
 // export const uploadAttendance = async (req, res, next) => {
@@ -1805,6 +1806,93 @@ export const getUnmappedPresent = async (req, res, next) => {
 
     } catch (error) {
         console.error("Get unmapped present error:", error);
+        next(error);
+    }
+};
+
+// Employees who are Present in the Attendance Excel for a date but are not counted as Present
+// by the Dashboard Daily Manpower Trend, with the reason. Read-only.
+export const getPresentNotCounted = async (req, res, next) => {
+    try {
+        const { date } = req.query;
+
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) {
+            return res.status(400).json({ success: false, message: "Date is required (YYYY-MM-DD)" });
+        }
+
+        const pool = await poolPromise;
+        const request = pool.request();
+        request.input("date", sql.VarChar, date);
+
+        // Same population as the Attendance Excel (dashboardOnly download above).
+        const result = await request.query(`
+            SELECT u.id, u.empId, u.fullName, u.[department] AS department, u.status,
+                   u.joiningDate, u.leavingDate, u.statusHistory, u.isTrainer, u.isEmployee,
+                   u.role, CONVERT(NVARCHAR(510), al.payCode) AS payCode
+            FROM attendance_logs al
+            INNER JOIN users u
+                ON al.userId = u.id
+            WHERE CONVERT(DATE, al.[date]) = CONVERT(DATE, @date, 23)
+              AND UPPER(LTRIM(RTRIM(CAST(al.status AS NVARCHAR(100)))))
+                  IN ('P', 'PRESENT')
+              ${getEligibleUserSql("u")}
+        `);
+
+        const clean = (value) => String(value ?? "").trim().toUpperCase();
+        const byUser = new Map();
+
+        for (const row of result.recordset || []) {
+            const entry = byUser.get(row.id) || { user: row, payCodes: [] };
+            const payCode = clean(row.payCode);
+            if (!entry.payCodes.includes(payCode)) entry.payCodes.push(payCode);
+            byUser.set(row.id, entry);
+        }
+
+        const notCounted = [];
+
+        for (const { user, payCodes } of byUser.values()) {
+            const reasons = [];
+            const empIdKey = clean(user.empId);
+
+            if (user.isTrainer) {
+                reasons.push("Trainer - not counted in manpower");
+            } else if (!user.isEmployee && clean(user.role) !== "CUSTOM") {
+                reasons.push(`Not an operator (role ${user.role || "-"})`);
+            }
+
+            if (!payCodes.some((payCode) => payCode && payCode === empIdKey)) {
+                reasons.push(`Attendance pay code "${payCodes.join("/")}" does not match Emp ID "${user.empId}"`);
+            }
+
+            const prepared = prepareManpowerUser(user);
+            if (!isUserActiveForManpowerDate(prepared, date)) {
+                reasons.push(getManpowerInactiveReason(prepared, date));
+            }
+
+            if (!reasons.length) continue;
+
+            notCounted.push({
+                id: user.id,
+                empId: user.empId,
+                fullName: user.fullName,
+                department: user.department,
+                status: user.status,
+                leavingDate: user.leavingDate,
+                reason: reasons.join("; "),
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                date,
+                excelPresent: byUser.size,
+                dashboardPresent: byUser.size - notCounted.length,
+                notCounted,
+            },
+        });
+    } catch (error) {
+        console.error("Get present not counted error:", error);
         next(error);
     }
 };

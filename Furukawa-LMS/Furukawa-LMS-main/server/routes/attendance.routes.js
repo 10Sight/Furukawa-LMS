@@ -1,5 +1,5 @@
 import express from "express";
-import { uploadAttendance, getAttendance, getFilters, getMissingAttendance, getUnmappedPresent } from "../controllers/attendance.controller.js";
+import { uploadAttendance, getAttendance, getFilters, getMissingAttendance, getUnmappedPresent, getPresentNotCounted } from "../controllers/attendance.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import { authorizeRole } from "../middlewares/roleAuth.middleware.js";
 import { SYSTEM_PERMISSIONS } from "../controllers/rolesPermissions.controller.js";
@@ -14,5 +14,6 @@ router.get("/", getAttendance);
 router.get("/filters", getFilters);
 router.get("/missing", getMissingAttendance);
 router.get("/unmapped-present", getUnmappedPresent);
+router.get("/present-not-counted", getPresentNotCounted);
 
 export default router;

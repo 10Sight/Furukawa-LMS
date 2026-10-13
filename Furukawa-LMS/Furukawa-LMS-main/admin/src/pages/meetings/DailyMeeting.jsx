@@ -22,12 +22,12 @@ import {
     IconPlus, IconPencil, IconTrash, IconArrowLeft, IconClock, IconUser, IconCalendarEvent, IconLock, IconCopy
 } from "@tabler/icons-react";
 import {
-    useGetAllDepartmentsQuery, useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
+    useGetDailyMeetingDepartmentsQuery, useGetDailyMeetingSectionsQuery,
+    useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
     useGetDailyMorningMeetingsQuery, useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation, useCloneDailyMorningMeetingMutation,
     useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation
 } from "@/services/api/DepartmentApi.js";
-import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import { toast } from "sonner";
 import { cn } from "@/utils/classNames.js";
 import ExcelClone from "@/components/tables/spreadsheet/ExcelClone.jsx";
@@ -520,6 +520,15 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
             <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Management Information System</div>
                 <div className="flex items-center gap-2">
+                    {/* Everyone browses every section; only one's own can be changed. */}
+                    {!canCreate && !canUpdate && !canDelete && (
+                        <span
+                            className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full"
+                            title="You can open and read these meetings. Editing is for users assigned to this department and section."
+                        >
+                            <IconEye className="w-3 h-3" /> View only
+                        </span>
+                    )}
                     {canCreate && (
                         <Button size="sm" onClick={() => setCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
                             <IconPlus className="w-4 h-4" /> Management Information System
@@ -840,7 +849,9 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
 export default function DailyMeeting() {
     const authUser = useSelector((state) => state.auth.user);
     const canReadDailyMeeting = hasPermission(authUser, "daily_meeting:read");
-    const { data: deptsData, isLoading, error } = useGetAllDepartmentsQuery({ limit: 500 }, { skip: !canReadDailyMeeting });
+    // Every department, whichever the user is assigned to: reading is open to all
+    // of them, and what can be edited is decided section by section further down.
+    const { data: deptsData, isLoading, error } = useGetDailyMeetingDepartmentsQuery(undefined, { skip: !canReadDailyMeeting, refetchOnMountOrArgChange: true });
     const departments = useMemo(() => deptsData?.data?.departments || [], [deptsData]);
 
     const isAdmin = useMemo(() => {
@@ -879,8 +890,10 @@ export default function DailyMeeting() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [departments, activeDeptId]);
 
-    const { data: sectionsData, isLoading: sectionsLoading } = useGetSectionsByDepartmentQuery(activeDeptId, {
-        skip: !activeDeptId
+    const { data: sectionsData, isLoading: sectionsLoading } = useGetDailyMeetingSectionsQuery(activeDeptId, {
+        skip: !activeDeptId || !canReadDailyMeeting,
+        // Sections are added and renamed on another page, which doesn't refresh this list.
+        refetchOnMountOrArgChange: true
     });
     const sections = useMemo(() => sectionsData?.data || [], [sectionsData]);
 

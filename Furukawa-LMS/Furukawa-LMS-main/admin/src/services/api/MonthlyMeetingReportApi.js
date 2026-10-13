@@ -6,6 +6,42 @@ export const monthlyMeetingReportApi = createApi({
     baseQuery: axiosBaseQuery,
     tagTypes: ["MonthlyReport"],
     endpoints: (builder) => ({
+        // The page's department and section tabs: every department and section, as
+        // { id, name }, for anyone who may read reports — unlike getAllDepartments /
+        // getSectionsByDepartment, which give a custom role only its own.
+        getMonthlyReportDepartments: builder.query({
+            query: () => ({
+                url: "/api/monthly-report-folders/departments",
+                method: "GET",
+            }),
+            providesTags: ["MonthlyReport"],
+        }),
+
+        getMonthlyReportSections: builder.query({
+            query: (departmentId) => ({
+                url: `/api/monthly-report-folders/departments/${departmentId}/sections`,
+                method: "GET",
+            }),
+            providesTags: (result, error, departmentId) => [{ type: "MonthlyReport", id: `sections-${departmentId}` }],
+        }),
+
+        getMonthlyReportConfig: builder.query({
+            query: (departmentId) => ({
+                url: `/api/monthly-report-configs/${departmentId}`,
+                method: "GET",
+            }),
+            providesTags: (result, error, departmentId) => [{ type: "MonthlyReport", id: `config-${departmentId}` }],
+        }),
+
+        saveMonthlyReportConfig: builder.mutation({
+            query: ({ departmentId, shutter, sections }) => ({
+                url: "/api/monthly-report-configs/save",
+                method: "POST",
+                data: { departmentId, shutter, sections },
+            }),
+            invalidatesTags: (result, error, { departmentId }) => [{ type: "MonthlyReport", id: `config-${departmentId}` }],
+        }),
+
         getMonthlyReportFolders: builder.query({
             query: (sectionId) => ({
                 url: `/api/monthly-report-folders/section/${sectionId}`,
@@ -74,6 +110,10 @@ export const monthlyMeetingReportApi = createApi({
 });
 
 export const {
+    useGetMonthlyReportDepartmentsQuery,
+    useGetMonthlyReportSectionsQuery,
+    useGetMonthlyReportConfigQuery,
+    useSaveMonthlyReportConfigMutation,
     useGetMonthlyReportFoldersQuery,
     useCreateMonthlyReportFolderMutation,
     useDeleteMonthlyReportFolderMutation,

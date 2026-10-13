@@ -11,6 +11,8 @@
 // visible. Number conditions compare the cell's underlying value, not that text
 // — "1,234.50" is 1234.5, not 1.
 
+import { getCellId, parseCellRef } from "./formulaEngine.js";
+
 export const FILTER_CONDITIONS = [
     { type: "empty", label: "Is empty" },
     { type: "notEmpty", label: "Is not empty" },
@@ -120,4 +122,46 @@ export const shownValuesOf = (filter, allValues) => {
 export const valueFilterFor = (allValues, shown) => {
     const hidden = allValues.filter((v) => !shown.has(v));
     return hidden.length ? { hidden } : null;
+};
+
+/**
+ * The values the filter list's Apply keeps showing, as a Set.
+ *
+ * With nothing in the search box, those are the ticked ones. With a search they are
+ * the ticked ones among what it found, and nothing else: searching for a value and
+ * applying shows that value's rows. In a long column, where the list can't offer every
+ * value, the search is the only way to reach most of them — and since every value
+ * starts ticked, counting the ticks alone would leave such a search filtering nothing.
+ *
+ * @param {object} options
+ * @param {Set<string>} options.ticked the values ticked in the list
+ * @param {string[]|null} options.matches the values the search found; null without a search
+ * @param {boolean} [options.add] with a search: add what it found to what the column's
+ *   filter already shows, instead of showing that alone
+ * @param {string[]} [options.alreadyShown] what the column's filter shows now (see shownValuesOf)
+ */
+export const valuesToShow = ({ ticked, matches, add = false, alreadyShown = [] }) => {
+    if (!matches) return new Set(ticked);
+    const shown = new Set(add ? alreadyShown : []);
+    for (const value of matches) if (ticked.has(value)) shown.add(value);
+    return shown;
+};
+
+/**
+ * A table column's distinct values as the filter list offers them — the text each
+ * cell shows — with how many rows show each: [{ value, count }], in order.
+ * @param {object} table the table, for its range (the first row is its header)
+ * @param {number} colIdx the column
+ * @param {object} display the sheet's displayed text by cell id
+ */
+export const columnValueCounts = (table, colIdx, display) => {
+    const s = parseCellRef(table?.range?.start || ""), e = parseCellRef(table?.range?.end || "");
+    if (!s || !e) return [];
+    const minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+    const counts = new Map();
+    for (let r = minRow + 1; r <= maxRow; r++) {
+        const value = String(display[getCellId(r, colIdx)] ?? "");
+        counts.set(value, (counts.get(value) || 0) + 1);
+    }
+    return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
 };

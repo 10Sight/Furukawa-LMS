@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    compileFilter, compileTableFilters, isFilterActive, shownValuesOf, valueFilterFor, parseNumberText,
+    compileFilter, compileTableFilters, isFilterActive, shownValuesOf, valueFilterFor, parseNumberText, valuesToShow, columnValueCounts,
 } from "../../portal/src/utils/spreadsheets/tableFilter.js";
 
 const condition = (type, value) => compileFilter({ condition: { type, value } });
@@ -79,4 +79,61 @@ test("the filter list's ticks round-trip through the stored filter", () => {
     assert.deepEqual(shownValuesOf({ condition: { type: "empty" } }, all), all);
     assert.deepEqual(valueFilterFor(all, new Set(["Open", "Pending"])), { hidden: ["", "Closed"] });
     assert.equal(valueFilterFor(all, new Set(all)), null);
+});
+
+// --- The filter list: what Apply keeps, and what the list offers ---
+
+const kept = (options) => [...valuesToShow(options)].sort();
+// A long column: 3,000 different values, every one of them ticked as the list opens.
+const many = Array.from({ length: 3000 }, (_, i) => `Part-${String(i + 1).padStart(4, "0")}`);
+
+test("searching for a value and applying shows that value's rows", () => {
+    const ticked = new Set(many);
+    const matches = many.filter((v) => v.includes("Part-2750"));
+    assert.deepEqual(kept({ ticked, matches }), ["Part-2750"]);
+    // Which is a filter that hides the other 2,999 — where counting ticks alone hid nothing.
+    assert.equal(valueFilterFor(many, valuesToShow({ ticked, matches })).hidden.length, 2999);
+    assert.equal(valueFilterFor(many, ticked), null);
+
+    // Several found: all of them, less any unticked in the list.
+    const found = many.filter((v) => v.startsWith("Part-001"));
+    assert.equal(kept({ ticked, matches: found }).length, 10);
+    const fewer = new Set(many); fewer.delete("Part-0012");
+    assert.equal(kept({ ticked: fewer, matches: found }).includes("Part-0012"), false);
+    assert.equal(kept({ ticked: fewer, matches: found }).length, 9);
+    // Nothing found, or everything found unticked: nothing to show, so nothing to apply.
+    assert.deepEqual(kept({ ticked, matches: [] }), []);
+    assert.deepEqual(kept({ ticked: new Set(), matches: found }), []);
+});
+
+test("without a search the ticks are the filter, as before", () => {
+    assert.deepEqual(kept({ ticked: new Set(["Open", "Pending"]), matches: null }), ["Open", "Pending"]);
+    assert.deepEqual(kept({ ticked: new Set(), matches: null }), []);
+    // The options a search uses change nothing without one.
+    assert.deepEqual(kept({ ticked: new Set(["Open"]), matches: null, add: true, alreadyShown: ["Closed"] }), ["Open"]);
+});
+
+test("a search can add to what the filter already shows", () => {
+    const all = ["Closed", "Open", "Pending", "Review"];
+    const filter = { hidden: ["Closed", "Pending", "Review"] }; // showing Open only
+    const alreadyShown = shownValuesOf(filter, all);
+    const ticked = new Set([...alreadyShown, "Pending"]); // "Pending" ticked after searching for it
+    assert.deepEqual(kept({ ticked, matches: ["Pending"], add: true, alreadyShown }), ["Open", "Pending"]);
+    assert.deepEqual(kept({ ticked, matches: ["Pending"], alreadyShown }), ["Pending"], "not asked to add: that alone");
+    assert.deepEqual(valueFilterFor(all, valuesToShow({ ticked, matches: ["Pending"], add: true, alreadyShown })), { hidden: ["Closed", "Review"] });
+});
+
+test("the filter list offers each value the column shows, with its count", () => {
+    const table = { range: { start: "B2", end: "C7" } }; // header in row 2
+    const display = { B2: "Status", B3: "Open", B4: "Closed", B5: "Open", B6: "", B7: "10", C3: "x", B8: "below the table", B1: "above it" };
+    assert.deepEqual(columnValueCounts(table, 1, display), [
+        { value: "", count: 1 }, { value: "10", count: 1 }, { value: "Closed", count: 1 }, { value: "Open", count: 2 },
+    ]);
+    assert.deepEqual(columnValueCounts(table, 2, display), [{ value: "", count: 4 }, { value: "x", count: 1 }]);
+    assert.deepEqual(columnValueCounts({ range: { start: "C7", end: "B2" } }, 1, display).length, 4, "a range given end first");
+    assert.deepEqual(columnValueCounts({ range: { start: "??", end: "B2" } }, 1, display), []);
+    assert.deepEqual(columnValueCounts(undefined, 1, display), []);
+    // Numbers in number order, not "10" before "9".
+    const numbers = { A2: "9", A3: "10", A4: "100" };
+    assert.deepEqual(columnValueCounts({ range: { start: "A1", end: "A4" } }, 0, numbers).map((v) => v.value), ["9", "10", "100"]);
 });

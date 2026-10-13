@@ -180,3 +180,32 @@ export const isUserActiveForManpowerDate = (preparedUser, asOfDateValue) => {
 
     return false;
 };
+
+const formatManpowerDateKey = (dateKey) => {
+    const text = String(dateKey);
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+};
+
+// Human-readable reason for a user isUserActiveForManpowerDate() rejected. Shown against
+// Present punches that the Dashboard / All Users cards do not count.
+export const getManpowerInactiveReason = (preparedUser, asOfDateValue) => {
+    const asOfDateKey = parseManpowerDateKey(asOfDateValue);
+    const historyPeriods = preparedUser?.historyPeriods || [];
+    const joiningKeys = historyPeriods.length
+        ? historyPeriods.map((period) => period.joiningDateKey)
+        : [preparedUser?.legacyJoiningDateKey ?? null];
+    const leavingKeys = historyPeriods.length
+        ? historyPeriods.map((period) => period.leavingDateKey)
+        : [preparedUser?.legacyLeavingDateKey ?? null];
+
+    if (asOfDateKey !== null && joiningKeys.every((key) => key !== null && key > asOfDateKey)) {
+        return `Joining date ${formatManpowerDateKey(Math.min(...joiningKeys))} is after this date`;
+    }
+
+    const pastLeavingKeys = leavingKeys.filter((key) => key !== null && key <= asOfDateKey);
+    if (pastLeavingKeys.length) {
+        return `Marked LEFT on ${formatManpowerDateKey(Math.max(...pastLeavingKeys))}, no rejoin entered`;
+    }
+
+    return `Status is ${preparedUser?.currentStatus || "inactive"}`;
+};

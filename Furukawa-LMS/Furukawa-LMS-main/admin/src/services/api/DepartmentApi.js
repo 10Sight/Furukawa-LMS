@@ -265,6 +265,26 @@ export const departmentApi = createApi({
             invalidatesTags: (result, error, { sectionId }) => [{ type: 'Department', id: `daily-meeting-sheet-${sectionId}` }],
         }),
 
+        // The Management Information System page's department and section tabs: every
+        // department and section, as { id, name }, for anyone who may read meetings —
+        // unlike getAllDepartments / getSectionsByDepartment, which give a custom role
+        // only its own.
+        getDailyMeetingDepartments: builder.query({
+            query: () => ({
+                url: "/api/daily-morning-meetings/departments",
+                method: "GET",
+            }),
+            providesTags: ['Department'],
+        }),
+
+        getDailyMeetingSections: builder.query({
+            query: (departmentId) => ({
+                url: `/api/daily-morning-meetings/departments/${departmentId}/sections`,
+                method: "GET",
+            }),
+            providesTags: (result, error, departmentId) => [{ type: 'Department', id: `daily-meeting-sections-${departmentId}` }],
+        }),
+
         getDailyMorningMeetings: builder.query({
             query: ({ sectionId, scope }) => ({
                 url: `/api/daily-morning-meetings/section/${sectionId}${scope ? `?scope=${scope}` : ""}`,
@@ -485,6 +505,8 @@ export const {
     useSaveDailyMeetingConfigMutation,
     useGetDailyMeetingSheetQuery,
     useSaveDailyMeetingSheetMutation,
+    useGetDailyMeetingDepartmentsQuery,
+    useGetDailyMeetingSectionsQuery,
     useGetDailyMorningMeetingsQuery,
     useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation,

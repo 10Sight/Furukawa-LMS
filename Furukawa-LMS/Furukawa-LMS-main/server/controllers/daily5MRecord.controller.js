@@ -7,6 +7,73 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
 import { scope5MRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
+import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
+import { formatLocalDate } from "../utils/istDate.util.js";
+
+const toDateStr = (value) => value instanceof Date ? (formatLocalDate(value) || "") : String(value || "").split('T')[0];
+
+// Row dates must be today unless the user holds daily5m:select_past_date, and the date of an
+// approved row is frozen unless they hold daily5m:edit_approved_date (which also requires a remark).
+// Only dates that are new or changed are checked, so previously saved rows never block a re-save.
+// Returns the date to store on the session: it follows row 0, and on an existing session it only
+// moves when row 0's date was changed by this save (the client-sent date is ignored).
+const check5MDates = ({ user, recordData, date, previous, adminRemarks }) => {
+    const isAdmin = user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+    const canSelectPastDate = isAdmin || hasAnyPermission(user, ['daily5m:select_past_date']);
+    const canEditApprovedDate = isAdmin || hasAnyPermission(user, ['daily5m:edit_approved_date']);
+    // Plant-local "today" (IST), independent of the server's own timezone
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+    const rangeError = (dateStr, label) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return new ApiError(`${label}: Invalid date (${dateStr}).`, 400);
+        if (dateStr > todayStr) return new ApiError(`${label}: Future dates are not allowed (${dateStr}).`, 400);
+        if (dateStr < todayStr && !canSelectPastDate) {
+            return new ApiError(`${label}: You do not have permission to select past dates (${dateStr}).`, 403);
+        }
+        return null;
+    };
+
+    const approvedDateChanges = [];
+    const backdatedRows = [];
+    for (let i = 0; i < 20; i++) {
+        const newDate = toDateStr(recordData?.[`rec_${i}_Date`]);
+        const prevDate = toDateStr(previous?.recordData?.[`rec_${i}_Date`]);
+        if (newDate === prevDate) continue;
+
+        const wasApproved = previous?.recordData?.[`rec_${i}_RowStatus`] === 'APPROVED' || (!!prevDate && previous?.status === 'APPROVED');
+        if (wasApproved) {
+            if (!canEditApprovedDate) {
+                return { error: new ApiError(`Row ${i + 1}: You do not have permission to edit the date of an approved row.`, 403) };
+            }
+            approvedDateChanges.push({ rowIndex: i, from: prevDate, to: newDate || null });
+        }
+        if (newDate) {
+            const error = rangeError(newDate, `Row ${i + 1}`);
+            if (error) return { error };
+            if (newDate < todayStr) backdatedRows.push({ rowIndex: i, date: newDate });
+        }
+    }
+
+    if (approvedDateChanges.length > 0 && String(adminRemarks || "").trim().length < 10) {
+        return { error: new ApiError("A remark of at least 10 characters is required when changing the date of an approved row.", 400) };
+    }
+
+    const row0Date = toDateStr(recordData?.rec_0_Date);
+    let sessionDate;
+    if (previous) {
+        const row0Changed = row0Date && row0Date !== toDateStr(previous.recordData?.rec_0_Date);
+        sessionDate = row0Changed ? row0Date : (toDateStr(previous.date) || toDateStr(date));
+    } else if (row0Date) {
+        sessionDate = row0Date;
+    } else {
+        sessionDate = toDateStr(date);
+        const error = rangeError(sessionDate, "Session date");
+        if (error) return { error };
+    }
+
+    const isBackdatedSession = !previous && sessionDate < todayStr;
+    return { sessionDate, approvedDateChanges, backdatedRows, isBackdatedSession };
+};
 
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
@@ -22,9 +89,10 @@ export const create5MRecord = async (req, res, next) => {
         // approve/reject transitions caused by this save.
         let previousRecordData = null;
         let previousSubmittedBy = null;
+        let previous = null;
         if (sessionId) {
             const [existingRows] = await executeQuery(
-                `SELECT TOP 1 recordData, submittedBy FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
+                `SELECT TOP 1 recordData, submittedBy, date, status FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
                 [sessionId]
             );
             if (existingRows && existingRows.length > 0 && existingRows[0].recordData) {
@@ -33,6 +101,14 @@ export const create5MRecord = async (req, res, next) => {
                     : existingRows[0].recordData;
                 previousSubmittedBy = existingRows[0].submittedBy;
             }
+            if (existingRows && existingRows.length > 0) {
+                previous = { recordData: previousRecordData || {}, date: existingRows[0].date, status: existingRows[0].status };
+            }
+        }
+
+        const dateCheck = check5MDates({ user: req.user, recordData, date, previous, adminRemarks });
+        if (dateCheck.error) {
+            return next(dateCheck.error);
         }
 
         // Server-side Segregation of Duties check: validate every row transitioning to
@@ -59,7 +135,7 @@ export const create5MRecord = async (req, res, next) => {
         const newRecord = await Daily5MRecord.upsert({
             departmentId,
             sectionId,
-            date,
+            date: dateCheck.sessionDate,
             shift,
             line,
             recordData,
@@ -68,6 +144,23 @@ export const create5MRecord = async (req, res, next) => {
             adminRemarks,
             submittedBy: userId
         });
+
+        if (dateCheck.approvedDateChanges.length > 0) {
+            logAudit(userId, "UPDATE_DAILY_5M_APPROVED_DATE", {
+                sessionId: newRecord.sessionId,
+                changes: dateCheck.approvedDateChanges,
+                remark: String(adminRemarks).trim()
+            }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+                .catch(err => console.error("logAudit(UPDATE_DAILY_5M_APPROVED_DATE) failed:", err.message));
+        }
+        if (dateCheck.backdatedRows.length > 0 || dateCheck.isBackdatedSession) {
+            logAudit(userId, "BACKDATE_DAILY_5M", {
+                sessionId: newRecord.sessionId,
+                sessionDate: dateCheck.sessionDate,
+                rows: dateCheck.backdatedRows
+            }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+                .catch(err => console.error("logAudit(BACKDATE_DAILY_5M) failed:", err.message));
+        }
 
         if (previousRecordData && recordData) {
             for (let i = 0; i < 20; i++) {
@@ -85,7 +178,7 @@ export const create5MRecord = async (req, res, next) => {
         }
 
         const auditAction = sessionId ? "UPDATE_DAILY_5M_RECORD" : "CREATE_DAILY_5M_RECORD";
-        logAudit(userId, auditAction, { departmentId, sectionId, formType, date, shift }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+        logAudit(userId, auditAction, { departmentId, sectionId, formType, date: dateCheck.sessionDate, shift }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
             .catch(err => console.error(`logAudit(${auditAction}) failed:`, err.message));
 
         /* Automatic report sending removed as per user request to move to a Save -> Preview -> Submit flow */

@@ -683,8 +683,11 @@ const SkillUpgradationPlan = ({
     totalPages = 1,
     // Full-screen mode: the wrapper's sticky header slot this sheet portals its toolbar into.
     headerActionsContainer = null,
+    // Set explicitly by the wrapper so the full-screen layout is used from the very first
+    // render, before the header slot's ref has resolved.
+    isFullScreen: isFullScreenProp,
 }) => {
-    const isFullScreen = Boolean(headerActionsContainer);
+    const isFullScreen = isFullScreenProp ?? Boolean(headerActionsContainer);
     const liveRevisionInfo = useRevisionInfo("skill-upgradation-plan", { docNo: "FRM-WH-QA-236" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved plan keeps whatever docNo/revNo/revDate was frozen into it at
@@ -1251,7 +1254,7 @@ const SkillUpgradationPlan = ({
 
     return (
         <Card className={isFullScreen
-            ? "h-full max-w-full flex flex-col overflow-hidden bg-white print:h-auto print:block print:overflow-visible print:border-0 print:shadow-none"
+            ? "h-full max-w-full flex flex-col overflow-hidden bg-white shadow-none border-slate-200 print:h-auto print:block print:overflow-visible print:border-0 print:shadow-none"
             : "max-w-full overflow-visible bg-white"}
         >
             {!isFullScreen && (
@@ -1271,7 +1274,7 @@ const SkillUpgradationPlan = ({
             )}
 
             {/* Full-screen view: search, zoom and the sheet actions live in the wrapper's sticky header instead */}
-            {isFullScreen && createPortal(
+            {isFullScreen && headerActionsContainer && createPortal(
                 <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                     {/* Left: associate search */}
                     <div className="min-w-0">{searchInputControl}</div>
@@ -1382,7 +1385,17 @@ const SkillUpgradationPlan = ({
                                     stickyFrozenCell={stickyFrozenCell}
                                 />
                             ))}
-                            {filteredRows.length === 0 && (
+                            {filteredRows.length === 0 && (isLoadingPlan || isLoadingStudents) && (
+                                <tr>
+                                    <td colSpan="26" className="border border-slate-300 p-12 text-slate-500 bg-white">
+                                        <div className="sticky left-0 w-fit flex items-center gap-2 px-4">
+                                            <IconLoader className="w-5 h-5 animate-spin text-blue-600" />
+                                            <span className="text-sm font-medium">Loading training plan data...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                            {filteredRows.length === 0 && !isLoadingPlan && !isLoadingStudents && (
                                 <tr>
                                     <td colSpan="26" className="border border-slate-300 p-8 text-center text-muted-foreground bg-slate-50">
                                         No rows match the search filter.

@@ -98,6 +98,50 @@ const getSectionAndDepartmentNames = async (sectionId) => {
     return rows[0] || {};
 };
 
+// The department and section tabs of the Management Information System page.
+//
+// Reading is not tied to where a user is assigned: anyone holding daily_meeting:read
+// browses every department and every section, and only the write actions are held to
+// their own (canModifyDailyMeetingSection). The general department and section lists
+// (/api/departments, /api/sections) can't serve these tabs — they give a custom role
+// only its own departments and sections, need permissions of their own, and carry far
+// more than a tab needs (a department's instructor, courses and students). So the page
+// has these two, which give just what a tab shows: an id and a name.
+export const getMeetingDepartments = async (req, res) => {
+    try {
+        const [rows] = await executeQuery(
+            "SELECT id, name FROM departments WHERE (isDeleted IS NULL OR isDeleted = 0) ORDER BY createdAt DESC"
+        );
+        return res.status(200).json({
+            success: true,
+            data: { departments: rows.map((row) => ({ id: row.id, name: row.name })) }
+        });
+    } catch (error) {
+        logger.error("Error in getMeetingDepartments:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const getMeetingDepartmentSections = async (req, res) => {
+    try {
+        const departmentId = Number(req.params.departmentId);
+        if (!Number.isInteger(departmentId) || departmentId <= 0) {
+            return res.status(400).json({ success: false, message: "Department ID is required" });
+        }
+        const [rows] = await executeQuery(
+            "SELECT id, name, departmentId FROM [sections] WHERE departmentId = ? ORDER BY createdAt DESC",
+            [departmentId]
+        );
+        return res.status(200).json({
+            success: true,
+            data: rows.map((row) => ({ id: row.id, name: row.name, departmentId: row.departmentId }))
+        });
+    } catch (error) {
+        logger.error("Error in getMeetingDepartmentSections:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
 export const getMeetingsForSection = async (req, res) => {
     try {
         const { sectionId } = req.params;

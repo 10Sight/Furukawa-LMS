@@ -2,6 +2,8 @@ import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 import {
+    getMeetingDepartments,
+    getMeetingDepartmentSections,
     getMeetingsForSection,
     getMeetingDetail,
     getMeetingPatchesAfter,
@@ -34,6 +36,11 @@ router.use(verifyJWT);
 
 // Read access is permission-only (no department/section lock) — any user
 // holding daily_meeting:read can view meetings across every department/section.
+// The page's department and section tabs, for the same readers: all of them, not
+// only the user's own. (Above "/:id", which would otherwise take "departments" for a
+// meeting id.)
+router.get("/departments", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingDepartments);
+router.get("/departments/:departmentId/sections", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingDepartmentSections);
 router.get("/section/:sectionId", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingsForSection);
 router.get("/:id", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingDetail);
 router.get("/:id/patches", authorizeRoles("daily_meeting:read", "isAdmin", "SUPERADMIN"), getMeetingPatchesAfter);

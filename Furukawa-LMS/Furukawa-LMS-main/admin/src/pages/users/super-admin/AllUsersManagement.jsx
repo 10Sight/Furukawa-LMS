@@ -81,6 +81,7 @@ const AllUsersManagement = () => {
   const [sortOrder, setSortOrder] = useState("desc");
   const [showDebugInfo, setShowDebugInfo] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showNotCountedModal, setShowNotCountedModal] = useState(false);
 
   const [filters, setFilters] = useState({
     role: "",
@@ -1025,7 +1026,7 @@ const AllUsersManagement = () => {
       </div>
 
       {/* Attendance Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card className="bg-emerald-50/50 border-emerald-100 shadow-sm hover:shadow-md transition-all duration-300">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
@@ -1058,6 +1059,25 @@ const AllUsersManagement = () => {
             </div>
             <div className="bg-rose-600 p-2.5 rounded-xl shadow-lg shadow-rose-200/50 text-white">
               <IconUserX className="w-6 h-6" strokeWidth={2.5} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Present in the Excel export but not counted in the Present card */}
+        <Card
+          className="bg-amber-50/50 border-amber-100 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer"
+          onClick={() => setShowNotCountedModal(true)}
+        >
+          <CardContent className="p-4 flex items-center justify-between text-amber-900">
+            <div>
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-1">Present, Not Counted</p>
+              <h3 className="text-2xl font-black leading-none">
+                {isLoading ? "..." : (usersData?.data?.notCountedPresentCount || 0)}
+              </h3>
+              <p className="text-[10px] text-amber-600/70 font-bold mt-2">In Excel only · click for reason</p>
+            </div>
+            <div className="bg-amber-500 p-2.5 rounded-xl shadow-lg shadow-amber-200/50 text-white">
+              <IconAlertTriangle className="w-6 h-6" strokeWidth={2.5} />
             </div>
           </CardContent>
         </Card>
@@ -1114,6 +1134,55 @@ const AllUsersManagement = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Present in Excel but not counted - details */}
+      <Dialog open={showNotCountedModal} onOpenChange={setShowNotCountedModal} className="max-w-5xl">
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconAlertTriangle className="w-5 h-5 text-amber-500" />
+              Present in Excel, not counted in software
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              Users with a Present punch for {filters.date || format(new Date(), "yyyy-MM-dd")} who are
+              exported as Present but are not included in the Present Users card or the Dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          {(usersData?.data?.notCountedPresent || []).length === 0 ? (
+            <p className="text-sm text-gray-500 py-6 text-center">
+              No such users. The Excel and the Present Users card match.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Emp ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Leaving Date</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {usersData.data.notCountedPresent.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.empId || "-"}</TableCell>
+                    <TableCell>{row.fullName || "-"}</TableCell>
+                    <TableCell>{row.status || "-"}</TableCell>
+                    <TableCell>{row.leavingDate ? String(row.leavingDate).substring(0, 10) : "-"}</TableCell>
+                    <TableCell className="text-amber-700 whitespace-normal">{row.reason}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {(usersData?.data?.notCountedPresentCount || 0) > (usersData?.data?.notCountedPresent || []).length && (
+            <p className="text-xs text-gray-500">
+              Showing the first {usersData.data.notCountedPresent.length} of {usersData.data.notCountedPresentCount}.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Debug Information Panel */}
       {showDebugInfo && (

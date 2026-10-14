@@ -250,20 +250,24 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   // Helper to ensure row has normalized imagesBefore and imagesAfter arrays
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
-    const imagesBefore = Array.isArray(row.imagesBefore)
+    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+    const imagesBefore = Array.isArray(row.imagesBefore) && !isDocBefore
       ? row.imagesBefore
-      : (row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
-    const imagesAfter = Array.isArray(row.imagesAfter)
+      : (!isDocBefore && row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
+    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+    const imagesAfter = Array.isArray(row.imagesAfter) && !isDocAfter
       ? row.imagesAfter
-      : (row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
+      : (!isDocAfter && row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
     return {
       ...row,
       imagesBefore,
       imagesAfter,
-      imageBefore: imagesBefore[0]?.url || row.imageBefore || null,
-      imageBeforeName: imagesBefore[0]?.name || row.imageBeforeName || '',
-      imageAfter: imagesAfter[0]?.url || row.imageAfter || null,
-      imageAfterName: imagesAfter[0]?.name || row.imageAfterName || ''
+      imageBefore: isDocBefore ? row.imageBefore : (imagesBefore[0]?.url || row.imageBefore || null),
+      imageBeforeName: isDocBefore ? row.imageBeforeName : (imagesBefore[0]?.name || row.imageBeforeName || ''),
+      fileTypeBefore: row.fileTypeBefore || (imagesBefore.length > 0 ? 'image' : ''),
+      imageAfter: isDocAfter ? row.imageAfter : (imagesAfter[0]?.url || row.imageAfter || null),
+      imageAfterName: isDocAfter ? row.imageAfterName : (imagesAfter[0]?.name || row.imageAfterName || ''),
+      fileTypeAfter: row.fileTypeAfter || (imagesAfter.length > 0 ? 'image' : '')
     };
   };
 
@@ -1139,19 +1143,96 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     });
   };
 
-  // Upload file selected from the 4-box modal
-  const handleFileUploadFromModal = async (uploadTypeId, file) => {
+  // Upload file(s) selected from the 4-box modal
+  const handleFileUploadFromModal = async (uploadTypeId, fileOrFiles) => {
     const { rowIndex, field, nameField, typeField } = uploadSelectionModal;
-    if (rowIndex === null || !file) return;
+    if (rowIndex === null || !fileOrFiles) return;
 
     const MAX_SIZE = 15 * 1024 * 1024; // 15 MB limit
+
+    // Multiple uploads permitted strictly for Images
+    if (uploadTypeId === 'image') {
+      const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+      if (files.length === 0) return;
+
+      const oversized = files.filter((f) => f.size > MAX_SIZE);
+      if (oversized.length > 0) {
+        const sizeMB = (oversized[0].size / (1024 * 1024)).toFixed(1);
+        window.alert(`File "${oversized[0].name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select smaller files.`);
+        return;
+      }
+
+      const newImages = [];
+      for (const file of files) {
+        let serverUrl = null;
+        if (topic?.id) {
+          try {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('fieldName', field);
+            fd.append('rowId', `row-${rowIndex + 1}`);
+            const uploadRes = await pdcaApi.uploadAttachment(topic.id, fd);
+            if (uploadRes?.url) {
+              serverUrl = uploadRes.url;
+            }
+          } catch (err) {
+            console.warn('Backend attachment upload failed, using local fallback:', err);
+          }
+        }
+
+        const dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+
+        newImages.push({
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          url: serverUrl || dataUrl,
+          name: file.name,
+          size: file.size,
+          type: 'image',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      setRows((prev) => {
+        const updated = [...prev];
+        const currentRow = updated[rowIndex] || {};
+        const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
+        const currentList = Array.isArray(currentRow[imagesField])
+          ? currentRow[imagesField]
+          : (currentRow[field] && (!currentRow[typeField] || currentRow[typeField] === 'image')
+              ? [{ id: 'legacy-0', url: currentRow[field], name: currentRow[nameField] || 'Image', type: 'image' }]
+              : []);
+        const updatedList = [...currentList, ...newImages];
+
+        updated[rowIndex] = {
+          ...currentRow,
+          [imagesField]: updatedList,
+          [field]: updatedList[0]?.url || null,
+          [nameField]: updatedList[0]?.name || '',
+          [typeField]: 'image'
+        };
+        return updated;
+      });
+
+      // Close selection modal
+      setUploadSelectionModal((prev) => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    // Single upload for PDF, PPT, Excel documents
+    const file = Array.isArray(fileOrFiles) ? fileOrFiles[0] : fileOrFiles;
+    if (!file) return;
+
     if (file.size > MAX_SIZE) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
       window.alert(`The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`);
       return;
     }
 
-    // Detect file type
     const detectedType = getFileType(file.name, file.type) || uploadTypeId;
     const finalType = ['image', 'pdf', 'excel', 'ppt'].includes(uploadTypeId) ? uploadTypeId : detectedType;
 
@@ -1175,6 +1256,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     reader.onload = (event) => {
       const dataUrl = event.target.result;
       const fileSrc = serverUrl || dataUrl;
+      const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
 
       setRows((prev) => {
         const updated = [...prev];
@@ -1182,7 +1264,8 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
           ...updated[rowIndex],
           [field]: fileSrc,
           [nameField]: file.name,
-          [typeField]: finalType
+          [typeField]: finalType,
+          [imagesField]: []
         };
         return updated;
       });
@@ -1190,7 +1273,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       // Close selection modal
       setUploadSelectionModal((prev) => ({ ...prev, isOpen: false }));
 
-      // Directly open the View modal after uploading (with Image Name, Edit, and Delete options)
+      // Directly open the View modal for the uploaded document
       setSelectedImageAction({
         rowIndex,
         field,
@@ -1424,11 +1507,13 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   const handleRemoveFile = (rowIndex, field, nameField, typeField) => {
     setRows((prev) => {
       const updated = [...prev];
+      const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
       updated[rowIndex] = {
         ...updated[rowIndex],
         [field]: null,
         [nameField]: '',
-        [typeField]: 'image'
+        [typeField]: 'image',
+        [imagesField]: []
       };
       return updated;
     });
@@ -1925,9 +2010,51 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
                     <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
                       {(() => {
+                        const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+
+                        if (isDoc && row.imageBefore) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedImageAction({
+                                  rowIndex: idx,
+                                  field: 'imageBefore',
+                                  nameField: 'imageBeforeName',
+                                  typeField: 'fileTypeBefore',
+                                  title: 'Image (Before)',
+                                  imageSrc: row.imageBefore,
+                                  imageName: row.imageBeforeName || 'Document',
+                                  fileType: row.fileTypeBefore
+                                })}
+                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
+                              >
+                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                  {row.fileTypeBefore === 'pdf' ? (
+                                    <FileText className="w-5 h-5 text-rose-600" />
+                                  ) : row.fileTypeBefore === 'excel' ? (
+                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                  ) : (
+                                    <Presentation className="w-5 h-5 text-amber-600" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                  {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
+                                </span>
+                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                  {row.fileTypeBefore}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        }
+
                         const beforeImages = Array.isArray(row.imagesBefore)
                           ? row.imagesBefore
-                          : (row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }] : []);
+                          : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
+                              ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
+                              : []);
                         const hasImages = beforeImages.length > 0;
 
                         if (hasImages) {
@@ -1963,14 +2090,14 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           );
                         }
 
-                        // Compact default icon button when empty
+                        // Compact default icon button when empty - opens 4-box upload selection modal
                         return (
                           <div className="flex items-center justify-center w-full py-1">
                             <button
                               type="button"
-                              onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                              onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
                               className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                              title="Click to add evidence images"
+                              title="Click to choose upload type"
                             >
                               <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
                             </button>
@@ -2010,9 +2137,51 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
                     <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
                       {(() => {
+                        const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+
+                        if (isDoc && row.imageAfter) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedImageAction({
+                                  rowIndex: idx,
+                                  field: 'imageAfter',
+                                  nameField: 'imageAfterName',
+                                  typeField: 'fileTypeAfter',
+                                  title: 'Image (After)',
+                                  imageSrc: row.imageAfter,
+                                  imageName: row.imageAfterName || 'Document',
+                                  fileType: row.fileTypeAfter
+                                })}
+                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
+                              >
+                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                  {row.fileTypeAfter === 'pdf' ? (
+                                    <FileText className="w-5 h-5 text-rose-600" />
+                                  ) : row.fileTypeAfter === 'excel' ? (
+                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                  ) : (
+                                    <Presentation className="w-5 h-5 text-amber-600" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                  {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
+                                </span>
+                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                  {row.fileTypeAfter}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        }
+
                         const afterImages = Array.isArray(row.imagesAfter)
                           ? row.imagesAfter
-                          : (row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }] : []);
+                          : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
+                              ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
+                              : []);
                         const hasImages = afterImages.length > 0;
 
                         if (hasImages) {
@@ -2048,14 +2217,14 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           );
                         }
 
-                        // Compact default icon button when empty
+                        // Compact default icon button when empty - opens 4-box upload selection modal
                         return (
                           <div className="flex items-center justify-center w-full py-1">
                             <button
                               type="button"
-                              onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                              onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
                               className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                              title="Click to add evidence images"
+                              title="Click to choose upload type"
                             >
                               <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
                             </button>

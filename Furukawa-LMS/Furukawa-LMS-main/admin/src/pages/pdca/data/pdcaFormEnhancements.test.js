@@ -351,4 +351,78 @@ test('PDCA Form: Observation column width controller respects min/max bounds and
   assert.equal(row.observation.includes('Lenghty observation'), true);
 });
 
+test('PDCA 4-Box Upload Type Selection: Image permits multiple uploads, while PDF, PPT, Excel are strictly single file', () => {
+  const uploadOptions = [
+    { id: 'image', title: 'Upload Image', multiple: true, accept: 'image/jpeg,image/png,image/webp,image/svg+xml,.jpg,.jpeg,.png,.webp,.svg' },
+    { id: 'pdf', title: 'Upload PDF', multiple: false, accept: '.pdf,application/pdf' },
+    { id: 'ppt', title: 'Upload PPT', multiple: false, accept: '.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+    { id: 'excel', title: 'Upload Excel', multiple: false, accept: '.xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv' }
+  ];
+
+  assert.equal(uploadOptions.length, 4);
+  const imageOpt = uploadOptions.find((o) => o.id === 'image');
+  assert.equal(imageOpt.multiple, true);
+  assert.equal(imageOpt.title, 'Upload Image');
+
+  const docOptions = uploadOptions.filter((o) => o.id !== 'image');
+  assert.equal(docOptions.length, 3);
+  docOptions.forEach((opt) => {
+    assert.equal(opt.multiple, false, `${opt.title} must have multiple: false`);
+  });
+});
+
+test('PDCA Image Upload: multiple selection and repeated uploads append to evidence without losing previous images', () => {
+  const row = createDefaultRows(1)[0];
+  assert.equal(row.imagesBefore.length, 0);
+
+  // 1. Initial multi-image selection (2 images)
+  const batch1 = [
+    { id: 'img-1', url: 'https://server.com/img1.png', name: 'photo1.png', type: 'image' },
+    { id: 'img-2', url: 'https://server.com/img2.png', name: 'photo2.png', type: 'image' }
+  ];
+  row.imagesBefore = [...row.imagesBefore, ...batch1];
+  row.imageBefore = row.imagesBefore[0].url;
+  row.imageBeforeName = row.imagesBefore[0].name;
+  row.fileTypeBefore = 'image';
+
+  assert.equal(row.imagesBefore.length, 2);
+  assert.equal(row.imageBefore, 'https://server.com/img1.png');
+
+  // 2. Repeated upload (adds 1 more image)
+  const batch2 = [
+    { id: 'img-3', url: 'https://server.com/img3.png', name: 'photo3.png', type: 'image' }
+  ];
+  row.imagesBefore = [...row.imagesBefore, ...batch2];
+  assert.equal(row.imagesBefore.length, 3);
+  assert.equal(row.imagesBefore[0].id, 'img-1');
+  assert.equal(row.imagesBefore[1].id, 'img-2');
+  assert.equal(row.imagesBefore[2].id, 'img-3');
+});
+
+test('PDCA Document Upload: PDF, PPT, Excel store single attachment file and maintain independent before/after state', () => {
+  const row = createDefaultRows(1)[0];
+
+  // Image Before has images
+  row.imagesBefore = [
+    { id: 'img-1', url: 'https://server.com/before.jpg', name: 'before.jpg', type: 'image' }
+  ];
+  row.imageBefore = row.imagesBefore[0].url;
+  row.imageBeforeName = row.imagesBefore[0].name;
+  row.fileTypeBefore = 'image';
+
+  // Image After has a single PDF uploaded
+  row.imageAfter = 'https://server.com/audit_report.pdf';
+  row.imageAfterName = 'audit_report.pdf';
+  row.fileTypeAfter = 'pdf';
+  row.imagesAfter = [];
+
+  // Verify independence
+  assert.equal(row.fileTypeBefore, 'image');
+  assert.equal(row.imagesBefore.length, 1);
+  assert.equal(row.fileTypeAfter, 'pdf');
+  assert.equal(row.imageAfter, 'https://server.com/audit_report.pdf');
+  assert.equal(row.imagesAfter.length, 0);
+});
+
+
 

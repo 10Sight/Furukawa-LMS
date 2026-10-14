@@ -21,6 +21,10 @@ const CONVERT_TIMEOUT_MS = 5 * 60 * 1000; // large decks with embedded video can
 const SLIDE_RENDER_DPI = process.env.SLIDE_RENDER_DPI || "200";
 // Keep embedded images at full resolution in the intermediate PDF.
 const PDF_EXPORT_FILTER = 'pdf:impress_pdf_Export:{"ReduceImageResolution":{"type":"boolean","value":"false"}}';
+// The high-fidelity export (isolated profile + lossless images) crashes some
+// LibreOffice installs on Windows (exit 0xC0000409), so it is opt-in:
+// set SOFFICE_HIFI_EXPORT=true only after confirming it works on that host.
+const USE_HIFI_EXPORT = process.env.SOFFICE_HIFI_EXPORT === "true";
 
 const UPLOADS_ROOT = path.join(process.cwd(), "uploads");
 const CONVERT_TMP_ROOT = path.join(UPLOADS_ROOT, "tmp", "monthly-report-convert");
@@ -74,11 +78,25 @@ const readPngSize = (filePath) => {
 
 const findPdf = (dir) => fs.readdirSync(dir).find((f) => f.toLowerCase().endsWith(".pdf"));
 
-// pptx -> pdf. Tries the high-fidelity command first (isolated profile +
-// lossless images); some LibreOffice builds/versions reject one of those
-// options, so on failure it retries once with the plain command that has
-// always worked, and reports both errors if that fails too.
+// Plain pptx -> pdf export: the command that works on every install.
+async function convertToPdfBasic(tmpDir, absolutePptxPath) {
+    await runCommand(SOFFICE_BIN, [
+        "--headless", "--norestore",
+        "--convert-to", "pdf",
+        "--outdir", tmpDir,
+        absolutePptxPath
+    ]);
+    const pdfFile = findPdf(tmpDir);
+    if (!pdfFile) throw new Error("LibreOffice did not produce a PDF from this file");
+    return pdfFile;
+}
+
+// pptx -> pdf. With SOFFICE_HIFI_EXPORT=true, tries the high-fidelity command
+// first (isolated profile + lossless images) and falls back to the basic one
+// if it fails, reporting both errors if that fails too.
 async function convertToPdf(tmpDir, absolutePptxPath) {
+    if (!USE_HIFI_EXPORT) return convertToPdfBasic(tmpDir, absolutePptxPath);
+
     // Each conversion gets its own LibreOffice profile: concurrent soffice
     // processes sharing the default profile lock each other and can fail or hang.
     const profileUrl = pathToFileURL(path.join(tmpDir, "lo-profile")).href;
@@ -102,21 +120,10 @@ async function convertToPdf(tmpDir, absolutePptxPath) {
     logger.warn(`[monthlyReportConversion] High-fidelity PDF export failed, retrying with basic export: ${primaryError.message}`);
 
     try {
-        await runCommand(SOFFICE_BIN, [
-            "--headless", "--norestore",
-            "--convert-to", "pdf",
-            "--outdir", tmpDir,
-            absolutePptxPath
-        ]);
+        return await convertToPdfBasic(tmpDir, absolutePptxPath);
     } catch (fallbackError) {
         throw new Error(`PDF export failed. High-fidelity: ${primaryError.message} | Basic: ${fallbackError.message}`);
     }
-
-    const pdfFile = findPdf(tmpDir);
-    if (!pdfFile) {
-        throw new Error(`LibreOffice did not produce a PDF from this file (high-fidelity attempt: ${primaryError.message})`);
-    }
-    return pdfFile;
 }
 
 async function convertPptxToSlides(recordId, absolutePptxPath) {

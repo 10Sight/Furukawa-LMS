@@ -3,7 +3,8 @@ import { authSession } from "@/utils/authSession.js";
 import axios from "axios";
 
 const ENV_BASE = import.meta?.env?.VITE_BASE_URL;
-const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
+const rawHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
+const hostname = (rawHost === "localhost" || rawHost === "::1") ? "127.0.0.1" : rawHost;
 export const BASE_URL = ENV_BASE || `http://${hostname}:3000`;
 // const BASE_URL = "https://swargaya-learning-management-system-3vcz.onrender.com";
 

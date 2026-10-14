@@ -3,6 +3,45 @@ import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
 export { PDCA_DEPARTMENTS };
 export const PDCA_STORAGE_KEY = 'pdca_dashboard_items';
 export const PDCA_SCOPES = ['Company', 'Department', 'Self PDCA', 'CFT'];
+
+export function createEmptyRow(customDefaults = {}) {
+  return {
+    date: customDefaults.date || '',
+    shift: customDefaults.shift || '',
+    lineArea: customDefaults.lineArea || '',
+    status: customDefaults.status || 'Open',
+    observation: customDefaults.observation || '',
+    imagesBefore: Array.isArray(customDefaults.imagesBefore)
+      ? customDefaults.imagesBefore
+      : (customDefaults.imageBefore ? [{ id: 'legacy-before-0', url: customDefaults.imageBefore, name: customDefaults.imageBeforeName || 'Before Image', type: customDefaults.fileTypeBefore || 'image' }] : []),
+    imageBefore: customDefaults.imageBefore || null,
+    imageBeforeName: customDefaults.imageBeforeName || '',
+    fileTypeBefore: customDefaults.fileTypeBefore || 'image',
+    rootCause: customDefaults.rootCause || '',
+    counterMeasure: customDefaults.counterMeasure || '',
+    imagesAfter: Array.isArray(customDefaults.imagesAfter)
+      ? customDefaults.imagesAfter
+      : (customDefaults.imageAfter ? [{ id: 'legacy-after-0', url: customDefaults.imageAfter, name: customDefaults.imageAfterName || 'After Image', type: customDefaults.fileTypeAfter || 'image' }] : []),
+    imageAfter: customDefaults.imageAfter || null,
+    imageAfterName: customDefaults.imageAfterName || '',
+    fileTypeAfter: customDefaults.fileTypeAfter || 'image',
+    responseDate: customDefaults.responseDate || '',
+    department: customDefaults.department || '',
+    staffEmployee: customDefaults.staffEmployee || '',
+    assignedEmployee: customDefaults.assignedEmployee || '',
+    cftTopic: customDefaults.cftTopic || '',
+    cftTopicId: customDefaults.cftTopicId || '',
+    cftSelectedType: customDefaults.cftSelectedType || '',
+    cftSelectedName: customDefaults.cftSelectedName || '',
+    cftSelectedCode: customDefaults.cftSelectedCode || '',
+    responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || ''
+  };
+}
+
+export function createDefaultRows(count = 10, customDefaults = {}) {
+  return Array.from({ length: count }, () => createEmptyRow(customDefaults));
+}
+
 export function loadPDCA(fallback) {
   const raw = localStorage.getItem(PDCA_STORAGE_KEY);
   if (raw === null) {

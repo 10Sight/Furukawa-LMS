@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { commitPDCA, loadPDCA, addPDCA, updatePDCA } from './pdcaStore.js';
+import { commitPDCA, loadPDCA, addPDCA, updatePDCA, createDefaultRows } from './pdcaStore.js';
 import { filterPDCARecords } from './recordFilters.js';
 test('All four categories create, persist, update and retain existing fields and records', () => {
   const storage = new Map();
@@ -28,3 +28,26 @@ test('All four categories create, persist, update and retain existing fields and
   assert.throws(() => commitPDCA(records => addPDCA(records, { id: 'Company', topic: 'Duplicate', plant: 'Bawal', scope: 'Company' }), []), /already exists/);
   assert.deepEqual(loadPDCA([]), before);
 });
+
+test('createDefaultRows initializes exactly 10 blank rows with correct schema by default', () => {
+  const rows = createDefaultRows(10);
+  assert.equal(rows.length, 10);
+  rows.forEach((row) => {
+    assert.equal(row.status, 'Open');
+    assert.equal(row.date, '');
+    assert.equal(row.shift, '');
+    assert.equal(row.lineArea, '');
+    assert.equal(row.observation, '');
+    assert.equal(row.imageBefore, null);
+    assert.equal(row.rootCause, '');
+    assert.equal(row.counterMeasure, '');
+    assert.equal(row.imageAfter, null);
+    assert.equal(row.responseDate, '');
+    assert.equal(row.department, '');
+    assert.equal(row.staffEmployee, '');
+    assert.equal(row.assignedEmployee, '');
+    assert.equal(row.cftTopic, '');
+    assert.equal(row.responsiblePersonConfirmation, '');
+  });
+});
+

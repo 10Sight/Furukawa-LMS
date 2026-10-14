@@ -24,6 +24,10 @@ const sheetJson = express.json({ limit: ENV.SHEET_BODY_LIMIT });
 
 // Must be mounted after cookie-parser: the access token is usually in a cookie.
 export const jsonBody = (req, res, next) => {
+    // PDCA sheets and attachments support embedded/standalone access and large payloads
+    if (/^\/api(?:\/v1)?\/pdca\//.test(req.path)) {
+        return sheetJson(req, res, next);
+    }
     if (!isLargeBodyRoute(req.method, req.path)) return standardJson(req, res, next);
     if (!isAcceptableAccessToken(readAccessToken(req))) {
         return res.status(401).json({ success: false, message: "You are not logged in!" });

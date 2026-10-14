@@ -31,7 +31,10 @@ export function createEmptyRow() {
  */
 export function usePDCASheet(topic, onSave, showToast) {
   const [rows, setRows] = useState(() => {
-    return topic?.sheet?.rows || Array.from({ length: 10 }, () => createEmptyRow());
+    if (Array.isArray(topic?.sheet?.rows) && topic.sheet.rows.length > 0) {
+      return topic.sheet.rows;
+    }
+    return Array.from({ length: 10 }, () => createEmptyRow());
   });
 
   const [headerInfo, setHeaderInfo] = useState(() => {
@@ -58,6 +61,8 @@ export function usePDCASheet(topic, onSave, showToast) {
       }
       if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
         setRows(savedSheet.rows);
+      } else {
+        setRows(prev => (Array.isArray(prev) && prev.length > 0) ? prev : Array.from({ length: 10 }, () => createEmptyRow()));
       }
     }).catch(err => {
       console.warn('Could not load sheet from backend:', err);

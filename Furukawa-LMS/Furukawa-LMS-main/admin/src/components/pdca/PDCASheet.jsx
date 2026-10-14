@@ -1,4 +1,3 @@
-import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.js';
 import FormZoomControls from '@components/shared/FormZoomControls';
 import React, { useState, useRef, useLayoutEffect, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -23,10 +22,14 @@ import {
   Edit3,
   Check,
   User,
-  Users
+  Users,
+  Image as ImageIcon,
+  Images,
+  AlertCircle
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
+import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
@@ -38,17 +41,27 @@ import {
 import SearchableLineAreaSelect from './SearchableLineAreaSelect';
 import { getMediaUrl } from '@/utils/mediaUtils.js';
 
+export const DEFAULT_OBSERVATION_WIDTH = 260;
+export const MIN_OBSERVATION_WIDTH = 180;
+export const MAX_OBSERVATION_WIDTH = 650;
+
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
   lineArea: customDefaults.lineArea || '',
   status: customDefaults.status || 'Open',
   observation: customDefaults.observation || '',
+  imagesBefore: Array.isArray(customDefaults.imagesBefore)
+    ? customDefaults.imagesBefore
+    : (customDefaults.imageBefore ? [{ id: 'legacy-before-0', url: customDefaults.imageBefore, name: customDefaults.imageBeforeName || 'Before Image', type: customDefaults.fileTypeBefore || 'image' }] : []),
   imageBefore: customDefaults.imageBefore || null,
   imageBeforeName: customDefaults.imageBeforeName || '',
   fileTypeBefore: customDefaults.fileTypeBefore || 'image',
   rootCause: customDefaults.rootCause || '',
   counterMeasure: customDefaults.counterMeasure || '',
+  imagesAfter: Array.isArray(customDefaults.imagesAfter)
+    ? customDefaults.imagesAfter
+    : (customDefaults.imageAfter ? [{ id: 'legacy-after-0', url: customDefaults.imageAfter, name: customDefaults.imageAfterName || 'After Image', type: customDefaults.fileTypeAfter || 'image' }] : []),
   imageAfter: customDefaults.imageAfter || null,
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
@@ -90,6 +103,21 @@ function AutoResizeTextarea({
     resize();
   }, [value]);
 
+  // Dynamically recompute height if column width changes (e.g. user drags Observation width handle)
+  useLayoutEffect(() => {
+    const el = localRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let prevWidth = el.offsetWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth !== prevWidth) {
+        prevWidth = el.offsetWidth;
+        resize();
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <textarea
       ref={(el) => {
@@ -115,6 +143,9 @@ function AutoResizeTextarea({
         display: 'block',
         width: '100%',
         boxSizing: 'border-box',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
       }}
     />
   );
@@ -216,24 +247,153 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   const [openStaffDropdown, setOpenStaffDropdown] = useState(null); // { rowIndex, top, left, width }
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
 
-  // Initialize rows with 10 empty items
-  const [rows, setRows] = useState(() => {
-    return topic?.sheet?.rows || Array.from({ length: 10 }, () => createEmptyRow());
-  });
+  // Helper to ensure row has normalized imagesBefore and imagesAfter arrays
+  const normalizeRow = (row) => {
+    if (!row) return createEmptyRow();
+    const imagesBefore = Array.isArray(row.imagesBefore)
+      ? row.imagesBefore
+      : (row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
+    const imagesAfter = Array.isArray(row.imagesAfter)
+      ? row.imagesAfter
+      : (row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
+    return {
+      ...row,
+      imagesBefore,
+      imagesAfter,
+      imageBefore: imagesBefore[0]?.url || row.imageBefore || null,
+      imageBeforeName: imagesBefore[0]?.name || row.imageBeforeName || '',
+      imageAfter: imagesAfter[0]?.url || row.imageAfter || null,
+      imageAfterName: imagesAfter[0]?.name || row.imageAfterName || ''
+    };
+  };
+
+  // Serialize sheet state helper for deep equality comparison
+  const serializeSheet = (r, h) => {
+    try {
+      return JSON.stringify({ rows: r, headerInfo: h });
+    } catch {
+      return '';
+    }
+  };
+
+  const initialRows = useMemo(() => {
+    if (Array.isArray(topic?.sheet?.rows) && topic.sheet.rows.length > 0) {
+      return topic.sheet.rows.map(normalizeRow);
+    }
+    return Array.from({ length: 10 }, () => createEmptyRow());
+  }, []);
+
+  const initialHeaderInfo = useMemo(() => {
+    return topic?.sheet?.headerInfo || {
+      topicName: '',
+      preparedBy: '',
+      auditNo: '',
+      attendees: ''
+    };
+  }, []);
+
+  // Initialize rows with 10 empty items by default
+  const [rows, setRows] = useState(initialRows);
 
   const [activePreviewImage, setActivePreviewImage] = useState(null);
   const [selectedImageAction, setSelectedImageAction] = useState(null);
   const [sheetSearch, setSheetSearch] = useState('');
 
-  // Editable Sheet Header Details: Topic name, Prepared By, Audit No, Attendees (kept empty by default for manual entry)
-  const [headerInfo, setHeaderInfo] = useState(topic?.sheet?.headerInfo || {
-    topicName: '',
-    preparedBy: '',
-    auditNo: '',
-    attendees: ''
+  // Evidence Viewer Modal state (Multiple Images for Before / After): { isOpen, rowIndex, field }
+  const [evidenceModal, setEvidenceModal] = useState({
+    isOpen: false,
+    rowIndex: null,
+    field: null
   });
 
+  // Editable Sheet Header Details: Topic name, Prepared By, Audit No, Attendees (kept empty by default for manual entry)
+  const [headerInfo, setHeaderInfo] = useState(initialHeaderInfo);
+
   const [isSaving, setIsSaving] = useState(false);
+
+  // Baseline snapshot ref to detect unsaved edits during the current editing session
+  const initialSnapshotRef = useRef(serializeSheet(initialRows, initialHeaderInfo));
+  const initialStateRef = useRef({
+    rows: initialRows.map((r) => ({ ...r })),
+    headerInfo: { ...initialHeaderInfo }
+  });
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+
+  // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
+  const [observationWidth, setObservationWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_observation_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_OBSERVATION_WIDTH && parsed <= MAX_OBSERVATION_WIDTH) {
+            return parsed;
+          }
+        }
+      }
+    } catch {}
+    return DEFAULT_OBSERVATION_WIDTH;
+  });
+
+  const activeColResizeRef = useRef(null);
+
+  const startColResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeColResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: observationWidth,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {}
+  };
+
+  const continueColResize = (event) => {
+    const active = activeColResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = event.clientX - active.startX;
+    const newWidth = Math.min(
+      MAX_OBSERVATION_WIDTH,
+      Math.max(MIN_OBSERVATION_WIDTH, active.startWidth + deltaX)
+    );
+    setObservationWidth(newWidth);
+  };
+
+  const finishColResize = (event) => {
+    const active = activeColResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
+    activeColResizeRef.current = null;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+      }
+    } catch {}
+  };
+
+  const handleResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setObservationWidth((prev) => Math.max(MIN_OBSERVATION_WIDTH, prev - 15));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setObservationWidth((prev) => Math.min(MAX_OBSERVATION_WIDTH, prev + 15));
+    }
+  };
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+      }
+    } catch {}
+  }, [observationWidth]);
 
   // Database-backed employee master records
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
@@ -258,12 +418,25 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     let active = true;
     pdcaApi.getSheet(topic.id).then(savedSheet => {
       if (!active || !savedSheet) return;
+      let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
-        setHeaderInfo(prev => ({ ...prev, ...savedSheet.headerInfo }));
+        finalHeader = { ...headerInfo, ...savedSheet.headerInfo };
+        setHeaderInfo(finalHeader);
       }
+      let finalRows = rows;
       if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
-        setRows(savedSheet.rows);
+        finalRows = savedSheet.rows.map(normalizeRow);
+        setRows(finalRows);
+      } else {
+        finalRows = Array.isArray(rows) && rows.length > 0 ? rows.map(normalizeRow) : Array.from({ length: 10 }, () => createEmptyRow());
+        setRows(finalRows);
       }
+      // Update baseline after successful backend load
+      initialStateRef.current = {
+        rows: finalRows.map((r) => ({ ...r })),
+        headerInfo: { ...finalHeader }
+      };
+      initialSnapshotRef.current = serializeSheet(finalRows, finalHeader);
     }).catch(err => {
       console.warn('Could not fetch sheet from backend:', err);
     });
@@ -284,7 +457,6 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       });
     }
   };
-  useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id), showToast);
 
   const saveSheet = async () => {
     if (isSaving) return false;
@@ -297,9 +469,11 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         r.lineArea?.trim() ||
         r.observation?.trim() ||
         r.imageBefore ||
+        (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
         r.rootCause?.trim() ||
         r.counterMeasure?.trim() ||
         r.imageAfter ||
+        (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
         r.responseDate?.trim() ||
         r.department?.trim() ||
         r.staffEmployee?.trim() ||
@@ -323,13 +497,25 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
     try {
       setIsSaving(true);
-      if (topic?.id) {
-        await pdcaApi.saveSheet(topic.id, sheetSnapshot);
+      const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
+      if (targetId) {
+        await pdcaApi.saveSheet(targetId, sheetSnapshot);
       }
       persistSheet(sheetSnapshot);
+      // Update baseline after successful save so subsequent navigation knows all edits are saved
+      initialStateRef.current = {
+        rows: rows.map((r) => ({ ...r })),
+        headerInfo: { ...headerInfo }
+      };
+      initialSnapshotRef.current = serializeSheet(rows, headerInfo);
       showToast('PDCA saved successfully.');
+      onSave?.(sheetSnapshot);
+      setTimeout(() => {
+        onBack?.();
+      }, 500);
       return true;
     } catch (error) {
+      persistSheet(sheetSnapshot);
       showToast(error.message || 'Could not save PDCA. Keep the form open and try again.');
       return false;
     } finally {
@@ -337,10 +523,37 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     }
   };
 
-  const handleBack = async () => {
-    // Flush the current snapshot before navigation, including the last focused cell.
-    const saved = await saveSheet();
-    if (saved) onBack?.();
+  // Determine if user has made unsaved changes in the current editing session
+  const hasUnsavedChanges = () => {
+    if (!initialSnapshotRef.current) return false;
+    return serializeSheet(rows, headerInfo) !== initialSnapshotRef.current;
+  };
+
+  // Navigation Back: Separated strictly from save and mandatory validation
+  const handleBack = () => {
+    if (hasUnsavedChanges()) {
+      setShowDiscardModal(true);
+    } else {
+      onBack?.();
+    }
+  };
+
+  // Discard all unsaved edits made during the session and navigate back immediately
+  const handleDiscardAndGoBack = () => {
+    setShowDiscardModal(false);
+    if (topic?.id && initialStateRef.current) {
+      setData((items) => {
+        if (!items) return items;
+        return items.map((item) =>
+          item.id === topic.id ? { ...item, sheet: initialStateRef.current } : item
+        );
+      });
+    }
+    if (initialStateRef.current) {
+      setRows(initialStateRef.current.rows);
+      setHeaderInfo(initialStateRef.current.headerInfo);
+    }
+    onBack?.();
   };
 
   const topicName = headerInfo.topicName || topic?.topic || 'Quality Inspection & Line Audit';
@@ -1052,26 +1265,197 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[editorModal.rowIndex] || {};
+      const imagesField = editorModal.field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
+      const nameField = editorModal.field === 'imageBefore' ? 'imageBeforeName' : 'imageAfterName';
+      const currentList = Array.isArray(currentRow[imagesField]) ? currentRow[imagesField] : [];
+
+      let updatedList;
+      if (editorModal.evidenceImageId) {
+        updatedList = currentList.map((img) =>
+          img.id === editorModal.evidenceImageId ? { ...img, url: newImageSrc } : img
+        );
+      } else if (currentList.length > 0) {
+        updatedList = [{ ...currentList[0], url: newImageSrc }, ...currentList.slice(1)];
+      } else {
+        updatedList = [{ id: `img-${Date.now()}`, url: newImageSrc, name: 'Edited Image', type: 'image' }];
+      }
+
       updated[editorModal.rowIndex] = {
-        ...updated[editorModal.rowIndex],
-        [editorModal.field]: newImageSrc
+        ...currentRow,
+        [imagesField]: updatedList,
+        [editorModal.field]: updatedList[0]?.url || newImageSrc,
+        [nameField]: updatedList[0]?.name || (editorModal.field === 'imageBefore' ? 'Before Image' : 'After Image')
       };
       return updated;
     });
 
-    // Reopen View modal with the newly edited image
-    const isBefore = editorModal.field === 'imageBefore';
-    const nameField = isBefore ? 'imageBeforeName' : 'imageAfterName';
-    const typeField = isBefore ? 'fileTypeBefore' : 'fileTypeAfter';
-    setSelectedImageAction({
-      rowIndex: editorModal.rowIndex,
-      field: editorModal.field,
-      nameField,
-      typeField,
-      title: isBefore ? 'Image (Before)' : 'Image (After)',
-      imageSrc: newImageSrc,
-      imageName: rows[editorModal.rowIndex]?.[nameField] || (isBefore ? 'Before Image' : 'After Image'),
-      fileType: 'image'
+    setEditorModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Open Evidence Viewer Modal for multiple evidence images
+  const handleOpenEvidenceViewer = (rowIndex, field) => {
+    setEvidenceModal({
+      isOpen: true,
+      rowIndex,
+      field
+    });
+  };
+
+  // Add multiple images as evidence
+  const handleAddEvidenceImages = async (files) => {
+    const { rowIndex, field } = evidenceModal;
+    if (rowIndex === null || !field) return;
+
+    const newImages = [];
+    for (const file of files) {
+      let serverUrl = null;
+      if (topic?.id) {
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('fieldName', field);
+          fd.append('rowId', `row-${rowIndex + 1}`);
+          const uploadRes = await pdcaApi.uploadAttachment(topic.id, fd);
+          if (uploadRes?.url) {
+            serverUrl = uploadRes.url;
+          }
+        } catch (err) {
+          console.warn('Backend upload failed, using data URL fallback:', err);
+        }
+      }
+
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
+
+      newImages.push({
+        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        url: serverUrl || dataUrl,
+        name: file.name,
+        size: file.size,
+        type: 'image',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+      const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
+      const nameField = field === 'imageBefore' ? 'imageBeforeName' : 'imageAfterName';
+      const currentList = Array.isArray(currentRow[imagesField])
+        ? currentRow[imagesField]
+        : (currentRow[field] ? [{ id: 'legacy-0', url: currentRow[field], name: currentRow[nameField] || 'Image', type: 'image' }] : []);
+      const updatedList = [...currentList, ...newImages];
+
+      updated[rowIndex] = {
+        ...currentRow,
+        [imagesField]: updatedList,
+        [field]: updatedList[0]?.url || null,
+        [nameField]: updatedList[0]?.name || ''
+      };
+      return updated;
+    });
+  };
+
+  // Remove individual evidence image
+  const handleRemoveEvidenceImage = (imageId) => {
+    const { rowIndex, field } = evidenceModal;
+    if (rowIndex === null || !field) return;
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+      const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
+      const nameField = field === 'imageBefore' ? 'imageBeforeName' : 'imageAfterName';
+      const currentList = Array.isArray(currentRow[imagesField])
+        ? currentRow[imagesField]
+        : (currentRow[field] ? [{ id: 'legacy-0', url: currentRow[field], name: currentRow[nameField] || 'Image', type: 'image' }] : []);
+      const updatedList = currentList.filter((img) => img.id !== imageId);
+
+      updated[rowIndex] = {
+        ...currentRow,
+        [imagesField]: updatedList,
+        [field]: updatedList[0]?.url || null,
+        [nameField]: updatedList[0]?.name || ''
+      };
+      return updated;
+    });
+  };
+
+  // Replace individual evidence image
+  const handleReplaceEvidenceImage = async (imageId, file) => {
+    const { rowIndex, field } = evidenceModal;
+    if (rowIndex === null || !field) return;
+
+    let serverUrl = null;
+    if (topic?.id) {
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('fieldName', field);
+        fd.append('rowId', `row-${rowIndex + 1}`);
+        const uploadRes = await pdcaApi.uploadAttachment(topic.id, fd);
+        if (uploadRes?.url) {
+          serverUrl = uploadRes.url;
+        }
+      } catch (err) {
+        console.warn('Backend replace upload failed, using data URL fallback:', err);
+      }
+    }
+
+    const dataUrl = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+      const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
+      const nameField = field === 'imageBefore' ? 'imageBeforeName' : 'imageAfterName';
+      const currentList = Array.isArray(currentRow[imagesField])
+        ? currentRow[imagesField]
+        : (currentRow[field] ? [{ id: 'legacy-0', url: currentRow[field], name: currentRow[nameField] || 'Image', type: 'image' }] : []);
+      const updatedList = currentList.map((img) => {
+        if (img.id === imageId) {
+          return {
+            ...img,
+            url: serverUrl || dataUrl,
+            name: file.name,
+            size: file.size,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return img;
+      });
+
+      updated[rowIndex] = {
+        ...currentRow,
+        [imagesField]: updatedList,
+        [field]: updatedList[0]?.url || null,
+        [nameField]: updatedList[0]?.name || ''
+      };
+      return updated;
+    });
+  };
+
+  // Open editor for a specific evidence image
+  const handleOpenEditorForEvidence = (img) => {
+    const { rowIndex, field } = evidenceModal;
+    setEditorModal({
+      isOpen: true,
+      rowIndex,
+      field,
+      evidenceImageId: img.id,
+      imageSrc: getMediaUrl(img.url),
+      title: `Edit Evidence Photo - Row ${rowIndex + 1} (${field === 'imageBefore' ? 'Before' : 'After'})`
     });
   };
 
@@ -1406,10 +1790,42 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                 <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569] text-[10.5px]">
                   <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] text-[10.5px]">
-                  <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                {/* 5. Observation Column Header with Visible, Draggable Width Controller */}
+                <th
+                  rowSpan={2}
+                  style={{
+                    width: `${observationWidth}px`,
+                    minWidth: `${observationWidth}px`,
+                    maxWidth: `${observationWidth}px`
+                  }}
+                  className="relative py-1.5 px-2 text-center border-r border-[#475569] text-[10.5px] select-none"
+                >
+                  <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                    <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                  </div>
+
+                  {/* Visible Draggable Resize Handle */}
+                  <span
+                    role="separator"
+                    aria-label="Resize Observation column width"
+                    aria-orientation="vertical"
+                    aria-valuemin={MIN_OBSERVATION_WIDTH}
+                    aria-valuemax={MAX_OBSERVATION_WIDTH}
+                    aria-valuenow={observationWidth}
+                    tabIndex={0}
+                    title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
+                    onPointerDown={startColResize}
+                    onPointerMove={continueColResize}
+                    onPointerUp={finishColResize}
+                    onPointerCancel={finishColResize}
+                    onLostPointerCapture={finishColResize}
+                    onKeyDown={handleResizeKeyDown}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                  >
+                    <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
+                  </span>
                 </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-[#475569] text-[10.5px]">
                   Image Before
                 </th>
                 <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] text-[10.5px]">
@@ -1418,7 +1834,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                 <th rowSpan={2} className="py-1.5 px-1 w-[105px] min-w-[95px] text-center border-r border-[#475569] leading-tight text-[10.5px]">
                   Counter Measure
                 </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[105px] text-center border-r border-[#475569] text-[10.5px]">
+                <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-[#475569] text-[10.5px]">
                   Image After
                 </th>
                 <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#475569] leading-tight">
@@ -1460,20 +1876,22 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     className="border-b border-[#64748B] hover:bg-[#F8FAFC] transition-colors"
                   >
                     {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
-                      <CompactDateCell
-                        value={row.date}
-                        onChange={(val) => handleCellChange(idx, 'date', val)}
-                      />
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
+                      <div className="w-full flex items-center justify-center">
+                        <CompactDateCell
+                          value={row.date}
+                          onChange={(val) => handleCellChange(idx, 'date', val)}
+                        />
+                      </div>
                     </td>
 
-                    {/* 2. Shift (Decreased width for single letter A/B/C/G, blank by default) */}
-                    <td className="p-0 align-middle border-r border-[#64748B] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
-                      <div className="relative w-full h-full flex items-center justify-center">
+                    {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
+                      <div className="relative w-full flex items-center justify-center">
                         <select
                           value={row.shift === 'General' ? 'G' : (row.shift || '')}
                           onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                          className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer transition-colors appearance-none"
+                          className="w-full bg-transparent border-0 outline-none px-1 py-1 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer transition-colors appearance-none"
                         >
                           <option value="">-</option>
                           <option value="A">A</option>
@@ -1481,204 +1899,222 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           <option value="C">C</option>
                           <option value="G">G</option>
                         </select>
-                        <ChevronDown className="w-2 h-2 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
                     </td>
 
-                    {/* 3. S.No (Clean uneditable number) */}
-                    <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
+                    {/* 3. S.No (Clean uneditable number, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
                       {sNo}
                     </td>
 
-                    <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[78px] min-w-[78px]">
-                      <select
-                        aria-label={`Status for row ${sNo}`}
-                        value={row.status || 'Open'}
-                        onChange={event => handleCellChange(idx, 'status', event.target.value)}
-                        className={`w-full rounded-md border pl-0.5 pr-0 py-1.5 text-[11px] font-medium outline-none cursor-pointer focus:ring-2 focus:ring-blue-300 ${
-                          row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
-                          row.status === 'In Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                          row.status === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                          'bg-blue-50 text-blue-700 border-blue-200'
-                        }`}
-                      >
-                        <option value="Open" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Open</option>
-                        <option value="Closed" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Closed</option>
-                        <option value="In Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In Progress</option>
-                        <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
-                      </select>
+                    {/* 4. Status (Centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[78px]">
+                      <div className="w-full flex items-center justify-center">
+                        <select
+                          aria-label={`Status for row ${sNo}`}
+                          value={row.status || 'Open'}
+                          onChange={event => handleCellChange(idx, 'status', event.target.value)}
+                          className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none cursor-pointer text-center focus:ring-2 focus:ring-blue-300 ${
+                            row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
+                            row.status === 'In Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                            row.status === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                            'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}
+                        >
+                          <option value="Open" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Open</option>
+                          <option value="Closed" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Closed</option>
+                          <option value="In Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In Progress</option>
+                          <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
+                        </select>
+                      </div>
                     </td>
 
-                    {/* 4. Line/Area (Searchable Dropdown with search bar) */}
-                    <td className="p-1 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
-                      <SearchableLineAreaSelect
-                        value={row.lineArea}
-                        onChange={(val) => handleCellChange(idx, 'lineArea', val)}
-                        placeholder="Line/Area..."
-                      />
+                    {/* 5. Line/Area (Searchable Dropdown with search bar, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px]">
+                      <div className="w-full flex items-center justify-center">
+                        <SearchableLineAreaSelect
+                          value={row.lineArea}
+                          onChange={(val) => handleCellChange(idx, 'lineArea', val)}
+                          placeholder="Line/Area..."
+                        />
+                      </div>
                     </td>
 
-                    {/* 5. Observation (Auto-expanding on Shift+Enter / multiline, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                    {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
+                    <td
+                      style={{
+                        width: `${observationWidth}px`,
+                        minWidth: `${observationWidth}px`,
+                        maxWidth: `${observationWidth}px`
+                      }}
+                      className="p-1 align-top border-r border-[#64748B] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                    >
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'observation', el)}
                         value={row.observation}
                         onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
-                        placeholder="Observation..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        placeholder="Observation details..."
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
                       />
                     </td>
 
-                    {/* 5. Image (Before) - Clean high-visibility preview with increased dimensions and aspect ratio preservation */}
-                    <td className="p-1.5 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
-                      {row.imageBefore ? (
-                        <div className="flex items-center justify-center w-full min-h-[90px] py-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenImageActions(idx, 'imageBefore')}
-                            className="group relative inline-flex items-center justify-center p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-sm overflow-hidden max-w-full"
-                            title={`Click to view ${row.imageBeforeName || 'file'}, edit or delete`}
-                          >
-                            {row.fileTypeBefore === 'image' ? (
-                              <div className="relative flex items-center justify-center">
-                                <img
-                                  src={getMediaUrl(row.imageBefore)}
-                                  alt={row.imageBeforeName || `Row ${sNo} Before`}
-                                  className="h-20 w-auto max-w-[110px] max-h-[85px] object-contain rounded transition-transform group-hover:scale-105"
-                                />
-                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                  <Eye className="w-4 h-4 drop-shadow" />
-                                </div>
-                              </div>
-                            ) : (
-                              <div
-                                className={`h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                                  row.fileTypeBefore === 'pdf'
-                                    ? 'bg-rose-50 text-rose-700 border border-rose-300'
-                                    : row.fileTypeBefore === 'excel'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
-                                      : row.fileTypeBefore === 'ppt'
-                                        ? 'bg-amber-50 text-amber-700 border border-amber-300'
-                                        : 'bg-blue-50 text-blue-700 border border-blue-300'
-                                }`}
+                    {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
+                      {(() => {
+                        const beforeImages = Array.isArray(row.imagesBefore)
+                          ? row.imagesBefore
+                          : (row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }] : []);
+                        const hasImages = beforeImages.length > 0;
+
+                        if (hasImages) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                                className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view all ${beforeImages.length} evidence photo(s), add more, edit or remove`}
                               >
-                                {row.fileTypeBefore === 'pdf' && <FileText className="w-4 h-4 text-rose-600" />}
-                                {row.fileTypeBefore === 'excel' && <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
-                                {row.fileTypeBefore === 'ppt' && <Presentation className="w-4 h-4 text-amber-600" />}
-                                {row.fileTypeBefore === 'document' && <File className="w-4 h-4 text-blue-600" />}
-                                <span className="text-[10px] font-bold uppercase tracking-tight">
-                                  {row.fileTypeBefore}
-                                </span>
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
-                          className="flex items-center justify-center gap-1 border border-dashed border-[#64748B] hover:border-blue-600 bg-white hover:bg-blue-50/40 rounded px-1.5 py-2 cursor-pointer text-slate-700 hover:text-blue-700 transition-colors w-full font-semibold"
-                          title="Click to choose: Upload Image, PDF, PPT, or Excel"
-                        >
-                          <Upload className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="text-[10.5px] whitespace-nowrap">Upload</span>
-                        </button>
-                      )}
-                    </td>
-
-                    {/* 6. Root Cause (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'rootCause', el)}
-                        value={row.rootCause}
-                        onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
-                        placeholder="Root cause..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
-                      />
-                    </td>
-
-                    {/* 7. Counter Measure (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
-                        value={row.counterMeasure}
-                        onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
-                        placeholder="Counter measure..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
-                      />
-                    </td>
-
-                    {/* 8. Image After - Clean image-only preview */}
-                    <td className="p-1 align-middle border-r border-[#64748B] w-[85px] min-w-[80px]">
-                      {row.imageAfter ? (
-                        <div className="flex items-center justify-center w-full">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenImageActions(idx, 'imageAfter')}
-                            className="group relative inline-flex items-center justify-center p-0.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-2xs overflow-hidden max-w-full"
-                            title={`Click to view ${row.imageAfterName || 'file'}, edit or delete`}
-                          >
-                            {row.fileTypeAfter === 'image' ? (
-                              <div className="relative">
-                                <img
-                                  src={getMediaUrl(row.imageAfter)}
-                                  alt={row.imageAfterName || `Row ${sNo} After`}
-                                  className="h-8 w-auto max-w-[70px] object-cover rounded transition-transform group-hover:scale-105"
-                                />
-                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                  <Eye className="w-3.5 h-3.5 drop-shadow" />
+                                <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
+                                  <img
+                                    src={getMediaUrl(beforeImages[0].url)}
+                                    alt={beforeImages[0].name || `Row ${sNo} Before`}
+                                    className="h-16 max-h-[80px] w-auto max-w-[130px] object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View ({beforeImages.length})</span>
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <div
-                                className={`h-8 px-1.5 rounded flex items-center gap-1 cursor-pointer ${
-                                  row.fileTypeAfter === 'pdf'
-                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                    : row.fileTypeAfter === 'excel'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : row.fileTypeAfter === 'ppt'
-                                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
-                                }`}
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                                    <Images className="w-3 h-3" />
+                                    <span>{beforeImages.length} {beforeImages.length === 1 ? 'Photo' : 'Photos'}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        // Compact default icon button when empty
+                        return (
+                          <div className="flex items-center justify-center w-full py-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                              title="Click to add evidence images"
+                            >
+                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </td>
+
+                    {/* 8. Root Cause (Auto-expanding, vertically and horizontally centered) */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                      <div className="w-full flex items-center justify-center">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'rootCause', el)}
+                          value={row.rootCause}
+                          onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
+                          placeholder="Root cause..."
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        />
+                      </div>
+                    </td>
+
+                    {/* 9. Counter Measure (Auto-expanding, vertically and horizontally centered) */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[105px] min-w-[95px] focus-within:bg-blue-50/30 text-center">
+                      <div className="w-full flex items-center justify-center">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
+                          value={row.counterMeasure}
+                          onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
+                          placeholder="Counter measure..."
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        />
+                      </div>
+                    </td>
+
+                    {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
+                      {(() => {
+                        const afterImages = Array.isArray(row.imagesAfter)
+                          ? row.imagesAfter
+                          : (row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }] : []);
+                        const hasImages = afterImages.length > 0;
+
+                        if (hasImages) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                                className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view all ${afterImages.length} evidence photo(s), add more, edit or remove`}
                               >
-                                {row.fileTypeAfter === 'pdf' && <FileText className="w-3.5 h-3.5 text-rose-600" />}
-                                {row.fileTypeAfter === 'excel' && <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
-                                {row.fileTypeAfter === 'ppt' && <Presentation className="w-3.5 h-3.5 text-amber-600" />}
-                                {row.fileTypeAfter === 'document' && <File className="w-3.5 h-3.5 text-blue-600" />}
-                                <span className="text-[9.5px] font-bold uppercase tracking-tight">
-                                  {row.fileTypeAfter}
-                                </span>
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
-                          className="flex items-center justify-center gap-1 border border-dashed border-[#94A3B8] hover:border-blue-600 bg-white hover:bg-blue-50/40 rounded px-1 py-1 cursor-pointer text-slate-600 hover:text-blue-700 transition-colors w-full"
-                          title="Click to choose: Upload Image, PDF, PPT, or Excel"
-                        >
-                          <Upload className="w-3 h-3 text-slate-400" />
-                          <span className="text-[10px] font-medium whitespace-nowrap">Upload</span>
-                        </button>
-                      )}
+                                <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
+                                  <img
+                                    src={getMediaUrl(afterImages[0].url)}
+                                    alt={afterImages[0].name || `Row ${sNo} After`}
+                                    className="h-16 max-h-[80px] w-auto max-w-[130px] object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View ({afterImages.length})</span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                    <Images className="w-3 h-3" />
+                                    <span>{afterImages.length} {afterImages.length === 1 ? 'Photo' : 'Photos'}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        // Compact default icon button when empty
+                        return (
+                          <div className="flex items-center justify-center w-full py-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                              title="Click to add evidence images"
+                            >
+                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
 
-                    {/* 9. Response Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
-                      <CompactDateCell
-                        value={row.responseDate}
-                        onChange={(val) => handleCellChange(idx, 'responseDate', val)}
-                      />
+                    {/* 11. Response Date (Stacked: Format on top, Calendar icon below, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
+                      <div className="w-full flex items-center justify-center">
+                        <CompactDateCell
+                          value={row.responseDate}
+                          onChange={(val) => handleCellChange(idx, 'responseDate', val)}
+                        />
+                      </div>
                     </td>
 
-                    {/* 10. Department Dropdown (Native Table Cell - Fully responsive height) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[75px]">
-                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
+                    {/* 12. Department Dropdown (Centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[75px]">
+                      <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                         <select
                           value={row.department || ''}
                           onChange={(e) => handleDepartmentChange(idx, e.target.value)}
@@ -1699,11 +2135,11 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       </div>
                     </td>
 
-                    {/* 11. Staff Name (Native Table Cell - Fully responsive height) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[88px] min-w-[80px]">
-                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
+                    {/* 13. Staff Name (Centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[88px] min-w-[80px]">
+                      <div className="relative w-full flex items-center justify-center">
                         {row.staffEmployee ? (
-                          <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
+                          <div className="relative w-full pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
                             <button
                               type="button"
                               onClick={(e) => handleToggleStaffDropdown(idx, e)}
@@ -1730,7 +2166,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           <button
                             type="button"
                             onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                            className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
+                            className="staff-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
                             title="Click to search and select staff employee"
                           >
                             <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
@@ -1756,11 +2192,11 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       </div>
                     </td>
 
-                    {/* 12. CFT (Native Table Cell - Fully responsive height) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[70px] min-w-[65px]">
-                      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
+                    {/* 14. CFT (Centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[70px] min-w-[65px]">
+                      <div className="relative w-full flex items-center justify-center">
                         {row.cftTopic ? (
-                          <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                          <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
                             {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
                             <button
                               type="button"
@@ -1814,7 +2250,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           <button
                             type="button"
                             onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
-                            className="cft-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                            className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
                             title="Click to select CFT Topic"
                           >
                             <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
@@ -1823,16 +2259,18 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       </div>
                     </td>
 
-                    {/* 11. (Responsible person instructions, etc.) (Auto-expanding on Shift+Enter, center aligned) */}
-                    <td className="p-0 align-top border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
-                        value={row.responsiblePersonConfirmation}
-                        onChange={(e) => handleCellChange(idx, 'responsiblePersonConfirmation', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'responsiblePersonConfirmation')}
-                        placeholder="Instructions, remarks..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
-                      />
+                    {/* 15. (Responsible person instructions, etc.) (Auto-expanding, centered) */}
+                    <td className="p-1 align-middle border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
+                      <div className="w-full flex items-center justify-center">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
+                          value={row.responsiblePersonConfirmation}
+                          onChange={(e) => handleCellChange(idx, 'responsiblePersonConfirmation', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'responsiblePersonConfirmation')}
+                          placeholder="Instructions, remarks..."
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        />
+                      </div>
                     </td>
 
                   </tr>
@@ -1945,6 +2383,26 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         onClose={() => setUploadSelectionModal((prev) => ({ ...prev, isOpen: false }))}
       />
 
+      {/* Evidence Viewer Modal (Multiple Evidence Images for Before / After) */}
+      <EvidenceViewerModal
+        isOpen={evidenceModal.isOpen}
+        onClose={() => setEvidenceModal({ isOpen: false, rowIndex: null, field: null })}
+        field={evidenceModal.field}
+        rowIndex={evidenceModal.rowIndex ?? 0}
+        images={
+          evidenceModal.rowIndex !== null && evidenceModal.field
+            ? (Array.isArray(rows[evidenceModal.rowIndex]?.[evidenceModal.field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter'])
+                ? rows[evidenceModal.rowIndex][evidenceModal.field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter']
+                : (rows[evidenceModal.rowIndex]?.[evidenceModal.field] ? [{ id: 'legacy-0', url: rows[evidenceModal.rowIndex][evidenceModal.field], name: rows[evidenceModal.rowIndex][evidenceModal.field === 'imageBefore' ? 'imageBeforeName' : 'imageAfterName'] || 'Image', type: 'image' }] : []))
+            : []
+        }
+        onAddImages={handleAddEvidenceImages}
+        onRemoveImage={handleRemoveEvidenceImage}
+        onReplaceImage={handleReplaceEvidenceImage}
+        onOpenEditor={handleOpenEditorForEvidence}
+        onViewEnlarged={(url) => setActivePreviewImage(url)}
+      />
+
       {/* Full-view Image & Attachment Modal (Image Name, Edit, Download, Delete actions + Full View) */}
       {selectedImageAction && typeof document !== 'undefined' && createPortal(
         <div
@@ -1982,8 +2440,23 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                 </div>
               </div>
 
-              {/* Right: Actions (Edit, Delete, Download, Close) */}
+              {/* Right: Actions (Replace, Edit, Download, Delete, Close) */}
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Replace Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const { rowIndex, field, nameField, typeField, title } = selectedImageAction;
+                    setSelectedImageAction(null);
+                    handleOpenUploadModal(rowIndex, field, nameField, typeField, title);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-blue-200"
+                  title="Replace this file with a new upload"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Replace</span>
+                </button>
+
                 {/* Edit Button (visible for images) */}
                 {selectedImageAction.fileType === 'image' && (
                   <button
@@ -2048,14 +2521,27 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               </div>
             </div>
 
-            {/* Main View Area: High-Res Image View */}
-            <div className="flex-1 min-h-[320px] max-h-[75vh] bg-slate-900/95 flex items-center justify-center p-3 sm:p-5 overflow-auto">
+            {/* Main View Area: High-Res Image View with Click to Enlarge */}
+            <div className="flex-1 min-h-[320px] max-h-[75vh] bg-slate-900/95 flex items-center justify-center p-3 sm:p-5 overflow-auto relative group">
               {selectedImageAction.fileType === 'image' ? (
-                <img
-                  src={getMediaUrl(selectedImageAction.imageSrc)}
-                  alt={selectedImageAction.imageName}
-                  className="max-h-[70vh] max-w-full w-auto h-auto rounded-lg object-contain shadow-2xl mx-auto"
-                />
+                <div className="relative inline-flex items-center justify-center max-w-full max-h-full">
+                  <img
+                    src={getMediaUrl(selectedImageAction.imageSrc)}
+                    alt={selectedImageAction.imageName}
+                    onClick={() => setActivePreviewImage(selectedImageAction.imageSrc)}
+                    className="max-h-[70vh] max-w-full w-auto h-auto rounded-lg object-contain shadow-2xl mx-auto cursor-zoom-in transition-transform hover:scale-[1.01]"
+                    title="Click for full-screen preview"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setActivePreviewImage(selectedImageAction.imageSrc)}
+                    className="absolute bottom-3 right-3 bg-slate-900/80 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-md backdrop-blur-xs transition-opacity opacity-0 group-hover:opacity-100 cursor-pointer"
+                    title="Enlarge to full screen"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Click to Enlarge</span>
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center p-8 text-center bg-white rounded-xl shadow-lg border border-slate-200 max-w-sm">
                   {selectedImageAction.fileType === 'pdf' && <FileText className="w-16 h-16 text-rose-500 mb-2" />}
@@ -2445,6 +2931,42 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         onSave={handleSaveStaffEmployee}
         onClose={() => setStaffEmployeeModal((prev) => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Discard Unsaved Changes Confirmation Modal */}
+      {showDiscardModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-4 mx-auto sm:mx-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 text-center sm:text-left">
+                Discard unsaved changes?
+              </h3>
+              <p className="mt-2 text-xs text-slate-500 leading-relaxed text-center sm:text-left">
+                You have unsaved changes in this PDCA form. If you leave now, all unsaved edits will be discarded.
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row-reverse items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleDiscardAndGoBack}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer transition-colors"
+              >
+                Discard Changes &amp; Go Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDiscardModal(false)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 shadow-2xs cursor-pointer transition-colors"
+              >
+                Stay on Page
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

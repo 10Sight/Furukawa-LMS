@@ -75,3 +75,45 @@ test('filterPDCARecords filters correctly by department and matches department i
   assert.equal(searchByDept[0].id, '3');
 });
 
+test('PDCA Unit selection persistence across session navigation and isolation', async () => {
+  const { getStoredUnit, saveStoredUnit, clearStoredUnit, PDCA_PLANTS } = await import('./recordFilters.js');
+  
+  const sessionMap = new Map();
+  globalThis.sessionStorage = {
+    getItem: k => sessionMap.get(k) ?? null,
+    setItem: (k, v) => sessionMap.set(k, String(v)),
+    removeItem: k => sessionMap.delete(k),
+    clear: () => sessionMap.clear()
+  };
+
+  // 1. Initial state (first visit): no unit stored -> defaults to 'Unit'
+  assert.equal(getStoredUnit('user-1'), 'Unit');
+
+  // 2. User selects Bawal -> saved and restored
+  saveStoredUnit('Bawal', 'user-1');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
+
+  // 3. User switches to Gujrat -> updated and restored
+  saveStoredUnit('Gujrat', 'user-1');
+  assert.equal(getStoredUnit('user-1'), 'Gujrat');
+
+  // 4. Invalid unit input is rejected safely
+  saveStoredUnit('InvalidPlant', 'user-1');
+  assert.equal(getStoredUnit('user-1'), 'Unit');
+
+  // 5. Restoring with corrupted/non-matching JSON falls back safely
+  sessionMap.set('pdca_selected_unit', '{"malformed');
+  assert.equal(getStoredUnit('user-1'), 'Unit');
+
+  // 6. Multi-user isolation: user-2 must not inherit user-1's unit selection
+  saveStoredUnit('Bawal', 'user-1');
+  assert.equal(getStoredUnit('user-2'), 'Unit');
+  assert.equal(sessionMap.has('pdca_selected_unit'), false); // Cleared on mismatch
+
+  // 7. Clear stored unit (e.g. on logout)
+  saveStoredUnit('Bawal', 'user-1');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
+  clearStoredUnit();
+  assert.equal(getStoredUnit('user-1'), 'Unit');
+});
+

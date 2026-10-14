@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, Plus } from 'lucide-react';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 
 export const CFT_TOPICS = [
   'Team Composition & Role',
@@ -139,6 +140,15 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
       },
       assignedMembers: assignedEmployees,
       isSelf: false,
+      sheet: {
+        headerInfo: {
+          topicName: topic,
+          preparedBy: memberObj.name,
+          auditNo: '',
+          attendees: ''
+        },
+        rows: createDefaultRows(10)
+      }
     };
 
     try {

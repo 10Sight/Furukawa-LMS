@@ -1,4 +1,5 @@
-import { filterPDCARecords, matchesPlant, PDCA_PLANTS } from '../data/recordFilters';
+import { filterPDCARecords, matchesPlant, PDCA_PLANTS, getStoredUnit, resolveCurrentUserId } from '../data/recordFilters';
+import { createDefaultRows } from '../data/pdcaStore';
 import { readSaved } from '@components/shared/formPersistence';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
@@ -17,11 +18,26 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const outletContext = useOutletContext();
   const onExportAll = outletContext?.onExportAll;
-  const { userContext, data, handleAddPDCA, handleUpdatePDCA, handleDeletePDCA, handleSaveMembers, showToast } = usePDCA();
+  const {
+    userContext,
+    data,
+    handleAddPDCA,
+    handleUpdatePDCA,
+    handleDeletePDCA,
+    handleSaveMembers,
+    showToast,
+    selectedPlant: contextSelectedPlant,
+    setSelectedPlant: contextSetSelectedPlant
+  } = usePDCA();
 
   const lpaSource = userContext.lpaSource;
   const [activeTab, setActiveTab] = useState(() => readSaved('pdca_list_filters', {}).scope || 'Company');
-  const [selectedPlant, setSelectedPlant] = useState('Unit');
+  const [localSelectedPlant, setLocalSelectedPlant] = useState(() => {
+    const userId = resolveCurrentUserId(userContext?.user);
+    return getStoredUnit(userId);
+  });
+  const selectedPlant = contextSelectedPlant ?? localSelectedPlant;
+  const setSelectedPlant = contextSetSelectedPlant ?? setLocalSelectedPlant;
   const [selectedDepartment, setSelectedDepartment] = useState(() => readSaved('pdca_list_filters', {}).department || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -75,6 +91,15 @@ export default function DashboardPage() {
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
       createdBy: userContext.user,
       lpaSource,
+      sheet: {
+        headerInfo: {
+          topicName: `${lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'} LPA · ${lpaSource.date || ''}`.trim(),
+          preparedBy: userContext.user?.name || '',
+          auditNo: '',
+          attendees: ''
+        },
+        rows: createDefaultRows(10)
+      }
     });
   };
   const autoOpenedRef = useRef(false);

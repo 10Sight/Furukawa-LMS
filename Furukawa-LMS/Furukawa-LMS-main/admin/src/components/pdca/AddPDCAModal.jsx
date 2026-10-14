@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { X, Layers, Check, ChevronDown, AlignLeft } from 'lucide-react';
 
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import SearchableLineAreaSelect from './SearchableLineAreaSelect';
 
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
@@ -161,6 +162,15 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             initials: getInitials(creatorName || 'NA'),
           },
           isSelf: scope === 'Self PDCA',
+          sheet: {
+            headerInfo: {
+              topicName: formData.topic.trim(),
+              preparedBy: creatorName.toUpperCase(),
+              auditNo: '',
+              attendees: ''
+            },
+            rows: createDefaultRows(10)
+          }
         });
       }
 

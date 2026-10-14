@@ -1,6 +1,7 @@
-import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY } from '../data/pdcaStore';
+import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY, createDefaultRows } from '../data/pdcaStore';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { initialPDCAData } from '../data/mockData';
+import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS } from '../data/recordFilters';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
 export const PDCAContext = createContext(null);
@@ -41,6 +42,24 @@ function getInitialUserContext() {
 export function PDCAProvider({ children }) {
   const [userContext, setUserContext] = useState(getInitialUserContext);
   const [loading, setLoading] = useState(false);
+
+  const currentUserId = resolveCurrentUserId(userContext?.user);
+  const [selectedPlant, setSelectedPlantState] = useState(() => getStoredUnit(currentUserId));
+
+  useEffect(() => {
+    const userId = resolveCurrentUserId(userContext?.user);
+    const validStored = getStoredUnit(userId);
+    if (validStored !== 'Unit' && validStored !== selectedPlant) {
+      setSelectedPlantState(validStored);
+    }
+  }, [userContext?.user]);
+
+  const setSelectedPlant = useCallback((plant) => {
+    const validPlant = PDCA_PLANTS.includes(plant) ? plant : 'Unit';
+    setSelectedPlantState(validPlant);
+    const userId = resolveCurrentUserId(userContext?.user);
+    saveStoredUnit(validPlant, userId);
+  }, [userContext?.user]);
 
   useEffect(() => {
     const receive = event => {
@@ -111,16 +130,41 @@ export function PDCAProvider({ children }) {
   };
 
   const handleAddPDCA = async (newItem) => {
+    const itemWithSheet = {
+      ...newItem,
+      sheet: {
+        headerInfo: newItem.sheet?.headerInfo || {
+          topicName: newItem.topic || '',
+          preparedBy: newItem.createdBy?.name || '',
+          auditNo: '',
+          attendees: ''
+        },
+        ...newItem.sheet,
+        rows: (Array.isArray(newItem.sheet?.rows) && newItem.sheet.rows.length > 0)
+          ? newItem.sheet.rows
+          : createDefaultRows(10)
+      }
+    };
     try {
-      const created = await pdcaApi.createRecord(newItem);
-      const savedRecord = created || newItem;
-      setData(records => addPDCA(records, savedRecord));
-      showToast(`✓ Created: ${savedRecord.id}`);
-      return savedRecord;
+      const created = await pdcaApi.createRecord(itemWithSheet);
+      const savedRecord = created || itemWithSheet;
+      const finalized = {
+        ...savedRecord,
+        sheet: {
+          headerInfo: savedRecord.sheet?.headerInfo || itemWithSheet.sheet.headerInfo,
+          ...savedRecord.sheet,
+          rows: (Array.isArray(savedRecord.sheet?.rows) && savedRecord.sheet.rows.length > 0)
+            ? savedRecord.sheet.rows
+            : itemWithSheet.sheet.rows
+        }
+      };
+      setData(records => addPDCA(records, finalized));
+      showToast(`✓ Created: ${finalized.id}`);
+      return finalized;
     } catch (err) {
-      setData(records => addPDCA(records, newItem));
-      showToast(`✓ Created: ${newItem.id}`);
-      return newItem;
+      setData(records => addPDCA(records, itemWithSheet));
+      showToast(`✓ Created: ${itemWithSheet.id}`);
+      return itemWithSheet;
     }
   };
 
@@ -172,7 +216,9 @@ export function PDCAProvider({ children }) {
     handleAddPDCA,
     handleUpdatePDCA,
     handleDeletePDCA,
-    handleSaveMembers
+    handleSaveMembers,
+    selectedPlant,
+    setSelectedPlant
   };
   return <PDCAContext.Provider value={value}>{children}</PDCAContext.Provider>;
 }

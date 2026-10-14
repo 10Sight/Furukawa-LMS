@@ -33,6 +33,7 @@ export function createAuthSession({ sessionStorage, localStorage, navigationType
                 apply(data.session);
             } else if (data?.type === 'logout') {
                 apply({});
+                try { sessionStorage.removeItem('pdca_selected_unit'); } catch {}
             }
         };
     };
@@ -54,7 +55,7 @@ export function createAuthSession({ sessionStorage, localStorage, navigationType
                 channel?.postMessage(value === 'true'
                     ? { type: 'login', session: snapshot() }
                     : { type: 'logout' });
-                if (value !== 'true') for (const item of ['user', 'token']) sessionStorage.removeItem(item);
+                if (value !== 'true') for (const item of ['user', 'token', 'pdca_selected_unit']) sessionStorage.removeItem(item);
             }
         },
         removeItem: key => sessionStorage.removeItem(key),

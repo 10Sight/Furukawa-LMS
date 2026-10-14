@@ -7,6 +7,44 @@ import {
 } from "../../db/pdca/pdcaDb.js";
 import logger from "../../logger/winston.logger.js";
 
+export function createEmptyRow(customDefaults = {}) {
+    return {
+        date: customDefaults.date || '',
+        shift: customDefaults.shift || '',
+        lineArea: customDefaults.lineArea || '',
+        status: customDefaults.status || 'Open',
+        observation: customDefaults.observation || '',
+        imagesBefore: Array.isArray(customDefaults.imagesBefore)
+            ? customDefaults.imagesBefore
+            : (customDefaults.imageBefore ? [{ id: 'legacy-before-0', url: customDefaults.imageBefore, name: customDefaults.imageBeforeName || 'Before Image', type: customDefaults.fileTypeBefore || 'image' }] : []),
+        imageBefore: customDefaults.imageBefore || null,
+        imageBeforeName: customDefaults.imageBeforeName || '',
+        fileTypeBefore: customDefaults.fileTypeBefore || 'image',
+        rootCause: customDefaults.rootCause || '',
+        counterMeasure: customDefaults.counterMeasure || '',
+        imagesAfter: Array.isArray(customDefaults.imagesAfter)
+            ? customDefaults.imagesAfter
+            : (customDefaults.imageAfter ? [{ id: 'legacy-after-0', url: customDefaults.imageAfter, name: customDefaults.imageAfterName || 'After Image', type: customDefaults.fileTypeAfter || 'image' }] : []),
+        imageAfter: customDefaults.imageAfter || null,
+        imageAfterName: customDefaults.imageAfterName || '',
+        fileTypeAfter: customDefaults.fileTypeAfter || 'image',
+        responseDate: customDefaults.responseDate || '',
+        department: customDefaults.department || '',
+        staffEmployee: customDefaults.staffEmployee || '',
+        assignedEmployee: customDefaults.assignedEmployee || '',
+        cftTopic: customDefaults.cftTopic || '',
+        cftTopicId: customDefaults.cftTopicId || '',
+        cftSelectedType: customDefaults.cftSelectedType || '',
+        cftSelectedName: customDefaults.cftSelectedName || '',
+        cftSelectedCode: customDefaults.cftSelectedCode || '',
+        responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || ''
+    };
+}
+
+export function createDefaultRows(count = 10, customDefaults = {}) {
+    return Array.from({ length: count }, () => createEmptyRow(customDefaults));
+}
+
 export class PDCAModel {
     static async init() {
         try {
@@ -302,9 +340,20 @@ export class PDCAModel {
         // Audit log
         await PDCAModel.logAudit(recordId, 'CREATE_RECORD', actor, `Created PDCA record: ${topic} (${recordId})`);
 
-        if (data.sheet) {
-            await PDCAModel.saveSheet(recordId, data.sheet, actor);
-        }
+        const defaultRows = createDefaultRows(10);
+        const sheetToSave = (data.sheet && Array.isArray(data.sheet.rows) && data.sheet.rows.length > 0)
+            ? data.sheet
+            : {
+                headerInfo: data.sheet?.headerInfo || {
+                    topicName: topic,
+                    preparedBy: createdByObj?.name || '',
+                    auditNo: '',
+                    attendees: ''
+                },
+                rows: defaultRows
+            };
+
+        await PDCAModel.saveSheet(recordId, sheetToSave, actor);
 
         return await PDCAModel.findByRecordId(recordId);
     }
@@ -378,7 +427,10 @@ export class PDCAModel {
 
         // Attach sheets
         const records = paginated.map(r => {
-            const sheet = store.sheets[r.recordId || r.id] || { headerInfo: null, rows: [] };
+            const stored = store.sheets[r.recordId || r.id];
+            const sheet = (stored && Array.isArray(stored.rows) && stored.rows.length > 0)
+                ? stored
+                : { headerInfo: stored?.headerInfo || null, rows: createDefaultRows(10) };
             return {
                 ...r,
                 id: r.recordId || r.id,
@@ -408,7 +460,10 @@ export class PDCAModel {
         const found = store.records.find(r => (r.recordId === recordId || r.id === recordId) && !r.isDeleted);
         if (!found) return null;
 
-        const sheet = store.sheets[found.recordId || found.id] || { headerInfo: null, rows: [] };
+        const stored = store.sheets[found.recordId || found.id];
+        const sheet = (stored && Array.isArray(stored.rows) && stored.rows.length > 0)
+            ? stored
+            : { headerInfo: stored?.headerInfo || null, rows: createDefaultRows(10) };
         return {
             ...found,
             id: found.recordId || found.id,
@@ -497,6 +552,7 @@ export class PDCAModel {
 
     // --- Sheet Management ---
     static async getSheet(recordId) {
+        const defaultRows = createDefaultRows(10);
         const dbActive = await isDbConnected();
         if (dbActive) {
             const [rows] = await executeQuery(`SELECT headerInfo, sheetData FROM pdca_sheets WHERE pdcaRecordId = ?`, [recordId]);
@@ -505,12 +561,22 @@ export class PDCAModel {
                 let sheetRows = [];
                 try { headerInfo = rows[0].headerInfo ? JSON.parse(rows[0].headerInfo) : null; } catch {}
                 try { sheetRows = rows[0].sheetData ? JSON.parse(rows[0].sheetData) : []; } catch {}
-                return { headerInfo, rows: sheetRows };
+                return {
+                    headerInfo,
+                    rows: (Array.isArray(sheetRows) && sheetRows.length > 0) ? sheetRows : defaultRows
+                };
             }
         }
 
         const store = readFallbackStore();
-        return store.sheets[recordId] || { headerInfo: null, rows: [] };
+        const stored = store.sheets[recordId];
+        if (stored && Array.isArray(stored.rows) && stored.rows.length > 0) {
+            return stored;
+        }
+        return {
+            headerInfo: stored?.headerInfo || null,
+            rows: defaultRows
+        };
     }
 
     static async saveSheet(recordId, sheet, actor = 'System') {
@@ -722,6 +788,9 @@ export class PDCAModel {
         try { lpaSource = row.lpaSource ? (typeof row.lpaSource === 'string' ? JSON.parse(row.lpaSource) : row.lpaSource) : null; } catch {}
         try { headerInfo = row.headerInfo ? (typeof row.headerInfo === 'string' ? JSON.parse(row.headerInfo) : row.headerInfo) : null; } catch {}
         try { rows = row.sheetData ? (typeof row.sheetData === 'string' ? JSON.parse(row.sheetData) : row.sheetData) : []; } catch {}
+        if (!Array.isArray(rows) || rows.length === 0) {
+            rows = createDefaultRows(10);
+        }
 
         return {
             id: row.recordId || String(row.id),

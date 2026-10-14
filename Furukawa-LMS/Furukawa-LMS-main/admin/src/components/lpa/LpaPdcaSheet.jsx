@@ -309,7 +309,10 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
   // Local rows state
   const [rows, setRows] = useState(() => {
-    return topic?.sheet?.rows || Array.from({ length: 10 }, () => createEmptyRow());
+    if (Array.isArray(topic?.sheet?.rows) && topic.sheet.rows.length > 0) {
+      return topic.sheet.rows;
+    }
+    return Array.from({ length: 10 }, () => createEmptyRow());
   });
 
   const [activePreviewImage, setActivePreviewImage] = useState(null);
@@ -349,6 +352,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       }
       if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
         setRows(savedSheet.rows);
+      } else {
+        setRows(prev => (Array.isArray(prev) && prev.length > 0) ? prev : Array.from({ length: 10 }, () => createEmptyRow()));
       }
     }).catch(err => {
       console.warn('Could not fetch sheet from backend:', err);
@@ -419,6 +424,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       }
       persistSheet(sheetSnapshot);
       notify('PDCA form saved successfully.', 'success');
+      setTimeout(() => {
+        onBack?.();
+      }, 500);
       return true;
     } catch (error) {
       notify(error.message || 'Could not save PDCA form. Please try again.', 'error');

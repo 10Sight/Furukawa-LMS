@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
+import { pathToFileURL } from "url";
 import logger from "../logger/winston.logger.js";
 import MonthlyReportRecord from "../models/monthlyReportRecord.model.js";
 
@@ -16,6 +17,10 @@ import MonthlyReportRecord from "../models/monthlyReportRecord.model.js";
 const SOFFICE_BIN = process.env.SOFFICE_PATH || "soffice";
 const PDFTOPPM_BIN = process.env.PDFTOPPM_PATH || "pdftoppm";
 const CONVERT_TIMEOUT_MS = 5 * 60 * 1000; // large decks with embedded video can take a while
+// 200 DPI keeps text/chart labels sharp when a slide is shown fullscreen on large displays.
+const SLIDE_RENDER_DPI = process.env.SLIDE_RENDER_DPI || "200";
+// Keep embedded images at full resolution in the intermediate PDF.
+const PDF_EXPORT_FILTER = 'pdf:impress_pdf_Export:{"ReduceImageResolution":{"type":"boolean","value":"false"}}';
 
 const UPLOADS_ROOT = path.join(process.cwd(), "uploads");
 const CONVERT_TMP_ROOT = path.join(UPLOADS_ROOT, "tmp", "monthly-report-convert");
@@ -52,14 +57,34 @@ const sortSlideFiles = (files) => files.sort((a, b) => {
     return numA - numB;
 });
 
+// Reads width/height straight from the PNG IHDR chunk (bytes 16-23) so the
+// viewer can lay out each slide at its true aspect ratio (4:3, A4, custom…).
+const readPngSize = (filePath) => {
+    try {
+        const fd = fs.openSync(filePath, "r");
+        const header = Buffer.alloc(24);
+        fs.readSync(fd, header, 0, 24, 0);
+        fs.closeSync(fd);
+        if (header.toString("ascii", 12, 16) !== "IHDR") return {};
+        return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+    } catch {
+        return {};
+    }
+};
+
 async function convertPptxToSlides(recordId, absolutePptxPath) {
     const tmpDir = path.join(CONVERT_TMP_ROOT, `${recordId}-${Date.now()}`);
     ensureDir(tmpDir);
 
     try {
+        // Each conversion gets its own LibreOffice profile: concurrent soffice
+        // processes sharing the default profile lock each other and can fail or hang.
+        const profileUrl = pathToFileURL(path.join(tmpDir, "lo-profile")).href;
+
         await runCommand(SOFFICE_BIN, [
+            `-env:UserInstallation=${profileUrl}`,
             "--headless", "--norestore",
-            "--convert-to", "pdf",
+            "--convert-to", PDF_EXPORT_FILTER,
             "--outdir", tmpDir,
             absolutePptxPath
         ]);
@@ -68,7 +93,7 @@ async function convertPptxToSlides(recordId, absolutePptxPath) {
         if (!pdfFile) throw new Error("LibreOffice did not produce a PDF from this file");
 
         await runCommand(PDFTOPPM_BIN, [
-            "-png", "-r", "150",
+            "-png", "-r", SLIDE_RENDER_DPI,
             path.join(tmpDir, pdfFile),
             path.join(tmpDir, "slide")
         ]);
@@ -84,8 +109,9 @@ async function convertPptxToSlides(recordId, absolutePptxPath) {
         const slides = slideFiles.map((fileName, index) => {
             const slideIndex = index + 1;
             const targetName = `slide_${slideIndex}.png`;
-            fs.renameSync(path.join(tmpDir, fileName), path.join(finalDir, targetName));
-            return { slideIndex, url: `/uploads/monthly-report/slides/${recordId}/${targetName}` };
+            const targetPath = path.join(finalDir, targetName);
+            fs.renameSync(path.join(tmpDir, fileName), targetPath);
+            return { slideIndex, url: `/uploads/monthly-report/slides/${recordId}/${targetName}`, ...readPngSize(targetPath) };
         });
 
         return slides;
@@ -102,8 +128,14 @@ async function convertPptxToSlides(recordId, absolutePptxPath) {
 const MAX_CONCURRENT_CONVERSIONS = 2;
 const queue = [];
 let activeCount = 0;
+let idleWaiters = [];
 
 function processQueue() {
+    if (activeCount === 0 && queue.length === 0) {
+        idleWaiters.forEach((resolve) => resolve());
+        idleWaiters = [];
+        return;
+    }
     if (activeCount >= MAX_CONCURRENT_CONVERSIONS || queue.length === 0) return;
     const job = queue.shift();
     activeCount++;
@@ -135,6 +167,13 @@ const pptxConversionService = {
     enqueue(recordId, absolutePptxPath) {
         queue.push({ recordId, absolutePptxPath });
         processQueue();
+    },
+
+    // Resolves once every queued/running conversion has finished (used by the
+    // bulk reconvert script, which must not exit while jobs are in flight).
+    onIdle() {
+        if (activeCount === 0 && queue.length === 0) return Promise.resolve();
+        return new Promise((resolve) => idleWaiters.push(resolve));
     }
 };
 

@@ -72,6 +72,26 @@ class MonthlyReportRecord {
         return MonthlyReportRecord.findById(insertedId);
     }
 
+    // Re-queues a finished record for conversion. Only DONE/FAILED records are
+    // flipped, so a record already queued or converting is never enqueued twice.
+    // Returns true when this call claimed the record.
+    static async markPendingForReconvert(id) {
+        const [, meta] = await executeQuery(
+            `UPDATE monthly_report_records
+             SET conversionStatus = 'PENDING', conversionError = NULL, updatedAt = GETDATE()
+             WHERE id = ? AND conversionStatus IN ('DONE', 'FAILED')`,
+            [id]
+        );
+        return meta.affectedRows > 0;
+    }
+
+    static async findAllReconvertible() {
+        const [rows] = await executeQuery(
+            "SELECT id, title, fileUrl FROM monthly_report_records WHERE conversionStatus IN ('DONE', 'FAILED') ORDER BY id"
+        );
+        return rows;
+    }
+
     static async markProcessing(id) {
         await executeQuery(
             "UPDATE monthly_report_records SET conversionStatus = 'PROCESSING', updatedAt = GETDATE() WHERE id = ?",

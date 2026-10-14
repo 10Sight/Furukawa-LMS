@@ -63,6 +63,19 @@ export const monthlyMeetingReportApi = createApi({
                 : [],
         }),
 
+        // Re-renders a record's slides from its stored original file. The record
+        // flips back to PENDING, so the panel's status polling picks up progress.
+        reconvertMonthlyReportRecord: builder.mutation({
+            query: ({ recordId }) => ({
+                url: `/api/monthly-report-records/${recordId}/reconvert`,
+                method: "POST",
+            }),
+            invalidatesTags: (result, error, { recordId, folderId }) => [
+                { type: "MonthlyReport", id: `records-${folderId}` },
+                { type: "MonthlyReport", id: `record-${recordId}` },
+            ],
+        }),
+
         deleteMonthlyReportRecord: builder.mutation({
             query: ({ recordId }) => ({
                 url: `/api/monthly-report-records/${recordId}`,
@@ -80,5 +93,6 @@ export const {
     useGetMonthlyReportRecordsQuery,
     useGetMonthlyReportRecordDetailQuery,
     useUploadMonthlyReportRecordMutation,
+    useReconvertMonthlyReportRecordMutation,
     useDeleteMonthlyReportRecordMutation,
 } = monthlyMeetingReportApi;

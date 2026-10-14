@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-    Folder, FolderPlus, FileText, Plus, Calendar, Eye, Search, ChevronRight, ArrowLeft, Trash2
+    Folder, FolderPlus, FileText, Plus, Calendar, Eye, Search, ChevronRight, ArrowLeft, Trash2, RefreshCw
 } from "lucide-react";
 import { IconLoader2, IconAlertTriangle, IconClockHour4 } from "@tabler/icons-react";
 import {
@@ -10,7 +10,7 @@ import {
 } from "@/components/common/ui/alert-dialog.jsx";
 import {
     useGetMonthlyReportFoldersQuery, useDeleteMonthlyReportFolderMutation,
-    useGetMonthlyReportRecordsQuery, useDeleteMonthlyReportRecordMutation,
+    useGetMonthlyReportRecordsQuery, useDeleteMonthlyReportRecordMutation, useReconvertMonthlyReportRecordMutation,
     useGetMonthlyReportRecordDetailQuery,
 } from "@/services/api/MonthlyMeetingReportApi.js";
 import CreateFolderDialog from "./CreateFolderDialog.jsx";
@@ -78,6 +78,20 @@ export default function FoldersAndRecordsPanel({ departmentId, sectionId, canCre
 
     const [deleteFolder, { isLoading: isDeletingFolder }] = useDeleteMonthlyReportFolderMutation();
     const [deleteRecord, { isLoading: isDeletingRecord }] = useDeleteMonthlyReportRecordMutation();
+    const [reconvertRecord] = useReconvertMonthlyReportRecordMutation();
+    const [reconvertingId, setReconvertingId] = useState(null);
+
+    const handleReconvert = async (item) => {
+        setReconvertingId(item.id);
+        try {
+            await reconvertRecord({ recordId: item.id, folderId: item.folderId }).unwrap();
+            toast.success(`Reconverting "${item.title}"…`);
+        } catch (err) {
+            toast.error(err?.message || "Failed to start reconversion.");
+        } finally {
+            setReconvertingId(null);
+        }
+    };
 
     const filteredFolders = folders.filter((f) => {
         if (!searchQuery.trim()) return true;
@@ -112,7 +126,7 @@ export default function FoldersAndRecordsPanel({ departmentId, sectionId, canCre
     if (activeRecordId) {
         return (
             <PresentationViewer
-                record={activeRecord}
+                record={activeRecord ? { ...activeRecord, folderName: activeFolder?.name } : activeRecordFromList ? { ...activeRecordFromList, folderName: activeFolder?.name } : null}
                 onBack={() => setActiveRecordId(null)}
             />
         );
@@ -293,6 +307,11 @@ export default function FoldersAndRecordsPanel({ departmentId, sectionId, canCre
                                                         <button type="button" disabled={!isReady && item.conversionStatus !== "FAILED"} onClick={(e) => { e.stopPropagation(); setActiveRecordId(item.id); }} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                                                             <Eye size={13} /><span>Open</span>
                                                         </button>
+                                                        {canCreate && (item.conversionStatus === "DONE" || item.conversionStatus === "FAILED") && (
+                                                            <button type="button" disabled={reconvertingId === item.id} onClick={(e) => { e.stopPropagation(); handleReconvert(item); }} className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-md hover:bg-indigo-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait" title="Reconvert slides from the original file">
+                                                                <RefreshCw size={14} className={reconvertingId === item.id ? "animate-spin" : ""} />
+                                                            </button>
+                                                        )}
                                                         {canDelete && (
                                                             <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: "record", id: item.id, folderId: activeFolder.id, label: item.title }); }} className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer" title="Delete record">
                                                                 <Trash2 size={14} />

@@ -133,6 +133,41 @@ export const createRecord = async (req, res) => {
     }
 };
 
+// Re-runs slide conversion from the stored original file, e.g. after server
+// fonts/LibreOffice are upgraded or the converter changes. Existing slides stay
+// on disk until the new conversion succeeds (the service replaces them then).
+export const reconvertRecord = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const record = await MonthlyReportRecord.findById(id);
+        if (!record) {
+            return res.status(404).json({ success: false, message: "Record not found" });
+        }
+        const folder = await MonthlyReportFolder.findById(record.folderId);
+        if (!folder || !(await canModifyMonthlyReportSection(req.user, folder.sectionId))) {
+            return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
+        }
+
+        const absolutePptxPath = path.join(process.cwd(), record.fileUrl);
+        if (!record.fileUrl?.startsWith("/uploads/") || !fs.existsSync(absolutePptxPath)) {
+            return res.status(410).json({ success: false, message: "The original PowerPoint file is no longer available — please upload it again" });
+        }
+
+        const claimed = await MonthlyReportRecord.markPendingForReconvert(record.id);
+        if (!claimed) {
+            return res.status(409).json({ success: false, message: "This presentation is already being converted" });
+        }
+
+        pptxConversionService.enqueue(record.id, absolutePptxPath);
+
+        const updated = await MonthlyReportRecord.findById(record.id);
+        return res.status(202).json({ success: true, message: "Reconversion started — slides will refresh shortly", data: formatRecordRow(updated) });
+    } catch (error) {
+        logger.error("Error in reconvertRecord:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
 export const deleteRecord = async (req, res) => {
     try {
         const { id } = req.params;

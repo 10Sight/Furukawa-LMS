@@ -6,6 +6,7 @@ import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, ShieldCheck, 
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import { VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableEmployeeSelect from './SearchableEmployeeSelect.jsx';
+import { safeRandomUUID } from '../../utils/uuid.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
 export const CFT_TOPICS = [];
@@ -196,7 +197,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const newCFTItem = {
-      id: `CFT-${Date.now()}`,
+      id: `CFT-${safeRandomUUID()}`,
       topic: topic.trim(),
       description: `CFT guidelines and protocol compliance for: ${topic.trim()}`,
       plant: plant === 'Unit' ? 'Bawal' : (plant || 'Bawal'),

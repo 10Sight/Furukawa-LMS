@@ -154,3 +154,26 @@ test('4. CFT Record persists with valid identifiers and integrates in PDCA', () 
   assert.equal(loaded.createdBy.name, 'Deepak Mehta');
   assert.equal(loaded.assignedMembers[0].name, 'Rahul Sharma');
 });
+
+test('5. safeRandomUUID generates valid UUIDs in insecure HTTP contexts (e.g. 192.168.90.19:5174)', async () => {
+  const { safeRandomUUID } = await import('../../../utils/uuid.js');
+
+  // Test standard generation
+  const id1 = safeRandomUUID();
+  assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id1), 'Must match UUID v4 regex');
+
+  // Simulate insecure context where crypto.randomUUID is undefined (like http://192.168.90.19:5174)
+  const originalRandomUUID = globalThis.crypto?.randomUUID;
+  try {
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+
+    const id2 = safeRandomUUID();
+    assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id2), 'Must generate valid UUID v4 even when crypto.randomUUID is undefined');
+    assert.notEqual(id1, id2, 'UUIDs must be unique');
+  } finally {
+    if (originalRandomUUID) {
+      Object.defineProperty(globalThis.crypto, 'randomUUID', { value: originalRandomUUID, configurable: true });
+    }
+  }
+});
+

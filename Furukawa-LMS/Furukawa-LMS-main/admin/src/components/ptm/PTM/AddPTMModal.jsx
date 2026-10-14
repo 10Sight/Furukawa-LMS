@@ -1,6 +1,7 @@
 import { readSaved, useFormAutosave } from '@components/shared/formPersistence';
 import React, { useState } from 'react';
 import { X, Check } from 'lucide-react';
+import { safeRandomUUID } from '../../../utils/uuid.js';
 
 export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate }) {
   const isEditMode = Boolean(editData);
@@ -87,7 +88,7 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
       });
     } else {
       onAdd({
-        id: `PTM-${formData.plant === 'Gujrat' ? 'GJ' : 'BW'}-${crypto.randomUUID()}`,
+        id: `PTM-${formData.plant === 'Gujrat' ? 'GJ' : 'BW'}-${safeRandomUUID()}`,
         topic: formData.topic,
         description: formData.description,
         plant: formData.plant,

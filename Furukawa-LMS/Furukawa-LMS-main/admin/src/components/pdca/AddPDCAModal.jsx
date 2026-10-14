@@ -8,6 +8,7 @@ import { X, Layers, Check, ChevronDown, AlignLeft } from 'lucide-react';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import SearchableLineAreaSelect from './SearchableLineAreaSelect';
+import { safeRandomUUID } from '../../utils/uuid.js';
 
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
   const { userContext } = usePDCA();
@@ -143,7 +144,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         });
       } else {
         onAdd({
-          id: `PDCA-${crypto.randomUUID()}`,
+          id: `PDCA-${safeRandomUUID()}`,
           topic: formData.topic.trim(),
           description: formData.description,
           plant: targetPlant,

@@ -23,6 +23,8 @@ build/
 # Server folders
 server/uploads/
 server/backups/
+server/db/**/*.json
+server/db/*.json
 nginx/certs/
 
 # Scratch / debug

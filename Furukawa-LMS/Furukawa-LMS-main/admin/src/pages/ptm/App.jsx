@@ -101,9 +101,21 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [selectedTopicItem, setSelectedTopicItem] = useState(null);
 
   /* ── 2. PTM Dashboard List State ── */
-  const [listItems, setListItems] = useSavedRecords('ptm_dashboard_items', initialPTMData);
+  const [listItems, setListItems] = useSavedRecords('ptm_dashboard_items', []);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+
+  // Clean legacy dummy PTM records if previously cached in browser
+  useEffect(() => {
+    setListItems((prev) => {
+      const filtered = (prev || []).filter(
+        (item) =>
+          !['PTM-GJ-101', 'PTM-BW-102', 'PTM-GJ-103', 'PTM-BW-104', 'PTM-GJ-105', 'PTM-BW-106'].includes(item.id) &&
+          !String(item.id || '').startsWith('DEMO-PTM-')
+      );
+      return filtered.length !== (prev || []).length ? filtered : prev;
+    });
+  }, []);
 
   const [activeTab, setActiveTab] = useState(() => getStoredJson('ptm_active_scope', 'Company'));
   useEffect(() => { try { localStorage.setItem('ptm_active_scope', JSON.stringify(activeTab)); } catch { /* Form saving reports storage failures. */ } }, [activeTab]);

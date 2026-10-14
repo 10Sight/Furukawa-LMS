@@ -38,7 +38,10 @@ export default function DashboardPage() {
   });
   const selectedPlant = contextSelectedPlant ?? localSelectedPlant;
   const setSelectedPlant = contextSetSelectedPlant ?? setLocalSelectedPlant;
-  const [selectedDepartment, setSelectedDepartment] = useState(() => readSaved('pdca_list_filters', {}).department || '');
+  const [selectedDepartment, setSelectedDepartment] = useState(() => {
+    const saved = readSaved('pdca_list_filters', {});
+    return saved.scope === 'Department' ? (saved.department || '') : '';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -53,8 +56,13 @@ export default function DashboardPage() {
 
   /* ── Filter Logic ───────────────────────────────────────── */
   useEffect(() => {
-    try { localStorage.setItem('pdca_list_filters', JSON.stringify({ plant: selectedPlant, scope: activeTab, department: selectedDepartment })); }
-    catch { /* Saving a form reports storage errors separately. */ }
+    try {
+      localStorage.setItem('pdca_list_filters', JSON.stringify({
+        plant: selectedPlant,
+        scope: activeTab,
+        department: activeTab === 'Department' ? selectedDepartment : ''
+      }));
+    } catch { /* Saving a form reports storage errors separately. */ }
   }, [selectedPlant, activeTab, selectedDepartment]);
   useEffect(() => {
     if (lpaSource?.unit) setSelectedPlant(lpaSource.unit);
@@ -109,13 +117,18 @@ export default function DashboardPage() {
       openLpaPdca();
     }
   }, [lpaSource]);
-  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, selectedDepartment),
-    [sourceData, activeTab, selectedPlant, searchQuery, selectedDepartment]);
+  const deptFilterToApply = activeTab === 'Department' ? selectedDepartment : '';
+  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, deptFilterToApply),
+    [sourceData, activeTab, selectedPlant, searchQuery, deptFilterToApply]);
 
   const revealSavedForm = item => {
     if (PDCA_PLANTS.includes(item.plant)) setSelectedPlant(item.plant);
     setActiveTab(item.scope);
-    if (item.department) setSelectedDepartment(item.department);
+    if (item.scope === 'Department') {
+      setSelectedDepartment(item.department || '');
+    } else {
+      setSelectedDepartment('');
+    }
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -320,6 +333,9 @@ export default function DashboardPage() {
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
+          if (tab !== 'Department') {
+            setSelectedDepartment('');
+          }
           setCurrentPage(1);
         }}
         counts={{ selfCount }}
@@ -333,6 +349,11 @@ export default function DashboardPage() {
           setCurrentPage(1);
         }}
         activeTab={activeTab}
+        selectedDepartment={selectedDepartment}
+        setSelectedDepartment={(d) => {
+          setSelectedDepartment(d);
+          setCurrentPage(1);
+        }}
         onExport={handleExportExcel}
         onOpenAddModal={() => {
           if (!PDCA_PLANTS.includes(selectedPlant)) {

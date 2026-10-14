@@ -1,5 +1,5 @@
 import FormZoomControls from '@components/shared/FormZoomControls';
-import React, { useState, useRef, useLayoutEffect, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
@@ -556,136 +556,95 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     onBack?.();
   };
 
-  const topicName = headerInfo.topicName || topic?.topic || 'Quality Inspection & Line Audit';
-  const createdByName = topic?.createdBy?.name || (topic?.createdBy?.code ? 'Member' : 'Pooja Verma');
-  const createdByCode = topic?.createdBy?.code || (topic?.createdBy?.name ? '' : 'BW082319');
+  const topicName = headerInfo.topicName || topic?.topic || '';
+  const createdByName = topic?.createdBy?.name || userContext?.user?.name || '';
+  const createdByCode = topic?.createdBy?.code || userContext?.user?.code || '';
 
-  // Build the list of available CFT topics (starting with current topic + mock CFTs + default standard topics)
-  const availableCFTTopics = useMemo(() => {
-    const currentObj = {
-      id: topic?.id || 'current_topic',
-      name: topicName,
-      members: [
-        {
-          name: createdByName,
-          code: createdByCode,
-          role: 'Lead Member'
-        }
-      ],
-      assignedEmployees: (topic?.assignedMembers && topic.assignedMembers.length > 0)
-        ? topic.assignedMembers
-        : [
-            { name: 'Rahul Sharma', code: 'BW041920' },
-            { name: 'Dinesh Rao', code: 'BW028371' },
-            { name: 'Mukesh Verma', code: 'BW051289' }
-          ]
-    };
+  // Live CFT Topics fetched directly from backend
+  const [cftTopics, setCftTopics] = useState([]);
+  const [cftLoading, setCftLoading] = useState(false);
+  const [cftError, setCftError] = useState(null);
 
-    const otherCFTs = (data || [])
-      .filter((d) => d.scope === 'CFT' && d.id !== topic?.id && d.topic !== topicName)
-      .map((d) => ({
-        id: d.id,
-        name: d.topic,
-        members: [
-          {
-            name: d.createdBy?.name || 'Member',
-            code: d.createdBy?.code || '',
-            role: 'Lead Member'
+  const loadCFTTopics = useCallback(async () => {
+    setCftLoading(true);
+    setCftError(null);
+    try {
+      const res = await pdcaApi.getCftTopics({
+        plant: topic?.plant && !['Unit', 'All Plants'].includes(topic.plant) ? topic.plant : undefined
+      });
+      const list = Array.isArray(res) ? res : (res?.records || []);
+      const map = new Map();
+      list.forEach((item) => {
+        if (item && item.id && !item.isDeleted) {
+          const members = [];
+          if (item.createdBy && item.createdBy.name) {
+            members.push({
+              name: item.createdBy.name,
+              code: item.createdBy.code || '',
+              role: 'Lead Member'
+            });
           }
-        ],
-        assignedEmployees: (d.assignedMembers && d.assignedMembers.length > 0)
-          ? d.assignedMembers
-          : [
-              { name: 'Deepak Mehta', code: 'GJ045819' },
-              { name: 'Priya Nair', code: 'GJ018442' }
-            ]
-      }));
+          const assignedEmployees = Array.isArray(item.assignedMembers)
+            ? item.assignedMembers
+                .map((m) => (typeof m === 'object' ? { name: m.name || '', code: m.code || '' } : { name: String(m), code: '' }))
+                .filter((m) => m.name)
+            : [];
 
-    const defaultTopics = [
-      {
-        id: 'cft-team-comp',
-        name: 'Team Composition & Role',
-        members: [{ name: 'Yogesh Kumar', code: 'AS081213', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Vikram Singh', code: 'GJ034112' },
-          { name: 'Ramesh Patel', code: 'GJ021944' }
-        ]
-      },
-      {
-        id: 'cft-align-goal',
-        name: 'Alignment & Goal Setting',
-        members: [{ name: 'Amit Patel', code: 'GJ092311', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Kavita Joshi', code: 'GJ019283' },
-          { name: 'Pooja Nair', code: 'BW039182' }
-        ]
-      },
-      {
-        id: 'cft-comm-proto',
-        name: 'Communication Protocols',
-        members: [{ name: 'Priya Nair', code: 'GJ018442', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Suresh Yadav', code: 'GJ047219' },
-          { name: 'Deepak Mehta', code: 'GJ045819' }
-        ]
-      },
-      {
-        id: 'cft-conflict-res',
-        name: 'Conflict Resolution',
-        members: [{ name: 'Manish Joshi', code: 'BW092301', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Ajay Verma', code: 'BW012398' },
-          { name: 'Rahul Sharma', code: 'BW041920' }
-        ]
-      },
-      {
-        id: 'cft-decision-model',
-        name: 'Decision- Making Models',
-        members: [{ name: 'Sandeep Verma', code: 'BW071562', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Rajesh Kumar', code: 'BW081290' },
-          { name: 'Dinesh Rao', code: 'BW028371' }
-        ]
-      }
-    ];
+          map.set(item.id, {
+            id: item.id,
+            name: item.topic || item.name || '',
+            plant: item.plant || '',
+            members,
+            assignedEmployees
+          });
+        }
+      });
+      setCftTopics(Array.from(map.values()));
+    } catch (err) {
+      console.error('Failed to load CFT topics:', err);
+      setCftError(err?.message || 'Failed to load CFT records');
+    } finally {
+      setCftLoading(false);
+    }
+  }, [topic?.plant]);
 
-    const all = [currentObj, ...otherCFTs];
-    defaultTopics.forEach((dt) => {
-      if (!all.some((t) => t.name.toLowerCase() === dt.name.toLowerCase())) {
-        all.push(dt);
-      }
-    });
-
-    return all;
-  }, [data, topic, topicName, createdByName, createdByCode]);
+  useEffect(() => {
+    loadCFTTopics();
+  }, [loadCFTTopics]);
 
   // Selected CFT Topic object for current row when in members mode
   const selectedRowForCFT = openCFTDropdown ? rows[openCFTDropdown.rowIndex] : null;
   const currentCFTTopicObj = useMemo(() => {
-    if (!selectedRowForCFT?.cftTopic) return null;
-    return (
-      availableCFTTopics.find(
-        (t) => t.name.toLowerCase() === selectedRowForCFT.cftTopic.toLowerCase()
-      ) || {
-        id: 'custom_topic',
+    if (!selectedRowForCFT) return null;
+    const targetId = selectedRowForCFT.cftTopicId;
+    const targetName = (selectedRowForCFT.cftTopic || '').toLowerCase();
+
+    let found = targetId ? cftTopics.find((t) => t.id === targetId) : null;
+    if (!found && targetName) {
+      found = cftTopics.find((t) => t.name.toLowerCase() === targetName);
+    }
+    if (found) return found;
+
+    if (selectedRowForCFT.cftTopic) {
+      return {
+        id: selectedRowForCFT.cftTopicId || 'cft_custom',
         name: selectedRowForCFT.cftTopic,
-        members: [
-          {
-            name: createdByName,
-            code: createdByCode,
-            role: 'Lead Member'
-          }
-        ],
-        assignedEmployees: (topic?.assignedMembers && topic.assignedMembers.length > 0)
-          ? topic.assignedMembers
-          : [
-              { name: 'Rahul Sharma', code: 'BW041920' },
-              { name: 'Dinesh Rao', code: 'BW028371' },
-              { name: 'Mukesh Verma', code: 'BW051289' }
+        members: selectedRowForCFT.cftSelectedName
+          ? [
+              {
+                name: selectedRowForCFT.cftSelectedName,
+                code: selectedRowForCFT.cftSelectedCode || '',
+                role: 'Member'
+              }
             ]
-      }
-    );
-  }, [selectedRowForCFT?.cftTopic, availableCFTTopics, createdByName, createdByCode, topic]);
+          : [],
+        assignedEmployees: selectedRowForCFT.assignedEmployee
+          ? [{ name: selectedRowForCFT.assignedEmployee, code: '' }]
+          : []
+      };
+    }
+    return null;
+  }, [selectedRowForCFT, cftTopics]);
 
   // Close CFT dropdown on outside click or scroll/resize
   useEffect(() => {
@@ -849,6 +808,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     if (openCFTDropdown?.rowIndex === rowIndex && openCFTDropdown?.mode === targetMode) {
       setOpenCFTDropdown(null);
       return;
+    }
+    if (targetMode === 'topics') {
+      loadCFTTopics();
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const dropdownWidth = 320;
@@ -2602,35 +2564,67 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
               {/* Body: List of Topic Names ONLY */}
               <div className="py-1.5 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[350px]">
-                {availableCFTTopics.map((topicItem) => {
-                  const isSelected = rows[openCFTDropdown.rowIndex]?.cftTopic === topicItem.name;
-
-                  return (
+                {cftLoading ? (
+                  <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-500">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-medium">Loading CFT records...</span>
+                  </div>
+                ) : cftError ? (
+                  <div className="py-6 px-3 text-center space-y-2">
+                    <p className="text-xs text-rose-600 font-medium">{cftError}</p>
                     <button
-                      key={topicItem.id}
                       type="button"
-                      onClick={() => handleSelectTopic(openCFTDropdown.rowIndex, topicItem)}
-                      className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center justify-between cursor-pointer group ${
-                        isSelected
-                          ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
-                          : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
-                      }`}
-                      title={`Select "${topicItem.name}"`}
+                      onClick={loadCFTTopics}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold shadow-xs cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 min-w-0 pr-2">
-                        <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            isSelected ? 'bg-blue-600 ring-2 ring-blue-200' : 'bg-slate-400 group-hover:bg-blue-500'
-                          }`}
-                        />
-                        <span className="text-xs font-semibold leading-snug line-clamp-2">
-                          {topicItem.name}
-                        </span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />}
+                      Retry
                     </button>
-                  );
-                })}
+                  </div>
+                ) : cftTopics.length === 0 ? (
+                  <div className="py-8 px-3 text-center text-slate-500 space-y-1.5">
+                    <Users className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                    <p className="text-xs font-semibold text-slate-700">No CFT records available. Create a CFT first.</p>
+                    <p className="text-[11px] text-slate-400">Genuinely saved CFT records will appear here.</p>
+                  </div>
+                ) : (
+                  cftTopics.map((topicItem) => {
+                    const currentRow = rows[openCFTDropdown.rowIndex];
+                    const isSelected =
+                      currentRow?.cftTopicId === topicItem.id ||
+                      (!currentRow?.cftTopicId && currentRow?.cftTopic === topicItem.name);
+
+                    return (
+                      <button
+                        key={topicItem.id}
+                        type="button"
+                        onClick={() => handleSelectTopic(openCFTDropdown.rowIndex, topicItem)}
+                        className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center justify-between cursor-pointer group ${
+                          isSelected
+                            ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                            : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
+                        }`}
+                        title={`Select "${topicItem.name}" (${topicItem.id})`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isSelected ? 'bg-blue-600 ring-2 ring-blue-200' : 'bg-slate-400 group-hover:bg-blue-500'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            <span className="text-xs font-semibold leading-snug line-clamp-2 block">
+                              {topicItem.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block">
+                              {topicItem.plant ? `${topicItem.plant} • ` : ''}{topicItem.id}
+                            </span>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </>
           ) : (
@@ -2656,7 +2650,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     </span>
                     <button
                       type="button"
-                      onClick={() => setOpenCFTDropdown((prev) => ({ ...prev, mode: 'topics' }))}
+                      onClick={() => {
+                        loadCFTTopics();
+                        setOpenCFTDropdown((prev) => ({ ...prev, mode: 'topics' }));
+                      }}
                       className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5 font-semibold cursor-pointer"
                       title="Change to another CFT Topic"
                     >

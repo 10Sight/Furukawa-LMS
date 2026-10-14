@@ -1,13 +1,13 @@
 // FRM-WH-DD-006 Project Tracking Matrix Rev. 17 (YHB MC25) Data
 
 export const initialHeaderInfo = {
-  model: 'YHB_MC25',
-  rank: 'C1',
-  apqpLeader: 'Mr. Deepak Chauhan',
+  model: '',
+  rank: '',
+  apqpLeader: '',
   phase: '1',
-  projectLeader: 'Shiva Chaudhary',
+  projectLeader: '',
   reviewDate: '',
-  formTitle: 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17 (YHB MC25)',
+  formTitle: 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17',
   tabName: 'PTM - Final Latest Rev. 17',
   docNo: 'FRM-WH-DD-006',
   revNo: '17',

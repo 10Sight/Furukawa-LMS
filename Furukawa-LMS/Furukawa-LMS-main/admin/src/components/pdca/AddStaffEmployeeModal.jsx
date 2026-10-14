@@ -150,7 +150,7 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
                       required
                       value={emp.name}
                       onChange={(e) => handleEmployeeChange(idx, 'name', e.target.value)}
-                      placeholder="e.g. Ramesh Verma"
+                      placeholder="Enter employee name"
                       className="w-full text-xs font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs"
                     />
                   </div>

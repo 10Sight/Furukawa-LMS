@@ -22,14 +22,6 @@ const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C
 const UNITS = ['Bawal', 'Gujrat'];
 const LEVELS = ['L1', 'L2', 'L3'];
 const todayIso = new Date().toISOString().slice(0, 10);
-const SAMPLE_DATES = [
-  todayIso,
-  '2026-10-12',
-  '2026-10-10',
-  '2026-10-08',
-  '2026-10-07',
-  '2026-10-06'
-];
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 const primary = button.replace('border-slate-200', 'border-blue-600').replace('bg-white', 'bg-blue-600').replace('text-slate-700', 'text-white').replace('hover:bg-slate-50', 'hover:bg-blue-700');
 const errorText = error => error.message || 'Could not save LPA data. Your edits have been retained.';
@@ -65,6 +57,7 @@ function LpaPageContent({ viewContext }) {
   dirtyRef.current = dirty || Boolean(pendingUpload) || busy;
   const draftKey = useCallback(id => `lpa_draft_${userId}_${id}`, [userId]);
   const uploadDraftKey = `lpa_upload_draft_${userId}`;
+
   useEffect(() => {
     try {
       const draft = JSON.parse(localStorage.getItem(uploadDraftKey) || 'null');
@@ -75,50 +68,21 @@ function LpaPageContent({ viewContext }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRecords(await listLPAWorkbooks(userId));
+      const allWorkbooks = await listLPAWorkbooks(userId);
+      const realWorkbooks = (allWorkbooks || []).filter(w => !w.sampleData);
+      setRecords(realWorkbooks);
       setMessage(null);
-    } catch (error) { setMessage({ error: true, text: errorText(error) }); }
-    finally { setLoading(false); }
+    } catch (error) {
+      setMessage({ error: true, text: errorText(error) });
+    } finally {
+      setLoading(false);
+    }
   }, [userId]);
-  useEffect(() => { load(); }, [load]);
+
   useEffect(() => {
-    if (loading || !selectedUnit || !selectedLevel || !['assembly', 'cc'].includes(activeSection)) return;
-    const scopeKey = `${userId}:${selectedUnit}:${selectedLevel}:${activeSection}`;
-    if (seededSampleScopes.current.has(scopeKey)) return;
-    seededSampleScopes.current.add(scopeKey);
-    const sampleTemplate = activeSection === 'assembly' ? assemblyTemplate : ccTemplate;
-    const missingDates = SAMPLE_DATES.filter(date => !records.some(record => record.sampleData && record.section === activeSection && record.unit === selectedUnit && (record.level || 'L1') === selectedLevel && record.auditDate === date));
-    if (!missingDates.length) return;
-    (async () => {
-      const created = [];
-      for (const date of missingDates) {
-        const sample = structuredClone(sampleTemplate);
-        sample.unit = selectedUnit;
-        sample.level = selectedLevel;
-        sample.auditDate = date;
-        sample.sampleData = true;
-        sample.name = `Sample ${sample.name} · ${date}`;
-        const sheet = sample.sheets[0];
-        const headerRow = sheet.rows.findIndex(row => row.some(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? ''))));
-        const observationColumn = headerRow >= 0 ? sheet.rows[headerRow].findIndex(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? ''))) : -1;
-        if (activeSection === 'assembly') sheet.rows[0][0] = { value: `Date/Shift- ${date}`, formatted: `Date/Shift- ${date}`, type: 's' };
-        else sheet.rows[1][0] = { value: `Date :-${date}`, formatted: `Date :-${date}`, type: 's' };
-        for (let rowIndex = activeSection === 'assembly' ? 3 : 4; rowIndex < Math.min(sheet.rows.length, 12); rowIndex++) {
-          if (observationColumn < 0 || !sheet.rows[rowIndex]) continue;
-          const value = ['O', '△', '×'][(rowIndex - (activeSection === 'assembly' ? 3 : 4)) % 3];
-          sheet.rows[rowIndex][observationColumn] = { value, formatted: value, type: 's' };
-        }
-        try {
-          const saved = await createLPAWorkbook(userId, sample);
-          created.push(saved);
-        } catch (error) {
-          setMessage({ error: true, text: `Sample ${activeSection === 'assembly' ? 'Assembly' : 'C&C'} data could not be added: ${errorText(error)}` });
-          break;
-        }
-      }
-      if (created.length) setRecords(previous => [...created.filter(saved => !previous.some(record => record.id === saved.id)), ...previous]);
-    })();
-  }, [loading, selectedUnit, selectedLevel, activeSection, userId, records]);
+    load();
+  }, [load]);
+
   const isEditorOpen = Boolean(editor);
   const isPdcaFormOpen = Boolean(customPdcaTopic);
   const isFormViewActive = isEditorOpen || isPdcaFormOpen;

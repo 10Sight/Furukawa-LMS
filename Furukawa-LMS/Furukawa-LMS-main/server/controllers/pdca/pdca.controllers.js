@@ -131,6 +131,18 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
         }, actor);
     }
 
+    // Validate selected CFT records referenced in rows
+    const rowsToValidate = Array.isArray(req.body?.rows) ? req.body.rows : (req.body?.sheetData || []);
+    for (const rowItem of rowsToValidate) {
+        if (rowItem?.cftTopicId && typeof rowItem.cftTopicId === 'string' && rowItem.cftTopicId.trim()) {
+            const cftTopicId = rowItem.cftTopicId.trim();
+            const cftRecord = await PDCAModel.findByRecordId(cftTopicId);
+            if (!cftRecord || cftRecord.isDeleted) {
+                throw new ApiError(`Invalid or deleted CFT record referenced: "${cftTopicId}"`, 400);
+            }
+        }
+    }
+
     const savedSheet = await PDCAModel.saveSheet(record.id, req.body, actor);
     return res.status(200).json(new ApiResponse(200, savedSheet, "PDCA sheet saved successfully"));
 });
@@ -381,35 +393,6 @@ export const getPDCAMetadata = asyncHandler(async (req, res) => {
             }));
         }
     } catch {}
-
-    // Fallback verified employee database records when DB query returns empty
-    if (!employees || employees.length === 0) {
-        employees = [
-            { id: 'emp-as081213', name: 'Yogesh Kumar', code: 'AS081213', department: 'PE', email: 'aso81213@fme-minda.co.in' },
-            { id: 'emp-gj034112', name: 'Vikram Singh', code: 'GJ034112', department: 'PE', email: 'vikram.singh@fme-minda.co.in' },
-            { id: 'emp-st080014', name: 'Joy Dastidar', code: 'ST080014', department: 'IT', email: 'st080014@furukawaminda.com' },
-            { id: 'emp-gj045819', name: 'Deepak Mehta', code: 'GJ045819', department: 'Quality', email: 'deepak.mehta@fme-minda.co.in' },
-            { id: 'emp-gj082711', name: 'Sunil Kumar', code: 'GJ082711', department: 'Quality', email: 'sunil.kumar@fme-minda.co.in' },
-            { id: 'emp-bw082319', name: 'Pooja Verma', code: 'BW082319', department: 'Quality', email: 'pooja.verma@fme-minda.co.in' },
-            { id: 'emp-bw041920', name: 'Rahul Sharma', code: 'BW041920', department: 'Assembly', email: 'r.sharma@fme-minda.co.in' },
-            { id: 'emp-gj018442', name: 'Priya Nair', code: 'GJ018442', department: 'Assembly', email: 'priya.nair@fme-minda.co.in' },
-            { id: 'emp-bw028371', name: 'Dinesh Rao', code: 'BW028371', department: 'Assembly', email: 'dinesh.rao@fme-minda.co.in' },
-            { id: 'emp-bw051289', name: 'Mukesh Verma', code: 'BW051289', department: 'Assembly', email: 'mukesh.verma@fme-minda.co.in' },
-            { id: 'emp-gj047219', name: 'Suresh Yadav', code: 'GJ047219', department: 'Assembly', email: 'suresh.yadav@fme-minda.co.in' },
-            { id: 'emp-gj021944', name: 'Ramesh Patel', code: 'GJ021944', department: 'SRC', email: 'ramesh.patel@fme-minda.co.in' },
-            { id: 'emp-gj019482', name: 'Naveen Yadav', code: 'GJ019482', department: 'Store', email: 'naveen.yadav@fme-minda.co.in' },
-            { id: 'emp-gj092311', name: 'Amit Patel', code: 'GJ092311', department: 'HR', email: 'amit.patel@fme-minda.co.in' },
-            { id: 'emp-gj019283', name: 'Kavita Joshi', code: 'GJ019283', department: 'Safety', email: 'kavita.joshi@fme-minda.co.in' },
-            { id: 'emp-bw029384', name: 'Brijesh Sharma', code: 'BW029384', department: 'FG', email: 'brijesh.sharma@fme-minda.co.in' },
-            { id: 'emp-bw071562', name: 'Sandeep Verma', code: 'BW071562', department: 'PPC', email: 'sandeep.verma@fme-minda.co.in' },
-            { id: 'emp-bw081290', name: 'Rajesh Kumar', code: 'BW081290', department: 'Maintenance', email: 'rajesh.kumar@fme-minda.co.in' },
-            { id: 'emp-bw039182', name: 'Pooja Nair', code: 'BW039182', department: 'Maintenance', email: 'pooja.nair@fme-minda.co.in' },
-            { id: 'emp-bw092301', name: 'Manish Joshi', code: 'BW092301', department: 'D&D', email: 'manish.joshi@fme-minda.co.in' },
-            { id: 'emp-bw012398', name: 'Ajay Verma', code: 'BW012398', department: 'D&D', email: 'ajay.verma@fme-minda.co.in' },
-            { id: 'emp-bw038291', name: 'Anil Gupta', code: 'BW038291', department: 'C&C', email: 'anil.gupta@fme-minda.co.in' },
-            { id: 'emp-bw091823', name: 'Karan Malhotra', code: 'BW091823', department: 'C&C', email: 'karan.malhotra@fme-minda.co.in' }
-        ];
-    }
 
     const metadata = {
         plants: ['Gujrat', 'Bawal'],

@@ -5,6 +5,17 @@ import {
   VERIFIED_EMPLOYEE_MASTER
 } from './pdcaEmployees.js';
 
+const TEST_EMPLOYEE_MASTER = [
+  { id: 'emp-as081213', name: 'Yogesh Kumar', code: 'AS081213', department: 'PE' },
+  { id: 'emp-st080014', name: 'Joy Dastidar', code: 'ST080014', department: 'IT' },
+  { id: 'emp-gj045819', name: 'Deepak Mehta', code: 'GJ045819', department: 'Quality' },
+  { id: 'emp-bw041920', name: 'Rahul Sharma', code: 'BW041920', department: 'Assembly' },
+  { id: 'emp-bw081290', name: 'Rajesh Kumar', code: 'BW081290', department: 'Maintenance' },
+  { id: 'emp-bw039182', name: 'Pooja Nair', code: 'BW039182', department: 'Maintenance' },
+  { id: 'emp-bw071562', name: 'Sandeep Verma', code: 'BW071562', department: 'PPC' },
+  { id: 'emp-gj092311', name: 'Amit Patel', code: 'GJ092311', department: 'HR' }
+];
+
 describe('PDCA Responsible Person Confirmation - Scenarios A to E', () => {
   // Simulate row state transitions identical to PDCASheet handlers
   const createInitialRows = () => [
@@ -25,7 +36,7 @@ describe('PDCA Responsible Person Confirmation - Scenarios A to E', () => {
     return updated;
   };
 
-  const handleSelectStaffMember = (rows, rowIndex, staffValue, db = VERIFIED_EMPLOYEE_MASTER) => {
+  const handleSelectStaffMember = (rows, rowIndex, staffValue, db = TEST_EMPLOYEE_MASTER) => {
     const updated = [...rows];
     if (!staffValue || !staffValue.trim()) {
       updated[rowIndex] = {

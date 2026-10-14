@@ -130,7 +130,7 @@ export default function AddMemberModal({ isOpen, onClose, targetItem, onSaveMemb
                       required
                       value={member.name}
                       onChange={(e) => handleMemberChange(idx, 'name', e.target.value)}
-                      placeholder="e.g. Ramesh Verma"
+                      placeholder="Enter employee name"
                       className="w-full text-xs font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none placeholder-slate-400 shadow-2xs"
                     />
                   </div>

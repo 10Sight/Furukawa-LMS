@@ -1,6 +1,5 @@
 import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY, createDefaultRows } from '../data/pdcaStore';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { initialPDCAData } from '../data/mockData';
 import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS } from '../data/recordFilters';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
@@ -79,11 +78,11 @@ export function PDCAProvider({ children }) {
   }, []);
 
   const [data, publishData] = useState(() => {
-    try { return loadPDCA(initialPDCAData); } catch { return initialPDCAData; }
+    try { return loadPDCA([]); } catch { return []; }
   });
 
   const setData = useCallback(update => {
-    const saved = commitPDCA(update, initialPDCAData);
+    const saved = commitPDCA(update, []);
     publishData(saved);
     return saved;
   }, []);
@@ -94,12 +93,9 @@ export function PDCAProvider({ children }) {
       setLoading(true);
       const res = await pdcaApi.getRecords();
       const records = res?.records || (Array.isArray(res) ? res : null);
-      if (Array.isArray(records) && records.length > 0) {
-        const existingIds = new Set(records.map(r => r.id || r.recordId));
-        const missing = (initialPDCAData || []).filter(f => !existingIds.has(f.id && f.recordId ? f.id : (f.id || f.recordId)));
-        const combined = missing.length > 0 ? [...records, ...missing] : records;
-        publishData(combined);
-        try { commitPDCA(combined, initialPDCAData); } catch {}
+      if (Array.isArray(records)) {
+        publishData(records);
+        try { commitPDCA(records, []); } catch {}
       }
     } catch (err) {
       console.warn('Could not fetch records from backend, using cached records:', err);
@@ -115,7 +111,7 @@ export function PDCAProvider({ children }) {
   useEffect(() => {
     const sync = event => {
       if (event.key !== PDCA_STORAGE_KEY) return;
-      try { publishData(loadPDCA(initialPDCAData)); }
+      try { publishData(loadPDCA([])); }
       catch { showToast('Saved PDCA records could not be loaded. Please keep your form open.'); }
     };
     window.addEventListener('storage', sync);
@@ -160,6 +156,7 @@ export function PDCAProvider({ children }) {
       };
       setData(records => addPDCA(records, finalized));
       showToast(`✓ Created: ${finalized.id}`);
+      await refreshData();
       return finalized;
     } catch (err) {
       setData(records => addPDCA(records, itemWithSheet));
@@ -171,6 +168,7 @@ export function PDCAProvider({ children }) {
   const handleUpdatePDCA = async (updated) => {
     try {
       await pdcaApi.updateRecord(updated.id, updated);
+      await refreshData();
     } catch (err) {
       console.warn('Backend update error, saving locally:', err);
     }

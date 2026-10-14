@@ -24,3 +24,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Runtime database persistence stores
+db/**/*.json
+db/*.json

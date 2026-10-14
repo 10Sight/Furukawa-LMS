@@ -11,326 +11,12 @@ import { SubNavTabs, getTodayDateStr } from './AuditorPlan';
    CONSTANTS
 ──────────────────────────────────────────────────────────*/
 const MONTHS = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
 const CURRENT_YEAR = new Date().getFullYear();
 const FIRST_YEARLY_FOLDER = 2024;
-
-/* ─────────────────────────────────────────────────────────
-   DUMMY DATA SEEDER
-──────────────────────────────────────────────────────────*/
-function makeDummyRowsMay() {
-  return [
-    {
-      id: 801,
-      auditDate: '2026-05-14',
-      lineAreaName: 'Stores',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Raw Material Storage',
-      observations: 'Expired lot of heat shrinkable tubes found stored in active staging rack without quarantine sticker.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: '1. Segregated expired lot to red quarantine cage.\n2. Visual shelf-life tag with expiry color code affixed to all raw material bins.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: '2026-05-20',
-      targetDatePA: '2026-05-28',
-      resp: 'Stores Lead',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Auditor',
-    },
-    {
-      id: 802,
-      auditDate: '2026-05-22',
-      lineAreaName: 'Prep',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Wire Stripping',
-      observations: 'Nick marks observed on 2 out of 10 wire strands after manual stripper blade adjustment.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Stripper blade replaced with calibrated pre-set V-blade. Operator trained on optical magnifier inspection.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-05-25',
-      targetDatePA: '2026-06-02',
-      resp: 'Prep Supervisor',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Head',
-    },
-  ];
-}
-
-function makeDummyRowsJune() {
-  return [
-    {
-      id: 901,
-      auditDate: '2026-06-12',
-      lineAreaName: 'Cutting',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Automated Cutting',
-      observations: 'Cut wire length reading on encoder had drift of +3.5mm against master scale specification.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Encoder belt tension recalibrated and weekly encoder zero verification checkpoint introduced.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-06-18',
-      targetDatePA: '2026-06-25',
-      resp: 'Maintenance Lead',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'Verified',
-    },
-    {
-      id: 902,
-      auditDate: '2026-06-20',
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Sub Assembly',
-      observations: 'Work instruction sheet display stand was missing on Station 3.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Stand fabricated and affixed with transparent acrylic cover.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: '2026-06-22',
-      targetDatePA: '2026-06-26',
-      resp: 'Assy Lead',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Auditor',
-    },
-  ];
-}
-
-function makeDummyRows() {
-  return [
-    {
-      id: 1001,
-      auditDate: '2026-07-21',
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'FIA',
-      observations: 'History card Status was not updated on board (Board no 04 - YHB Floor -03).',
-      evidence1Value: 'Not Available',
-      evidence1Images: [],
-      preventiveActions: 'Responsibility define for check the availability of History card on FIA board during FIA board check sheet filling.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: '2026-07-30',
-      targetDatePA: '2026-08-03',
-      resp: 'Assy Prod',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'Verified',
-    },
-    {
-      id: 1002,
-      auditDate: '2026-07-21',
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Material Trolley',
-      observations: 'Material identification was not available on bin not making it difficult to identify the material type OK or NG.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: '1. Replace paper identification with laminated material identification to prevent tearing during handling.\n2. An acrylic sheet fix on identification for durability during new line set up.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-07-30',
-      targetDatePA: '2026-08-03',
-      resp: 'Assy Prod',
-      statusCA: 'Closed',
-      statusPA: 'In Progress',
-      verification: '',
-    },
-    {
-      id: 1003,
-      auditDate: '2026-07-21',
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Clamp Cutting Gun',
-      observations: 'Gun validation tag was not available.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: '1. Replace paper identification with laminated material identification to prevent tearing during handling.\n2. Gun validation no. mark by tool on new gun.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-07-30',
-      targetDatePA: '2026-08-03',
-      resp: 'Assay Prod',
-      statusCA: 'Open',
-      statusPA: 'Open',
-      verification: '',
-    },
-  ];
-}
-
-function makeDummyRowsAug() {
-  return [
-    {
-      id: 2001,
-      auditDate: '2026-08-05',
-      lineAreaName: 'Weld',
-      controlPlan: 'CP-WH-WLD-001',
-      pfmea: 'PFMEA-WH-WLD-001',
-      processName: 'MIG Welding',
-      observations: 'Welding parameter log not maintained for last 3 shifts.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Shift supervisor to maintain daily welding log before shift handover.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-08-10',
-      targetDatePA: '2026-08-20',
-      resp: 'Weld Dept',
-      statusCA: 'Closed',
-      statusPA: 'Open',
-      verification: '',
-    },
-    {
-      id: 2002,
-      auditDate: '2026-08-05',
-      lineAreaName: 'Paint',
-      controlPlan: 'CP-WH-PNT-003',
-      pfmea: 'PFMEA-WH-PNT-003',
-      processName: 'Primer Application',
-      observations: 'Film thickness gauge not calibrated (due date expired 15 days ago).',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Gauge sent for calibration. New calibration sticker to be applied.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: '2026-08-12',
-      targetDatePA: '2026-08-25',
-      resp: 'Paint QA',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Head',
-    },
-  ];
-}
-
-function makeDummyRowsSept() {
-  return [
-    {
-      id: 2501,
-      auditDate: '2026-09-08',
-      lineAreaName: 'Quality Lab',
-      controlPlan: 'CP-WH-QA-001',
-      pfmea: 'PFMEA-WH-QA-001',
-      processName: 'Torque Audit',
-      observations: 'Digital torque wrench calibration sticker was partially torn off and due date was illegible.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Laminated transparent protective cover applied over all calibration stickers in shop floor.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: '2026-09-12',
-      targetDatePA: '2026-09-18',
-      resp: 'Quality Dept',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Head',
-    },
-    {
-      id: 2502,
-      auditDate: '2026-09-17',
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Circuit Testing',
-      observations: 'Ground clip grounding resistance measured 1.2 Ohm against standard limit of <= 0.5 Ohm.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Grounding test pin replaced and grounding busbar connection cleaned of oxide.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: '2026-09-22',
-      targetDatePA: '2026-09-30',
-      resp: 'Testing QA',
-      statusCA: 'In Progress',
-      statusPA: 'Open',
-      verification: '',
-    },
-  ];
-}
-
-function makeDummyRowsOct() {
-  const today = getTodayDateStr();
-  return [
-    {
-      id: 9001,
-      auditDate: today,
-      lineAreaName: 'Assy',
-      controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-      pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-      processName: 'Final Inspection & Testing',
-      observations: 'Continuity tester probe calibration seal was broken on Station 2.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Probe recalibrated and new tamper-evident calibration seal affixed.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: today,
-      targetDatePA: '2026-10-10',
-      resp: 'Quality Dept',
-      statusCA: 'In Progress',
-      statusPA: 'Open',
-      verification: '',
-    },
-    {
-      id: 9002,
-      auditDate: today,
-      lineAreaName: 'Weld',
-      controlPlan: 'CP-WH-WLD-001',
-      pfmea: 'PFMEA-WH-WLD-001',
-      processName: 'Laser Marking & Crimping',
-      observations: 'Crimping height gauge zero-offset was found drifted by +0.03mm.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Daily dial gauge zeroing checkpoint added to operator start-up sheet.',
-      evidence2Value: 'Image Upload',
-      evidence2Images: [],
-      targetDateCA: today,
-      targetDatePA: '2026-10-08',
-      resp: 'Prod Line Leader',
-      statusCA: 'Closed',
-      statusPA: 'Closed',
-      verification: 'QA Head',
-    },
-    {
-      id: 9003,
-      auditDate: today,
-      lineAreaName: 'Paint',
-      controlPlan: 'CP-WH-PNT-003',
-      pfmea: 'PFMEA-WH-PNT-003',
-      processName: 'Primer Application',
-      observations: 'Wet film comb gauge tooth worn down beyond permissible calibration limits.',
-      evidence1Value: 'Image Upload',
-      evidence1Images: [],
-      preventiveActions: 'Defective comb gauge scrapped. New calibrated ISO-certified gauge issued.',
-      evidence2Value: 'Not Available',
-      evidence2Images: [],
-      targetDateCA: today,
-      targetDatePA: '2026-10-12',
-      resp: 'Paint QA',
-      statusCA: 'Open',
-      statusPA: 'Open',
-      verification: '',
-    },
-  ];
-}
 
 /* ─────────────────────────────────────────────────────────
    STORAGE HELPERS
@@ -348,58 +34,37 @@ function loadIndex(unit) {
     const raw = localStorage.getItem(storageKeyIndex(unit));
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length >= 4) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function saveIndex(unit, idx) {
-  try { localStorage.setItem(storageKeyIndex(unit), JSON.stringify(idx)); } catch {}
+  try {
+    localStorage.setItem(storageKeyIndex(unit), JSON.stringify(idx));
+  } catch {}
 }
 
 function loadMonthRows(unit, year, monthIdx) {
   try {
     const raw = localStorage.getItem(storageKeyMonthly(unit, year, monthIdx));
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function saveMonthRows(unit, year, monthIdx, rows) {
-  try { localStorage.setItem(storageKeyMonthly(unit, year, monthIdx), JSON.stringify(rows)); } catch {}
+  try {
+    localStorage.setItem(storageKeyMonthly(unit, year, monthIdx), JSON.stringify(rows));
+  } catch {}
 }
 
 function buildInitialIndex(unit) {
-  const currentMonthIdx = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  // Seed monthly NC records from May through October
-  saveMonthRows(unit, 2026, 4, makeDummyRowsMay());
-  saveMonthRows(unit, 2026, 5, makeDummyRowsJune());
-  saveMonthRows(unit, 2026, 6, makeDummyRows());
-  saveMonthRows(unit, 2026, 7, makeDummyRowsAug());
-  saveMonthRows(unit, 2026, 8, makeDummyRowsSept());
-  saveMonthRows(unit, currentYear, currentMonthIdx, makeDummyRowsOct());
-
-  const index = [
-    { year: 2026, monthIdx: 4, label: 'May 2026', createdAt: '2026-05-01T00:00:00.000Z' },
-    { year: 2026, monthIdx: 5, label: 'June 2026', createdAt: '2026-06-01T00:00:00.000Z' },
-    { year: 2026, monthIdx: 6, label: 'July 2026', createdAt: '2026-07-01T00:00:00.000Z' },
-    { year: 2026, monthIdx: 7, label: 'August 2026', createdAt: '2026-08-01T00:00:00.000Z' },
-    { year: 2026, monthIdx: 8, label: 'September 2026', createdAt: '2026-09-01T00:00:00.000Z' },
-  ];
-
-  if (!index.some((e) => e.year === currentYear && e.monthIdx === currentMonthIdx)) {
-    index.push({
-      year: currentYear,
-      monthIdx: currentMonthIdx,
-      label: `${MONTHS[currentMonthIdx]} ${currentYear}`,
-      createdAt: new Date().toISOString(),
-    });
-  }
-
-  saveIndex(unit, index);
-  return index;
+  return [];
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -1078,50 +743,7 @@ function TodayNCView({ unit }) {
   const [allMonthRows, setAllMonthRows] = useState(() => {
     const saved = loadMonthRows(unit, currentYear, currentMonthIdx);
     if (saved && saved.length > 0) return saved;
-    const seed = [
-      {
-        id: 9001,
-        auditDate: todayStr,
-        lineAreaName: 'Assy',
-        controlPlan: 'CP-WH-PE-MSIL-YHB-002',
-        pfmea: 'PFMEA-WH-PE-MSIL-YHB-002',
-        processName: 'Final Inspection & Testing',
-        observations: 'Continuity tester probe calibration seal was broken on Station 2.',
-        evidence1Value: 'Image Upload',
-        evidence1Images: [],
-        preventiveActions: 'Probe recalibrated and new tamper-evident calibration seal affixed.',
-        evidence2Value: 'Not Available',
-        evidence2Images: [],
-        targetDateCA: todayStr,
-        targetDatePA: '2026-10-10',
-        resp: 'Quality Dept',
-        statusCA: 'In Progress',
-        statusPA: 'Open',
-        verification: '',
-      },
-      {
-        id: 9002,
-        auditDate: todayStr,
-        lineAreaName: 'Weld',
-        controlPlan: 'CP-WH-WLD-001',
-        pfmea: 'PFMEA-WH-WLD-001',
-        processName: 'Laser Marking & Crimping',
-        observations: 'Crimping height gauge zero-offset was found drifted by +0.03mm.',
-        evidence1Value: 'Image Upload',
-        evidence1Images: [],
-        preventiveActions: 'Daily dial gauge zeroing checkpoint added to operator start-up sheet.',
-        evidence2Value: 'Image Upload',
-        evidence2Images: [],
-        targetDateCA: todayStr,
-        targetDatePA: '2026-10-08',
-        resp: 'Prod Line Leader',
-        statusCA: 'Closed',
-        statusPA: 'Closed',
-        verification: 'QA Head',
-      },
-    ];
-    saveMonthRows(unit, currentYear, currentMonthIdx, seed);
-    return seed;
+    return [];
   });
 
   const updateRow = (id, field, value) => {
@@ -1321,6 +943,13 @@ function TodayNCView({ unit }) {
                     </td>
                   </tr>
                 ))}
+                {todayRows.length === 0 && (
+                  <tr>
+                    <td colSpan={16} className="py-8 text-center text-xs text-slate-400">
+                      No NC records found for today. Click "Add Today's NC Row" to log a non-conformance.
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <td colSpan={16} className="border border-slate-200 px-3 py-2 bg-slate-50">
                     <button

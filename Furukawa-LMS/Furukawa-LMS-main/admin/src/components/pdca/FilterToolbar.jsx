@@ -1,3 +1,4 @@
+import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import React from 'react';
 import { 
   Search, 
@@ -66,7 +67,9 @@ export function TableActionBar({
   setSearchQuery,
   onExport,
   onOpenAddModal,
-  activeTab = 'Company'
+  activeTab = 'Company',
+  selectedDepartment = '',
+  setSelectedDepartment = () => {}
 }) {
   const isCFT = activeTab === 'CFT';
 
@@ -91,6 +94,26 @@ export function TableActionBar({
           </button>
         )}
       </div>
+
+      {/* Department Dropdown (shown only on Department tab) */}
+      {activeTab === 'Department' && (
+        <div className="relative flex-shrink-0">
+          <select
+            value={selectedDepartment || ''}
+            onChange={(e) => setSelectedDepartment(e.target.value)}
+            className="appearance-none bg-[#F8FAFC] border border-[#E5E7EB] text-slate-700 text-xs font-semibold rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white shadow-2xs transition-all cursor-pointer"
+            id="department-filter-select"
+          >
+            <option value="">All Departments</option>
+            {PDCA_DEPARTMENTS.map((dept) => (
+              <option key={dept} value={dept}>
+                {dept}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+      )}
 
       {/* Buttons above Table */}
       <div className="flex items-center gap-2.5 flex-shrink-0">

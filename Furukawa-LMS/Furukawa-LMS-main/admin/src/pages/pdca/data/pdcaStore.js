@@ -56,9 +56,12 @@ export function loadPDCA(fallback) {
   } catch {
     return fallback;
   }
-  if (!Array.isArray(records) || records.some(record => !record || typeof record !== 'object' || ['id', 'topic', 'plant', 'scope', 'description', 'date', 'time'].some(field => record[field] != null && typeof record[field] !== 'string') || (record.createdBy && ['name', 'code', 'initials'].some(field => record.createdBy[field] != null && typeof record.createdBy[field] !== 'string')))) {
+  if (!Array.isArray(records)) {
     return fallback;
   }
+  records = records.filter(record => record && typeof record === 'object' && (record.id || record.recordId));
+  // Strip legacy mock records if present in browser storage
+  records = records.filter(record => !String(record.id || '').startsWith('PDCA-ASY-BW-'));
   // Ensure newly seeded records from fallback are merged into existing local storage
   if (Array.isArray(fallback) && fallback.length > 0) {
     const existingIds = new Set(records.map(r => r.id || r.recordId));
@@ -81,13 +84,20 @@ export function addPDCA(records, item) {
   if (!item.topic?.trim()) throw new Error('Please enter a topic.');
   if (!PDCA_SCOPES.includes(item.scope)) throw new Error('Please select a valid PDCA category.');
   if (!['Bawal', 'Gujrat'].includes(item.plant)) throw new Error('Please select Bawal or Gujrat.');
-  if (!item.id || records.some(record => record.id === item.id)) throw new Error('This PDCA ID already exists. Please try again.');
-  return [item, ...records];
+  const list = Array.isArray(records) ? records : [];
+  if (!item.id || list.some(record => (record.id && record.id === item.id) || (record.recordId && record.recordId === item.id))) {
+    throw new Error('This PDCA ID already exists. Please try again.');
+  }
+  return [item, ...list];
 }
 export function updatePDCA(records, item) {
   if (!item.topic?.trim()) throw new Error('Please enter a topic.');
   if (!PDCA_SCOPES.includes(item.scope)) throw new Error('Please select a valid PDCA category.');
-  if (!records.some(record => record.id === item.id)) throw new Error('This PDCA no longer exists.');
-  return records.map(record => record.id === item.id ? { ...record, ...item } : record);
+  const list = Array.isArray(records) ? records : [];
+  const existingIdx = list.findIndex(record => (record.id && record.id === item.id) || (record.recordId && record.recordId === item.id));
+  if (existingIdx < 0) throw new Error('This PDCA no longer exists.');
+  const copy = [...list];
+  copy[existingIdx] = { ...copy[existingIdx], ...item };
+  return copy;
 }
 

@@ -892,240 +892,7 @@ const FOLDERS = [
   },
 ];
 
-const DEFAULT_DOCUMENTS = [
-  // 1. Procedure Audit Documents
-  {
-    id: 'doc_procedure_default',
-    folderId: 'procedure',
-    formKey: 'Procedure',
-    title: 'PRC-WH-QA-009: Standard Operating Procedure (Flowchart & Guidelines)',
-    code: 'PRC-WH-QA-009',
-    rev: 'Rev: 10',
-    revDate: '09.07.2026',
-    year: 2026,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Standard Operating Procedure PRC-WH-QA-009, process audit flowchart, steps and evaluation rules.',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-09T00:00:00.000Z',
-  },
-  {
-    id: 'doc_procedure_bawal',
-    folderId: 'procedure',
-    formKey: 'Procedure',
-    title: 'PRC-WH-QA-009-BW: Bawal Plant Process Audit Work Instructions',
-    code: 'PRC-WH-QA-009-BW',
-    rev: 'Rev: 12',
-    revDate: '15.08.2026',
-    year: 2026,
-    unit: 'Bawal',
-    isDefault: true,
-    description: 'Unit-specific SOP for Bawal high-volume assembly lines, crimping, and electrical continuity verification.',
-    createdAt: '2026-02-01T00:00:00.000Z',
-    updatedAt: '2026-08-15T00:00:00.000Z',
-  },
-  {
-    id: 'doc_procedure_gujrat',
-    folderId: 'procedure',
-    formKey: 'Procedure',
-    title: 'PRC-WH-QA-009-GJ: Gujrat Plant Special Processes Inspection SOP',
-    code: 'PRC-WH-QA-009-GJ',
-    rev: 'Rev: 08',
-    revDate: '20.06.2026',
-    year: 2026,
-    unit: 'Gujrat',
-    isDefault: true,
-    description: 'Special process audit guidelines for automated ultrasonic welding and injection moulding at Gujrat unit.',
-    createdAt: '2026-01-15T00:00:00.000Z',
-    updatedAt: '2026-06-20T00:00:00.000Z',
-  },
-
-  // 2. Auditor List Documents
-  {
-    id: 'doc_auditer_list_default',
-    folderId: 'auditer-list',
-    formKey: 'Auditer List',
-    title: 'Process Auditor List - 2026 (Annexure - 1)',
-    code: 'PRC-WH-QA-009 / Annexure-1',
-    rev: 'Rev: 07',
-    revDate: '09.01.2026',
-    year: 2026,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Certified process auditors list, qualifications and training records for Year 2026.',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-09T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_list_bawal_2026',
-    folderId: 'auditer-list',
-    formKey: 'Auditer List',
-    title: 'Bawal Plant Certified Process Auditors Directory - 2026',
-    code: 'ANNEXURE-1-BW-2026',
-    rev: 'Rev: 04',
-    revDate: '12.02.2026',
-    year: 2026,
-    unit: 'Bawal',
-    isDefault: true,
-    description: 'Active certified internal process auditors, wire harness experience, and sign-offs for Bawal plant.',
-    createdAt: '2026-02-12T00:00:00.000Z',
-    updatedAt: '2026-02-12T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_list_gujrat_2026',
-    folderId: 'auditer-list',
-    formKey: 'Auditer List',
-    title: 'Gujrat Plant Qualified Process Auditors Roster - 2026',
-    code: 'ANNEXURE-1-GJ-2026',
-    rev: 'Rev: 03',
-    revDate: '18.03.2026',
-    year: 2026,
-    unit: 'Gujrat',
-    isDefault: true,
-    description: 'Qualified auditors directory for Gujrat unit with training records in SRC and JB operations.',
-    createdAt: '2026-03-18T00:00:00.000Z',
-    updatedAt: '2026-03-18T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_list_2025',
-    folderId: 'auditer-list',
-    formKey: 'Auditer List',
-    title: 'Process Auditor List - 2025 (Annual Archive)',
-    code: 'PRC-WH-QA-009 / Annexure-1-2025',
-    rev: 'Rev: 06',
-    revDate: '10.01.2025',
-    year: 2025,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Previous year qualified auditors list and competence assessment records.',
-    createdAt: '2025-01-10T00:00:00.000Z',
-    updatedAt: '2025-12-28T00:00:00.000Z',
-  },
-
-  // 3. Auditor Plan Documents
-  {
-    id: 'doc_auditer_plan_2026',
-    folderId: 'auditer-plan',
-    formKey: 'Auditer Plan',
-    title: 'PROCESS AUDIT PLAN - 2026',
-    code: 'PLAN-2026',
-    rev: 'Rev: 01',
-    revDate: '05.01.2026',
-    year: 2026,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Annual process audit schedule and tracking matrix for Year 2026.',
-    createdAt: '2026-01-05T00:00:00.000Z',
-    updatedAt: '2026-01-05T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_plan_bawal_2026',
-    folderId: 'auditer-plan',
-    formKey: 'Auditer Plan',
-    title: 'PROCESS AUDIT PLAN - 2026 (Bawal Plant)',
-    code: 'PLAN-BW-2026',
-    rev: 'Rev: 03',
-    revDate: '15.01.2026',
-    year: 2026,
-    unit: 'Bawal',
-    isDefault: true,
-    description: 'Bawal Plant 2026 Annual Audit Matrix with Plan vs Actual tracking across all assembly lines.',
-    createdAt: '2026-01-15T00:00:00.000Z',
-    updatedAt: '2026-09-30T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_plan_gujrat_2026',
-    folderId: 'auditer-plan',
-    formKey: 'Auditer Plan',
-    title: 'PROCESS AUDIT PLAN - 2026 (Gujrat Plant)',
-    code: 'PLAN-GJ-2026',
-    rev: 'Rev: 02',
-    revDate: '20.01.2026',
-    year: 2026,
-    unit: 'Gujrat',
-    isDefault: true,
-    description: 'Gujrat Plant 2026 Annual Audit Matrix with monthly Plan vs Actual tracking for component manufacturing.',
-    createdAt: '2026-01-20T00:00:00.000Z',
-    updatedAt: '2026-09-28T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_plan_2025',
-    folderId: 'auditer-plan',
-    formKey: 'Auditer Plan',
-    title: 'PROCESS AUDIT PLAN - 2025 (Annual Completed Matrix)',
-    code: 'PLAN-2025',
-    rev: 'Rev: 12',
-    revDate: '30.12.2025',
-    year: 2025,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Full year 2025 completed process audit matrix with historical actuals and closure records.',
-    createdAt: '2025-01-05T00:00:00.000Z',
-    updatedAt: '2025-12-30T00:00:00.000Z',
-  },
-  {
-    id: 'doc_auditer_plan_2027',
-    folderId: 'auditer-plan',
-    formKey: 'Auditer Plan',
-    title: 'PROCESS AUDIT PLAN - 2027 (Advance Projected Schedule)',
-    code: 'PLAN-2027',
-    rev: 'Rev: 00',
-    revDate: '01.10.2026',
-    year: 2027,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Advance planned schedule matrix for upcoming Year 2027 audits.',
-    createdAt: '2026-10-01T00:00:00.000Z',
-    updatedAt: '2026-10-01T00:00:00.000Z',
-  },
-
-  // 4. Process Audit Check Sheet Documents
-  {
-    id: 'doc_checksheet_default',
-    folderId: 'check-sheet',
-    formKey: 'Process Audit Check Sheet',
-    title: 'CHK-WH-QA-047: Process Audit Check Sheet - Store & Warehouse',
-    code: 'CHK-WH-QA-047',
-    rev: 'Rev.No 06',
-    revDate: '12.12.2022',
-    year: 2026,
-    unit: 'All Units',
-    isDefault: true,
-    description: 'Process audit check sheet for Store with 18 checkpoints, evidence verification, and NCR status tracking.',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-12T00:00:00.000Z',
-  },
-  {
-    id: 'doc_checksheet_bawal',
-    folderId: 'check-sheet',
-    formKey: 'Process Audit Check Sheet',
-    title: 'CHK-WH-QA-047-BW: Process Audit Check Sheet - Cutting & Crimping (Bawal)',
-    code: 'CHK-WH-QA-047-BW',
-    rev: 'Rev.No 07',
-    revDate: '30.07.2025',
-    year: 2026,
-    unit: 'Bawal',
-    isDefault: true,
-    description: 'Bawal Plant auto cutting, manual crimping, and wire prep process audit check sheet.',
-    createdAt: '2026-02-01T00:00:00.000Z',
-    updatedAt: '2026-07-30T00:00:00.000Z',
-  },
-  {
-    id: 'doc_checksheet_gujrat',
-    folderId: 'check-sheet',
-    formKey: 'Process Audit Check Sheet',
-    title: 'CHK-WH-QA-047-GJ: Process Audit Check Sheet - Assembly & Testing (Gujrat)',
-    code: 'CHK-WH-QA-047-GJ',
-    rev: 'Rev.No 05',
-    revDate: '15.03.2025',
-    year: 2026,
-    unit: 'Gujrat',
-    isDefault: true,
-    description: 'Gujrat Plant final assembly lines, grommet insertion, and circuit continuity check sheet.',
-    createdAt: '2026-02-15T00:00:00.000Z',
-    updatedAt: '2026-03-15T00:00:00.000Z',
-  },
-];
+const DEFAULT_DOCUMENTS = [];
 
 function readDocValues(doc) {
   if (!doc) return {};
@@ -1134,119 +901,23 @@ function readDocValues(doc) {
     const saved = localStorage.getItem(docKey);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && Object.keys(parsed).length > 2) return parsed;
+      if (parsed && typeof parsed === 'object') return parsed;
     }
   } catch (e) {
     console.error(e);
   }
 
-  // Comprehensive initial defaults based on form type and year
   const initial = {};
   if (doc.formKey === 'Auditer Plan') {
-    initial['E1'] = doc.title || `PROCESS AUDIT PLAN - ${doc.year || 2026}`;
+    initial['E1'] = doc.title || (doc.year ? `PROCESS AUDIT PLAN - ${doc.year}` : 'PROCESS AUDIT PLAN');
     if (doc.year) initial['G2'] = String(doc.year);
     if (doc.revDate) initial['A1'] = `Updation Date: ${doc.revDate}`;
-
-    // Assigned Auditors in Column E
-    initial['E4'] = 'Ramesh Kumar';
-    initial['E6'] = 'Sunil Sharma';
-    initial['E8'] = 'Aditya Singh';
-    initial['E10'] = 'Pooja Sharma';
-    initial['E12'] = 'Vikas Verma';
-    initial['E14'] = 'Manoj Kumar';
-    initial['E16'] = 'Deepak Rao';
-    initial['E18'] = 'Amit Patel';
-    initial['E20'] = 'Suresh Yadav';
-    initial['E22'] = 'Rajesh Meena';
-    initial['E24'] = 'Kavita Rani';
-    initial['E26'] = 'Praveen Kumar';
-
-    // Plan (yellow) & Actual (green/blue) Stars matching Process Audit Schedule matrix
-    // Row 4-5: Material Receiving / Storage & Issuance
-    initial['G4'] = 'yellow'; initial['G5'] = 'green';
-
-    // Row 6-7: Material receiving inspection
-    initial['G6'] = 'yellow'; initial['G7'] = 'green';
-
-    // Row 8-9: Part cutting
-    initial['G8'] = 'yellow'; initial['G9'] = 'green';
-
-    // Row 10-11: Auto cutting and crimping
-    initial['G10'] = 'yellow'; initial['M10'] = 'yellow';
-    initial['G11'] = 'green'; initial['M11'] = 'blue';
-
-    // Row 12-13: Shield wire cutting & stripping (Feb delayed to May -> Arrow connects Feb to May)
-    initial['H12'] = 'yellow';
-    initial['H13'] = 'blue'; initial['K13'] = 'green';
-    initial['S13'] = 'Adherence';
-
-    // Row 14-15: Middle Stripping (Feb delayed to May -> Arrow connects Feb to May)
-    initial['H14'] = 'yellow';
-    initial['H15'] = 'blue'; initial['K15'] = 'green';
-    initial['S15'] = 'Adherence';
-
-    // Row 16-17: Manual Crimping (Feb delayed to May -> Arrow connects Feb to May; Oct star)
-    initial['H16'] = 'yellow'; initial['P16'] = 'yellow';
-    initial['H17'] = 'blue'; initial['K17'] = 'green'; initial['P17'] = 'blue';
-    initial['S17'] = 'Adherence';
-
-    // Row 18-19: Twist wire (Feb delayed to May -> Arrow connects Feb to May)
-    initial['H18'] = 'yellow';
-    initial['H19'] = 'blue'; initial['K19'] = 'green';
-    initial['S19'] = 'Adherence';
-
-    // Row 20-21: Joint crimping & Joint Taping (Mar delayed to Apr -> Arrow connects Mar to Apr; Oct star)
-    initial['I20'] = 'yellow'; initial['P20'] = 'yellow';
-    initial['I21'] = 'blue'; initial['J21'] = 'green'; initial['P21'] = 'blue';
-    initial['S21'] = 'Re-audit / OK (Post Delay)';
-
-    // Row 22-23: Resistance welding (Mar delayed to Apr -> Arrow connects Mar to Apr; Oct star)
-    initial['I22'] = 'yellow'; initial['P22'] = 'yellow';
-    initial['I23'] = 'blue'; initial['J23'] = 'green'; initial['P23'] = 'blue';
-    initial['S23'] = 'Re-audit / OK (Post Delay)';
-
-    // Row 24-25: Silicon injection (Mar delayed to Apr -> Arrow connects Mar to Apr; Oct star)
-    initial['I24'] = 'yellow'; initial['P24'] = 'yellow';
-    initial['I25'] = 'blue'; initial['J25'] = 'green'; initial['P25'] = 'blue';
-    initial['S25'] = 'Re-audit / OK (Post Delay)';
-
-    // Row 26-27: Heat shrink tube assembly (Mar delayed to Apr -> Arrow connects Mar to Apr; Oct star)
-    initial['I26'] = 'yellow'; initial['P26'] = 'yellow';
-    initial['I27'] = 'blue'; initial['J27'] = 'green'; initial['P27'] = 'blue';
-    initial['S27'] = 'Re-audit / OK (Post Delay)';
-
-    // Row 28-29: Ferrite fitting & Manual crimping (Apr & Oct)
-    initial['J28'] = 'yellow'; initial['P28'] = 'yellow';
-    initial['J29'] = 'green'; initial['P29'] = 'blue';
-
-    // Row 30-31: Assembly (Jun)
-    initial['L30'] = 'yellow'; initial['L31'] = 'green';
-
-    // Row 32-33: Assembly (Jul)
-    initial['M32'] = 'yellow'; initial['M33'] = 'blue';
-
-    // Row 34-35: Assembly (Aug)
-    initial['N34'] = 'yellow'; initial['N35'] = 'blue';
-
-    // Row 36-37: Assembly (Nov)
-    initial['Q36'] = 'yellow'; initial['Q37'] = 'blue';
-
-    // Signature blocks
-    initial['B53'] = 'Prepared by: Quality Lead (Aditya Singh)';
-    initial['E53'] = 'Checked by: Plant QA Head (Sunil Sharma)';
-    initial['H53'] = 'Approved by: Operations VP (Rajesh Kumar)';
   } else if (doc.formKey === 'Auditer List') {
     initial['A5'] = doc.title || 'List for Process Auditors - Certified Internal Auditors';
     if (doc.revDate) initial['R4'] = `Rev Date: ${doc.revDate}`;
-    initial['B49'] = 'Prepared By: Quality Assurance Lead';
-    initial['G49'] = 'Checked By: Plant QA Head';
-    initial['L49'] = 'Approved By: Operations VP';
   } else if (doc.formKey === 'Procedure') {
     initial['A1'] = doc.title || 'Standard Operating Procedure (PRC-WH-QA-009)';
-    initial['R4'] = `Rev Date: ${doc.revDate || '09.07.2026'}`;
-    initial['B95'] = 'Prepared By: QA System Lead';
-    initial['E95'] = 'Reviewed By: QA Head';
-    initial['H95'] = 'Approved By: Plant Director';
+    if (doc.revDate) initial['R4'] = `Rev Date: ${doc.revDate}`;
   }
   return initial;
 }
@@ -1410,16 +1081,14 @@ export default function ProcessAudit({ showToast, onFormOpenChange }) {
       const saved = localStorage.getItem('process_audit_documents');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const ids = new Set(parsed.map((d) => d.id));
-          const missing = DEFAULT_DOCUMENTS.filter((d) => !ids.has(d.id));
-          return [...parsed, ...missing];
+        if (Array.isArray(parsed)) {
+          return parsed.filter((d) => !d.isDefault && !String(d.id || '').startsWith('doc_'));
         }
       }
     } catch (e) {
       console.error(e);
     }
-    return DEFAULT_DOCUMENTS;
+    return [];
   });
 
   const [selectedUnit, setSelectedUnit] = useState(() => {

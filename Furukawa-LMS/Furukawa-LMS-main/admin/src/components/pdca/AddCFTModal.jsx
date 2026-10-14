@@ -6,34 +6,16 @@ import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, Plus } from '
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 
-export const CFT_TOPICS = [
-  'Team Composition & Role',
-  'Alignment & Goal Setting',
-  'Communication Protocols',
-  'Conflict Resolution',
-  'Decision- Making Models'
-];
+import pdcaApi from '@/services/api/pdcaApi.js';
 
-export const CFT_MEMBERS = [
-  { name: 'YOGESH KUMAR', code: 'AS081213', email: 'aso81213@fme-minda.co.in', initials: 'YK', avatarBg: 'bg-blue-100 text-blue-700' },
-  { name: 'RAHUL SHARMA', code: 'BW041920', email: 'r.sharma@fme-minda.co.in', initials: 'RS', avatarBg: 'bg-emerald-100 text-emerald-700' },
-  { name: 'AMIT PATEL', code: 'GJ092311', email: 'amit.patel@fme-minda.co.in', initials: 'AP', avatarBg: 'bg-amber-100 text-amber-700' },
-  { name: 'PRIYA NAIR', code: 'GJ018442', email: 'priya.nair@fme-minda.co.in', initials: 'PN', avatarBg: 'bg-rose-100 text-rose-700' },
-  { name: 'DEEPAK MEHTA', code: 'GJ045819', email: 'd.mehta@fme-minda.co.in', initials: 'DM', avatarBg: 'bg-indigo-100 text-indigo-700' },
-];
-
-export const AVAILABLE_CFT_EMPLOYEES = [
-  { name: 'AMIT PATEL', code: 'GJ092311' },
-  { name: 'PRIYA NAIR', code: 'GJ018442' },
-  { name: 'DEEPAK MEHTA', code: 'GJ045819' },
-  { name: 'YOGESH KUMAR', code: 'AS081213' },
-  { name: 'RAHUL SHARMA', code: 'BW041920' },
-];
+export const CFT_TOPICS = [];
+export const CFT_MEMBERS = [];
+export const AVAILABLE_CFT_EMPLOYEES = [];
 
 export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gujrat' }) {
   const [topic, setTopic] = useState('');
-  const [membersList, setMembersList] = useState(CFT_MEMBERS);
-  const [selectedMemberCode, setSelectedMemberCode] = useState(CFT_MEMBERS[0].code);
+  const [membersList, setMembersList] = useState([]);
+  const [selectedMemberCode, setSelectedMemberCode] = useState('');
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
   const [memberNameInput, setMemberNameInput] = useState('');
   const [memberCodeInput, setMemberCodeInput] = useState('');
@@ -44,12 +26,42 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
   const [empNameInput, setEmpNameInput] = useState('');
   const [empCodeInput, setEmpCodeInput] = useState('');
 
+  // Fetch verified employees from live database metadata API
+  useEffect(() => {
+    let active = true;
+    pdcaApi.getMetadata().then((meta) => {
+      if (!active || !meta?.employees) return;
+      const formatted = meta.employees.map((emp) => ({
+        name: emp.name,
+        code: emp.code || '',
+        email: emp.email || '',
+        department: emp.department || '',
+        initials: (emp.name || '')
+          .split(' ')
+          .map((n) => n[0])
+          .filter(Boolean)
+          .slice(0, 2)
+          .join(''),
+        avatarBg: 'bg-blue-100 text-blue-700'
+      }));
+      if (formatted.length > 0) {
+        setMembersList(formatted);
+        setSelectedMemberCode((prev) => prev || formatted[0].code || formatted[0].name);
+      }
+    }).catch((err) => {
+      console.warn('Could not load employees in AddCFTModal:', err);
+    });
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       const draft = readSaved(`pdca_cft_draft_${defaultPlant}`, {});
       setTopic(draft.topic || '');
-      setMembersList(draft.membersList || CFT_MEMBERS);
-      setSelectedMemberCode(draft.selectedMemberCode || CFT_MEMBERS[0].code);
+      if (draft.membersList && draft.membersList.length > 0) {
+        setMembersList(draft.membersList);
+      }
+      setSelectedMemberCode(draft.selectedMemberCode || '');
       setShowAddMemberForm(false);
       setMemberNameInput(draft.memberNameInput || '');
       setMemberCodeInput(draft.memberCodeInput || '');
@@ -117,7 +129,13 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const memberObj = membersList.find((m) => m.code === selectedMemberCode) || membersList[0];
+    const memberObj = membersList.find((m) => m.code === selectedMemberCode) || membersList[0] || {
+      name: 'CFT Lead Member',
+      code: selectedMemberCode || 'LEAD',
+      email: '',
+      avatarBg: 'bg-emerald-100 text-emerald-700',
+      initials: 'CL'
+    };
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -245,7 +263,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
                         handleAddMemberManual();
                       }
                     }}
-                    placeholder="Member Name (e.g. Ramesh Verma)"
+                    placeholder="Member Name (e.g. Employee Name)"
                     className="text-xs font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none placeholder-slate-400 shadow-2xs"
                     id="cft-manual-member-name"
                   />
@@ -293,11 +311,15 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
                 id="cft-members-select"
                 required
               >
-                {membersList.map((member) => (
-                  <option key={member.code} value={member.code}>
-                    {member.name} ({member.code})
-                  </option>
-                ))}
+                {membersList.length === 0 ? (
+                  <option value="">No registered employees available. Click '+ Add Member' above.</option>
+                ) : (
+                  membersList.map((member) => (
+                    <option key={member.code || member.name} value={member.code || member.name}>
+                      {member.name} {member.code ? `(${member.code})` : ''}
+                    </option>
+                  ))
+                )}
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -347,7 +369,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Gu
                         handleAddEmployeeManual();
                       }
                     }}
-                    placeholder="Emp Name (e.g. Ramesh Verma)"
+                    placeholder="Emp Name (e.g. Employee Name)"
                     className="w-full text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none shadow-2xs"
                     autoFocus
                   />

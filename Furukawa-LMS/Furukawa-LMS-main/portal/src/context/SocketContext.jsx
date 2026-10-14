@@ -38,10 +38,10 @@ export const SocketProvider = ({ children }) => {
                 // Prefer explicit env, fall back to API base URL, then localhost
                 const envUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_SERVER_URL;
                 const apiBase = axiosInstance?.defaults?.baseURL;
-                let socketUrl = 'https://swargaya-learning-management-system-3vcz.onrender.com';
+                let socketUrl;
                 if (envUrl) {
                     socketUrl = envUrl;
-                } else if (apiBase) {
+                } else if (apiBase && !apiBase.startsWith('/')) {
                     try {
                         socketUrl = new URL(apiBase).origin;
                     } catch {
@@ -50,11 +50,13 @@ export const SocketProvider = ({ children }) => {
                 } else if (typeof window !== 'undefined') {
                     const { protocol, hostname } = window.location;
                     socketUrl = `${protocol}//${hostname}:3000`;
+                } else {
+                    socketUrl = 'http://localhost:3000';
                 }
                 const newSocket = io(socketUrl, {
                     path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',
                     // Allow fallback when websocket upgrade fails in local/dev environments.
-                    transports: ['websocket', 'polling'],
+                    transports: ['polling', 'websocket'],
                     upgrade: true,
                     withCredentials: true,
                     // The server works out who this socket belongs to from the access
@@ -86,7 +88,7 @@ export const SocketProvider = ({ children }) => {
                 });
 
                 newSocket.on('authenticated', () => {
-                    toast.success('Real-time notifications enabled');
+                    // Socket authenticated successfully
                 });
 
                 // Real-time notification handlers
@@ -202,12 +204,7 @@ export const SocketProvider = ({ children }) => {
 
                 // Error handling
                 newSocket.on('connect_error', (error) => {
-                    console.error('Socket connection error:', error);
-                    if (!newSocket.connected) {
-                        toast.error('Connection error', {
-                            description: 'Failed to connect to real-time notifications',
-                        });
-                    }
+                    console.warn('Socket connection note:', error?.message || error);
                 });
 
                 setSocket(newSocket);

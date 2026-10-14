@@ -1,6 +1,6 @@
 import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.js';
 import FormZoomControls from '@components/shared/FormZoomControls';
-import React, { useState, useRef, useLayoutEffect, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
@@ -23,7 +23,9 @@ import {
   Edit3,
   Check,
   User,
-  Users
+  Users,
+  RefreshCw,
+  Layers
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
@@ -32,114 +34,6 @@ import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import SearchableLineAreaSelect from '../pdca/SearchableLineAreaSelect';
-
-// Department to Employees mapping
-const departmentEmployeesData = {
-  'PE': [
-    'Yogesh Kumar (AS081213)',
-    'Vikram Singh (GJ034112)'
-  ],
-  'IT': [
-    'Yogesh Kumar (AS081213)',
-    'Deepak Mehta (GJ045819)'
-  ],
-  'Quality': [
-    'Deepak Mehta (GJ045819)',
-    'Yogesh Kumar (AS081213)',
-    'Sunil Kumar (GJ082711)'
-  ],
-  'Assembly': [
-    'Rahul Sharma (BW041920)',
-    'Priya Nair (GJ018442)',
-    'Dinesh Rao (BW028371)'
-  ],
-  'SRC': [
-    'Yogesh Kumar (AS081213)',
-    'Ramesh Patel (GJ021944)'
-  ],
-  'Store': [
-    'Naveen Yadav (GJ019482)',
-    'Yogesh Kumar (AS081213)'
-  ],
-  'HR': [
-    'Amit Patel (GJ092311)',
-    'Kavita Joshi (GJ019283)'
-  ],
-  'Safety': [
-    'Amit Patel (GJ092311)',
-    'Kavita Joshi (GJ019283)'
-  ],
-  'FG': [
-    'Naveen Yadav (GJ019482)',
-    'Brijesh Sharma (BW029384)'
-  ],
-  'PPC': [
-    'Sandeep Verma (BW071562)',
-    'Rajesh Kumar (BW081290)'
-  ],
-  'Maintenance': [
-    'Sandeep Verma (BW071562)',
-    'Rajesh Kumar (BW081290)',
-    'Pooja Nair (BW039182)'
-  ],
-  'D&D': [
-    'Manish Joshi (BW092301)',
-    'Ajay Verma (BW012398)'
-  ],
-  'C&C': [
-    'Anil Gupta (BW038291)',
-    'Karan Malhotra (BW091823)'
-  ],
-  // Legacy department mappings for backwards compatibility with older saved records
-  'SRC Quality': [
-    'Yogesh Kumar (AS081213)',
-    'Ramesh Patel (GJ021944)',
-    'Vikram Singh (GJ034112)'
-  ],
-  'Die Casting': [
-    'Rahul Sharma (BW041920)',
-    'Dinesh Rao (BW028371)',
-    'Mukesh Verma (BW051289)'
-  ],
-  'EHS Safety': [
-    'Amit Patel (GJ092311)',
-    'Kavita Joshi (GJ019283)'
-  ],
-  'Plant Maintenance': [
-    'Sandeep Verma (BW071562)',
-    'Rajesh Kumar (BW081290)',
-    'Pooja Nair (BW039182)'
-  ],
-  'Wiring Harness': [
-    'Priya Nair (GJ018442)',
-    'Suresh Yadav (GJ047219)'
-  ],
-  'Press & Stamping': [
-    'Manish Joshi (BW092301)',
-    'Ajay Verma (BW012398)'
-  ],
-  'IQC Quality': [
-    'Deepak Mehta (GJ045819)',
-    'Sunil Kumar (GJ082711)'
-  ],
-  'Robotics': [
-    'Anil Gupta (BW038291)',
-    'Karan Malhotra (BW091823)'
-  ],
-  'Logistics': [
-    'Yogesh Kumar (AS081213)',
-    'Naveen Yadav (GJ019482)'
-  ],
-  'Tool Room': [
-    'Yogesh Kumar (AS081213)',
-    'Brijesh Sharma (BW029384)'
-  ],
-  'Production': [
-    'Arun Sharma (PR019283)',
-    'Mahesh Rao (PR029381)',
-    'Sanjay Gupta (PR039182)'
-  ]
-};
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
@@ -452,107 +346,97 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     }
   };
 
-  const topicName = headerInfo.topicName || topic?.topic || 'Quality Inspection & Line Audit';
-  const createdByName = topic?.createdBy?.name || (topic?.createdBy?.code ? 'Member' : 'Pooja Verma');
-  const createdByCode = topic?.createdBy?.code || (topic?.createdBy?.name ? '' : 'BW082319');
+  const topicName = headerInfo.topicName || topic?.topic || '';
+  const createdByName = topic?.createdBy?.name || '';
+  const createdByCode = topic?.createdBy?.code || '';
+
+  // Database-backed employee master records
+  const [dbEmployees, setDbEmployees] = useState([]);
+
+  // Fetch verified employee records from database via metadata API
+  useEffect(() => {
+    let active = true;
+    pdcaApi.getMetadata().then((meta) => {
+      if (!active || !meta) return;
+      if (Array.isArray(meta.employees) && meta.employees.length > 0) {
+        setDbEmployees(meta.employees);
+      }
+    }).catch((err) => {
+      console.warn('Could not fetch employee metadata from database:', err);
+    });
+    return () => { active = false; };
+  }, []);
+
+  // Live CFT Topics fetched directly from backend
+  const [cftTopics, setCftTopics] = useState([]);
+  const [cftLoading, setCftLoading] = useState(false);
+  const [cftError, setCftError] = useState(null);
+
+  const loadCFTTopics = useCallback(async () => {
+    setCftLoading(true);
+    setCftError(null);
+    try {
+      const res = await pdcaApi.getCftTopics({
+        plant: topic?.plant && !['Unit', 'All Plants'].includes(topic.plant) ? topic.plant : undefined
+      });
+      const list = Array.isArray(res) ? res : (res?.records || []);
+      const map = new Map();
+      list.forEach((item) => {
+        if (item && item.id && !item.isDeleted) {
+          const members = [];
+          if (item.createdBy && item.createdBy.name) {
+            members.push({
+              name: item.createdBy.name,
+              code: item.createdBy.code || '',
+              role: 'Lead Member'
+            });
+          }
+          const assignedEmployees = Array.isArray(item.assignedMembers)
+            ? item.assignedMembers
+                .map((m) => (typeof m === 'object' ? { name: m.name || '', code: m.code || '' } : { name: String(m), code: '' }))
+                .filter((m) => m.name)
+            : [];
+
+          map.set(item.id, {
+            id: item.id,
+            name: item.topic || item.name || '',
+            plant: item.plant || '',
+            members,
+            assignedEmployees
+          });
+        }
+      });
+      setCftTopics(Array.from(map.values()));
+    } catch (err) {
+      console.error('Failed to load CFT topics:', err);
+      setCftError(err?.message || 'Failed to load CFT records');
+    } finally {
+      setCftLoading(false);
+    }
+  }, [topic?.plant]);
+
+  useEffect(() => {
+    loadCFTTopics();
+  }, [loadCFTTopics]);
 
   // Available CFT topics
   const availableCFTTopics = useMemo(() => {
-    const currentObj = {
-      id: topic?.id || 'current_topic',
-      name: topicName,
-      members: [
-        {
-          name: createdByName,
-          code: createdByCode,
-          role: 'Lead Member'
-        }
-      ],
-      assignedEmployees: (topic?.assignedMembers && topic.assignedMembers.length > 0)
-        ? topic.assignedMembers
-        : [
-            { name: 'Rahul Sharma', code: 'BW041920' },
-            { name: 'Dinesh Rao', code: 'BW028371' },
-            { name: 'Mukesh Verma', code: 'BW051289' }
-          ]
-    };
-
-    const otherCFTs = (data || [])
-      .filter((d) => d.scope === 'CFT' && d.id !== topic?.id && d.topic !== topicName)
-      .map((d) => ({
-        id: d.id,
-        name: d.topic,
-        members: [
-          {
-            name: d.createdBy?.name || 'Member',
-            code: d.createdBy?.code || '',
-            role: 'Lead Member'
-          }
-        ],
-        assignedEmployees: (d.assignedMembers && d.assignedMembers.length > 0)
-          ? d.assignedMembers
-          : [
-              { name: 'Deepak Mehta', code: 'GJ045819' },
-              { name: 'Priya Nair', code: 'GJ018442' }
-            ]
-      }));
-
-    const defaultTopics = [
-      {
-        id: 'cft-team-comp',
-        name: 'Team Composition & Role',
-        members: [{ name: 'Yogesh Kumar', code: 'AS081213', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Vikram Singh', code: 'GJ034112' },
-          { name: 'Ramesh Patel', code: 'GJ021944' }
-        ]
-      },
-      {
-        id: 'cft-align-goal',
-        name: 'Alignment & Goal Setting',
-        members: [{ name: 'Amit Patel', code: 'GJ092311', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Kavita Joshi', code: 'GJ019283' },
-          { name: 'Pooja Nair', code: 'BW039182' }
-        ]
-      },
-      {
-        id: 'cft-comm-proto',
-        name: 'Communication Protocols',
-        members: [{ name: 'Priya Nair', code: 'GJ018442', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Deepak Mehta', code: 'GJ045819' },
-          { name: 'Suresh Yadav', code: 'GJ047219' }
-        ]
-      },
-      {
-        id: 'cft-risk-mgmt',
-        name: 'Risk Management',
-        members: [{ name: 'Rahul Sharma', code: 'BW041920', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Dinesh Rao', code: 'BW028371' },
-          { name: 'Mukesh Verma', code: 'BW051289' }
-        ]
-      },
-      {
-        id: 'cft-perf-metrics',
-        name: 'Performance Metrics',
-        members: [{ name: 'Sandeep Verma', code: 'BW071562', role: 'Lead Member' }],
-        assignedEmployees: [
-          { name: 'Rajesh Kumar', code: 'BW081290' },
-          { name: 'Anil Gupta', code: 'BW038291' }
-        ]
-      }
-    ];
-
     const map = new Map();
-    [currentObj, ...otherCFTs, ...defaultTopics].forEach(item => {
+    if (topic?.scope === 'CFT' && topic?.id) {
+      map.set(topic.id, {
+        id: topic.id,
+        name: topicName,
+        members: [{ name: createdByName, code: createdByCode, role: 'Lead Member' }],
+        assignedEmployees: Array.isArray(topic.assignedMembers) ? topic.assignedMembers : []
+      });
+    }
+    cftTopics.forEach((item) => {
       if (item && item.id && !map.has(item.id)) {
         map.set(item.id, item);
       }
     });
     return Array.from(map.values());
-  }, [topic, data, topicName, createdByName, createdByCode]);
+  }, [cftTopics, topic, topicName, createdByName, createdByCode]);
 
   // Close CFT dropdown on outside click or scroll
   useEffect(() => {
@@ -631,24 +515,76 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     });
   };
 
+  const employeeOptionList = useMemo(() => {
+    const map = new Map();
+    dbEmployees.forEach((emp) => {
+      const label = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+      map.set(label, {
+        label,
+        name: emp.name,
+        code: emp.code || '',
+        department: emp.department || ''
+      });
+    });
+
+    (topic?.assignedMembers || []).forEach((m) => {
+      if (m?.name) {
+        const label = m.code ? `${m.name} (${m.code})` : m.name;
+        if (!map.has(label)) {
+          map.set(label, {
+            label,
+            name: m.name,
+            code: m.code || '',
+            department: ''
+          });
+        }
+      }
+    });
+
+    rows.forEach((r) => {
+      if (r.staffEmployee?.trim()) {
+        const label = r.staffEmployee.trim();
+        if (!map.has(label)) {
+          map.set(label, {
+            label,
+            name: label,
+            code: '',
+            department: r.department || ''
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [dbEmployees, topic?.assignedMembers, rows]);
+
   const getStaffOptionsForRow = (rowIndex) => {
     const row = rows[rowIndex];
-    const deptEmployees = row?.department ? (departmentEmployeesData[row.department] || []) : [];
+    const currentDept = row?.department?.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
 
+    let list = employeeOptionList.map((e) => e.label);
     if (query) {
-      const allEmps = new Set();
-      Object.values(departmentEmployeesData).forEach(list => list.forEach(name => allEmps.add(name)));
-      return Array.from(allEmps).filter(emp => emp.toLowerCase().includes(query));
+      list = employeeOptionList
+        .filter(
+          (item) =>
+            item.label.toLowerCase().includes(query) ||
+            item.name.toLowerCase().includes(query) ||
+            item.code.toLowerCase().includes(query) ||
+            (item.department && item.department.toLowerCase().includes(query))
+        )
+        .map((e) => e.label);
     }
 
-    if (deptEmployees.length > 0) {
-      return deptEmployees;
+    if (currentDept) {
+      const deptMatches = employeeOptionList
+        .filter((item) => item.department && item.department.toLowerCase() === currentDept)
+        .map((e) => e.label);
+      const others = list.filter((l) => !deptMatches.includes(l));
+      return [...deptMatches, ...others];
     }
 
-    const allEmps = new Set();
-    Object.values(departmentEmployeesData).forEach(list => list.forEach(name => allEmps.add(name)));
-    return Array.from(allEmps);
+    return list;
   };
 
   const handleToggleCFTDropdown = (rowIndex, e, initialTab = 'topics') => {
@@ -1816,7 +1752,30 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
           </div>
 
           <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[260px]">
-            {availableCFTTopics.map((topObj) => {
+            {cftLoading ? (
+              <div className="py-6 px-3 text-center">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto text-blue-600 mb-2" />
+                <p className="text-xs text-slate-500">Loading CFT records...</p>
+              </div>
+            ) : cftError ? (
+              <div className="py-6 px-3 text-center">
+                <p className="text-xs text-rose-600 font-semibold mb-2">{cftError}</p>
+                <button
+                  type="button"
+                  onClick={loadCFTTopics}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : availableCFTTopics.length === 0 ? (
+              <div className="py-6 px-3 text-center">
+                <Layers className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-700">No CFT records available</p>
+                <p className="text-[11px] text-slate-400 mt-1">Create a CFT first.</p>
+              </div>
+            ) : (
+              availableCFTTopics.map((topObj) => {
               const isSelectedTopic = rows[openCFTDropdown.rowIndex]?.cftTopicId === topObj.id ||
                 rows[openCFTDropdown.rowIndex]?.cftTopic === topObj.name;
               const isExpanded = expandedTopicId === topObj.id;
@@ -1865,7 +1824,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>,
         document.body
@@ -1928,7 +1887,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
               getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empName, i) => {
                 const isSelected = rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
                 const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
-                  (departmentEmployeesData[rows[openStaffDropdown.rowIndex].department] || []).includes(empName);
+                  rows[openStaffDropdown.rowIndex]?.department && employeeOptionList.some(e => e.label === empName && e.department?.toLowerCase() === rows[openStaffDropdown.rowIndex].department.toLowerCase());
 
                 return (
                   <button

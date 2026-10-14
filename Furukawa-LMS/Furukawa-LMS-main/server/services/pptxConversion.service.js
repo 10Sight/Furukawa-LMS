@@ -72,15 +72,19 @@ const readPngSize = (filePath) => {
     }
 };
 
-async function convertPptxToSlides(recordId, absolutePptxPath) {
-    const tmpDir = path.join(CONVERT_TMP_ROOT, `${recordId}-${Date.now()}`);
-    ensureDir(tmpDir);
+const findPdf = (dir) => fs.readdirSync(dir).find((f) => f.toLowerCase().endsWith(".pdf"));
+
+// pptx -> pdf. Tries the high-fidelity command first (isolated profile +
+// lossless images); some LibreOffice builds/versions reject one of those
+// options, so on failure it retries once with the plain command that has
+// always worked, and reports both errors if that fails too.
+async function convertToPdf(tmpDir, absolutePptxPath) {
+    // Each conversion gets its own LibreOffice profile: concurrent soffice
+    // processes sharing the default profile lock each other and can fail or hang.
+    const profileUrl = pathToFileURL(path.join(tmpDir, "lo-profile")).href;
+    let primaryError;
 
     try {
-        // Each conversion gets its own LibreOffice profile: concurrent soffice
-        // processes sharing the default profile lock each other and can fail or hang.
-        const profileUrl = pathToFileURL(path.join(tmpDir, "lo-profile")).href;
-
         await runCommand(SOFFICE_BIN, [
             `-env:UserInstallation=${profileUrl}`,
             "--headless", "--norestore",
@@ -88,9 +92,39 @@ async function convertPptxToSlides(recordId, absolutePptxPath) {
             "--outdir", tmpDir,
             absolutePptxPath
         ]);
+        const pdfFile = findPdf(tmpDir);
+        if (pdfFile) return pdfFile;
+        primaryError = new Error("LibreOffice did not produce a PDF from this file");
+    } catch (error) {
+        primaryError = error;
+    }
 
-        const pdfFile = fs.readdirSync(tmpDir).find((f) => f.toLowerCase().endsWith(".pdf"));
-        if (!pdfFile) throw new Error("LibreOffice did not produce a PDF from this file");
+    logger.warn(`[monthlyReportConversion] High-fidelity PDF export failed, retrying with basic export: ${primaryError.message}`);
+
+    try {
+        await runCommand(SOFFICE_BIN, [
+            "--headless", "--norestore",
+            "--convert-to", "pdf",
+            "--outdir", tmpDir,
+            absolutePptxPath
+        ]);
+    } catch (fallbackError) {
+        throw new Error(`PDF export failed. High-fidelity: ${primaryError.message} | Basic: ${fallbackError.message}`);
+    }
+
+    const pdfFile = findPdf(tmpDir);
+    if (!pdfFile) {
+        throw new Error(`LibreOffice did not produce a PDF from this file (high-fidelity attempt: ${primaryError.message})`);
+    }
+    return pdfFile;
+}
+
+async function convertPptxToSlides(recordId, absolutePptxPath) {
+    const tmpDir = path.join(CONVERT_TMP_ROOT, `${recordId}-${Date.now()}`);
+    ensureDir(tmpDir);
+
+    try {
+        const pdfFile = await convertToPdf(tmpDir, absolutePptxPath);
 
         await runCommand(PDFTOPPM_BIN, [
             "-png", "-r", SLIDE_RENDER_DPI,

@@ -1095,7 +1095,7 @@ export default function ProcessAudit({ showToast, onFormOpenChange }) {
     try {
       // sessionStorage persists within the tab session (survives page navigation)
       // but clears on a real browser reload – exactly the desired behavior.
-      return sessionStorage.getItem('process_audit_selected_unit') || null;
+      return sessionStorage.getItem('process_audit_selected_unit') || 'Bawal';
     } catch {
       return null;
     }

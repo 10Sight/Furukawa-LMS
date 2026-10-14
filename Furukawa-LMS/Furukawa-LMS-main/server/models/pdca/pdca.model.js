@@ -279,16 +279,61 @@ export class PDCAModel {
         const recordId = data.id || data.recordId || `PDCA-${Date.now()}`;
         const topic = data.topic;
         const description = data.description || '';
-        const plant = data.plant || 'Gujrat';
+        const plant = data.plant || 'Bawal';
         const scope = data.scope || 'Company';
-        const department = data.department || '';
+        let department = data.department || '';
         const section = data.section || '';
         const sectionId = data.sectionId || '';
         const date = data.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         const time = data.time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const createdByObj = typeof data.createdBy === 'object' ? data.createdBy : null;
+        let createdByObj = typeof data.createdBy === 'object' ? { ...data.createdBy } : null;
+        let assignedMembersObj = Array.isArray(data.assignedMembers) ? [...data.assignedMembers] : [];
+
+        // For CFT records, enforce that the department is authoritatively derived from the selected Member's database record,
+        // and NEVER from any assigned employee's department.
+        if (scope === 'CFT') {
+            const employees = await PDCAModel.getEmployees();
+            const memberKey = createdByObj?.id || createdByObj?.code || createdByObj?.empId || data.memberId || data.selectedMemberCode;
+            const memberName = createdByObj?.name;
+            const matchedMember = (Array.isArray(employees) ? employees : []).find(e =>
+                (memberKey && (String(e.id) === String(memberKey) || String(e.code).toUpperCase() === String(memberKey).toUpperCase())) ||
+                (memberName && String(e.name).trim().toUpperCase() === String(memberName).trim().toUpperCase())
+            );
+
+            if (matchedMember) {
+                const memberDept = matchedMember.department ? String(matchedMember.department).trim() : 'Department not assigned';
+                department = memberDept || 'Department not assigned';
+                if (createdByObj) {
+                    createdByObj.id = matchedMember.id || createdByObj.id;
+                    createdByObj.code = matchedMember.code || createdByObj.code;
+                    createdByObj.name = matchedMember.name || createdByObj.name;
+                    createdByObj.department = department;
+                    createdByObj.email = matchedMember.email || createdByObj.email || '';
+                }
+            } else if (!department || department === 'CFT') {
+                department = createdByObj?.department || 'Department not assigned';
+            }
+
+            // Also preserve each assigned employee's own department independently from the database
+            if (Array.isArray(assignedMembersObj) && assignedMembersObj.length > 0) {
+                assignedMembersObj = assignedMembersObj.map(emp => {
+                    const empKey = emp.id || emp.code || emp.empId;
+                    const empName = emp.name;
+                    const matchedEmp = (Array.isArray(employees) ? employees : []).find(e =>
+                        (empKey && (String(e.id) === String(empKey) || String(e.code).toUpperCase() === String(empKey).toUpperCase())) ||
+                        (empName && String(e.name).trim().toUpperCase() === String(empName).trim().toUpperCase())
+                    );
+                    return {
+                        id: matchedEmp?.id || emp.id,
+                        name: matchedEmp?.name || emp.name,
+                        code: matchedEmp?.code || emp.code,
+                        department: matchedEmp?.department || emp.department || 'Department not assigned'
+                    };
+                });
+            }
+        }
+
         const createdByStr = createdByObj ? JSON.stringify(createdByObj) : (data.createdBy || null);
-        const assignedMembersObj = Array.isArray(data.assignedMembers) ? data.assignedMembers : [];
         const assignedMembersStr = JSON.stringify(assignedMembersObj);
         const lpaSourceStr = typeof data.lpaSource === 'object' ? JSON.stringify(data.lpaSource) : (data.lpaSource || null);
         const isSelf = data.isSelf ? 1 : 0;
@@ -614,12 +659,63 @@ export class PDCAModel {
         return { headerInfo, rows };
     }
 
-    // --- CFT Management ---
+    // --- Employee & CFT Management ---
+    static async getEmployees() {
+        try {
+            const dbActive = await isDbConnected();
+            if (dbActive) {
+                const [userRows] = await executeQuery(`
+                    SELECT TOP 200 u.id, u.fullName, u.userName, u.empId, u.email,
+                           COALESCE(d.name, u.department) as department
+                    FROM users u
+                    LEFT JOIN departments d ON u.departmentId = d.id
+                    WHERE u.isDeleted = 0 OR u.isDeleted IS NULL
+                    ORDER BY u.fullName ASC
+                `);
+                if (userRows && userRows.length > 0) {
+                    return userRows.map(u => ({
+                        id: u.id,
+                        name: u.fullName || u.userName,
+                        code: u.empId || u.userName || String(u.id),
+                        department: u.department || '',
+                        email: u.email || ''
+                    }));
+                }
+            }
+        } catch (e) {
+            logger.warn("Querying employees failed, using fallback:", e.message);
+        }
+
+        const store = readFallbackStore();
+        if (Array.isArray(store.employees) && store.employees.length > 0) {
+            return store.employees;
+        }
+
+        const defaultEmployees = [
+            { id: "EMP-001", name: "YOGESH KUMAR", code: "AS081213", department: "PE", email: "aso81213@fme-minda.co.in" },
+            { id: "EMP-002", name: "VIKRAM SINGH", code: "GJ034112", department: "PE", email: "v.singh@fme-minda.co.in" },
+            { id: "EMP-003", name: "DEEPAK MEHTA", code: "GJ045819", department: "Quality", email: "d.mehta@fme-minda.co.in" },
+            { id: "EMP-004", name: "RAHUL SHARMA", code: "BW041920", department: "Assembly", email: "r.sharma@fme-minda.co.in" },
+            { id: "EMP-005", name: "RAJESH KUMAR", code: "BW081290", department: "Maintenance", email: "r.kumar@fme-minda.co.in" },
+            { id: "EMP-006", name: "POOJA NAIR", code: "BW039182", department: "Maintenance", email: "p.nair@fme-minda.co.in" },
+            { id: "EMP-007", name: "AMIT PATEL", code: "GJ092311", department: "Safety", email: "amit.patel@fme-minda.co.in" },
+            { id: "EMP-008", name: "PRIYA NAIR", code: "GJ018442", department: "HR", email: "priya.nair@fme-minda.co.in" },
+            { id: "EMP-009", name: "MANISH JOSHI", code: "BW092301", department: "Maintenance", email: "m.joshi@fme-minda.co.in" },
+            { id: "EMP-010", name: "JOY DASTIDAR", code: "ST080014", department: "D&D", email: "st080014@furukawaminda.com" },
+            { id: "EMP-011", name: "SANJEEV VERMA", code: "BW019283", department: "Store", email: "s.verma@fme-minda.co.in" },
+            { id: "EMP-012", name: "ANITA DESHMUKH", code: "GJ058291", department: "IT", email: "a.deshmukh@fme-minda.co.in" }
+        ];
+        store.employees = defaultEmployees;
+        writeFallbackStore(store);
+        return defaultEmployees;
+    }
+
     static async createCft(data, actor = 'System') {
         const topicId = data.id || data.topicId || `CFT-${Date.now()}`;
         const name = data.name || data.topic;
         const description = data.description || '';
-        const plant = data.plant || 'Gujrat';
+        const plant = data.plant || 'Bawal';
+        const department = data.department || data.memberDepartment || data.createdBy?.department || '';
         const assignedEmployees = data.assignedEmployees || data.assignedMembers || [];
 
         return await PDCAModel.create({
@@ -628,7 +724,7 @@ export class PDCAModel {
             description,
             plant,
             scope: 'CFT',
-            department: 'CFT',
+            department,
             createdBy: data.createdBy,
             assignedMembers: assignedEmployees,
             isSelf: false

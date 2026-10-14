@@ -372,30 +372,11 @@ export const getPDCAMetadata = asyncHandler(async (req, res) => {
         }
     } catch {}
 
-    // Fetch active employees/users for staff dropdown
-    let employees = [];
-    try {
-        const [userRows] = await executeQuery(`
-            SELECT TOP 200 u.id, u.fullName, u.userName, u.empId, u.email,
-                   COALESCE(d.name, u.department) as department
-            FROM users u
-            LEFT JOIN departments d ON u.departmentId = d.id
-            WHERE u.isDeleted = 0 OR u.isDeleted IS NULL
-            ORDER BY u.fullName ASC
-        `);
-        if (userRows && userRows.length > 0) {
-            employees = userRows.map(u => ({
-                id: u.id,
-                name: u.fullName || u.userName,
-                code: u.empId || u.userName || String(u.id),
-                department: u.department || '',
-                email: u.email || ''
-            }));
-        }
-    } catch {}
+    // Fetch active employees/users for staff & CFT dropdown
+    let employees = await PDCAModel.getEmployees();
 
     const metadata = {
-        plants: ['Gujrat', 'Bawal'],
+        plants: ['Bawal', 'Gujrat'],
         scopes: ['Company', 'Department', 'Self PDCA', 'CFT'],
         shifts: ['Day', 'Night', 'General', 'A', 'B', 'C'],
         statuses: ['Open', 'Under Observation', 'Delayed', 'Closed'],

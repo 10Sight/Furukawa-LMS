@@ -87,7 +87,7 @@ test('PDCA Unit selection persistence across session navigation and isolation', 
   };
 
   // 1. Initial state (first visit): no unit stored -> defaults to 'Unit'
-  assert.equal(getStoredUnit('user-1'), 'Unit');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
 
   // 2. User selects Bawal -> saved and restored
   saveStoredUnit('Bawal', 'user-1');
@@ -99,21 +99,21 @@ test('PDCA Unit selection persistence across session navigation and isolation', 
 
   // 4. Invalid unit input is rejected safely
   saveStoredUnit('InvalidPlant', 'user-1');
-  assert.equal(getStoredUnit('user-1'), 'Unit');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
 
   // 5. Restoring with corrupted/non-matching JSON falls back safely
   sessionMap.set('pdca_selected_unit', '{"malformed');
-  assert.equal(getStoredUnit('user-1'), 'Unit');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
 
   // 6. Multi-user isolation: user-2 must not inherit user-1's unit selection
   saveStoredUnit('Bawal', 'user-1');
-  assert.equal(getStoredUnit('user-2'), 'Unit');
+  assert.equal(getStoredUnit('user-2'), 'Bawal');
   assert.equal(sessionMap.has('pdca_selected_unit'), false); // Cleared on mismatch
 
   // 7. Clear stored unit (e.g. on logout)
   saveStoredUnit('Bawal', 'user-1');
   assert.equal(getStoredUnit('user-1'), 'Bawal');
   clearStoredUnit();
-  assert.equal(getStoredUnit('user-1'), 'Unit');
+  assert.equal(getStoredUnit('user-1'), 'Bawal');
 });
 

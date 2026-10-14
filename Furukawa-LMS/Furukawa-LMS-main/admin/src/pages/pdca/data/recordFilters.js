@@ -34,11 +34,11 @@ export function resolveCurrentUserId(user) {
   return '';
 }
 
-export function getStoredUnit(currentUserId) {
+export function getStoredUnit(currentUserId, defaultFallback = 'Bawal') {
   try {
-    if (typeof sessionStorage === 'undefined') return 'Unit';
+    if (typeof sessionStorage === 'undefined') return defaultFallback;
     const raw = sessionStorage.getItem(PDCA_SELECTED_UNIT_KEY);
-    if (!raw) return 'Unit';
+    if (!raw) return defaultFallback;
 
     let unit = raw;
     let storedUserId = null;
@@ -57,15 +57,15 @@ export function getStoredUnit(currentUserId) {
     const resolvedUserId = currentUserId || resolveCurrentUserId();
     if (resolvedUserId && storedUserId && String(resolvedUserId) !== String(storedUserId)) {
       sessionStorage.removeItem(PDCA_SELECTED_UNIT_KEY);
-      return 'Unit';
+      return defaultFallback;
     }
 
     if (PDCA_PLANTS.includes(unit)) {
       return unit;
     }
-    return 'Unit';
+    return defaultFallback;
   } catch {
-    return 'Unit';
+    return defaultFallback;
   }
 }
 

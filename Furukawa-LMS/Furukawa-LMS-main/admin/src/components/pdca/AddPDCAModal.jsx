@@ -113,7 +113,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         throw new Error('Please select a Department from the available options.');
       }
       const scope = editData?.scope || defaultScope;
-      const targetPlant = (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) ? 'Gujrat' : defaultPlant;
+      const targetPlant = (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) ? 'Bawal' : defaultPlant;
 
       const now = new Date();
       const dateStr = userContext.lpaSource?.date

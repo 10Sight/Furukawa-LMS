@@ -76,7 +76,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     try {
       // sessionStorage persists within the tab session (survives navigation)
       // but clears on a real browser reload – exactly the desired behavior.
-      return sessionStorage.getItem('ptm_selected_unit') || null;
+      return sessionStorage.getItem('ptm_selected_unit') || 'Bawal';
     } catch {
       return null;
     }
@@ -252,7 +252,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   const handleOpenForm = (item) => {
     if (!selectedUnit) return;
-    const form = item.form || { headerInfo: loadUnitHeaderInfo(selectedUnit), ptmRows: loadUnitRows(selectedUnit) };
+    const form = item.form || { headerInfo: loadUnitHeaderInfo(selectedUnit || 'Bawal'), ptmRows: loadUnitRows(selectedUnit || 'Bawal') };
     setHeaderInfo(form.headerInfo);
     setPtmRows(form.ptmRows);
     formStateRef.current = form;
@@ -550,7 +550,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                   className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-2xl border border-[#E2E8F0] shadow-[0_1px_4px_rgba(0,0,0,0.03)] text-xs font-bold text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
                   title="Switch Plant Unit"
                 >
-                  <span>{selectedUnit || 'Unit'}</span>
+                  <span>{selectedUnit || 'Bawal'}</span>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                 </button>
 

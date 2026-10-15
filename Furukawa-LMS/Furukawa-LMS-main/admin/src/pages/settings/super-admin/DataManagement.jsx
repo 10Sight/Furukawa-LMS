@@ -30,11 +30,13 @@ import {
   TrendingUp
 } from "lucide-react";
 import { toast } from "sonner";
+import axiosInstance from "../../../services/requests/axiosInstance.js";
 
 const DataManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   // API Hooks
   const [restoreBackup, { isLoading: restoring }] = useRestoreFromBackupMutation();
@@ -78,6 +80,40 @@ const DataManagement = () => {
     }
   };
 
+  // Download backup .bak file to the user's machine
+  const handleDownloadBackup = async (backupId) => {
+    setDownloadingId(backupId);
+    const toastId = toast.loading(`Downloading ${backupId}...`);
+    try {
+      const response = await axiosInstance.get(
+        `/api/data-management/backup/${encodeURIComponent(backupId)}/download`,
+        { responseType: 'blob' }
+      );
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', backupId);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Backup downloaded successfully', { id: toastId });
+    } catch (error) {
+      let errorMsg = 'Failed to download backup';
+      if (error.response?.data instanceof Blob) {
+        try {
+          const json = JSON.parse(await error.response.data.text());
+          if (json?.message) errorMsg = json.message;
+        } catch {
+          // Ignore blob parse errors
+        }
+      }
+      toast.error(errorMsg, { id: toastId });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   // Delete backup
   const handleDeleteBackup = async (backupId) => {
     try {
@@ -111,6 +147,8 @@ const DataManagement = () => {
         return <Archive className="h-4 w-4 text-blue-600" />;
       case 'RESTORE_BACKUP':
         return <RefreshCcw className="h-4 w-4 text-green-600" />;
+      case 'DOWNLOAD_BACKUP':
+        return <Download className="h-4 w-4 text-green-600" />;
       case 'EXPORT_DATA':
         return <Download className="h-4 w-4 text-purple-600" />;
       case 'IMPORT_DATA':
@@ -293,6 +331,18 @@ const DataManagement = () => {
                               className="text-indigo-600 hover:text-indigo-900"
                             >
                               Restore
+                            </button>
+                          )}
+                          {backup.fileExists && (
+                            <button
+                              onClick={() => handleDownloadBackup(backup.backup?.id || backup.id)}
+                              disabled={downloadingId === (backup.backup?.id || backup.id)}
+                              className="inline-flex items-center text-green-600 hover:text-green-900 disabled:opacity-50"
+                            >
+                              {downloadingId === (backup.backup?.id || backup.id)
+                                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                : <Download className="h-4 w-4 mr-1" />}
+                              Download
                             </button>
                           )}
                           <button

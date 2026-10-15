@@ -203,6 +203,28 @@ export const restoreFromBackup = asyncHandler(async (req, res) => {
     }
 });
 
+// Download backup - streams the .bak file to the client so it can be kept off-server
+export const downloadBackup = asyncHandler(async (req, res) => {
+    const { backupId } = req.params;
+    const { filename, filePath } = resolveBackupFile(backupId);
+
+    try {
+        await fs.access(filePath);
+    } catch {
+        throw new ApiError('Backup file not found', 404);
+    }
+
+    await Audit.create({
+        user: req.user.id,
+        action: 'DOWNLOAD_BACKUP',
+        details: { backupId: filename },
+        ipAddress: req.ip || '',
+        userAgent: req.get('User-Agent') || ''
+    });
+
+    res.download(filePath, filename);
+});
+
 // Delete backup
 export const deleteBackup = asyncHandler(async (req, res) => {
     const { backupId } = req.params;
@@ -413,11 +435,11 @@ export const getDataOperationHistory = asyncHandler(async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const [rows] = await pool.query(
-        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.[user] = u.id WHERE action IN ('RESTORE_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+        "SELECT a.*, u.fullName FROM audits a LEFT JOIN users u ON a.[user] = u.id WHERE action IN ('RESTORE_BACKUP','DOWNLOAD_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA') ORDER BY createdAt DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
         [Number(offset), Number(limit)]
     );
 
-    const [c] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action IN ('RESTORE_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA')");
+    const [c] = await pool.query("SELECT COUNT(*) as total FROM audits WHERE action IN ('RESTORE_BACKUP','DOWNLOAD_BACKUP','DELETE_BACKUP','EXPORT_DATA','IMPORT_DATA')");
 
     res.json(new ApiResponse(200, { operations: rows, total: c[0].total }, 'History fetched'));
 });

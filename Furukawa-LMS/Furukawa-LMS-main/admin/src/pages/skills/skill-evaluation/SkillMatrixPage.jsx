@@ -19,10 +19,17 @@ import { useGetActiveConfigQuery } from "@/services/api/CourseLevelConfigApi.js"
 import { useGetSkillMatrixListQuery, useGetSkillMatrixQuery, useSaveSkillMatrixMutation, useDeleteEvaluationSheetMutation, useDeleteSkillMatrixMutation } from "@/services/api/SkillMatrixApi.js";
 import { canActOnSkillMatrix, SKILL_MATRIX_SIGNATURE_ROLES } from "../../../../../shared/skillMatrixRouting.js";
 import { toast } from "sonner";
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 import { Input } from "@/components/forms/primitives/input.jsx";
-import { exportToExcel } from "@/utils/exportHelper.js";
+import {
+    getSubSectionDisplayLevel,
+    getMinSkillLabel,
+    getRowPercent,
+    getMonthlySchedulePercents,
+    sumField,
+    percentOf,
+    SCHEDULE_MONTHS,
+    exportSkillMatrixToExcel,
+} from "./skillMatrixExport.js";
 import {
     Select,
     SelectContent,
@@ -69,12 +76,6 @@ const VALID_SKILL_MATRIX_TABS = [
     "skillMatrix",
     "observance",
 ];
-
-const getLevelWeight = (levelStr) => {
-    if (!levelStr) return 0;
-    const match = levelStr.match(/\d+/);
-    return match ? parseInt(match[0]) : 0;
-};
 
 const ConditionalTabs = ({ isEmbedded, activeTab, setActiveTab, children }) => {
     if (isEmbedded) {
@@ -1239,23 +1240,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
 
     const columnStats = React.useMemo(() => {
         return groupedSubSections.map(group => {
-            const actual = filteredAndSortedEntries.filter(entry => {
-                const subSectionStations = group.indices.map(idx => entry.stations[idx]).filter(Boolean);
-                const maxWeight = subSectionStations.reduce((max, s) => {
-                    const w = getLevelWeight(s.curr);
-                    return w > max ? w : max;
-                }, -1);
-
-                const userAssignments = entry.assignments || [];
-                const isAssigned = userAssignments?.some(ua =>
-                    String(ua.subSectionId) === String(group.id) ||
-                    subSectionStations.some(s => String(s._id) === String(ua.machineId))
-                );
-
-                const hasSkill = subSectionStations.some(s => s.curr && s.curr !== '-');
-                const displayLevel = (isAssigned || hasSkill) ? (subSectionStations.find(s => getLevelWeight(s.curr) === maxWeight)?.curr || 'L-0') : '-';
-                return displayLevel !== '-';
-            }).length;
+            const actual = filteredAndSortedEntries.filter(entry => getSubSectionDisplayLevel(entry, group) !== '-').length;
             return { actual };
         });
     }, [filteredAndSortedEntries, groupedSubSections]);
@@ -1349,6 +1334,37 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
         } finally {
             toast.dismiss(loadingToast);
             setIsGeneratingImage(false);
+        }
+    };
+
+    // Builds the .xlsx from the live table state, so unsaved edits are included
+    // and every filtered row is exported (not just the current page).
+    const handleExportExcel = async () => {
+        if (!groupedSubSections.length) {
+            toast.error("No stations to export for this selection.");
+            return;
+        }
+        const toastId = toast.loading("Generating Skill Matrix Excel...");
+        try {
+            await exportSkillMatrixToExcel({
+                entries: filteredAndSortedEntries,
+                groups: groupedSubSections,
+                columnActuals: columnStats.map(s => s.actual),
+                config,
+                levels: activeConfig?.levels || [],
+                header: {
+                    department: selectedDeptName,
+                    section: sectionsData?.data?.find(s => String(s.id || s._id) === String(selectedSection))?.name || "All",
+                    line: selectedLine ? selectedLineName : "All",
+                    subSection: subSectionsData?.data?.find(ss => String(ss.id || ss._id) === String(selectedSubSection))?.name || "All",
+                    month: selectedMonth,
+                },
+                revisionInfo,
+            });
+            toast.success("Skill Matrix exported", { id: toastId });
+        } catch (error) {
+            console.error("Excel export error:", error);
+            toast.error("Failed to export Skill Matrix", { id: toastId });
         }
     };
 
@@ -1776,14 +1792,8 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                     <Button
                                         variant="outline"
                                         className="border-green-600 text-green-600 hover:bg-green-50"
-                                        onClick={() => exportToExcel("Skill Matrix Sheet", {
-                                            departmentId: selectedDepartment,
-                                            sectionId: selectedSection,
-                                            lineId: selectedLine,
-                                            subSectionId: selectedSubSection,
-                                            stationId: selectedStation,
-                                            month: selectedMonth
-                                        })}
+                                        onClick={handleExportExcel}
+                                        disabled={!selectedDepartment || !selectedMonth || isMachinesLoading}
                                     >
                                         <IconDownload className="mr-2 h-4 w-4" />
                                         Export
@@ -2053,20 +2063,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             <tr>
                                                 <th colSpan={5} className="border border-black p-1 text-right">Min.Skill Required</th>
 
-                                                {groupedSubSections.map((group, i) => {
-                                                    // Directly use the sub-section's required level
-                                                    const rawVal = group.minimumRequiredLevel || config.minSkills?.[i] || "L2";
-                                                    // Clean value: remove leading/trailing dots or commas
-                                                    const cleanedVal = String(rawVal).replace(/^[.,\s]+|[.,\s]+$/g, '');
-
-                                                    return (
-                                                        <th key={i} className="border border-black p-0 h-4 bg-gray-50/50">
-                                                            <div className="text-center text-[11px] font-bold">
-                                                                {cleanedVal}
-                                                            </div>
-                                                        </th>
-                                                    )
-                                                })}
+                                                {groupedSubSections.map((group, i) => (
+                                                    <th key={i} className="border border-black p-0 h-4 bg-gray-50/50">
+                                                        <div className="text-center text-[11px] font-bold">
+                                                            {getMinSkillLabel(group, i, config)}
+                                                        </div>
+                                                    </th>
+                                                ))}
                                             </tr>
 
                                             {/* Operation Sharing Row */}
@@ -2173,31 +2176,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                             {/* Sub-Sections Skills (Aggregated) */}
 
                                                             {groupedSubSections.map((group, i) => {
-                                                                const subSectionStations = group.indices.map(idx => entry.stations[idx]).filter(Boolean);
-
-                                                                let maxStation = null;
-                                                                let maxWeight = -1;
-
-                                                                subSectionStations.forEach(s => {
-                                                                    const w = getLevelWeight(s.curr);
-                                                                    if (w > maxWeight) {
-                                                                        maxWeight = w;
-                                                                        maxStation = s;
-                                                                    }
-                                                                });
-
-                                                                if (!maxStation && subSectionStations.length > 0) {
-                                                                    maxStation = subSectionStations[0];
-                                                                }
-
-                                                                const userAssignments = entry.assignments || [];
-                                                                const isAssigned = userAssignments?.some(ua =>
-                                                                    String(ua.subSectionId) === String(group.id) ||
-                                                                    subSectionStations.some(s => String(s._id) === String(ua.machineId))
-                                                                );
-
-                                                                const hasSkill = subSectionStations.some(s => s.curr && s.curr !== '-');
-                                                                const displayLevel = (isAssigned || hasSkill) ? (maxStation?.curr || 'L-0') : '-';
+                                                                const displayLevel = getSubSectionDisplayLevel(entry, group);
 
                                                                 return (
                                                                     <td key={i} className="border border-black p-0 align-middle">
@@ -2237,7 +2216,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                                 </select>
                                                             </td>
                                                             <td className="border border-black font-bold text-blue-600 p-0">
-                                                                {((parseFloat(entry.actual) / (parseFloat(entry.plan) || 1)) * 100).toFixed(0)}%
+                                                                {getRowPercent(entry)}%
                                                             </td>
                                                         </tr>
                                                     );
@@ -2266,18 +2245,14 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                     </td>
                                                 ))}
                                                 <td className="border border-black font-bold text-center bg-white">
-                                                    {filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0)}
+                                                    {sumField(filteredAndSortedEntries, 'plan')}
                                                 </td>
                                                 <td className="border border-black font-bold text-center bg-white">
-                                                    {filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0)}
+                                                    {sumField(filteredAndSortedEntries, 'actual')}
                                                 </td>
                                                 <td className="border border-black bg-white"></td>
                                                 <td className="border border-black font-bold text-blue-600 text-center bg-white">
-                                                    {(() => {
-                                                        const totalPlan = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0);
-                                                        const totalActual = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0);
-                                                        return totalPlan > 0 ? ((totalActual / totalPlan) * 100).toFixed(0) : 0;
-                                                    })()}%
+                                                    {percentOf(sumField(filteredAndSortedEntries, 'actual'), sumField(filteredAndSortedEntries, 'plan'))}%
                                                 </td>
                                             </tr>
                                             <tr>
@@ -2308,7 +2283,7 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                             <thead>
                                                 <tr className="bg-gray-50">
                                                     <th className="border border-black p-1 w-24 text-right">Evaluation</th>
-                                                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(m => (
+                                                    {SCHEDULE_MONTHS.map(m => (
                                                         <th key={m} className="border border-black p-1">{m}</th>
                                                     ))}
                                                 </tr>
@@ -2333,28 +2308,13 @@ const SkillMatrix = ({ isEmbedded = false, onOperatorClick }) => {
                                                 </tr>
                                                 <tr>
                                                     <td className="border border-black p-1 text-right font-bold bg-gray-50 uppercase text-[9px]">% (Skilled manpower)</td>
-                                                    {Array(12).fill(0).map((_, i) => {
-                                                        // Auto-calculate for current selected month
-                                                        const currentMonthIdx = selectedMonth ? parseInt(selectedMonth.split('-')[1]) - 1 : -1;
-                                                        let planVal, actualVal;
-
-                                                        if (i === currentMonthIdx) {
-                                                            planVal = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.plan) || 0), 0);
-                                                            actualVal = filteredAndSortedEntries.reduce((acc, curr) => acc + (parseFloat(curr.actual) || 0), 0);
-                                                        } else {
-                                                            planVal = parseFloat(config.footerRows?.planMonths?.[i]) || 0;
-                                                            actualVal = parseFloat(config.footerRows?.actualMonths?.[i]) || 0;
-                                                        }
-
-                                                        const percentVal = planVal > 0 ? ((actualVal / planVal) * 100).toFixed(0) : 0;
-                                                        return (
-                                                            <td key={i} className="border border-black p-0 bg-gray-50/30">
-                                                                <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-blue-600 min-h-[24px]">
-                                                                    {percentVal}%
-                                                                </div>
-                                                            </td>
-                                                        );
-                                                    })}
+                                                    {getMonthlySchedulePercents(config, selectedMonth, filteredAndSortedEntries).map((percentVal, i) => (
+                                                        <td key={i} className="border border-black p-0 bg-gray-50/30">
+                                                            <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-blue-600 min-h-[24px]">
+                                                                {percentVal}%
+                                                            </div>
+                                                        </td>
+                                                    ))}
                                                 </tr>
                                             </tbody>
                                         </table>

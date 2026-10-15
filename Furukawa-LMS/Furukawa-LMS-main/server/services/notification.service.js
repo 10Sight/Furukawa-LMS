@@ -382,9 +382,6 @@ class NotificationService {
             case "10-Cycle Check Sheet":
                 await this._fillTenCycleSheet(worksheet, formData);
                 break;
-            case "Skill Matrix Sheet":
-                await this._fillSkillMatrixSheet(worksheet, formData);
-                break;
             case "Daily Production Report Sheet":
                 await this._fillDPRSheet(worksheet, formData);
                 break;
@@ -1831,52 +1828,6 @@ class NotificationService {
         const footerCell = worksheet.getCell(`A${lastRowNumber}`);
         footerCell.value = 'FRM-WH-QA-185 | REV: 01 | REV DATE: 05.11.2023 | PAGE: 1 OF 1';
         footerCell.alignment = { horizontal: 'center' };
-    }
-
-    static async _fillSkillMatrixSheet(worksheet, formData) {
-        // --- Header ---
-        worksheet.mergeCells('A1:Z1');
-        const companyCell = worksheet.getCell('A1');
-        companyCell.value = 'FURUKAWA MINDA ELECTRIC PVT. LTD.';
-        companyCell.font = { bold: true, size: 10 };
-        companyCell.alignment = { horizontal: 'right' };
-
-        worksheet.mergeCells('A2:Z2');
-        const titleCell = worksheet.getCell('A2');
-        titleCell.value = 'SKILL MATRIX SHEET - ' + (formData.month || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }));
-        titleCell.font = { bold: true, size: 20 };
-        titleCell.alignment = { horizontal: 'center' };
-
-        // --- Matrix Table ---
-        worksheet.addRow([]);
-        const skills = formData.skills || []; // List of skill names
-        const headerRow = worksheet.addRow(['S.No', 'Emp Name', 'Emp Code', ...skills, 'Total Score', 'Max Possible', '%']);
-        headerRow.eachCell(cell => this._applyHeaderStyle(cell));
-
-        worksheet.columns = [
-            { key: 'sn', width: 5 },
-            { key: 'name', width: 30 },
-            { key: 'code', width: 15 },
-            ...skills.map(s => ({ width: 10 })),
-            { key: 'total', width: 12 },
-            { key: 'max', width: 12 },
-            { key: 'percent', width: 10 }
-        ];
-
-        const entries = formData.entries || [];
-        entries.forEach((emp, index) => {
-            const skillValues = skills.map(s => {
-                const level = emp.matrixData ? emp.matrixData[s] : null;
-                return level ? 'L' + level : '-';
-            });
-            const row = worksheet.addRow([index + 1, emp.name, emp.employeeCode, ...skillValues, emp.totalScore || '', emp.maxScore || '', emp.percentage || '']);
-            row.eachCell(cell => this._applyBorderStyle(cell));
-        });
-
-        // --- Legend ---
-        worksheet.addRow([]);
-        const legendRow = worksheet.addRow(['L1: Partial Knowledge', 'L2: Basic Knowledge', 'L3: Advanced Knowledge', 'L4: Expert (Can Train)']);
-        legendRow.font = { italic: true };
     }
 
     static async _fillDPRSheet(worksheet, formData) {

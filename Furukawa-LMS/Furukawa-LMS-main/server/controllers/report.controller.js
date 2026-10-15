@@ -200,14 +200,12 @@ export const exportFormReport = asyncHandler(async (req, res) => {
             break;
 
         case "Skill Matrix Sheet":
-            const [smRows] = await executeQuery(`SELECT * FROM skill_matrices WHERE department = ? OR id = ?`, [departmentId, id]);
-            if (smRows.length > 0) {
-                formData = {
-                    ...smRows[0],
-                    entries: typeof smRows[0].entries === 'string' ? JSON.parse(smRows[0].entries || "[]") : (smRows[0].entries || [])
-                };
-            }
-            break;
+            // Exported client-side from the Skill Matrix page so the file reflects the live
+            // table (unsaved edits, derived rows, per-sub-section columns).
+            return res.status(400).json({
+                success: false,
+                message: "Skill Matrix Sheet is exported from the Skill Matrix page, not this endpoint"
+            });
 
         case "Daily Production Report Sheet":
             const [dprRows] = await executeQuery(`SELECT * FROM daily_production_reports WHERE id = ?`, [id]);

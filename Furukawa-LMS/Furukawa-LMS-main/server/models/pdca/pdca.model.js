@@ -31,6 +31,10 @@ export function createEmptyRow(customDefaults = {}) {
         responseDate: customDefaults.responseDate || '',
         department: customDefaults.department || '',
         staffEmployee: customDefaults.staffEmployee || '',
+        staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
+        staffName: customDefaults.staffName || '',
+        staffId: customDefaults.staffId || '',
+        employeeId: customDefaults.employeeId || customDefaults.staffId || '',
         assignedEmployee: customDefaults.assignedEmployee || '',
         cftTopic: customDefaults.cftTopic || '',
         cftTopicId: customDefaults.cftTopicId || '',
@@ -660,18 +664,26 @@ export class PDCAModel {
     }
 
     // --- Employee & CFT Management ---
-    static async getEmployees() {
+    static async getEmployees(searchQuery = '') {
+        const cleanQuery = typeof searchQuery === 'string' ? searchQuery.trim().toLowerCase() : '';
         try {
             const dbActive = await isDbConnected();
             if (dbActive) {
-                const [userRows] = await executeQuery(`
-                    SELECT TOP 200 u.id, u.fullName, u.userName, u.empId, u.email,
+                let sql = `
+                    SELECT u.id, u.fullName, u.userName, u.empId, u.email,
                            COALESCE(d.name, u.department) as department
                     FROM users u
                     LEFT JOIN departments d ON u.departmentId = d.id
-                    WHERE u.isDeleted = 0 OR u.isDeleted IS NULL
-                    ORDER BY u.fullName ASC
-                `);
+                    WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
+                `;
+                const params = [];
+                if (cleanQuery) {
+                    const pattern = `%${cleanQuery}%`;
+                    sql += ` AND (LOWER(u.fullName) LIKE ? OR LOWER(u.userName) LIKE ? OR LOWER(u.empId) LIKE ? OR LOWER(d.name) LIKE ?)`;
+                    params.push(pattern, pattern, pattern, pattern);
+                }
+                sql += ` ORDER BY u.fullName ASC`;
+                const [userRows] = await executeQuery(sql, params);
                 if (userRows && userRows.length > 0) {
                     return userRows.map(u => ({
                         id: u.id,
@@ -687,27 +699,37 @@ export class PDCAModel {
         }
 
         const store = readFallbackStore();
-        if (Array.isArray(store.employees) && store.employees.length > 0) {
-            return store.employees;
+        let list = Array.isArray(store.employees) && store.employees.length > 0 ? store.employees : null;
+
+        if (!list) {
+            const defaultEmployees = [
+                { id: "EMP-001", name: "YOGESH KUMAR", code: "AS081213", department: "PE", email: "aso81213@fme-minda.co.in" },
+                { id: "EMP-002", name: "VIKRAM SINGH", code: "GJ034112", department: "PE", email: "v.singh@fme-minda.co.in" },
+                { id: "EMP-003", name: "DEEPAK MEHTA", code: "GJ045819", department: "Quality", email: "d.mehta@fme-minda.co.in" },
+                { id: "EMP-004", name: "RAHUL SHARMA", code: "BW041920", department: "Assembly", email: "r.sharma@fme-minda.co.in" },
+                { id: "EMP-005", name: "RAJESH KUMAR", code: "BW081290", department: "Maintenance", email: "r.kumar@fme-minda.co.in" },
+                { id: "EMP-006", name: "POOJA NAIR", code: "BW039182", department: "Maintenance", email: "p.nair@fme-minda.co.in" },
+                { id: "EMP-007", name: "AMIT PATEL", code: "GJ092311", department: "Safety", email: "amit.patel@fme-minda.co.in" },
+                { id: "EMP-008", name: "PRIYA NAIR", code: "GJ018442", department: "HR", email: "priya.nair@fme-minda.co.in" },
+                { id: "EMP-009", name: "MANISH JOSHI", code: "BW092301", department: "Maintenance", email: "m.joshi@fme-minda.co.in" },
+                { id: "EMP-010", name: "JOY DASTIDAR", code: "ST080014", department: "D&D", email: "st080014@furukawaminda.com" },
+                { id: "EMP-011", name: "SANJEEV VERMA", code: "BW019283", department: "Store", email: "s.verma@fme-minda.co.in" },
+                { id: "EMP-012", name: "ANITA DESHMUKH", code: "GJ058291", department: "IT", email: "a.deshmukh@fme-minda.co.in" }
+            ];
+            store.employees = defaultEmployees;
+            writeFallbackStore(store);
+            list = defaultEmployees;
         }
 
-        const defaultEmployees = [
-            { id: "EMP-001", name: "YOGESH KUMAR", code: "AS081213", department: "PE", email: "aso81213@fme-minda.co.in" },
-            { id: "EMP-002", name: "VIKRAM SINGH", code: "GJ034112", department: "PE", email: "v.singh@fme-minda.co.in" },
-            { id: "EMP-003", name: "DEEPAK MEHTA", code: "GJ045819", department: "Quality", email: "d.mehta@fme-minda.co.in" },
-            { id: "EMP-004", name: "RAHUL SHARMA", code: "BW041920", department: "Assembly", email: "r.sharma@fme-minda.co.in" },
-            { id: "EMP-005", name: "RAJESH KUMAR", code: "BW081290", department: "Maintenance", email: "r.kumar@fme-minda.co.in" },
-            { id: "EMP-006", name: "POOJA NAIR", code: "BW039182", department: "Maintenance", email: "p.nair@fme-minda.co.in" },
-            { id: "EMP-007", name: "AMIT PATEL", code: "GJ092311", department: "Safety", email: "amit.patel@fme-minda.co.in" },
-            { id: "EMP-008", name: "PRIYA NAIR", code: "GJ018442", department: "HR", email: "priya.nair@fme-minda.co.in" },
-            { id: "EMP-009", name: "MANISH JOSHI", code: "BW092301", department: "Maintenance", email: "m.joshi@fme-minda.co.in" },
-            { id: "EMP-010", name: "JOY DASTIDAR", code: "ST080014", department: "D&D", email: "st080014@furukawaminda.com" },
-            { id: "EMP-011", name: "SANJEEV VERMA", code: "BW019283", department: "Store", email: "s.verma@fme-minda.co.in" },
-            { id: "EMP-012", name: "ANITA DESHMUKH", code: "GJ058291", department: "IT", email: "a.deshmukh@fme-minda.co.in" }
-        ];
-        store.employees = defaultEmployees;
-        writeFallbackStore(store);
-        return defaultEmployees;
+        if (cleanQuery) {
+            return list.filter(emp =>
+                (emp.name && emp.name.toLowerCase().includes(cleanQuery)) ||
+                (emp.code && emp.code.toLowerCase().includes(cleanQuery)) ||
+                (emp.department && emp.department.toLowerCase().includes(cleanQuery))
+            );
+        }
+
+        return list;
     }
 
     static async createCft(data, actor = 'System') {
@@ -869,6 +891,76 @@ export class PDCAModel {
 
         const store = readFallbackStore();
         return store.auditLogs.filter(a => a.pdcaRecordId === pdcaRecordId);
+    }
+
+    /**
+     * Retrieves all sections and their nested lines/areas from the MSSQL database.
+     * If the database is offline, only reuses the last cached copy of real database rows;
+     * it never returns hardcoded/seeded data.
+     */
+    static async getSectionsWithLines() {
+        const dbActive = await isDbConnected();
+        if (dbActive) {
+            try {
+                const [secRows] = await executeQuery(`
+                    SELECT id, name, uniCode, departmentId, category
+                    FROM [sections]
+                    WHERE (isActive = 1 OR isActive IS NULL)
+                    ORDER BY name ASC
+                `);
+                const [lineRows] = await executeQuery(`
+                    SELECT id, name, uniCode, sectionId, department
+                    FROM [lines]
+                    WHERE (isActive = 1 OR isActive IS NULL)
+                    ORDER BY name ASC
+                `);
+
+                if (Array.isArray(secRows) && secRows.length > 0) {
+                    const secMap = new Map();
+                    secRows.forEach(s => {
+                        secMap.set(s.id, {
+                            id: s.id,
+                            name: s.name,
+                            uniCode: s.uniCode || '',
+                            departmentId: s.departmentId,
+                            category: s.category || '',
+                            lines: []
+                        });
+                    });
+
+                    if (Array.isArray(lineRows)) {
+                        lineRows.forEach(l => {
+                            if (secMap.has(l.sectionId)) {
+                                secMap.get(l.sectionId).lines.push({
+                                    id: l.id,
+                                    name: l.name,
+                                    uniCode: l.uniCode || '',
+                                    sectionId: l.sectionId,
+                                    department: l.department
+                                });
+                            }
+                        });
+                    }
+
+                    const result = Array.from(secMap.values());
+                    try {
+                        const store = readFallbackStore();
+                        store.sections = result;
+                        writeFallbackStore(store);
+                    } catch {}
+                    return result;
+                }
+            } catch (err) {
+                logger.warn("Querying sections/lines from MSSQL failed, using fallback store:", err.message);
+            }
+        }
+
+        const store = readFallbackStore();
+        if (Array.isArray(store.sections) && store.sections.length > 0) {
+            return store.sections;
+        }
+
+        return [];
     }
 
     // Helper formatter

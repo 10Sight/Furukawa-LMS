@@ -32,7 +32,8 @@ export const parseStaffEmployee = (input) => {
     };
   }
   const trimmed = String(input).trim();
-  const match = trimmed.match(/^(.*?)\s*\(([^)]+)\)$/);
+  const firstPart = trimmed.split(/[,;]/)[0].trim();
+  const match = firstPart.match(/^(.*?)\s*\(([^)]+)\)$/);
   if (match) {
     return {
       name: match[1].trim(),
@@ -40,7 +41,7 @@ export const parseStaffEmployee = (input) => {
     };
   }
   return {
-    name: trimmed,
+    name: firstPart,
     code: ''
   };
 };

@@ -22,7 +22,9 @@ import {
     getAttachment,
     deleteAttachment,
     getPDCAHistory,
-    getPDCAMetadata
+    getPDCAMetadata,
+    getPDCASections,
+    getPDCAEmployees
 } from "../../controllers/pdca/pdca.controllers.js";
 
 const router = Router();
@@ -58,6 +60,8 @@ router.use(optionalAuth);
 
 // G. Metadata and Dropdowns
 router.get("/metadata", getPDCAMetadata);
+router.get("/sections", getPDCASections);
+router.get("/employees", getPDCAEmployees);
 
 // C. CFT Topic Management
 router.post("/cft", createCFTTopic);

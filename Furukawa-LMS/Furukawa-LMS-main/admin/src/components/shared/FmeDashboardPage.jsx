@@ -39,6 +39,6 @@ export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
     }, [page, setIsFormView]);
     const source = page === 'man-machine-interlink'
         ? MAN_MACHINE_INTERLINK_URL
-        : `/cms-dashboard/index.html?page=${page}`;
+        : `/cms-dashboard/index.html?page=${page}&_v=${Date.now()}`;
     return <iframe ref={frameRef} src={source} title={labels[page]} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" onLoad={() => { publishUserContext(); frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin); }} className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`} style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }} />;
 }

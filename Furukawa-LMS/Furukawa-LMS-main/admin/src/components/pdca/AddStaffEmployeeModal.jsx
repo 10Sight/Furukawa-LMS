@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, UserPlus, Check, User, IdCard, Trash2, Plus } from 'lucide-react';
+import SearchableStaffSelect from './SearchableStaffSelect.jsx';
 
-export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initialValue = '', onSave }) {
+export default function AddStaffEmployeeModal({
+  isOpen,
+  onClose,
+  rowIndex,
+  initialValue = '',
+  initialEmployees = null,
+  onSave
+}) {
   const [employees, setEmployees] = useState([{ name: '', code: '' }]);
 
   // Parse existing employee string like "Rahul Sharma (BW041920), Dinesh Rao (BW028371)"
-  const parseEmployees = (str) => {
+  const parseEmployees = (str, initialList) => {
+    if (Array.isArray(initialList) && initialList.length > 0) {
+      return initialList.map((e) => ({
+        id: e.id || undefined,
+        name: e.name || e.fullName || '',
+        code: (e.code || e.empId || '').toUpperCase(),
+        department: e.department || undefined
+      }));
+    }
     if (!str || !str.trim()) return [{ name: '', code: '' }];
     const parts = str.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
     if (parts.length === 0) return [{ name: '', code: '' }];
@@ -14,7 +30,7 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
     return parts.map((part) => {
       const match = part.match(/^(.*?)\s*\((.*?)\)$/);
       if (match) {
-        return { name: match[1].trim(), code: match[2].trim() };
+        return { name: match[1].trim(), code: match[2].trim().toUpperCase() };
       }
       return { name: part.trim(), code: '' };
     });
@@ -22,9 +38,9 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
 
   useEffect(() => {
     if (isOpen) {
-      setEmployees(parseEmployees(initialValue));
+      setEmployees(parseEmployees(initialValue, initialEmployees));
     }
-  }, [isOpen, initialValue]);
+  }, [isOpen, initialValue, initialEmployees]);
 
   if (!isOpen) return null;
 
@@ -48,21 +64,51 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
     });
   };
 
+  const handleSelectEmployee = (index, selectedEmp) => {
+    setEmployees((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        id: selectedEmp?.id || updated[index]?.id,
+        name: selectedEmp?.name || '',
+        code: (selectedEmp?.code || selectedEmp?.empId || '').toUpperCase(),
+        department: selectedEmp?.department || updated[index]?.department
+      };
+      return updated;
+    });
+  };
+
   const handleSubmit = (e) => {
-    e.preventDefault();
-    const validEmployees = employees
-      .map((emp) => ({
-        name: emp.name.trim(),
-        code: emp.code.trim().toUpperCase()
-      }))
-      .filter((emp) => emp.name);
+    if (e && e.preventDefault) e.preventDefault();
+    const seen = new Set();
+    const validEmployees = [];
+
+    for (const emp of employees) {
+      const name = (emp.name || '').trim();
+      const code = (emp.code || '').trim().toUpperCase();
+      if (!name) continue;
+      const key = (code || name).toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        validEmployees.push({
+          id: emp.id || undefined,
+          name,
+          code,
+          department: emp.department || undefined
+        });
+      }
+    }
 
     const formattedValue = validEmployees
       .map((emp) => (emp.code ? `${emp.name} (${emp.code})` : emp.name))
       .join(', ');
 
-    onSave(rowIndex, formattedValue);
-    onClose();
+    if (typeof onSave === 'function') {
+      onSave(rowIndex, formattedValue, validEmployees);
+    }
+    if (typeof onClose === 'function') {
+      onClose();
+    }
   };
 
   const modalContent = (
@@ -124,8 +170,13 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
                 className="p-3.5 rounded-xl border border-slate-200 bg-[#F9FAFC] relative space-y-2.5 group"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-500">
-                    Employee #{idx + 1}
+                  <span className="text-[11px] font-bold text-slate-500 flex items-center gap-2">
+                    <span>Employee #{idx + 1}</span>
+                    {emp.department && (
+                      <span className="text-[9.5px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                        {emp.department}
+                      </span>
+                    )}
                   </span>
                   {employees.length > 1 && (
                     <button
@@ -145,26 +196,31 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
                       <User className="w-3 h-3 text-blue-600" />
                       <span>Emp Name *</span>
                     </label>
-                    <input
-                      type="text"
-                      required
+                    <SearchableStaffSelect
                       value={emp.name}
-                      onChange={(e) => handleEmployeeChange(idx, 'name', e.target.value)}
-                      placeholder="Enter employee name"
-                      className="w-full text-xs font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs"
+                      onChange={(name) => handleEmployeeChange(idx, 'name', name)}
+                      onSelectEmployee={(selectedEmp) => handleSelectEmployee(idx, selectedEmp)}
+                      placeholder="Search or select employee name..."
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                      <IdCard className="w-3 h-3 text-blue-600" />
-                      <span>Emp ID (Optional)</span>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <IdCard className="w-3 h-3 text-blue-600" />
+                        <span>Emp ID</span>
+                      </span>
+                      {emp.code && (
+                        <span className="text-[9.5px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                          Auto-filled
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
                       value={emp.code}
                       onChange={(e) => handleEmployeeChange(idx, 'code', e.target.value)}
                       placeholder="e.g. GJ024108"
-                      className="w-full text-xs font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs"
+                      className="w-full text-xs font-mono font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 shadow-2xs"
                     />
                   </div>
                 </div>
@@ -182,7 +238,9 @@ export default function AddStaffEmployeeModal({ isOpen, onClose, rowIndex, initi
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              id="save-staff-employees-btn"
+              onClick={handleSubmit}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             >
               <Check className="w-4 h-4 stroke-[2.5]" />

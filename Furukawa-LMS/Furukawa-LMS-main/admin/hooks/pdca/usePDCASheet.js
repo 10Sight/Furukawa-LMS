@@ -21,6 +21,10 @@ export function createEmptyRow() {
     responseDate: '',
     department: '',
     staffEmployee: '',
+    staffEmployees: [],
+    staffName: '',
+    staffId: '',
+    employeeId: '',
     cftTopic: '',
     responsiblePersonConfirmation: ''
   };

@@ -37,7 +37,7 @@ export default function FmeDashboardPage({ page }) {
     if (!sourceRef.current) {
         const sheet = new URLSearchParams(search).get('sheet');
         const route = page === 'pdca' && sheet ? `/sheet/${encodeURIComponent(sheet)}` : '/';
-        sourceRef.current = `/cms-dashboard/index.html?page=${page}${demoModeEnabled(import.meta.env) ? "&demo=1" : ""}#${route}`;
+        sourceRef.current = `/cms-dashboard/index.html?page=${page}&_v=${Date.now()}${demoModeEnabled(import.meta.env) ? "&demo=1" : ""}#${route}`;
     }
     useEffect(() => {
         const syncRoute = event => {

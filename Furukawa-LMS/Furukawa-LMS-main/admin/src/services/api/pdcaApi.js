@@ -91,9 +91,21 @@ export const pdcaApi = {
         return response.data?.data || response.data;
     },
 
-    // G. Metadata
+    // G. Metadata and Dropdown Data
     getMetadata: async () => {
         const response = await axiosInstance.get(`${BASE_PATH}/metadata`);
+        return response.data?.data || response.data;
+    },
+
+    getSections: async () => {
+        const response = await axiosInstance.get(`${BASE_PATH}/sections`);
+        return response.data?.data || response.data;
+    },
+
+    getEmployees: async (search = '') => {
+        const response = await axiosInstance.get(`${BASE_PATH}/employees`, {
+            params: search ? { search } : {}
+        });
         return response.data?.data || response.data;
     }
 };

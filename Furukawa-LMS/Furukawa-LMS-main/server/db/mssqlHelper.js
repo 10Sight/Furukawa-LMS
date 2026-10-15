@@ -104,7 +104,7 @@ export const runOnRequest = async (request, queryText, params = [], options = {}
     // failure block the rest of the queue.
     const run = () => executeRequest(request, processedQuery, queryText, options.label);
     const resultPromise = schemaQueuePromise.then(run, run);
-    schemaQueuePromise = resultPromise.then(() => {}, () => {});
+    schemaQueuePromise = resultPromise.then(() => { }, () => { });
     return resultPromise;
 };
 

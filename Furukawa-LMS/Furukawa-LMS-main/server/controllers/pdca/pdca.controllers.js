@@ -143,6 +143,37 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
         }
     }
 
+    // Validate that each selected Line/Area belongs to its selected Section (lines.sectionId -> sections.id)
+    const rowsWithLineArea = rowsToValidate.filter(
+        (r) => r && r.lineAreaId !== undefined && r.lineAreaId !== null && r.lineAreaId !== ''
+    );
+    if (rowsWithLineArea.length > 0) {
+        const hierarchy = await PDCAModel.getSectionsWithLines();
+        if (Array.isArray(hierarchy) && hierarchy.length > 0) {
+            for (const r of rowsWithLineArea) {
+                const targetSecId = r.sectionId ?? r.lineAreaSectionId;
+                if (targetSecId) {
+                    const section = hierarchy.find((s) => String(s.id) === String(targetSecId));
+                    const line = section && (section.lines || []).find((l) => String(l.id) === String(r.lineAreaId));
+                    if (!section || !line) {
+                        throw new ApiError(
+                            `Invalid Line/Area selection "${r.lineArea || r.lineAreaId}": it does not belong to the selected Section.`,
+                            400
+                        );
+                    }
+                } else {
+                    const parentSec = hierarchy.find((s) => (s.lines || []).some((l) => String(l.id) === String(r.lineAreaId)));
+                    if (parentSec) {
+                        r.sectionId = parentSec.id;
+                        r.lineAreaSectionId = parentSec.id;
+                        if (!r.section) r.section = parentSec.name;
+                        if (!r.sectionCode) r.sectionCode = parentSec.uniCode || '';
+                    }
+                }
+            }
+        }
+    }
+
     const savedSheet = await PDCAModel.saveSheet(record.id, req.body, actor);
     return res.status(200).json(new ApiResponse(200, savedSheet, "PDCA sheet saved successfully"));
 });
@@ -375,14 +406,38 @@ export const getPDCAMetadata = asyncHandler(async (req, res) => {
     // Fetch active employees/users for staff & CFT dropdown
     let employees = await PDCAModel.getEmployees();
 
+    // Fetch database-driven sections with nested lines/areas
+    let sections = await PDCAModel.getSectionsWithLines();
+
     const metadata = {
         plants: ['Bawal', 'Gujrat'],
         scopes: ['Company', 'Department', 'Self PDCA', 'CFT'],
         shifts: ['Day', 'Night', 'General', 'A', 'B', 'C'],
         statuses: ['Open', 'Under Observation', 'Delayed', 'Closed'],
         departments,
-        employees
+        employees,
+        sections
     };
 
     return res.status(200).json(new ApiResponse(200, metadata, "PDCA metadata retrieved successfully"));
 });
+
+/**
+ * 19. Retrieve all Sections and nested Lines/Areas directly from database
+ * GET /api/v1/pdca/sections
+ */
+export const getPDCASections = asyncHandler(async (req, res) => {
+    const sections = await PDCAModel.getSectionsWithLines();
+    return res.status(200).json(new ApiResponse(200, sections, "Sections and lines retrieved successfully"));
+});
+
+/**
+ * 20. Retrieve Employees directly from database (with search support)
+ * GET /api/v1/pdca/employees?search=...
+ */
+export const getPDCAEmployees = asyncHandler(async (req, res) => {
+    const { search } = req.query;
+    const employees = await PDCAModel.getEmployees(search);
+    return res.status(200).json(new ApiResponse(200, employees, "Employees retrieved successfully"));
+});
+

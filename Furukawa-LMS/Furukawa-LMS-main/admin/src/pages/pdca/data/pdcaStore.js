@@ -8,8 +8,15 @@ export function createEmptyRow(customDefaults = {}) {
   return {
     date: customDefaults.date || '',
     shift: customDefaults.shift || '',
-    lineArea: customDefaults.lineArea || '',
     status: customDefaults.status || 'Open',
+    department: customDefaults.department || '',
+    section: customDefaults.section || '',
+    sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
+    sectionCode: customDefaults.sectionCode || '',
+    lineArea: customDefaults.lineArea || '',
+    lineAreaSectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null,
+    lineAreaId: customDefaults.lineAreaId ?? null,
+    lineAreaCode: customDefaults.lineAreaCode || '',
     observation: customDefaults.observation || '',
     imagesBefore: Array.isArray(customDefaults.imagesBefore)
       ? customDefaults.imagesBefore
@@ -26,15 +33,19 @@ export function createEmptyRow(customDefaults = {}) {
     imageAfterName: customDefaults.imageAfterName || '',
     fileTypeAfter: customDefaults.fileTypeAfter || 'image',
     responseDate: customDefaults.responseDate || '',
-    department: customDefaults.department || '',
+    responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
     staffEmployee: customDefaults.staffEmployee || '',
+    staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
+    staffName: customDefaults.staffName || '',
+    staffId: customDefaults.staffId || '',
+    employeeId: customDefaults.employeeId || customDefaults.staffId || '',
     assignedEmployee: customDefaults.assignedEmployee || '',
     cftTopic: customDefaults.cftTopic || '',
     cftTopicId: customDefaults.cftTopicId || '',
     cftSelectedType: customDefaults.cftSelectedType || '',
     cftSelectedName: customDefaults.cftSelectedName || '',
     cftSelectedCode: customDefaults.cftSelectedCode || '',
-    responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || ''
+    responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || customDefaults.staffEmployee || ''
   };
 }
 

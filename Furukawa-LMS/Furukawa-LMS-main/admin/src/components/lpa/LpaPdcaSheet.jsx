@@ -33,13 +33,22 @@ import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
-import SearchableLineAreaSelect from '../pdca/SearchableLineAreaSelect';
+import { parseStaffEmployee, findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
+import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
+import SearchableSectionSelect, { VERIFIED_SECTION_MASTER } from '../pdca/SearchableSectionSelect';
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  lineArea: customDefaults.lineArea || '',
   status: customDefaults.status || 'Open',
+  department: customDefaults.department || '',
+  section: customDefaults.section || '',
+  sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
+  sectionCode: customDefaults.sectionCode || '',
+  lineArea: customDefaults.lineArea || '',
+  lineAreaSectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null,
+  lineAreaId: customDefaults.lineAreaId ?? null,
+  lineAreaCode: customDefaults.lineAreaCode || '',
   observation: customDefaults.observation || '',
   imageBefore: customDefaults.imageBefore || null,
   imageBeforeName: customDefaults.imageBeforeName || '',
@@ -50,8 +59,12 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
   responseDate: customDefaults.responseDate || '',
-  department: customDefaults.department || '',
+  responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
   staffEmployee: customDefaults.staffEmployee || '',
+  staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
+  staffName: customDefaults.staffName || '',
+  staffId: customDefaults.staffId || '',
+  employeeId: customDefaults.employeeId || customDefaults.staffId || '',
   assignedEmployee: customDefaults.assignedEmployee || '',
   cftTopic: customDefaults.cftTopic || '',
   cftTopicId: customDefaults.cftTopicId || '',
@@ -201,10 +214,86 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   const [openStaffDropdown, setOpenStaffDropdown] = useState(null);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
 
+  // Database-backed employee master records
+  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+
+  const normalizeRow = (row) => {
+    if (!row) return createEmptyRow();
+    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+    const imagesBefore = Array.isArray(row.imagesBefore) && !isDocBefore
+      ? row.imagesBefore
+      : (!isDocBefore && row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
+    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+    const imagesAfter = Array.isArray(row.imagesAfter) && !isDocAfter
+      ? row.imagesAfter
+      : (!isDocAfter && row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
+    let staffEmployee = (row.staffEmployee || row.responsiblePersonConfirmation || '').trim();
+    let staffEmployees = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
+    let staffId = (row.staffId || row.employeeId || '').trim();
+    let staffName = (row.staffName || '').trim();
+
+    if (staffEmployees.length > 0) {
+      staffEmployees = staffEmployees.map((emp) => {
+        const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
+        const name = emp.name || p.name || '';
+        const code = (emp.code || emp.empId || p.code || '').toUpperCase();
+        const department = emp.department || findEmployeeDepartment(`${name} (${code})`, dbEmployees) || (row.department || '');
+        return {
+          id: emp.id || undefined,
+          name,
+          code,
+          department
+        };
+      });
+
+      if (!staffEmployee) {
+        staffEmployee = staffEmployees
+          .map((e) => ((e.code || e.empId) ? `${e.name || e.fullName} (${e.code || e.empId})` : (e.name || e.fullName)))
+          .join(', ');
+      }
+      if (!staffName) staffName = staffEmployees[0].name || staffEmployees[0].fullName || '';
+      if (!staffId) staffId = staffEmployees[0].code || staffEmployees[0].empId || '';
+    } else if (staffEmployee) {
+      const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      staffEmployees = parts.map((part) => {
+        const { name, code } = parseStaffEmployee(part);
+        const dept = findEmployeeDepartment(part, dbEmployees) || (row.department || '');
+        return { name, code, department: dept };
+      });
+      if (!staffName || !staffId) {
+        const primary = parseStaffEmployee(staffEmployee);
+        if (!staffName) staffName = primary.name || '';
+        if (!staffId) staffId = primary.code || '';
+      }
+    } else if (staffName) {
+      const dept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) || (row.department || '');
+      staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
+      staffEmployees = [{ name: staffName, code: staffId, department: dept }];
+    }
+
+    return {
+      ...row,
+      imagesBefore,
+      imagesAfter,
+      imageBefore: isDocBefore ? row.imageBefore : (imagesBefore[0]?.url || row.imageBefore || null),
+      imageBeforeName: isDocBefore ? row.imageBeforeName : (imagesBefore[0]?.name || row.imageBeforeName || ''),
+      fileTypeBefore: row.fileTypeBefore || (imagesBefore.length > 0 ? 'image' : ''),
+      imageAfter: isDocAfter ? row.imageAfter : (imagesAfter[0]?.url || row.imageAfter || null),
+      imageAfterName: isDocAfter ? row.imageAfterName : (imagesAfter[0]?.name || row.imageAfterName || ''),
+      fileTypeAfter: row.fileTypeAfter || (imagesAfter.length > 0 ? 'image' : ''),
+      staffEmployee,
+      staffEmployees,
+      staffName,
+      staffId,
+      employeeId: staffId,
+      responsiblePersonConfirmation: staffEmployee || row.responsiblePersonConfirmation || ''
+    };
+  };
+
   // Local rows state
   const [rows, setRows] = useState(() => {
     if (Array.isArray(topic?.sheet?.rows) && topic.sheet.rows.length > 0) {
-      return topic.sheet.rows;
+      return topic.sheet.rows.map(normalizeRow);
     }
     return Array.from({ length: 10 }, () => createEmptyRow());
   });
@@ -227,6 +316,136 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     }, 3500);
   };
 
+  // Resizable column widths for Observation, Root Cause, and Counter Measure
+  const [observationWidth, setObservationWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_observation_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= 180 && parsed <= 650) return parsed;
+        }
+      }
+    } catch {}
+    return 260;
+  });
+
+  const activeObsResizeRef = useRef(null);
+  const startObservationResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeObsResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: observationWidth };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+  };
+  const continueObservationResize = (event) => {
+    const active = activeObsResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const newWidth = Math.min(650, Math.max(180, active.startWidth + (event.clientX - active.startX)));
+    setObservationWidth(newWidth);
+  };
+  const finishObservationResize = (event) => {
+    const active = activeObsResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+    activeObsResizeRef.current = null;
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_observation_col_width', String(observationWidth)); } catch {}
+  };
+  const handleObservationResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setObservationWidth(prev => Math.max(180, prev - 15)); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); setObservationWidth(prev => Math.min(650, prev + 15)); }
+  };
+  useEffect(() => {
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_observation_col_width', String(observationWidth)); } catch {}
+  }, [observationWidth]);
+
+  const [rootCauseWidth, setRootCauseWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_root_cause_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= 95 && parsed <= 550) return parsed;
+        }
+      }
+    } catch {}
+    return 135;
+  });
+
+  const activeRootCauseResizeRef = useRef(null);
+  const startRootCauseResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeRootCauseResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: rootCauseWidth };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+  };
+  const continueRootCauseResize = (event) => {
+    const active = activeRootCauseResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const newWidth = Math.min(550, Math.max(95, active.startWidth + (event.clientX - active.startX)));
+    setRootCauseWidth(newWidth);
+  };
+  const finishRootCauseResize = (event) => {
+    const active = activeRootCauseResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+    activeRootCauseResizeRef.current = null;
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_root_cause_col_width', String(rootCauseWidth)); } catch {}
+  };
+  const handleRootCauseResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setRootCauseWidth(prev => Math.max(95, prev - 15)); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); setRootCauseWidth(prev => Math.min(550, prev + 15)); }
+  };
+  useEffect(() => {
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_root_cause_col_width', String(rootCauseWidth)); } catch {}
+  }, [rootCauseWidth]);
+
+  const [counterMeasureWidth, setCounterMeasureWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_counter_measure_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= 95 && parsed <= 550) return parsed;
+        }
+      }
+    } catch {}
+    return 145;
+  });
+
+  const activeCounterMeasureResizeRef = useRef(null);
+  const startCounterMeasureResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeCounterMeasureResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: counterMeasureWidth };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+  };
+  const continueCounterMeasureResize = (event) => {
+    const active = activeCounterMeasureResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const newWidth = Math.min(550, Math.max(95, active.startWidth + (event.clientX - active.startX)));
+    setCounterMeasureWidth(newWidth);
+  };
+  const finishCounterMeasureResize = (event) => {
+    const active = activeCounterMeasureResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+    activeCounterMeasureResizeRef.current = null;
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_counter_measure_col_width', String(counterMeasureWidth)); } catch {}
+  };
+  const handleCounterMeasureResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setCounterMeasureWidth(prev => Math.max(95, prev - 15)); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); setCounterMeasureWidth(prev => Math.min(550, prev + 15)); }
+  };
+  useEffect(() => {
+    try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('pdca_counter_measure_col_width', String(counterMeasureWidth)); } catch {}
+  }, [counterMeasureWidth]);
+
   // Editable Sheet Header Details
   const [headerInfo, setHeaderInfo] = useState(topic?.sheet?.headerInfo || {
     topicName: '',
@@ -245,9 +464,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         setHeaderInfo(prev => ({ ...prev, ...savedSheet.headerInfo }));
       }
       if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
-        setRows(savedSheet.rows);
+        setRows(savedSheet.rows.map(normalizeRow));
       } else {
-        setRows(prev => (Array.isArray(prev) && prev.length > 0) ? prev : Array.from({ length: 10 }, () => createEmptyRow()));
+        setRows(prev => (Array.isArray(prev) && prev.length > 0) ? prev.map(normalizeRow) : Array.from({ length: 10 }, () => createEmptyRow()));
       }
     }).catch(err => {
       console.warn('Could not fetch sheet from backend:', err);
@@ -349,9 +568,6 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   const topicName = headerInfo.topicName || topic?.topic || '';
   const createdByName = topic?.createdBy?.name || '';
   const createdByCode = topic?.createdBy?.code || '';
-
-  // Database-backed employee master records
-  const [dbEmployees, setDbEmployees] = useState([]);
 
   // Fetch verified employee records from database via metadata API
   useEffect(() => {
@@ -563,24 +779,24 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     const currentDept = row?.department?.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
 
-    let list = employeeOptionList.map((e) => e.label);
+    let list = employeeOptionList;
     if (query) {
-      list = employeeOptionList
-        .filter(
-          (item) =>
-            item.label.toLowerCase().includes(query) ||
-            item.name.toLowerCase().includes(query) ||
-            item.code.toLowerCase().includes(query) ||
-            (item.department && item.department.toLowerCase().includes(query))
-        )
-        .map((e) => e.label);
+      list = employeeOptionList.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          item.name.toLowerCase().includes(query) ||
+          item.code.toLowerCase().includes(query) ||
+          (item.department && item.department.toLowerCase().includes(query))
+      );
     }
 
     if (currentDept) {
-      const deptMatches = employeeOptionList
-        .filter((item) => item.department && item.department.toLowerCase() === currentDept)
-        .map((e) => e.label);
-      const others = list.filter((l) => !deptMatches.includes(l));
+      const deptMatches = list.filter(
+        (item) => item.department && item.department.toLowerCase() === currentDept
+      );
+      const others = list.filter(
+        (item) => !item.department || item.department.toLowerCase() !== currentDept
+      );
       return [...deptMatches, ...others];
     }
 
@@ -637,6 +853,37 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
           : '';
       }
 
+      // Automatically link CFT assigned employees or selected member into staffEmployees if not set
+      let newStaffEmployees = updated[rowIndex].staffEmployees || [];
+      let newStaffEmployee = updated[rowIndex].staffEmployee || '';
+      let newDept = updated[rowIndex].department;
+
+      if (!newStaffEmployee || newStaffEmployees.length === 0) {
+        if (personObj) {
+          const personDept = personObj.department || findEmployeeDepartment(personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name, dbEmployees) || '';
+          newStaffEmployees = [{
+            name: personObj.name,
+            code: personObj.code || '',
+            department: personDept
+          }];
+          newStaffEmployee = personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name;
+          if (personDept && !newDept) newDept = personDept;
+        } else if (Array.isArray(topicObj.assignedEmployees) && topicObj.assignedEmployees.length > 0) {
+          newStaffEmployees = topicObj.assignedEmployees.map((ae) => {
+            const aeDept = ae.department || findEmployeeDepartment(ae.code ? `${ae.name} (${ae.code})` : ae.name, dbEmployees) || '';
+            return {
+              name: ae.name,
+              code: ae.code || '',
+              department: aeDept
+            };
+          });
+          newStaffEmployee = newStaffEmployees.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+          if (newStaffEmployees[0]?.department && !newDept) {
+            newDept = newStaffEmployees[0].department;
+          }
+        }
+      }
+
       updated[rowIndex] = {
         ...updated[rowIndex],
         cftTopic: topicObj.name,
@@ -644,7 +891,11 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         cftSelectedType: selectedType,
         cftSelectedName: personObj ? personObj.name : '',
         cftSelectedCode: personObj ? personObj.code : '',
-        assignedEmployee: assignedStr
+        assignedEmployee: assignedStr,
+        staffEmployee: newStaffEmployee,
+        staffEmployees: newStaffEmployees,
+        department: newDept,
+        responsiblePersonConfirmation: newStaffEmployee
       };
       return updated;
     });
@@ -676,24 +927,262 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   const [staffEmployeeModal, setStaffEmployeeModal] = useState({
     isOpen: false,
     rowIndex: null,
-    initialValue: ''
+    initialValue: '',
+    initialEmployees: null
   });
 
   const handleOpenAddStaffModal = (rowIndex) => {
     const row = rows[rowIndex];
+    const existing = Array.isArray(row?.staffEmployees) && row.staffEmployees.length > 0
+      ? row.staffEmployees
+      : (row?.staffEmployee
+          ? row.staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((p) => {
+              const parsed = parseStaffEmployee(p);
+              return {
+                name: parsed.name,
+                code: parsed.code,
+                department: findEmployeeDepartment(p, dbEmployees) || ''
+              };
+            })
+          : []);
+
+    // When clicking (+) on an existing group, append an empty row for immediate entry
+    const initialEmployees = existing.length > 0
+      ? [...existing, { name: '', code: '', department: '' }]
+      : [{ name: '', code: '', department: '' }];
+
     setStaffEmployeeModal({
       isOpen: true,
       rowIndex,
-      initialValue: row?.staffEmployee || ''
+      initialValue: row?.staffEmployee || '',
+      initialEmployees
     });
   };
 
-  const handleSaveStaffEmployee = (rowIndex, fullStaffString) => {
+  const handleRemoveStaffEmployee = (rowIndex, empIndex) => {
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      if (empIndex >= 0 && empIndex < currentList.length) {
+        currentList.splice(empIndex, 1);
+      }
+
+      if (currentList.length === 0) {
+        updated[rowIndex] = {
+          ...currentRow,
+          staffEmployee: '',
+          staffEmployees: [],
+          staffName: '',
+          staffId: '',
+          employeeId: '',
+          responsiblePersonConfirmation: ''
+        };
+      } else {
+        const formatted = currentList
+          .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+          .join(', ');
+        const primary = currentList[0];
+        updated[rowIndex] = {
+          ...currentRow,
+          staffEmployee: formatted,
+          staffEmployees: currentList,
+          staffName: primary.name || '',
+          staffId: primary.code || '',
+          employeeId: primary.code || '',
+          department: primary.department || currentRow.department,
+          responsiblePersonConfirmation: formatted
+        };
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectStaffMember = (rowIndex, staffValue, employeeList = []) => {
+    if (typeof rowIndex !== 'number' || rowIndex < 0) return;
+
+    if (!staffValue || !staffValue.trim()) {
+      setRows((prev) => {
+        const updated = [...prev];
+        updated[rowIndex] = {
+          ...updated[rowIndex],
+          staffEmployee: '',
+          staffEmployees: [],
+          staffName: '',
+          staffId: '',
+          employeeId: '',
+          responsiblePersonConfirmation: ''
+        };
+        return updated;
+      });
+      return;
+    }
+
+    const trimmedStaff = staffValue.trim();
+    const { name: staffName, code: staffCode } = parseStaffEmployee(trimmedStaff);
+
+    let employeesArray = Array.isArray(employeeList) && employeeList.length > 0
+      ? employeeList.map((e) => ({
+          ...e,
+          department: e.department || findEmployeeDepartment(e.code ? `${e.name} (${e.code})` : e.name, dbEmployees) || ''
+        }))
+      : trimmedStaff.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((part) => {
+          const p = parseStaffEmployee(part);
+          return {
+            name: p.name,
+            code: p.code,
+            department: findEmployeeDepartment(part, dbEmployees) || ''
+          };
+        });
+
+    const matchedDept = findEmployeeDepartment(trimmedStaff, dbEmployees);
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+
+      const newRow = {
+        ...currentRow,
+        staffEmployee: trimmedStaff,
+        staffEmployees: employeesArray,
+        staffName: staffName || currentRow.staffName || '',
+        staffId: staffCode || currentRow.staffId || '',
+        employeeId: staffCode || currentRow.employeeId || '',
+        responsiblePersonConfirmation: trimmedStaff
+      };
+
+      if (matchedDept) {
+        newRow.department = matchedDept;
+      }
+
+      updated[rowIndex] = newRow;
+      return updated;
+    });
+
+    if (!matchedDept) {
+      notify?.(`Staff member "${trimmedStaff}" could not be matched to a verified database department. Please select department manually.`, 'info');
+    }
+  };
+
+  const handleSaveStaffEmployee = (rowIndex, fullStaffString, employeeList = []) => {
+    handleSelectStaffMember(rowIndex, fullStaffString, employeeList);
+  };
+
+  // Column 5: Department change handler (Plan phase - before Section)
+  const handleDepartmentChange = (rowIndex, dept) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      let nextSection = curr.section;
+      let nextSectionId = curr.sectionId;
+      let nextSectionCode = curr.sectionCode;
+      let nextLineArea = curr.lineArea;
+      let nextLineAreaId = curr.lineAreaId;
+      let nextLineAreaCode = curr.lineAreaCode;
+      let nextLineAreaSectionId = curr.lineAreaSectionId;
+
+      if (dept && curr.sectionId) {
+        const secMatch = VERIFIED_SECTION_MASTER.find((s) => String(s.id) === String(curr.sectionId));
+        if (secMatch && secMatch.category && secMatch.category !== 'Not Applicable') {
+          const deptLower = dept.trim().toLowerCase();
+          const catLower = secMatch.category.trim().toLowerCase();
+          const isCrimping = deptLower === 'c&c';
+          const match = catLower === deptLower || (isCrimping && catLower === 'crimping');
+          if (!match && VERIFIED_SECTION_MASTER.some((s) => s.category?.toLowerCase() === deptLower || (isCrimping && s.category?.toLowerCase() === 'crimping'))) {
+            nextSection = '';
+            nextSectionId = null;
+            nextSectionCode = '';
+            nextLineArea = '';
+            nextLineAreaId = null;
+            nextLineAreaCode = '';
+            nextLineAreaSectionId = null;
+          }
+        }
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        department: dept,
+        section: nextSection,
+        sectionId: nextSectionId,
+        sectionCode: nextSectionCode,
+        lineArea: nextLineArea,
+        lineAreaId: nextLineAreaId,
+        lineAreaCode: nextLineAreaCode,
+        lineAreaSectionId: nextLineAreaSectionId
+      };
+      return updated;
+    });
+  };
+
+  // Column 6: Section change handler (Plan phase - before Line/Area)
+  const handleSectionChange = (rowIndex, sectionName, meta = {}) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      const newSectionId = meta?.sectionId ?? null;
+      const newSectionCode = meta?.sectionCode ?? '';
+
+      let nextLineArea = curr.lineArea;
+      let nextLineAreaId = curr.lineAreaId;
+      let nextLineAreaCode = curr.lineAreaCode;
+
+      if (curr.lineAreaId && newSectionId != null) {
+        const dbSections = getCachedDbSections() || [];
+        const secMatch = dbSections.find((s) => String(s.id) === String(newSectionId));
+        if (secMatch && Array.isArray(secMatch.lines) && secMatch.lines.length > 0) {
+          const lineBelongs = secMatch.lines.some((l) => String(l.id) === String(curr.lineAreaId));
+          if (!lineBelongs) {
+            nextLineArea = '';
+            nextLineAreaId = null;
+            nextLineAreaCode = '';
+          }
+        }
+      } else if (!sectionName) {
+        nextLineArea = '';
+        nextLineAreaId = null;
+        nextLineAreaCode = '';
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        section: sectionName,
+        sectionId: newSectionId,
+        sectionCode: newSectionCode,
+        lineAreaSectionId: newSectionId,
+        lineArea: nextLineArea,
+        lineAreaId: nextLineAreaId,
+        lineAreaCode: nextLineAreaCode
+      };
+      return updated;
+    });
+  };
+
+  // Column 14: Responsible Person Confirmation Dept handler (Check phase)
+  const handleResponsiblePersonDeptChange = (rowIndex, dept) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const prevDept = updated[rowIndex]?.responsiblePersonDept || updated[rowIndex]?.department || '';
+      const shouldClearStaff = prevDept !== dept;
+
+      const currentEmps = Array.isArray(updated[rowIndex]?.staffEmployees) ? [...updated[rowIndex].staffEmployees] : [];
+      if (currentEmps.length > 0) {
+        currentEmps[0] = { ...currentEmps[0], department: dept };
+      }
+
       updated[rowIndex] = {
         ...updated[rowIndex],
-        staffEmployee: fullStaffString
+        responsiblePersonDept: dept,
+        staffEmployees: shouldClearStaff ? [] : currentEmps,
+        staffEmployee: shouldClearStaff ? '' : (updated[rowIndex]?.staffEmployee || ''),
+        staffName: shouldClearStaff ? '' : (updated[rowIndex]?.staffName || ''),
+        staffId: shouldClearStaff ? '' : (updated[rowIndex]?.staffId || ''),
+        employeeId: shouldClearStaff ? '' : (updated[rowIndex]?.employeeId || '')
       };
       return updated;
     });
@@ -777,17 +1266,6 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
     });
   };
 
-  const handleDepartmentChange = (rowIndex, dept) => {
-    setRows((prev) => {
-      const updated = [...prev];
-      updated[rowIndex] = {
-        ...updated[rowIndex],
-        department: dept
-      };
-      return updated;
-    });
-  };
-
   // Add Row
   const handleAddRow = () => {
     setRows((prev) => [
@@ -849,6 +1327,39 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   };
 
   const departmentsList = PDCA_DEPARTMENTS;
+
+  // Auto-adjusting widths for Section and Line/Area columns:
+  // Decreased base width when empty or short, expands automatically if a selected option is bigger.
+  const { sectionColWidth, lineAreaColWidth } = useMemo(() => {
+    let maxSectionLen = 0;
+    let maxLineAreaLen = 0;
+
+    for (const r of rows) {
+      const secText = (r.section || r.sectionCode || '').trim();
+      if (secText.length > maxSectionLen) {
+        maxSectionLen = secText.length;
+      }
+      const lineText = (r.lineArea || r.lineAreaCode || '').trim();
+      if (lineText.length > maxLineAreaLen) {
+        maxLineAreaLen = lineText.length;
+      }
+    }
+
+    // Base widths:
+    // Section: when empty/placeholder ("Section..."), base width is ~80px (previously 130px).
+    // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
+    const secWidth = maxSectionLen === 0
+      ? 80
+      : Math.min(220, Math.max(80, Math.round(maxSectionLen * 7.2 + 34)));
+
+    // Line/Area: when empty/placeholder ("Line/Area..."), base width is ~90px (previously 130px).
+    // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
+    const lineAreaWidth = maxLineAreaLen === 0
+      ? 90
+      : Math.min(220, Math.max(90, Math.round(maxLineAreaLen * 7.2 + 38)));
+
+    return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
+  }, [rows]);
 
   // Filter rows by search
   const filteredRows = useMemo(() => {
@@ -950,7 +1461,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                 {/* Title Row: Centered Page Title */}
                 <tr className="bg-white border-b border-[#94A3B8]">
                   <th
-                    colSpan={15}
+                    colSpan={17}
                     className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
                   >
                     {topic?.topic || 'PDCA - M Tanaka San Audit'}
@@ -968,7 +1479,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     会議名
                   </th>
                   <th
-                    colSpan={7}
+                    colSpan={9}
                     className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                   >
                     <input
@@ -1010,7 +1521,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     出席者
                   </th>
                   <th
-                    colSpan={7}
+                    colSpan={9}
                     className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
                   >
                     <input
@@ -1049,9 +1560,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     className="bg-white border-r border-[#94A3B8] py-1 px-1"
                   />
 
-                  {/* P: Plan - Above Status, Line/Area, Observation, Image Before, Root Cause */}
+                  {/* P: Plan - Above Status, Department, Section, Line/Area, Observation, Image Before, Root Cause */}
                   <th
-                    colSpan={5}
+                    colSpan={7}
                     className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
                     title="Plan (P)"
                   >
@@ -1108,14 +1619,68 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     <span>Status</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
-                  {/* 5. Line/Area */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[130px] min-w-[120px] text-center border-r border-[#475569]">
+                  {/* 5. Department */}
+                  <th rowSpan={2} className="py-1.5 px-1 w-[90px] min-w-[85px] text-center border-r border-[#475569] text-[10.5px]">
+                    <span>Department</span>
+                  </th>
+
+                  {/* 6. Section */}
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${sectionColWidth}px`,
+                      minWidth: `${sectionColWidth}px`
+                    }}
+                    className="py-1.5 px-1 text-center border-r border-[#475569] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
+                  >
+                    <span>Section</span>
+                  </th>
+
+                  {/* 7. Line/Area */}
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${lineAreaColWidth}px`,
+                      minWidth: `${lineAreaColWidth}px`
+                    }}
+                    className="py-1.5 px-1 text-center border-r border-[#475569] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
+                  >
                     <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
                   {/* 6. Observation */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[210px] min-w-[180px] text-center border-r border-[#475569]">
-                    <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${observationWidth}px`,
+                      minWidth: `${observationWidth}px`,
+                      maxWidth: `${observationWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-[#475569] text-[10.5px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                    </div>
+
+                    <span
+                      role="separator"
+                      aria-label="Resize Observation column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={180}
+                      aria-valuemax={650}
+                      aria-valuenow={observationWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
+                      onPointerDown={startObservationResize}
+                      onPointerMove={continueObservationResize}
+                      onPointerUp={finishObservationResize}
+                      onPointerCancel={finishObservationResize}
+                      onLostPointerCapture={finishObservationResize}
+                      onKeyDown={handleObservationResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
+                    </span>
                   </th>
 
                   {/* 7. Image Before */}
@@ -1124,13 +1689,73 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                   </th>
 
                   {/* 8. Root Cause */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[125px] min-w-[110px] text-center border-r border-[#475569]">
-                    Root Cause
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${rootCauseWidth}px`,
+                      minWidth: `${rootCauseWidth}px`,
+                      maxWidth: `${rootCauseWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-[#475569] text-[10.5px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Root Cause</span>
+                    </div>
+
+                    <span
+                      role="separator"
+                      aria-label="Resize Root Cause column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={95}
+                      aria-valuemax={550}
+                      aria-valuenow={rootCauseWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Root Cause column width (${rootCauseWidth}px)`}
+                      onPointerDown={startRootCauseResize}
+                      onPointerMove={continueRootCauseResize}
+                      onPointerUp={finishRootCauseResize}
+                      onPointerCancel={finishRootCauseResize}
+                      onLostPointerCapture={finishRootCauseResize}
+                      onKeyDown={handleRootCauseResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
+                    </span>
                   </th>
 
                   {/* 9. Counter Measure */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[140px] min-w-[120px] text-center border-r border-[#475569]">
-                    Counter Measure
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${counterMeasureWidth}px`,
+                      minWidth: `${counterMeasureWidth}px`,
+                      maxWidth: `${counterMeasureWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-[#475569] leading-tight text-[10.5px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Counter Measure</span>
+                    </div>
+
+                    <span
+                      role="separator"
+                      aria-label="Resize Counter Measure column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={95}
+                      aria-valuemax={550}
+                      aria-valuenow={counterMeasureWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Counter Measure column width (${counterMeasureWidth}px)`}
+                      onPointerDown={startCounterMeasureResize}
+                      onPointerMove={continueCounterMeasureResize}
+                      onPointerUp={finishCounterMeasureResize}
+                      onPointerCancel={finishCounterMeasureResize}
+                      onLostPointerCapture={finishCounterMeasureResize}
+                      onKeyDown={handleCounterMeasureResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
+                    </span>
                   </th>
 
                   {/* 10. Image After */}
@@ -1159,13 +1784,13 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
                 {/* Row 5: Column Subheaders for Dept, Staff Name, CFT */}
                 <tr className="bg-white border-b border-[#B0BEC5] text-slate-600 font-semibold text-[9.5px] select-none">
-                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[82px] min-w-[75px]">
+                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[85px] min-w-[75px]">
                     Dept
                   </th>
-                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[88px] min-w-[80px]">
+                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[155px] min-w-[140px]">
                     Staff Name
                   </th>
-                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[70px] min-w-[65px]">
+                  <th className="py-0.5 px-1 text-center border-r border-[#B0BEC5] w-[95px] min-w-[85px]">
                     CFT
                   </th>
                 </tr>
@@ -1232,17 +1857,92 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         </select>
                       </td>
 
-                      {/* 5. Line/Area (Searchable dropdown with search bar) */}
-                      <td className="p-1 align-middle border-r border-[#64748B] w-[130px] min-w-[120px] text-center">
+                      {/* 5. Department */}
+                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
+                        <div className="relative w-full flex items-center justify-center">
+                          <select
+                            value={row.department || ''}
+                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
+                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate font-medium"
+                            title={row.department || 'Select Department'}
+                          >
+                            <option value="">Dept...</option>
+                            {departmentsList.map((d) => (
+                              <option key={d} value={d}>
+                                {d}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                      </td>
+
+                      {/* 6. Section */}
+                      <td
+                        style={{
+                          width: `${sectionColWidth}px`,
+                          minWidth: `${sectionColWidth}px`
+                        }}
+                        className="p-0.5 align-middle text-center border-r border-[#64748B] transition-[width] duration-150"
+                      >
+                        <div className="w-full flex items-center justify-center">
+                          <SearchableSectionSelect
+                            value={row.section}
+                            sectionId={row.sectionId ?? row.lineAreaSectionId}
+                            sectionCode={row.sectionCode}
+                            department={row.department}
+                            onChange={(sectionName, meta) => handleSectionChange(idx, sectionName, meta)}
+                            placeholder="Section..."
+                          />
+                        </div>
+                      </td>
+
+                      {/* 7. Line/Area */}
+                      <td
+                        style={{
+                          width: `${lineAreaColWidth}px`,
+                          minWidth: `${lineAreaColWidth}px`
+                        }}
+                        className="p-0.5 align-middle border-r border-[#64748B] text-center transition-[width] duration-150"
+                      >
                         <SearchableLineAreaSelect
                           value={row.lineArea}
-                          onChange={(val) => handleCellChange(idx, 'lineArea', val)}
+                          sectionId={row.sectionId ?? row.lineAreaSectionId}
+                          lineId={row.lineAreaId}
+                          onChange={(val, meta) =>
+                            setRows((prev) => {
+                              const updated = [...prev];
+                              const curr = updated[idx];
+                              const newSectionId = meta?.sectionId ?? curr.sectionId;
+                              const newSection = meta?.section || curr.section;
+                              const newSectionCode = meta?.sectionCode || curr.sectionCode;
+
+                              updated[idx] = {
+                                ...curr,
+                                lineArea: val,
+                                lineAreaSectionId: newSectionId,
+                                lineAreaId: meta?.lineId ?? null,
+                                lineAreaCode: meta?.lineCode ?? '',
+                                section: newSection,
+                                sectionId: newSectionId,
+                                sectionCode: newSectionCode
+                              };
+                              return updated;
+                            })
+                          }
                           placeholder="Line/Area..."
                         />
                       </td>
 
                       {/* 6. Observation */}
-                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[210px] min-w-[180px] focus-within:bg-blue-50/30 text-center">
+                      <td
+                        className="p-0.5 align-middle border-r border-[#64748B] focus-within:bg-blue-50/30 text-center"
+                        style={{
+                          width: `${observationWidth}px`,
+                          minWidth: `${observationWidth}px`,
+                          maxWidth: `${observationWidth}px`,
+                        }}
+                      >
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'observation', el)}
                           value={row.observation}
@@ -1319,7 +2019,14 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 8. Root Cause */}
-                      <td className="p-0 align-middle border-r border-[#64748B] w-[125px] min-w-[110px] focus-within:bg-blue-50/30 text-center">
+                      <td
+                        className="p-0 align-middle border-r border-[#64748B] focus-within:bg-blue-50/30 text-center"
+                        style={{
+                          width: `${rootCauseWidth}px`,
+                          minWidth: `${rootCauseWidth}px`,
+                          maxWidth: `${rootCauseWidth}px`,
+                        }}
+                      >
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'rootCause', el)}
                           value={row.rootCause}
@@ -1331,7 +2038,14 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 9. Counter Measure */}
-                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[140px] min-w-[120px] focus-within:bg-blue-50/30 text-center">
+                      <td
+                        className="p-0.5 align-middle border-r border-[#64748B] focus-within:bg-blue-50/30 text-center"
+                        style={{
+                          width: `${counterMeasureWidth}px`,
+                          minWidth: `${counterMeasureWidth}px`,
+                          maxWidth: `${counterMeasureWidth}px`,
+                        }}
+                      >
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                           value={row.counterMeasure}
@@ -1431,33 +2145,107 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 12. Dept (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[75px]">
-                        <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
-                          <select
-                            value={row.department || ''}
-                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
-                            title={row.department || 'Select Department'}
-                          >
-                            <option value="">Dept...</option>
-                            {row.department && !departmentsList.includes(row.department) && (
-                              <option value={row.department}>{row.department}</option>
-                            )}
-                            {departmentsList.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[85px] min-w-[75px]">
+                        {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                            {row.staffEmployees.map((emp, empIdx) => (
+                              <div
+                                key={empIdx}
+                                className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
+                              >
+                                <select
+                                  value={emp.department || row.department || ''}
+                                  onChange={(e) => {
+                                    const newDept = e.target.value;
+                                    setRows((prev) => {
+                                      const updated = [...prev];
+                                      const curr = updated[idx];
+                                      const newEmps = [...curr.staffEmployees];
+                                      newEmps[empIdx] = { ...newEmps[empIdx], department: newDept };
+                                      updated[idx] = {
+                                        ...curr,
+                                        staffEmployees: newEmps,
+                                        department: empIdx === 0 ? newDept : curr.department
+                                      };
+                                      return updated;
+                                    });
+                                  }}
+                                  className="w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                                  title={emp.department || row.department || 'Select Department'}
+                                >
+                                  <option value="">Dept...</option>
+                                  {emp.department && !departmentsList.includes(emp.department) && (
+                                    <option value={emp.department}>{emp.department}</option>
+                                  )}
+                                  {departmentsList.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             ))}
-                          </select>
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
+                            <select
+                              value={row.responsiblePersonDept || row.department || ''}
+                              onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
+                              className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                              title={row.responsiblePersonDept || row.department || 'Select Department'}
+                            >
+                              <option value="">Dept...</option>
+                              {(row.responsiblePersonDept || row.department) && !departmentsList.includes(row.responsiblePersonDept || row.department) && (
+                                <option value={row.responsiblePersonDept || row.department}>{row.responsiblePersonDept || row.department}</option>
+                              )}
+                              {departmentsList.map((d) => (
+                                <option key={d} value={d}>
+                                  {d}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                        )}
                       </td>
 
-                      {/* 13. Staff Name (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[88px] min-w-[80px]">
-                        <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
-                          {row.staffEmployee ? (
-                            <div className="relative w-full h-full min-h-[42px] pl-1 pr-4 py-1 flex items-center justify-between gap-0.5 group">
+                      {/* 13. Staff Name (Native Table Cell - Fully responsive height, supports multiple employees) */}
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[155px] min-w-[140px]">
+                        <div className="relative w-full h-full min-h-[42px] flex flex-col justify-center">
+                          {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                            <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                              {row.staffEmployees.map((emp, empIdx) => {
+                                const empDisplay = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+                                return (
+                                  <div
+                                    key={empIdx}
+                                    className="relative w-full py-1 pl-2 pr-6 flex items-center justify-between gap-1 group/emp min-h-[30px] hover:bg-slate-50/80 transition-colors"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAddStaffModal(idx)}
+                                      className="text-[10px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors cursor-pointer"
+                                      title={`Click to view/manage group: ${empDisplay}`}
+                                    >
+                                      {empDisplay}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveStaffEmployee(idx, empIdx);
+                                      }}
+                                      className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
+                                      title={`Remove ${emp.name} from group`}
+                                    >
+                                      <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : row.staffEmployee ? (
+                            <div className="relative w-full h-full min-h-[42px] pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleStaffDropdown(idx, e)}
@@ -1472,9 +2260,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleCellChange(idx, 'staffEmployee', '');
+                                  handleSelectStaffMember(idx, '');
                                 }}
-                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0"
+                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
                                 title="Clear staff employee"
                               >
                                 <X className="w-3 h-3 stroke-[2.5]" />
@@ -1484,7 +2272,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             <button
                               type="button"
                               onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                              className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-4 group"
+                              className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-6 group"
                               title="Click to search and select staff employee"
                             >
                               <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
@@ -1502,8 +2290,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               e.stopPropagation();
                               handleOpenAddStaffModal(idx);
                             }}
-                            className="absolute bottom-0.5 right-0.5 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                            title="Add custom staff manually (+)"
+                            className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
+                            title="Add employee to this CFT group (+)"
                           >
                             <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
                           </button>
@@ -1511,7 +2299,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 14. CFT (Native Table Cell - Fully responsive height) */}
-                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[70px] min-w-[65px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[95px] min-w-[85px]">
                         <div className="relative w-full h-full min-h-[42px] flex items-center justify-center">
                           {row.cftTopic ? (
                             <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
@@ -1519,10 +2307,10 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 type="button"
                                 onClick={(e) => handleToggleCFTDropdown(idx, e, 'members')}
                                 className="cft-trigger-btn flex-1 min-w-0 text-left cursor-pointer flex flex-col justify-center py-0.5 hover:opacity-85 transition-opacity"
-                                title="Click to view and select Members / Assigned Employees for this topic"
+                                title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                               >
                                 <span
-                                  className="text-[10px] font-semibold truncate max-w-[65px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                  className="text-[10px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
                                   title={row.cftTopic}
                                 >
                                   {row.cftTopic}
@@ -1530,7 +2318,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 {row.cftSelectedName && (
                                   <div className="flex items-center gap-0.5 mt-0.5">
                                     <span
-                                      className={`text-[8.5px] font-medium truncate max-w-[60px] px-0.5 py-0.2 rounded leading-tight ${
+                                      className={`text-[8.5px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
                                         row.cftSelectedType === 'member'
                                           ? 'text-blue-700 bg-blue-50 border border-blue-200'
                                           : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
@@ -1884,17 +2672,26 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
           <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[240px]">
             {getStaffOptionsForRow(openStaffDropdown.rowIndex).length > 0 ? (
-              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empName, i) => {
+              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empItem, i) => {
+                const empName = empItem.label;
+                const empDept = empItem.department;
                 const isSelected = rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
                 const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
-                  rows[openStaffDropdown.rowIndex]?.department && employeeOptionList.some(e => e.label === empName && e.department?.toLowerCase() === rows[openStaffDropdown.rowIndex].department.toLowerCase());
+                  empDept &&
+                  empDept.toLowerCase() === rows[openStaffDropdown.rowIndex].department.toLowerCase();
 
                 return (
                   <button
                     key={`${empName}_${i}`}
                     type="button"
                     onClick={() => {
-                      handleCellChange(openStaffDropdown.rowIndex, 'staffEmployee', empName);
+                      const empObj = {
+                        id: empItem.id,
+                        name: empItem.name || empItem.label,
+                        code: empItem.code || '',
+                        department: empItem.department || ''
+                      };
+                      handleSelectStaffMember(openStaffDropdown.rowIndex, empName, [empObj]);
                       setOpenStaffDropdown(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${
@@ -1909,13 +2706,26 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                           isSelected ? 'bg-blue-600' : 'bg-slate-300 group-hover:bg-blue-500'
                         }`}
                       />
-                      <span className="truncate">{empName}</span>
+                      <span className="truncate font-medium">{empItem.name || empName}</span>
                     </div>
-                    {isDeptMatch && (
-                      <span className="text-[9px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 py-0.2 shrink-0">
-                        Dept
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {empItem.code && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                          {empItem.code}
+                        </span>
+                      )}
+                      {empDept && (
+                        <span
+                          className={`text-[9.5px] font-medium px-1.5 py-0.5 rounded border ${
+                            isDeptMatch
+                              ? 'bg-blue-100/80 text-blue-800 border-blue-300 font-semibold'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {empDept}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })
@@ -1947,6 +2757,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         isOpen={staffEmployeeModal.isOpen}
         rowIndex={staffEmployeeModal.rowIndex}
         initialValue={staffEmployeeModal.initialValue}
+        initialEmployees={staffEmployeeModal.initialEmployees}
         onSave={handleSaveStaffEmployee}
         onClose={() => setStaffEmployeeModal((prev) => ({ ...prev, isOpen: false }))}
       />

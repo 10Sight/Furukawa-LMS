@@ -7,7 +7,7 @@ import { X, Layers, Check, ChevronDown, AlignLeft } from 'lucide-react';
 
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
-import SearchableLineAreaSelect from './SearchableLineAreaSelect';
+import CascadingLineAreaSelect from './CascadingLineAreaSelect';
 import { safeRandomUUID } from '../../utils/uuid.js';
 
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
@@ -25,6 +25,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
     scope: defaultScope,
     department: '',
     section: userContext.section?.name || '',
+    sectionId: userContext.section?.id || '',
     createdBy: '',
     employeeId: '',
   };
@@ -40,6 +41,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         scope: editData.scope || 'Company',
         department: editData.department || '',
         section: editData.section || userContext.section?.name || '',
+        sectionId: editData.sectionId || userContext.section?.id || '',
         createdBy: editData.createdBy?.name || '',
         employeeId: editData.createdBy?.code || '',
       }));
@@ -47,9 +49,10 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
       setFormData(readSaved(draftKey, {
         ...defaultForm,
         section: userContext.section?.name || '',
+        sectionId: userContext.section?.id || '',
       }));
     }
-  }, [editData, isOpen, defaultScope, draftKey, userContext.section?.name]);
+  }, [editData, isOpen, defaultScope, draftKey, userContext.section?.name, userContext.section?.id]);
 
   useFormAutosave(formData, value => localStorage.setItem(draftKey, JSON.stringify(value)), isOpen, message => window.alert(message));
 
@@ -132,7 +135,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
           scope,
           department: formData.department,
           section: sectionVal,
-          sectionId: editData?.sectionId || userContext.section?.id || '',
+          sectionId: formData.sectionId || editData?.sectionId || userContext.section?.id || '',
           createdBy: {
             name: creatorName.toUpperCase(),
             code: creatorCode,
@@ -151,7 +154,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
           scope,
           department: formData.department,
           section: sectionVal,
-          sectionId: userContext.section?.id || '',
+          sectionId: formData.sectionId || userContext.section?.id || '',
           lpaSource: userContext.lpaSource ? { ...userContext.lpaSource } : undefined,
           date: dateStr,
           time: timeStr,
@@ -209,7 +212,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 pb-24 space-y-4 max-h-[78vh] overflow-y-auto">
           {/* Topic */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -258,11 +261,18 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
                 <span>Line / Area / Section *</span>
                 <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Required</span>
               </label>
-              <SearchableLineAreaSelect
+              <CascadingLineAreaSelect
+                id="pdca-section"
                 value={formData.section}
-                onChange={(val) => setFormData({ ...formData, section: val })}
+                onChange={(val, meta) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    section: val,
+                    sectionId: meta?.sectionId ? String(meta.sectionId) : prev.sectionId
+                  }));
+                }}
                 placeholder="Search or select Line / Area / Section..."
-                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none shadow-2xs transition-all"
+                compact={false}
               />
             </div>
           </div>

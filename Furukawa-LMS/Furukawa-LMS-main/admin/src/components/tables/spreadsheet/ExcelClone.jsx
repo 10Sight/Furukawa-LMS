@@ -38,6 +38,7 @@ import { patternWithDecimals } from "../../../constants/spreadsheets/numberForma
 import { FUNCTION_CATALOG } from "../../../constants/spreadsheets/formulaCatalog.js";
 import { createPortal } from "react-dom";
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
+import { continueTextSeries } from "../../../utils/spreadsheets/fillSeries.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf, reorderSheets, canOrderSheets, isIndexLikeName } from "../../../utils/spreadsheets/workbookUpdate.js";
@@ -692,6 +693,24 @@ const bandIndexForPixel = (offsets, px) => {
 };
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+// A filled cell: the source cell with its formatting, holding `value`. Styled
+// runs (cell.rich) describe the source's own text, so they go when the value
+// is a different one (the next in a series, a shifted formula).
+const withFilledValue = (sourceCell, value) => {
+    if (value === sourceCell.value) return { ...sourceCell, value };
+    const { rich: _rich, ...rest } = sourceCell;
+    return { ...rest, value };
+};
+
+// The fill-handle preview for a drag from source range `src` to (row, col):
+// down or right, whichever the pointer has gone further, no further than the sheet.
+const fillPreviewTo = (src, row, col, rowCount, columnCount) => {
+    const dRow = Math.max(0, Math.min(row - src.maxRow, rowCount - 1 - src.maxRow));
+    const dCol = Math.max(0, Math.min(col - src.maxCol, columnCount - 1 - src.maxCol));
+    if (dRow === 0 && dCol === 0) return { axis: null, extraCount: 0 };
+    return dRow >= dCol ? { axis: "vertical", extraCount: dRow } : { axis: "horizontal", extraCount: dCol };
+};
 
 // Excel-style duplicate-name suffixing: "Sheet 1" -> "Sheet 1 (1)"; copying an
 // already-suffixed sheet bumps the number ("Sheet 1 (1)" -> "Sheet 1 (2)")
@@ -1789,13 +1808,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // conversion needed there. The only places that still need to know about
     // `zoom` explicitly are ones converting real screen pixels (mouse-drag
     // deltas for resize/media gestures) into that authored space.
-    const [zoom, setZoom] = useState(1.0); // 1.0 = 100%
-    const handleZoomIn = useCallback(() => {
-        setZoom((prev) => Math.min(4.0, Math.round((prev + 0.1) * 10) / 10));
-    }, []);
-    const handleZoomOut = useCallback(() => {
-        setZoom((prev) => Math.max(0.1, Math.round((prev - 0.1) * 10) / 10));
-    }, []);
+    // Each sheet keeps its own zoom, saved with the workbook as `sheet.zoom`
+    // (left out at 100%), and is shown at it whenever it is opened, in view
+    // mode too. Set through setZoom further down, which also records it on the
+    // sheet. Read from the sheet only on opening it, so a co-editor zooming
+    // their own view doesn't move yours.
+    const [zoom, setZoomState] = useState(1.0); // 1.0 = 100%
 
     // Row virtualization: only rows within [scrollTop, scrollTop+viewportHeight]
     // (plus a buffer) are rendered, so a 5000+-row sheet doesn't put 5000+ <tr>s
@@ -2006,7 +2024,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 Object.entries(loadedSheets).map(([name, sheet]) => [name, { ...sheet, media: sheet.media || [] }])
             );
             setSheets(sanitizedSheets);
-            setActiveSheetName(sheetData.data.activeSheet && sanitizedSheets[sheetData.data.activeSheet] ? sheetData.data.activeSheet : Object.keys(sanitizedSheets)[0]);
+            const openSheetName = sheetData.data.activeSheet && sanitizedSheets[sheetData.data.activeSheet] ? sheetData.data.activeSheet : Object.keys(sanitizedSheets)[0];
+            setActiveSheetName(openSheetName);
+            // Set here too: the sheet opened may have the same name as the one shown before.
+            setZoomState(sanitizedSheets[openSheetName]?.zoom || 1);
             // Taken only at load: a later background refetch must not move the
             // version forward while the grid still holds the older sheets.
             if (meetingId && sheetData.data.version != null) meetingVersionsRef.current[meetingId] = sheetData.data.version;
@@ -2045,6 +2066,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             setFormatPainterStyle(null);
             setSheets({ [DEFAULT_SHEET_NAME]: emptySheet() });
             setActiveSheetName(DEFAULT_SHEET_NAME);
+            setZoomState(1);
             historyPast.current = [];
             historyFuture.current = [];
             bumpHistory();
@@ -2381,7 +2403,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // it is given, and must replace a cell (`cells[id] = {...}`) instead of
     // editing one in place. The undo stack holds change records, not copies of
     // the workbook.
-    const updateSheets = useCallback((updater) => {
+    // `history: false` makes a change that is saved but isn't a step of its own
+    // to undo (the zoom, say) — an undo record restores only what it touched.
+    const updateSheets = useCallback((updater, { history = true } = {}) => {
         // Every commit — a source-sheet edit, a pivot config change, an
         // import, a sheet rename — can affect a pivot sheet's output, so
         // recompute all of them rather than trying to track which commits
@@ -2395,13 +2419,36 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const { next, undo: record } = applyWorkbookUpdate(sheetsRef.current, updater, recomputePivots);
         if (!record) return; // the updater changed nothing
 
-        historyPast.current.push(record);
-        if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
-        historyFuture.current = [];
-        bumpHistory();
+        if (history) {
+            historyPast.current.push(record);
+            if (historyPast.current.length > HISTORY_LIMIT) historyPast.current.shift();
+            historyFuture.current = [];
+            bumpHistory();
+        }
         setSheets(next);
         setIsDirty(true);
     }, [bumpHistory, setSheets]);
+
+    // Zoom: shown at once, and (in edit mode) recorded on the sheet so a save
+    // keeps it. In view mode it changes only what this viewer sees.
+    const setZoom = useCallback((value) => {
+        const next = Math.round(clamp(Number(value) || 1, 0.1, 4.0) * 10) / 10;
+        setZoomState(next);
+        if (readOnly) return;
+        const sheetName = activeSheetName;
+        updateSheets((draft) => {
+            const sheet = draft[sheetName];
+            if (!sheet || (sheet.zoom || 1) === next) return;
+            if (next === 1) delete sheet.zoom;
+            else sheet.zoom = next;
+        }, { history: false });
+    }, [readOnly, activeSheetName, updateSheets]);
+    const handleZoomIn = useCallback(() => setZoom(zoom + 0.1), [setZoom, zoom]);
+    const handleZoomOut = useCallback(() => setZoom(zoom - 0.1), [setZoom, zoom]);
+    // Opening a sheet (switching to it, or the workbook loading) shows it at its saved zoom.
+    useEffect(() => {
+        setZoomState(sheetsRef.current[activeSheetName]?.zoom || 1);
+    }, [activeSheetName, sheetsRef]);
 
     const mutateActiveCells = useCallback((mutator) => {
         if (isSheetReadOnly) return;
@@ -3584,13 +3631,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (isFilling.current && e.buttons === 1) {
             const src = fillSourceRange.current;
             if (!src || !ref) return;
-            const maxDRow = rowCount - 1 - src.maxRow;
-            const maxDCol = columnCount - 1 - src.maxCol;
-            const dRow = Math.max(0, Math.min(ref.row - src.maxRow, maxDRow));
-            const dCol = Math.max(0, Math.min(ref.col - src.maxCol, maxDCol));
-            if (dRow === 0 && dCol === 0) { setFillPreview({ axis: null, extraCount: 0 }); return; }
-            if (dRow >= dCol) setFillPreview({ axis: "vertical", extraCount: dRow });
-            else setFillPreview({ axis: "horizontal", extraCount: dCol });
+            setFillPreview(fillPreviewTo(src, ref.row, ref.col, rowCount, columnCount));
             return;
         }
         if (isSelecting.current && e.buttons === 1) {
@@ -3601,7 +3642,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Fills the row/column extension implied by the current drag, copying
     // formatting from and (for a single formula source) shifting relative
     // refs off the cell each new cell's position maps back to under a
-    // repeating pattern of the original selection's length.
+    // repeating pattern of the original selection's length. Numbers continue
+    // as a series (extrapolateSeries), and so does text Excel would continue —
+    // weekdays, months, dates, quarters, "Item 1" (continueTextSeries); any
+    // other text is copied.
     const applyFill = useCallback(() => {
         if (!fillPreview || !fillPreview.axis || fillPreview.extraCount <= 0) { setFillPreview(null); return; }
         const src = fillSourceRange.current;
@@ -3628,7 +3672,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     for (let r = minRow; r <= maxRow; r++) sourceCellsForCol.push(sheetCells[getCellId(r, col)]);
                     const seriesValues = isNumericSource(sourceCellsForCol)
                         ? extrapolateSeries(sourceCellsForCol.map((c) => c.value), extraCount)
-                        : null;
+                        : continueTextSeries(sourceCellsForCol.map((c) => c?.value), extraCount);
 
                     for (let i = 1; i <= extraCount; i++) {
                         const targetRow = maxRow + i;
@@ -3642,7 +3686,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         else if (seriesValues) newValue = seriesValues[i - 1];
                         else newValue = sourceCell.value ?? "";
 
-                        sheetCells[targetId] = { ...sourceCell, value: newValue };
+                        sheetCells[targetId] = withFilledValue(sourceCell, newValue);
                     }
                 }
             } else {
@@ -3652,7 +3696,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     for (let c = minCol; c <= maxCol; c++) sourceCellsForRow.push(sheetCells[getCellId(row, c)]);
                     const seriesValues = isNumericSource(sourceCellsForRow)
                         ? extrapolateSeries(sourceCellsForRow.map((c) => c.value), extraCount)
-                        : null;
+                        : continueTextSeries(sourceCellsForRow.map((c) => c?.value), extraCount);
 
                     for (let i = 1; i <= extraCount; i++) {
                         const targetCol = maxCol + i;
@@ -3666,7 +3710,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         else if (seriesValues) newValue = seriesValues[i - 1];
                         else newValue = sourceCell.value ?? "";
 
-                        sheetCells[targetId] = { ...sourceCell, value: newValue };
+                        sheetCells[targetId] = withFilledValue(sourceCell, newValue);
                     }
                 }
             }
@@ -3723,10 +3767,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return () => window.removeEventListener("mouseup", onMouseUp);
     }, []);
 
-    // Drag-selecting to (or past) the grid's edge keeps scrolling that way and
-    // extends the selection to the cell under the pointer, like Excel. At the
-    // end of the sheet it appends rows/columns so the drag can keep going —
-    // in batches, so a long drag leaves a few undo steps rather than hundreds.
+    // Drag-selecting — or dragging the fill handle — to (or past) the grid's
+    // edge keeps scrolling that way and extends the selection (or the fill) to
+    // the cell under the pointer, like Excel. At the end of the sheet it
+    // appends rows/columns so the drag can keep going — in batches, so a long
+    // drag leaves a few undo steps rather than hundreds.
     const dragScrollState = useRef(null);
     dragScrollState.current = {
         rowOffsets, colOffsets, rowCount, columnCount, zoom,
@@ -3743,7 +3788,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const tick = () => {
             const el = gridContainerRef.current;
             const state = dragScrollState.current;
-            if (!el || !pointer || !isSelecting.current) { stop(); return; }
+            if (!el || !pointer || !(isSelecting.current || isFilling.current)) { stop(); return; }
             const rect = el.getBoundingClientRect();
             const headerRight = rect.left + ROW_HEADER_WIDTH * state.zoom;
             const headerBottom = rect.top + HEADER_ROW_HEIGHT * state.zoom;
@@ -3766,11 +3811,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const y = clamp(pointer.y, headerBottom + 1, rect.bottom - DRAG_SCROLL_EDGE);
             const col = clamp(bandIndexForPixel(state.colOffsets, (x - rect.left) / state.zoom + el.scrollLeft), 0, state.columnCount - 1);
             const row = clamp(bandIndexForPixel(state.rowOffsets, (y - rect.top) / state.zoom + el.scrollTop), 0, state.rowCount - 1);
+            if (isFilling.current) {
+                const src = fillSourceRange.current;
+                if (!src) return;
+                const next = fillPreviewTo(src, row, col, state.rowCount, state.columnCount);
+                setFillPreview((prev) => (prev && prev.axis === next.axis && prev.extraCount === next.extraCount ? prev : next));
+                return;
+            }
             const id = getCellId(row, col);
             setSelectionRaw((prev) => (prev.end === id ? prev : { ...prev, end: id }));
         };
         const onMouseMove = (e) => {
-            if (!isSelecting.current || e.buttons !== 1) { pointer = null; return; }
+            if (!(isSelecting.current || isFilling.current) || e.buttons !== 1) { pointer = null; return; }
             pointer = { x: e.clientX, y: e.clientY };
             if (!timer) timer = setInterval(tick, DRAG_SCROLL_INTERVAL_MS);
         };

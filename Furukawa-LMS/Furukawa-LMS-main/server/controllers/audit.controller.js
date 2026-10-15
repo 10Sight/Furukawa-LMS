@@ -27,6 +27,13 @@ const populateAuditUser = async (audit) => {
     return audit;
 };
 
+// Joins each audit to its user and the user's department / section, so the listing needs a single query.
+const AUDIT_LIST_FROM = `
+    FROM audits a
+    LEFT JOIN users u ON u.id = TRY_CAST(a.[user] AS INT)
+    LEFT JOIN departments d ON d.id = COALESCE(u.departmentId, u.targetDeptId)
+    LEFT JOIN sections s ON s.id = COALESCE(u.sectionId, u.targetSectionId)`;
+
 export const getAllAudits = asyncHandler(async (req, res) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit) || 20, 900);
@@ -35,107 +42,90 @@ export const getAllAudits = asyncHandler(async (req, res) => {
     const filters = [];
     const params = [];
 
+    // Only the retention window is ever listed; older rows are deleted nightly by auditRetentionScheduler.
+    const retentionCutoff = new Date(Date.now() - ENV.AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom) : null;
+    filters.push("a.createdAt >= ?");
+    params.push(dateFrom && !isNaN(dateFrom) && dateFrom > retentionCutoff ? dateFrom : retentionCutoff);
+
     // Role-based filtering using isAdmin boolean flag
     // Non-admins cannot see admin/superadmin activities
-    let adminIds = [];
     if (req.user && !req.user.isAdmin) {
-        const [admins] = await executeQuery("SELECT id FROM users WHERE isAdmin = 1");
-        adminIds = admins.map(u => String(u.id));
+        filters.push("(a.[user] IS NULL OR ISNULL(u.isAdmin, 0) = 0)");
+
+        // Block sensitive system actions from non-admins
+        filters.push(`(
+            a.[user] IS NOT NULL
+            OR
+            (a.[user] IS NULL AND a.action NOT LIKE '%SYSTEM_ADMIN%'
+                AND a.action NOT LIKE '%SUPERADMIN%'
+                AND a.action NOT LIKE '%PRIVILEGE%'
+                AND a.action NOT LIKE '%ROLE_CHANGE%'
+                AND a.action NOT LIKE '%SYSTEM_SETTINGS%')
+        )`);
     }
 
     // User filter
     if (req.query.userId) {
-        const isId = !isNaN(parseInt(req.query.userId));
-
-        if (isId) {
-            const targetId = parseInt(req.query.userId);
-            if (!req.user.isAdmin && adminIds.includes(String(targetId))) {
-                filters.push("1=0"); // Block access to admin audit entries
-            } else {
-                filters.push("[user] = ?");
-                params.push(String(targetId));
-            }
+        if (!isNaN(parseInt(req.query.userId))) {
+            filters.push("a.[user] = ?");
+            params.push(String(parseInt(req.query.userId)));
         } else {
-            const [users] = await executeQuery(
-                "SELECT id FROM users WHERE (email LIKE ? OR fullName LIKE ?)",
-                [`%${req.query.userId}%`, `%${req.query.userId}%`]
-            );
-
-            let allowedUserIds = users.map(u => String(u.id));
-            if (!req.user.isAdmin) {
-                allowedUserIds = allowedUserIds.filter(id => !adminIds.includes(id));
-            }
-
-            if (allowedUserIds.length > 0) {
-                filters.push(`[user] IN (${allowedUserIds.map(id => `'${id}'`).join(',')})`);
-            } else {
-                filters.push("1=0");
-            }
+            filters.push("(u.email LIKE ? OR u.fullName LIKE ?)");
+            params.push(`%${req.query.userId}%`, `%${req.query.userId}%`);
         }
-    } else if (!req.user.isAdmin && adminIds.length > 0) {
-        // Exclude admin users' audit entries
-        const idList = adminIds.map(id => `'${id}'`).join(',');
-        filters.push(`([user] NOT IN (${idList}) OR [user] IS NULL)`);
     }
 
-    // Block sensitive system actions from non-admins
-    if (req.user && !req.user.isAdmin) {
-        filters.push(`(
-            [user] IS NOT NULL 
-            OR 
-            ([user] IS NULL AND action NOT LIKE '%SYSTEM_ADMIN%'
-                AND action NOT LIKE '%SUPERADMIN%'
-                AND action NOT LIKE '%PRIVILEGE%'
-                AND action NOT LIKE '%ROLE_CHANGE%'
-                AND action NOT LIKE '%SYSTEM_SETTINGS%')
-        )`);
+    // Department / section of the acting user
+    if (req.query.departmentId && !isNaN(parseInt(req.query.departmentId))) {
+        filters.push("d.id = ?");
+        params.push(parseInt(req.query.departmentId));
+    }
+    if (req.query.sectionId && !isNaN(parseInt(req.query.sectionId))) {
+        filters.push("s.id = ?");
+        params.push(parseInt(req.query.sectionId));
     }
 
     // Action filter
     if (req.query.action) {
-        filters.push("action LIKE ?");
+        filters.push("a.action LIKE ?");
         params.push(`%${req.query.action}%`);
     }
 
     // Search filter
     if (req.query.search) {
         const term = `%${req.query.search}%`;
-        filters.push(`(action LIKE ? OR resourceType LIKE ? OR ip LIKE ?)`);
-        params.push(term, term, term);
+        filters.push(`(a.action LIKE ? OR a.resourceType LIKE ? OR a.ip LIKE ? OR u.fullName LIKE ? OR u.empId LIKE ?)`);
+        params.push(term, term, term, term, term);
     }
 
-    // Date range
-    if (req.query.dateFrom) {
-        filters.push("createdAt >= ?");
-        params.push(new Date(req.query.dateFrom));
-    }
     if (req.query.dateTo) {
-        filters.push("createdAt <= ?");
+        filters.push("a.createdAt <= ?");
         params.push(new Date(req.query.dateTo));
     }
 
     // IP
     if (req.query.ipAddress) {
-        filters.push("ip LIKE ?");
+        filters.push("a.ip LIKE ?");
         params.push(`%${req.query.ipAddress}%`);
     }
 
     // User Agent
     if (req.query.userAgent) {
-        filters.push("userAgent LIKE ?");
+        filters.push("a.userAgent LIKE ?");
         params.push(`%${req.query.userAgent}%`);
     }
 
     // Severity
     if (req.query.severity) {
-        filters.push("severity = ?");
+        filters.push("a.severity = ?");
         params.push(req.query.severity.toLowerCase());
     }
 
-    const whereClause = filters.length > 0 ? "WHERE " + filters.join(" AND ") : "";
+    const whereClause = "WHERE " + filters.join(" AND ");
 
     // Count total
-    const [countRows] = await executeQuery(`SELECT COUNT(*) as count FROM audits ${whereClause}`, params);
+    const [countRows] = await executeQuery(`SELECT COUNT(*) as count ${AUDIT_LIST_FROM} ${whereClause}`, params);
     const total = countRows[0].count;
 
     // Sorting - validate against allowed columns only
@@ -146,12 +136,32 @@ export const getAllAudits = asyncHandler(async (req, res) => {
 
     // MSSQL pagination
     const [rows] = await executeQuery(
-        `SELECT * FROM audits ${whereClause} ORDER BY ${safeSortBy} ${order} OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`,
+        `SELECT a.*,
+                u.id AS u_id, u.fullName AS u_fullName, u.email AS u_email, u.empId AS u_empId,
+                u.isAdmin AS u_isAdmin, u.isTrainer AS u_isTrainer, u.isEmployee AS u_isEmployee,
+                d.id AS d_id, d.name AS d_name, s.id AS s_id, s.name AS s_name
+         ${AUDIT_LIST_FROM} ${whereClause}
+         ORDER BY a.${safeSortBy} ${order}, a.id ${order} OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`,
         [...params, offset, limit]
     );
 
-    let audits = rows.map(r => new Audit(r));
-    audits = await Promise.all(audits.map(populateAuditUser));
+    const audits = rows.map(r => {
+        const audit = new Audit(r);
+        if (r.u_id) {
+            audit.user = {
+                id: r.u_id,
+                fullName: r.u_fullName,
+                email: r.u_email,
+                empId: r.u_empId,
+                isAdmin: r.u_isAdmin,
+                isTrainer: r.u_isTrainer,
+                isEmployee: r.u_isEmployee,
+                department: r.d_id ? { id: r.d_id, name: r.d_name } : null,
+                section: r.s_id ? { id: r.s_id, name: r.s_name } : null,
+            };
+        }
+        return audit;
+    });
 
     res.json(
         new ApiResponse(

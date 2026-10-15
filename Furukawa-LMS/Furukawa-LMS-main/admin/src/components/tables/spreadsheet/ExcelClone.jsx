@@ -35,6 +35,8 @@ import {
     shiftSpan, shiftFormulaBands
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
+import { FUNCTION_CATALOG } from "../../../constants/spreadsheets/formulaCatalog.js";
+import { createPortal } from "react-dom";
 import { parseDateTimeText } from "../../../utils/spreadsheets/formulaValues.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
@@ -508,6 +510,32 @@ const SelectionRangeBorder = ({ top, bottom, left, right, color = SELECTION_BORD
     );
 };
 
+// One cell of a reference in the formula being edited, drawn like Excel's range
+// finder: a light tint of the reference's color, a dashed border round the
+// whole range, and a small square handle on each of its corners.
+const FormulaRefHighlight = ({ color, top, bottom, left, right }) => {
+    const edge = `2px dashed ${color}`;
+    const handle = "absolute w-[6px] h-[6px] z-[2]";
+    return (
+        <>
+            <div
+                className="absolute inset-0 pointer-events-none z-[1]"
+                style={{
+                    backgroundColor: `${color}1f`,
+                    borderTop: top ? edge : undefined,
+                    borderBottom: bottom ? edge : undefined,
+                    borderLeft: left ? edge : undefined,
+                    borderRight: right ? edge : undefined,
+                }}
+            />
+            {top && left && <span className={cn(handle, "-top-[2px] -left-[2px]")} style={{ backgroundColor: color }} />}
+            {top && right && <span className={cn(handle, "-top-[2px] -right-[2px]")} style={{ backgroundColor: color }} />}
+            {bottom && left && <span className={cn(handle, "-bottom-[2px] -left-[2px]")} style={{ backgroundColor: color }} />}
+            {bottom && right && <span className={cn(handle, "-bottom-[2px] -right-[2px]")} style={{ backgroundColor: color }} />}
+        </>
+    );
+};
+
 const rangeBounds = (range) => {
     const s = parseCellRef(range.start), e = parseCellRef(range.end);
     if (!s || !e) return null;
@@ -523,7 +551,60 @@ const escapeRegex =(s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // in a formula gets one consistent color, reused for that reference's grid
 // highlight and its colored text in the editor. Cycled, not derived from the
 // dataviz categorical palette — this is transient editing chrome, not a chart.
-const FORMULA_REF_COLORS = ["#4f46e5", "#059669", "#d97706", "#db2777", "#0891b2", "#7c3aed", "#dc2626", "#65a30d"];
+// Ordered like Excel's range finder: blue, red, purple, green, pink, orange, teal, violet.
+const FORMULA_REF_COLORS = ["#3b78e7", "#e5484d", "#9b51e0", "#1f9d55", "#e0479e", "#f08c00", "#0f9d8a", "#6d5bd0"];
+
+// Function AutoComplete (the list under the editor while a function name is
+// typed) and the argument tip (the syntax of the function the caret is inside).
+const FUNCTION_LIST = [...new Map(FUNCTION_CATALOG.map((f) => [f.name, f])).values()].sort((a, b) => a.name.localeCompare(b.name));
+const FUNCTION_BY_NAME = new Map(FUNCTION_LIST.map((f) => [f.name, f]));
+
+// Whether `before` ends inside a "string literal".
+const endsInsideString = (before) => (before.match(/"/g) || []).length % 2 === 1;
+
+// The function name being typed right before `caret`: { start, prefix }, or null.
+// A name follows "=", an operator, "(" or "," — never "!" or ":", which lead
+// into a reference — and isn't already followed by its "(".
+const functionPrefixAt = (text, caret) => {
+    if (!isFormula(text)) return null;
+    const before = text.slice(0, caret);
+    if (endsInsideString(before)) return null;
+    const m = /(^\s*=|[=(,;+\-*/^&<>%\s])([A-Za-z_][A-Za-z0-9._]*)$/.exec(before);
+    if (!m || text[caret] === "(") return null;
+    return { start: m.index + m[1].length, prefix: m[2].toUpperCase() };
+};
+
+// The innermost known function call the caret sits inside: { name, argIndex }, or null.
+const enclosingFunctionAt = (text, caret) => {
+    if (!isFormula(text)) return null;
+    const stack = [];
+    let inString = false;
+    for (let i = 0; i < caret; i++) {
+        const ch = text[i];
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === "(") {
+            const name = /([A-Za-z_][A-Za-z0-9._]*)$/.exec(text.slice(0, i))?.[1]?.toUpperCase() || null;
+            stack.push({ name, argIndex: 0 });
+        } else if (ch === ")") stack.pop();
+        else if (ch === "," && stack.length) stack[stack.length - 1].argIndex++;
+    }
+    for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name && FUNCTION_BY_NAME.has(stack[i].name)) return stack[i];
+    }
+    return null;
+};
+
+// A function's syntax as { name, params: [{ text, current }] }, with the
+// argument at `argIndex` marked current; past the listed ones, a trailing "…" is.
+const argumentTipParts = (fn, argIndex) => {
+    const inner = fn.syntax.slice(fn.syntax.indexOf("(") + 1, fn.syntax.lastIndexOf(")"));
+    const params = inner ? inner.split(",").map((p) => p.trim()) : [];
+    const last = params.length - 1;
+    const repeats = last >= 0 && (params[last] === "…" || params[last] === "...");
+    const current = argIndex <= last && !(repeats && argIndex === last) ? argIndex : (repeats ? last : -1);
+    return { name: fn.name, params: params.map((text, i) => ({ text, current: i === current })) };
+};
 
 // Splits a formula string into colored/uncolored segments for the read-only
 // backdrop behind the (text-transparent) edit input, and returns the color
@@ -550,11 +631,12 @@ const tokenizeFormulaForDisplay = (text) => {
 // `mono` must match whichever font class the real (transparent-text) input
 // underneath is using — sans for the in-cell editor, mono for the formula bar
 // — or the colored characters here drift out of alignment with the invisible
-// caret/text in the input on top of it.
-const FormulaTextOverlay = ({ text, mono = false, className }) => {
+// caret/text in the input on top of it. The same goes for font size, and for
+// scrollLeft once the text is wider than the input (see syncFormulaOverlayScroll).
+const FormulaTextOverlay = ({ text, mono = false, className, ref }) => {
     const { segments } = tokenizeFormulaForDisplay(text);
     return (
-        <div aria-hidden="true" className={cn("absolute inset-0 whitespace-pre overflow-hidden pointer-events-none", mono && "font-mono", className)}>
+        <div ref={ref} aria-hidden="true" className={cn("absolute inset-0 whitespace-pre overflow-hidden pointer-events-none", mono && "font-mono", className)}>
             {segments.map((seg, i) => <span key={i} style={{ color: seg.color || "#0f172a" }}>{seg.text}</span>)}
         </div>
     );
@@ -1723,6 +1805,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // inserts their reference instead of committing the edit and navigating away.
     const cellEditInputRef = useRef(null);
     const formulaBarInputRef = useRef(null);
+    const cellEditOverlayRef = useRef(null); // the colored FormulaTextOverlay behind each input
+    const formulaBarOverlayRef = useRef(null);
     const activeEditInputRef = useRef(null); // whichever of the two above last had focus
     const cursorPosRef = useRef({ start: 0, end: 0 });
     // Part of a cell's text can have a style of its own (richText.js). While a cell
@@ -2139,6 +2223,90 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const isEditingFormula = !!editingCell && editValue.trim().startsWith("=");
 
+    // The single-line editors scroll sideways once a formula outgrows them; the
+    // overlay behind each has to scroll with it. onScroll covers caret moves, and
+    // this effect covers the overlay mounting (or its text changing) while the
+    // input is already scrolled, which fires no scroll event.
+    const syncFormulaOverlayScroll = useCallback(() => {
+        if (cellEditOverlayRef.current && cellEditInputRef.current) cellEditOverlayRef.current.scrollLeft = cellEditInputRef.current.scrollLeft;
+        if (formulaBarOverlayRef.current && formulaBarInputRef.current) formulaBarOverlayRef.current.scrollLeft = formulaBarInputRef.current.scrollLeft;
+    }, []);
+    useLayoutEffect(() => {
+        if (isEditingFormula) syncFormulaOverlayScroll();
+    }, [isEditingFormula, editValue, editingCell, syncFormulaOverlayScroll]);
+
+    // ---- Function AutoComplete + argument tip (see functionPrefixAt) ----
+    // The caret, as state so the list follows it; cursorPosRef stays the
+    // source for point mode, which must not re-render on every caret move.
+    const [editCaret, setEditCaret] = useState(0);
+    const trackEditorCaret = useCallback((e) => {
+        cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd };
+        // Caret moved away from the last clicked-in reference: the next click
+        // inserts at the caret instead of replacing that reference.
+        if (formulaInsertRange.current && e.target.selectionEnd !== formulaInsertRange.current.end) formulaInsertRange.current = null;
+        setEditCaret(e.target.selectionEnd);
+    }, []);
+    const [fnSuggestDismissed, setFnSuggestDismissed] = useState(null); // token key Esc closed the list on
+    const [fnSuggestPick, setFnSuggestPick] = useState({ key: null, index: 0 });
+    useEffect(() => { setFnSuggestDismissed(null); }, [editingCell]);
+
+    const editCaretPos = Math.min(editCaret, editValue.length);
+    const fnToken = isEditingFormula ? functionPrefixAt(editValue, editCaretPos) : null;
+    const fnTokenKey = fnToken ? `${fnToken.start}:${fnToken.prefix}` : null;
+    const fnMatches = fnToken && fnTokenKey !== fnSuggestDismissed
+        ? FUNCTION_LIST.filter((f) => f.name.startsWith(fnToken.prefix))
+        : [];
+    const fnPickIndex = fnSuggestPick.key === fnTokenKey ? Math.min(fnSuggestPick.index, fnMatches.length - 1) : 0;
+    const argTipCall = isEditingFormula && !fnMatches.length ? enclosingFunctionAt(editValue, editCaretPos) : null;
+    const argTip = argTipCall ? argumentTipParts(FUNCTION_BY_NAME.get(argTipCall.name), argTipCall.argIndex) : null;
+    const showFormulaAssist = fnMatches.length > 0 || !!argTip;
+
+    // Where the list/tip goes: under the editor, starting at the name being
+    // typed (or the editor's left edge). Measured in screen space, since the
+    // grid's CSS zoom applies to the in-cell editor but not to the popup.
+    const [formulaAssistAnchor, setFormulaAssistAnchor] = useState(null);
+    const formulaAssistStart = fnToken ? fnToken.start : null;
+    useLayoutEffect(() => {
+        if (!showFormulaAssist) { setFormulaAssistAnchor(null); return; }
+        const measure = () => {
+            const el = activeEditInputRef.current;
+            if (!el?.isConnected) { setFormulaAssistAnchor(null); return; }
+            const r = el.getBoundingClientRect();
+            let x = r.left;
+            if (formulaAssistStart !== null && !el.value.slice(0, formulaAssistStart).includes("\n")) {
+                const style = getComputedStyle(el);
+                const ctx = (measure.canvas ||= document.createElement("canvas")).getContext("2d");
+                ctx.font = style.font;
+                const scale = el.offsetWidth ? r.width / el.offsetWidth : 1;
+                const textX = parseFloat(style.paddingLeft) + ctx.measureText(el.value.slice(0, formulaAssistStart)).width - el.scrollLeft;
+                x = Math.min(r.left + textX * scale, r.right - 40);
+            }
+            const next = { x: Math.max(4, Math.min(x, window.innerWidth - 240)), y: r.bottom + 2 };
+            setFormulaAssistAnchor((prev) => (prev && prev.x === next.x && prev.y === next.y ? prev : next));
+        };
+        measure();
+        window.addEventListener("scroll", measure, true);
+        window.addEventListener("resize", measure);
+        return () => { window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
+    }, [showFormulaAssist, editingCell, editValue, formulaAssistStart]);
+
+    // Replaces the name being typed (and the rest of that word) with `name(`,
+    // caret inside the parentheses, as Tab or a click on the list does in Excel.
+    const acceptFunctionSuggestion = (name) => {
+        if (!fnToken) return;
+        const el = activeEditInputRef.current;
+        let tail = editCaretPos;
+        while (tail < editValue.length && /[A-Za-z0-9._]/.test(editValue[tail])) tail++;
+        const hasParen = editValue[tail] === "(";
+        const inserted = hasParen ? name : `${name}(`;
+        const pos = fnToken.start + inserted.length + (hasParen ? 1 : 0);
+        setEditValue(editValue.slice(0, fnToken.start) + inserted + editValue.slice(tail));
+        formulaInsertRange.current = null;
+        cursorPosRef.current = { start: pos, end: pos };
+        setEditCaret(pos);
+        requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(pos, pos); } });
+    };
+
     // Maps every cell covered by a reference in the formula currently being
     // edited to that reference's color + which perimeter edges it sits on —
     // Excel's "range finder" highlighting, kept in sync with tokenizeFormulaForDisplay
@@ -2292,6 +2460,45 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         for (let i = 0; i < rowCount; i++) offsets.push(offsets[offsets.length - 1] + heightForRow(i));
         return offsets;
     }, [rowCount, heightForRow]);
+
+    // fitCellEditor: the in-cell editor grows to fit what is typed, as in Excel.
+    // A Wrap Text cell keeps its width and gets taller. Any other cell gets wider,
+    // over its neighbours to the right, until it reaches the grid's right edge,
+    // and from there wraps and gets taller. Never smaller than the cell itself.
+    // Sizes are CSS px inside the grid's zoom; rects are screen px, hence `scale`.
+    const editingCellWraps = !!(editingCell && cells[editingCell]?.wrap);
+    useLayoutEffect(() => {
+        const el = cellEditInputRef.current;
+        const td = el?.closest("td");
+        const grid = gridContainerRef.current;
+        if (!editingCell || !el || !td || !grid) return;
+        const cellW = td.offsetWidth, cellH = td.offsetHeight;
+        const tdRect = td.getBoundingClientRect();
+        const scale = cellW ? tdRect.width / cellW : 1;
+        const gridRight = grid.getBoundingClientRect().left + grid.clientWidth * scale;
+        const maxW = Math.max(cellW, Math.floor((gridRight - tdRect.left) / scale) - 2);
+
+        let width = cellW, wrap = editingCellWraps;
+        el.style.height = `${cellH}px`;
+        if (!wrap) {
+            el.setAttribute("wrap", "off");
+            el.style.width = `${cellW}px`;
+            const needed = el.scrollWidth + 2;
+            if (needed > maxW) { width = maxW; wrap = true; }
+            else width = Math.max(cellW, needed);
+        }
+        el.setAttribute("wrap", wrap ? "soft" : "off");
+        el.style.width = `${width}px`;
+        el.style.height = `${cellH}px`;
+        el.style.height = `${Math.max(cellH, el.scrollHeight)}px`;
+        if (!wrap) el.scrollLeft = 0;
+
+        const overlay = cellEditOverlayRef.current;
+        if (overlay) {
+            overlay.style.whiteSpace = wrap ? "pre-wrap" : "pre";
+            overlay.style.overflowWrap = wrap ? "break-word" : "normal";
+        }
+    }, [editingCell, editValue, editingCellWraps, isEditingFormula, widthForCol, heightForRow, zoom]);
 
     // Keeps the scroll position and viewport size in sync with the actual DOM so
     // virtualization can compute which rows and columns are visible. The offsets
@@ -2824,6 +3031,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const end = el.value.length;
         el.setSelectionRange(end, end);
         cursorPosRef.current = { start: end, end };
+        setEditCaret(end);
     }, [editingCell]);
 
     const cancelEdit = useCallback(() => {
@@ -2839,15 +3047,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // to extend a single cell into a range replaces "A1" with "A1:B3" in place
     // rather than accumulating text) and refocuses whichever input the user was
     // typing in, caret placed right after the inserted reference.
-    const insertFormulaReference = useCallback((refText) => {
+    // `prefix` (Ctrl+click's ",") goes in front but stays outside the tracked
+    // span, so dragging on from there replaces only the reference.
+    const insertFormulaReference = useCallback((refText, prefix = "") => {
         setEditValue((prev) => {
             const range = formulaInsertRange.current;
-            const start = range ? range.start : cursorPosRef.current.start;
+            const at = range ? range.start : cursorPosRef.current.start;
             const end = range ? range.end : cursorPosRef.current.end;
-            const next = prev.slice(0, start) + refText + prev.slice(end);
+            const next = prev.slice(0, at) + prefix + refText + prev.slice(end);
+            const start = at + prefix.length;
             const newEnd = start + refText.length;
             formulaInsertRange.current = { start, end: newEnd };
             cursorPosRef.current = { start: newEnd, end: newEnd };
+            setEditCaret(newEnd);
             requestAnimationFrame(() => {
                 const el = activeEditInputRef.current || cellEditInputRef.current;
                 if (el) { el.focus(); el.setSelectionRange(newEnd, newEnd); }
@@ -3213,9 +3425,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         // Excel's click-to-build-a-formula behavior. Clicking back into the cell
         // actually being edited (editingCell === cellId) is a normal text-cursor
         // click, not a reference insert.
+        // A plain click replaces the reference the last click put in. As in Excel,
+        // Ctrl+click keeps it and adds the new cell after a comma, and Shift+click
+        // stretches it into a range from its first cell to this one.
         if (editingCell && editingCell !== cellId && editValue.trim().startsWith("=")) {
-            pointModeAnchor.current = cellId;
+            // Keep the focus in the editor: left to itself the mousedown focuses
+            // the grid, and the editor's blur would commit the formula half-typed.
+            e?.preventDefault();
+            const range = formulaInsertRange.current;
             isPointingFormula.current = true;
+            if (e?.shiftKey && range) {
+                const anchor = editValue.slice(range.start, range.end).split(":")[0];
+                pointModeAnchor.current = anchor;
+                insertFormulaReference(anchor === cellId ? cellId : `${anchor}:${cellId}`);
+                return;
+            }
+            pointModeAnchor.current = cellId;
+            if (e?.ctrlKey || e?.metaKey) {
+                const at = range ? range.end : cursorPosRef.current.end;
+                formulaInsertRange.current = null;
+                cursorPosRef.current = { start: at, end: at };
+                const needsComma = !/[=(,;+\-*/^&<>:]$/.test(editValue.slice(0, at).trimEnd());
+                insertFormulaReference(cellId, needsComma ? "," : "");
+                return;
+            }
             insertFormulaReference(cellId);
             return;
         }
@@ -5568,6 +5801,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
 
         // ---- While editing a cell ----
+        // The function list, when open, takes the arrows, Tab and Esc first.
+        // Enter still commits the cell as typed, as in Excel.
+        if (isEditor && fnMatches.length && !ctrl && !alt) {
+            if (key === "ArrowDown" || key === "ArrowUp") {
+                handled();
+                const step = key === "ArrowDown" ? 1 : -1;
+                setFnSuggestPick({ key: fnTokenKey, index: (fnPickIndex + step + fnMatches.length) % fnMatches.length });
+                return;
+            }
+            if (key === "Tab" && !shift) { handled(); acceptFunctionSuggestion(fnMatches[fnPickIndex].name); return; }
+            if (key === "Escape") { handled(); setFnSuggestDismissed(fnTokenKey); return; }
+        }
         if (isEditor) {
             if (key === "Enter" && alt) { handled(); insertIntoEditor(target, "\n"); return; }
             if (key === "Enter" && ctrl) { handled(); commitEditToSelection(); return; }
@@ -5973,7 +6218,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
                         )}
                         {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
-                        {formulaRefEdges && <SelectionRangeBorder {...formulaRefEdges} />}
+                        {formulaRefEdges && <FormulaRefHighlight {...formulaRefEdges} />}
                         {/* This cell has a comment: a corner triangle, nothing more.
                             The thread opens in the one shared card. */}
                         {commentThread && (
@@ -6004,27 +6249,31 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             </button>
                         )}
                         {isEditing ? (
-                            <div className="relative w-full h-full">
-                                {isEditingFormula && <FormulaTextOverlay text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
+                            // Sized by fitCellEditor: it grows past the cell (over its
+                            // neighbours) as the text does, so the backdrop is its own.
+                            <div
+                                className="absolute left-0 top-0 z-[9] outline outline-2 outline-indigo-500 -outline-offset-2"
+                                style={{ backgroundColor: cell?.bg || "#ffffff" }}
+                            >
+                                {isEditingFormula && <FormulaTextOverlay ref={cellEditOverlayRef} text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
                                 {/* A textarea (not an input) so Alt+Enter can add a line
                                     break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
-                                    sheet-level key handler (handleKeyDown). */}
+                                    sheet-level key handler (handleKeyDown). Its width,
+                                    height and wrap are set by fitCellEditor. */}
                                 <textarea
                                 ref={cellEditInputRef}
                                 autoFocus={editOriginRef.current !== "bar"}
                                 rows={1}
-                                wrap="off"
                                 className={cn(
-                                    "block w-full h-full px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden",
-                                    // A solid background here would paint over the colored-reference
-                                    // overlay sitting behind this (otherwise text-transparent) input —
-                                    // the <td> beneath already supplies the white backdrop.
-                                    isEditingFormula ? "bg-transparent text-transparent caret-slate-900" : "bg-white"
+                                    "block px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden bg-transparent",
+                                    // Transparent text so the colored-reference overlay behind it shows.
+                                    isEditingFormula && "text-transparent caret-slate-900"
                                 )}
                                 value={editValue}
-                                onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
-                                onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
+                                onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
+                                onSelect={trackEditorCaret}
                                 onFocus={(e) => { activeEditInputRef.current = e.target; }}
+                                onScroll={syncFormulaOverlayScroll}
                                 onBlur={(e) => rowHandlers.current.handleEditorBlur(e)}
                                 />
                             </div>
@@ -6821,20 +7070,21 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         readOnly={readOnly}
                         value={editingCell === activeCell ? editValue : (cells[activeCell]?.value ?? "")}
                         onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
-                        onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
-                        onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
+                        onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
+                        onSelect={trackEditorCaret}
                         onBlur={handleEditorBlur}
                         placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                     />
                 ) : (
                     <div className="relative flex-1">
-                        {editingCell === activeCell && isEditingFormula && <FormulaTextOverlay text={editValue} mono className="px-1 py-1 leading-4" />}
+                        {editingCell === activeCell && isEditingFormula && <FormulaTextOverlay ref={formulaBarOverlayRef} text={editValue} mono className="px-1 py-1 text-xs leading-4" />}
                         {/* One-line textarea rather than an input, so Alt+Enter can add a
                             line break here too; Enter/Tab/Esc/F4 go through handleKeyDown. */}
                         <textarea
                             ref={formulaBarInputRef}
                             rows={1}
                             wrap="off"
+                            onScroll={syncFormulaOverlayScroll}
                             className={cn(
                                 "block w-full text-xs leading-4 font-mono outline-none px-1 py-1 resize-none overflow-hidden",
                                 editingCell === activeCell && isEditingFormula && "bg-transparent text-transparent caret-slate-900"
@@ -6842,8 +7092,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             readOnly={readOnly}
                             value={editingCell === activeCell ? editValue : (cells[activeCell]?.value ?? "")}
                             onFocus={(e) => { activeEditInputRef.current = e.target; if (!readOnly && editingCell !== activeCell) startEditing(activeCell, undefined, "bar"); }}
-                            onChange={(e) => { setEditValue(e.target.value); formulaInsertRange.current = null; }}
-                            onSelect={(e) => { cursorPosRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }; }}
+                            onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
+                            onSelect={trackEditorCaret}
                             onBlur={handleEditorBlur}
                             placeholder="Enter a value or formula, e.g. =SUM(A1:A5)"
                         />
@@ -6853,6 +7103,56 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     {isFormulaBarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
                 </Button>
             </div>
+
+            {/* Function AutoComplete list / argument tip under whichever editor is in
+                use. A portal, so neither the grid's zoom nor its overflow clips it;
+                mousedown is swallowed so the editor keeps focus (a blur commits). */}
+            {formulaAssistAnchor && showFormulaAssist && createPortal(
+                <div
+                    className="fixed z-[60] text-xs select-none"
+                    style={{ left: formulaAssistAnchor.x, top: formulaAssistAnchor.y }}
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                >
+                    {fnMatches.length > 0 ? (
+                        <div className="flex items-start gap-1">
+                            <ul role="listbox" aria-label="Functions" className="w-52 max-h-[220px] overflow-y-auto themed-scrollbar bg-white border border-slate-300 shadow-lg py-0.5">
+                                {fnMatches.map((f, i) => (
+                                    <li
+                                        key={f.name}
+                                        role="option"
+                                        aria-selected={i === fnPickIndex}
+                                        ref={i === fnPickIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                                        className={cn(
+                                            "flex items-center gap-2 px-2 py-[3px] cursor-pointer",
+                                            i === fnPickIndex ? "bg-[#cce4f7] text-slate-900" : "text-slate-700 hover:bg-slate-100"
+                                        )}
+                                        onClick={() => acceptFunctionSuggestion(f.name)}
+                                    >
+                                        <IconMathFunction className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                        <span className="font-medium">{f.name}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="max-w-64 bg-white border border-slate-300 shadow-md px-2 py-1.5 text-slate-700 leading-snug">
+                                <div className="font-mono text-[11px] text-slate-900 mb-0.5">{fnMatches[fnPickIndex].syntax}</div>
+                                {fnMatches[fnPickIndex].description}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-[#fafafa] border border-slate-300 shadow-md px-2 py-1 text-slate-700 whitespace-nowrap">
+                            <span>{argTip.name}(</span>
+                            {argTip.params.map((p, i) => (
+                                <span key={i}>
+                                    {i > 0 && ", "}
+                                    <span className={p.current ? "font-bold text-slate-900" : undefined}>{p.text}</span>
+                                </span>
+                            ))}
+                            <span>)</span>
+                        </div>
+                    )}
+                </div>,
+                document.body
+            )}
 
             {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
             <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")}>

@@ -1,6 +1,10 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import migrationHelper from "../db/migrationHelper.js";
 
+// Backup / data-management history is shown on the Data Management page and is kept
+// beyond the audit retention window.
+export const RETAINED_AUDIT_ACTIONS = ['RESTORE_BACKUP', 'DOWNLOAD_BACKUP', 'DELETE_BACKUP', 'EXPORT_DATA', 'IMPORT_DATA'];
+
 class Audit {
     constructor(data) {
         this.id = data.id;
@@ -33,6 +37,13 @@ class Audit {
                     )
                 `);
             }
+            // Serves the newest-first listing and the nightly retention delete.
+            await migrationHelper.ensureIndexExists(
+                'audits',
+                'idx_audits_createdAt',
+                'CREATE INDEX idx_audits_createdAt ON audits(createdAt)',
+                { longRunning: true }
+            );
             console.log("Audits table verified/created in MSSQL.");
         } catch (error) {
             console.error("Error creating audits table in MSSQL:", error);

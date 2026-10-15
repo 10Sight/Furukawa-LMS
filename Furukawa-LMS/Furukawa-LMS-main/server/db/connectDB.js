@@ -77,7 +77,7 @@ const poolPromise = new sql.ConnectionPool(dbConfig)
         return pool;
     })
     .catch(err => {
-        logger.error("MSSQL Connection Failed", err.message);
+        logger.error(`MSSQL Connection Failed: ${err.message}`);
         // Do not force exit so the API server remains operational
         return null;
     });
@@ -85,7 +85,7 @@ const poolPromise = new sql.ConnectionPool(dbConfig)
 const longRunningPoolPromise = new sql.ConnectionPool(longRunningDbConfig)
     .connect()
     .catch(err => {
-        logger.error("MSSQL long-running pool connection failed", err.message);
+        logger.error(`MSSQL long-running pool connection failed: ${err.message}`);
         return null;
     });
 

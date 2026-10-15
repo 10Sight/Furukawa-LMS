@@ -18,7 +18,9 @@ export const auditApi = createApi({
                 dateFrom = null,
                 dateTo = null,
                 ipAddress = "",
-                userAgent = ""
+                userAgent = "",
+                departmentId = "",
+                sectionId = ""
             } = {}) => {
                 const params = { page, limit };
                 
@@ -32,6 +34,8 @@ export const auditApi = createApi({
                 if (dateTo) params.dateTo = dateTo;
                 if (ipAddress) params.ipAddress = ipAddress;
                 if (userAgent) params.userAgent = userAgent;
+                if (departmentId) params.departmentId = departmentId;
+                if (sectionId) params.sectionId = sectionId;
                 
                 return {
                     url: "/api/audits",

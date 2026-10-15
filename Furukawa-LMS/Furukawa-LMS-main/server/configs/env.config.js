@@ -48,6 +48,10 @@ const ENV = {
     BASE_URL: process.env.BASE_URL || "http://192.168.90.19:5174",
     APP_BASE_URL: process.env.APP_BASE_URL || "http://192.168.90.19:5174",
 
+    // Audit logs (Recent Activity) older than this many days are deleted nightly and never
+    // returned by GET /api/audits (see services/auditRetentionScheduler.js).
+    AUDIT_RETENTION_DAYS: Math.max(parseInt(process.env.AUDIT_RETENTION_DAYS, 10) || 30, 1),
+
     // Spreadsheet storage. Changing either needs only a restart: the server converts
     // existing data to match on startup (see services/sheetStorageMaintenance.js).
     //

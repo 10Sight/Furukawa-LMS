@@ -86,6 +86,8 @@ const MIN_COLUMN_WIDTH = 40;
 const MIN_ROW_HEIGHT = 20;
 const ROW_HEADER_WIDTH = 40;
 const HEADER_ROW_HEIGHT = 28; // matches the sticky column-header <th> row's h-7
+const FREEZE_LINE_COLOR = "#94a3b8"; // the line along frozen panes' edge
+const GRIDLINE_COLOR = "#e2e8f0"; // Tailwind slate-200, the grid's border colour
 const MEDIA_MIN_SIZE = 40;
 const ROW_VIRTUALIZATION_BUFFER = 16;
 const COL_VIRTUALIZATION_BUFFER = 4;
@@ -509,6 +511,36 @@ const SelectionRangeBorder = ({ top, bottom, left, right, color = SELECTION_BORD
         />
     );
 };
+
+// View > Freeze Panes icons, after Excel's: a small grid with the frozen part
+// shaded and the freeze line drawn in blue.
+const FreezeIconGrid = ({ className, children }) => (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
+        <rect x="3.5" y="5.5" width="25" height="21" fill="#ffffff" stroke="#64748b" />
+        <path d="M3.5 12.5h25M3.5 19.5h25M11.5 5.5v21M19.5 5.5v21" stroke="#cbd5e1" />
+        {children}
+    </svg>
+);
+const FreezePanesIcon = ({ className }) => (
+    <FreezeIconGrid className={className}>
+        <rect x="4" y="6" width="24" height="6.5" fill="#dbeafe" />
+        <rect x="4" y="12.5" width="7.5" height="13.5" fill="#dbeafe" />
+        <path d="M3.5 12.5h25M11.5 5.5v21" stroke="#2563eb" strokeWidth="1.6" />
+        <path d="M24 1.5l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4z" fill="#0ea5e9" />
+    </FreezeIconGrid>
+);
+const FreezeTopRowIcon = ({ className }) => (
+    <FreezeIconGrid className={className}>
+        <rect x="4" y="6" width="24" height="6.5" fill="#dbeafe" />
+        <path d="M3.5 12.5h25" stroke="#2563eb" strokeWidth="1.6" />
+    </FreezeIconGrid>
+);
+const FreezeFirstColumnIcon = ({ className }) => (
+    <FreezeIconGrid className={className}>
+        <rect x="4" y="6" width="7.5" height="20" fill="#dbeafe" />
+        <path d="M11.5 5.5v21" stroke="#2563eb" strokeWidth="1.6" />
+    </FreezeIconGrid>
+);
 
 // One cell of a reference in the formula being edited, drawn like Excel's range
 // finder: a light tint of the reference's color, a dashed border round the
@@ -1729,7 +1761,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [pasteSpecialOpen, setPasteSpecialOpen] = useState(false);
     const [formatCellsOpen, setFormatCellsOpen] = useState(false);
     const [formatCellsTab, setFormatCellsTab] = useState(null);
-    const [ribbonTab, setRibbonTab] = useState("home"); // "home" | "insert"
+    const [ribbonTab, setRibbonTab] = useState("home"); // "home" | "insert" | "view"
     // The Shape Format tab is there only while a shape is selected; this is whether
     // it is the tab in front. Home or Insert, whichever was, comes back when it goes.
     const [shapeTabOpen, setShapeTabOpen] = useState(false);
@@ -2092,6 +2124,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const merges = activeSheet.merges || EMPTY_LIST;
     const columnWidths = activeSheet.columnWidths || EMPTY_MAP;
     const rowHeights = activeSheet.rowHeights || EMPTY_MAP;
+    // Freeze Panes (View tab): the first `rows` rows and `cols` columns stay put
+    // while the rest of the sheet scrolls. Stored on the sheet as { rows, cols }.
+    const freezeRows = Math.max(0, Math.min(activeSheet.freeze?.rows || 0, activeSheet.rowCount || 0));
+    const freezeCols = Math.max(0, Math.min(activeSheet.freeze?.cols || 0, activeSheet.columnCount || 0));
     const tables = activeSheet.tables || EMPTY_LIST;
     const media = activeSheet.media || EMPTY_LIST;
     const hiddenRows = activeSheet.hiddenRows || EMPTY_LIST; // manually hidden (Ctrl+9), unlike filter-hidden rows
@@ -2608,14 +2644,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // spacers standing in for the columns before and after them.
     // Keyed on the two ends rather than the range object, which is rebuilt on every
     // vertical scroll step: the list is a dependency of every rendered row.
+    // Frozen columns are always rendered, first, whatever the scroll; the left
+    // spacer then stands in only for the scrollable columns scrolled past.
     const { startCol, endCol } = visibleColRange;
+    const scrollStartCol = Math.max(startCol, freezeCols);
+    const lastRenderedCol = Math.max(endCol, freezeCols - 1);
     const visibleCols = useMemo(() => {
         const list = [];
-        for (let c = startCol; c <= endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
+        for (let c = 0; c < freezeCols; c++) if (!hiddenColSet.has(c)) list.push(c);
+        for (let c = scrollStartCol; c <= endCol; c++) if (!hiddenColSet.has(c)) list.push(c);
         return list;
-    }, [startCol, endCol, hiddenColSet]);
-    const leftSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[visibleColRange.startCol] - colOffsets[0];
-    const rightSpacerWidth = visibleColRange.endCol < 0 ? 0 : colOffsets[columnCount] - colOffsets[visibleColRange.endCol + 1];
+    }, [freezeCols, scrollStartCol, endCol, hiddenColSet]);
+    const frozenColsRendered = useMemo(() => visibleCols.filter((c) => c < freezeCols).length, [visibleCols, freezeCols]);
+    const leftSpacerWidth = lastRenderedCol < 0 ? 0 : colOffsets[Math.min(scrollStartCol, lastRenderedCol + 1)] - colOffsets[freezeCols];
+    const rightSpacerWidth = lastRenderedCol < 0 ? 0 : colOffsets[columnCount] - colOffsets[lastRenderedCol + 1];
+    // The same for rows: frozen rows first, then the virtualized window below them.
+    const scrollStartRow = Math.max(visibleRowRange.startRow, freezeRows);
+    const lastRenderedRow = Math.max(visibleRowRange.endRow, freezeRows - 1);
     // Cells in a full-width row: the row header, the rendered columns and the spacers.
     const renderedColSpan = 1 + visibleCols.length + (leftSpacerWidth > 0 ? 1 : 0) + (rightSpacerWidth > 0 ? 1 : 0);
 
@@ -2630,26 +2675,33 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const ref = parseCellRef(cellId);
         if (!el || !ref) return;
 
+        // Frozen rows/columns never need scrolling to; the rest must clear the
+        // headers and the frozen panes, which cover the top/left of the view.
+        // (The offsets already count the header row / row-number column.)
         const viewTop = el.scrollTop;
-        const headerHeight = HEADER_ROW_HEIGHT;
+        const headerHeight = rowOffsets[freezeRows] ?? HEADER_ROW_HEIGHT;
         const rowStart = rowOffsets[ref.row];
         const rowEnd = rowOffsets[ref.row + 1];
-        if (rowStart < viewTop + headerHeight) {
+        if (ref.row < freezeRows) {
+            // stays in view
+        } else if (rowStart < viewTop + headerHeight) {
             el.scrollTop = Math.max(0, rowStart - headerHeight);
         } else if (rowEnd > viewTop + el.clientHeight) {
             el.scrollTop = rowEnd - el.clientHeight;
         }
 
         const viewLeft = el.scrollLeft;
-        const headerWidth = ROW_HEADER_WIDTH;
+        const headerWidth = colOffsets[freezeCols] ?? ROW_HEADER_WIDTH;
         const colStart = colOffsets[ref.col];
         const colEnd = colOffsets[ref.col + 1];
-        if (colStart < viewLeft + headerWidth) {
+        if (ref.col < freezeCols) {
+            // stays in view
+        } else if (colStart < viewLeft + headerWidth) {
             el.scrollLeft = Math.max(0, colStart - headerWidth);
         } else if (colEnd > viewLeft + el.clientWidth) {
             el.scrollLeft = colEnd - el.clientWidth;
         }
-    }, [rowOffsets, colOffsets]);
+    }, [rowOffsets, colOffsets, freezeRows, freezeCols]);
 
     useEffect(() => {
         if (lastScrolledCellRef.current === activeCell) return;
@@ -4783,6 +4835,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 for (const m of sheet.merges || []) {
                     try { worksheet.mergeCells(`${m.start}:${m.end}`); } catch { /* malformed range — skip it rather than fail the whole export */ }
                 }
+                if (sheet.freeze?.rows > 0 || sheet.freeze?.cols > 0) {
+                    const ySplit = sheet.freeze.rows || 0, xSplit = sheet.freeze.cols || 0;
+                    worksheet.views = [{ state: "frozen", xSplit, ySplit, topLeftCell: getCellId(ySplit, xSplit) }];
+                }
                 // Comment threads go out as plain cell notes, one message per paragraph
                 // (the file format's threaded comments aren't something ExcelJS writes).
                 for (const [cellId, threadId] of Object.entries(sheet.commentAnchors || {})) {
@@ -4963,8 +5019,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     skippedRuleCount += conditional.skipped;
                     approximatedRuleCount += conditional.approximated;
 
+                    const frozenView = (worksheet.views || []).find((v) => v?.state === "frozen" && (v.xSplit > 0 || v.ySplit > 0));
                     importedSheets[sheetName] = {
                         ...emptySheet(),
+                        ...(frozenView && { freeze: { rows: Math.floor(frozenView.ySplit || 0), cols: Math.floor(frozenView.xSplit || 0) } }),
                         cells: importedCells,
                         conditionalRules: conditional.rules,
                         // Grown to cover picture anchors too, since media is
@@ -5424,6 +5482,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     };
 
+    // --- View: Freeze Panes ---
+    // Rows above and columns left of the active cell stay in view while the rest
+    // scrolls. Unlike Excel, which freezes what is on screen above the cell, this
+    // always counts from row 1 / column A, so what is frozen doesn't depend on
+    // where the sheet happened to be scrolled.
+    const isFrozen = freezeRows > 0 || freezeCols > 0;
+    const setFreeze = (rowsToFreeze, colsToFreeze) => {
+        updateSheets((next) => {
+            const sheet = next[activeSheetName];
+            if (rowsToFreeze > 0 || colsToFreeze > 0) sheet.freeze = { rows: rowsToFreeze, cols: colsToFreeze };
+            else delete sheet.freeze;
+        });
+    };
+    const freezePanesAtActiveCell = () => {
+        if (isFrozen) { setFreeze(0, 0); return; }
+        const ref = parseCellRef(activeCell);
+        if (!ref) return;
+        if (ref.row === 0 && ref.col === 0) {
+            toast.info("Select the cell below the rows and to the right of the columns you want to freeze.");
+            return;
+        }
+        setFreeze(ref.row, ref.col);
+    };
+
     // --- Sheets: navigation, hide / unhide ---
 
     const visibleSheetNames = Object.keys(sheets).filter((name) => !sheets[name]?.hidden);
@@ -5733,6 +5815,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         HMC: () => { if (guardEditable()) mergeCenter(); },
         HOI: autoFitColumns,
         HOA: autoFitRows,
+        // View > Freeze Panes, as Excel's Alt+W, F then F / R / C.
+        WFF: () => { if (!readOnly) freezePanesAtActiveCell(); },
+        WFR: () => { if (!readOnly) setFreeze(1, 0); },
+        WFC: () => { if (!readOnly) setFreeze(0, 1); },
         OHR: () => { if (!readOnly) startRenameSheet(activeSheetName); },
         OHH: () => hideSheet(activeSheetName),
         OHU: () => { if (!readOnly) setUnhideSheetOpen(true); },
@@ -6059,10 +6145,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Everything a row draws from that is the same for every row. Its identity is
     // what matters — a new one means "redraw every row".
     const hasLeftSpacer = leftSpacerWidth > 0, hasRightSpacer = rightSpacerWidth > 0, isPaintingFormat = !!formatPainterStyle;
+    const frozenRowOffsets = freezeRows ? rowOffsets : null, frozenColOffsets = freezeCols ? colOffsets : null;
     const rowShared = useMemo(() => ({}), [ // eslint-disable-line react-hooks/exhaustive-deps
         cells, displayGrid, mergeMap, conditionalMap, formulaRefBorderMap, commentAnchors, commentThreads, filterHeaderTables,
         fillPreviewCellIds, hiddenRowSet, hiddenColSet, manualHiddenRowSet, visibleCols, hasLeftSpacer, hasRightSpacer,
         gridlinesVisible, showFormulas, readOnly, isPaintingFormat,
+        // Frozen cells stick at offsets taken from these, so a resize moves them all.
+        freezeRows, freezeCols, frozenColsRendered, frozenRowOffsets, frozenColOffsets,
     ]);
     // How the selection and the active cell fall on a row, as a string: the columns
     // each selected range covers there and whether the row is that range's first or
@@ -6088,221 +6177,255 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         handleRowHeaderMouseDown, handleRowHeaderMouseEnter, startRowResize, handleCellMouseDown, handleCellMouseEnter,
         startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit, handleEditorBlur,
     };
+    // A cell in a frozen row and/or column sticks to the top/left, just past the
+    // headers (the offsets already count them), on an opaque backdrop so what
+    // scrolls under it doesn't show through. Collapsed table borders don't move
+    // with a sticky cell, so it draws its gridlines itself, plus Excel's darker
+    // line along the freeze. The one being edited is lifted above the other
+    // frozen cells, so its editor can grow over them.
+    const frozenCellStyle = (rowIdx, colIdx, spanRowEnd, spanColEnd, isEditing, bg) => {
+        const inRows = rowIdx < freezeRows, inCols = colIdx < freezeCols;
+        if (!inRows && !inCols) return null;
+        const lastRow = inRows && spanRowEnd >= freezeRows - 1;
+        const lastCol = inCols && spanColEnd >= freezeCols - 1;
+        const shadows = [
+            lastRow ? `inset 0 -2px 0 0 ${FREEZE_LINE_COLOR}` : gridlinesVisible && `inset 0 -1px 0 0 ${GRIDLINE_COLOR}`,
+            lastCol ? `inset -2px 0 0 0 ${FREEZE_LINE_COLOR}` : gridlinesVisible && `inset -1px 0 0 0 ${GRIDLINE_COLOR}`,
+        ].filter(Boolean);
+        return {
+            position: "sticky",
+            ...(inRows && { top: rowOffsets[rowIdx] }),
+            ...(inCols && { left: colOffsets[colIdx] }),
+            zIndex: isEditing ? 9 : inRows && inCols ? 8 : 7,
+            backgroundColor: bg || "#ffffff",
+            boxShadow: shadows.join(", ") || undefined,
+        };
+    };
     const renderRowRef = useRef(null);
-    renderRowRef.current = (rowIdx) => (
-        <tr key={rowIdx}>
-            <td
-                onMouseDown={(e) => rowHandlers.current.handleRowHeaderMouseDown(rowIdx, e)}
-                onMouseEnter={() => rowHandlers.current.handleRowHeaderMouseEnter(rowIdx)}
-                className={cn(
-                    "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
-                    (hoveredCell?.row === rowIdx || allSelectionBounds.some((b) => rowIdx >= b.minRow && rowIdx <= b.maxRow))
-                        ? "bg-indigo-100 text-indigo-700"
-                        : "bg-slate-100 text-slate-500",
-                    manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
-                )}
-                style={{ width: ROW_HEADER_WIDTH, height: heightForRow(rowIdx) }}
-                title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
-            >
-                {rowIdx + 1}
-                {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
-                {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
-                {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
-                <div
-                    onMouseDown={(e) => rowHandlers.current.startRowResize(e, rowIdx)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-indigo-400/60 z-10"
-                    title="Drag to resize row"
-                />
-            </td>
-            {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
-            {visibleCols.map((colIdx) => {
-                const cellId = getCellId(rowIdx, colIdx);
-                const merge = mergeMap[cellId];
-                // Cells covered by a merge but not its anchor render nothing —
-                // the anchor's <td> below spans over them via colSpan/rowSpan.
-                if (merge && merge.start !== cellId) return null;
+    renderRowRef.current = (rowIdx) => {
+        const renderCell = (colIdx) => {
+            const cellId = getCellId(rowIdx, colIdx);
+            const merge = mergeMap[cellId];
+            // Cells covered by a merge but not its anchor render nothing —
+            // the anchor's <td> below spans over them via colSpan/rowSpan.
+            if (merge && merge.start !== cellId) return null;
 
-                const cell = cells[cellId];
-                const isActive = activeCell === cellId;
-                const isInRange = isCellSelected(rowIdx, colIdx);
-                const isEditing = editingCell === cellId;
-                const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
-                const isFillPreviewCell = fillPreviewCellIds.has(cellId);
-                const conditional = conditionalMap[cellId];
-                const conditionalStyle = conditional?.style;
-                // Parts of the text in a style of their own — only where the cell
-                // shows its text as typed (not a number or date shown in a format).
-                const richRuns = cell?.rich && displayGrid[cellId] === cell.value ? cellRuns(cell) : undefined;
-                // Spans count only rendered rows/columns, so a merge that
-                // covers hidden ones doesn't push the rest of the row over.
-                const mergeSpan = merge ? (() => {
-                    const s = parseCellRef(merge.start), e = parseCellRef(merge.end);
-                    let rowSpan = 0, colSpan = 0;
-                    for (let r = s.row; r <= e.row; r++) if (!hiddenRowSet.has(r)) rowSpan++;
-                    for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
-                    return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
-                })() : null;
-                // Perimeter border for a multi-cell selection: only true on the
-                // outer-facing sides of the selection rectangle, accounting for
-                // this cell's merge span if it has one.
-                const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
-                const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
-                const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
-                const inActiveRange = rowIdx >= selectionBounds?.minRow && rowIdx <= selectionBounds?.maxRow
-                    && colIdx >= selectionBounds?.minCol && colIdx <= selectionBounds?.maxCol;
-                let selectionEdges = isMultiSelection && inActiveRange ? {
-                    top: rowIdx === selectionBounds.minRow,
-                    bottom: spanRowEnd === selectionBounds.maxRow,
-                    left: colIdx === selectionBounds.minCol,
-                    right: spanColEnd === selectionBounds.maxCol
-                } : null;
-                // The other Ctrl-selected ranges each get their own perimeter.
-                if (isInRange) {
-                    for (const b of extraBounds) {
-                        if (rowIdx < b.minRow || rowIdx > b.maxRow || colIdx < b.minCol || colIdx > b.maxCol) continue;
-                        selectionEdges = {
-                            top: selectionEdges?.top || rowIdx === b.minRow,
-                            bottom: selectionEdges?.bottom || spanRowEnd === b.maxRow,
-                            left: selectionEdges?.left || colIdx === b.minCol,
-                            right: selectionEdges?.right || spanColEnd === b.maxCol
-                        };
-                    }
+            const cell = cells[cellId];
+            const isActive = activeCell === cellId;
+            const isInRange = isCellSelected(rowIdx, colIdx);
+            const isEditing = editingCell === cellId;
+            const isFillCorner = selectionBounds && rowIdx === selectionBounds.maxRow && colIdx === selectionBounds.maxCol;
+            const isFillPreviewCell = fillPreviewCellIds.has(cellId);
+            const conditional = conditionalMap[cellId];
+            const conditionalStyle = conditional?.style;
+            // Parts of the text in a style of their own — only where the cell
+            // shows its text as typed (not a number or date shown in a format).
+            const richRuns = cell?.rich && displayGrid[cellId] === cell.value ? cellRuns(cell) : undefined;
+            // Spans count only rendered rows/columns, so a merge that
+            // covers hidden ones doesn't push the rest of the row over.
+            const mergeSpan = merge ? (() => {
+                const s = parseCellRef(merge.start), e = parseCellRef(merge.end);
+                let rowSpan = 0, colSpan = 0;
+                for (let r = s.row; r <= e.row; r++) if (!hiddenRowSet.has(r)) rowSpan++;
+                for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
+                return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
+            })() : null;
+            // Perimeter border for a multi-cell selection: only true on the
+            // outer-facing sides of the selection rectangle, accounting for
+            // this cell's merge span if it has one.
+            const isMultiSelection = selectionBounds && (selectionBounds.minRow !== selectionBounds.maxRow || selectionBounds.minCol !== selectionBounds.maxCol);
+            const spanRowEnd = mergeSpan ? mergeSpan.rowEnd : rowIdx;
+            const spanColEnd = mergeSpan ? mergeSpan.colEnd : colIdx;
+            const inActiveRange = rowIdx >= selectionBounds?.minRow && rowIdx <= selectionBounds?.maxRow
+                && colIdx >= selectionBounds?.minCol && colIdx <= selectionBounds?.maxCol;
+            let selectionEdges = isMultiSelection && inActiveRange ? {
+                top: rowIdx === selectionBounds.minRow,
+                bottom: spanRowEnd === selectionBounds.maxRow,
+                left: colIdx === selectionBounds.minCol,
+                right: spanColEnd === selectionBounds.maxCol
+            } : null;
+            // The other Ctrl-selected ranges each get their own perimeter.
+            if (isInRange) {
+                for (const b of extraBounds) {
+                    if (rowIdx < b.minRow || rowIdx > b.maxRow || colIdx < b.minCol || colIdx > b.maxCol) continue;
+                    selectionEdges = {
+                        top: selectionEdges?.top || rowIdx === b.minRow,
+                        bottom: selectionEdges?.bottom || spanRowEnd === b.maxRow,
+                        left: selectionEdges?.left || colIdx === b.minCol,
+                        right: selectionEdges?.right || spanColEnd === b.maxCol
+                    };
                 }
-                const formulaRefEdges = formulaRefBorderMap[cellId];
-                const commentThreadId = commentAnchors[cellId];
-                const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
-                // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
-                const filterTable = filterHeaderTables[cellId];
-                const columnHasActiveFilter = filterTable && isFilterActive(filterTable.filters?.[colIdx]);
+            }
+            const formulaRefEdges = formulaRefBorderMap[cellId];
+            const commentThreadId = commentAnchors[cellId];
+            const commentThread = commentThreadId ? commentThreads[commentThreadId] : null;
+            // AutoFilter dropdown: only the header row of a filter-enabled table gets one.
+            const filterTable = filterHeaderTables[cellId];
+            const columnHasActiveFilter = filterTable && isFilterActive(filterTable.filters?.[colIdx]);
 
-                return (
-                    <td
-                        key={cellId}
-                        rowSpan={mergeSpan?.rowSpan}
-                        colSpan={mergeSpan?.colSpan}
-                        onMouseDown={(e) => rowHandlers.current.handleCellMouseDown(cellId, e)}
-                        onMouseEnter={(e) => rowHandlers.current.handleCellMouseEnter(cellId, e)}
-                        onDoubleClick={readOnly ? undefined : () => rowHandlers.current.startEditing(cellId)}
-                        className={cn(
-                            "p-0 relative",
-                            gridlinesVisible ? "border border-slate-200" : "border border-transparent",
-                            isActive && "outline outline-2 outline-indigo-500 -outline-offset-2",
-                            isFillPreviewCell && "outline outline-1 outline-dashed outline-indigo-400 -outline-offset-1",
-                            formatPainterStyle && "cursor-copy"
-                        )}
-                        style={{
-                            height: heightForRow(rowIdx),
-                            verticalAlign: cell?.valign || "middle",
-                            backgroundColor: conditionalStyle?.bg || cell?.bg
-                        }}
-                    >
-                        {conditional?.dataBar && !isEditing && (
-                            <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
-                                <div
-                                    className="h-full"
-                                    style={{
-                                        width: `${conditional.dataBar.pct * 100}%`,
-                                        background: conditional.dataBar.gradient
-                                            ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
-                                            : conditional.dataBar.color
-                                    }}
-                                />
-                            </div>
-                        )}
-                        {conditionalStyle?.borderColor && (
-                            <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
-                        )}
-                        <CellBorderOverlay border={cell?.border} />
-                        {isInRange && !isActive && (
-                            <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
-                        )}
-                        {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
-                        {formulaRefEdges && <FormulaRefHighlight {...formulaRefEdges} />}
-                        {/* This cell has a comment: a corner triangle, nothing more.
-                            The thread opens in the one shared card. */}
-                        {commentThread && (
-                            <span
-                                className={cn(
-                                    "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
-                                    commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
-                                )}
+            return (
+                <td
+                    key={cellId}
+                    rowSpan={mergeSpan?.rowSpan}
+                    colSpan={mergeSpan?.colSpan}
+                    onMouseDown={(e) => rowHandlers.current.handleCellMouseDown(cellId, e)}
+                    onMouseEnter={(e) => rowHandlers.current.handleCellMouseEnter(cellId, e)}
+                    onDoubleClick={readOnly ? undefined : () => rowHandlers.current.startEditing(cellId)}
+                    className={cn(
+                        "p-0 relative",
+                        gridlinesVisible ? "border border-slate-200" : "border border-transparent",
+                        isActive && "outline outline-2 outline-indigo-500 -outline-offset-2",
+                        isFillPreviewCell && "outline outline-1 outline-dashed outline-indigo-400 -outline-offset-1",
+                        formatPainterStyle && "cursor-copy"
+                    )}
+                    style={{
+                        height: heightForRow(rowIdx),
+                        verticalAlign: cell?.valign || "middle",
+                        backgroundColor: conditionalStyle?.bg || cell?.bg,
+                        ...frozenCellStyle(rowIdx, colIdx, spanRowEnd, spanColEnd, isEditing, conditionalStyle?.bg || cell?.bg)
+                    }}
+                >
+                    {conditional?.dataBar && !isEditing && (
+                        <div className="absolute inset-y-[3px] left-[2px] right-[2px] pointer-events-none">
+                            <div
+                                className="h-full"
+                                style={{
+                                    width: `${conditional.dataBar.pct * 100}%`,
+                                    background: conditional.dataBar.gradient
+                                        ? `linear-gradient(90deg, ${conditional.dataBar.color}, ${conditional.dataBar.color}22)`
+                                        : conditional.dataBar.color
+                                }}
                             />
-                        )}
-                        {filterTable && (
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); rowHandlers.current.openColumnFilter(filterTable, colIdx, e.currentTarget); }}
-                                className={cn(
-                                    "absolute right-0.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] flex items-center justify-center rounded z-10 cursor-pointer",
-                                    // The header may be any colour — a styled table's dark band or a
-                                    // plain AutoFilter range's own cell styling — so the button brings
-                                    // its own backing rather than relying on the cell's. A column that
-                                    // is being filtered gets a solid one, to stand out from the rest.
-                                    columnHasActiveFilter
-                                        ? "bg-indigo-600 text-white shadow-sm ring-1 ring-white hover:bg-indigo-700"
-                                        : "bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-slate-900"
-                                )}
-                                title={columnHasActiveFilter ? "This column is filtered — sort and filter" : "Sort and filter this column"}
-                            >
-                                {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" strokeWidth={2.25} />}
-                            </button>
-                        )}
-                        {isEditing ? (
-                            // Sized by fitCellEditor: it grows past the cell (over its
-                            // neighbours) as the text does, so the backdrop is its own.
-                            <div
-                                className="absolute left-0 top-0 z-[9] outline outline-2 outline-indigo-500 -outline-offset-2"
-                                style={{ backgroundColor: cell?.bg || "#ffffff" }}
-                            >
-                                {isEditingFormula && <FormulaTextOverlay ref={cellEditOverlayRef} text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
-                                {/* A textarea (not an input) so Alt+Enter can add a line
-                                    break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
-                                    sheet-level key handler (handleKeyDown). Its width,
-                                    height and wrap are set by fitCellEditor. */}
-                                <textarea
-                                ref={cellEditInputRef}
-                                autoFocus={editOriginRef.current !== "bar"}
-                                rows={1}
-                                className={cn(
-                                    "block px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden bg-transparent",
-                                    // Transparent text so the colored-reference overlay behind it shows.
-                                    isEditingFormula && "text-transparent caret-slate-900"
-                                )}
-                                value={editValue}
-                                onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
-                                onSelect={trackEditorCaret}
-                                onFocus={(e) => { activeEditInputRef.current = e.target; }}
-                                onScroll={syncFormulaOverlayScroll}
-                                onBlur={(e) => rowHandlers.current.handleEditorBlur(e)}
-                                />
-                            </div>
-                        ) : (
-                            <div
-                                className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                                style={richRuns
-                                    ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecoration: "none" }
-                                    : conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
-                            >
-                                {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
-                                {richRuns
-                                    ? runSegments(cell.value, richRuns).map((segment, i) => <span key={i} style={runSpanStyle(segment.style, cell)}>{segment.text}</span>)
-                                    : showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
-                            </div>
-                        )}
-                        {isFillCorner && !isEditing && !readOnly && (
-                            <div
-                                onMouseDown={(e) => rowHandlers.current.handleFillHandleMouseDown(e)}
-                                className="absolute -right-[3px] -bottom-[3px] w-[7px] h-[7px] bg-indigo-600 border border-white cursor-crosshair z-20"
-                                title="Drag to fill"
+                        </div>
+                    )}
+                    {conditionalStyle?.borderColor && (
+                        <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${conditionalStyle.borderColor}` }} />
+                    )}
+                    <CellBorderOverlay border={cell?.border} />
+                    {isInRange && !isActive && (
+                        <div className="absolute inset-0 bg-indigo-500/15 pointer-events-none" />
+                    )}
+                    {selectionEdges && <SelectionRangeBorder {...selectionEdges} />}
+                    {formulaRefEdges && <FormulaRefHighlight {...formulaRefEdges} />}
+                    {/* This cell has a comment: a corner triangle, nothing more.
+                        The thread opens in the one shared card. */}
+                    {commentThread && (
+                        <span
+                            className={cn(
+                                "absolute top-0 right-0 w-0 h-0 border-l-[7px] border-l-transparent border-t-[7px] pointer-events-none z-[1]",
+                                commentThread.status === "resolved" ? "border-t-emerald-500" : "border-t-amber-500"
+                            )}
+                        />
+                    )}
+                    {filterTable && (
+                        <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); rowHandlers.current.openColumnFilter(filterTable, colIdx, e.currentTarget); }}
+                            className={cn(
+                                // z-[4]: above the cell's own overlays, below frozen panes (7–8) scrolling over it.
+                                "absolute right-0.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] flex items-center justify-center rounded z-[4] cursor-pointer",
+                                // The header may be any colour — a styled table's dark band or a
+                                // plain AutoFilter range's own cell styling — so the button brings
+                                // its own backing rather than relying on the cell's. A column that
+                                // is being filtered gets a solid one, to stand out from the rest.
+                                columnHasActiveFilter
+                                    ? "bg-indigo-600 text-white shadow-sm ring-1 ring-white hover:bg-indigo-700"
+                                    : "bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-slate-900"
+                            )}
+                            title={columnHasActiveFilter ? "This column is filtered — sort and filter" : "Sort and filter this column"}
+                        >
+                            {columnHasActiveFilter ? <IconFilterFilled className="w-3 h-3" /> : <IconFilter className="w-3 h-3" strokeWidth={2.25} />}
+                        </button>
+                    )}
+                    {isEditing ? (
+                        // Sized by fitCellEditor: it grows past the cell (over its
+                        // neighbours) as the text does, so the backdrop is its own.
+                        <div
+                            className="absolute left-0 top-0 z-[5] outline outline-2 outline-indigo-500 -outline-offset-2"
+                            style={{ backgroundColor: cell?.bg || "#ffffff" }}
+                        >
+                            {isEditingFormula && <FormulaTextOverlay ref={cellEditOverlayRef} text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
+                            {/* A textarea (not an input) so Alt+Enter can add a line
+                                break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
+                                sheet-level key handler (handleKeyDown). Its width,
+                                height and wrap are set by fitCellEditor. */}
+                            <textarea
+                            ref={cellEditInputRef}
+                            autoFocus={editOriginRef.current !== "bar"}
+                            rows={1}
+                            className={cn(
+                                "block px-1.5 py-[6px] text-xs leading-4 outline-none border-none relative resize-none overflow-hidden bg-transparent",
+                                // Transparent text so the colored-reference overlay behind it shows.
+                                isEditingFormula && "text-transparent caret-slate-900"
+                            )}
+                            value={editValue}
+                            onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
+                            onSelect={trackEditorCaret}
+                            onFocus={(e) => { activeEditInputRef.current = e.target; }}
+                            onScroll={syncFormulaOverlayScroll}
+                            onBlur={(e) => rowHandlers.current.handleEditorBlur(e)}
                             />
-                        )}
-                    </td>
-                );
-            })}
-            {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
-        </tr>
-    );
+                        </div>
+                    ) : (
+                        <div
+                            className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
+                            style={richRuns
+                                ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecoration: "none" }
+                                : conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
+                        >
+                            {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
+                            {richRuns
+                                ? runSegments(cell.value, richRuns).map((segment, i) => <span key={i} style={runSpanStyle(segment.style, cell)}>{segment.text}</span>)
+                                : showFormulas && isFormula(cell?.value) ? cell.value : (displayGrid[cellId] ?? "")}
+                        </div>
+                    )}
+                    {isFillCorner && !isEditing && !readOnly && (
+                        <div
+                            onMouseDown={(e) => rowHandlers.current.handleFillHandleMouseDown(e)}
+                            className="absolute -right-[3px] -bottom-[3px] w-[7px] h-[7px] bg-indigo-600 border border-white cursor-crosshair z-20"
+                            title="Drag to fill"
+                        />
+                    )}
+                </td>
+            );
+        };
+        return (
+            <tr key={rowIdx}>
+                <td
+                    onMouseDown={(e) => rowHandlers.current.handleRowHeaderMouseDown(rowIdx, e)}
+                    onMouseEnter={() => rowHandlers.current.handleRowHeaderMouseEnter(rowIdx)}
+                    className={cn(
+                        "sticky left-0 z-10 border border-slate-200 text-[11px] font-semibold text-center cursor-pointer hover:bg-slate-200 select-none",
+                        (hoveredCell?.row === rowIdx || allSelectionBounds.some((b) => rowIdx >= b.minRow && rowIdx <= b.maxRow))
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "bg-slate-100 text-slate-500",
+                        manualHiddenRowSet.has(rowIdx - 1) && "border-t-2 border-t-indigo-400"
+                    )}
+                    style={{
+                        width: ROW_HEADER_WIDTH, height: heightForRow(rowIdx),
+                        // A frozen row's number stays at the top with it, over the ones scrolling under.
+                        ...(rowIdx < freezeRows && { top: rowOffsets[rowIdx], zIndex: 15 }),
+                    }}
+                    title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
+                >
+                    {rowIdx + 1}
+                    {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
+                    {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
+                    {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
+                    <div
+                        onMouseDown={(e) => rowHandlers.current.startRowResize(e, rowIdx)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute bottom-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-indigo-400/60 z-10"
+                        title="Drag to resize row"
+                    />
+                </td>
+                {visibleCols.slice(0, frozenColsRendered).map(renderCell)}
+                {leftSpacerWidth > 0 && <td key="left-spacer" style={{ padding: 0, border: "none" }} />}
+                {visibleCols.slice(frozenColsRendered).map(renderCell)}
+                {rightSpacerWidth > 0 && <td key="right-spacer" style={{ padding: 0, border: "none" }} />}
+            </tr>
+        );
+    };
 
     const defaultPivotSourceRange = selectionBounds
         ? `${getCellId(selectionBounds.minRow, selectionBounds.minCol)}:${getCellId(selectionBounds.maxRow, selectionBounds.maxCol)}`
@@ -6422,7 +6545,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
             {/* Ribbon tabs — Home mirrors Excel's Home tab; Insert holds PivotTable / media */}
             <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
-                {[["home", "Home"], ["insert", "Insert"], ...(hasFormatShape ? [["shape", "Shape Format"]] : [])].map(([key, label]) => (
+                {[["home", "Home"], ["insert", "Insert"], ["view", "View"], ...(hasFormatShape ? [["shape", "Shape Format"]] : [])].map(([key, label]) => (
                     <button
                         key={key}
                         type="button"
@@ -6854,6 +6977,46 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     </RibbonDropdown>
                 </RibbonGroup>
             </div>
+            ) : ribbonTab === "view" ? (
+            <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
+                <RibbonGroup label="Window">
+                    {/* Excel's Freeze Panes menu: each entry says what it keeps in view. */}
+                    <RibbonDropdown
+                        large
+                        title="Freeze Panes — keep part of the sheet in view while the rest scrolls"
+                        trigger={<>
+                            <FreezePanesIcon className="w-8 h-8" />
+                            <span className="text-xs leading-tight inline-flex items-center gap-0.5">
+                                Freeze<br />Panes <IconChevronDown className="w-3 h-3 text-slate-500" />
+                            </span>
+                        </>}
+                        contentClassName="w-80"
+                    >
+                        <MenuClose>
+                            {(close) => [
+                                isFrozen
+                                    ? ["unfreeze", FreezePanesIcon, "Unfreeze Panes", "Unlock all rows and columns to scroll through the entire worksheet.", () => setFreeze(0, 0)]
+                                    : ["panes", FreezePanesIcon, "Freeze Panes", "Keep rows and columns visible while the rest of the worksheet scrolls (based on current selection).", freezePanesAtActiveCell],
+                                ["row", FreezeTopRowIcon, "Freeze Top Row", "Keep the top row visible while scrolling through the rest of the worksheet.", () => setFreeze(1, 0)],
+                                ["col", FreezeFirstColumnIcon, "Freeze First Column", "Keep the first column visible while scrolling through the rest of the worksheet.", () => setFreeze(0, 1)],
+                            ].map(([key, icon, label, description, run]) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    className="w-full flex items-start gap-2.5 text-left px-2 py-1.5 rounded-sm hover:bg-slate-100 cursor-pointer"
+                                    onClick={() => { close(); run(); }}
+                                >
+                                    {React.createElement(icon, { className: "w-8 h-8 shrink-0" })}
+                                    <span className="min-w-0">
+                                        <span className="block text-xs font-semibold text-slate-800">{label}</span>
+                                        <span className="block text-[11px] leading-snug text-slate-500">{description}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </MenuClose>
+                    </RibbonDropdown>
+                </RibbonGroup>
+            </div>
             ) : (
             <div className="flex items-stretch border-b border-slate-200 bg-[#f8f8f8] overflow-x-auto themed-scrollbar">
                 <RibbonGroup label="Tables">
@@ -7247,8 +7410,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             {/* In a fixed-layout table the first row sets every column's
                                 width, so the spacers get theirs here; the body rows'
                                 spacer cells just line up under them. */}
-                            {leftSpacerWidth > 0 && <th key="left-spacer" style={{ width: leftSpacerWidth, padding: 0, border: "none" }} />}
-                            {visibleCols.map((colIdx) => { const c = columns[colIdx]; return (
+                            {visibleCols.map((colIdx, i) => { const c = columns[colIdx]; return (
+                                <React.Fragment key={c}>
+                                {/* Frozen columns come first; the spacer for the scrolled-past ones follows them. */}
+                                {i === frozenColsRendered && leftSpacerWidth > 0 && <th key="left-spacer" style={{ width: leftSpacerWidth, padding: 0, border: "none" }} />}
                                 <th
                                     key={c}
                                     onMouseDown={(e) => handleColHeaderMouseDown(colIdx, e)}
@@ -7261,7 +7426,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         // Marks where hidden columns sit, like Excel's double line.
                                         hiddenColSet.has(colIdx - 1) && "border-l-2 border-l-indigo-400"
                                     )}
-                                    style={{ width: widthForCol(colIdx) }}
+                                    style={{
+                                        width: widthForCol(colIdx),
+                                        // A frozen column's letter stays at the left with it, over the ones scrolling under.
+                                        ...(colIdx < freezeCols && { left: colOffsets[colIdx], zIndex: 25 }),
+                                    }}
                                     title={hiddenColSet.has(colIdx - 1) ? "Hidden column(s) to the left — select across them and press Ctrl+Shift+0 to unhide" : undefined}
                                 >
                                     {c}
@@ -7276,17 +7445,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                         title="Drag to resize column · double-click to fit"
                                     />
                                 </th>
+                                </React.Fragment>
                             ); })}
                             {rightSpacerWidth > 0 && <th key="right-spacer" style={{ width: rightSpacerWidth, padding: 0, border: "none" }} />}
                         </tr>
                     </thead>
                     <tbody>
-                        {visibleRowRange.startRow > 0 && (
-                            <tr key="top-spacer">
-                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[visibleRowRange.startRow] - rowOffsets[0], padding: 0, border: "none" }} />
-                            </tr>
-                        )}
-                        {rows.slice(visibleRowRange.startRow, visibleRowRange.endRow + 1).map((rowIdx) => {
+                        {/* Frozen rows first, always drawn; the spacer then stands in for
+                            the scrollable rows scrolled past, above the drawn window. */}
+                        {[...rows.slice(0, freezeRows), "top-spacer", ...rows.slice(scrollStartRow, visibleRowRange.endRow + 1)].map((rowIdx) => {
+                            if (rowIdx === "top-spacer") {
+                                const spacerHeight = rowOffsets[Math.min(scrollStartRow, lastRenderedRow + 1)] - rowOffsets[freezeRows];
+                                return spacerHeight > 0 && (
+                                    <tr key="top-spacer">
+                                        <td colSpan={renderedColSpan} style={{ height: spacerHeight, padding: 0, border: "none" }} />
+                                    </tr>
+                                );
+                            }
                             if (hiddenRowSet.has(rowIdx)) return null;
                             return (
                                 <GridRow
@@ -7302,9 +7477,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 />
                             );
                         })}
-                        {visibleRowRange.endRow < rowCount - 1 && (
+                        {lastRenderedRow < rowCount - 1 && (
                             <tr key="bottom-spacer">
-                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[rowCount] - rowOffsets[visibleRowRange.endRow + 1], padding: 0, border: "none" }} />
+                                <td colSpan={renderedColSpan} style={{ height: rowOffsets[rowCount] - rowOffsets[lastRenderedRow + 1], padding: 0, border: "none" }} />
                             </tr>
                         )}
                     </tbody>

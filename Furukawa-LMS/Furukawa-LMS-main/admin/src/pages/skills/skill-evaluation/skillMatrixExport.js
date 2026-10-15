@@ -65,6 +65,70 @@ export const getMonthlySchedulePercents = (config, selectedMonth, entries) => {
     });
 };
 
+// Mirrors SkillIcon's parsing: -1 = blank ('-'), 0 = under training, n = filled slices.
+const levelToFilledSlices = (levelStr, levels) => {
+    const value = levelStr || '-';
+    if (value === '-' || value === 'None') return -1;
+    if (value === 'L-0') return 0;
+    if (value.startsWith('L-')) return parseInt(value.split('-')[1]) || 0;
+    const found = levels.find(l => l.name === value);
+    return found ? found.order + 1 : 0;
+};
+
+const SYMBOL_PX = 20; // displayed size in the sheet
+const SYMBOL_SCALE = 3; // drawn larger so it stays crisp when zoomed
+
+// Draws the same pie symbol as SkillIcon onto a canvas and returns base64 PNG data,
+// or null when there is nothing to draw (blank level / no canvas available).
+const drawSkillSymbol = (filled, maxLevels) => {
+    if (filled < 0 || typeof document === 'undefined') return null;
+    const size = SYMBOL_PX * SYMBOL_SCALE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const center = size / 2;
+    const radius = size / 2 - 2 * SYMBOL_SCALE;
+    ctx.strokeStyle = 'black';
+
+    if (filled === 0) {
+        // Under training: dashed circle with a dashed cross
+        ctx.setLineDash([2 * SYMBOL_SCALE, 2 * SYMBOL_SCALE]);
+        ctx.lineWidth = SYMBOL_SCALE;
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 0.5 * SYMBOL_SCALE;
+        ctx.beginPath();
+        ctx.moveTo(center, center - radius);
+        ctx.lineTo(center, center + radius);
+        ctx.moveTo(center - radius, center);
+        ctx.lineTo(center + radius, center);
+        ctx.stroke();
+    } else {
+        const anglePerSlice = (Math.PI * 2) / maxLevels;
+        let start = -Math.PI / 2; // 12 o'clock, clockwise like the UI
+        ctx.lineWidth = 0.5 * SYMBOL_SCALE;
+        for (let i = 0; i < maxLevels; i++) {
+            ctx.beginPath();
+            ctx.moveTo(center, center);
+            ctx.arc(center, center, radius, start, start + anglePerSlice);
+            ctx.closePath();
+            ctx.fillStyle = i < filled ? 'black' : 'white';
+            ctx.fill();
+            ctx.stroke();
+            start += anglePerSlice;
+        }
+        ctx.lineWidth = SYMBOL_SCALE;
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+    return canvas.toDataURL('image/png').split(',')[1];
+};
+
 const THIN_BORDER = {
     top: { style: 'thin' },
     left: { style: 'thin' },
@@ -146,6 +210,33 @@ export const exportSkillMatrixToExcel = async ({
     const left = { horizontal: 'left' };
     const right = { horizontal: 'right' };
 
+    // One embedded PNG per distinct level, reused for every cell showing it.
+    const maxLevels = levels.length || 4;
+    const symbolIds = new Map();
+    // Floats the level symbol centred over a cell; returns false when nothing was drawn.
+    const placeSymbol = (row, col, levelStr) => {
+        const filled = levelToFilledSlices(levelStr, levels);
+        if (!symbolIds.has(filled)) {
+            const base64 = drawSkillSymbol(filled, maxLevels);
+            symbolIds.set(filled, base64 ? workbook.addImage({ base64, extension: 'png' }) : null);
+        }
+        const imageId = symbolIds.get(filled);
+        if (imageId == null) return false;
+
+        const colPx = (ws.getColumn(col).width || 9) * 7 + 5;
+        const rowPx = ((ws.getRow(row).height || 15) * 4) / 3;
+        ws.addImage(imageId, {
+            tl: {
+                col: col - 1 + Math.max(0, (colPx - SYMBOL_PX) / 2 / colPx),
+                row: row - 1 + Math.max(0, (rowPx - SYMBOL_PX) / 2 / rowPx),
+            },
+            ext: { width: SYMBOL_PX, height: SYMBOL_PX },
+            editAs: 'oneCell',
+        });
+        return true;
+    };
+    const SYMBOL_ROW_HEIGHT = 21; // points (~28px), fits the 20px symbol
+
     // --- Title ---
     r++;
     block(r, 1, r, totalCols, 'FURUKAWA MINDA ELECTRIC PVT. LTD.', { font: { bold: true, size: 10 }, alignment: right, border: false });
@@ -200,13 +291,20 @@ export const exportSkillMatrixToExcel = async ({
     }
 
     // --- Legend ---
-    r += 2;
-    const legend = [
-        'L-0: Under training',
-        ...levels.map(level => `${level.name}: ${level.description || level.name}`),
-    ].join('     ');
-    block(r, 1, r, 2, 'Skill Symbol', { font: bold, fill: GREY, alignment: right });
-    block(r, 3, r, totalCols, legend, { alignment: left });
+    r++;
+    const legendItems = [
+        ['L-0', 'Under training'],
+        ...levels.map(level => [level.name, level.description || level.name]),
+    ];
+    const legendStart = r + 1;
+    legendItems.forEach(([levelStr, label]) => {
+        r++;
+        ws.getRow(r).height = SYMBOL_ROW_HEIGHT;
+        set(r, 3, '');
+        if (!placeSymbol(r, 3, levelStr)) ws.getCell(r, 3).value = levelStr;
+        block(r, 4, r, 6, label, { alignment: left });
+    });
+    block(legendStart, 1, r, 2, 'Skill Symbol', { font: bold, fill: GREY, alignment: right });
 
     // --- Table header ---
     r += 2;
@@ -259,6 +357,7 @@ export const exportSkillMatrixToExcel = async ({
     r = h7;
     entries.forEach((entry, idx) => {
         r++;
+        ws.getRow(r).height = SYMBOL_ROW_HEIGHT;
         set(r, 1, idx + 1, { font: bold });
         set(r, 2, entry.name || entry.manualName || '', { font: bold, alignment: left });
         set(r, 3, entry.cardNo || '');
@@ -266,8 +365,12 @@ export const exportSkillMatrixToExcel = async ({
         set(r, 5, entry.certDate || '');
         set(r, 6, entry.position || '', { font: bold, fill: YELLOW_LIGHT });
         groups.forEach((group, i) => {
+            const col = firstGroupCol + i;
             const level = getSubSectionDisplayLevel(entry, group);
-            set(r, firstGroupCol + i, level, { font: level === '-' ? undefined : bold });
+            // Blank like the UI for '-'; otherwise the symbol, falling back to text
+            // only if it could not be drawn.
+            const drawn = placeSymbol(r, col, level);
+            set(r, col, level === '-' || drawn ? '' : level, { font: bold });
         });
         set(r, planCol, entry.plan ?? '');
         set(r, actualCol, entry.actual ?? '', { font: bold, fill: GREY });

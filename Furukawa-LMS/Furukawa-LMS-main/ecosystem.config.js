@@ -16,7 +16,7 @@ module.exports = {
     },
     {
       name: "lms-frontend",
-      cwd: "./portal", // <-- CHANGED from ./admin to ./portal
+      cwd: "./admin",
       script: "./node_modules/vite/bin/vite.js",
       args: "--host --port 5174", 
       instances: 1,

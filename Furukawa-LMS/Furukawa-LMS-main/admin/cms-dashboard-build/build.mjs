@@ -45,5 +45,7 @@ await build({
   }), autoprefixer()] } },
   build: { outDir, emptyOutDir: false, rollupOptions: { input: path.join(buildRoot, 'index.html') } },
 });
-// Both CMS hosts serve the same canonical integration bundle.
-cpSync(outDir, path.join(portalPublicRoot, 'cms-dashboard'), { recursive: true });
+// Both CMS hosts serve the same canonical integration bundle if portal exists.
+if (existsSync(path.dirname(portalPublicRoot))) {
+  cpSync(outDir, path.join(portalPublicRoot, 'cms-dashboard'), { recursive: true });
+}

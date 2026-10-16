@@ -71,8 +71,29 @@ export function loadPDCA(fallback) {
     return fallback;
   }
   records = records.filter(record => record && typeof record === 'object' && (record.id || record.recordId));
-  // Strip legacy mock records if present in browser storage
-  records = records.filter(record => !String(record.id || '').startsWith('PDCA-ASY-BW-'));
+  const DUMMY_IDS = new Set(['PDCA-GJ-101', 'PDCA-BW-102', 'PDCA-GJ-103', 'PDCA-BW-104', 'CFT-GJ-201', 'CFT-BW-202']);
+  const DUMMY_TOPICS = new Set([
+    'Reduction of Solder Bridge Defects in ECU Assembly',
+    'Die-Casting Cycle Time Optimization on Cell #4',
+    'Forklift Traffic Collision Prevention IoT Radar',
+    'Air Compressor Energy Leakage Elimination',
+    'Team Composition & Role',
+    'Alignment & Goal Setting',
+    'Assembly Line 3 - Pneumatic Crimper Pressure Drop Detection Alarm',
+    'Assembly Line 2 - Conveyor Belt Speed Synchronization with Pick-and-Place',
+    'C&C Area - CNC Milling Center #3 Spindle Runout Laser Alignment Audit',
+    'Press Shop - Progressive Stamping Die Strip Mis-feed Optical Sensor Calibration',
+    'Die Casting Area - Mold Water Cooling Channel Descaling & Flow Rate Verification',
+    'Zero Defect Assembly CFT',
+    'Automated Line Solder Inspection Updated'
+  ]);
+  // Strip dummy records if present in browser storage
+  records = records.filter(record => {
+    const id = String(record.id || record.recordId || '');
+    if (DUMMY_IDS.has(id) || id.startsWith('PDCA-ASY-BW-') || id.startsWith('PDCA-CC-BW-')) return false;
+    if (record.topic && DUMMY_TOPICS.has(record.topic.trim())) return false;
+    return true;
+  });
   // Ensure newly seeded records from fallback are merged into existing local storage
   if (Array.isArray(fallback) && fallback.length > 0) {
     const existingIds = new Set(records.map(r => r.id || r.recordId));

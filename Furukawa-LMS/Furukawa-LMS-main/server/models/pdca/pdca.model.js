@@ -174,108 +174,7 @@ export class PDCAModel {
     }
 
     static async seedInitialDataIfEmpty() {
-        try {
-            const dbActive = await isDbConnected();
-            const store = readFallbackStore();
-            let total = store.records.filter(r => !r.isDeleted).length;
-
-            if (dbActive) {
-                const [countRows] = await executeQuery(`SELECT COUNT(*) AS total FROM pdca_records WHERE isDeleted = 0`);
-                if (countRows && countRows[0]) total = countRows[0].total;
-            }
-
-            if (total === 0) {
-                logger.info("Seeding initial PDCA records...");
-                const seedItems = [
-                    {
-                        id: "PDCA-GJ-101",
-                        topic: "Reduction of Solder Bridge Defects in ECU Assembly",
-                        description: "Implement automated optical inspection (AOI) pre-wave soldering verification to reduce rework cycle time.",
-                        date: "23 Sep 2026",
-                        time: "09:45 AM",
-                        createdBy: { name: "YOGESH KUMAR", code: "AS081213", email: "aso81213@fme-minda.co.in", avatarBg: "bg-blue-100 text-blue-700", initials: "YK" },
-                        plant: "Gujrat",
-                        scope: "Company",
-                        department: "SRC Quality",
-                        isSelf: false
-                    },
-                    {
-                        id: "PDCA-BW-102",
-                        topic: "Die-Casting Cycle Time Optimization on Cell #4",
-                        description: "Hydraulic pressure recalibration and chilled water cooling channel upgrade for lower cycle duration.",
-                        date: "22 Sep 2026",
-                        time: "11:15 AM",
-                        createdBy: { name: "RAHUL SHARMA", code: "BW041920", email: "r.sharma@fme-minda.co.in", avatarBg: "bg-emerald-100 text-emerald-700", initials: "RS" },
-                        plant: "Bawal",
-                        scope: "Company",
-                        department: "Die Casting",
-                        isSelf: true
-                    },
-                    {
-                        id: "PDCA-GJ-103",
-                        topic: "Forklift Traffic Collision Prevention IoT Radar",
-                        description: "Install 360-degree proximity sensors and warning buzzers at blind intersections in main warehouse.",
-                        date: "20 Sep 2026",
-                        time: "02:30 PM",
-                        createdBy: { name: "AMIT PATEL", code: "GJ092311", email: "amit.patel@fme-minda.co.in", avatarBg: "bg-amber-100 text-amber-700", initials: "AP" },
-                        plant: "Gujrat",
-                        scope: "Company",
-                        department: "EHS Safety",
-                        isSelf: false
-                    },
-                    {
-                        id: "PDCA-BW-104",
-                        topic: "Air Compressor Energy Leakage Elimination",
-                        description: "Ultrasonic air leak survey across pneumatic piping network in press shop to reduce kWh consumption.",
-                        date: "18 Sep 2026",
-                        time: "10:00 AM",
-                        createdBy: { name: "PRIYA NAIR", code: "GJ018442", email: "priya.nair@fme-minda.co.in", avatarBg: "bg-rose-100 text-rose-700", initials: "PN" },
-                        plant: "Bawal",
-                        scope: "Company",
-                        department: "Plant Maintenance",
-                        isSelf: false
-                    },
-                    {
-                        id: "CFT-GJ-201",
-                        topic: "Team Composition & Role",
-                        description: "Cross-functional team operational charter defining roles for production engineering, quality assurance and maintenance leads.",
-                        date: "25 Sep 2026",
-                        time: "10:30 AM",
-                        createdBy: { name: "YOGESH KUMAR", code: "AS081213", email: "aso81213@fme-minda.co.in", avatarBg: "bg-blue-100 text-blue-700", initials: "YK" },
-                        plant: "Gujrat",
-                        scope: "CFT",
-                        department: "CFT",
-                        isSelf: false,
-                        assignedMembers: [
-                            { name: "AMIT PATEL", code: "GJ092311" },
-                            { name: "PRIYA NAIR", code: "GJ018442" }
-                        ]
-                    },
-                    {
-                        id: "CFT-BW-202",
-                        topic: "Alignment & Goal Setting",
-                        description: "Zero Lost Time Injury (LTI) milestone targets aligned across shift leaders and contractor teams.",
-                        date: "24 Sep 2026",
-                        time: "02:15 PM",
-                        createdBy: { name: "RAHUL SHARMA", code: "BW041920", email: "r.sharma@fme-minda.co.in", avatarBg: "bg-emerald-100 text-emerald-700", initials: "RS" },
-                        plant: "Bawal",
-                        scope: "CFT",
-                        department: "CFT",
-                        isSelf: false,
-                        assignedMembers: [
-                            { name: "DEEPAK MEHTA", code: "GJ045819" },
-                            { name: "YOGESH KUMAR", code: "AS081213" }
-                        ]
-                    }
-                ];
-
-                for (const item of seedItems) {
-                    await PDCAModel.create(item, 'SYSTEM_SEED');
-                }
-            }
-        } catch (e) {
-            logger.warn("Seeding PDCA initial records note:", e.message);
-        }
+        // Dummy data seeding removed - dashboard displays only user-created PDCA records
     }
 
     // --- Record CRUD ---
@@ -960,7 +859,51 @@ export class PDCAModel {
             return store.sections;
         }
 
-        return [];
+        const defaultSections = [
+            { id: 70, name: 'Assembly Quality', uniCode: 'WQ1-4', category: 'Quality', lines: [{ id: 701, name: 'Final Inspection Area', uniCode: 'FIA', sectionId: 70 }, { id: 702, name: 'Pre-Inspection Rework', uniCode: 'PIR', sectionId: 70 }, { id: 703, name: 'Quality Lab', uniCode: 'QL', sectionId: 70 }] },
+            { id: 74, name: 'Assembly Production', uniCode: 'WAP1-8', category: 'Assembly', lines: [{ id: 741, name: 'Assembly Area', uniCode: 'AA', sectionId: 74 }, { id: 742, name: 'Assembly Line 1', uniCode: 'AL1', sectionId: 74 }, { id: 743, name: 'Assembly Line 2', uniCode: 'AL2', sectionId: 74 }, { id: 744, name: 'Assembly Line 3', uniCode: 'AL3', sectionId: 74 }] },
+            { id: 75, name: 'Assembly Production (Support team)', uniCode: 'WAP1-7', category: 'Assembly', lines: [{ id: 751, name: 'Assembly Area', uniCode: 'AA', sectionId: 75 }] },
+            { id: 78, name: 'AIRBAG SUB-ASSEMBLY', uniCode: 'WAP1-6', category: 'Assembly', lines: [{ id: 781, name: 'Assembly Line 1', uniCode: 'AL1', sectionId: 78 }] },
+            { id: 79, name: 'TUBE CUTTING', uniCode: 'WAP1-5', category: 'Assembly', lines: [{ id: 791, name: 'Line 1', uniCode: 'L1', sectionId: 79 }] },
+            { id: 80, name: 'SPD', uniCode: 'WAP1-4', category: 'Assembly', lines: [{ id: 801, name: 'Line A', uniCode: 'LA', sectionId: 80 }] },
+            { id: 82, name: 'ASSEMBLY SUB LEADER', uniCode: 'WAP1-3', category: 'Assembly', lines: [{ id: 821, name: 'Assembly Area', uniCode: 'AA', sectionId: 82 }] },
+            { id: 85, name: 'PRODUCTION OFFICE', uniCode: 'WAP1-1', category: 'Assembly', lines: [{ id: 851, name: 'Line 1', uniCode: 'L1', sectionId: 85 }] },
+            { id: 87, name: 'Quality C&C', uniCode: 'WQ1-5', category: 'Quality', lines: [{ id: 871, name: 'Quality Lab', uniCode: 'QL', sectionId: 87 }] },
+            { id: 94, name: 'Assembly Quality (Line Leader)', uniCode: 'WQ1-3', category: 'Quality', lines: [{ id: 941, name: 'Final Inspection Area', uniCode: 'FIA', sectionId: 94 }] },
+            { id: 95, name: 'CSG + 3T (Quality)', uniCode: 'WQ1-2', category: 'Quality', lines: [{ id: 951, name: 'Quality Lab', uniCode: 'QL', sectionId: 95 }] },
+            { id: 96, name: 'SRC Quality', uniCode: 'SRC1-4', category: 'SRC', lines: [{ id: 961, name: 'Quality Lab', uniCode: 'QL', sectionId: 96 }] },
+            { id: 98, name: 'SRC- Production', uniCode: 'SRC1-2', category: 'SRC', lines: [{ id: 981, name: 'Line 1', uniCode: 'L1', sectionId: 98 }] },
+            { id: 99, name: 'Quality Lab', uniCode: 'WQ1-1', category: 'Quality', lines: [{ id: 991, name: 'Quality Lab', uniCode: 'QL', sectionId: 99 }] },
+            { id: 100, name: 'Training cell', uniCode: 'TC01', category: 'Training', lines: [{ id: 1001, name: 'Line 1', uniCode: 'L1', sectionId: 100 }] },
+            { id: 104, name: 'JB', uniCode: 'SRC1-1', category: 'SRC', lines: [{ id: 1041, name: 'Line 1', uniCode: 'L1', sectionId: 104 }] },
+            { id: 105, name: 'Safety', uniCode: 'SF1-1', category: 'Safety', lines: [{ id: 1051, name: 'Line 1', uniCode: 'L1', sectionId: 105 }] },
+            { id: 106, name: 'Store', uniCode: 'STR1-1', category: 'Store', lines: [{ id: 1061, name: 'Stores / Warehouse', uniCode: 'SW', sectionId: 106 }] },
+            { id: 107, name: 'FG (Bawal +3T+TTIPL)', uniCode: 'FG1-1', category: 'FG', lines: [{ id: 1071, name: 'Stores / Warehouse', uniCode: 'SW', sectionId: 107 }] },
+            { id: 108, name: 'Logistics', uniCode: 'FG1-2', category: 'Logistics', lines: [{ id: 1081, name: 'Packaging Area', uniCode: 'PA', sectionId: 108 }] },
+            { id: 109, name: 'PPC (Name Tag Printing)', uniCode: 'PP1-1', category: 'PPC', lines: [{ id: 1091, name: 'Line 1', uniCode: 'L1', sectionId: 109 }] },
+            { id: 110, name: 'PE', uniCode: 'PE1-1', category: 'PE', lines: [{ id: 1101, name: 'Line 1', uniCode: 'L1', sectionId: 110 }] },
+            { id: 111, name: 'Maintenance', uniCode: 'MT1-1', category: 'Maintenance', lines: [{ id: 1111, name: 'Maintenance Area', uniCode: 'MA', sectionId: 111 }, { id: 1112, name: 'Utility', uniCode: 'UT', sectionId: 111 }] },
+            { id: 113, name: 'IT', uniCode: 'IT01-1', category: 'IT', lines: [{ id: 1131, name: 'Line 1', uniCode: 'L1', sectionId: 113 }] },
+            { id: 115, name: 'D&D', uniCode: 'DD1-1', category: 'D&D', lines: [{ id: 1151, name: 'Line 1', uniCode: 'L1', sectionId: 115 }] },
+            { id: 116, name: 'Assembly (Rework/Material Handler/Trainer/Support)', uniCode: 'WAP1-2', category: 'Assembly', lines: [{ id: 1161, name: 'Assembly Area', uniCode: 'AA', sectionId: 116 }] },
+            { id: 117, name: 'Quality Office ( Reports)', uniCode: 'WQ1-6', category: 'Quality', lines: [{ id: 1171, name: 'Quality Lab', uniCode: 'QL', sectionId: 117 }] },
+            { id: 118, name: '200% Manpower', uniCode: 'WQ1-7', category: 'Quality', lines: [{ id: 1181, name: 'Final Inspection Area', uniCode: 'FIA', sectionId: 118 }] },
+            { id: 120, name: 'SRC Maintenance', uniCode: 'SRC1-5', category: 'SRC', lines: [{ id: 1201, name: 'Maintenance Area', uniCode: 'MA', sectionId: 120 }] },
+            { id: 121, name: 'C&C machine', uniCode: 'WCP1-5', category: 'CRIMPING', lines: [{ id: 1211, name: 'C&C Area', uniCode: 'CCA', sectionId: 121 }, { id: 1212, name: 'Line 1', uniCode: 'L1', sectionId: 121 }] },
+            { id: 122, name: 'C&C other', uniCode: 'WCP1-4', category: 'CRIMPING', lines: [{ id: 1221, name: 'C&C Area', uniCode: 'CCA', sectionId: 122 }] },
+            { id: 123, name: 'C&C (Leader, rework, material handler, rolling,)', uniCode: 'WCP1-3', category: 'CRIMPING', lines: [{ id: 1231, name: 'C&C Area', uniCode: 'CCA', sectionId: 123 }] },
+            { id: 124, name: 'SFG Confirmation _C&C & Document', uniCode: 'WCP1-2', category: 'CRIMPING', lines: [{ id: 1241, name: 'Line 1', uniCode: 'L1', sectionId: 124 }] },
+            { id: 125, name: 'Utility', uniCode: 'MT1-01', category: 'Maintenance', lines: [{ id: 1251, name: 'Utility', uniCode: 'UT', sectionId: 125 }] },
+            { id: 126, name: 'SFG Confirmation', uniCode: 'WAP1-9', category: 'Assembly', lines: [{ id: 1261, name: 'Assembly Line 1', uniCode: 'AL1', sectionId: 126 }] },
+            { id: 128, name: 'GA', uniCode: 'GA01', category: 'GA', lines: [{ id: 1281, name: 'Line 1', uniCode: 'L1', sectionId: 128 }] }
+        ];
+
+        try {
+            store.sections = defaultSections;
+            writeFallbackStore(store);
+        } catch {}
+
+        return defaultSections;
     }
 
     // Helper formatter

@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "build:cms": "node cms-dashboard-build/build.mjs",
+    "predev": "node cms-dashboard-build/build.mjs",
+    "prebuild": "node cms-dashboard-build/build.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

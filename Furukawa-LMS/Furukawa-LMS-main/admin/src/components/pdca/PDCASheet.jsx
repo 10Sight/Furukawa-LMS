@@ -306,7 +306,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
         const name = emp.name || p.name || '';
         const code = (emp.code || emp.empId || p.code || '').toUpperCase();
-        const department = emp.department || findEmployeeDepartment(`${name} (${code})`, dbEmployees) || (row.department || '');
+        const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+          findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+        const department = dbDept || (emp.department && emp.department !== 'CFT' ? emp.department : '') || (row.department && row.department !== 'CFT' ? row.department : '');
         return {
           id: emp.id || undefined,
           name,
@@ -326,7 +328,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       staffEmployees = parts.map((part) => {
         const { name, code } = parseStaffEmployee(part);
-        const dept = findEmployeeDepartment(part, dbEmployees) || (row.department || '');
+        const dbDept = findEmployeeDepartment(part, dbEmployees) ||
+          findEmployeeDepartment(part, VERIFIED_EMPLOYEE_MASTER);
+        const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
         return { name, code, department: dept };
       });
       if (!staffName || !staffId) {
@@ -335,7 +339,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         if (!staffId) staffId = primary.code || '';
       }
     } else if (staffName) {
-      const dept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) || (row.department || '');
+      const dbDept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) ||
+        findEmployeeDepartment(`${staffName} (${staffId})`, VERIFIED_EMPLOYEE_MASTER);
+      const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
       staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
@@ -348,7 +354,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     const lineAreaId = row.lineAreaId ?? null;
     const lineAreaCode = row.lineAreaCode || '';
     const lineAreaSectionId = row.lineAreaSectionId ?? sectionId;
-    const responsiblePersonDept = row.responsiblePersonDept || staffEmployees[0]?.department || (staffEmployee ? findEmployeeDepartment(staffEmployee, dbEmployees) : '') || '';
+    const resolvedDbDept = staffEmployees[0]?.department || (staffEmployee ? (findEmployeeDepartment(staffEmployee, dbEmployees) || findEmployeeDepartment(staffEmployee, VERIFIED_EMPLOYEE_MASTER)) : '') || '';
+    const responsiblePersonDept = (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
+      ? row.responsiblePersonDept
+      : (resolvedDbDept !== 'CFT' ? resolvedDbDept : '');
 
     return {
       ...row,
@@ -754,11 +763,8 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         headerInfo: { ...headerInfo }
       };
       initialSnapshotRef.current = serializeSheet(rows, headerInfo);
-      showToast('PDCA saved successfully.');
+      showToast('PDCA is saved successfully');
       onSave?.(sheetSnapshot);
-      setTimeout(() => {
-        onBack?.();
-      }, 500);
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
@@ -822,17 +828,19 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       const map = new Map();
       list.forEach((item) => {
         if (item && item.id && !item.isDeleted) {
+          const itemDept = item.department || item.memberDepartment || item.createdBy?.department || '';
           const members = [];
           if (item.createdBy && item.createdBy.name) {
             members.push({
               name: item.createdBy.name,
               code: item.createdBy.code || '',
-              role: 'Lead Member'
+              role: 'Lead Member',
+              department: item.createdBy.department || itemDept
             });
           }
           const assignedEmployees = Array.isArray(item.assignedMembers)
             ? item.assignedMembers
-                .map((m) => (typeof m === 'object' ? { name: m.name || '', code: m.code || '' } : { name: String(m), code: '' }))
+                .map((m) => (typeof m === 'object' ? { name: m.name || '', code: m.code || '', department: m.department || itemDept } : { name: String(m), code: '', department: itemDept }))
                 .filter((m) => m.name)
             : [];
 
@@ -840,11 +848,47 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
             id: item.id,
             name: item.topic || item.name || '',
             plant: item.plant || '',
+            department: itemDept,
             members,
-            assignedEmployees
+            assignedEmployees,
+            rawItem: item
           });
         }
       });
+
+      // Also merge any CFT records available in local context
+      if (Array.isArray(data)) {
+        data.forEach((item) => {
+          if (item && item.id && item.scope === 'CFT' && !item.isDeleted && !map.has(item.id)) {
+            const itemDept = item.department || item.memberDepartment || item.createdBy?.department || '';
+            const members = [];
+            if (item.createdBy && item.createdBy.name) {
+              members.push({
+                name: item.createdBy.name,
+                code: item.createdBy.code || '',
+                role: 'Lead Member',
+                department: item.createdBy.department || itemDept
+              });
+            }
+            const assignedEmployees = Array.isArray(item.assignedMembers)
+              ? item.assignedMembers
+                  .map((m) => (typeof m === 'object' ? { name: m.name || '', code: m.code || '', department: m.department || itemDept } : { name: String(m), code: '', department: itemDept }))
+                  .filter((m) => m.name)
+              : [];
+
+            map.set(item.id, {
+              id: item.id,
+              name: item.topic || item.name || '',
+              plant: item.plant || '',
+              department: itemDept,
+              members,
+              assignedEmployees,
+              rawItem: item
+            });
+          }
+        });
+      }
+
       setCftTopics(Array.from(map.values()));
     } catch (err) {
       console.error('Failed to load CFT topics:', err);
@@ -852,7 +896,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     } finally {
       setCftLoading(false);
     }
-  }, [topic?.plant]);
+  }, [topic?.plant, data]);
 
   useEffect(() => {
     loadCFTTopics();
@@ -875,17 +919,19 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       return {
         id: selectedRowForCFT.cftTopicId || 'cft_custom',
         name: selectedRowForCFT.cftTopic,
+        department: selectedRowForCFT.responsiblePersonDept || selectedRowForCFT.department || '',
         members: selectedRowForCFT.cftSelectedName
           ? [
               {
                 name: selectedRowForCFT.cftSelectedName,
                 code: selectedRowForCFT.cftSelectedCode || '',
-                role: 'Member'
+                role: 'Member',
+                department: selectedRowForCFT.responsiblePersonDept || selectedRowForCFT.department || ''
               }
             ]
           : [],
         assignedEmployees: selectedRowForCFT.assignedEmployee
-          ? [{ name: selectedRowForCFT.assignedEmployee, code: '' }]
+          ? [{ name: selectedRowForCFT.assignedEmployee, code: '', department: selectedRowForCFT.responsiblePersonDept || selectedRowForCFT.department || '' }]
           : []
       };
     }
@@ -1083,98 +1129,159 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     });
   };
 
+  // Track async request tokens per row to prevent stale responses from overwriting newer selections
+  const cftRequestRef = useRef({});
+
   const handleSelectTopic = (rowIndex, topicItem) => {
-    // 1. Topic appears on row!
+    if (!topicItem || !topicItem.name) {
+      handleDeleteCFT(rowIndex);
+      return;
+    }
+
+    const requestId = Date.now();
+    cftRequestRef.current[rowIndex] = requestId;
+
+    // Always fetch employees fresh from the selected CFT, discarding old CFT data
+    const candidateList = (Array.isArray(topicItem.assignedEmployees) && topicItem.assignedEmployees.length > 0)
+      ? topicItem.assignedEmployees
+      : (Array.isArray(topicItem.members) && topicItem.members.length > 0 ? topicItem.members : []);
+
+    const newStaffEmployees = candidateList.map((emp) => {
+      const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
+      const name = emp.name || p.name || '';
+      const code = (emp.code || emp.empId || p.code || '').toUpperCase();
+      const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+        findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+      const department = dbDept ||
+        (emp.department && emp.department !== 'CFT' ? emp.department : '') ||
+        (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') ||
+        '';
+      return { id: emp.id || undefined, name, code, department };
+    });
+
+    const formattedStaff = newStaffEmployees
+      .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+      .join(', ');
+
+    const targetDept = newStaffEmployees[0]?.department || (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') || '';
+
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
-      const isSwitchingTopic = currentRow.cftTopic !== topicItem.name;
 
-      let newStaffEmployees = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
-      if ((newStaffEmployees.length === 0 || !currentRow.staffEmployee) && Array.isArray(topicItem.assignedEmployees) && topicItem.assignedEmployees.length > 0) {
-        newStaffEmployees = topicItem.assignedEmployees.map((emp) => {
-          const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
-          const name = emp.name || p.name || '';
-          const code = (emp.code || emp.empId || p.code || '').toUpperCase();
-          const department = emp.department || findEmployeeDepartment(`${name} (${code})`, dbEmployees) || '';
-          return { id: emp.id || undefined, name, code, department };
-        });
-      }
-
-      const formattedStaff = newStaffEmployees
-        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
-        .join(', ');
-
+      // Case A & B: Update CFT and dependent Department and Staff Name immediately
+      // Remove previously fetched values and do not retain stale data from prior CFT
       updated[rowIndex] = {
         ...currentRow,
         cftTopic: topicItem.name,
         cftTopicId: topicItem.id,
-        ...(newStaffEmployees.length > 0
-          ? {
-              staffEmployees: newStaffEmployees,
-              staffEmployee: formattedStaff,
-              staffName: newStaffEmployees[0]?.name || '',
-              staffId: newStaffEmployees[0]?.code || '',
-              employeeId: newStaffEmployees[0]?.code || '',
-              department: currentRow.department || newStaffEmployees[0]?.department || '',
-              responsiblePersonConfirmation: formattedStaff
-            }
-          : {}),
-        ...(isSwitchingTopic
-          ? {
-              cftSelectedType: '',
-              cftSelectedName: '',
-              cftSelectedCode: '',
-              assignedEmployee: ''
-            }
-          : {})
+        cftSelectedType: '',
+        cftSelectedName: '',
+        cftSelectedCode: '',
+        assignedEmployee: '',
+        department: targetDept,
+        responsiblePersonDept: targetDept,
+        staffEmployees: newStaffEmployees,
+        staffEmployee: formattedStaff,
+        staffName: newStaffEmployees[0]?.name || '',
+        staffId: newStaffEmployees[0]?.code || '',
+        employeeId: newStaffEmployees[0]?.code || '',
+        responsiblePersonConfirmation: formattedStaff
       };
       return updated;
     });
+
     // Close topic dropdown so topic name is now visible on row
     setOpenCFTDropdown(null);
+
+    // Asynchronous check for fresh member assignments from API
+    if (topicItem.id) {
+      pdcaApi.getCftMembers(topicItem.id).then((freshMembers) => {
+        // Prevent older responses from overwriting newer selections
+        if (cftRequestRef.current[rowIndex] !== requestId) return;
+        if (!Array.isArray(freshMembers) || freshMembers.length === 0) return;
+
+        setRows((prev) => {
+          const curr = prev[rowIndex];
+          if (!curr || curr.cftTopicId !== topicItem.id) return prev;
+
+          const resolvedFresh = freshMembers.map((emp) => {
+            const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
+            const name = emp.name || p.name || '';
+            const code = (emp.code || emp.empId || p.code || '').toUpperCase();
+            const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+              findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+            const department = dbDept ||
+              (emp.department && emp.department !== 'CFT' ? emp.department : '') ||
+              (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') ||
+              '';
+            return { id: emp.id || undefined, name, code, department };
+          });
+
+          const freshFormatted = resolvedFresh
+            .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+            .join(', ');
+          const freshDept = resolvedFresh[0]?.department || (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') || (curr.responsiblePersonDept !== 'CFT' ? curr.responsiblePersonDept : '');
+
+          return prev.map((r, i) => {
+            if (i !== rowIndex) return r;
+            return {
+              ...r,
+              department: freshDept,
+              responsiblePersonDept: freshDept,
+              staffEmployees: resolvedFresh,
+              staffEmployee: freshFormatted,
+              staffName: resolvedFresh[0]?.name || '',
+              staffId: resolvedFresh[0]?.code || '',
+              employeeId: resolvedFresh[0]?.code || '',
+              responsiblePersonConfirmation: freshFormatted
+            };
+          });
+        });
+      }).catch((err) => {
+        console.warn('Could not fetch fresh CFT members:', err);
+      });
+    }
   };
 
   const handleSelectCFTMember = (rowIndex, memberObj, type) => {
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
-      const currentEmps = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const p = parseStaffEmployee(memberObj.name ? (memberObj.code ? `${memberObj.name} (${memberObj.code})` : memberObj.name) : memberObj);
+      const name = memberObj.name || p.name || '';
+      const code = (memberObj.code || p.code || '').toUpperCase();
+      const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+        findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+      const dept = dbDept ||
+        (memberObj.department && memberObj.department !== 'CFT' ? memberObj.department : '') ||
+        (currentCFTTopicObj?.department && currentCFTTopicObj?.department !== 'CFT' ? currentCFTTopicObj?.department : '') ||
+        (currentRow.responsiblePersonDept && currentRow.responsiblePersonDept !== 'CFT' ? currentRow.responsiblePersonDept : '') ||
+        '';
 
-      const exists = currentEmps.some(
-        (e) => (e.code && memberObj.code && e.code.toUpperCase() === memberObj.code.toUpperCase()) ||
-               (e.name && memberObj.name && e.name.toLowerCase() === memberObj.name.toLowerCase())
-      );
+      const empEntry = {
+        id: memberObj.id || undefined,
+        name,
+        code,
+        department: dept
+      };
 
-      let newEmps = currentEmps;
-      if (!exists && memberObj.name) {
-        const dept = findEmployeeDepartment(`${memberObj.name} (${memberObj.code || ''})`, dbEmployees) || '';
-        newEmps.push({
-          name: memberObj.name,
-          code: (memberObj.code || '').toUpperCase(),
-          department: dept
-        });
-      }
-
-      const formattedStaff = newEmps.map((e) => (e.code ? `${e.name} (${e.code})` : e.name)).join(', ');
+      const formattedStaff = code ? `${name} (${code})` : name;
 
       updated[rowIndex] = {
         ...currentRow,
         cftSelectedType: type,
-        cftSelectedName: memberObj.name,
-        cftSelectedCode: memberObj.code || '',
-        assignedEmployee: `${memberObj.name}${memberObj.code ? ` (${memberObj.code})` : ''}`,
-        ...(newEmps.length > 0
-          ? {
-              staffEmployees: newEmps,
-              staffEmployee: formattedStaff,
-              staffName: newEmps[0]?.name || '',
-              staffId: newEmps[0]?.code || '',
-              employeeId: newEmps[0]?.code || '',
-              department: currentRow.department || newEmps[0]?.department || '',
-              responsiblePersonConfirmation: formattedStaff
-            }
-          : {})
+        cftSelectedName: name,
+        cftSelectedCode: code,
+        assignedEmployee: formattedStaff,
+        department: dept || currentRow.department,
+        responsiblePersonDept: dept || currentRow.responsiblePersonDept,
+        staffEmployees: [empEntry],
+        staffEmployee: formattedStaff,
+        staffName: name,
+        staffId: code,
+        employeeId: code,
+        responsiblePersonConfirmation: formattedStaff
       };
       return updated;
     });
@@ -1184,12 +1291,39 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   const handleClearMemberOnly = (rowIndex) => {
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+      const topicObj = cftTopics.find((t) => t.id === currentRow.cftTopicId || t.name === currentRow.cftTopic);
+      const candidateList = topicObj ? ((Array.isArray(topicObj.assignedEmployees) && topicObj.assignedEmployees.length > 0)
+        ? topicObj.assignedEmployees
+        : (Array.isArray(topicObj.members) && topicObj.members.length > 0 ? topicObj.members : [])) : [];
+
+      const restoredStaff = candidateList.map((emp) => {
+        const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
+        const name = emp.name || p.name || '';
+        const code = (emp.code || emp.empId || p.code || '').toUpperCase();
+        const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+          findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+        const department = dbDept || (emp.department && emp.department !== 'CFT' ? emp.department : '') || (topicObj?.department && topicObj?.department !== 'CFT' ? topicObj?.department : '') || '';
+        return { id: emp.id || undefined, name, code, department };
+      });
+
+      const formattedStaff = restoredStaff.map((e) => (e.code ? `${e.name} (${e.code})` : e.name)).join(', ');
+      const targetDept = restoredStaff[0]?.department || (topicObj?.department && topicObj?.department !== 'CFT' ? topicObj?.department : '') || '';
+
       updated[rowIndex] = {
-        ...updated[rowIndex],
+        ...currentRow,
         cftSelectedType: '',
         cftSelectedName: '',
         cftSelectedCode: '',
-        assignedEmployee: ''
+        assignedEmployee: '',
+        department: targetDept,
+        responsiblePersonDept: targetDept,
+        staffEmployees: restoredStaff,
+        staffEmployee: formattedStaff,
+        staffName: restoredStaff[0]?.name || '',
+        staffId: restoredStaff[0]?.code || '',
+        employeeId: restoredStaff[0]?.code || '',
+        responsiblePersonConfirmation: formattedStaff
       };
       return updated;
     });
@@ -1202,17 +1336,33 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   };
 
   const handleDeleteCFT = (rowIndex, e) => {
-    e.stopPropagation();
+    if (e?.stopPropagation) e.stopPropagation();
+    // Cancel in-flight async response
+    cftRequestRef.current[rowIndex] = Date.now();
+
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[rowIndex] || {};
+      // Case C: Clear CFT and clear dependent Department and Staff Name fields
       updated[rowIndex] = {
-        ...updated[rowIndex],
+        ...currentRow,
         cftTopic: '',
         cftTopicId: '',
         cftSelectedType: '',
         cftSelectedName: '',
         cftSelectedCode: '',
-        assignedEmployee: ''
+        assignedEmployee: '',
+        department: '',
+        responsiblePersonDept: '',
+        staffEmployees: [],
+        staffEmployee: '',
+        staffName: '',
+        staffId: '',
+        employeeId: '',
+        responsiblePersonConfirmation:
+          currentRow.responsiblePersonConfirmation === currentRow.staffEmployee
+            ? ''
+            : (currentRow.responsiblePersonConfirmation || '')
       };
       return updated;
     });
@@ -1567,7 +1717,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
       const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
       const name = emp.name || p.name || '';
       const code = (emp.code || emp.empId || p.code || '').toUpperCase();
-      const department = emp.department || findEmployeeDepartment(`${name} (${code})`, dbEmployees) || '';
+      const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+        findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+      const department = dbDept || (emp.department && emp.department !== 'CFT' ? emp.department : '') || '';
       return {
         id: emp.id || undefined,
         name,
@@ -1577,7 +1729,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
     });
 
     // Match against verified employee records in database using Staff ID and Staff Name
-    const primaryDept = employeesArray[0]?.department || findEmployeeDepartment(trimmedStaff, dbEmployees);
+    const primaryDept = employeesArray[0]?.department || findEmployeeDepartment(trimmedStaff, dbEmployees) || findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER);
 
     setRows((prev) => {
       const updated = [...prev];
@@ -1593,8 +1745,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         responsiblePersonConfirmation: trimmedStaff
       };
 
-      if (primaryDept) {
+      if (primaryDept && primaryDept !== 'CFT') {
         newRow.department = primaryDept;
+        newRow.responsiblePersonDept = primaryDept;
       }
 
       updated[rowIndex] = newRow;
@@ -2214,7 +2367,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               <tr className="bg-white border-b border-[#94A3B8]">
                 <th
                   colSpan={17}
-                  className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
+                  className="py-3 px-4 text-center font-bold text-slate-900 text-lg sm:text-xl md:text-2xl tracking-wide select-none"
                 >
                   {topic?.topic || 'PDCA - M Tanaka San Audit'}
                 </th>
@@ -2948,7 +3101,14 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                               className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                             >
                               <select
-                                value={emp.department || row.responsiblePersonDept || ''}
+                                value={
+                                  (emp.department && emp.department !== 'CFT')
+                                    ? emp.department
+                                    : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) ||
+                                       findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, VERIFIED_EMPLOYEE_MASTER) ||
+                                       (row.responsiblePersonDept !== 'CFT' ? row.responsiblePersonDept : '') ||
+                                       '')
+                                }
                                 onChange={(e) => {
                                   const newDept = e.target.value;
                                   setRows((prev) => {
@@ -2965,10 +3125,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                   });
                                 }}
                                 className="w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
-                                title={emp.department || row.responsiblePersonDept || 'Select Department'}
+                                title={((emp.department && emp.department !== 'CFT') ? emp.department : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) || row.responsiblePersonDept)) || 'Select Department'}
                               >
                                 <option value="">Dept...</option>
-                                {emp.department && !departmentsList.includes(emp.department) && (
+                                {emp.department && emp.department !== 'CFT' && !departmentsList.includes(emp.department) && (
                                   <option value={emp.department}>{emp.department}</option>
                                 )}
                                 {departmentsList.map((d) => (
@@ -2983,13 +3143,21 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       ) : (
                         <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                           <select
-                            value={row.responsiblePersonDept || ''}
+                            value={
+                              (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
+                                ? row.responsiblePersonDept
+                                : (row.staffEmployees?.[0]?.department && row.staffEmployees[0].department !== 'CFT'
+                                    ? row.staffEmployees[0].department
+                                    : (findEmployeeDepartment(row.staffEmployee, dbEmployees) ||
+                                       findEmployeeDepartment(row.staffEmployee, VERIFIED_EMPLOYEE_MASTER) ||
+                                       ''))
+                            }
                             onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
                             className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
                             title={row.responsiblePersonDept || 'Select Department'}
                           >
                             <option value="">Dept...</option>
-                            {row.responsiblePersonDept && !departmentsList.includes(row.responsiblePersonDept) && (
+                            {row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT' && !departmentsList.includes(row.responsiblePersonDept) && (
                               <option value={row.responsiblePersonDept}>{row.responsiblePersonDept}</option>
                             )}
                             {departmentsList.map((d) => (
@@ -3525,7 +3693,22 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     <p className="text-[11px] text-slate-400">Genuinely saved CFT records will appear here.</p>
                   </div>
                 ) : (
-                  cftTopics.map((topicItem) => {
+                  <>
+                    {/* Clear CFT option when a CFT is currently selected on this row */}
+                    {rows[openCFTDropdown.rowIndex]?.cftTopic && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCFT(openCFTDropdown.rowIndex)}
+                        className="w-full text-left px-2.5 py-1.5 mb-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-between text-xs font-semibold cursor-pointer"
+                        title="Clear CFT and dependent Department and Staff Name"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Clear CFT Selection</span>
+                        </div>
+                      </button>
+                    )}
+                    {cftTopics.map((topicItem) => {
                     const currentRow = rows[openCFTDropdown.rowIndex];
                     const isSelected =
                       currentRow?.cftTopicId === topicItem.id ||
@@ -3561,7 +3744,8 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                         {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />}
                       </button>
                     );
-                  })
+                  })}
+                  </>
                 )}
               </div>
             </>

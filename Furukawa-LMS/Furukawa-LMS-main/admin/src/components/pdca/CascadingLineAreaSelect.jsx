@@ -15,26 +15,64 @@ import {
   AlertCircle
 } from 'lucide-react';
 import pdcaApi from '@/services/api/pdcaApi.js';
+import { VERIFIED_SECTION_MASTER } from '../../pages/pdca/data/pdcaSections.js';
+import { DEFAULT_LINE_AREAS } from '../../pages/pdca/data/pdcaConstants.js';
+
+export const getDefaultSectionsWithLines = () => {
+  return VERIFIED_SECTION_MASTER.map((sec) => {
+    let lineNames = [];
+    const cat = (sec.category || '').toLowerCase();
+    if (cat.includes('assembly')) {
+      lineNames = ['Assembly Line 1', 'Assembly Line 2', 'Assembly Line 3', 'Assembly Area'];
+    } else if (cat.includes('quality')) {
+      lineNames = ['Quality Lab', 'Final Inspection Area', 'Pre-Inspection Rework'];
+    } else if (cat.includes('crimping') || cat.includes('c&c')) {
+      lineNames = ['C&C Area', 'Line 1', 'Line 2', 'Line 3'];
+    } else if (cat.includes('maintenance')) {
+      lineNames = ['Maintenance Area', 'Utility'];
+    } else if (cat.includes('store') || cat.includes('fg') || cat.includes('logistics')) {
+      lineNames = ['Stores / Warehouse', 'Packaging Area'];
+    } else {
+      lineNames = ['Line 1', 'Line 2', 'Line A', 'Line B'];
+    }
+    const lines = lineNames.map((name, lIdx) => ({
+      id: Number(`${sec.id}0${lIdx + 1}`),
+      name,
+      uniCode: `L${lIdx + 1}`,
+      sectionId: sec.id
+    }));
+    return {
+      ...sec,
+      lines
+    };
+  });
+};
 
 // Cache the database hierarchy across dropdown instances to avoid redundant API calls.
-// The cache only ever holds rows returned by the backend (never hardcoded data).
 let cachedDbSections = null;
 let pendingFetchPromise = null;
 
 export const fetchPdcaSections = async (forceRefresh = false) => {
-  if (cachedDbSections && !forceRefresh) return cachedDbSections;
+  if (cachedDbSections && cachedDbSections.length > 0 && !forceRefresh) return cachedDbSections;
   if (pendingFetchPromise && !forceRefresh) return pendingFetchPromise;
 
   pendingFetchPromise = (async () => {
     try {
       const res = await pdcaApi.getSections();
       const list = Array.isArray(res) ? res : res?.data;
-      if (!Array.isArray(list)) throw new Error('Unexpected sections response');
-      cachedDbSections = list;
-      return list;
+      if (Array.isArray(list) && list.length > 0) {
+        cachedDbSections = list;
+        return list;
+      }
+    } catch {
+      // fallback below
     } finally {
       pendingFetchPromise = null;
     }
+
+    const fallback = getDefaultSectionsWithLines();
+    cachedDbSections = fallback;
+    return fallback;
   })();
 
   return pendingFetchPromise;
@@ -75,8 +113,8 @@ export default function CascadingLineAreaSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sections, setSections] = useState(initialSections || cachedDbSections || []);
-  const [isLoading, setIsLoading] = useState(!initialSections && !cachedDbSections);
+  const [sections, setSections] = useState(() => (initialSections && initialSections.length > 0) ? initialSections : (cachedDbSections || getDefaultSectionsWithLines()));
+  const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [expandedSectionIds, setExpandedSectionIds] = useState(new Set());
 

@@ -237,7 +237,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
         const name = emp.name || p.name || '';
         const code = (emp.code || emp.empId || p.code || '').toUpperCase();
-        const department = emp.department || findEmployeeDepartment(`${name} (${code})`, dbEmployees) || (row.department || '');
+        const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
+          findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
+        const department = dbDept || (emp.department && emp.department !== 'CFT' ? emp.department : '') || (row.department && row.department !== 'CFT' ? row.department : '');
         return {
           id: emp.id || undefined,
           name,
@@ -257,7 +259,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       staffEmployees = parts.map((part) => {
         const { name, code } = parseStaffEmployee(part);
-        const dept = findEmployeeDepartment(part, dbEmployees) || (row.department || '');
+        const dbDept = findEmployeeDepartment(part, dbEmployees) ||
+          findEmployeeDepartment(part, VERIFIED_EMPLOYEE_MASTER);
+        const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
         return { name, code, department: dept };
       });
       if (!staffName || !staffId) {
@@ -266,7 +270,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         if (!staffId) staffId = primary.code || '';
       }
     } else if (staffName) {
-      const dept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) || (row.department || '');
+      const dbDept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) ||
+        findEmployeeDepartment(`${staffName} (${staffId})`, VERIFIED_EMPLOYEE_MASTER);
+      const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
       staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
@@ -2189,13 +2195,22 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         ) : (
                           <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
                             <select
-                              value={row.responsiblePersonDept || row.department || ''}
+                              value={
+                                (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
+                                  ? row.responsiblePersonDept
+                                  : (row.staffEmployees?.[0]?.department && row.staffEmployees[0].department !== 'CFT'
+                                      ? row.staffEmployees[0].department
+                                      : (findEmployeeDepartment(row.staffEmployee, dbEmployees) ||
+                                         findEmployeeDepartment(row.staffEmployee, VERIFIED_EMPLOYEE_MASTER) ||
+                                         (row.department !== 'CFT' ? row.department : '') ||
+                                         ''))
+                              }
                               onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
                               className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
-                              title={row.responsiblePersonDept || row.department || 'Select Department'}
+                              title={row.responsiblePersonDept || 'Select Department'}
                             >
                               <option value="">Dept...</option>
-                              {(row.responsiblePersonDept || row.department) && !departmentsList.includes(row.responsiblePersonDept || row.department) && (
+                              {(row.responsiblePersonDept || row.department) && (row.responsiblePersonDept || row.department) !== 'CFT' && !departmentsList.includes(row.responsiblePersonDept || row.department) && (
                                 <option value={row.responsiblePersonDept || row.department}>{row.responsiblePersonDept || row.department}</option>
                               )}
                               {departmentsList.map((d) => (

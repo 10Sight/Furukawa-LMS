@@ -2,12 +2,36 @@ import { readSaved } from '@components/shared/formPersistence';
 import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.js';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, ShieldCheck, Info } from 'lucide-react';
+import { X, Users, ChevronDown, User, Layers, Building2, UserPlus, ShieldCheck, Info, Calendar } from 'lucide-react';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import { VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableEmployeeSelect from './SearchableEmployeeSelect.jsx';
 import { safeRandomUUID } from '../../utils/uuid.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
+
+const getTodayInputDate = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateForPDCA = (val) => {
+  if (!val) {
+    return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m, d] = val.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  const dateObj = new Date(val);
+  if (!isNaN(dateObj.getTime())) {
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  return val;
+};
 
 export const CFT_TOPICS = [];
 export const CFT_MEMBERS = [];
@@ -32,6 +56,9 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
   // 4. Unit / Plant (Defaults to Bawal)
   const initialPlant = (!defaultPlant || defaultPlant === 'Unit' || defaultPlant === 'All Plants') ? 'Bawal' : defaultPlant;
   const [plant, setPlant] = useState(initialPlant);
+
+  // 5. Date selection
+  const [cftDate, setCftDate] = useState(getTodayInputDate());
 
   // Fetch verified employees from live database metadata API
   const fetchEmployees = useCallback(async () => {
@@ -102,6 +129,10 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
       if (Array.isArray(draft.assignedEmployees)) {
         setAssignedEmployees(draft.assignedEmployees);
       }
+
+      if (draft.cftDate) {
+        setCftDate(draft.cftDate);
+      }
     }
   }, [isOpen, defaultPlant, employeesList]);
 
@@ -111,9 +142,10 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
     selectedMember,
     selectedMemberCode: selectedMember?.code || selectedMember?.id || '',
     plant,
+    cftDate,
     memberDepartment,
     assignedEmployees
-  }), [topic, selectedMember, plant, memberDepartment, assignedEmployees]);
+  }), [topic, selectedMember, plant, cftDate, memberDepartment, assignedEmployees]);
 
   useFormAutosave(
     draftState,
@@ -193,7 +225,7 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
       : 'Department not assigned';
 
     const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const dateStr = cftDate ? formatDateForPDCA(cftDate) : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const newCFTItem = {
@@ -405,23 +437,43 @@ export default function AddCFTModal({ isOpen, onClose, onAdd, defaultPlant = 'Ba
             </div>
           </div>
 
-          {/* 5. Plant / Unit Selection (Default to Bawal) */}
-          <div className="pt-1 border-t border-slate-100">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Unit * (Default: Bawal)</span>
-            </label>
-            <div className="relative">
-              <select
-                value={plant}
-                onChange={(e) => setPlant(e.target.value)}
-                className="w-full appearance-none text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none pr-10 shadow-2xs"
-                id="cft-unit-select"
-              >
-                <option value="Bawal">Bawal</option>
-                <option value="Gujrat">Gujrat</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* 5. Plant / Unit & Date Selection */}
+          <div className="pt-1 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Unit * (Default: Bawal)</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={plant}
+                  onChange={(e) => setPlant(e.target.value)}
+                  className="w-full appearance-none text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none pr-10 shadow-2xs"
+                  id="cft-unit-select"
+                >
+                  <option value="Bawal">Bawal</option>
+                  <option value="Gujrat">Gujrat</option>
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="cft-date-input" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Date *</span>
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">Required</span>
+              </label>
+              <input
+                type="date"
+                id="cft-date-input"
+                required
+                value={cftDate}
+                onChange={(e) => setCftDate(e.target.value)}
+                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none shadow-2xs transition-all cursor-pointer"
+              />
             </div>
           </div>
 

@@ -430,6 +430,7 @@ export class PDCAModel {
         const department = data.department !== undefined ? data.department : existing.department;
         const section = data.section !== undefined ? data.section : existing.section;
         const sectionId = data.sectionId !== undefined ? data.sectionId : existing.sectionId;
+        const date = data.date !== undefined ? data.date : existing.date;
         const assignedMembers = data.assignedMembers !== undefined ? data.assignedMembers : existing.assignedMembers;
 
         const dbActive = await isDbConnected();
@@ -437,11 +438,11 @@ export class PDCAModel {
             await executeQuery(`
                 UPDATE pdca_records
                 SET topic = ?, description = ?, plant = ?, scope = ?, department = ?,
-                    section = ?, sectionId = ?, assignedMembers = ?, updatedAt = GETDATE()
+                    section = ?, sectionId = ?, date = ?, assignedMembers = ?, updatedAt = GETDATE()
                 WHERE recordId = ?
             `, [
                 topic, description, plant, scope, department,
-                section, sectionId, JSON.stringify(assignedMembers), existing.id
+                section, sectionId, date, JSON.stringify(assignedMembers), existing.id
             ]);
         }
 
@@ -458,6 +459,7 @@ export class PDCAModel {
                 department,
                 section,
                 sectionId,
+                date,
                 assignedMembers,
                 updatedAt: new Date().toISOString()
             };

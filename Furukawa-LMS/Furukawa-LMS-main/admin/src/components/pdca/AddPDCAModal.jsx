@@ -3,12 +3,47 @@ import { readSaved } from '@components/shared/formPersistence';
 import { usePDCAAutosave as useFormAutosave } from '@hooks/pdca/usePDCAAutosave.js';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Layers, Check, ChevronDown, AlignLeft } from 'lucide-react';
+import { X, Layers, Check, ChevronDown, AlignLeft, Calendar } from 'lucide-react';
 
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import CascadingLineAreaSelect from './CascadingLineAreaSelect';
 import { safeRandomUUID } from '../../utils/uuid.js';
+
+const getTodayInputDate = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toInputDateValue = (val) => {
+  if (!val) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateForPDCA = (val) => {
+  if (!val) {
+    return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m, d] = val.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  const dateObj = new Date(val);
+  if (!isNaN(dateObj.getTime())) {
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  return val;
+};
 
 export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultPlant, defaultScope = 'Company' }) {
   const { userContext } = usePDCA();
@@ -19,11 +54,14 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
   ];
   const draftKey = `pdca_draft_${editData?.id || `${defaultPlant}_${defaultScope}_${userContext.lpaSource?.category || 'general'}_${userContext.lpaSource?.workbookId || 'all'}_${userContext.lpaSource?.worksheet || ''}`}`;
 
+  const defaultDate = toInputDateValue(userContext.lpaSource?.date) || getTodayInputDate();
+
   const defaultForm = {
     topic: '',
     description: userContext.lpaSource?.observations?.join('\n') || '',
     scope: defaultScope,
     department: '',
+    date: defaultDate,
     section: userContext.section?.name || '',
     sectionId: userContext.section?.id || '',
     createdBy: '',
@@ -40,6 +78,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
         description: editData.description || '',
         scope: editData.scope || 'Company',
         department: editData.department || '',
+        date: toInputDateValue(editData.date) || getTodayInputDate(),
         section: editData.section || userContext.section?.name || '',
         sectionId: editData.sectionId || userContext.section?.id || '',
         createdBy: editData.createdBy?.name || '',
@@ -48,11 +87,12 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
     } else {
       setFormData(readSaved(draftKey, {
         ...defaultForm,
+        date: toInputDateValue(userContext.lpaSource?.date) || getTodayInputDate(),
         section: userContext.section?.name || '',
         sectionId: userContext.section?.id || '',
       }));
     }
-  }, [editData, isOpen, defaultScope, draftKey, userContext.section?.name, userContext.section?.id]);
+  }, [editData, isOpen, defaultScope, draftKey, userContext.section?.name, userContext.section?.id, userContext.lpaSource?.date]);
 
   useFormAutosave(formData, value => localStorage.setItem(draftKey, JSON.stringify(value)), isOpen, message => window.alert(message));
 
@@ -120,10 +160,10 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
       const targetPlant = (!isEditMode && !['Bawal', 'Gujrat'].includes(defaultPlant)) ? 'Bawal' : defaultPlant;
 
       const now = new Date();
-      const dateStr = userContext.lpaSource?.date
+      const dateStr = formData.date ? formatDateForPDCA(formData.date) : (userContext.lpaSource?.date
         ? new Date(`${userContext.lpaSource.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-        : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        : now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+      const timeStr = editData?.time || now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       const sectionVal = formData.section.trim();
 
@@ -134,6 +174,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
           description: formData.description,
           scope,
           department: formData.department,
+          date: dateStr,
           section: sectionVal,
           sectionId: formData.sectionId || editData?.sectionId || userContext.section?.id || '',
           createdBy: {
@@ -245,7 +286,8 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
+          {/* Department & Date Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="pdca-department" className="block text-xs font-semibold text-slate-700 mb-1.5">Department</label>
               <div className="relative">
@@ -256,25 +298,45 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
                 <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
+
             <div>
-              <label htmlFor="pdca-section" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                <span>Line / Area / Section *</span>
+              <label htmlFor="pdca-date" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Date *</span>
+                </span>
                 <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Required</span>
               </label>
-              <CascadingLineAreaSelect
-                id="pdca-section"
-                value={formData.section}
-                onChange={(val, meta) => {
-                  setFormData((prev) => ({
-                    ...prev,
-                    section: val,
-                    sectionId: meta?.sectionId ? String(meta.sectionId) : prev.sectionId
-                  }));
-                }}
-                placeholder="Search or select Line / Area / Section..."
-                compact={false}
+              <input
+                type="date"
+                id="pdca-date"
+                required
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                className="w-full text-sm font-medium border border-slate-300 rounded-xl px-3.5 py-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none shadow-2xs transition-all cursor-pointer"
               />
             </div>
+          </div>
+
+          {/* Line / Area / Section */}
+          <div>
+            <label htmlFor="pdca-section" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>Line / Area / Section *</span>
+              <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Required</span>
+            </label>
+            <CascadingLineAreaSelect
+              id="pdca-section"
+              value={formData.section}
+              onChange={(val, meta) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  section: val,
+                  sectionId: meta?.sectionId ? String(meta.sectionId) : prev.sectionId
+                }));
+              }}
+              placeholder="Search or select Line / Area / Section..."
+              compact={false}
+            />
           </div>
 
           {/* Footer */}

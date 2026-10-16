@@ -11,6 +11,67 @@ const getActorName = (req) => {
     return req.user?.fullName || req.user?.userName || req.body?.createdBy?.name || 'System User';
 };
 
+// Helper to get authenticated user or throw
+export const getAuthenticatedUser = (req) => {
+    if (!req.user) {
+        throw new ApiError("Authentication required to perform this action", 401);
+    }
+    return req.user;
+};
+
+// Helper to determine if an authenticated user is the creator of a PDCA record
+export const isUserCreatorOfRecord = (user, record) => {
+    if (!user || !record) return false;
+
+    const createdBy = record.createdBy;
+    const createdById = record.createdById;
+
+    // Unknown/legacy records without creator information:
+    // Protected as read-only for ordinary employees; admins can administer them.
+    if (!createdBy && !createdById) {
+        return Boolean(user.isAdmin || user.role === 'ADMIN');
+    }
+
+    const userIds = [user.id, user._id, user.userId]
+        .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+        .map(String);
+
+    const userCodes = [user.empId, user.employeeId, user.userName, user.code]
+        .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+        .map(s => String(s).trim().toUpperCase());
+
+    // 1. Check createdById
+    if (createdById) {
+        const cid = String(createdById).trim();
+        if (userIds.includes(cid)) return true;
+        if (userCodes.includes(cid.toUpperCase())) return true;
+    }
+
+    // 2. Check createdBy object
+    if (typeof createdBy === 'object') {
+        const rIds = [createdBy.id, createdBy._id, createdBy.userId]
+            .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+            .map(String);
+        for (const rid of rIds) {
+            if (userIds.includes(rid)) return true;
+            if (userCodes.includes(rid.toUpperCase())) return true;
+        }
+
+        const rCodes = [createdBy.empId, createdBy.code, createdBy.employeeId, createdBy.userName]
+            .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+            .map(s => String(s).trim().toUpperCase());
+        for (const rcode of rCodes) {
+            if (userCodes.includes(rcode)) return true;
+        }
+    } else if (typeof createdBy === 'string' && createdBy.trim()) {
+        const cStr = createdBy.trim();
+        if (userIds.includes(cStr)) return true;
+        if (userCodes.includes(cStr.toUpperCase())) return true;
+    }
+
+    return false;
+};
+
 // --- A. PDCA Record Management ---
 
 /**
@@ -18,16 +79,35 @@ const getActorName = (req) => {
  * POST /api/v1/pdca
  */
 export const createPDCARecord = asyncHandler(async (req, res) => {
-    const { topic, plant, scope } = req.body;
+    const user = getAuthenticatedUser(req);
+    const { topic } = req.body;
 
     if (!topic || !String(topic).trim()) {
         throw new ApiError("Topic is required", 400);
     }
 
-    const actor = getActorName(req);
-    const newRecord = await PDCAModel.create(req.body, actor);
+    const creatorCode = (user.empId || user.userName || String(user.id)).toUpperCase();
+    const creatorUser = {
+        id: user.id || user._id,
+        userId: user.id || user._id,
+        empId: user.empId || user.userName || String(user.id),
+        code: creatorCode,
+        name: user.fullName || user.userName,
+        email: user.email || '',
+        avatarBg: req.body?.createdBy?.avatarBg || 'bg-blue-100 text-blue-700',
+        initials: req.body?.createdBy?.initials || (user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U')
+    };
 
-    return res.status(201).json(new ApiResponse(201, newRecord, "PDCA record created successfully"));
+    const recordData = {
+        ...req.body,
+        createdBy: creatorUser,
+        createdById: String(user.id || user._id || creatorCode)
+    };
+
+    const actor = user.fullName || user.userName;
+    const newRecord = await PDCAModel.create(recordData, actor);
+
+    return res.status(201).json(new ApiResponse(201, { ...newRecord, isCreator: true }, "PDCA record created successfully"));
 });
 
 /**
@@ -45,6 +125,13 @@ export const getPDCARecords = asyncHandler(async (req, res) => {
         limit: limit ? parseInt(limit, 10) : 100
     });
 
+    if (result && Array.isArray(result.records)) {
+        result.records = result.records.map(rec => ({
+            ...rec,
+            isCreator: req.user ? isUserCreatorOfRecord(req.user, rec) : false
+        }));
+    }
+
     return res.status(200).json(new ApiResponse(200, result, "PDCA records fetched successfully"));
 });
 
@@ -60,7 +147,12 @@ export const getPDCARecordById = asyncHandler(async (req, res) => {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
-    return res.status(200).json(new ApiResponse(200, record, "PDCA record retrieved successfully"));
+    const decorated = {
+        ...record,
+        isCreator: req.user ? isUserCreatorOfRecord(req.user, record) : false
+    };
+
+    return res.status(200).json(new ApiResponse(200, decorated, "PDCA record retrieved successfully"));
 });
 
 /**
@@ -68,15 +160,27 @@ export const getPDCARecordById = asyncHandler(async (req, res) => {
  * PUT /api/v1/pdca/:id
  */
 export const updatePDCARecord = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
 
-    const updated = await PDCAModel.update(id, req.body, actor);
-    if (!updated) {
+    const existing = await PDCAModel.findByRecordId(id);
+    if (!existing) {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
-    return res.status(200).json(new ApiResponse(200, updated, "PDCA record updated successfully"));
+    if (!isUserCreatorOfRecord(user, existing)) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record can edit it", 403);
+    }
+
+    const actor = user.fullName || user.userName;
+    const updateData = { ...req.body };
+    // Preserve original creator information - never overwrite on update
+    delete updateData.createdBy;
+    delete updateData.createdById;
+
+    const updated = await PDCAModel.update(id, updateData, actor);
+
+    return res.status(200).json(new ApiResponse(200, { ...updated, isCreator: true }, "PDCA record updated successfully"));
 });
 
 /**
@@ -84,9 +188,19 @@ export const updatePDCARecord = asyncHandler(async (req, res) => {
  * DELETE /api/v1/pdca/:id
  */
 export const deletePDCARecord = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
 
+    const existing = await PDCAModel.findByRecordId(id);
+    if (!existing) {
+        throw new ApiError(`PDCA record with ID ${id} not found`, 404);
+    }
+
+    if (!isUserCreatorOfRecord(user, existing)) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record can delete it", 403);
+    }
+
+    const actor = user.fullName || user.userName;
     const deleted = await PDCAModel.delete(id, actor);
     if (!deleted) {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
@@ -117,17 +231,33 @@ export const getPDCASheet = asyncHandler(async (req, res) => {
  * PUT /api/v1/pdca/:id/sheet
  */
 export const savePDCASheet = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
+    const actor = user.fullName || user.userName || getActorName(req);
 
     let record = await PDCAModel.findByRecordId(id);
-    if (!record) {
+    if (record) {
+        if (!isUserCreatorOfRecord(user, record)) {
+            throw new ApiError("Forbidden: Only the employee who created this PDCA record can edit its sheet", 403);
+        }
+    } else {
         // Auto-create base record if saving sheet for newly initialized record
+        const creatorCode = (user.empId || user.userName || String(user.id)).toUpperCase();
+        const creatorUser = {
+            id: user.id || user._id,
+            userId: user.id || user._id,
+            empId: user.empId || user.userName || String(user.id),
+            code: creatorCode,
+            name: user.fullName || user.userName,
+            email: user.email || ''
+        };
         record = await PDCAModel.create({
             id,
             topic: req.body?.headerInfo?.topicName || "PDCA Audit Sheet",
-            plant: req.body?.plant || "Gujrat",
-            scope: "Company"
+            plant: req.body?.plant || "Bawal",
+            scope: "Company",
+            createdBy: creatorUser,
+            createdById: String(user.id || user._id || creatorCode)
         }, actor);
     }
 
@@ -185,6 +315,7 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
  * POST /api/v1/pdca/cft
  */
 export const createCFTTopic = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { name, topic } = req.body;
     const title = name || topic;
 
@@ -192,10 +323,28 @@ export const createCFTTopic = asyncHandler(async (req, res) => {
         throw new ApiError("CFT Topic Name is required", 400);
     }
 
-    const actor = getActorName(req);
-    const cftTopic = await PDCAModel.createCft(req.body, actor);
+    const creatorCode = (user.empId || user.userName || String(user.id)).toUpperCase();
+    const creatorUser = {
+        id: user.id || user._id,
+        userId: user.id || user._id,
+        empId: user.empId || user.userName || String(user.id),
+        code: creatorCode,
+        name: user.fullName || user.userName,
+        email: user.email || '',
+        avatarBg: req.body?.createdBy?.avatarBg || 'bg-emerald-100 text-emerald-700',
+        initials: req.body?.createdBy?.initials || (user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U')
+    };
 
-    return res.status(201).json(new ApiResponse(201, cftTopic, "CFT topic created successfully"));
+    const cftData = {
+        ...req.body,
+        createdBy: creatorUser,
+        createdById: String(user.id || user._id || creatorCode)
+    };
+
+    const actor = user.fullName || user.userName;
+    const cftTopic = await PDCAModel.createCft(cftData, actor);
+
+    return res.status(201).json(new ApiResponse(201, { ...cftTopic, isCreator: true }, "CFT topic created successfully"));
 });
 
 /**
@@ -213,6 +362,13 @@ export const getCFTTopics = asyncHandler(async (req, res) => {
         limit: limit ? parseInt(limit, 10) : 100
     });
 
+    if (result && Array.isArray(result.records)) {
+        result.records = result.records.map(rec => ({
+            ...rec,
+            isCreator: req.user ? isUserCreatorOfRecord(req.user, rec) : false
+        }));
+    }
+
     return res.status(200).json(new ApiResponse(200, result, "CFT topics retrieved successfully"));
 });
 
@@ -221,15 +377,26 @@ export const getCFTTopics = asyncHandler(async (req, res) => {
  * PUT /api/v1/pdca/cft/:id
  */
 export const updateCFTTopic = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
 
-    const updated = await PDCAModel.update(id, req.body, actor);
-    if (!updated) {
+    const existing = await PDCAModel.findByRecordId(id);
+    if (!existing) {
         throw new ApiError(`CFT topic with ID ${id} not found`, 404);
     }
 
-    return res.status(200).json(new ApiResponse(200, updated, "CFT topic updated successfully"));
+    if (!isUserCreatorOfRecord(user, existing)) {
+        throw new ApiError("Forbidden: Only the employee who created this CFT record can edit it", 403);
+    }
+
+    const actor = user.fullName || user.userName;
+    const updateData = { ...req.body };
+    delete updateData.createdBy;
+    delete updateData.createdById;
+
+    const updated = await PDCAModel.update(id, updateData, actor);
+
+    return res.status(200).json(new ApiResponse(200, { ...updated, isCreator: true }, "CFT topic updated successfully"));
 });
 
 /**
@@ -237,9 +404,19 @@ export const updateCFTTopic = asyncHandler(async (req, res) => {
  * DELETE /api/v1/pdca/cft/:id
  */
 export const deleteCFTTopic = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
 
+    const existing = await PDCAModel.findByRecordId(id);
+    if (!existing) {
+        throw new ApiError(`CFT topic with ID ${id} not found`, 404);
+    }
+
+    if (!isUserCreatorOfRecord(user, existing)) {
+        throw new ApiError("Forbidden: Only the employee who created this CFT record can delete it", 403);
+    }
+
+    const actor = user.fullName || user.userName;
     const deleted = await PDCAModel.delete(id, actor);
     if (!deleted) {
         throw new ApiError(`CFT topic with ID ${id} not found`, 404);
@@ -266,8 +443,19 @@ export const getCFTMembers = asyncHandler(async (req, res) => {
  * PUT /api/v1/pdca/cft/:id/members
  */
 export const updateCFTMembers = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
-    const actor = getActorName(req);
+
+    const existing = await PDCAModel.findByRecordId(id);
+    if (!existing) {
+        throw new ApiError(`CFT topic with ID ${id} not found`, 404);
+    }
+
+    if (!isUserCreatorOfRecord(user, existing)) {
+        throw new ApiError("Forbidden: Only the employee who created this CFT record can edit its members", 403);
+    }
+
+    const actor = user.fullName || user.userName;
     const members = req.body.members || req.body;
 
     if (!Array.isArray(members)) {
@@ -285,8 +473,18 @@ export const updateCFTMembers = asyncHandler(async (req, res) => {
  * POST /api/v1/pdca/:id/attachments
  */
 export const uploadAttachment = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id } = req.params;
     const { rowId, fieldName } = req.body;
+
+    const record = await PDCAModel.findByRecordId(id);
+    if (!record) {
+        throw new ApiError(`PDCA record with ID ${id} not found`, 404);
+    }
+
+    if (!isUserCreatorOfRecord(user, record)) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record can upload attachments", 403);
+    }
 
     if (!req.file) {
         throw new ApiError("No file uploaded", 400);
@@ -307,7 +505,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
         mimeType: req.file.mimetype,
         size: req.file.size,
         url: fileUrl,
-        uploadedBy: getActorName(req)
+        uploadedBy: user.fullName || user.userName
     });
 
     return res.status(201).json(new ApiResponse(201, {
@@ -347,11 +545,17 @@ export const getAttachment = asyncHandler(async (req, res) => {
  * DELETE /api/v1/pdca/:id/attachments/:attachmentId
  */
 export const deleteAttachment = asyncHandler(async (req, res) => {
+    const user = getAuthenticatedUser(req);
     const { id, attachmentId } = req.params;
-    const attachment = await PDCAModel.getAttachmentById(attachmentId);
 
+    const attachment = await PDCAModel.getAttachmentById(attachmentId);
     if (!attachment || attachment.pdcaRecordId !== id) {
         throw new ApiError("Attachment not found", 404);
+    }
+
+    const record = await PDCAModel.findByRecordId(id);
+    if (record && !isUserCreatorOfRecord(user, record)) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record can delete attachments", 403);
     }
 
     await PDCAModel.deleteAttachment(attachmentId);

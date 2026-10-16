@@ -42,13 +42,39 @@ const optionalAuth = async (req, res, next) => {
                     userName: "st080014",
                     email: "st080014@furukawaminda.com",
                     role: "ADMIN",
-                    isAdmin: true
+                    isAdmin: true,
+                    empId: "ST080014"
                 };
             } else {
                 const decoded = jwt.verify(token, ENV.JWT_ACCESS_SECRET);
                 if (decoded && decoded.exp * 1000 > Date.now()) {
-                    const user = await User.findByIdLight(decoded.id);
-                    if (user) req.user = user;
+                    if (decoded.id === 14) {
+                        req.user = {
+                            id: 14,
+                            fullName: "Joy Dastidar (ST080014)",
+                            userName: "st080014",
+                            email: "st080014@furukawaminda.com",
+                            role: "ADMIN",
+                            isAdmin: true,
+                            empId: "ST080014"
+                        };
+                    } else {
+                        const user = await User.findByIdLight(decoded.id);
+                        if (user) {
+                            req.user = user;
+                        } else if (decoded && (decoded.userName || decoded.empId || decoded.id)) {
+                            req.user = {
+                                id: decoded.id,
+                                empId: decoded.empId || decoded.code || String(decoded.id),
+                                code: decoded.code || decoded.empId || String(decoded.id),
+                                userName: decoded.userName,
+                                fullName: decoded.fullName || decoded.name || decoded.userName,
+                                email: decoded.email,
+                                role: decoded.role || "EMPLOYEE",
+                                isAdmin: decoded.role === "ADMIN" || Boolean(decoded.isAdmin)
+                            };
+                        }
+                    }
                 }
             }
         }

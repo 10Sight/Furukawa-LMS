@@ -18,6 +18,70 @@ export function filterPDCARecords(data, plant, scope, search = '', department = 
 }
 export const PDCA_SELECTED_UNIT_KEY = 'pdca_selected_unit';
 
+export function isRecordCreator(record, currentUser) {
+  if (!record || !currentUser) return false;
+
+  // If backend provided precomputed isCreator flag for the current session, respect it
+  if (record.isCreator === true) return true;
+
+  const createdBy = record.createdBy;
+  const createdById = record.createdById;
+
+  // Older/legacy records with unknown ownership: protected as read-only for ordinary employees
+  if (!createdBy && !createdById) {
+    return Boolean(currentUser.isAdmin || currentUser.role === 'ADMIN');
+  }
+
+  const userIds = [
+    currentUser.id,
+    currentUser._id,
+    currentUser.userId
+  ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(String);
+
+  const userCodes = [
+    currentUser.empId,
+    currentUser.employeeId,
+    currentUser.code,
+    currentUser.userName,
+    currentUser.empCode
+  ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(s => String(s).trim().toUpperCase());
+
+  // Check createdById
+  if (createdById) {
+    const cid = String(createdById).trim();
+    if (userIds.includes(cid)) return true;
+    if (userCodes.includes(cid.toUpperCase())) return true;
+  }
+
+  // Check createdBy object
+  if (typeof createdBy === 'object') {
+    const rIds = [createdBy.id, createdBy._id, createdBy.userId]
+      .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+      .map(String);
+    for (const rid of rIds) {
+      if (userIds.includes(rid)) return true;
+      if (userCodes.includes(rid.toUpperCase())) return true;
+    }
+
+    const rCodes = [
+      createdBy.empId,
+      createdBy.code,
+      createdBy.employeeId,
+      createdBy.userName
+    ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(s => String(s).trim().toUpperCase());
+
+    for (const rcode of rCodes) {
+      if (userCodes.includes(rcode)) return true;
+    }
+  } else if (typeof createdBy === 'string' && createdBy.trim()) {
+    const cStr = createdBy.trim();
+    if (userIds.includes(cStr)) return true;
+    if (userCodes.includes(cStr.toUpperCase())) return true;
+  }
+
+  return false;
+}
+
 export function resolveCurrentUserId(user) {
   if (user && (user.id || user._id || user.code || user.employeeId || user.userName || user.name)) {
     return String(user.id || user._id || user.code || user.employeeId || user.userName || user.name);

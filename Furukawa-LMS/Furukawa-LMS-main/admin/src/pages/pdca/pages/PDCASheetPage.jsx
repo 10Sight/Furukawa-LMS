@@ -4,11 +4,13 @@ import PDCASheet from '@components/pdca/PDCASheet';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
+import { isRecordCreator } from '../data/recordFilters';
+
 export default function PDCASheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { data } = usePDCA();
+  const { data, userContext } = usePDCA();
   const [directTopic, setDirectTopic] = useState(null);
 
   useEffect(() => {
@@ -24,11 +26,17 @@ export default function PDCASheetPage() {
   // Find the selected topic by route param ID, fallback to direct fetch, or fallback to first item
   const selectedTopic = (id ? data.find((d) => d.id === id) : (data.length > 0 ? data[0] : null)) || directTopic;
 
+  const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
+  const isReadOnly = Boolean(selectedTopic?.id && !isCreator);
+
   return (
     <div className="w-full min-w-0">
       <PDCASheet
         key={selectedTopic?.id || id}
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}
+        readOnly={isReadOnly}
+        isCreator={isCreator}
+        currentUser={userContext?.user}
         onBack={() => {
           navigate(location.state?.returnTo || '/', { replace: true });
         }}

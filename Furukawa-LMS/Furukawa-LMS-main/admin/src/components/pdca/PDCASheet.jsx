@@ -34,6 +34,7 @@ import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
   findEmployeeDepartment,
@@ -107,6 +108,7 @@ function AutoResizeTextarea({
   className,
   inputRef,
   minHeight = 44,
+  readOnly = false,
 }) {
   const localRef = useRef(null);
 
@@ -151,12 +153,14 @@ function AutoResizeTextarea({
       }}
       rows={Math.max(2, (value || '').split('\n').length)}
       value={value}
+      readOnly={readOnly}
       onChange={(e) => {
+        if (readOnly) return;
         onChange(e);
         resize();
       }}
-      onKeyDown={onKeyDown}
-      placeholder={placeholder}
+      onKeyDown={readOnly ? undefined : onKeyDown}
+      placeholder={readOnly ? '' : placeholder}
       className={className}
       style={{
         overflow: 'hidden',
@@ -173,7 +177,7 @@ function AutoResizeTextarea({
 }
 
 // Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is displayed)
-function CompactDateCell({ value, onChange }) {
+function CompactDateCell({ value, onChange, readOnly = false }) {
   const inputRef = useRef(null);
 
   const formatDisplayDate = (isoStr) => {
@@ -187,6 +191,7 @@ function CompactDateCell({ value, onChange }) {
   };
 
   const handleOpenPicker = () => {
+    if (readOnly) return;
     if (inputRef.current) {
       if (typeof inputRef.current.showPicker === 'function') {
         try {
@@ -199,6 +204,16 @@ function CompactDateCell({ value, onChange }) {
   };
 
   const display = formatDisplayDate(value);
+
+  if (readOnly) {
+    return (
+      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none">
+        <span className="text-[10.5px] font-semibold text-slate-800 text-center tracking-tight truncate">
+          {display || '-'}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -251,8 +266,21 @@ function CompactDateCell({ value, onChange }) {
   );
 }
 
-export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateChange }) {
-  const { data, setData, showToast } = usePDCA();
+export default function PDCASheet({
+  topic,
+  onBack,
+  onSave,
+  currentDate,
+  onDateChange,
+  readOnly = false,
+  isCreator = true,
+  currentUser = null
+}) {
+  const { data, setData, showToast, userContext } = usePDCA();
+  const effectiveUser = currentUser || userContext?.user;
+  const effectiveReadOnly = Boolean(
+    readOnly || (topic?.id && !isRecordCreator(topic, effectiveUser))
+  );
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
     ? (cftAssignedMembers.length === 1
@@ -714,6 +742,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
   };
 
   const saveSheet = async () => {
+    if (effectiveReadOnly) {
+      showToast('You are in view-only mode. Only the record creator can save changes.');
+      return false;
+    }
     if (isSaving) return false;
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
@@ -777,6 +809,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
   // Determine if user has made unsaved changes in the current editing session
   const hasUnsavedChanges = () => {
+    if (effectiveReadOnly) return false;
     if (!initialSnapshotRef.current) return false;
     return serializeSheet(rows, headerInfo) !== initialSnapshotRef.current;
   };
@@ -2298,16 +2331,24 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={saveSheet}
-              title="Save all PDCA form changes"
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-opacity ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin' : ''}`} />
-              <span>{isSaving ? 'Saving...' : 'Save'}</span>
-            </button>
+            {!effectiveReadOnly && (
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={saveSheet}
+                title="Save all PDCA form changes"
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-opacity ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+              >
+                <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin' : ''}`} />
+                <span>{isSaving ? 'Saving...' : 'Save'}</span>
+              </button>
+            )}
+            {effectiveReadOnly && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold shadow-2xs">
+                <Eye className="w-3.5 h-3.5 text-amber-600" />
+                <span>View-Only Mode</span>
+              </span>
+            )}
             {onDateChange && (
               <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-700 cursor-pointer shadow-2xs">
                 <Calendar className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
@@ -2342,14 +2383,16 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
               />
             </div>
 
-            {/* Add Row Button */}
-            <button
-              onClick={handleAddRow}
-              className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add Row</span>
-            </button>
+            {/* Add Row Button (Only when not read-only) */}
+            {!effectiveReadOnly && (
+              <button
+                onClick={handleAddRow}
+                className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Add Row</span>
+              </button>
+            )}
             <FormZoomControls rootSelector=".pdca-form-root" />
           </div>
         </div>
@@ -2390,8 +2433,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   <input
                     type="text"
                     value={headerInfo.topicName}
+                    readOnly={effectiveReadOnly}
+                    disabled={effectiveReadOnly}
                     onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
-                    className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-xs focus:bg-blue-50/20"
+                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                   />
                 </th>
                 <th
@@ -2409,8 +2454,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   <input
                     type="text"
                     value={headerInfo.preparedBy}
+                    readOnly={effectiveReadOnly}
+                    disabled={effectiveReadOnly}
                     onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
-                    className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs focus:bg-blue-50/20"
+                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                   />
                 </th>
               </tr>
@@ -2432,8 +2479,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   <input
                     type="text"
                     value={headerInfo.attendees}
+                    readOnly={effectiveReadOnly}
+                    disabled={effectiveReadOnly}
                     onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
-                    className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs focus:bg-blue-50/20"
+                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                   />
                 </th>
                 <th
@@ -2451,8 +2500,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   <input
                     type="text"
                     value={headerInfo.auditNo}
+                    readOnly={effectiveReadOnly}
+                    disabled={effectiveReadOnly}
                     onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
-                    className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs focus:bg-blue-50/20"
+                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                   />
                 </th>
               </tr>
@@ -2693,6 +2744,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.date}
+                          readOnly={effectiveReadOnly}
                           onChange={(val) => handleCellChange(idx, 'date', val)}
                         />
                       </div>
@@ -2702,9 +2754,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     <td className="p-1 align-middle text-center border-r border-[#64748B] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
+                          disabled={effectiveReadOnly}
                           value={row.shift === 'General' ? 'G' : (row.shift || '')}
                           onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                          className="w-full bg-transparent border-0 outline-none px-1 py-1 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer transition-colors appearance-none"
+                          className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
                         >
                           <option value="">-</option>
                           <option value="A">A</option>
@@ -2712,7 +2765,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           <option value="C">C</option>
                           <option value="G">G</option>
                         </select>
-                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        {!effectiveReadOnly && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
                       </div>
                     </td>
 
@@ -2725,10 +2780,11 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     <td className="p-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <select
+                          disabled={effectiveReadOnly}
                           aria-label={`Status for row ${sNo}`}
                           value={row.status || 'Open'}
                           onChange={event => handleCellChange(idx, 'status', event.target.value)}
-                          className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none cursor-pointer text-center focus:ring-2 focus:ring-blue-300 ${
+                          className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${
                             row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
                             row.status === 'In Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
                             row.status === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
@@ -2747,9 +2803,10 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     <td className="p-0.5 align-middle text-center border-r border-[#64748B] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
+                          disabled={effectiveReadOnly}
                           value={row.department || ''}
                           onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                          className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate font-medium"
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
                           title={row.department || 'Select Department'}
                         >
                           <option value="">Dept...</option>
@@ -2759,7 +2816,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        {!effectiveReadOnly && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
                       </div>
                     </td>
 
@@ -2773,6 +2832,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     >
                       <div className="w-full flex items-center justify-center">
                         <SearchableSectionSelect
+                          disabled={effectiveReadOnly}
                           value={row.section}
                           sectionId={row.sectionId ?? row.lineAreaSectionId}
                           sectionCode={row.sectionCode}
@@ -2793,6 +2853,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                     >
                       <div className="w-full flex items-center justify-center">
                         <SearchableLineAreaSelect
+                          disabled={effectiveReadOnly}
                           value={row.lineArea}
                           sectionId={row.sectionId ?? row.lineAreaSectionId}
                           lineId={row.lineAreaId}
@@ -2834,6 +2895,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'observation', el)}
                         value={row.observation}
+                        readOnly={effectiveReadOnly}
                         onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
                         placeholder="Observation details..."
@@ -2898,7 +2960,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                 type="button"
                                 onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
                                 className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                title={`Click to view all ${beforeImages.length} evidence photo(s), add more, edit or remove`}
+                                title={`Click to view all ${beforeImages.length} evidence photo(s)`}
                               >
                                 <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
                                   <img
@@ -2920,6 +2982,14 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                   </span>
                                 </div>
                               </button>
+                            </div>
+                          );
+                        }
+
+                        if (effectiveReadOnly) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                              -
                             </div>
                           );
                         }
@@ -2953,6 +3023,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'rootCause', el)}
                           value={row.rootCause}
+                          readOnly={effectiveReadOnly}
                           onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                           placeholder="Root cause..."
@@ -2974,6 +3045,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                           value={row.counterMeasure}
+                          readOnly={effectiveReadOnly}
                           onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                           placeholder="Counter measure..."
@@ -3039,7 +3111,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                 type="button"
                                 onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
                                 className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                title={`Click to view all ${afterImages.length} evidence photo(s), add more, edit or remove`}
+                                title={`Click to view all ${afterImages.length} evidence photo(s)`}
                               >
                                 <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
                                   <img
@@ -3065,6 +3137,14 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           );
                         }
 
+                        if (effectiveReadOnly) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                              -
+                            </div>
+                          );
+                        }
+
                         // Compact default icon button when empty - opens 4-box upload selection modal
                         return (
                           <div className="flex items-center justify-center w-full py-1">
@@ -3086,6 +3166,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.responseDate}
+                          readOnly={effectiveReadOnly}
                           onChange={(val) => handleCellChange(idx, 'responseDate', val)}
                         />
                       </div>
@@ -3101,6 +3182,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                               className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                             >
                               <select
+                                disabled={effectiveReadOnly}
                                 value={
                                   (emp.department && emp.department !== 'CFT')
                                     ? emp.department
@@ -3124,7 +3206,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                     return updated;
                                   });
                                 }}
-                                className="w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                                className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                                 title={((emp.department && emp.department !== 'CFT') ? emp.department : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) || row.responsiblePersonDept)) || 'Select Department'}
                               >
                                 <option value="">Dept...</option>
@@ -3143,6 +3225,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                       ) : (
                         <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                           <select
+                            disabled={effectiveReadOnly}
                             value={
                               (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
                                 ? row.responsiblePersonDept
@@ -3153,7 +3236,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                        ''))
                             }
                             onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                             title={row.responsiblePersonDept || 'Select Department'}
                           >
                             <option value="">Dept...</option>
@@ -3166,7 +3249,9 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                               </option>
                             ))}
                           </select>
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          {!effectiveReadOnly && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
                         </div>
                       )}
                     </td>
@@ -3185,50 +3270,64 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                                 >
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenAddStaffModal(idx)}
-                                    className="text-[10px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors cursor-pointer"
-                                    title={`Click to view/manage group: ${empDisplay}`}
+                                    onClick={effectiveReadOnly ? undefined : () => handleOpenAddStaffModal(idx)}
+                                    className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${effectiveReadOnly ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
+                                    title={`Group: ${empDisplay}`}
                                   >
                                     {empDisplay}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveStaffEmployee(idx, empIdx);
-                                    }}
-                                    className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
-                                    title={`Remove ${emp.name} from group`}
-                                  >
-                                    <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                                  </button>
+                                  {!effectiveReadOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveStaffEmployee(idx, empIdx);
+                                      }}
+                                      className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
+                                      title={`Remove ${emp.name} from group`}
+                                    >
+                                      <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
                           </div>
                         ) : row.staffEmployee ? (
                           <div className="relative w-full pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                              className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                              title={`Click to search/change staff: ${row.staffEmployee}`}
-                            >
-                              <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
+                            {effectiveReadOnly ? (
+                              <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center select-text">
                                 {row.staffEmployee}
                               </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectStaffMember(idx, '');
-                              }}
-                              className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
-                              title="Clear staff employee"
-                            >
-                              <X className="w-3 h-3 stroke-[2.5]" />
-                            </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                                  className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
+                                  title={`Click to search/change staff: ${row.staffEmployee}`}
+                                >
+                                  <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
+                                    {row.staffEmployee}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectStaffMember(idx, '');
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
+                                  title="Clear staff employee"
+                                >
+                                  <X className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : effectiveReadOnly ? (
+                          <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[10px] select-none">
+                            -
                           </div>
                         ) : (
                           <button
@@ -3245,18 +3344,20 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                           </button>
                         )}
 
-                        {/* Down right side '+' option button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAddStaffModal(idx);
-                          }}
-                          className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                          title="Add employee to this CFT group (+)"
-                        >
-                          <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                        </button>
+                        {/* Down right side '+' option button (Only if not readOnly) */}
+                        {!effectiveReadOnly && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAddStaffModal(idx);
+                            }}
+                            className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
+                            title="Add employee to this CFT group (+)"
+                          >
+                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -3294,26 +3395,30 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                               )}
                             </button>
 
-                            {/* Right: Edit & Delete buttons */}
-                            <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                              <button
-                                type="button"
-                                onClick={(e) => handleEditCFTTopic(idx, e)}
-                                className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                title="Change CFT Topic"
-                              >
-                                <Edit3 className="w-2.5 h-2.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteCFT(idx, e)}
-                                className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                title="Delete CFT Topic & Member"
-                              >
-                                <Trash2 className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
+                            {/* Right: Edit & Delete buttons (Only when not read-only) */}
+                            {!effectiveReadOnly && (
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleEditCFTTopic(idx, e)}
+                                  className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  title="Change CFT Topic"
+                                >
+                                  <Edit3 className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteCFT(idx, e)}
+                                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Delete CFT Topic & Member"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            )}
                           </div>
+                        ) : effectiveReadOnly ? (
+                          <span className="text-slate-300 text-[10px] select-none">-</span>
                         ) : (
                           <button
                             type="button"
@@ -3333,6 +3438,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
                           value={row.responsiblePersonConfirmation}
+                          readOnly={effectiveReadOnly}
                           onChange={(e) => handleCellChange(idx, 'responsiblePersonConfirmation', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'responsiblePersonConfirmation')}
                           placeholder="Instructions, remarks..."
@@ -3348,46 +3454,46 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
           </table>
           </div>{/* end main table wrapper */}
 
-          {/* ── ACTIONS Side Panel ── */}
-          <div className="flex-shrink-0 w-[40px] bg-[#F8FAFC] flex flex-col">
-            {/* Panel Header */}
-            <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white px-2 py-[9px] flex items-center justify-center gap-1.5 select-none">
-
-
-            </div>
-
-            {/* Spacer that matches the remaining thead rows below the panel header */}
-            <div style={{ height: Math.max(0, theadHeight - actionsHeaderHeight), boxSizing: 'border-box' }} aria-hidden="true" />
-
-            {/* Per-row action icons – one pair per row, stacked vertically */}
-            {rows.map((_, idx) => (
-              <div
-                key={idx}
-                style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
-                className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
-              >
-                {/* Insert Row Above – icon only */}
-                <button
-                  type="button"
-                  onClick={() => handleInsertRowAbove(idx)}
-                  className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
-                  title="Insert row above"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                </button>
-
-                {/* Delete Row – icon only */}
-                <button
-                  type="button"
-                  onClick={() => handleDeleteRow(idx)}
-                  className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                  title="Delete this row"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                </button>
+          {/* ── ACTIONS Side Panel (Only if not read-only) ── */}
+          {!effectiveReadOnly && (
+            <div className="flex-shrink-0 w-[40px] bg-[#F8FAFC] flex flex-col">
+              {/* Panel Header */}
+              <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white px-2 py-[9px] flex items-center justify-center gap-1.5 select-none">
               </div>
-            ))}
-          </div>{/* end actions panel */}
+
+              {/* Spacer that matches the remaining thead rows below the panel header */}
+              <div style={{ height: Math.max(0, theadHeight - actionsHeaderHeight), boxSizing: 'border-box' }} aria-hidden="true" />
+
+              {/* Per-row action icons – one pair per row, stacked vertically */}
+              {rows.map((_, idx) => (
+                <div
+                  key={idx}
+                  style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
+                  className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
+                >
+                  {/* Insert Row Above – icon only */}
+                  <button
+                    type="button"
+                    onClick={() => handleInsertRowAbove(idx)}
+                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                    title="Insert row above"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+
+                  {/* Delete Row – icon only */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRow(idx)}
+                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                    title="Delete this row"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
         </div>{/* end flex wrapper */}
 
@@ -3398,13 +3504,15 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
             <span>Infinite rows active</span>
           </div>
 
-          <button
-            onClick={handleAddRow}
-            className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded shadow-2xs cursor-pointer text-xs"
-          >
-            <Plus className="w-3.5 h-3.5 text-blue-600" />
-            <span>Add Row</span>
-          </button>
+          {!effectiveReadOnly && (
+            <button
+              onClick={handleAddRow}
+              className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded shadow-2xs cursor-pointer text-xs"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-600" />
+              <span>Add Row</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -3456,6 +3564,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
         isOpen={evidenceModal.isOpen}
         onClose={() => setEvidenceModal({ isOpen: false, rowIndex: null, field: null })}
         field={evidenceModal.field}
+        readOnly={effectiveReadOnly}
         rowIndex={evidenceModal.rowIndex ?? 0}
         images={
           evidenceModal.rowIndex !== null && evidenceModal.field
@@ -3510,23 +3619,25 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
 
               {/* Right: Actions (Replace, Edit, Download, Delete, Close) */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Replace Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const { rowIndex, field, nameField, typeField, title } = selectedImageAction;
-                    setSelectedImageAction(null);
-                    handleOpenUploadModal(rowIndex, field, nameField, typeField, title);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-blue-200"
-                  title="Replace this file with a new upload"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Replace</span>
-                </button>
+                {/* Replace Button (Only if not read-only) */}
+                {!effectiveReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { rowIndex, field, nameField, typeField, title } = selectedImageAction;
+                      setSelectedImageAction(null);
+                      handleOpenUploadModal(rowIndex, field, nameField, typeField, title);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-blue-200"
+                    title="Replace this file with a new upload"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Replace</span>
+                  </button>
+                )}
 
-                {/* Edit Button (visible for images) */}
-                {selectedImageAction.fileType === 'image' && (
+                {/* Edit Button (visible for images and only if not read-only) */}
+                {!effectiveReadOnly && selectedImageAction.fileType === 'image' && (
                   <button
                     type="button"
                     onClick={() => {
@@ -3542,7 +3653,7 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   </button>
                 )}
 
-                {/* Download Button */}
+                {/* Download Button - available for everyone */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3560,20 +3671,22 @@ export default function PDCASheet({ topic, onBack, onSave, currentDate, onDateCh
                   <span className="hidden sm:inline">Download</span>
                 </button>
 
-                {/* Delete Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const { rowIndex, field, nameField, typeField } = selectedImageAction;
-                    handleRemoveFile(rowIndex, field, nameField, typeField);
-                    setSelectedImageAction(null);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-rose-200"
-                  title="Delete this file"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
+                {/* Delete Button (Only if not read-only) */}
+                {!effectiveReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { rowIndex, field, nameField, typeField } = selectedImageAction;
+                      handleRemoveFile(rowIndex, field, nameField, typeField);
+                      setSelectedImageAction(null);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-rose-200"
+                    title="Delete this file"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
 
                 <div className="h-5 w-px bg-slate-200 mx-0.5" />
 

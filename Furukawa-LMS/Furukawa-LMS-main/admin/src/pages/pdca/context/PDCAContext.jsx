@@ -1,6 +1,6 @@
 import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY, createDefaultRows } from '../data/pdcaStore';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS } from '../data/recordFilters';
+import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS, isRecordCreator } from '../data/recordFilters';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
 export const PDCAContext = createContext(null);
@@ -19,9 +19,14 @@ function getInitialUserContext() {
         return {
           loading: false,
           user: {
+            id: u.id || u._id || '',
+            userId: u.id || u._id || '',
             name: u.fullName || u.name || u.userName || '',
             code: u.employeeId || u.empId || u.empCode || u.userName || '',
-            email: u.email || ''
+            empId: u.empId || u.employeeId || u.empCode || u.userName || '',
+            userName: u.userName || '',
+            email: u.email || '',
+            isAdmin: Boolean(u.isAdmin || u.role === 'ADMIN')
           },
           section: {
             id: section?.id || section?._id || sectionId || '',
@@ -165,7 +170,15 @@ export function PDCAProvider({ children }) {
     }
   };
 
+  const isCreator = useCallback((record) => {
+    return isRecordCreator(record, userContext?.user);
+  }, [userContext?.user]);
+
   const handleUpdatePDCA = async (updated) => {
+    if (!isRecordCreator(updated, userContext?.user)) {
+      showToast('Forbidden: Only the employee who created this record can edit it.');
+      return;
+    }
     try {
       await pdcaApi.updateRecord(updated.id, updated);
       await refreshData();
@@ -177,6 +190,11 @@ export function PDCAProvider({ children }) {
   };
 
   const handleDeletePDCA = async (id) => {
+    const target = (data || []).find(record => String(record.id) === String(id));
+    if (target && !isRecordCreator(target, userContext?.user)) {
+      showToast('Forbidden: Only the employee who created this record can delete it.');
+      return;
+    }
     try {
       await pdcaApi.deleteRecord(id);
     } catch (err) {
@@ -192,6 +210,11 @@ export function PDCAProvider({ children }) {
   };
 
   const handleSaveMembers = async (itemId, members) => {
+    const target = (data || []).find(record => String(record.id) === String(itemId));
+    if (target && !isRecordCreator(target, userContext?.user)) {
+      showToast('Forbidden: Only the employee who created this CFT record can assign members.');
+      return;
+    }
     try {
       await pdcaApi.updateCftMembers(itemId, members);
     } catch (err) {
@@ -205,6 +228,7 @@ export function PDCAProvider({ children }) {
 
   const value = {
     userContext,
+    isCreator,
     loading,
     data,
     setData,

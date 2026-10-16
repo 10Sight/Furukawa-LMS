@@ -23,6 +23,7 @@ export default function EvidenceViewerModal({
   field = "imageBefore",
   rowIndex = 0,
   images = [],
+  readOnly = false,
   onAddImages,
   onRemoveImage,
   onReplaceImage,
@@ -163,37 +164,44 @@ export default function EvidenceViewerModal({
                 }`}>
                   Row #{rowIndex + 1}
                 </span>
+                {readOnly && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                    View-Only
+                  </span>
+                )}
                 <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                   {images.length} {images.length === 1 ? 'image' : 'images'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Upload and inspect multiple photographic evidence records for this observation.
+                {readOnly ? 'View and download photographic evidence records for this observation.' : 'Upload and inspect multiple photographic evidence records for this observation.'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Primary Add Image Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-semibold shadow-xs hover:shadow transition-all cursor-pointer disabled:cursor-not-allowed"
-              title="Select one or more image files to upload"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Uploading...</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  <span>Add Image</span>
-                </>
-              )}
-            </button>
+            {/* Primary Add Image Button (Only if not read-only) */}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-semibold shadow-xs hover:shadow transition-all cursor-pointer disabled:cursor-not-allowed"
+                title="Select one or more image files to upload"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    <span>Add Image</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Close Button */}
             <button
@@ -236,30 +244,36 @@ export default function EvidenceViewerModal({
                 No Evidence Images Added Yet
               </h4>
               <p className="text-xs text-slate-500 max-w-sm mb-5 leading-relaxed">
-                Add photographic evidence for {columnLabel} on Row #{rowIndex + 1}. You can upload multiple JPG, PNG, or WEBP photos.
+                {readOnly
+                  ? `No photographic evidence has been uploaded for ${columnLabel} on Row #${rowIndex + 1}.`
+                  : `Add photographic evidence for ${columnLabel} on Row #${rowIndex + 1}. You can upload multiple JPG, PNG, or WEBP photos.`}
               </p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Image</span>
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Image</span>
+                </button>
+              )}
             </div>
           ) : (
             /* Multi-Image Evidence Grid */
             <div className="space-y-4">
-              {/* Optional top quick-add dropzone strip */}
-              <div
-                onClick={() => !isUploading && fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-600 hover:text-blue-600"
-              >
-                <Upload className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-semibold">Click to add more images</span>
-                <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP)</span>
-              </div>
+              {/* Optional top quick-add dropzone strip (Only if not readOnly) */}
+              {!readOnly && (
+                <div
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-600 hover:text-blue-600"
+                >
+                  <Upload className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-semibold">Click to add more images</span>
+                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP)</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                 {images.map((img, idx) => {
@@ -340,27 +354,31 @@ export default function EvidenceViewerModal({
                         ) : (
                           <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                             <div className="flex items-center gap-1">
-                              {/* Edit Image (Pen, Crop, Text) */}
-                              <button
-                                type="button"
-                                onClick={() => onOpenEditor?.(img)}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                                title="Edit photo (Pen, Crop, Text)"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
+                              {/* Edit Image (Pen, Crop, Text) - Only if not read-only */}
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenEditor?.(img)}
+                                  className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Edit photo (Pen, Crop, Text)"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
-                              {/* Replace Image */}
-                              <button
-                                type="button"
-                                onClick={() => handleTriggerReplace(img.id)}
-                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                title="Replace with a different image"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              </button>
+                              {/* Replace Image - Only if not read-only */}
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTriggerReplace(img.id)}
+                                  className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Replace with a different image"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
-                              {/* Download Image */}
+                              {/* Download Image - Allowed for all users */}
                               <button
                                 type="button"
                                 onClick={() => handleDownload(img)}
@@ -371,15 +389,17 @@ export default function EvidenceViewerModal({
                               </button>
                             </div>
 
-                            {/* Delete Button */}
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(img.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="Remove this evidence photo"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {/* Delete Button - Only if not read-only */}
+                            {!readOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(img.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Remove this evidence photo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

@@ -84,6 +84,7 @@ export class PDCAModel {
                         'CREATE INDEX idx_pdca_plant_scope ON pdca_records(plant, scope)');
                 } else {
                     await migrationHelper.ensureColumnExists('pdca_records', 'recordId', 'NVARCHAR(100)');
+                    await migrationHelper.ensureColumnExists('pdca_records', 'createdById', 'NVARCHAR(100)');
                     await migrationHelper.ensureColumnExists('pdca_records', 'assignedMembers', 'NVARCHAR(MAX)');
                     await migrationHelper.ensureColumnExists('pdca_records', 'lpaSource', 'NVARCHAR(MAX)');
                     await migrationHelper.ensureColumnExists('pdca_records', 'isDeleted', 'BIT DEFAULT 0');
@@ -237,21 +238,35 @@ export class PDCAModel {
         }
 
         const createdByStr = createdByObj ? JSON.stringify(createdByObj) : (data.createdBy || null);
+        const createdById = data.createdById ? String(data.createdById) : (createdByObj?.id ? String(createdByObj.id) : (createdByObj?.userId ? String(createdByObj.userId) : (createdByObj?.code ? String(createdByObj.code) : null)));
         const assignedMembersStr = JSON.stringify(assignedMembersObj);
         const lpaSourceStr = typeof data.lpaSource === 'object' ? JSON.stringify(data.lpaSource) : (data.lpaSource || null);
         const isSelf = data.isSelf ? 1 : 0;
 
         const dbActive = await isDbConnected();
         if (dbActive) {
-            await executeQuery(`
-                INSERT INTO pdca_records (
+            try {
+                await executeQuery(`
+                    INSERT INTO pdca_records (
+                        recordId, topic, description, plant, scope, department, section, sectionId,
+                        date, time, createdBy, createdById, assignedMembers, lpaSource, isSelf, isDeleted, createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, GETDATE(), GETDATE())
+                `, [
                     recordId, topic, description, plant, scope, department, section, sectionId,
-                    date, time, createdBy, assignedMembers, lpaSource, isSelf, isDeleted, createdAt, updatedAt
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, GETDATE(), GETDATE())
-            `, [
-                recordId, topic, description, plant, scope, department, section, sectionId,
-                date, time, createdByStr, assignedMembersStr, lpaSourceStr, isSelf
-            ]);
+                    date, time, createdByStr, createdById, assignedMembersStr, lpaSourceStr, isSelf
+                ]);
+            } catch (err) {
+                // Backward-compatible fallback if createdById column is pending migration
+                await executeQuery(`
+                    INSERT INTO pdca_records (
+                        recordId, topic, description, plant, scope, department, section, sectionId,
+                        date, time, createdBy, assignedMembers, lpaSource, isSelf, isDeleted, createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, GETDATE(), GETDATE())
+                `, [
+                    recordId, topic, description, plant, scope, department, section, sectionId,
+                    date, time, createdByStr, assignedMembersStr, lpaSourceStr, isSelf
+                ]);
+            }
         }
 
         // Mirror in persistent store
@@ -270,6 +285,7 @@ export class PDCAModel {
             date,
             time,
             createdBy: createdByObj,
+            createdById: createdById ? String(createdById) : null,
             assignedMembers: assignedMembersObj,
             lpaSource: data.lpaSource || null,
             isSelf: Boolean(isSelf),
@@ -925,6 +941,11 @@ export class PDCAModel {
             rows = createDefaultRows(10);
         }
 
+        let createdById = row.createdById ? String(row.createdById) : null;
+        if (!createdById && createdBy && typeof createdBy === 'object') {
+            createdById = createdBy.id ? String(createdBy.id) : (createdBy.userId ? String(createdBy.userId) : (createdBy.code ? String(createdBy.code) : null));
+        }
+
         return {
             id: row.recordId || String(row.id),
             dbId: row.id,
@@ -938,6 +959,7 @@ export class PDCAModel {
             date: row.date,
             time: row.time,
             createdBy,
+            createdById,
             assignedMembers,
             lpaSource,
             isSelf: Boolean(row.isSelf),

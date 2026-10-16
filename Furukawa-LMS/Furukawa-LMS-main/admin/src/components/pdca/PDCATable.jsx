@@ -1,8 +1,10 @@
 import React from 'react';
 import { Download, Copy, Trash2, Building2, UserPlus, Users, Edit3 } from 'lucide-react';
+import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
 
 export default function PDCATable({
   items,
+  currentUser,
   onDownload,
   onCopy,
   onDelete,
@@ -134,14 +136,14 @@ export default function PDCATable({
                   <td className="py-4 px-4 min-w-[180px]">
                     {row.assignedMembers && row.assignedMembers.length > 0 ? (
                       <div 
-                        onClick={() => onOpenAddMember?.(row)}
-                        title="Click to edit or add employees"
-                        className="flex flex-wrap gap-1.5 items-center cursor-pointer group/emp hover:opacity-90"
+                        onClick={() => { if (isRecordCreator(row, currentUser)) onOpenAddMember?.(row); }}
+                        title={isRecordCreator(row, currentUser) ? "Click to edit or add employees" : "Assigned employees"}
+                        className={`flex flex-wrap gap-1.5 items-center ${isRecordCreator(row, currentUser) ? 'cursor-pointer group/emp hover:opacity-90' : 'cursor-default'}`}
                       >
                         {row.assignedMembers.map((emp, i) => (
                           <div
                             key={i}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-[11px] text-emerald-900 shadow-2xs group-hover/emp:border-emerald-400 transition-colors"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-[11px] text-emerald-900 shadow-2xs transition-colors"
                           >
                             <span className="font-semibold text-emerald-800">{emp.name}</span>
                             <span className="font-mono text-[9px] text-emerald-600 bg-white px-1 py-0.5 rounded border border-emerald-100">
@@ -151,13 +153,17 @@ export default function PDCATable({
                         ))}
                       </div>
                     ) : (
-                      <button
-                        onClick={() => onOpenAddMember?.(row)}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-dashed border-emerald-300 transition-colors cursor-pointer"
-                      >
-                        <UserPlus className="w-3 h-3" />
-                        <span>+ Assign Employees</span>
-                      </button>
+                      isRecordCreator(row, currentUser) ? (
+                        <button
+                          onClick={() => onOpenAddMember?.(row)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-dashed border-emerald-300 transition-colors cursor-pointer"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>+ Assign Employees</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">None assigned</span>
+                      )
                     )}
                   </td>
                 )}
@@ -165,14 +171,16 @@ export default function PDCATable({
                 {/* Actions: Download, Copy, Delete */}
                 <td className="py-4 px-4 whitespace-nowrap">
                   <div className="flex items-center justify-center gap-1.5">
-                    {/* Edit PDCA Record */}
-                    <button
-                      onClick={() => onEdit?.(row)}
-                      title="Edit PDCA record"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
+                    {/* Edit PDCA Record - Only visible to record creator */}
+                    {isRecordCreator(row, currentUser) && (
+                      <button
+                        onClick={() => onEdit?.(row)}
+                        title="Edit PDCA record"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                    )}
 
                     {/* Download PDCA Sheet */}
                     <button
@@ -192,14 +200,16 @@ export default function PDCATable({
                       <Copy className="w-4 h-4" />
                     </button>
 
-                    {/* Delete - with confirm on first click */}
-                    <button
-                      onClick={() => handleDeleteClick(row.id)}
-                      title="Delete"
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer text-slate-400 hover:text-rose-600 hover:bg-rose-50`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Delete - Only visible to record creator */}
+                    {isRecordCreator(row, currentUser) && (
+                      <button
+                        onClick={() => handleDeleteClick(row.id)}
+                        title="Delete"
+                        className="p-1.5 rounded-lg transition-colors cursor-pointer text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

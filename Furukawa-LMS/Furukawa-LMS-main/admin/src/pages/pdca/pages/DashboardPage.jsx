@@ -1,4 +1,4 @@
-import { filterPDCARecords, matchesPlant, PDCA_PLANTS, getStoredUnit, resolveCurrentUserId } from '../data/recordFilters';
+import { filterPDCARecords, matchesPlant, PDCA_PLANTS, getStoredUnit, resolveCurrentUserId, isRecordCreator } from '../data/recordFilters';
 import { createDefaultRows } from '../data/pdcaStore';
 import { readSaved } from '@components/shared/formPersistence';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -137,6 +137,14 @@ export default function DashboardPage() {
     revealSavedForm(item);
     if (lpaSource) navigate(`/sheet/${encodeURIComponent(item.id)}`, { state: { returnTo: lpaSource.returnTo || '/' } });
   };
+  const handleEditPDCA = (item) => {
+    if (!item) return;
+    if (!isRecordCreator(item, userContext?.user)) {
+      showToast('Only the record creator can edit this PDCA record.');
+      return;
+    }
+    setModalMode(item);
+  };
   const updatePDCA = item => {
     handleUpdatePDCA(item);
     revealSavedForm(item);
@@ -144,11 +152,19 @@ export default function DashboardPage() {
   const requestDeletePDCA = id => {
     const item = data.find(record => String(record.id) === String(id));
     if (!item) return;
+    if (!isRecordCreator(item, userContext?.user)) {
+      showToast('Only the record creator can delete this PDCA record.');
+      return;
+    }
     setDeleteError('');
     setDeleteTarget(item);
   };
   const confirmDeletePDCA = () => {
     if (!deleteTarget) return;
+    if (!isRecordCreator(deleteTarget, userContext?.user)) {
+      setDeleteError('Only the record creator can delete this PDCA record.');
+      return;
+    }
     try {
       handleDeletePDCA(deleteTarget.id);
       setCurrentPage(page => Math.min(page, Math.max(1, Math.ceil((filteredData.length - 1) / itemsPerPage))));
@@ -373,6 +389,7 @@ export default function DashboardPage() {
       {activeTab === 'CFT' ? (
         <CFTCardGrid
           items={paginatedData}
+          currentUser={userContext?.user}
           pageStartIndex={pageStartIndex}
           totalItems={filteredData.length}
           selectedPlant={selectedPlant}
@@ -381,11 +398,12 @@ export default function DashboardPage() {
           onDelete={requestDeletePDCA}
           onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
-          onEdit={(item) => setModalMode(item)}
+          onEdit={handleEditPDCA}
         />
       ) : (
         <PDCATable
           items={paginatedData}
+          currentUser={userContext?.user}
           activeTab={activeTab}
           pageStartIndex={pageStartIndex}
           selectedPlant={selectedPlant}
@@ -394,7 +412,7 @@ export default function DashboardPage() {
           onDelete={requestDeletePDCA}
           onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
-          onEdit={(item) => setModalMode(item)}
+          onEdit={handleEditPDCA}
         />
       )}
 

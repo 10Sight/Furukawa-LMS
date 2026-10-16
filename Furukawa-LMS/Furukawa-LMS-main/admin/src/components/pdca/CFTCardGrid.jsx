@@ -9,9 +9,11 @@ import {
   Inbox,
   ChevronRight
 } from 'lucide-react';
+import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
 
 export default function CFTCardGrid({
   items = [],
+  currentUser,
   pageStartIndex = 0,
   totalItems = 0,
   selectedPlant = 'Unit',
@@ -129,25 +131,27 @@ export default function CFTCardGrid({
                       <Users className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Assigned Employees ({row.assignedMembers?.length || 0})</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onOpenAddMember?.(row)}
-                      className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 hover:underline cursor-pointer"
-                    >
-                      {row.assignedMembers?.length ? 'Edit' : '+ Assign'}
-                    </button>
+                    {isRecordCreator(row, currentUser) && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAddMember?.(row)}
+                        className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 hover:underline cursor-pointer"
+                      >
+                        {row.assignedMembers?.length ? 'Edit' : '+ Assign'}
+                      </button>
+                    )}
                   </div>
 
                   {row.assignedMembers && row.assignedMembers.length > 0 ? (
                     <div 
-                      onClick={() => onOpenAddMember?.(row)}
-                      title="Click to edit or add employees"
-                      className="flex flex-wrap gap-1.5 items-center cursor-pointer group/emp hover:opacity-90 min-h-[28px]"
+                      onClick={() => { if (isRecordCreator(row, currentUser)) onOpenAddMember?.(row); }}
+                      title={isRecordCreator(row, currentUser) ? "Click to edit or add employees" : "Assigned employees"}
+                      className={`flex flex-wrap gap-1.5 items-center min-h-[28px] ${isRecordCreator(row, currentUser) ? 'cursor-pointer group/emp hover:opacity-90' : 'cursor-default'}`}
                     >
                       {row.assignedMembers.map((emp, i) => (
                         <div
                           key={i}
-                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-[11px] text-emerald-900 shadow-2xs group-hover/emp:border-emerald-400 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-[11px] text-emerald-900 shadow-2xs transition-colors"
                         >
                           <span className="font-semibold text-emerald-800">{emp.name}</span>
                           <span className="font-mono text-[9px] text-emerald-600 bg-white px-1 py-0.5 rounded border border-emerald-100">
@@ -157,19 +161,23 @@ export default function CFTCardGrid({
                       ))}
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => onOpenAddMember?.(row)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg border border-dashed border-emerald-300 transition-colors cursor-pointer w-full justify-center"
-                    >
-                      <UserPlus className="w-3 h-3" />
-                      <span>+ Assign Employees</span>
-                    </button>
+                    isRecordCreator(row, currentUser) ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAddMember?.(row)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg border border-dashed border-emerald-300 transition-colors cursor-pointer w-full justify-center"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>+ Assign Employees</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">None assigned</span>
+                    )
                   )}
                 </div>
               </div>
 
-              {/* Card Footer Actions (Exact match to PDCATable actions: View Sheet, Download, Copy, Delete) */}
+              {/* Card Footer Actions (View Sheet, Download, Copy, Delete) */}
               <div className="pt-3.5 mt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 {/* View Sheet Button */}
                 <button
@@ -203,15 +211,17 @@ export default function CFTCardGrid({
                     <Copy className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* Delete with confirm */}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteClick(row.id)}
-                    title="Delete"
-                    className={`p-2 rounded-xl border transition-colors cursor-pointer shadow-2xs text-slate-400 hover:text-rose-600 hover:bg-rose-50 border-slate-200`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Delete - Only visible to record creator */}
+                  {isRecordCreator(row, currentUser) && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(row.id)}
+                      title="Delete"
+                      className="p-2 rounded-xl border transition-colors cursor-pointer shadow-2xs text-slate-400 hover:text-rose-600 hover:bg-rose-50 border-slate-200"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

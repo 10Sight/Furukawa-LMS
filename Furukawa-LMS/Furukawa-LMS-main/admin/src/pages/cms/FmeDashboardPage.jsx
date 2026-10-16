@@ -1,4 +1,5 @@
 import { demoModeEnabled } from "../../../../shared/demoData.js";
+import { authSession } from "@/utils/authSession.js";
 import React, { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
@@ -18,9 +19,18 @@ export default function FmeDashboardPage({ page }) {
     const sectionId = user?.sectionId?.id || user?.sectionId?._id || user?.sectionId || user?.sections?.[0]?.id || user?.sections?.[0]?._id || user?.sections?.[0];
     const section = (Array.isArray(sections) ? sections : []).find(item => String(item.id || item._id) === String(sectionId));
     const contextRef = useRef(null);
+    const authToken = authSession.getItem('token') || sessionStorage.getItem('token') || '';
     contextRef.current = {
         lpaSource: null,
-        user: { name: user?.fullName || user?.name || '', code: user?.employeeId || user?.empId || user?.empCode || user?.userName || '', email: user?.email || '' },
+        token: authToken,
+        user: {
+            id: user?.id || user?._id || '',
+            name: user?.fullName || user?.name || '',
+            code: user?.employeeId || user?.empId || user?.empCode || user?.userName || '',
+            email: user?.email || '',
+            role: user?.role || 'EMPLOYEE',
+            isAdmin: Boolean(user?.isAdmin || user?.role === 'ADMIN')
+        },
         section: { id: section?.id || section?._id || sectionId || '', name: section?.name || user?.section?.name || user?.sectionName || user?.sectionId?.name || user?.sections?.[0]?.name || '' },
         departments: departments.map(item => ({ id: item.id || item._id, name: item.name })),
         loading: false,

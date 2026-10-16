@@ -459,6 +459,18 @@ export default function PDCASheet({
 
   const [isSaving, setIsSaving] = useState(false);
 
+  // Form-level calendar date (defaulting to topic date or today)
+  const [formDate, setFormDate] = useState(() => {
+    if (currentDate) return currentDate;
+    if (topic?.date) {
+      const d = new Date(topic.date);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0];
+      }
+    }
+    return new Date().toISOString().split('T')[0];
+  });
+
   // Baseline snapshot ref to detect unsaved edits during the current editing session
   const initialSnapshotRef = useRef(serializeSheet(initialRows, initialHeaderInfo));
   const initialStateRef = useRef({
@@ -804,6 +816,24 @@ export default function PDCASheet({
       return false;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExportToExcel = async () => {
+    try {
+      showToast('Generating complete Excel workbook with images...');
+      const { exportPDCASheetToExcel } = await import('../../pages/pdca/data/pdcaExcelExport.js');
+      await exportPDCASheetToExcel({
+        topic,
+        sheet: {
+          rows,
+          headerInfo
+        }
+      });
+      showToast('✓ Complete PDCA sheet exported to Excel');
+    } catch (err) {
+      console.error('Failed to export PDCA sheet to Excel:', err);
+      showToast('Export failed. Please try again.');
     }
   };
 
@@ -1507,76 +1537,7 @@ export default function PDCASheet({
 
   // Focus navigation refs grid: cellRefs.current[`${rowIndex}_${colName}`]
   const cellRefs = useRef({});
-  // Measure both header sections so the separate Actions rail starts its rows at the exact table boundary.
-  const theadRef = useRef(null);
-  const [theadHeight, setTheadHeight] = useState(0);
-  const actionsHeaderRef = useRef(null);
-  const [actionsHeaderHeight, setActionsHeaderHeight] = useState(0);
 
-  useLayoutEffect(() => {
-    const measure = () => {
-      if (theadRef.current) {
-        setTheadHeight(theadRef.current.getBoundingClientRect().height);
-      }
-      if (actionsHeaderRef.current) {
-        setActionsHeaderHeight(actionsHeaderRef.current.getBoundingClientRect().height);
-      }
-    };
-    measure();
-    const ro = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(measure)
-      : null;
-    if (ro && theadRef.current) ro.observe(theadRef.current);
-    if (ro && actionsHeaderRef.current) ro.observe(actionsHeaderRef.current);
-    return () => ro?.disconnect();
-  }, []);
-
-  // Per-row height sync: measure each <tr> so the Actions panel cards match exactly
-  const trRowRefs = useRef({});       // index -> <tr> DOM element
-  const [rowHeights, setRowHeights] = useState({});   // index -> px height
-
-  // Single ResizeObserver that watches all registered <tr> elements
-  const rowObserverRef = useRef(null);
-  useLayoutEffect(() => {
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => {
-      const updates = {};
-      entries.forEach((entry) => {
-        const idx = entry.target.__rowIdx;
-        // Preserve fractional CSS pixels so the side rail follows the table row edge exactly.
-        if (idx !== undefined) updates[idx] = entry.target.getBoundingClientRect().height;
-      });
-      if (Object.keys(updates).length > 0) {
-        setRowHeights((prev) => ({ ...prev, ...updates }));
-      }
-    });
-    rowObserverRef.current = observer;
-    // Observe any already-registered rows
-    Object.entries(trRowRefs.current).forEach(([, el]) => { if (el) observer.observe(el); });
-    return () => observer.disconnect();
-  }, []);
-
-  // Callback ref attached to each <tr> – only register/observe, never call setState here
-  const registerTrRef = (idx, el) => {
-    const prev = trRowRefs.current[idx];
-    if (prev && rowObserverRef.current) rowObserverRef.current.unobserve(prev);
-    if (el) {
-      el.__rowIdx = idx;
-      trRowRefs.current[idx] = el;
-      if (rowObserverRef.current) rowObserverRef.current.observe(el);
-    } else {
-      delete trRowRefs.current[idx];
-    }
-  };
-
-  // Seed row heights after render (safe: useEffect runs after commit, not during)
-  useEffect(() => {
-    const snapshot = {};
-    Object.entries(trRowRefs.current).forEach(([i, el]) => {
-      if (el) snapshot[Number(i)] = el.getBoundingClientRect().height;
-    });
-    if (Object.keys(snapshot).length > 0) setRowHeights(snapshot);
-  }, [rows.length]); // re-seed whenever rows are added/deleted
 
   const registerRef = (rowIndex, colName, el) => {
     if (el) {
@@ -2315,11 +2276,13 @@ export default function PDCASheet({
     return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
+  const totalCols = effectiveReadOnly ? 17 : 18;
+
   return (
     <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
-      {/* Control Bar: Back Button, PDCA Audit Matrix, Search & Add Row */}
-      <div className="w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
-        {/* Control Toolbar (Back, PDCA Audit Matrix, Search & Add Row) */}
+      {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
+      <div className="sticky top-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
+        {/* Control Toolbar */}
         <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs bg-white">
           <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
             <button
@@ -2349,19 +2312,33 @@ export default function PDCASheet({
                 <span>View-Only Mode</span>
               </span>
             )}
-            {onDateChange && (
-              <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-700 cursor-pointer shadow-2xs">
-                <Calendar className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                <span className="font-semibold text-slate-600">Date:</span>
-                <input
-                  type="date"
-                  value={currentDate || ''}
-                  onChange={(e) => onDateChange(e.target.value)}
-                  className="bg-transparent border-0 outline-none text-xs font-semibold text-slate-800 cursor-pointer p-0"
-                  title="Choose date of data to view"
-                />
-              </label>
-            )}
+            {/* Calendar Date Picker on PDCA Form Page */}
+            <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-700 cursor-pointer shadow-2xs hover:bg-slate-100 transition-colors">
+              <Calendar className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+              <span className="font-semibold text-slate-600">Date:</span>
+              <input
+                type="date"
+                value={formDate || ''}
+                disabled={effectiveReadOnly}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormDate(val);
+                  if (onDateChange) onDateChange(val);
+                }}
+                className="bg-transparent border-0 outline-none text-xs font-semibold text-slate-800 cursor-pointer p-0"
+                title="Select date for this PDCA sheet"
+              />
+            </label>
+            {/* Complete Excel Workbook Export Button */}
+            <button
+              type="button"
+              onClick={handleExportToExcel}
+              title="Download complete PDCA sheet with images and dropdown options as Excel (.xlsx)"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex-shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Excel</span>
+            </button>
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -2399,334 +2376,354 @@ export default function PDCASheet({
       </div>
 
       {/* Spreadsheet Matrix Table Grid */}
-      <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto">
-        <div className="flex items-stretch w-full overflow-x-auto max-w-full">
-          {/* ── Main Table ── */}
-          <div className="flex-1 min-w-0 overflow-x-auto">
-          <table className="w-full text-left border-collapse border border-[#B0BEC5] text-[11px]">
-            {/* Table Column Headers */}
-            <thead ref={theadRef}>
-              {/* Title Row: Centered Page Title */}
-              <tr className="bg-white border-b border-[#94A3B8]">
-                <th
-                  colSpan={17}
-                  className="py-3 px-4 text-center font-bold text-slate-900 text-lg sm:text-xl md:text-2xl tracking-wide select-none"
-                >
-                  {topic?.topic || 'PDCA - M Tanaka San Audit'}
-                </th>
-              </tr>
+      <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-140px)]">
+        <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
+          <colgroup>
+            <col style={{ width: '56px', minWidth: '52px' }} />
+            <col style={{ width: '38px', minWidth: '34px' }} />
+            <col style={{ width: '34px', minWidth: '30px' }} />
+            <col style={{ width: '82px', minWidth: '78px' }} />
+            <col style={{ width: '90px', minWidth: '85px' }} />
+            <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
+            <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
+            <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
+            <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
+            <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
+            <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: '56px', minWidth: '52px' }} />
+            <col style={{ width: '85px', minWidth: '75px' }} />
+            <col style={{ width: '155px', minWidth: '140px' }} />
+            <col style={{ width: '95px', minWidth: '85px' }} />
+            <col style={{ width: '100px', minWidth: '90px' }} />
+            {!effectiveReadOnly && <col style={{ width: '44px', minWidth: '40px' }} />}
+          </colgroup>
 
-              {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
-              <tr className="bg-white border-b border-[#94A3B8] text-[11px]">
-                <th
-                  colSpan={2}
-                  className="text-slate-900 font-bold text-center border-r border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
-                  style={{ backgroundColor: '#FFFF99' }}
-                  title="Meeting Name (会議名)"
-                >
-                  会議名
-                </th>
-                <th
-                  colSpan={9}
-                  className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
-                >
-                  <input
-                    type="text"
-                    value={headerInfo.topicName}
-                    readOnly={effectiveReadOnly}
-                    disabled={effectiveReadOnly}
-                    onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
-                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                  />
-                </th>
-                <th
-                  colSpan={2}
-                  className="text-slate-900 font-bold text-center border-r border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
-                  style={{ backgroundColor: '#FFFF99' }}
-                  title="Prepared By (作成者 :)"
-                >
-                  作成者 :
-                </th>
-                <th
-                  colSpan={4}
-                  className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
-                >
-                  <input
-                    type="text"
-                    value={headerInfo.preparedBy}
-                    readOnly={effectiveReadOnly}
-                    disabled={effectiveReadOnly}
-                    onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
-                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                  />
-                </th>
-              </tr>
+          {/* Table Column Headers - Frozen on vertical scroll */}
+          <thead className="sticky top-0 z-20 bg-white shadow-xs">
+            {/* Title Row: Centered Page Title */}
+            <tr className="bg-white">
+              <th
+                colSpan={totalCols}
+                className="py-4 px-6 text-center font-extrabold text-slate-900 text-2xl sm:text-3xl md:text-4xl tracking-wide select-none bg-white border-r border-b border-[#94A3B8]"
+              >
+                {topic?.topic || 'PDCA - M Tanaka San Audit'}
+              </th>
+            </tr>
 
-              {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
-              <tr className="bg-white border-b border-[#94A3B8] text-[11px]">
-                <th
-                  colSpan={2}
-                  className="text-slate-900 font-bold text-center border-r border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
-                  style={{ backgroundColor: '#FFFF99' }}
-                  title="Attendees (出席者)"
-                >
-                  出席者
-                </th>
-                <th
-                  colSpan={9}
-                  className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
-                >
-                  <input
-                    type="text"
-                    value={headerInfo.attendees}
-                    readOnly={effectiveReadOnly}
-                    disabled={effectiveReadOnly}
-                    onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
-                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                  />
-                </th>
-                <th
-                  colSpan={2}
-                  className="text-slate-900 font-bold text-center border-r border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
-                  style={{ backgroundColor: '#FFFF99' }}
-                  title="Audit / Minutes No (議事録No)"
-                >
-                  議事録No
-                </th>
-                <th
-                  colSpan={4}
-                  className="bg-white border-r border-[#94A3B8] p-0 font-normal align-middle"
-                >
-                  <input
-                    type="text"
-                    value={headerInfo.auditNo}
-                    readOnly={effectiveReadOnly}
-                    disabled={effectiveReadOnly}
-                    onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
-                    className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                  />
-                </th>
-              </tr>
-
-              {/* Row 3: P D C A Phase Labels Row */}
-              <tr className="bg-white border-b-2 border-slate-700 text-center select-none text-xs">
-                {/* Empty cell above Date, Shift, S.No */}
-                <th
-                  colSpan={3}
-                  className="bg-white border-r border-[#94A3B8] py-1 px-1"
+            {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
+            <tr className="bg-white text-[11px]">
+              <th
+                colSpan={2}
+                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
+                style={{ backgroundColor: '#FFFF99' }}
+                title="Meeting Name (会議名)"
+              >
+                会議名
+              </th>
+              <th
+                colSpan={9}
+                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+              >
+                <input
+                  type="text"
+                  value={headerInfo.topicName}
+                  readOnly={effectiveReadOnly}
+                  disabled={effectiveReadOnly}
+                  onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
+              </th>
+              <th
+                colSpan={2}
+                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
+                style={{ backgroundColor: '#FFFF99' }}
+                title="Prepared By (作成者 :)"
+              >
+                作成者 :
+              </th>
+              <th
+                colSpan={totalCols - 13}
+                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+              >
+                <input
+                  type="text"
+                  value={headerInfo.preparedBy}
+                  readOnly={effectiveReadOnly}
+                  disabled={effectiveReadOnly}
+                  onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                />
+              </th>
+            </tr>
 
-                {/* P: Plan - Above Status, Department, Section, Line/Area, Observation, Image Before, Root Cause */}
-                <th
-                  colSpan={7}
-                  className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
-                  title="Plan (P)"
+            {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
+            <tr className="bg-white text-[11px]">
+              <th
+                colSpan={2}
+                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
+                style={{ backgroundColor: '#FFFF99' }}
+                title="Attendees (出席者)"
+              >
+                出席者
+              </th>
+              <th
+                colSpan={9}
+                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+              >
+                <input
+                  type="text"
+                  value={headerInfo.attendees}
+                  readOnly={effectiveReadOnly}
+                  disabled={effectiveReadOnly}
+                  onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                />
+              </th>
+              <th
+                colSpan={2}
+                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
+                style={{ backgroundColor: '#FFFF99' }}
+                title="Audit / Minutes No (議事録No)"
+              >
+                議事録No
+              </th>
+              <th
+                colSpan={totalCols - 13}
+                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+              >
+                <input
+                  type="text"
+                  value={headerInfo.auditNo}
+                  readOnly={effectiveReadOnly}
+                  disabled={effectiveReadOnly}
+                  onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                />
+              </th>
+            </tr>
+
+            {/* Row 3: P D C A Phase Labels Row */}
+            <tr className="bg-white text-center select-none text-xs">
+              {/* Empty cell above Date, Shift, S.No */}
+              <th
+                colSpan={3}
+                className="bg-white border-r border-b-2 border-[#475569] py-1 px-1"
+              />
+
+              {/* P: Plan */}
+              <th
+                colSpan={7}
+                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                title="Plan (P)"
+              >
+                P
+              </th>
+
+              {/* D: Do */}
+              <th
+                colSpan={3}
+                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                title="Do (D)"
+              >
+                D
+              </th>
+
+              {/* C: Check */}
+              <th
+                colSpan={3}
+                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                title="Check (C)"
+              >
+                C
+              </th>
+
+              {/* A: Act */}
+              <th
+                colSpan={totalCols - 16}
+                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                title="Act (A)"
+              >
+                A
+              </th>
+            </tr>
+
+            <tr className="bg-[#ECEFF1] text-slate-800 text-[11px] font-semibold select-none text-center">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+                <span>Date</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+                <span>Shift</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+                S.No
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                <span>Status</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[90px] min-w-[85px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                <span>Department</span>
+              </th>
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${sectionColWidth}px`,
+                  minWidth: `${sectionColWidth}px`
+                }}
+                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
+              >
+                <span>Section</span>
+              </th>
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${lineAreaColWidth}px`,
+                  minWidth: `${lineAreaColWidth}px`
+                }}
+                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
+              >
+                <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${observationWidth}px`,
+                  minWidth: `${observationWidth}px`,
+                  maxWidth: `${observationWidth}px`
+                }}
+                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                  <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                </div>
+
+                {/* Draggable Resize Handle */}
+                <span
+                  role="separator"
+                  aria-label="Resize Observation column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_OBSERVATION_WIDTH}
+                  aria-valuemax={MAX_OBSERVATION_WIDTH}
+                  aria-valuenow={observationWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
+                  onPointerDown={startColResize}
+                  onPointerMove={continueColResize}
+                  onPointerUp={finishColResize}
+                  onPointerCancel={finishColResize}
+                  onLostPointerCapture={finishColResize}
+                  onKeyDown={handleResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
                 >
-                  P
-                </th>
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                Image Before
+              </th>
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${rootCauseWidth}px`,
+                  minWidth: `${rootCauseWidth}px`,
+                  maxWidth: `${rootCauseWidth}px`
+                }}
+                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                  <span>Root Cause</span>
+                </div>
 
-                {/* D: Do - Above Counter Measure, Image After, Response Date */}
-                <th
-                  colSpan={3}
-                  className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
-                  title="Do (D)"
+                {/* Draggable Resize Handle */}
+                <span
+                  role="separator"
+                  aria-label="Resize Root Cause column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_ROOT_CAUSE_WIDTH}
+                  aria-valuemax={MAX_ROOT_CAUSE_WIDTH}
+                  aria-valuenow={rootCauseWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Root Cause column width (${rootCauseWidth}px)`}
+                  onPointerDown={startRootCauseResize}
+                  onPointerMove={continueRootCauseResize}
+                  onPointerUp={finishRootCauseResize}
+                  onPointerCancel={finishRootCauseResize}
+                  onLostPointerCapture={finishRootCauseResize}
+                  onKeyDown={handleRootCauseResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
                 >
-                  D
-                </th>
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
+              </th>
 
-                {/* C: Check - Above Responsible Person Confirmation (Dept / Staff / CFT) */}
-                <th
-                  colSpan={3}
-                  className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
-                  title="Check (C)"
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${counterMeasureWidth}px`,
+                  minWidth: `${counterMeasureWidth}px`,
+                  maxWidth: `${counterMeasureWidth}px`
+                }}
+                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10.5px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                  <span>Counter Measure</span>
+                </div>
+
+                {/* Draggable Resize Handle */}
+                <span
+                  role="separator"
+                  aria-label="Resize Counter Measure column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_COUNTER_MEASURE_WIDTH}
+                  aria-valuemax={MAX_COUNTER_MEASURE_WIDTH}
+                  aria-valuenow={counterMeasureWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Counter Measure column width (${counterMeasureWidth}px)`}
+                  onPointerDown={startCounterMeasureResize}
+                  onPointerMove={continueCounterMeasureResize}
+                  onPointerUp={finishCounterMeasureResize}
+                  onPointerCancel={finishCounterMeasureResize}
+                  onLostPointerCapture={finishCounterMeasureResize}
+                  onKeyDown={handleCounterMeasureResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
                 >
-                  C
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                Image After
+              </th>
+              <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
+                <div className="text-[10px] leading-tight font-semibold">Response</div>
+                <div className="text-[10px] leading-tight font-semibold">Date</div>
+              </th>
+              <th colSpan={3} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
+                <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
+                  Responsible Person Confirmation
+                </div>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[9.5px]">
+                (Responsible person instructions, etc.)
+              </th>
+              {!effectiveReadOnly && (
+                <th rowSpan={2} className="py-1.5 px-1 w-[44px] min-w-[40px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] font-semibold select-none">
+                  Actions
                 </th>
+              )}
+            </tr>
 
-                {/* A: Act - Above (Responsible person instructions, etc.) */}
-                <th
-                  colSpan={1}
-                  className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
-                  title="Act (A)"
-                >
-                  A
-                </th>
-              </tr>
-
-              <tr className="bg-[#ECEFF1] text-slate-800 border-b border-[#475569] text-[11px] font-semibold select-none text-center">
-                <th rowSpan={2} className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#475569]">
-                  <span>Date</span> <span className="text-red-500 font-bold">*</span>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-0.5 w-[36px] min-w-[34px] text-center border-r border-[#475569]">
-                  <span>Shift</span> <span className="text-red-500 font-bold">*</span>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-[#475569]">
-                  S.No
-                </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#475569] text-[10.5px]">
-                  <span>Status</span> <span className="text-red-500 font-bold">*</span>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[90px] min-w-[85px] text-center border-r border-[#475569] text-[10.5px]">
-                  <span>Department</span>
-                </th>
-                <th
-                  rowSpan={2}
-                  style={{
-                    width: `${sectionColWidth}px`,
-                    minWidth: `${sectionColWidth}px`
-                  }}
-                  className="py-1.5 px-1 text-center border-r border-[#475569] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
-                >
-                  <span>Section</span>
-                </th>
-                <th
-                  rowSpan={2}
-                  style={{
-                    width: `${lineAreaColWidth}px`,
-                    minWidth: `${lineAreaColWidth}px`
-                  }}
-                  className="py-1.5 px-1 text-center border-r border-[#475569] text-[10.5px] whitespace-nowrap transition-[width] duration-150"
-                >
-                  <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
-                </th>
-                {/* 5. Observation Column Header with Visible, Draggable Width Controller */}
-                <th
-                  rowSpan={2}
-                  style={{
-                    width: `${observationWidth}px`,
-                    minWidth: `${observationWidth}px`,
-                    maxWidth: `${observationWidth}px`
-                  }}
-                  className="relative py-1.5 px-2 text-center border-r border-[#475569] text-[10.5px] select-none"
-                >
-                  <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                    <span>Observation</span> <span className="text-red-500 font-bold">*</span>
-                  </div>
-
-                  {/* Visible Draggable Resize Handle */}
-                  <span
-                    role="separator"
-                    aria-label="Resize Observation column width"
-                    aria-orientation="vertical"
-                    aria-valuemin={MIN_OBSERVATION_WIDTH}
-                    aria-valuemax={MAX_OBSERVATION_WIDTH}
-                    aria-valuenow={observationWidth}
-                    tabIndex={0}
-                    title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
-                    onPointerDown={startColResize}
-                    onPointerMove={continueColResize}
-                    onPointerUp={finishColResize}
-                    onPointerCancel={finishColResize}
-                    onLostPointerCapture={finishColResize}
-                    onKeyDown={handleResizeKeyDown}
-                    className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                  >
-                    <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
-                  </span>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-[#475569] text-[10.5px]">
-                  Image Before
-                </th>
-                {/* 8. Root Cause Column Header with Visible, Draggable Width Controller */}
-                <th
-                  rowSpan={2}
-                  style={{
-                    width: `${rootCauseWidth}px`,
-                    minWidth: `${rootCauseWidth}px`,
-                    maxWidth: `${rootCauseWidth}px`
-                  }}
-                  className="relative py-1.5 px-2 text-center border-r border-[#475569] text-[10.5px] select-none"
-                >
-                  <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                    <span>Root Cause</span>
-                  </div>
-
-                  {/* Visible Draggable Resize Handle */}
-                  <span
-                    role="separator"
-                    aria-label="Resize Root Cause column width"
-                    aria-orientation="vertical"
-                    aria-valuemin={MIN_ROOT_CAUSE_WIDTH}
-                    aria-valuemax={MAX_ROOT_CAUSE_WIDTH}
-                    aria-valuenow={rootCauseWidth}
-                    tabIndex={0}
-                    title={`Drag horizontally or use arrow keys to adjust Root Cause column width (${rootCauseWidth}px)`}
-                    onPointerDown={startRootCauseResize}
-                    onPointerMove={continueRootCauseResize}
-                    onPointerUp={finishRootCauseResize}
-                    onPointerCancel={finishRootCauseResize}
-                    onLostPointerCapture={finishRootCauseResize}
-                    onKeyDown={handleRootCauseResizeKeyDown}
-                    className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                  >
-                    <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
-                  </span>
-                </th>
-
-                {/* 9. Counter Measure Column Header with Visible, Draggable Width Controller */}
-                <th
-                  rowSpan={2}
-                  style={{
-                    width: `${counterMeasureWidth}px`,
-                    minWidth: `${counterMeasureWidth}px`,
-                    maxWidth: `${counterMeasureWidth}px`
-                  }}
-                  className="relative py-1.5 px-2 text-center border-r border-[#475569] leading-tight text-[10.5px] select-none"
-                >
-                  <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                    <span>Counter Measure</span>
-                  </div>
-
-                  {/* Visible Draggable Resize Handle */}
-                  <span
-                    role="separator"
-                    aria-label="Resize Counter Measure column width"
-                    aria-orientation="vertical"
-                    aria-valuemin={MIN_COUNTER_MEASURE_WIDTH}
-                    aria-valuemax={MAX_COUNTER_MEASURE_WIDTH}
-                    aria-valuenow={counterMeasureWidth}
-                    tabIndex={0}
-                    title={`Drag horizontally or use arrow keys to adjust Counter Measure column width (${counterMeasureWidth}px)`}
-                    onPointerDown={startCounterMeasureResize}
-                    onPointerMove={continueCounterMeasureResize}
-                    onPointerUp={finishCounterMeasureResize}
-                    onPointerCancel={finishCounterMeasureResize}
-                    onLostPointerCapture={finishCounterMeasureResize}
-                    onKeyDown={handleCounterMeasureResizeKeyDown}
-                    className="group absolute inset-y-0 right-0 z-20 flex w-3.5 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                  >
-                    <span className="h-4 w-1 rounded-full bg-slate-400 group-hover:bg-blue-600 group-active:bg-blue-700 transition-colors shadow-2xs" />
-                  </span>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-[#475569] text-[10.5px]">
-                  Image After
-                </th>
-                <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#475569] leading-tight">
-                  <div className="text-[10px] leading-tight font-semibold">Response</div>
-                  <div className="text-[10px] leading-tight font-semibold">Date</div>
-                </th>
-                <th colSpan={3} className="py-1 px-0 border-r border-[#475569] text-center">
-                  <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
-                    Responsible Person Confirmation
-                  </div>
-                </th>
-                <th rowSpan={2} className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-[#475569] leading-tight text-[9.5px]">
-                  (Responsible person instructions, etc.)
-                </th>
-              </tr>
-
-              <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[9.5px] border-b-2 border-[#475569] select-none text-center">
-                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[85px] min-w-[75px]">
-                  Dept
-                </th>
-                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[155px] min-w-[140px]">
-                  Staff Name
-                </th>
-                <th className="py-0.5 px-1 text-center border-r border-[#475569] w-[95px] min-w-[85px]">
-                  CFT
-                </th>
-              </tr>
-            </thead>
+            <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[9.5px] select-none text-center">
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[85px] min-w-[75px]">
+                Dept
+              </th>
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[155px] min-w-[140px]">
+                Staff Name
+              </th>
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[95px] min-w-[85px]">
+                CFT
+              </th>
+            </tr>
+          </thead>
 
             {/* Table Rows with thin bordered cells matching reference style */}
             <tbody className="bg-white">
@@ -2736,11 +2733,10 @@ export default function PDCASheet({
                 return (
                   <tr
                     key={idx}
-                    ref={(el) => registerTrRef(idx, el)}
-                    className="border-b border-[#64748B] hover:bg-[#F8FAFC] transition-colors"
+                    className="group/row transition-colors"
                   >
                     {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.date}
@@ -2751,7 +2747,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
                           disabled={effectiveReadOnly}
@@ -2772,12 +2768,12 @@ export default function PDCASheet({
                     </td>
 
                     {/* 3. S.No (Clean uneditable number, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-xs">
                       {sNo}
                     </td>
 
                     {/* 4. Status (Centered in cell) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[78px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <select
                           disabled={effectiveReadOnly}
@@ -2800,7 +2796,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 5. Department (Dropdown with the 13 required departments) */}
-                    <td className="p-0.5 align-middle text-center border-r border-[#64748B] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
                           disabled={effectiveReadOnly}
@@ -2828,7 +2824,7 @@ export default function PDCASheet({
                         width: `${sectionColWidth}px`,
                         minWidth: `${sectionColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-[#64748B] transition-[width] duration-150"
+                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
                       <div className="w-full flex items-center justify-center">
                         <SearchableSectionSelect
@@ -2849,7 +2845,7 @@ export default function PDCASheet({
                         width: `${lineAreaColWidth}px`,
                         minWidth: `${lineAreaColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-[#64748B] transition-[width] duration-150"
+                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
                       <div className="w-full flex items-center justify-center">
                         <SearchableLineAreaSelect
@@ -2890,7 +2886,7 @@ export default function PDCASheet({
                         minWidth: `${observationWidth}px`,
                         maxWidth: `${observationWidth}px`
                       }}
-                      className="p-1 align-top border-r border-[#64748B] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                      className="p-1 align-top border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
                     >
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'observation', el)}
@@ -2904,7 +2900,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
-                    <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[140px] text-center">
                       {(() => {
                         const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
 
@@ -3017,7 +3013,7 @@ export default function PDCASheet({
                         minWidth: `${rootCauseWidth}px`,
                         maxWidth: `${rootCauseWidth}px`
                       }}
-                      className="p-1 align-middle border-r border-[#64748B] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
                     >
                       <div className="w-full flex items-center justify-center">
                         <AutoResizeTextarea
@@ -3039,7 +3035,7 @@ export default function PDCASheet({
                         minWidth: `${counterMeasureWidth}px`,
                         maxWidth: `${counterMeasureWidth}px`
                       }}
-                      className="p-1 align-middle border-r border-[#64748B] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
                     >
                       <div className="w-full flex items-center justify-center">
                         <AutoResizeTextarea
@@ -3055,7 +3051,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
-                    <td className="p-1 align-middle border-r border-[#64748B] w-[150px] min-w-[140px] text-center">
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[140px] text-center">
                       {(() => {
                         const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
 
@@ -3162,7 +3158,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 11. Response Date (Stacked: Format on top, Calendar icon below, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.responseDate}
@@ -3173,7 +3169,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 14. Department Dropdown in Responsible Person Confirmation */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[85px] min-w-[75px]">
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[85px] min-w-[75px]">
                       {row.staffEmployees && row.staffEmployees.length > 1 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                           {row.staffEmployees.map((emp, empIdx) => (
@@ -3257,7 +3253,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 13. Staff Name (Centered in cell, supports multiple employees in a single cell) */}
-                    <td className="p-0 align-middle text-center border-r border-[#64748B] w-[155px] min-w-[140px]">
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[155px] min-w-[140px]">
                       <div className="relative w-full h-full min-h-[34px] flex flex-col justify-center">
                         {row.staffEmployees && row.staffEmployees.length > 1 ? (
                           <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
@@ -3362,7 +3358,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 14. CFT (Centered in cell) */}
-                    <td className="p-1 align-middle text-center border-r border-[#64748B] w-[95px] min-w-[85px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
                       <div className="relative w-full h-full flex items-center justify-center">
                         {row.cftTopic ? (
                           <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
@@ -3433,7 +3429,7 @@ export default function PDCASheet({
                     </td>
 
                     {/* 15. (Responsible person instructions, etc.) (Auto-expanding, centered) */}
-                    <td className="p-1 align-middle border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] w-[100px] min-w-[90px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
                       <div className="w-full flex items-center justify-center">
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
@@ -3447,55 +3443,35 @@ export default function PDCASheet({
                       </div>
                     </td>
 
+                    {/* 16. Actions Column (Insert Row Above / Delete Row) */}
+                    {!effectiveReadOnly && (
+                      <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleInsertRowAbove(idx)}
+                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                            title="Insert row above"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(idx)}
+                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                            title="Delete this row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          </div>{/* end main table wrapper */}
-
-          {/* ── ACTIONS Side Panel (Only if not read-only) ── */}
-          {!effectiveReadOnly && (
-            <div className="flex-shrink-0 w-[40px] bg-[#F8FAFC] flex flex-col">
-              {/* Panel Header */}
-              <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white px-2 py-[9px] flex items-center justify-center gap-1.5 select-none">
-              </div>
-
-              {/* Spacer that matches the remaining thead rows below the panel header */}
-              <div style={{ height: Math.max(0, theadHeight - actionsHeaderHeight), boxSizing: 'border-box' }} aria-hidden="true" />
-
-              {/* Per-row action icons – one pair per row, stacked vertically */}
-              {rows.map((_, idx) => (
-                <div
-                  key={idx}
-                  style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
-                  className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
-                >
-                  {/* Insert Row Above – icon only */}
-                  <button
-                    type="button"
-                    onClick={() => handleInsertRowAbove(idx)}
-                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
-                    title="Insert row above"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  </button>
-
-                  {/* Delete Row – icon only */}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteRow(idx)}
-                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                    title="Delete this row"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-        </div>{/* end flex wrapper */}
 
         {/* Footer info matching reference screenshot bottom strip */}
         <div className="bg-[#F8FAFC] border-t border-[#B0BEC5] px-4 py-2 flex items-center justify-between text-xs text-slate-500">

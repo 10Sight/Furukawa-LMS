@@ -14,22 +14,39 @@ export default function PDCATable({
   activeTab = 'Company',
   pageStartIndex = 0,
   selectedPlant = 'Unit',
+  selectedDate = '',
+  onClearDate = null
 }) {
   const handleDeleteClick = (id) => onDelete?.(id);
 
   if (items.length === 0) {
-    const isUnitDefault = selectedPlant === 'Unit' || selectedPlant === 'All Plants';
+    const isUnitDefault = selectedPlant === 'Unit';
     return (
       <div className="bg-white rounded-2xl border border-[#ECEFF3] p-6 sm:p-14 text-center shadow-sm">
         <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
         <h3 className="text-base font-semibold text-slate-800">
-          {isUnitDefault ? 'Please Select a Unit' : 'No Records Found'}
+          {isUnitDefault
+            ? 'Please Select a Unit'
+            : selectedDate
+              ? `No Records Found for Date: ${selectedDate}`
+              : 'No Records Found'}
         </h3>
         <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
           {isUnitDefault
             ? 'Select Gujrat or Bawal from the Unit dropdown above to display the records for that unit.'
-            : 'No records match the selected unit or search query. Try selecting a different unit or clearing your search.'}
+            : selectedDate
+              ? 'No PDCA records match the selected date. Try selecting a different date or clear the date filter.'
+              : 'No records match the selected unit or search query. Try selecting a different unit or clearing your search.'}
         </p>
+        {selectedDate && onClearDate && (
+          <button
+            type="button"
+            onClick={onClearDate}
+            className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+          >
+            Clear Date Filter
+          </button>
+        )}
       </div>
     );
   }

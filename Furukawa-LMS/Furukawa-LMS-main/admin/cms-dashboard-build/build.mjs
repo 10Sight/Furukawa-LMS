@@ -29,6 +29,7 @@ await build({
   plugins: [react()],
   resolve: { alias: [
     ...['react-dom/client', 'react-dom', 'react/jsx-runtime', 'react', 'react-router-dom', 'lucide-react'].map(name => ({ find: name, replacement: require.resolve(name) })),
+    { find: 'exceljs', replacement: path.resolve(adminRoot, 'node_modules/exceljs/dist/exceljs.min.js') },
     { find: '@', replacement: path.join(adminRoot, 'src') },
     { find: '@components', replacement: path.join(adminRoot, 'src/components') },
     { find: '@hooks', replacement: path.join(adminRoot, 'src/hooks') },

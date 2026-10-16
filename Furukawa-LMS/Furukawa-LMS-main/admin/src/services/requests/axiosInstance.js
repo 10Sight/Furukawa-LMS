@@ -13,10 +13,27 @@ const axiosInstance = axios.create({ baseURL: BASE_URL, withCredentials: true })
 // Request interceptor - for authentication token handling
 axiosInstance.interceptors.request.use(
     (config) => {
-        const token = authSession.getItem('token');
+        let token = authSession.getItem('token');
+        if (!token) {
+            try {
+                token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            } catch {}
+        }
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+
+        // Also pass X-User-Code and X-User-Id headers as fallback for iframe context
+        try {
+            const userRaw = authSession.getItem('user') || sessionStorage.getItem('user');
+            if (userRaw) {
+                const u = typeof userRaw === 'object' ? userRaw : JSON.parse(userRaw);
+                const code = u.employeeId || u.empId || u.code || u.userName;
+                if (code) config.headers['X-User-Code'] = code;
+                if (u.id || u._id) config.headers['X-User-Id'] = u.id || u._id;
+                if (u.name || u.fullName) config.headers['X-User-Name'] = u.name || u.fullName;
+            }
+        } catch {}
 
         return config;
     },

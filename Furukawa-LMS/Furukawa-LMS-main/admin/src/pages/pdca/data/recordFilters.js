@@ -1,18 +1,73 @@
 import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
 export { PDCA_DEPARTMENTS };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
+export const ALL_UNITS_OPTION = 'All Unit';
+
 export function matchesPlant(item, plant) {
-  if (!PDCA_PLANTS.includes(plant)) return false;
+  if (!plant) return false;
+  const normalizedPlant = String(plant).trim().toLowerCase();
+  if (
+    normalizedPlant === 'all unit' ||
+    normalizedPlant === 'all units' ||
+    normalizedPlant === 'all plants'
+  ) {
+    return true;
+  }
+  if (!PDCA_PLANTS.some(p => p.toLowerCase() === normalizedPlant)) return false;
   const savedPlant = (item.plant || '').toLowerCase();
   // Previously created forms used All Plants; retain access without moving them.
-  return savedPlant === plant.toLowerCase() || savedPlant === 'all plants';
+  return savedPlant === normalizedPlant || savedPlant === 'all plants';
 }
-export function filterPDCARecords(data, plant, scope, search = '', department = '') {
+
+export function matchesDate(item, dateFilter) {
+  if (!dateFilter || !String(dateFilter).trim()) return true;
+  const target = String(dateFilter).trim(); // Expected format: YYYY-MM-DD
+  const parts = target.split('-').map(Number);
+  if (parts.length < 3) return true;
+  const [ty, tm, td] = parts;
+
+  // 1. Check item.date (e.g. '16 Oct 2026', '2026-10-16', '16/10/2026')
+  if (item.date) {
+    const raw = String(item.date).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      if (raw === target) return true;
+    }
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      if (d.getFullYear() === ty && (d.getMonth() + 1) === tm && d.getDate() === td) {
+        return true;
+      }
+    }
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const monthName = months[tm - 1];
+    const dayStr = String(td).padStart(2, '0');
+    const daySimple = String(td);
+    const low = raw.toLowerCase();
+    if (low.includes(String(ty)) && low.includes(monthName) && (low.includes(dayStr) || low.includes(daySimple))) {
+      return true;
+    }
+  }
+
+  // 2. Check item.createdAt / item.sheet?.rows dates
+  if (item.createdAt) {
+    const d = new Date(item.createdAt);
+    if (!isNaN(d.getTime())) {
+      if (d.getFullYear() === ty && (d.getMonth() + 1) === tm && d.getDate() === td) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function filterPDCARecords(data, plant, scope, search = '', department = '', dateFilter = '') {
   const query = search.toLowerCase().trim();
   const deptFilter = (department || '').toLowerCase().trim();
   return data.filter(item => matchesPlant(item, plant) &&
     (scope === 'Self PDCA' ? item.isSelf || item.scope === scope : item.scope === scope) &&
     (!deptFilter || (item.department || '').toLowerCase() === deptFilter) &&
+    matchesDate(item, dateFilter) &&
     (!query || [item.topic, item.description, item.id, item.department, item.createdBy?.name, item.createdBy?.code]
       .some(value => String(value || '').toLowerCase().includes(query))));
 }
@@ -124,7 +179,7 @@ export function getStoredUnit(currentUserId, defaultFallback = 'Bawal') {
       return defaultFallback;
     }
 
-    if (PDCA_PLANTS.includes(unit)) {
+    if (PDCA_PLANTS.includes(unit) || unit === 'All Unit') {
       return unit;
     }
     return defaultFallback;
@@ -136,7 +191,7 @@ export function getStoredUnit(currentUserId, defaultFallback = 'Bawal') {
 export function saveStoredUnit(unit, currentUserId) {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    if (PDCA_PLANTS.includes(unit)) {
+    if (PDCA_PLANTS.includes(unit) || unit === 'All Unit') {
       const resolvedUserId = currentUserId || resolveCurrentUserId();
       sessionStorage.setItem(PDCA_SELECTED_UNIT_KEY, JSON.stringify({
         unit,

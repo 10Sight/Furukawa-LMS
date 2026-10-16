@@ -115,5 +115,50 @@ test('PDCA Unit selection persistence across session navigation and isolation', 
   assert.equal(getStoredUnit('user-1'), 'Bawal');
   clearStoredUnit();
   assert.equal(getStoredUnit('user-1'), 'Bawal');
+
+  // 8. User selects 'All Unit' -> saved and restored
+  saveStoredUnit('All Unit', 'user-1');
+  assert.equal(getStoredUnit('user-1'), 'All Unit');
 });
+
+test('filterPDCARecords with All Unit returns all records across Bawal and Gujrat with one click', () => {
+  const records = [
+    { id: '1', plant: 'Bawal', scope: 'Company', topic: 'Bawal item 1' },
+    { id: '2', plant: 'Gujrat', scope: 'Company', topic: 'Gujrat item 1' },
+    { id: '3', plant: 'Bawal', scope: 'Company', topic: 'Bawal item 2' },
+    { id: '4', plant: 'Gujrat', scope: 'Self PDCA', topic: 'Gujrat self item', isSelf: true }
+  ];
+
+  const companyAllUnits = filterPDCARecords(records, 'All Unit', 'Company');
+  assert.equal(companyAllUnits.length, 3);
+  assert.deepEqual(companyAllUnits.map(r => r.id), ['1', '2', '3']);
+
+  const selfAllUnits = filterPDCARecords(records, 'All Unit', 'Self PDCA');
+  assert.equal(selfAllUnits.length, 1);
+  assert.equal(selfAllUnits[0].id, '4');
+});
+
+test('filterPDCARecords filters correctly with calendar date filter', () => {
+  const records = [
+    { id: '1', plant: 'Bawal', scope: 'Company', topic: 'Oct 15 item', date: '15 Oct 2026' },
+    { id: '2', plant: 'Bawal', scope: 'Company', topic: 'Oct 16 item', date: '2026-10-16' },
+    { id: '3', plant: 'Bawal', scope: 'Company', topic: 'ISO item', date: '2026-10-15T09:30:00Z' },
+    { id: '4', plant: 'Bawal', scope: 'Company', topic: 'Another date', date: '10 Nov 2026' }
+  ];
+
+  // Filtering for 2026-10-15 should match record 1 and record 3
+  const oct15Matches = filterPDCARecords(records, 'Bawal', 'Company', '', '', '2026-10-15');
+  assert.equal(oct15Matches.length, 2);
+  assert.deepEqual(oct15Matches.map(r => r.id), ['1', '3']);
+
+  // Filtering for 2026-10-16 should match record 2
+  const oct16Matches = filterPDCARecords(records, 'Bawal', 'Company', '', '', '2026-10-16');
+  assert.equal(oct16Matches.length, 1);
+  assert.equal(oct16Matches[0].id, '2');
+
+  // Empty or cleared date filter should restore all records
+  const allRecords = filterPDCARecords(records, 'Bawal', 'Company', '', '', '');
+  assert.equal(allRecords.length, 4);
+});
+
 

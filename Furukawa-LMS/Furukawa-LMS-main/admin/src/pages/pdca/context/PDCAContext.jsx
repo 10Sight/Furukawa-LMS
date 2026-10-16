@@ -59,7 +59,7 @@ export function PDCAProvider({ children }) {
   }, [userContext?.user]);
 
   const setSelectedPlant = useCallback((plant) => {
-    const validPlant = PDCA_PLANTS.includes(plant) ? plant : 'Unit';
+    const validPlant = (PDCA_PLANTS.includes(plant) || plant === 'All Unit') ? plant : 'All Unit';
     setSelectedPlantState(validPlant);
     const userId = resolveCurrentUserId(userContext?.user);
     saveStoredUnit(validPlant, userId);
@@ -68,6 +68,15 @@ export function PDCAProvider({ children }) {
   useEffect(() => {
     const receive = event => {
       if (event.origin === window.location.origin && event.source === window.parent && event.data?.type === 'fme-cms-user-context') {
+        if (event.data.token) {
+          try {
+            sessionStorage.setItem('token', event.data.token);
+            sessionStorage.setItem('isLoggedIn', 'true');
+            if (event.data.user) {
+              sessionStorage.setItem('user', JSON.stringify(event.data.user));
+            }
+          } catch {}
+        }
         setUserContext(prev => ({
           ...prev,
           ...event.data,

@@ -42,6 +42,7 @@ export default function DashboardPage() {
     const saved = readSaved('pdca_list_filters', {});
     return saved.scope === 'Department' ? (saved.department || '') : '';
   });
+  const [selectedDate, setSelectedDate] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -118,8 +119,8 @@ export default function DashboardPage() {
     }
   }, [lpaSource]);
   const deptFilterToApply = activeTab === 'Department' ? selectedDepartment : '';
-  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, deptFilterToApply),
-    [sourceData, activeTab, selectedPlant, searchQuery, deptFilterToApply]);
+  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, deptFilterToApply, selectedDate),
+    [sourceData, activeTab, selectedPlant, searchQuery, deptFilterToApply, selectedDate]);
 
   const revealSavedForm = item => {
     if (PDCA_PLANTS.includes(item.plant)) setSelectedPlant(item.plant);
@@ -181,7 +182,7 @@ export default function DashboardPage() {
   }, [filteredData, currentPage]);
 
   const selfCount = useMemo(() => {
-    if (selectedPlant === 'Unit' || selectedPlant === 'All Plants') {
+    if (selectedPlant === 'Unit') {
       return 0;
     }
     return sourceData.filter(
@@ -230,115 +231,53 @@ export default function DashboardPage() {
     document.body.removeChild(textArea);
   };
 
-  /* ── Export CSV ─────────────────────────────────────────── */
-  const handleExportExcel = () => {
-    const rows = ['S.No,ID,Topic,Description,Date,Time,Created By,Emp Code,Plant,Department']
-      .concat(
-        filteredData.map((r, i) =>
-          `${i + 1},"${r.id}","${r.topic}","${r.description}","${r.date}","${r.time}","${r.createdBy?.name || ''}","${r.createdBy?.code || ''}","${r.plant}","${r.department || ''}"`
-        )
-      )
-      .join('\n');
-
-    const link = document.createElement('a');
-    link.href = 'data:text/csv;charset=utf-8,' + encodeURI(rows);
-    link.download = `PDCA_${activeTab}_${selectedPlant}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('✓ Exported to CSV');
+  /* ── Export Complete Excel Workbook with dropdowns and formatting ── */
+  const handleExportExcel = async () => {
+    try {
+      showToast('Generating Excel export...');
+      const { exportPDCARecordsListToExcel } = await import('../data/pdcaExcelExport');
+      await exportPDCARecordsListToExcel({
+        records: filteredData,
+        activeTab,
+        selectedPlant,
+        selectedDate
+      });
+      showToast('✓ Exported complete PDCA dataset to Excel');
+    } catch (err) {
+      console.error('Failed to export PDCA Excel workbook:', err);
+      showToast('Export failed. Please try again.');
+    }
   };
 
-  /* ── Download PDCA Sheet ────────────────────────────────── */
-  const handleDownloadPDCASheet = (row) => {
-    const today = new Date().toISOString().split('T')[0];
-    const escapeCsv = (str) => `"${(str || '').replace(/"/g, '""')}"`;
-
-    const sheetHeaders = [
-      escapeCsv('PDCA - M Tanaka San Audit Sheet'),
-      escapeCsv(`Topic: ${row.topic}`),
-      escapeCsv(`PDCA ID: ${row.id}`),
-      escapeCsv(`Unit / Plant: ${row.plant}`),
-      escapeCsv(`Created By: ${row.createdBy?.name || ''} (${row.createdBy?.code || ''})`),
-      escapeCsv(`Generated Date: ${today}`),
-      '',
-      [
-        'S.No',
-        'Date',
-        'Shift',
-        'Line / Area',
-        'Observation',
-        'Image (Before)',
-        'Root Cause',
-        'Counter Measure',
-        'Image After',
-        'Response Date',
-        'Department',
-        'Staff Employee Name',
-        'Assigned Employees',
-        '(Responsible person instructions, etc.)'
-      ].map(escapeCsv).join(',')
-    ];
-
-    const auditRows = Array.from({ length: 10 }, (_, idx) => {
-      const sNo = idx + 1;
-      const date = idx === 0 ? (row.date || today) : '';
-      const shift = idx === 0 ? 'A' : '';
-      const lineArea = '';
-      const observation = idx === 0 ? (row.description || row.topic) : '';
-      const imageBefore = idx === 0 ? 'No Image' : '';
-      const rootCause = '';
-      const counterMeasure = '';
-      const imageAfter = idx === 0 ? 'No Image' : '';
-      const responseDate = '';
-      const department = idx === 0 ? (row.department || 'SRC Quality') : '';
-      const staffEmployee = idx === 0 ? (row.createdBy?.name ? `${row.createdBy.name} (${row.createdBy.code || 'EMP'})` : '') : '';
-      const assignedEmpStr = idx === 0 && row.assignedMembers?.length
-        ? row.assignedMembers.map(e => `${e.name} (${e.code})`).join('; ')
-        : '';
-      const remarks = '';
-
-      return [
-        sNo,
-        escapeCsv(date),
-        escapeCsv(shift),
-        escapeCsv(lineArea),
-        escapeCsv(observation),
-        escapeCsv(imageBefore),
-        escapeCsv(rootCause),
-        escapeCsv(counterMeasure),
-        escapeCsv(imageAfter),
-        escapeCsv(responseDate),
-        escapeCsv(department),
-        escapeCsv(staffEmployee),
-        escapeCsv(assignedEmpStr),
-        escapeCsv(remarks)
-      ].join(',');
-    });
-
-    const csvContent = [...sheetHeaders, ...auditRows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const sanitizedTopic = (row.topic || 'PDCA_Sheet').replace(/[^a-zA-Z0-9_-]/g, '_');
-    link.download = `PDCA_Audit_Sheet_${row.id}_${sanitizedTopic}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    showToast(`✓ Downloaded PDCA Sheet for ${row.id}`);
+  /* ── Download PDCA Sheet (.xlsx with embedded images) ──────────────── */
+  const handleDownloadPDCASheet = async (row) => {
+    try {
+      showToast(`Preparing Excel workbook with images for ${row.id}...`);
+      const { exportPDCASheetToExcel } = await import('../data/pdcaExcelExport');
+      await exportPDCASheetToExcel({
+        topic: row,
+        sheet: row.sheet
+      });
+      showToast(`✓ Downloaded PDCA Sheet for ${row.id}`);
+    } catch (err) {
+      console.error('Failed to download PDCA sheet:', err);
+      showToast('Could not download PDCA sheet. Please try again.');
+    }
   };
 
   return (
     <div className="space-y-3.5 w-full min-w-0">
       {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p><button type="button" onClick={openLpaPdca} className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">{sourceData.length ? 'Open original PDCA form' : 'Create original PDCA record'}</button></div>}
-      {/* 1. Unit Filter on Top */}
+      {/* 1. Unit Filter and Calendar Date Filter on Top */}
       <FilterToolbar
         selectedPlant={selectedPlant}
         setSelectedPlant={(p) => {
           setSelectedPlant(p);
+          setCurrentPage(1);
+        }}
+        selectedDate={selectedDate}
+        setSelectedDate={(d) => {
+          setSelectedDate(d);
           setCurrentPage(1);
         }}
         onExportAll={onExportAll || handleExportExcel}
@@ -372,7 +311,7 @@ export default function DashboardPage() {
         }}
         onExport={handleExportExcel}
         onOpenAddModal={() => {
-          if (!PDCA_PLANTS.includes(selectedPlant)) {
+          if (!PDCA_PLANTS.includes(selectedPlant) && selectedPlant !== 'All Unit') {
             showToast('Please select Bawal or Gujrat before creating a form.');
             document.getElementById('plant-filter-select')?.focus();
             return;
@@ -407,6 +346,8 @@ export default function DashboardPage() {
           activeTab={activeTab}
           pageStartIndex={pageStartIndex}
           selectedPlant={selectedPlant}
+          selectedDate={selectedDate}
+          onClearDate={() => setSelectedDate('')}
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
@@ -428,7 +369,7 @@ export default function DashboardPage() {
       <AddPDCAModal
         isOpen={modalMode !== null}
         onClose={() => setModalMode(null)}
-        defaultPlant={selectedPlant}
+        defaultPlant={selectedPlant === 'All Unit' ? 'Bawal' : selectedPlant}
         defaultScope={activeTab}
         onAdd={saveNewPDCA}
         editData={modalMode !== 'add' ? modalMode : null}
@@ -439,7 +380,7 @@ export default function DashboardPage() {
       <AddCFTModal
         isOpen={isCFTModalOpen}
         onClose={() => setIsCFTModalOpen(false)}
-        defaultPlant={selectedPlant}
+        defaultPlant={selectedPlant === 'All Unit' ? 'Bawal' : selectedPlant}
         onAdd={(newCFTItem) => {
           saveNewPDCA(newCFTItem);
         }}

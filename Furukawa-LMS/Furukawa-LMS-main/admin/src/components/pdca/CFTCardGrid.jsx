@@ -25,7 +25,7 @@ export default function CFTCardGrid({
 }) {
   const handleDeleteClick = (id) => onDelete?.(id);
 
-  if (selectedPlant === 'Unit' || selectedPlant === 'All Plants') {
+  if (selectedPlant === 'Unit') {
     return (
       <div className="bg-white rounded-2xl border border-[#ECEFF3] p-12 text-center shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
         <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100">

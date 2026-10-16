@@ -285,9 +285,9 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       formulae: [statusListStr]
     };
 
-    // E: Department
+    // E: Department & Unit
     const cellDept = rowObj.getCell(5);
-    cellDept.value = r.department || '';
+    cellDept.value = r.unit ? (r.department ? `${r.department} (${r.unit})` : r.unit) : (r.department || '');
     applyCellStyle(cellDept, { align: 'center', size: 9 });
     cellDept.dataValidation = {
       type: 'list',
@@ -350,10 +350,12 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     cellCft.value = r.cftTopic || r.cftSelectedName || '';
     applyCellStyle(cellCft, { align: 'center', size: 9 });
 
-    // Q: Remarks / Instructions
+    // Q: Responsible Person Instruction / Confirmation
     const cellRemarks = rowObj.getCell(17);
-    cellRemarks.value = r.remarks || '';
-    applyCellStyle(cellRemarks, { align: 'left', size: 9 });
+    const confVal = r.confirmation || (r.responsiblePersonConfirmation === 'Confirmed' || r.responsiblePersonConfirmation === 'Not - Confirmed' ? r.responsiblePersonConfirmation : '');
+    const otherRemarks = r.responsiblePersonConfirmation && r.responsiblePersonConfirmation !== 'Confirmed' && r.responsiblePersonConfirmation !== 'Not - Confirmed' ? r.responsiblePersonConfirmation : (r.remarks || '');
+    cellRemarks.value = confVal ? (otherRemarks ? `${confVal} - ${otherRemarks}` : confVal) : (otherRemarks || '');
+    applyCellStyle(cellRemarks, { align: 'center', size: 9 });
 
     // Embed Before Image if available
     const beforeUrl = r.imageBefore || (Array.isArray(r.imagesBefore) && r.imagesBefore[0]?.url);

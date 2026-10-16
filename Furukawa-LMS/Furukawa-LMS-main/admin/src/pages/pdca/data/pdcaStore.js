@@ -10,6 +10,7 @@ export function createEmptyRow(customDefaults = {}) {
     shift: customDefaults.shift || '',
     status: customDefaults.status || 'Open',
     department: customDefaults.department || '',
+    unit: customDefaults.unit || '',
     section: customDefaults.section || '',
     sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
     sectionCode: customDefaults.sectionCode || '',
@@ -45,6 +46,7 @@ export function createEmptyRow(customDefaults = {}) {
     cftSelectedType: customDefaults.cftSelectedType || '',
     cftSelectedName: customDefaults.cftSelectedName || '',
     cftSelectedCode: customDefaults.cftSelectedCode || '',
+    confirmation: customDefaults.confirmation || '',
     responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || customDefaults.staffEmployee || ''
   };
 }

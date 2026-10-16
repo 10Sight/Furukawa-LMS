@@ -61,6 +61,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   shift: customDefaults.shift || '',
   status: customDefaults.status || 'Open',
   department: customDefaults.department || '',
+  unit: customDefaults.unit || '',
   section: customDefaults.section || '',
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
   sectionCode: customDefaults.sectionCode || '',
@@ -96,6 +97,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   cftSelectedType: customDefaults.cftSelectedType || '',
   cftSelectedName: customDefaults.cftSelectedName || '',
   cftSelectedCode: customDefaults.cftSelectedCode || '',
+  confirmation: customDefaults.confirmation || '',
   responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || customDefaults.staffEmployee || ''
 });
 
@@ -387,9 +389,28 @@ export default function PDCASheet({
       ? row.responsiblePersonDept
       : (resolvedDbDept !== 'CFT' ? resolvedDbDept : '');
 
+    // Confirmation & Status conditional synchronization (Rules A, B, C, D)
+    let confirmation = (row.confirmation || '').trim();
+    if (!confirmation && (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed')) {
+      confirmation = row.responsiblePersonConfirmation.trim();
+    }
+
+    let status = row.status || 'Open';
+    if (confirmation === 'Confirmed') {
+      status = 'Closed';
+    } else if (confirmation === 'Not - Confirmed') {
+      status = 'In - Progress';
+    }
+
+    // Section P Unit: only retained if Department is present
+    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (department ? (row.unit || '') : '');
+
     return {
       ...row,
       department,
+      unit,
+      confirmation,
+      status,
       section,
       sectionId,
       sectionCode,
@@ -411,7 +432,7 @@ export default function PDCASheet({
       staffName,
       staffId,
       employeeId: staffId,
-      responsiblePersonConfirmation: staffEmployee || row.responsiblePersonConfirmation || ''
+      responsiblePersonConfirmation: confirmation || row.responsiblePersonConfirmation || staffEmployee || ''
     };
   };
 
@@ -1570,6 +1591,16 @@ export default function PDCASheet({
       let nextLineAreaCode = curr.lineAreaCode;
       let nextLineAreaSectionId = curr.lineAreaSectionId;
 
+      // Dependent Unit logic:
+      // - If Department selection is cleared, clear the dependent Unit selection as well.
+      // - If the user changes the Department, revalidate the Unit selection and clear it if necessary.
+      let nextUnit = curr.unit || '';
+      if (!dept) {
+        nextUnit = '';
+      } else if (curr.unit && curr.unit !== 'Bawal' && curr.unit !== 'Gujrat') {
+        nextUnit = '';
+      }
+
       // Changing the Department must clear the Section only when the previously selected Section is no longer valid for that Department
       if (dept && curr.sectionId) {
         const secMatch = VERIFIED_SECTION_MASTER.find((s) => String(s.id) === String(curr.sectionId));
@@ -1593,6 +1624,7 @@ export default function PDCASheet({
       updated[rowIndex] = {
         ...curr,
         department: dept,
+        unit: nextUnit,
         section: nextSection,
         sectionId: nextSectionId,
         sectionCode: nextSectionCode,
@@ -1600,6 +1632,60 @@ export default function PDCASheet({
         lineAreaId: nextLineAreaId,
         lineAreaCode: nextLineAreaCode,
         lineAreaSectionId: nextLineAreaSectionId
+      };
+      return updated;
+    });
+  };
+
+  // Section A: Responsible Person Instruction, etc. Confirmation change handler
+  // Rule A: Confirmed -> Status = Closed
+  // Rule B: Not - Confirmed -> Status = In - Progress
+  // Rule C: Changing between them updates Status immediately
+  // Rule D: If cleared, do not assign arbitrary status
+  const handleConfirmationChange = (rowIndex, value) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      let nextStatus = curr.status;
+      if (value === 'Confirmed') {
+        nextStatus = 'Closed';
+      } else if (value === 'Not - Confirmed') {
+        nextStatus = 'In - Progress';
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        confirmation: value,
+        status: nextStatus,
+        responsiblePersonConfirmation: value || curr.responsiblePersonConfirmation || ''
+      };
+      return updated;
+    });
+  };
+
+  // Column 4: Status change handler
+  const handleStatusChange = (rowIndex, value) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      let nextConfirmation = curr.confirmation;
+      if (value === 'Closed') {
+        nextConfirmation = 'Confirmed';
+      } else if (value === 'In - Progress' || value === 'In Progress') {
+        nextConfirmation = 'Not - Confirmed';
+      } else if (value === 'Open' || value === 'Delay') {
+        nextConfirmation = '';
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        status: value,
+        confirmation: nextConfirmation,
+        responsiblePersonConfirmation: nextConfirmation || curr.responsiblePersonConfirmation || ''
       };
       return updated;
     });
@@ -2383,7 +2469,7 @@ export default function PDCASheet({
             <col style={{ width: '38px', minWidth: '34px' }} />
             <col style={{ width: '34px', minWidth: '30px' }} />
             <col style={{ width: '82px', minWidth: '78px' }} />
-            <col style={{ width: '90px', minWidth: '85px' }} />
+            <col style={{ width: '95px', minWidth: '90px' }} />
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
             <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
@@ -2395,7 +2481,7 @@ export default function PDCASheet({
             <col style={{ width: '85px', minWidth: '75px' }} />
             <col style={{ width: '155px', minWidth: '140px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
-            <col style={{ width: '100px', minWidth: '90px' }} />
+            <col style={{ width: '120px', minWidth: '110px' }} />
             {!effectiveReadOnly && <col style={{ width: '44px', minWidth: '40px' }} />}
           </colgroup>
 
@@ -2561,7 +2647,7 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Status</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[90px] min-w-[85px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+              <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Department</span>
               </th>
               <th
@@ -2702,7 +2788,7 @@ export default function PDCASheet({
                   Responsible Person Confirmation
                 </div>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[9.5px]">
+              <th rowSpan={2} className="py-1.5 px-1 w-[120px] min-w-[110px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[9.5px]">
                 (Responsible person instructions, etc.)
               </th>
               {!effectiveReadOnly && (
@@ -2779,41 +2865,64 @@ export default function PDCASheet({
                           disabled={effectiveReadOnly}
                           aria-label={`Status for row ${sNo}`}
                           value={row.status || 'Open'}
-                          onChange={event => handleCellChange(idx, 'status', event.target.value)}
+                          onChange={event => handleStatusChange(idx, event.target.value)}
                           className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${
                             row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
-                            row.status === 'In Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                            (row.status === 'In Progress' || row.status === 'In - Progress') ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
                             row.status === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
                             'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                         >
                           <option value="Open" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Open</option>
                           <option value="Closed" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Closed</option>
+                          <option value="In - Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In - Progress</option>
                           <option value="In Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In Progress</option>
                           <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
                         </select>
                       </div>
                     </td>
 
-                    {/* 5. Department (Dropdown with the 13 required departments) */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
-                      <div className="relative w-full flex items-center justify-center">
-                        <select
-                          disabled={effectiveReadOnly}
-                          value={row.department || ''}
-                          onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                          title={row.department || 'Select Department'}
-                        >
-                          <option value="">Dept...</option>
-                          {departmentsList.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                        {!effectiveReadOnly && (
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    {/* 5. Department (Dropdown with the 13 required departments) & Dependent Unit Dropdown */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px] focus-within:bg-blue-50/30">
+                      <div className="w-full flex flex-col items-center justify-center gap-0.5 py-0.5">
+                        <div className="relative w-full flex items-center justify-center">
+                          <select
+                            disabled={effectiveReadOnly}
+                            value={row.department || ''}
+                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                            title={row.department || 'Select Department'}
+                          >
+                            <option value="">Dept...</option>
+                            {departmentsList.map((d) => (
+                              <option key={d} value={d}>
+                                {d}
+                              </option>
+                            ))}
+                          </select>
+                          {!effectiveReadOnly && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
+                        </div>
+
+                        {/* Dependent Unit Dropdown: Displayed ONLY after a Department has been selected */}
+                        {Boolean(row.department) && (
+                          <div className="relative w-full flex items-center justify-center border-t border-slate-200/80 pt-0.5">
+                            <select
+                              disabled={effectiveReadOnly}
+                              value={row.unit || ''}
+                              onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
+                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-0.5 text-[10px] text-blue-700 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                              title={row.unit ? `Unit: ${row.unit}` : 'Select Unit'}
+                            >
+                              <option value="">Unit...</option>
+                              <option value="Bawal">Bawal</option>
+                              <option value="Gujrat">Gujrat</option>
+                            </select>
+                            {!effectiveReadOnly && (
+                              <ChevronDown className="w-2.5 h-2.5 text-blue-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -3428,18 +3537,39 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 15. (Responsible person instructions, etc.) (Auto-expanding, centered) */}
-                    <td className="p-1 align-middle border-r border-b border-[#64748B] w-[100px] min-w-[90px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
-                      <div className="w-full flex items-center justify-center">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
-                          value={row.responsiblePersonConfirmation}
-                          readOnly={effectiveReadOnly}
-                          onChange={(e) => handleCellChange(idx, 'responsiblePersonConfirmation', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'responsiblePersonConfirmation')}
-                          placeholder="Instructions, remarks..."
-                          className="w-full bg-transparent border-0 outline-none p-1.5 text-xs text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
-                        />
+                    {/* 15. Responsible Person Instruction, etc. Column: Confirmation Dropdown & Connected Status */}
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] w-[120px] min-w-[110px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
+                      <div className="w-full flex flex-col items-center justify-center gap-1">
+                        <div className="relative w-full flex items-center justify-center">
+                          <select
+                            disabled={effectiveReadOnly}
+                            aria-label={`Confirmation for row ${sNo}`}
+                            value={row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : '')}
+                            onChange={(e) => handleConfirmationChange(idx, e.target.value)}
+                            className={`w-full rounded-md border px-1 py-1 text-[10.5px] font-semibold outline-none text-center appearance-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
+                              row.confirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Confirmed'
+                                ? 'bg-green-50 text-green-700 border-green-300'
+                                : row.confirmation === 'Not - Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed'
+                                ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
+                                : 'bg-slate-50 text-slate-700 border-slate-300'
+                            }`}
+                            title={row.confirmation || 'Select Confirmation'}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Not - Confirmed">Not - Confirmed</option>
+                          </select>
+                          {!effectiveReadOnly && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
+                        </div>
+
+                        {/* Preserved Instructions / Remarks Text (Preserves historical notes without overwriting) */}
+                        {Boolean(row.responsiblePersonConfirmation && row.responsiblePersonConfirmation !== 'Confirmed' && row.responsiblePersonConfirmation !== 'Not - Confirmed') && (
+                          <div className="w-full text-[9px] text-slate-500 italic truncate px-0.5 text-center" title={row.responsiblePersonConfirmation}>
+                            {row.responsiblePersonConfirmation}
+                          </div>
+                        )}
                       </div>
                     </td>
 

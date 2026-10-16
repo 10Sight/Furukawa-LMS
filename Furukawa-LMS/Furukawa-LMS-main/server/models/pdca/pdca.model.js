@@ -30,6 +30,7 @@ export function createEmptyRow(customDefaults = {}) {
         fileTypeAfter: customDefaults.fileTypeAfter || 'image',
         responseDate: customDefaults.responseDate || '',
         department: customDefaults.department || '',
+        unit: customDefaults.unit || '',
         staffEmployee: customDefaults.staffEmployee || '',
         staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
         staffName: customDefaults.staffName || '',
@@ -41,6 +42,7 @@ export function createEmptyRow(customDefaults = {}) {
         cftSelectedType: customDefaults.cftSelectedType || '',
         cftSelectedName: customDefaults.cftSelectedName || '',
         cftSelectedCode: customDefaults.cftSelectedCode || '',
+        confirmation: customDefaults.confirmation || '',
         responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || ''
     };
 }

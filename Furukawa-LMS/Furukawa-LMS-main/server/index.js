@@ -75,6 +75,7 @@ import headcountReportScheduler from "./services/headcountReportScheduler.js";
 import DojoStageHistory from "./models/dojoStagHistory.model.js";
 import dojoStageHistoryScheduler from "./services/dojoStageHistoryScheduler.js";
 import sheetStorageMaintenance from "./services/sheetStorageMaintenance.js";
+import auditRetentionScheduler from "./services/auditRetentionScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -608,6 +609,7 @@ const startServer = async () => {
                 headcountReportScheduler.init();
                 dojoStageHistoryScheduler.init();
                 sheetStorageMaintenance.init();
+                auditRetentionScheduler.init();
 
                 // Deliberately no historical backfill here. dojo_stage_history should only ever hold
                 // snapshots that were actually captured on (or very near) the date they're for — via
@@ -632,6 +634,7 @@ const startServer = async () => {
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();
             sheetStorageMaintenance.stop();
+            auditRetentionScheduler.stop();
             process.exit(0);
         });
 
@@ -645,6 +648,7 @@ const startServer = async () => {
             planNotificationScheduler.stop();
             headcountReportScheduler.stop();
             sheetStorageMaintenance.stop();
+            auditRetentionScheduler.stop();
             process.exit(0);
         });
 

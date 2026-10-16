@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
     getBackupHistory,
     restoreFromBackup,
+    downloadBackup,
     deleteBackup,
     exportSystemData,
     importSystemData,
@@ -26,6 +27,9 @@ router.get("/backup/history", getBackupHistory);
 
 // Restore from backup
 router.post("/backup/:backupId/restore", restoreFromBackup);
+
+// Download backup .bak file
+router.get("/backup/:backupId/download", downloadBackup);
 
 // Delete backup
 router.delete("/backup/:backupId", deleteBackup);

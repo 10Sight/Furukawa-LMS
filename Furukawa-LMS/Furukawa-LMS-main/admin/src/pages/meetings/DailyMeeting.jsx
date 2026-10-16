@@ -370,6 +370,12 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     const handleChartsChange = useCallback((newCharts) => {
         excelRef.current?.updateCharts(newCharts);
     }, []);
+    // In view mode the chart panel (and its Show/Hide toggle) only appears on a
+    // sheet that has a chart — a viewer has no way to add one. Same test as
+    // ExcelGraph's getChartsForSheet: a `charts` list, or a legacy `chartConfig`.
+    const activeExcelSheet = excelState?.sheets?.[excelState.activeSheetName];
+    const sheetHasCharts = Array.isArray(activeExcelSheet?.charts) ? activeExcelSheet.charts.length > 0 : !!activeExcelSheet?.chartConfig;
+    const showChartsPanel = mode !== "view" || sheetHasCharts;
     // The snapshot belongs to one meeting — drop it when another opens, so the
     // charts never briefly render (or edit) the previous meeting's data.
     useEffect(() => { setExcelState(null); }, [selectedMeetingId]);
@@ -470,16 +476,18 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="cursor-pointer flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-200"
-                                    onClick={() => setIsGraphVisible((v) => !v)}
-                                    title={isGraphVisible ? "Hide Charts" : "Show Charts"}
-                                >
-                                    {isGraphVisible ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
-                                    <span>{isGraphVisible ? "Hide Charts" : "Show Charts"}</span>
-                                </Button>
+                                {showChartsPanel && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="cursor-pointer flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-200"
+                                        onClick={() => setIsGraphVisible((v) => !v)}
+                                        title={isGraphVisible ? "Hide Charts" : "Show Charts"}
+                                    >
+                                        {isGraphVisible ? <IconChevronUp className="w-4 h-4 text-slate-500" /> : <IconChevronDown className="w-4 h-4 text-slate-500" />}
+                                        <span>{isGraphVisible ? "Hide Charts" : "Show Charts"}</span>
+                                    </Button>
+                                )}
                                 {canUpdate && (
                                     <Button variant="outline" size="sm" className="shrink-0 cursor-pointer flex items-center gap-1.5" onClick={() => setEditDetailsMeeting(selectedMeeting)}>
                                         <IconPencil className="w-3.5 h-3.5" /> Edit Details
@@ -490,7 +498,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                         <CardContent className="p-0 bg-white">
                             {/* Mounted only while visible: collapsing it with a max-height
                                 transition handed recharts a 0px-tall box mid-animation. */}
-                            {isGraphVisible && (
+                            {showChartsPanel && isGraphVisible && (
                                 <div className="bg-slate-50/50 border-b border-slate-100 p-3">
                                     <ExcelErrorBoundary key={selectedMeeting.id} title="Charts failed to render" description="The chart area hit an unexpected error. The spreadsheet below is not affected.">
                                         <ExcelGraph excelData={excelState} onChartsChange={handleChartsChange} readOnly={mode === "view"} />

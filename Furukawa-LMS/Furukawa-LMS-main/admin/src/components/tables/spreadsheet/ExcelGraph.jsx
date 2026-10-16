@@ -1300,7 +1300,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
             || Object.values(cfg.seriesLabels || {}).some((o) => o?.show)
             || Object.values(cfg.pointLabels || {}).some(showsOwnLabel));
         // Labels are clickable, and show which one is selected, only on the chart being edited.
-        const isActiveChart = !mini && cfg.id === config?.id;
+        const isActiveChart = !mini && !readOnly && cfg.id === config?.id;
         const selectedPointOf = (seriesId) => (isActiveChart && ribbonTab === "format" && formatTarget === `series:${seriesId}` ? activePoint : null);
         const showGrid = !mini && cfg.showGridlines;
         // The data labels of series `index`, or null when that series shows none.
@@ -1614,6 +1614,9 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
 
     const titleText = textStyleFor(config, "title");
 
+    // A viewer can't add a chart, so a sheet without one shows nothing at all.
+    if (readOnly && !config) return null;
+
     return (
         <FullScreenFrame isFullScreen={isFullScreen} onExit={exitFullScreen} title="Charts" icon={IconChartBar}>
         <div className={cn(
@@ -1633,7 +1636,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                                 : "bg-transparent border-transparent text-slate-500 hover:bg-slate-100"
                         )}
                         onClick={() => setActiveChartId(chart.id)}
-                        onDoubleClick={() => startRenameChart(chart)}
+                        onDoubleClick={readOnly ? undefined : () => startRenameChart(chart)}
                     >
                         {renamingChartId === chart.id ? (
                             <input
@@ -1651,7 +1654,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         ) : (
                             <span>{chart.name}</span>
                         )}
-                        {renamingChartId !== chart.id && (
+                        {!readOnly && renamingChartId !== chart.id && (
                             <button
                                 className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
                                 onClick={(e) => { e.stopPropagation(); deleteChart(chart.id); }}
@@ -1662,24 +1665,28 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         )}
                     </div>
                 ))}
-                <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={() => addChart()} title="Add chart">
-                    <IconPlus className="w-4 h-4" />
-                </button>
+                {!readOnly && (
+                    <button className="p-1.5 rounded-md hover:bg-slate-200 text-slate-500 shrink-0 cursor-pointer" onClick={() => addChart()} title="Add chart">
+                        <IconPlus className="w-4 h-4" />
+                    </button>
+                )}
                 </div>
                 {hadInvalid && config && (
                     <span title="Some cells in the selected range aren't numbers and were treated as 0." className="flex items-center gap-1 text-amber-600 text-[11px] px-1.5 shrink-0">
                         <IconAlertTriangle className="w-3.5 h-3.5" /> Data warning
                     </span>
                 )}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
-                    onClick={() => setIsToolbarExpanded((v) => !v)}
-                    title={isToolbarExpanded ? "Collapse ribbon" : "Expand ribbon"}
-                >
-                    {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
-                </Button>
+                {!readOnly && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 cursor-pointer hover:bg-slate-200/50 text-slate-500"
+                        onClick={() => setIsToolbarExpanded((v) => !v)}
+                        title={isToolbarExpanded ? "Collapse ribbon" : "Expand ribbon"}
+                    >
+                        {isToolbarExpanded ? <IconChevronUp className="w-4 h-4" /> : <IconChevronDown className="w-4 h-4" />}
+                    </Button>
+                )}
                 <Button
                     variant="ghost"
                     size="icon"
@@ -1691,7 +1698,9 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                 </Button>
             </div>
 
-            {/* Ribbon tabs — Insert mirrors Excel's Insert > Charts / Sparklines; Chart Design holds the chart's own settings */}
+            {/* Ribbon tabs — Insert mirrors Excel's Insert > Charts / Sparklines; Chart Design holds the chart's own settings.
+                View mode has no ribbon at all, as in ExcelClone. */}
+            {!readOnly && (<>
             <div className="flex items-end gap-1 px-2 border-b border-slate-200 bg-white select-none">
                 {[["insert", "Insert"], ["design", "Chart Design"], ["format", "Format"]].map(([key, label]) => (
                     <button
@@ -2419,6 +2428,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
             </div>
             )}
             </div>
+            </>)}
 
             {!config ? (
                 // Kept to one short row: most sheets have no chart, and this sits
@@ -2450,7 +2460,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                     <div className="flex items-center justify-center h-64 text-sm text-slate-400">Loading sheet…</div>
                 ) : data.length === 0 || seriesKeys.length === 0 ? (
                     <div className="flex items-center justify-center h-64 text-sm text-slate-400 text-center px-6">
-                        No data in the selected range. Use Chart Design › Select Data to choose columns and rows to chart.
+                        {readOnly ? "No data in this chart's range." : "No data in the selected range. Use Chart Design › Select Data to choose columns and rows to chart."}
                     </div>
                 ) : isFullScreen ? (
                     <div className="relative flex-1 min-h-[260px]">

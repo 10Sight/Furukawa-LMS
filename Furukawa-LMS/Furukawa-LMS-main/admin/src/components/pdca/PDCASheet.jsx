@@ -396,6 +396,9 @@ export default function PDCASheet({
     }
 
     let status = row.status || 'Open';
+    if (status === 'In Progress') {
+      status = 'In - Progress';
+    }
     if (confirmation === 'Confirmed') {
       status = 'Closed';
     } else if (confirmation === 'Not - Confirmed') {
@@ -1667,23 +1670,24 @@ export default function PDCASheet({
 
   // Column 4: Status change handler
   const handleStatusChange = (rowIndex, value) => {
+    const normalizedStatus = (value === 'In Progress' || value === 'In - Progress') ? 'In - Progress' : value;
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
       if (!curr) return prev;
 
       let nextConfirmation = curr.confirmation;
-      if (value === 'Closed') {
+      if (normalizedStatus === 'Closed') {
         nextConfirmation = 'Confirmed';
-      } else if (value === 'In - Progress' || value === 'In Progress') {
+      } else if (normalizedStatus === 'In - Progress') {
         nextConfirmation = 'Not - Confirmed';
-      } else if (value === 'Open' || value === 'Delay') {
+      } else if (normalizedStatus === 'Open' || normalizedStatus === 'Delay') {
         nextConfirmation = '';
       }
 
       updated[rowIndex] = {
         ...curr,
-        status: value,
+        status: normalizedStatus,
         confirmation: nextConfirmation,
         responsiblePersonConfirmation: nextConfirmation || curr.responsiblePersonConfirmation || ''
       };
@@ -2864,7 +2868,7 @@ export default function PDCASheet({
                         <select
                           disabled={effectiveReadOnly}
                           aria-label={`Status for row ${sNo}`}
-                          value={row.status || 'Open'}
+                          value={row.status === 'In Progress' ? 'In - Progress' : (row.status || 'Open')}
                           onChange={event => handleStatusChange(idx, event.target.value)}
                           className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${
                             row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
@@ -2876,7 +2880,6 @@ export default function PDCASheet({
                           <option value="Open" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Open</option>
                           <option value="Closed" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Closed</option>
                           <option value="In - Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In - Progress</option>
-                          <option value="In Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In Progress</option>
                           <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
                         </select>
                       </div>

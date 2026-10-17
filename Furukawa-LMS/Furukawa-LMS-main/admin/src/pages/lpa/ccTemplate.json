@@ -3446,16 +3446,16 @@
             }
           },
           {
-            "value": "Ο",
-            "formatted": "Ο",
+            "value": "O",
+            "formatted": "O",
             "type": "s",
             "style": {
               "patternType": "none"
             }
           },
           {
-            "value": "Ο",
-            "formatted": "Ο",
+            "value": "3",
+            "formatted": "3",
             "type": "s",
             "style": {
               "patternType": "none"
@@ -3520,8 +3520,8 @@
             }
           },
           {
-            "value": "Δ",
-            "formatted": "Δ",
+            "value": "△",
+            "formatted": "△",
             "type": "s",
             "style": {
               "patternType": "none"
@@ -3586,8 +3586,8 @@
             }
           },
           {
-            "value": "Χ",
-            "formatted": "Χ",
+            "value": "×",
+            "formatted": "×",
             "type": "s",
             "style": {
               "patternType": "none"

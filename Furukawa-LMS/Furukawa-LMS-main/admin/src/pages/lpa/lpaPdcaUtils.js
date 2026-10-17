@@ -1,23 +1,23 @@
-export const OBSERVATION_OPTIONS = ['Ο', 'Δ', 'Χ', 'NA'];
+export const OBSERVATION_OPTIONS = ['O', '△', '×', 'NA'];
 
 export function normalizeObservationSymbol(val) {
   if (val === null || val === undefined || val === '') return '';
   const trimmed = String(val).trim();
-  // Match Greek Ο, Latin O/o, white circle ○, heavy circle ⭕
-  if (['Ο', 'O', 'o', '○', '⭕'].includes(trimmed)) return 'Ο';
-  // Match Greek Δ, White Triangle △, Black Triangle ▲
-  if (['Δ', '△', '▲'].includes(trimmed)) return 'Δ';
-  // Match Greek Χ, Multiplication ×, Latin X/x, Cross ❌
-  if (['Χ', '×', 'X', 'x', '❌'].includes(trimmed)) return 'Χ';
+  // Match Latin O/o, Greek Ο, white circle ○, heavy circle ⭕
+  if (['O', 'o', 'Ο', '○', '⭕'].includes(trimmed)) return 'O';
+  // Match White Triangle △, Greek Δ, Black Triangle ▲
+  if (['△', 'Δ', '▲'].includes(trimmed)) return '△';
+  // Match Multiplication ×, Latin X/x, Greek Χ, Cross ❌
+  if (['×', 'X', 'x', 'Χ', '❌'].includes(trimmed)) return '×';
   if (trimmed.toUpperCase() === 'NA') return 'NA';
   return trimmed;
 }
 
 export function getScoreForObservation(val) {
   const normalized = normalizeObservationSymbol(val);
-  if (normalized === 'Ο') return 3;
-  if (normalized === 'Δ') return 3;
-  if (normalized === 'Χ') return 0;
+  if (normalized === 'O') return 3;
+  if (normalized === '△') return 3;
+  if (normalized === '×') return 0;
   if (normalized === 'NA') return 'NA';
   return '';
 }
@@ -94,7 +94,7 @@ export function extractObservationsFromSheet(sheet, record, date) {
     const normObs = normalizeObservationSymbol(obsVal);
     // Findings (non-conformance or items marked with symbols)
     const hasSymbol = Boolean(normObs);
-    const isIssue = ['Χ', 'Δ'].includes(normObs);
+    const isIssue = ['×', '△', 'Χ', 'Δ', 'X', 'x'].includes(normObs);
 
     if (hasSymbol) {
       const lineArea = currentArea || focusVal || sectionVal || (section === 'assembly' ? 'Assembly Area' : 'C&C Area');

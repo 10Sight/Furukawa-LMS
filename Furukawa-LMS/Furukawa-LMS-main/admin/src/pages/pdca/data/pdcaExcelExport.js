@@ -237,7 +237,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
   // Prepare Data Validation Dropdowns
   const deptListStr = `"${PDCA_DEPARTMENTS.join(',')}"`;
-  const statusListStr = '"Open,In Progress,Closed,Pending"';
+  const statusListStr = '"Open,In - Progress,Closed,Delay"';
   const shiftListStr = '"A,B,C,General"';
 
   // Data Rows (Starting at row 7)
@@ -277,7 +277,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       align: 'center',
       size: 9,
       bold: true,
-      color: r.status === 'Closed' ? '15803D' : (r.status === 'In Progress' ? '2563EB' : 'D97706')
+      color: r.status === 'Closed' ? '15803D' : ((r.status === 'In Progress' || r.status === 'In - Progress') ? '2563EB' : 'D97706')
     });
     cellStatus.dataValidation = {
       type: 'list',

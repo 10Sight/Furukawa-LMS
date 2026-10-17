@@ -7,21 +7,21 @@ import {
   getLpaPdcaTopic
 } from './lpaPdcaUtils.js';
 
-test('OBSERVATION_OPTIONS includes Ο, Δ, Χ, and NA', () => {
-  assert.deepEqual(OBSERVATION_OPTIONS, ['Ο', 'Δ', 'Χ', 'NA']);
+test('OBSERVATION_OPTIONS includes O, △, ×, and NA', () => {
+  assert.deepEqual(OBSERVATION_OPTIONS, ['O', '△', '×', 'NA']);
 });
 
 test('normalizeObservationSymbol normalizes variations of circle, delta, cross and NA', () => {
-  assert.equal(normalizeObservationSymbol('Ο'), 'Ο');
-  assert.equal(normalizeObservationSymbol('O'), 'Ο');
-  assert.equal(normalizeObservationSymbol('o'), 'Ο');
+  assert.equal(normalizeObservationSymbol('Ο'), 'O');
+  assert.equal(normalizeObservationSymbol('O'), 'O');
+  assert.equal(normalizeObservationSymbol('o'), 'O');
 
-  assert.equal(normalizeObservationSymbol('Δ'), 'Δ');
-  assert.equal(normalizeObservationSymbol('△'), 'Δ');
+  assert.equal(normalizeObservationSymbol('Δ'), '△');
+  assert.equal(normalizeObservationSymbol('△'), '△');
 
-  assert.equal(normalizeObservationSymbol('Χ'), 'Χ');
-  assert.equal(normalizeObservationSymbol('×'), 'Χ');
-  assert.equal(normalizeObservationSymbol('X'), 'Χ');
+  assert.equal(normalizeObservationSymbol('Χ'), '×');
+  assert.equal(normalizeObservationSymbol('×'), '×');
+  assert.equal(normalizeObservationSymbol('X'), '×');
 
   assert.equal(normalizeObservationSymbol('NA'), 'NA');
   assert.equal(normalizeObservationSymbol('na'), 'NA');

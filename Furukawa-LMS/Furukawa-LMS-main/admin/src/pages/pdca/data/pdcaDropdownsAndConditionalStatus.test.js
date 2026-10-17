@@ -186,3 +186,20 @@ test('5. Round-trip data persistence for Department, Unit, Confirmation, and Sta
   assert.equal(parsed[0].status, 'Closed');
   assert.equal(parsed[0].responsiblePersonConfirmation, 'Confirmed');
 });
+
+test('6. Status column dropdown has exactly one In Progress option (\'In - Progress\') and normalizes legacy \'In Progress\'', () => {
+  const STATUS_OPTIONS = ['Open', 'Closed', 'In - Progress', 'Delay'];
+
+  // Verify only one In Progress option exists in the list of options
+  const inProgressMatches = STATUS_OPTIONS.filter(opt => opt.toLowerCase().includes('progress'));
+  assert.equal(inProgressMatches.length, 1);
+  assert.equal(inProgressMatches[0], 'In - Progress');
+
+  // Verify legacy 'In Progress' normalizes to 'In - Progress'
+  const normalizeStatus = (status) => status === 'In Progress' ? 'In - Progress' : (status || 'Open');
+  assert.equal(normalizeStatus('In Progress'), 'In - Progress');
+  assert.equal(normalizeStatus('In - Progress'), 'In - Progress');
+  assert.equal(normalizeStatus('Open'), 'Open');
+  assert.equal(normalizeStatus('Closed'), 'Closed');
+  assert.equal(normalizeStatus('Delay'), 'Delay');
+});

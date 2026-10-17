@@ -6,7 +6,7 @@
 // included.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSheet } from "../../portal/src/utils/spreadsheets/formulaEngine.js";
+import { evaluateSheet } from "../../admin/src/utils/spreadsheets/formulaEngine.js";
 
 const sheet = (entries) => Object.fromEntries(Object.entries(entries).map(([id, value]) => [id, { value }]));
 const shown = (cells, ...ids) => { const { display } = evaluateSheet(cells, { seed: 0 }); return ids.map((id) => display[id]); };

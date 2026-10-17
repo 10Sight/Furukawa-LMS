@@ -4,7 +4,7 @@
 // takes on a fill, and where its lines break in the exported picture.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readableTextColor, wrapTextLines } from "../../portal/src/utils/spreadsheets/shapeText.js";
+import { readableTextColor, wrapTextLines } from "../../admin/src/utils/spreadsheets/shapeText.js";
 
 const byLength = (s) => s.length; // every character one unit wide
 

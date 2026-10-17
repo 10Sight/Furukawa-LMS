@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     lineArrowGeometry, lineArrowSvg, elbowConnectorGeometry, elbowConnectorSvg, shapeColor, shapeFillPatch, shapeOutlinePatch, shapeStrokeWidth, SHAPE_OUTLINE_WEIGHTS
-} from "../../portal/src/utils/spreadsheets/shapeGeometry.js";
+} from "../../admin/src/utils/spreadsheets/shapeGeometry.js";
 
 const headSize = ([tip, a, b]) => ({ length: Math.abs(tip[0] - a[0]), width: Math.abs(a[1] - b[1]) });
 

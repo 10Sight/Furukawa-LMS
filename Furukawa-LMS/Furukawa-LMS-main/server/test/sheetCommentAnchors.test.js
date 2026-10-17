@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
     newThreadId, shiftCommentAnchors, reorderCommentAnchorRows, moveCommentAnchorBlock, mergeCommentAnchors, threadToNoteText,
     commentAnchorsInBlock, dropCommentAnchorBlock, threadToCopyText, MAX_COMMENT_LENGTH
-} from "../../portal/src/utils/spreadsheets/commentEngine.js";
+} from "../../admin/src/utils/spreadsheets/commentEngine.js";
 
 // Rows and columns are 0-based throughout, as in the grid: B4 is row 3, col 1.
 const anchors = Object.freeze({ A1: "a", B4: "b", C4: "c", D10: "d" });

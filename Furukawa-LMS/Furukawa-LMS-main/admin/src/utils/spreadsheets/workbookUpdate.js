@@ -24,6 +24,8 @@
 
 import { createNextState, isDraft, original } from "@reduxjs/toolkit";
 import { deriveCellIndex } from "./formulaEngine.js";
+import { recordCellMapCopy } from "./cellMapLineage.js";
+import { copyCellMap } from "./chunkedCells.js";
 
 const CELLS_STATE = Symbol("cellsDraftState");
 // Past this many changed cells an update is a bulk rewrite: its undo record
@@ -36,11 +38,9 @@ const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 // A non-plain prototype is what makes immer leave the handle alone.
 class CellsDraft {}
 
-const copyCells = (cells) => {
-    const copy = {};
-    for (const id in cells) copy[id] = cells[id];
-    return copy;
-};
+// The copy an edit writes to: a chunked map (see chunkedCells.js), which
+// shares all but the blocks the edit touches with the map it was copied from.
+const copyCells = copyCellMap;
 
 const makeCellsDraft = (base, owner) => {
     const state = { base, copy: null, owner, shellSheet: null, changed: new Set(), bulk: false };
@@ -144,7 +144,10 @@ export const applyWorkbookUpdate = (prev, updater, postProcess) => {
         } else if (!state.copy && sheet === state.shellSheet) {
             next[name] = state.owner; // untouched: keep the previous object
         } else {
-            if (state.copy && !state.bulk) deriveCellIndex(state.copy, state.base, state.changed);
+            if (state.copy && !state.bulk) {
+                deriveCellIndex(state.copy, state.base, state.changed);
+                recordCellMapCopy(state.copy, state.base, state.changed);
+            }
             next[name] = { ...sheet, cells: state.copy || state.base };
             if (!state.bulk && state.owner === prev[name]) derived[name] = { sheet: next[name], state };
         }
@@ -194,6 +197,7 @@ export const applyHistoryRecord = (current, record) => {
                     if (cell === undefined) delete cells[id]; else cells[id] = cell;
                 }
                 deriveCellIndex(cells, currentCells, entry.cells.keys());
+                recordCellMapCopy(cells, currentCells, [...entry.cells.keys()]);
             }
             next[name] = withSettings(current[name], entry.props, cells);
             patched.add(name);

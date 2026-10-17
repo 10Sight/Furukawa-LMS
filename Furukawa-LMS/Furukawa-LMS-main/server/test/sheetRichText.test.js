@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     normalizeRuns, cellRuns, applyRunStyle, shiftRunsForEdit, runSegments, isRunStyleOn, withRunStyle, withoutRunKeys
-} from "../../portal/src/utils/spreadsheets/richText.js";
+} from "../../admin/src/utils/spreadsheets/richText.js";
 
 const RED = "#ff0000", BLUE = "#0000ff";
 // A text's styled parts, written out: "Hello [World]" style.

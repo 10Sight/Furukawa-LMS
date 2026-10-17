@@ -5,9 +5,9 @@
 // what someone else's save brought into the workbook in the meantime (workbookSync.js).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyWorkbookUpdate, applyHistoryRecord, reorderSheets, canOrderSheets, isIndexLikeName } from "../../portal/src/utils/spreadsheets/workbookUpdate.js";
-import { diffWorkbook } from "../../portal/src/components/tables/spreadsheet/workbookDiff.js";
-import { rebaseRemotePatch } from "../../portal/src/utils/spreadsheets/workbookSync.js";
+import { applyWorkbookUpdate, applyHistoryRecord, reorderSheets, canOrderSheets, isIndexLikeName } from "../../admin/src/utils/spreadsheets/workbookUpdate.js";
+import { diffWorkbook } from "../../admin/src/components/tables/spreadsheet/workbookDiff.js";
+import { rebaseRemotePatch } from "../../admin/src/utils/spreadsheets/workbookSync.js";
 
 const sheet = (cells, extra = {}) => ({ cells, rowCount: 30, columnCount: 15, merges: [], media: [], commentAnchors: {}, ...extra });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -27,15 +27,15 @@ test("undo and redo of cell and setting edits restore the workbook exactly", () 
     assert.equal(next.T, start.T);
 
     const undone = applyHistoryRecord(next, undo);
-    assert.deepEqual(undone.next, start);
+    assert.deepEqual(json(undone.next), json(start));
     assert.equal(undone.next.T, start.T);
     assert.equal(undone.next.S.cells.A1, start.S.cells.A1);
     assert.equal("hiddenRows" in undone.next.S, false);
 
     const redone = applyHistoryRecord(undone.next, undone.inverse);
-    assert.deepEqual(redone.next, next);
+    assert.deepEqual(json(redone.next), json(next));
     assert.equal("pivotConfig" in redone.next.S, false);
-    assert.deepEqual(applyHistoryRecord(redone.next, redone.inverse).next, start);
+    assert.deepEqual(json(applyHistoryRecord(redone.next, redone.inverse).next), json(start));
 });
 
 test("an update that changes nothing leaves no record", () => {

@@ -18,6 +18,7 @@ import {
     Label as ChartLabel
 } from "recharts";
 import { getCellId, colToIndex, indexToCol, parseCellRef } from "../../../utils/spreadsheets/formulaEngine.js";
+import { cellIdsOf } from "../../../utils/spreadsheets/chunkedCells.js";
 import {
     parseNumericCell, parseRangeString, formatRangeString, chartRanges, naturalPlotBy,
     seriesIdsForRanges, seriesCountForRanges, MAX_CHART_SERIES, extractDisjointChartData, legacyConfigRanges,
@@ -1005,7 +1006,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
             return;
         }
         let maxRow = -1, maxCol = -1, minRow = Infinity;
-        for (const id of Object.keys(activeSheet.cells || {})) {
+        for (const id of cellIdsOf(activeSheet.cells || {})) {
             const ref = parseCellRef(id);
             const v = displayGrid[id];
             if (!ref || v === undefined || v === "") continue;

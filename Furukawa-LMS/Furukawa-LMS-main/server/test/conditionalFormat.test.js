@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { evaluateSheet } from "../../admin/src/utils/spreadsheets/formulaEngine.js";
+import { copyCellMap } from "../../admin/src/utils/spreadsheets/chunkedCells.js";
 import {
     computeConditionalFormats, normalizeRules, clearRulesFromBounds, stampRules, parseRangesText, formatRangesText, boundsOfRange,
 } from "../../admin/src/utils/spreadsheets/conditionalFormat.js";
@@ -196,4 +197,28 @@ test("pasted on another sheet, the rules are copied there as rules of its own", 
     assert.equal(out[1].id, "t1");
     assert.equal(source[0].ranges[0].end, "B4", "the sheet copied from keeps its rule as it was");
     assert.equal(stampRules(target, boundsOf("M1"), boundsOf("N1"), source), target, "no rule on the copied cells, none where they land");
+});
+
+// --- Worked out cell by cell ---
+
+test("looking up one cell gives what working out the whole sheet gives, block-stored cells and whole columns included", () => {
+    const values = { A1: "10", A2: "20", A3: "20", A4: "text", A5: "", B1: "=SEQUENCE(3)", C7: "5", A40000: "90" };
+    const rules = [
+        { id: "1", type: "cellIs", operator: "gt", value: "15", ranges: range("A1", "A1048576"), format: { bg: "#111111" }, stopIfTrue: true },
+        { id: "2", type: "duplicate", ranges: range("A1", "A1048576"), format: { bg: "#222222", bold: true } },
+        { id: "3", type: "dataBar", ranges: [{ start: "A1", end: "C1048576" }] },
+        { id: "4", type: "blanks", ranges: range("A1", "C9"), format: { color: "#333333" } },
+        { id: "5", type: "top", rank: 1, ranges: range("B1", "B5"), format: { italic: true } },
+    ];
+    const cells = copyCellMap(sheetOf(values));
+    const evaluation = evaluateSheet(cells);
+    const options = { display: evaluation.display, raw: evaluation.raw, cells, evaluateAt: evaluation.evaluateAt, spillAnchors: evaluation.spillAnchors };
+    const whole = { ...computeConditionalFormats(rules, options) };
+    assert.ok(Object.keys(whole).length > 5);
+    for (const id of ["A1", "A2", "A3", "A4", "A5", "A6", "B1", "B2", "B3", "B4", "C7", "C8", "A40000", "A40001", "D1"]) {
+        // A fresh map each time, so nothing worked out for one cell helps another.
+        assert.deepEqual(computeConditionalFormats(rules, options)[id], whole[id], id);
+    }
+    assert.equal(whole.A40001, undefined, "an empty cell of a whole-column range is left alone");
+    assert.ok(whole.B2?.dataBar, "a spilled value is covered too");
 });

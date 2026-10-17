@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     compileFilter, compileTableFilters, isFilterActive, shownValuesOf, valueFilterFor, parseNumberText, valuesToShow, columnValueCounts,
-} from "../../portal/src/utils/spreadsheets/tableFilter.js";
+} from "../../admin/src/utils/spreadsheets/tableFilter.js";
 
 const condition = (type, value) => compileFilter({ condition: { type, value } });
 

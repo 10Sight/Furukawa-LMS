@@ -34,6 +34,7 @@ import {
     evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE,
     shiftSpan, shiftFormulaBands
 } from "../../../utils/spreadsheets/formulaEngine.js";
+import { forEachCellId, cellIdsOf, createCellMap, cellCountOf } from "../../../utils/spreadsheets/chunkedCells.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { FUNCTION_CATALOG } from "../../../constants/spreadsheets/formulaCatalog.js";
 import { createPortal } from "react-dom";
@@ -131,6 +132,19 @@ const MAX_PATCH_CHARS = 1024 * 1024;
 // theirs and sent again (live co-editing only) before it is reported as failed.
 const MAX_SAVE_RETRIES = 3;
 // True when `live` holds nothing that isn't already in `saved` (see workbookDiff.js).
+// A full save sends the workbook as one JSON text, and neither the browser nor
+// the server can hold a string longer than about 512 MB (V8's limit) — around
+// five million cells. Past this many, a full save is refused with a message
+// saying so rather than failing somewhere inside JSON.stringify.
+const MAX_SAVED_CELLS = 4000000;
+const countWorkbookCells = (sheets) => Object.values(sheets).reduce((n, sheet) => n + (sheet?.cells ? cellCountOf(sheet.cells) : 0), 0);
+const tooLargeToSave = (sheets) => {
+    const count = countWorkbookCells(sheets);
+    if (count <= MAX_SAVED_CELLS) return null;
+    const error = new Error(`This workbook has ${count.toLocaleString()} cells — more than can be saved (about ${MAX_SAVED_CELLS.toLocaleString()}). Delete some rows, or split it into separate workbooks.`);
+    error.tooLarge = true;
+    return error;
+};
 const isWorkbookSaved = (saved, live) => {
     if (!saved || !live) return false;
     if (saved === live) return true;
@@ -1930,6 +1944,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const run = async () => {
             let snapshot = sheets;
             if (!targetMeetingId) {
+                const tooLarge = tooLargeToSave(snapshot);
+                if (tooLarge) throw tooLarge;
                 return saveFnsRef.current.saveSectionSheet({ sectionId: targetSectionId, sheets: snapshot, activeSheet }).unwrap();
             }
             const clientId = clientIdRef.current;
@@ -1957,6 +1973,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         }
                     }
                     if (!res) {
+                        const tooLarge = tooLargeToSave(snapshot);
+                        if (tooLarge) throw tooLarge;
                         res = await saveFnsRef.current.saveMeetingSheet({
                             meetingId: targetMeetingId, sheets: snapshot, activeSheet, version, clientId
                         }).unwrap();
@@ -1993,7 +2011,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         sheetsRef.current === snapshot
         || (!!targetMeetingId && isWorkbookSaved(savedWorkbooksRef.current[targetMeetingId]?.sheets, sheetsRef.current))
     ), []);
-    const saveErrorMessage = (err, fallback) => (err?.status === 409 && err.message ? err.message : fallback);
+    const saveErrorMessage = (err, fallback) => ((err?.status === 409 || err?.tooLarge) && err.message ? err.message : fallback);
 
     const flushChartSave = useCallback(async () => {
         const pending = chartSaveRef.current;
@@ -2393,7 +2411,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // highlighting immediately instead of baking in a one-time static color.
     // cellId -> { style, dataBar, icon }.
     const conditionalMap = useMemo(
-        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells, evaluateAt: evaluation.evaluateAt }),
+        () => computeConditionalFormats(conditionalRules, { display: displayGrid, raw: rawGrid, cells, evaluateAt: evaluation.evaluateAt, spillAnchors: evaluation.spillAnchors }),
         [conditionalRules, displayGrid, rawGrid, cells, evaluation]
     );
 
@@ -3188,7 +3206,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const height = maxRow - minRow + 1, width = maxCol - minCol + 1;
         const wholeLines = (minRow === 0 && maxRow === rowCount - 1) || (minCol === 0 && maxCol === columnCount - 1);
         const used = wholeLines || height * width > DENSE_WALK_CELLS
-            ? usedBoundsWithin(selectionBounds, Object.keys(cells), evaluation.spillAnchors.keys())
+            ? usedBoundsWithin(selectionBounds, cellIdsOf(cells), evaluation.spillAnchors.keys())
             : selectionBounds;
         const lastShownRow = wholeLines ? (used ? used.maxRow : minRow) : maxRow;
         const lastShownCol = wholeLines ? (used ? used.maxCol : minCol) : maxCol;
@@ -4362,8 +4380,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const oldCells = plainOf(sheet.cells);
-            const newCells = {};
-            for (const id of Object.keys(oldCells)) {
+            const newCells = createCellMap(); // a plain object can't hold more than ~8.4M cells
+            for (const id of cellIdsOf(oldCells)) {
                 const ref = parseCellRef(id);
                 const pos = axis === "row" ? ref.row : ref.col;
                 if (count < 0 && pos >= at && pos < at - count) continue;
@@ -4680,7 +4698,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const out = [];
         for (const name of sheetNames) {
             const sheetCells = sheets[name]?.cells || {};
-            const ids = Object.keys(sheetCells).filter((id) => {
+            const ids = cellIdsOf(sheetCells).filter((id) => {
                 const v = sheetCells[id]?.value;
                 return v !== undefined && v !== null && v !== "" && findMatcher(String(v));
             });
@@ -5004,7 +5022,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     const worksheet = worksheets[wsIdx];
                     const sheetName = toUniqueExcelSheetName(worksheet.name || `Sheet ${wsIdx + 1}`, usedNames);
                     const progressLabel = `Reading sheet ${wsIdx + 1} of ${worksheets.length} ("${sheetName}")…`;
-                    const importedCells = {};
+                    // A chunked map: a plain object can't hold more than ~8.4M cells.
+                    const importedCells = createCellMap();
                     const importedColumnWidths = {};
                     const importedRowHeights = {};
                     const importedHiddenRows = [];
@@ -5108,7 +5127,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const count = worksheets.length;
                 const imageNote = importedImageCount > 0 ? ` and ${importedImageCount} image${importedImageCount === 1 ? "" : "s"}` : "";
                 const ruleNote = importedRuleCount > 0 ? `${imageNote ? "," : " with"} ${importedRuleCount} conditional formatting rule${importedRuleCount === 1 ? "" : "s"}` : "";
-                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}${ruleNote}. Click Save to persist ${count === 1 && !imageNote && !ruleNote ? "it" : "them"}.`);
+                const importedCellCount = countWorkbookCells(importedSheets);
+                const savable = importedCellCount <= MAX_SAVED_CELLS;
+                toast.success(`Imported ${count} sheet${count === 1 ? "" : "s"}${imageNote}${ruleNote}.${savable ? ` Click Save to persist ${count === 1 && !imageNote && !ruleNote ? "it" : "them"}.` : ""}`);
+                if (!savable) {
+                    toast.warning(`This workbook has ${importedCellCount.toLocaleString()} cells. You can view and edit it, but it can't be saved — the limit is about ${MAX_SAVED_CELLS.toLocaleString()}.`);
+                }
                 if (skippedRuleCount > 0) {
                     toast.warning(`${skippedRuleCount} conditional formatting rule${skippedRuleCount === 1 ? " was" : "s were"} skipped — no equivalent here.`);
                 }
@@ -5250,10 +5274,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             const ref = parseCellRef(id);
             if (ref) visit(id, ref.row, ref.col);
         };
-        for (const id in cells) {
-            const v = cells[id]?.value;
+        forEachCellId(cells, (id, cell) => {
+            const v = cell?.value;
             if (v !== undefined && v !== null && v !== "") emit(id);
-        }
+        });
         for (const id of evaluation.spillAnchors.keys()) emit(id);
     };
 
@@ -6169,7 +6193,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const col = pos % CELL_POS_STRIDE, row = (pos - col) / CELL_POS_STRIDE;
                 if (inEarlier(row, col, statsBounds.length)) add(id, row, col);
             };
-            for (const id in cells) visit(id);
+            forEachCellId(cells, visit);
             for (const id of evaluation.spillAnchors.keys()) if (!Object.prototype.hasOwnProperty.call(cells, id)) visit(id);
         }
         if (!count) return null;

@@ -5,7 +5,7 @@
 // in the grid at that moment.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dataRegionAround, blockChartRange, newChartRange } from "../../portal/src/utils/spreadsheets/chartMatrixEngine.js";
+import { dataRegionAround, blockChartRange, newChartRange } from "../../admin/src/utils/spreadsheets/chartMatrixEngine.js";
 
 // A grid from rows of values, placed with its top-left corner at `origin` ("B3").
 const colOf = (index) => String.fromCharCode(65 + index);

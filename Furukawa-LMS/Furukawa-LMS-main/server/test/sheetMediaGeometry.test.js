@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds
-} from "../../portal/src/utils/spreadsheets/mediaGeometry.js";
+} from "../../admin/src/utils/spreadsheets/mediaGeometry.js";
 
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-9, `${message || ""} expected ${expected}, got ${actual}`);
 const turn = (x, y, degrees) => {

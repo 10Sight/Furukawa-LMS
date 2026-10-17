@@ -8,6 +8,7 @@
 // written twice ("He said ""hi"""), which is how Excel writes one and expects one.
 
 import { getCellId, parseCellRef } from "./formulaEngine.js";
+import { cellIdsOf } from "./chunkedCells.js";
 
 // A paste larger than this is refused rather than left to freeze the page. Reading
 // and storing this many cells takes well under a second; twice as many takes over
@@ -168,7 +169,7 @@ export const clearCellBlock = (cells, existing, bounds) => {
         }
         return;
     }
-    for (const id of Object.keys(existing)) {
+    for (const id of cellIdsOf(existing)) {
         const ref = parseCellRef(id);
         if (ref && inBounds(ref, bounds)) delete cells[id];
     }

@@ -13,8 +13,8 @@ import {
     parseDelimitedText, gridSize, serializeCellsToText, serializeCellsToHtml, readClipMarker,
     buildClipboardPayload, isOwnClip, normalizeNewlines, newClipId, usedBoundsWithin, clearCellBlock, DENSE_WALK_CELLS,
     parseClipboardHtmlStyles
-} from "../../portal/src/utils/spreadsheets/clipboardInterop.js";
-import { applyWorkbookUpdate, plainOf } from "../../portal/src/utils/spreadsheets/workbookUpdate.js";
+} from "../../admin/src/utils/spreadsheets/clipboardInterop.js";
+import { applyWorkbookUpdate, plainOf } from "../../admin/src/utils/spreadsheets/workbookUpdate.js";
 
 test("rows and columns as Excel copies them", () => {
     // Excel on Windows: tabs between cells, \r\n after every row including the last.
@@ -157,7 +157,7 @@ test("emptying a block removes its cells and no others, however large it is", ()
         const { next, undo } = applyWorkbookUpdate(workbook, (draft) => {
             clearCellBlock(draft.S.cells, plainOf(draft.S.cells), bounds);
         });
-        assert.deepEqual(Object.keys(next.S.cells), left, `${large ? "large" : "small"} block`);
+        assert.deepEqual(Object.keys(next.S.cells).sort(), left, `${large ? "large" : "small"} block`); // a chunked map lists its cells block by block
         assert.equal(undo === null, left.length === 4, "nothing removed is no change at all");
     }
     assert.deepEqual(Object.keys(workbook.S.cells), ["A1", "B2", "B500", "D2"], "the workbook it started from is untouched");

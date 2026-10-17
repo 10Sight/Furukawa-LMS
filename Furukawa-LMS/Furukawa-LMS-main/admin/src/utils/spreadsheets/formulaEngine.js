@@ -14,6 +14,8 @@ import {
 } from "./formulaValues.js";
 import { FUNCTIONS, RESULT_FORMAT_HINTS } from "./formulaFunctions.js";
 import { formatWithPattern, DATE_FORMAT_PATTERN, TIME_FORMAT_PATTERN, DATETIME_FORMAT_PATTERN } from "./formulaFormat.js";
+import { cellMapMark, cellMapChangesSince } from "./cellMapLineage.js";
+import { forEachCellId, cellIdsOf } from "./chunkedCells.js";
 
 // ---------------------------------------------------------------------------
 // Cell addressing
@@ -442,13 +444,24 @@ class EvalPass {
         // total reads the same cells from hundreds of formulas; without this each
         // read rebuilt the cell's id string and looked the cell up again.
         this.values = new Map();
+        // While set (a DependencyIndex), what each formula evaluated reads is
+        // recorded into it: `frames` holds one read record per formula being
+        // evaluated, innermost last. See "Recalculating after an edit" below.
+        this.recorder = null;
+        this.frames = [];
+        this.sawCycle = false;
+    }
+
+    // The read record of the formula being evaluated, if reads are recorded.
+    currentReads() {
+        return this.frames.length ? this.frames[this.frames.length - 1] : null;
     }
 
     // Final value of a formula cell: { value, matrix?, hint, spillBlocked? }.
     evalFormula(id) {
         const cached = this.memo.get(id);
         if (cached) return cached;
-        if (this.inProgress.has(id)) return { value: err(ERR.CYCLE) };
+        if (this.inProgress.has(id)) { this.sawCycle = true; return { value: err(ERR.CYCLE) }; }
         this.inProgress.add(id);
         const { row, col } = this.layout.positions.get(id) || parseCellRef(id);
         const ast = parseFormula(this.cells[id].value);
@@ -457,7 +470,16 @@ class EvalPass {
             row, col, id,
             random: () => mulberry32(hashString(`${this.seed}|${id}|${callCounter++}`)),
         };
-        let result = this.evalNode(ast, frame);
+        const recorder = this.recorder;
+        const reads = recorder ? { cells: [], areas: [], now: false, extent: false, inArea: 0 } : null;
+        if (reads) this.frames.push(reads);
+        let result;
+        try {
+            result = this.evalNode(ast, frame);
+        } finally {
+            if (reads) this.frames.pop();
+        }
+        if (reads) recorder.add(id, reads);
         this.inProgress.delete(id);
 
         const entry = { hint: hintFor(ast) };
@@ -491,6 +513,10 @@ class EvalPass {
 
     valueAt(row, col) {
         const key = row * CELL_POS_STRIDE + col;
+        if (this.frames.length) {
+            const reads = this.frames[this.frames.length - 1];
+            if (!reads.inArea) reads.cells.push(key);
+        }
         const seen = this.values.get(key);
         if (seen !== undefined) return seen === NO_VALUE ? null : seen;
 
@@ -516,11 +542,18 @@ class EvalPass {
     }
 
     areaMatrix(r1, r2, c1, c2) {
+        // An area is recorded as one read, not one per cell.
+        const reads = this.currentReads();
+        if (reads) { reads.areas.push(r1, r2, c1, c2); reads.inArea++; }
         const rows = [];
-        for (let r = r1; r <= r2; r++) {
-            const row = [];
-            for (let c = c1; c <= c2; c++) row.push(this.valueAt(r, c));
-            rows.push(row);
+        try {
+            for (let r = r1; r <= r2; r++) {
+                const row = [];
+                for (let c = c1; c <= c2; c++) row.push(this.valueAt(r, c));
+                rows.push(row);
+            }
+        } finally {
+            if (reads) reads.inArea--;
         }
         return new Matrix(rows, { row: r1, col: c1 });
     }
@@ -535,12 +568,19 @@ class EvalPass {
             case "name": return err(ERR.NAME);
             case "cell": return this.valueAt(node.row, node.col);
             case "area": {
+                // A whole-column/row reference reaches as far as the sheet's data does.
+                if (node.r2 === null || node.c2 === null) {
+                    const reads = this.currentReads();
+                    if (reads) reads.extent = true;
+                }
                 const r2 = node.r2 === null ? Math.max(this.layout.maxRow, node.r1) : node.r2;
                 const c2 = node.c2 === null ? Math.max(this.layout.maxCol, node.c1) : node.c2;
                 return this.areaMatrix(node.r1, r2, node.c1, c2);
             }
             case "spill": {
                 const id = getCellId(node.row, node.col);
+                const reads = this.currentReads();
+                if (reads && !reads.inArea) reads.cells.push(node.row * CELL_POS_STRIDE + node.col);
                 if (!isFormula(this.cells[id]?.value)) return err(ERR.REF);
                 const entry = this.evalFormula(id);
                 if (entry.matrix && !entry.spillBlocked) return new Matrix(entry.matrix, { row: node.row, col: node.col });
@@ -571,10 +611,15 @@ class EvalPass {
     }
 
     functionContext(frame) {
+        const pass = this;
         return {
             row: frame.row,
             col: frame.col,
-            now: this.now,
+            get now() {
+                const reads = pass.currentReads();
+                if (reads) reads.now = true;
+                return pass.now;
+            },
             random: frame.random,
             broadcast,
             colName: indexToCol,
@@ -668,11 +713,11 @@ const cellIndexOf = (cells) => {
     let index = cellIndexCache.get(cells);
     if (!index) {
         const formulas = new Map();
-        for (const id in cells) {
-            if (!isFormulaCell(cells[id])) continue;
+        forEachCellId(cells, (id, cell) => {
+            if (!isFormulaCell(cell)) return;
             const ref = parseCellRef(id);
             if (ref) formulas.set(id, ref);
-        }
+        });
         index = { formulas, used: null };
         cellIndexCache.set(cells, index);
     }
@@ -685,13 +730,13 @@ const usedRangeOf = (cells) => {
     const index = cellIndexOf(cells);
     if (!index.used) {
         let maxRow = 0, maxCol = 0;
-        for (const id in cells) {
-            if (isEmptyRaw(cells[id]?.value)) continue;
+        forEachCellId(cells, (id, cell) => {
+            if (isEmptyRaw(cell?.value)) return;
             const ref = posOf(id);
-            if (!ref) continue;
+            if (!ref) return;
             if (ref.row > maxRow) maxRow = ref.row;
             if (ref.col > maxCol) maxCol = ref.col;
-        }
+        });
         index.used = { maxRow, maxCol };
     }
     return index.used;
@@ -730,8 +775,214 @@ export const deriveCellIndex = (nextCells, prevCells, changedIds) => {
     cellIndexCache.set(nextCells, { formulas, used });
 };
 
+// The used range also covers cells the previous pass spilled into.
+const makeLayout = (cells, positions, spill) => {
+    let resolved = null;
+    const resolve = () => {
+        if (resolved) return resolved;
+        let { maxRow, maxCol } = usedRangeOf(cells);
+        for (const id of spill.keys()) {
+            const ref = parseCellRef(id);
+            if (ref.row > maxRow) maxRow = ref.row;
+            if (ref.col > maxCol) maxCol = ref.col;
+        }
+        resolved = { maxRow, maxCol };
+        return resolved;
+    };
+    return {
+        positions,
+        get maxRow() { return resolve().maxRow; },
+        get maxCol() { return resolve().maxCol; },
+    };
+};
+
+// ---------------------------------------------------------------------------
+// Recalculating after an edit
+//
+// Evaluating every formula again after each keystroke costs time in
+// proportion to the sheet, not to the edit. So an evaluation also records
+// what each formula read — single cells, areas, the clock (NOW/TODAY), and the
+// sheet's extent (whole-column/row references) — into a DependencyIndex, and
+// keeps it with the results. When the next evaluation is of a cell map that
+// differs from that one at a few known cells (see cellMapLineage.js), only the
+// formulas that read one of those cells, directly or through other formulas,
+// are evaluated again; every other formula keeps its previous result.
+//
+// That shortcut is taken only when it gives exactly what a full evaluation
+// would: never across an F9 re-roll (a new seed), and never for a sheet with
+// array results (spills move what other cells show) or a circular reference
+// (results depend on where evaluation started). Those, and any edit that would
+// dirty half the sheet's formulas anyway, are evaluated in full.
+
+const AREA_BLOCK_SHIFT = 10; // areas are indexed by column and 1024-row block
+const AREA_BUCKET_LIMIT = 4096; // past this many blocks an area is checked directly
+const INCREMENTAL_CHANGE_LIMIT = 20000;
+const RECENT_EVALUATIONS = 4; // one per sheet being looked at, roughly
+
+const addReader = (map, key, id) => {
+    const current = map.get(key);
+    if (current === undefined) map.set(key, id);
+    else if (typeof current === "string") { if (current !== id) map.set(key, new Set([current, id])); }
+    else current.add(id);
+};
+const removeReader = (map, key, id) => {
+    const current = map.get(key);
+    if (current === id) map.delete(key);
+    else if (current instanceof Set) { current.delete(id); if (current.size === 0) map.delete(key); }
+};
+const forEachReader = (value, fn) => {
+    if (value === undefined) return;
+    if (typeof value === "string") fn(value); else for (const id of value) fn(id);
+};
+const areasContain = (areas, row, col) => {
+    for (let i = 0; i < areas.length; i += 4) {
+        if (row >= areas[i] && row <= areas[i + 1] && col >= areas[i + 2] && col <= areas[i + 3]) return true;
+    }
+    return false;
+};
+// Calls `fn` for each column-and-row-block an area covers; false (calling
+// nothing) when it covers too many to index that way.
+const forEachAreaBucket = (areas, i, fn) => {
+    const b1 = areas[i] >> AREA_BLOCK_SHIFT, b2 = areas[i + 1] >> AREA_BLOCK_SHIFT;
+    const c1 = areas[i + 2], c2 = areas[i + 3];
+    if ((b2 - b1 + 1) * (c2 - c1 + 1) > AREA_BUCKET_LIMIT) return false;
+    for (let b = b1; b <= b2; b++) for (let c = c1; c <= c2; c++) fn(b * CELL_POS_STRIDE + c);
+    return true;
+};
+
+// Which formulas read what: formula id -> its reads, and back from a cell to
+// the formulas that read it.
+class DependencyIndex {
+    constructor() {
+        this.reads = new Map(); // formula id -> { cells: pos[], areas: [r1, r2, c1, c2, ...], large }
+        this.cellReaders = new Map(); // pos -> formula id | Set of them
+        this.areaReaders = new Map(); // area bucket -> formula id | Set of them
+        this.largeAreaReaders = new Set();
+        this.nowReaders = new Set();
+        this.extentReaders = new Set();
+    }
+
+    add(id, reads) {
+        this.remove(id);
+        const record = { cells: reads.cells, areas: reads.areas, large: false };
+        this.reads.set(id, record);
+        for (const pos of record.cells) addReader(this.cellReaders, pos, id);
+        for (let i = 0; i < record.areas.length; i += 4) {
+            if (!forEachAreaBucket(record.areas, i, (bucket) => addReader(this.areaReaders, bucket, id))) record.large = true;
+        }
+        if (record.large) this.largeAreaReaders.add(id);
+        if (reads.now) this.nowReaders.add(id);
+        if (reads.extent) this.extentReaders.add(id);
+    }
+
+    remove(id) {
+        const record = this.reads.get(id);
+        if (!record) return;
+        this.reads.delete(id);
+        for (const pos of record.cells) removeReader(this.cellReaders, pos, id);
+        for (let i = 0; i < record.areas.length; i += 4) {
+            forEachAreaBucket(record.areas, i, (bucket) => removeReader(this.areaReaders, bucket, id));
+        }
+        this.largeAreaReaders.delete(id);
+        this.nowReaders.delete(id);
+        this.extentReaders.delete(id);
+    }
+
+    // Calls `fn` with every formula that read the cell at (row, col).
+    forEachReaderOf(row, col, fn) {
+        forEachReader(this.cellReaders.get(row * CELL_POS_STRIDE + col), fn);
+        forEachReader(this.areaReaders.get((row >> AREA_BLOCK_SHIFT) * CELL_POS_STRIDE + col), (id) => {
+            if (areasContain(this.reads.get(id).areas, row, col)) fn(id);
+        });
+        for (const id of this.largeAreaReaders) {
+            if (areasContain(this.reads.get(id).areas, row, col)) fn(id);
+        }
+    }
+}
+
+// Results of recent evaluations that a later one may start from, newest last.
+// Each holds a mark for its cell map rather than the map itself, so it doesn't
+// keep a superseded copy of a large sheet alive. Its index is handed on to the
+// evaluation derived from it (and updated there), so each is used once.
+const recentEvaluations = [];
+
+const rememberEvaluation = (cells, pass, index, opts) => {
+    const extent = index.extentReaders.size ? { ...usedRangeOf(cells) } : null;
+    recentEvaluations.push({ mark: cellMapMark(cells), memo: pass.memo, index, seed: opts.seed, now: opts.now, extent });
+    if (recentEvaluations.length > RECENT_EVALUATIONS) recentEvaluations.shift();
+};
+
+// Takes the remembered evaluation `cells` was edited from, if any.
+const takeBaseEvaluation = (cells) => {
+    for (let i = recentEvaluations.length - 1; i >= 0; i--) {
+        const changed = cellMapChangesSince(recentEvaluations[i].mark, cells, INCREMENTAL_CHANGE_LIMIT);
+        if (changed) return { base: recentEvaluations.splice(i, 1)[0], changed };
+    }
+    return null;
+};
+
+// `cells` evaluated from `base` by re-evaluating only what `changed` affects,
+// or null when that can't be done exactly (`base`'s index is spent either way,
+// and the caller then evaluates in full).
+const evaluateFrom = (base, changed, cells, opts) => {
+    if (base.seed !== opts.seed) return null;
+    const { index } = base;
+    const positions = cellIndexOf(cells).formulas;
+
+    const dirty = new Set();
+    const queue = []; // row, col of each cell whose value may have changed
+    const markDirty = (id) => {
+        if (dirty.has(id) || !positions.has(id)) return;
+        dirty.add(id);
+        const { row, col } = positions.get(id);
+        queue.push(row, col);
+    };
+    for (const id of changed) {
+        const pos = posOf(id);
+        if (pos) queue.push(pos.row, pos.col);
+        if (positions.has(id)) dirty.add(id);
+    }
+    if (opts.now !== base.now) for (const id of index.nowReaders) markDirty(id);
+    if (index.extentReaders.size) {
+        const used = usedRangeOf(cells);
+        if (!base.extent || used.maxRow !== base.extent.maxRow || used.maxCol !== base.extent.maxCol) {
+            for (const id of index.extentReaders) markDirty(id);
+        }
+    }
+    const dirtyLimit = Math.max(1000, positions.size >> 1);
+    for (let i = 0; i < queue.length; i += 2) {
+        index.forEachReaderOf(queue[i], queue[i + 1], markDirty);
+        if (dirty.size > dirtyLimit) return null;
+    }
+
+    const memo = new Map(base.memo);
+    for (const id of changed) {
+        if (!positions.has(id)) { memo.delete(id); index.remove(id); }
+    }
+    for (const id of dirty) memo.delete(id);
+
+    const known = { spill: new Map(), blocked: new Set() };
+    const pass = new EvalPass(cells, makeLayout(cells, positions, known.spill), known, opts);
+    pass.memo = memo;
+    pass.recorder = index;
+    for (const id of dirty) pass.evalFormula(id);
+    pass.recorder = null;
+    if (pass.sawCycle) return null;
+    for (const id of dirty) if (memo.get(id).matrix) return null;
+
+    rememberEvaluation(cells, pass, index, opts);
+    return { pass, known, evaluated: dirty.size };
+};
+
 const evaluateSheetCells = (cells, options = {}) => {
     const opts = { now: options.now ?? nowSerial(), seed: options.seed ?? 0 };
+
+    const start = takeBaseEvaluation(cells);
+    if (start) {
+        const derived = evaluateFrom(start.base, start.changed, cells, opts);
+        if (derived) return derived;
+    }
+
     // Only formula cells are evaluated here; plain values are read (and
     // parsed) only if a formula actually references them.
     const positions = cellIndexOf(cells).formulas;
@@ -740,38 +991,25 @@ const evaluateSheetCells = (cells, options = {}) => {
         const pa = positions.get(a), pb = positions.get(b);
         return pa.row - pb.row || pa.col - pb.col;
     });
-    const usedRange = () => usedRangeOf(cells);
-    // The used range also covers cells the previous pass spilled into.
-    const makeLayout = (spill) => {
-        let resolved = null;
-        const resolve = () => {
-            if (resolved) return resolved;
-            let { maxRow, maxCol } = usedRange();
-            for (const id of spill.keys()) {
-                const ref = parseCellRef(id);
-                if (ref.row > maxRow) maxRow = ref.row;
-                if (ref.col > maxCol) maxCol = ref.col;
-            }
-            resolved = { maxRow, maxCol };
-            return resolved;
-        };
-        return {
-            positions,
-            get maxRow() { return resolve().maxRow; },
-            get maxCol() { return resolve().maxCol; },
-        };
-    };
 
     let known = { spill: new Map(), blocked: new Set() };
     let pass = null;
+    let index = null;
+    let hasArrays = false;
     for (let iteration = 0; iteration < 6; iteration++) {
-        pass = new EvalPass(cells, makeLayout(known.spill), known, opts);
+        pass = new EvalPass(cells, makeLayout(cells, positions, known.spill), known, opts);
+        // Reads are recorded until the sheet shows an array result: with
+        // spills the index isn't used (see above).
+        index = hasArrays ? null : new DependencyIndex();
+        pass.recorder = index;
         for (const id of formulaIds) pass.evalFormula(id);
+        pass.recorder = null;
 
         const next = { spill: new Map(), blocked: new Set() };
         for (const id of formulaIds) {
             const entry = pass.memo.get(id);
             if (!entry?.matrix) continue;
+            hasArrays = true;
             const { row, col } = positions.get(id);
             // Blocked by a typed value in the way — independent of other spills.
             if (pass.isSpillObstructed(row, col, entry.matrix)) continue;
@@ -790,7 +1028,8 @@ const evaluateSheetCells = (cells, options = {}) => {
         known = next;
         if (settled) break;
     }
-    return { pass, known };
+    if (index && !hasArrays && !pass.sawCycle) rememberEvaluation(cells, pass, index, opts);
+    return { pass, known, evaluated: formulaIds.length };
 };
 
 // ---------------------------------------------------------------------------
@@ -861,7 +1100,7 @@ const PLAIN_NUMBER_RE = /^-?\d+(\.\d+)?$/;
 // stand in for, so the grid only pays for the rows it renders instead of
 // formatting every cell of a large sheet on each edit.
 export const evaluateSheet = (cells, options = {}) => {
-    const { pass, known } = evaluateSheetCells(cells, options);
+    const { pass, known, evaluated } = evaluateSheetCells(cells, options);
 
     // [display, raw] for a cell, or null when the sheet has nothing there.
     const compute = (id) => {
@@ -905,7 +1144,7 @@ export const evaluateSheet = (cells, options = {}) => {
         return entry;
     };
     const allIds = () => {
-        const ids = Object.keys(cells);
+        const ids = cellIdsOf(cells);
         for (const id of known.spill.keys()) if (!hasOwn.call(cells, id)) ids.push(id);
         return ids;
     };
@@ -942,6 +1181,9 @@ export const evaluateSheet = (cells, options = {}) => {
         display: lazyView(0),
         raw: lazyView(1),
         spillAnchors: new Map([...known.spill].map(([id, s]) => [id, s.anchor])),
+        // How many formulas this evaluation ran: all of them, or after an edit only
+        // those it could have changed.
+        evaluatedFormulas: evaluated,
         evaluateAt,
     };
 };

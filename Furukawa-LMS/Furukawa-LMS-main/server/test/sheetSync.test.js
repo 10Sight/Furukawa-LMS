@@ -6,10 +6,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeWorkbook, validatePatch, applyPatch } from "../utils/sheetWorkbook.js";
-import { diffWorkbook } from "../../portal/src/components/tables/spreadsheet/workbookDiff.js";
+import { diffWorkbook } from "../../admin/src/components/tables/spreadsheet/workbookDiff.js";
 import {
     normalizeStoredWorkbook, applyPatchToSaved, rebaseLive, rebaseRemotePatch, rebaseRemotePatches, rebaseSnapshot
-} from "../../portal/src/utils/spreadsheets/workbookSync.js";
+} from "../../admin/src/utils/spreadsheets/workbookSync.js";
 
 const sheet = (cells, extra = {}) => ({ cells, rowCount: 30, columnCount: 15, merges: [], media: [], ...extra });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -53,8 +53,8 @@ test("the saved copy follows the server exactly, without being edited in place",
         Missing: { set: { A1: { value: "x" } } }
     } });
     const next = applyPatchToSaved(base, patch);
-    assert.deepEqual(next, onServer(base, patch));
-    assert.deepEqual(base, frozen);
+    assert.deepEqual(json(next), onServer(base, patch));
+    assert.deepEqual(json(base), json(frozen));
     // Untouched parts are shared, not copied.
     assert.equal(next.T, base.T);
     assert.equal(next.S.cells.A1, base.S.cells.A1);
@@ -68,7 +68,7 @@ test("with nothing unsaved, the screen simply becomes the server's workbook", ()
     const saved = { S: sheet({ A1: { value: "1" } }), T: sheet({}) };
     const patch = wire({ v: 1, sheets: { S: { set: { B2: { value: "theirs" } }, props: { rowCount: 60 } } } });
     const result = rebaseRemotePatch(saved, saved, patch);
-    assert.deepEqual(result.saved, onServer(saved, patch));
+    assert.deepEqual(json(result.saved), onServer(saved, patch));
     assert.equal(result.live.S, result.saved.S);
     assert.equal(result.live.T, saved.T);
     assert.deepEqual(unsaved(result.saved, result.live), { v: 1, sheets: {} });
@@ -87,8 +87,8 @@ test("unsaved edits survive; everything else is taken", () => {
     } } });
 
     const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
-    assert.deepEqual(nextSaved, onServer(saved, patch));
-    assert.deepEqual(live.S.cells, {
+    assert.deepEqual(json(nextSaved), onServer(saved, patch));
+    assert.deepEqual(json(live.S.cells), {
         A1: { value: "mine" }, E5: { value: "mine too" },   // mine kept (C3 stays deleted)
         B2: { value: "theirs" }, F6: { value: "theirs" }    // theirs taken (D4 gone)
     });
@@ -111,7 +111,7 @@ test("comment anchors: mine and theirs on different cells are both kept", () => 
     const patch = wire({ v: 1, sheets: { S: { anchors: { set: { E5: "theirs", B2: "theirs", D4: "theirs" }, del: ["C3"] } } } });
 
     const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
-    assert.deepEqual(nextSaved, onServer(saved, patch));
+    assert.deepEqual(json(nextSaved), onServer(saved, patch));
     assert.deepEqual(live.S.commentAnchors, { A1: "t1", D4: "mine", E5: "theirs" });
     assert.deepEqual(unsaved(nextSaved, live).sheets.S, { anchors: { set: { D4: "mine" }, del: ["B2"] } });
     assert.deepEqual(onServer(saved, patch, unsaved(nextSaved, live)), json(live));
@@ -122,7 +122,7 @@ test("comment anchors: with none of my own unsaved, the screen shares the server
     const mine = edit(saved, "S", { B2: { value: "mine" } });
     const patch = wire({ v: 1, sheets: { S: { anchors: { set: { C3: "theirs" } } }, T: { anchors: { set: { A1: "first" } } } } });
     const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
-    assert.deepEqual(nextSaved, onServer(saved, patch));
+    assert.deepEqual(json(nextSaved), onServer(saved, patch));
     assert.equal(live.S.commentAnchors, nextSaved.S.commentAnchors);
     assert.deepEqual(live.S.commentAnchors, { A1: "t1", C3: "theirs" });
     assert.deepEqual(live.T.commentAnchors, { A1: "first" });
@@ -144,9 +144,9 @@ test("a sheet I removed or renamed without saving is left alone on screen", () =
     const mine = { Renamed: saved.S, T: saved.T };
     const patch = wire({ v: 1, sheets: { S: { set: { A1: { value: "theirs" } } }, T: { set: { A1: { value: "theirs" } } } } });
     const { live, saved: nextSaved } = rebaseRemotePatch(mine, saved, patch);
-    assert.deepEqual(nextSaved, onServer(saved, patch));
+    assert.deepEqual(json(nextSaved), onServer(saved, patch));
     assert.equal(live.Renamed, saved.S);
-    assert.deepEqual(live.T.cells, { A1: { value: "theirs" } });
+    assert.deepEqual(json(live.T.cells), { A1: { value: "theirs" } });
     assert.deepEqual(Object.keys(live), ["Renamed", "T"]);
     // The rename still needs a full save.
     assert.equal(unsaved(nextSaved, live), null);

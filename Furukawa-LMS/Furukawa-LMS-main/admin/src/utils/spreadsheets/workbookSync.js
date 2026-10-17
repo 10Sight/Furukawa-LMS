@@ -14,6 +14,9 @@
 // both workbooks, so that after a patch is taken the two still differ by exactly the
 // user's unsaved work and nothing else.
 
+import { recordCellMapCopy } from "./cellMapLineage.js";
+import { copyCellMap } from "./chunkedCells.js";
+
 const DEFAULT_ROW_COUNT = 30;
 const DEFAULT_COLUMN_COUNT = 15;
 const DEFAULT_SHEET_NAME = "Sheet 1";
@@ -50,18 +53,22 @@ const applyEntry = (sheet, entry, takes) => {
     if (entry.set || entry.del) {
         const cells = isPlainObject(sheet.cells) ? sheet.cells : EMPTY_CELLS;
         let nextCells = null;
-        const writableCells = () => nextCells || (nextCells = { ...cells });
+        const changed = [];
+        const writableCells = () => nextCells || (nextCells = copyCellMap(cells));
         if (entry.set) {
             for (const id of Object.keys(entry.set)) {
-                if (cells[id] !== entry.set[id] && takes("cell", id)) writableCells()[id] = entry.set[id];
+                if (cells[id] !== entry.set[id] && takes("cell", id)) { writableCells()[id] = entry.set[id]; changed.push(id); }
             }
         }
         if (entry.del) {
             for (const id of entry.del) {
-                if (hasOwn(nextCells || cells, id) && takes("cell", id)) delete writableCells()[id];
+                if (hasOwn(nextCells || cells, id) && takes("cell", id)) { delete writableCells()[id]; changed.push(id); }
             }
         }
-        if (nextCells) writable().cells = nextCells;
+        if (nextCells) {
+            recordCellMapCopy(nextCells, cells, changed);
+            writable().cells = nextCells;
+        }
     }
     if (entry.anchors) {
         const anchors = isPlainObject(sheet.commentAnchors) ? sheet.commentAnchors : EMPTY_CELLS;

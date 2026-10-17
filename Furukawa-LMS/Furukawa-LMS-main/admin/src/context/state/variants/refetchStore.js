@@ -1,4 +1,5 @@
-import { configureStore } from "@reduxjs/toolkit";
+import { configureStore, isPlain } from "@reduxjs/toolkit";
+import { isChunkedCells } from "../../../utils/spreadsheets/chunkedCells.js";
 
 // Slice imports
 import authSliceReducer from "../slices/AuthSlice.js";
@@ -46,6 +47,11 @@ import { leftRequestApi } from "../../../services/api/LeftRequestApi.js";
 import { monthlyMeetingReportApi } from "../../../services/api/MonthlyMeetingReportApi.js";
 
 
+
+// A spreadsheet's cell map can be a chunked one (utils/spreadsheets/chunkedCells.js),
+// which rides along in the sheet-saving mutations' arguments and serializes exactly
+// like the plain object it stands for.
+const isSerializable = (value) => isPlain(value) || isChunkedCells(value);
 
 const store = configureStore({
     reducer: {
@@ -95,7 +101,7 @@ const store = configureStore({
         [monthlyMeetingReportApi.reducerPath]: monthlyMeetingReportApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware().concat(
+        getDefaultMiddleware({ serializableCheck: { isSerializable } }).concat(
             authApi.middleware,
             userApi.middleware,
             instructorApi.middleware,

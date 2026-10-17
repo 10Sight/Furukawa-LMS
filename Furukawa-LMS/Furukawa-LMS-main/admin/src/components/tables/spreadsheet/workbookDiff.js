@@ -10,6 +10,9 @@
 // can leave an equal cell as a new object; that just sends a cell that didn't need
 // sending.)
 
+import { cellMapChanges } from "../../../utils/spreadsheets/cellMapLineage.js";
+import { forEachCellId } from "../../../utils/spreadsheets/chunkedCells.js";
+
 // Past this many changed cells the edit is a bulk rewrite (a large paste, a row
 // insert that shifts everything below it) and the whole workbook is saved instead.
 export const MAX_PATCH_CELLS = 5000;
@@ -44,18 +47,29 @@ export const diffWorkbook = (base, next, { activeSheet } = {}) => {
         if (beforeCells !== afterCells) {
             const set = {};
             const del = [];
-            for (const id in afterCells) {
-                if (afterCells[id] === beforeCells[id]) continue;
+            const compare = (id) => {
+                if (afterCells[id] === beforeCells[id]) return;
                 // A cell can't be "set" to nothing; treat it as removed.
                 if (afterCells[id] === undefined || afterCells[id] === null) {
                     if (beforeCells[id] !== undefined && beforeCells[id] !== null) { del.push(id); changedCells++; }
-                    continue;
+                    return;
                 }
                 set[id] = afterCells[id];
                 changedCells++;
-            }
-            for (const id in beforeCells) {
-                if (!hasOwn(afterCells, id)) { del.push(id); changedCells++; }
+            };
+            // Usually both cell maps descend from one another by a few edits, and only
+            // the cells those edits touched need comparing (see cellMapLineage.js).
+            const candidates = cellMapChanges(beforeCells, afterCells, MAX_PATCH_CELLS - changedCells);
+            if (candidates) {
+                for (const id of candidates) {
+                    if (hasOwn(afterCells, id)) compare(id);
+                    else if (hasOwn(beforeCells, id)) { del.push(id); changedCells++; }
+                }
+            } else {
+                forEachCellId(afterCells, compare);
+                forEachCellId(beforeCells, (id) => {
+                    if (!hasOwn(afterCells, id)) { del.push(id); changedCells++; }
+                });
             }
             if (changedCells > MAX_PATCH_CELLS) return null;
             if (Object.keys(set).length > 0) entry.set = set;

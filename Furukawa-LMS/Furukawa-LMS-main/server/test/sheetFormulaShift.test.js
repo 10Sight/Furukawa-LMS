@@ -5,7 +5,7 @@
 // cells it pointed at before.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { shiftFormulaBands, shiftSpan } from "../../portal/src/utils/spreadsheets/formulaEngine.js";
+import { shiftFormulaBands, shiftSpan } from "../../admin/src/utils/spreadsheets/formulaEngine.js";
 
 const insertRows = (formula, at, count = 1) => shiftFormulaBands(formula, "row", at, count);
 const deleteRows = (formula, at, count = 1) => shiftFormulaBands(formula, "row", at, -count);

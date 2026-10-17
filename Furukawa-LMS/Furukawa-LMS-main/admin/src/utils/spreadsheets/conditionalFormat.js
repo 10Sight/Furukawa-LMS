@@ -33,6 +33,7 @@
 
 import { parseCellRef, getCellId, adjustFormula, parseFormula } from "./formulaEngine.js";
 import { parseDateTimeText, dateToSerial, serialToParts, nowSerial } from "./formulaValues.js";
+import { forEachCellIdIn } from "./chunkedCells.js";
 
 export const VISUAL_RULE_TYPES = new Set(["dataBar", "colorScale", "iconSet"]);
 
@@ -376,27 +377,48 @@ const pointValue = (point, sorted) => {
 // cells instead of cell by cell, so a whole-column rule stays cheap.
 const DENSE_RANGE_LIMIT = 20000;
 
-// Returns { [cellId]: { style?, dataBar?, icon? } } for every cell a rule affects.
+// What conditional formatting does to each cell: a read-only map of
+// { [cellId]: { style?, dataBar?, icon? } }, with an entry for every cell a rule
+// affects.
 //   display / raw : the evaluated grids (formatted text / number-or-string)
 //   cells         : the sheet's stored cells (for their number formats)
 //   today         : whole-day serial, for the date rules
 //   evaluateAt    : (formula, row, col) => value, from evaluateSheet — needed
 //                   for formula rules and formulas used as rule values
-export const computeConditionalFormats = (rules, { display, raw, cells = {}, today = Math.floor(nowSerial()), evaluateAt = null }) => {
-    const result = {};
+//   spillAnchors  : evaluateSheet's spillAnchors (spilled-into cell id -> anchor).
+//                   With it, a large range is read off `cells` block by block
+//                   instead of off every key of `display`.
+//
+// The map is worked out cell by cell, the first time a cell is looked up — the
+// grid looks up only the cells it renders — rather than for every cell every
+// rule covers: a rule over whole columns of a sheet with millions of rows
+// would otherwise format and test all of them on each edit. A rule that
+// compares a cell with the rest of its range (data bars, colour scales, icon
+// sets, top/bottom, above/below average, duplicate/unique) reads that range
+// once, when the first of its cells is looked up. Enumerating the map
+// (Object.keys, for...in) works out every cell, as before.
+export const computeConditionalFormats = (rules, { display, raw, cells = {}, today = Math.floor(nowSerial()), evaluateAt = null, spillAnchors = null }) => {
     const list = normalizeRules(rules);
-    if (!list.length) return result;
+    if (!list.length) return {};
 
-    let filled = null;
-    const filledCells = () => {
-        if (!filled) {
-            filled = [];
+    // A cell holding nothing — not stored, not spilled into — is covered by a
+    // range larger than DENSE_RANGE_LIMIT only if it's filled.
+    const isFilled = (id) => Object.prototype.hasOwnProperty.call(display, id);
+    // Calls `visit(id, row, col)` for each filled cell inside bounds `b`.
+    const forEachFilledIn = (b, visit) => {
+        const inside = (row, col) => row >= b.minRow && row <= b.maxRow && col >= b.minCol && col <= b.maxCol;
+        if (!spillAnchors) {
             for (const id of Object.keys(display)) {
                 const ref = parseCellRef(id);
-                if (ref) filled.push({ id, row: ref.row, col: ref.col });
+                if (ref && inside(ref.row, ref.col)) visit(id, ref.row, ref.col);
             }
+            return;
         }
-        return filled;
+        forEachCellIdIn(cells, b, visit);
+        for (const id of spillAnchors.keys()) {
+            const ref = parseCellRef(id);
+            if (ref && inside(ref.row, ref.col)) visit(id, ref.row, ref.col);
+        }
     };
 
     const entryFor = (id, rule, row, col) => {
@@ -415,100 +437,122 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
         return { id, row, col, shown, value, blank, error, num };
     };
 
-    const stopped = new Set();
+    // Applying a rule to a cell answers STOP when no later rule may touch it.
+    const STOP = true;
+    const once = (compute) => {
+        let done = false, value;
+        return () => {
+            if (!done) { value = compute(); done = true; }
+            return value;
+        };
+    };
 
-    for (const rule of list) {
-        const seen = new Set();
-        const entries = [];
+    const prepare = (rule) => {
+        const bounds = (rule.ranges || []).map(boundsOfRange).filter(Boolean);
+        if (!bounds.length) return null;
+        const dense = bounds.map((b) => (b.maxRow - b.minRow + 1) * (b.maxCol - b.minCol + 1) > DENSE_RANGE_LIMIT);
         // Rule formulas are written for the top-left cell of the first range.
-        let anchor = null;
-        for (const range of rule.ranges || []) {
-            const b = boundsOfRange(range);
-            if (!b) continue;
-            if (!anchor) anchor = { row: b.minRow, col: b.minCol };
-            const area = (b.maxRow - b.minRow + 1) * (b.maxCol - b.minCol + 1);
-            if (area > DENSE_RANGE_LIMIT) {
-                for (const c of filledCells()) {
-                    if (c.row < b.minRow || c.row > b.maxRow || c.col < b.minCol || c.col > b.maxCol || seen.has(c.id)) continue;
-                    seen.add(c.id);
-                    entries.push(entryFor(c.id, rule, c.row, c.col));
-                }
-            } else {
-                for (let r = b.minRow; r <= b.maxRow; r++) {
-                    for (let c = b.minCol; c <= b.maxCol; c++) {
-                        const id = getCellId(r, c);
-                        if (seen.has(id)) continue;
-                        seen.add(id);
-                        entries.push(entryFor(id, rule, r, c));
-                    }
-                }
-            }
-        }
-        if (!entries.length) continue;
+        const anchor = { row: bounds[0].minRow, col: bounds[0].minCol };
 
-        const effectFor = (id) => (result[id] || (result[id] = {}));
-        const numbers = () => entries.filter((e) => e.num !== null).map((e) => e.num);
+        const contains = (id, row, col) => {
+            let filled = null;
+            for (let i = 0; i < bounds.length; i++) {
+                const b = bounds[i];
+                if (row < b.minRow || row > b.maxRow || col < b.minCol || col > b.maxCol) continue;
+                if (!dense[i]) { if (id === getCellId(row, col)) return true; continue; }
+                if (filled === null) filled = isFilled(id);
+                if (filled) return true;
+            }
+            return false;
+        };
+        // Every cell the rule covers, each once, in range order.
+        const entries = once(() => {
+            const seen = new Set();
+            const out = [];
+            const add = (id, row, col) => {
+                if (seen.has(id)) return;
+                seen.add(id);
+                out.push(entryFor(id, rule, row, col));
+            };
+            bounds.forEach((b, i) => {
+                if (dense[i]) { forEachFilledIn(b, add); return; }
+                for (let r = b.minRow; r <= b.maxRow; r++) for (let c = b.minCol; c <= b.maxCol; c++) add(getCellId(r, c), r, c);
+            });
+            return out;
+        });
+        const numbers = () => entries().filter((e) => e.num !== null).map((e) => e.num);
         // The formula as it reads at a given cell, evaluated there.
         const formulaAt = (formula, e) => evaluateAt(adjustFormula(formula, e.row - anchor.row, e.col - anchor.col), e.row, e.col);
 
+        let apply;
         if (rule.type === "dataBar") {
-            const nums = numbers();
-            const maxAbs = nums.reduce((m, n) => Math.max(m, Math.abs(n)), 0);
-            const sorted = Array.isArray(rule.points) ? [...nums].sort((a, b) => a - b) : null;
-            const from = sorted ? pointValue(rule.points[0], sorted) : null;
-            const to = sorted ? pointValue(rule.points[1], sorted) : null;
-            const custom = from !== null && to !== null && to > from;
-            for (const e of entries) {
-                if (e.num === null || stopped.has(e.id)) continue;
-                const effect = effectFor(e.id);
-                if (effect.dataBar) continue;
+            const stats = once(() => {
+                const nums = numbers();
+                const maxAbs = nums.reduce((m, n) => Math.max(m, Math.abs(n)), 0);
+                const sorted = Array.isArray(rule.points) ? [...nums].sort((a, b) => a - b) : null;
+                const from = sorted ? pointValue(rule.points[0], sorted) : null;
+                const to = sorted ? pointValue(rule.points[1], sorted) : null;
+                return { maxAbs, from, to, custom: from !== null && to !== null && to > from };
+            });
+            apply = (e, effectFor) => {
+                if (e.num === null) return;
+                const { maxAbs, from, to, custom } = stats();
+                const effect = effectFor();
+                if (effect.dataBar) return;
                 effect.dataBar = {
                     pct: custom ? Math.min(1, Math.max(0, (e.num - from) / (to - from))) : maxAbs ? Math.abs(e.num) / maxAbs : 0,
                     color: e.num < 0 ? "#e34948" : rule.color || "#638ec6",
                     gradient: !!rule.gradient,
                 };
-            }
-            continue;
-        }
-
-        if (rule.type === "colorScale") {
-            const nums = numbers().sort((a, b) => a - b);
-            if (!nums.length) continue;
-            const colors = Array.isArray(rule.colors) && rule.colors.length >= 2 ? rule.colors : ["#f8696b", "#63be7b"];
-            const points = Array.isArray(rule.points) && rule.points.length === colors.length ? rule.points.map((p) => pointValue(p, nums)) : [];
-            const lo = points[0] ?? nums[0], hi = points[colors.length - 1] ?? nums[nums.length - 1];
-            const mid = (colors.length === 3 ? points[1] : null) ?? percentileOf(nums, 50);
-            for (const e of entries) {
-                if (e.num === null || stopped.has(e.id)) continue;
-                const effect = effectFor(e.id);
+            };
+        } else if (rule.type === "colorScale") {
+            const stats = once(() => {
+                const nums = numbers().sort((a, b) => a - b);
+                if (!nums.length) return null;
+                const colors = Array.isArray(rule.colors) && rule.colors.length >= 2 ? rule.colors : ["#f8696b", "#63be7b"];
+                const points = Array.isArray(rule.points) && rule.points.length === colors.length ? rule.points.map((p) => pointValue(p, nums)) : [];
+                const lo = points[0] ?? nums[0], hi = points[colors.length - 1] ?? nums[nums.length - 1];
+                const mid = (colors.length === 3 ? points[1] : null) ?? percentileOf(nums, 50);
+                return { colors, lo, hi, mid };
+            });
+            apply = (e, effectFor) => {
+                if (e.num === null) return;
+                const s = stats();
+                if (!s) return;
+                const { colors, lo, hi, mid } = s;
+                const effect = effectFor();
                 const style = effect.style || (effect.style = {});
-                if (style.bg !== undefined) continue;
-                if (hi <= lo) { style.bg = colors[colors.length - 1]; continue; }
+                if (style.bg !== undefined) return;
+                if (hi <= lo) { style.bg = colors[colors.length - 1]; return; }
                 const v = Math.min(hi, Math.max(lo, e.num));
                 if (colors.length === 2) style.bg = mixColors(colors[0], colors[1], (v - lo) / (hi - lo));
                 else if (v <= mid) style.bg = mid <= lo ? colors[1] : mixColors(colors[0], colors[1], (v - lo) / (mid - lo));
                 else style.bg = hi <= mid ? colors[2] : mixColors(colors[1], colors[2], (v - mid) / (hi - mid));
-            }
-            continue;
-        }
-
-        if (rule.type === "iconSet") {
+            };
+        } else if (rule.type === "iconSet") {
             const set = ICON_SETS[rule.set] || ICON_SETS["3Arrows"];
-            const nums = numbers();
-            if (!nums.length) continue;
-            const lo = Math.min(...nums), hi = Math.max(...nums);
             const count = set.icons.length;
-            // Explicit cut-offs: starts[i] is where the i-th icon from the bottom begins.
-            let starts = null;
-            if (Array.isArray(rule.points) && rule.points.length === count) {
-                const sorted = [...nums].sort((a, b) => a - b);
-                starts = rule.points.map((p) => ({ at: pointValue(p, sorted), exclusive: p?.gte === false }));
-                if (starts.slice(1).some((p) => p.at === null)) starts = null;
-            }
-            for (const e of entries) {
-                if (e.num === null || stopped.has(e.id)) continue;
-                const effect = effectFor(e.id);
-                if (effect.icon) continue;
+            const stats = once(() => {
+                const nums = numbers();
+                if (!nums.length) return null;
+                let lo = Infinity, hi = -Infinity; // not Math.min(...nums): that runs out of stack on a large range
+                for (const n of nums) { if (n < lo) lo = n; if (n > hi) hi = n; }
+                // Explicit cut-offs: starts[i] is where the i-th icon from the bottom begins.
+                let starts = null;
+                if (Array.isArray(rule.points) && rule.points.length === count) {
+                    const sorted = [...nums].sort((a, b) => a - b);
+                    starts = rule.points.map((p) => ({ at: pointValue(p, sorted), exclusive: p?.gte === false }));
+                    if (starts.slice(1).some((p) => p.at === null)) starts = null;
+                }
+                return { lo, hi, starts };
+            });
+            apply = (e, effectFor) => {
+                if (e.num === null) return;
+                const s = stats();
+                if (!s) return;
+                const { lo, hi, starts } = s;
+                const effect = effectFor();
+                if (effect.icon) return;
                 // Bands split the value range evenly; the top band gets icon 0.
                 let index;
                 if (starts) {
@@ -521,147 +565,182 @@ export const computeConditionalFormats = (rules, { display, raw, cells = {}, tod
                 }
                 if (rule.reverse) index = count - 1 - index;
                 effect.icon = { set: rule.set in ICON_SETS ? rule.set : "3Arrows", index };
-            }
-            continue;
+            };
+        } else {
+            // The remaining types decide match / no match, then apply `format`.
+            const matches = once(() => matcherFor(rule, { entries, numbers, formulaAt, display, raw, cells, today, evaluateAt }));
+            const format = rule.format || {};
+            apply = (e, effectFor) => {
+                if (!matches()(e)) return;
+                const effect = effectFor();
+                const style = effect.style || (effect.style = {});
+                for (const key of ["bg", "color", "bold", "italic", "underline", "strike", "borderColor"]) {
+                    if (style[key] === undefined && format[key] !== undefined && format[key] !== null && format[key] !== "") style[key] = format[key];
+                }
+                if (rule.stopIfTrue) return STOP;
+            };
         }
+        return { rule, contains, entries, apply };
+    };
 
-        // The remaining types decide match / no match, then apply `format`.
-        let matches;
-        switch (rule.type) {
-            case "cellIs": {
-                // A value is a constant, or a formula read afresh at each cell.
-                const operand = (v) => {
-                    const text = String(v ?? "").trim();
-                    if (text.startsWith("=") && text.length > 1) {
-                        if (evaluateAt) return (e) => formulaAt(text, e);
-                        // Without the formula engine only a plain cell reference can be read.
-                        const ref = text.slice(1).replace(/\$/g, "").toUpperCase();
-                        if (parseCellRef(ref)) {
-                            const refRaw = raw[ref];
-                            const fixed = typeof refRaw === "number" ? refRaw : String(display[ref] ?? "");
-                            return () => fixed;
-                        }
-                        const literal = text.slice(1).replace(/^"|"$/g, "");
-                        return () => literal;
-                    }
-                    const constant = NUMERIC_RE.test(text) ? parseFloat(text) : text.replace(/^"(.*)"$/, "$1");
-                    return () => constant;
-                };
-                const a = operand(rule.value), b = operand(rule.value2);
-                const compare = (e, target) => {
-                    if (typeof target === "boolean") target = target ? "TRUE" : "FALSE";
-                    if (typeof target === "number") return e.num === null ? null : e.num - target;
-                    if (e.blank || e.error || ERROR_RE.test(String(target))) return null;
-                    return e.shown.toLowerCase().localeCompare(String(target).toLowerCase());
-                };
-                matches = (e) => {
-                    const ca = compare(e, a(e));
-                    if (rule.operator === "between" || rule.operator === "notBetween") {
-                        const cb = compare(e, b(e));
-                        if (ca === null || cb === null) return false;
-                        const inside = (ca >= 0 && cb <= 0) || (ca <= 0 && cb >= 0);
-                        return rule.operator === "between" ? inside : !inside;
-                    }
-                    if (ca === null) return rule.operator === "neq" && !e.blank;
-                    switch (rule.operator) {
-                        case "gt": return ca > 0;
-                        case "lt": return ca < 0;
-                        case "gte": return ca >= 0;
-                        case "lte": return ca <= 0;
-                        case "neq": return ca !== 0;
-                        default: return ca === 0;
-                    }
-                };
-                break;
+    const prepared = list.map(prepare).filter(Boolean);
+    const cache = new Map();
+    const effectAt = (id) => {
+        if (typeof id !== "string") return undefined;
+        if (cache.has(id)) return cache.get(id);
+        let effect;
+        const ref = parseCellRef(id);
+        if (ref) {
+            const effectFor = () => effect || (effect = {});
+            for (const p of prepared) {
+                if (!p.contains(id, ref.row, ref.col)) continue;
+                const e = entryFor(id, p.rule, ref.row, ref.col);
+                if (p.apply(e, effectFor) === STOP) break;
             }
-            case "text": {
-                const needle = String(rule.text ?? "").toLowerCase();
-                matches = (e) => {
-                    if (!needle || e.error) return false;
-                    const hay = e.shown.toLowerCase();
-                    switch (rule.operator) {
-                        case "notContains": return !hay.includes(needle);
-                        case "beginsWith": return hay.startsWith(needle);
-                        case "endsWith": return hay.endsWith(needle);
-                        default: return hay.includes(needle);
-                    }
-                };
-                break;
-            }
-            case "date": {
-                const [from, to] = datePeriodBounds(rule.period, today);
-                matches = (e) => {
-                    if (e.blank || e.error) return false;
-                    let serial = null;
-                    if (typeof e.value === "string") serial = parseDateTimeText(e.value.trim());
-                    else if (e.num !== null) {
-                        const cell = cells[e.id];
-                        const format = cell?.numberFormat;
-                        if (format === "date" || format === "datetime" || (cell?.numberPattern && DATE_FORMAT_RE.test(cell.numberPattern))) serial = e.num;
-                    }
-                    if (serial === null || serial === undefined) return false;
-                    const day = Math.floor(serial);
-                    return day >= from && day <= to;
-                };
-                break;
-            }
-            case "duplicate":
-            case "unique": {
-                const keyOf = (e) => (e.num !== null ? `n:${e.num}` : `s:${e.shown.toLowerCase()}`);
-                const counts = new Map();
-                for (const e of entries) if (!e.blank) counts.set(keyOf(e), (counts.get(keyOf(e)) || 0) + 1);
-                matches = (e) => !e.blank && (counts.get(keyOf(e)) > 1) === (rule.type === "duplicate");
-                break;
-            }
-            case "blanks": matches = (e) => e.shown.trim() === ""; break;
-            case "noBlanks": matches = (e) => e.shown.trim() !== ""; break;
-            case "errors": matches = (e) => e.error; break;
-            case "noErrors": matches = (e) => !e.error; break;
-            case "top": {
-                const nums = numbers().sort((x, y) => (rule.bottom ? x - y : y - x));
-                const rank = Math.max(1, Math.floor(Number(rule.rank) || 10));
-                const take = rule.percent ? Math.max(1, Math.floor((nums.length * Math.min(100, rank)) / 100)) : Math.min(rank, nums.length);
-                const cutoff = nums.length ? nums[take - 1] : null;
-                matches = (e) => cutoff !== null && e.num !== null && (rule.bottom ? e.num <= cutoff : e.num >= cutoff);
-                break;
-            }
-            case "average": {
-                const nums = numbers();
-                const mean = nums.length ? nums.reduce((s, n) => s + n, 0) / nums.length : null;
-                matches = (e) => {
-                    if (mean === null || e.num === null) return false;
-                    switch (rule.mode) {
-                        case "below": return e.num < mean;
-                        case "equalAbove": return e.num >= mean;
-                        case "equalBelow": return e.num <= mean;
-                        default: return e.num > mean;
-                    }
-                };
-                break;
-            }
-            case "formula": {
-                const formula = String(rule.formula ?? "").trim();
-                const usable = !!evaluateAt && isReadableFormula(formula);
-                matches = (e) => {
-                    if (!usable) return false;
-                    const value = formulaAt(formula, e);
-                    return value === true || (typeof value === "number" && value !== 0);
-                };
-                break;
-            }
-            default: matches = () => false;
         }
+        cache.set(id, effect);
+        return effect;
+    };
+    let allIds = null;
+    const keys = () => {
+        if (!allIds) {
+            const ids = new Set();
+            for (const p of prepared) for (const e of p.entries()) ids.add(e.id);
+            allIds = [...ids].filter((id) => effectAt(id) !== undefined);
+        }
+        return allIds;
+    };
 
-        const format = rule.format || {};
-        for (const e of entries) {
-            if (stopped.has(e.id) || !matches(e)) continue;
-            const effect = effectFor(e.id);
-            const style = effect.style || (effect.style = {});
-            for (const key of ["bg", "color", "bold", "italic", "underline", "strike", "borderColor"]) {
-                if (style[key] === undefined && format[key] !== undefined && format[key] !== null && format[key] !== "") style[key] = format[key];
-            }
-            if (rule.stopIfTrue) stopped.add(e.id);
+    return new Proxy({}, {
+        get: (_, id) => effectAt(id),
+        has: (_, id) => effectAt(id) !== undefined,
+        ownKeys: () => keys(),
+        getOwnPropertyDescriptor: (_, id) => {
+            const value = effectAt(id);
+            return value === undefined ? undefined : { value, enumerable: true, configurable: true, writable: false };
+        },
+    });
+};
+
+// Whether an entry ({ shown, value, num, blank, error, ... }) matches a rule of
+// one of the match/no-match types. `entries` and `numbers` give the rule's
+// whole range, for the types that compare against it.
+const matcherFor = (rule, { entries, numbers, formulaAt, display, raw, cells, today, evaluateAt }) => {
+    switch (rule.type) {
+        case "cellIs": {
+            // A value is a constant, or a formula read afresh at each cell.
+            const operand = (v) => {
+                const text = String(v ?? "").trim();
+                if (text.startsWith("=") && text.length > 1) {
+                    if (evaluateAt) return (e) => formulaAt(text, e);
+                    // Without the formula engine only a plain cell reference can be read.
+                    const ref = text.slice(1).replace(/\$/g, "").toUpperCase();
+                    if (parseCellRef(ref)) {
+                        const refRaw = raw[ref];
+                        const fixed = typeof refRaw === "number" ? refRaw : String(display[ref] ?? "");
+                        return () => fixed;
+                    }
+                    const literal = text.slice(1).replace(/^"|"$/g, "");
+                    return () => literal;
+                }
+                const constant = NUMERIC_RE.test(text) ? parseFloat(text) : text.replace(/^"(.*)"$/, "$1");
+                return () => constant;
+            };
+            const a = operand(rule.value), b = operand(rule.value2);
+            const compare = (e, target) => {
+                if (typeof target === "boolean") target = target ? "TRUE" : "FALSE";
+                if (typeof target === "number") return e.num === null ? null : e.num - target;
+                if (e.blank || e.error || ERROR_RE.test(String(target))) return null;
+                return e.shown.toLowerCase().localeCompare(String(target).toLowerCase());
+            };
+            return (e) => {
+                const ca = compare(e, a(e));
+                if (rule.operator === "between" || rule.operator === "notBetween") {
+                    const cb = compare(e, b(e));
+                    if (ca === null || cb === null) return false;
+                    const inside = (ca >= 0 && cb <= 0) || (ca <= 0 && cb >= 0);
+                    return rule.operator === "between" ? inside : !inside;
+                }
+                if (ca === null) return rule.operator === "neq" && !e.blank;
+                switch (rule.operator) {
+                    case "gt": return ca > 0;
+                    case "lt": return ca < 0;
+                    case "gte": return ca >= 0;
+                    case "lte": return ca <= 0;
+                    case "neq": return ca !== 0;
+                    default: return ca === 0;
+                }
+            };
         }
+        case "text": {
+            const needle = String(rule.text ?? "").toLowerCase();
+            return (e) => {
+                if (!needle || e.error) return false;
+                const hay = e.shown.toLowerCase();
+                switch (rule.operator) {
+                    case "notContains": return !hay.includes(needle);
+                    case "beginsWith": return hay.startsWith(needle);
+                    case "endsWith": return hay.endsWith(needle);
+                    default: return hay.includes(needle);
+                }
+            };
+        }
+        case "date": {
+            const [from, to] = datePeriodBounds(rule.period, today);
+            return (e) => {
+                if (e.blank || e.error) return false;
+                let serial = null;
+                if (typeof e.value === "string") serial = parseDateTimeText(e.value.trim());
+                else if (e.num !== null) {
+                    const cell = cells[e.id];
+                    const format = cell?.numberFormat;
+                    if (format === "date" || format === "datetime" || (cell?.numberPattern && DATE_FORMAT_RE.test(cell.numberPattern))) serial = e.num;
+                }
+                if (serial === null || serial === undefined) return false;
+                const day = Math.floor(serial);
+                return day >= from && day <= to;
+            };
+        }
+        case "duplicate":
+        case "unique": {
+            const keyOf = (e) => (e.num !== null ? `n:${e.num}` : `s:${e.shown.toLowerCase()}`);
+            const counts = new Map();
+            for (const e of entries()) if (!e.blank) counts.set(keyOf(e), (counts.get(keyOf(e)) || 0) + 1);
+            return (e) => !e.blank && (counts.get(keyOf(e)) > 1) === (rule.type === "duplicate");
+        }
+        case "blanks": return (e) => e.shown.trim() === "";
+        case "noBlanks": return (e) => e.shown.trim() !== "";
+        case "errors": return (e) => e.error;
+        case "noErrors": return (e) => !e.error;
+        case "top": {
+            const nums = numbers().sort((x, y) => (rule.bottom ? x - y : y - x));
+            const rank = Math.max(1, Math.floor(Number(rule.rank) || 10));
+            const take = rule.percent ? Math.max(1, Math.floor((nums.length * Math.min(100, rank)) / 100)) : Math.min(rank, nums.length);
+            const cutoff = nums.length ? nums[take - 1] : null;
+            return (e) => cutoff !== null && e.num !== null && (rule.bottom ? e.num <= cutoff : e.num >= cutoff);
+        }
+        case "average": {
+            const nums = numbers();
+            const mean = nums.length ? nums.reduce((s, n) => s + n, 0) / nums.length : null;
+            return (e) => {
+                if (mean === null || e.num === null) return false;
+                switch (rule.mode) {
+                    case "below": return e.num < mean;
+                    case "equalAbove": return e.num >= mean;
+                    case "equalBelow": return e.num <= mean;
+                    default: return e.num > mean;
+                }
+            };
+        }
+        case "formula": {
+            const formula = String(rule.formula ?? "").trim();
+            const usable = !!evaluateAt && isReadableFormula(formula);
+            return (e) => {
+                if (!usable) return false;
+                const value = formulaAt(formula, e);
+                return value === true || (typeof value === "number" && value !== 0);
+            };
+        }
+        default: return () => false;
     }
-    return result;
 };

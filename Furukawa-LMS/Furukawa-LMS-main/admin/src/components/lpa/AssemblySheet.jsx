@@ -77,9 +77,8 @@ function AuditorSearchDropdown({ value, onChange, employeeMaster = [], disabled,
             setIsOpen(!isOpen);
           }
         }}
-        className={`w-full h-[34px] min-h-[34px] flex items-center justify-between gap-1.5 px-2.5 text-xs border rounded-md shadow-2xs transition-all ${
-          isOpen ? 'ring-2 ring-blue-500/20 border-blue-600 bg-white' : 'border-slate-300 bg-white hover:border-slate-400'
-        } ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'cursor-pointer'}`}
+        className={`w-full h-[34px] min-h-[34px] flex items-center justify-between gap-1.5 px-2.5 text-xs border rounded-md shadow-2xs transition-all ${isOpen ? 'ring-2 ring-blue-500/20 border-blue-600 bg-white' : 'border-slate-300 bg-white hover:border-slate-400'
+          } ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'cursor-pointer'}`}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <User size={13} className="text-slate-400 shrink-0" />
@@ -133,9 +132,8 @@ function AuditorSearchDropdown({ value, onChange, employeeMaster = [], disabled,
                     key={emp.id || emp.code || emp.name}
                     type="button"
                     onClick={() => handleSelect(emp)}
-                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-left rounded-md transition-colors cursor-pointer ${
-                      isSelected ? 'bg-blue-50 text-blue-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                    }`}
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-left rounded-md transition-colors cursor-pointer ${isSelected ? 'bg-blue-50 text-blue-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                      }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-slate-900 truncate">{emp.name}</div>
@@ -249,7 +247,7 @@ export default function AssemblySheet({
           setSectionsMaster(data);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     pdcaApi.getEmployees()
       .then(res => {
@@ -258,7 +256,7 @@ export default function AssemblySheet({
           setEmployeeMaster(list);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => { active = false; };
   }, []);
@@ -563,7 +561,7 @@ export default function AssemblySheet({
     return row.some(cell => {
       const text = String(cell?.value ?? cell?.formatted ?? '').toUpperCase();
       return (text.includes('AUDITOR NAME') && text.includes('AUDITOR SIGN')) ||
-             (text.includes('AUDITOR SIGN') && text.includes('DEPARTMENT'));
+        (text.includes('AUDITOR SIGN') && text.includes('DEPARTMENT'));
     });
   }, []);
 
@@ -612,6 +610,7 @@ export default function AssemblySheet({
         const isScore = c === scoreColumn && isChecklistRow;
         const isTotalRow = r === 37;
         const isPercentageRow = r === 38;
+        const isFocusCell = c === 1 && isChecklistRow;
         const isAreaCell = c === areaColumn && (r === 1 || isChecklistRow);
         const isScoreHeader = r === 1 && c === scoreColumn;
 
@@ -646,6 +645,7 @@ export default function AssemblySheet({
           c === 0 && r >= legendStart + 2 && r <= legendStart + 6 ? 'assembly-legend-label' : '',
           c === 0 && r === legendStart + 6 ? 'assembly-horizontal' : '',
           c === scoreColumn && (isChecklistRow || isTotalRow) ? 'assembly-score-cell' : '',
+          isFocusCell ? 'assembly-focus-cell' : '',
           isAreaCell ? 'assembly-area-cell' : '',
           isLegend ? 'assembly-legend-cell' : '',
           isLegendHeader ? 'assembly-legend-header' : '',
@@ -660,7 +660,7 @@ export default function AssemblySheet({
             c === 0 ? (
               <div className="assembly-total-label">Total Marks:</div>
             ) : c === 4 ? (
-              <div className="text-center font-black text-sm text-slate-900 py-1">{totalMarks}/</div>
+              <div className="text-center font-black text-sm text-slate-900 py-1">{totalMarks}</div>
             ) : c === 6 ? (
               <div className="assembly-score-container assembly-score-total" title="Total Score">
                 <span className="assembly-score-value font-black text-sm text-slate-900">{totalScore}</span>
@@ -720,6 +720,29 @@ export default function AssemblySheet({
                 <span className="assembly-score-value">{value}</span>
               )}
             </div>
+          ) : (isChecklistRow && (c === 1 || c === areaColumn)) ? (
+            <div className={`assembly-vertical-cell-wrapper ${c === 1 ? 'assembly-focus-wrapper' : 'assembly-area-wrapper'}`}>
+              <span
+                role={isAdmin ? 'textbox' : undefined}
+                contentEditable={isAdmin && !disabled}
+                suppressContentEditableWarning={true}
+                aria-label={`${sheet.name} ${columnName(c)}${r + 1}`}
+                onBlur={event => {
+                  if (!isAdmin) return;
+                  handleCellChange(r, c, event.currentTarget.innerText?.trim() || '');
+                  requestAnimationFrame(() => measureRow(r));
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+                className={`assembly-vertical-cell-text ${c === 1 ? 'assembly-focus-text' : 'assembly-area-text'}`}
+              >
+                {(value || '').replace(/\s+/g, ' ').trim()}
+              </span>
+            </div>
           ) : (
             <textarea
               aria-label={`${sheet.name} ${columnName(c)}${r + 1}`}
@@ -771,7 +794,7 @@ export default function AssemblySheet({
               <p className="assembly-header-subtitle-text">
                 Assembly Quality & Production
               </p>
-            </div> 
+            </div>
           </div>
 
           {/* Right Box: Auditor Name(s) with Search Dropdown + Add Auditor */}

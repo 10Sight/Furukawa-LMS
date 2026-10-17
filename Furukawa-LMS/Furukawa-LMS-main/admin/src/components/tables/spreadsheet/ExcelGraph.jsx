@@ -28,6 +28,10 @@ import { cn } from "@/utils/classNames.js";
 import FullScreenFrame from "./FullScreenFrame.jsx";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/common/ui/dialog.jsx";
 import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+    AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/common/ui/alert-dialog.jsx";
+import {
     RibbonGroup, RibbonBtn, RibbonDropdown, RibbonSplit, MenuItem, MenuSeparator, MenuHeader, MenuClose,
     RibbonStack, RibbonRow, RibbonDivider, RibbonCombo, ColorSplitButton,
 } from "./ribbonParts.jsx";
@@ -867,6 +871,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
     const [expandedPointSeries, setExpandedPointSeries] = useState(null); // series col letter, or null
     const [activeChartId, setActiveChartId] = useState(null);
     const [renamingChartId, setRenamingChartId] = useState(null);
+    const [chartToDelete, setChartToDelete] = useState(null); // the chart the "Delete chart?" confirmation is asking about
     const [renameValue, setRenameValue] = useState("");
     const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -1688,7 +1693,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                                     // Always there on the chart being shown (and on touch screens); on the others, on hover.
                                     chart.id === config?.id ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                                 )}
-                                onClick={(e) => { e.stopPropagation(); deleteChart(chart.id); }}
+                                onClick={(e) => { e.stopPropagation(); setChartToDelete(chart); }}
                                 title={`Delete ${chart.name}`}
                                 aria-label={`Delete ${chart.name}`}
                             >
@@ -2255,7 +2260,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                 </RibbonGroup>
 
                 <RibbonGroup label="Delete">
-                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5 hover:bg-red-50" title="Delete Chart: remove this chart (the data in the sheet stays)" onClick={() => deleteChart(config.id)}>
+                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5 hover:bg-red-50" title="Delete Chart: remove this chart (the data in the sheet stays)" onClick={() => setChartToDelete(config)}>
                         <IconTrash className="w-8 h-8 text-red-600" strokeWidth={1.3} />
                         <span className="text-xs leading-tight text-center">Delete<br />Chart</span>
                     </RibbonBtn>
@@ -2525,6 +2530,27 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                 }}
                 onOk={(key, comboSettings) => { applyVariant(key, comboSettings); setInsertDialog(null); }}
             />
+
+            {/* Asked before a chart is deleted (from its tab's × or the ribbon's Delete Chart). */}
+            <AlertDialog open={!!chartToDelete} onOpenChange={(open) => { if (!open) setChartToDelete(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete chart?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete the chart "{chartToDelete?.name}"? Only the chart is removed; the data in the sheet stays as it is.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="cursor-pointer bg-red-600 hover:bg-red-700 focus:ring-red-600 text-white"
+                            onClick={() => { if (chartToDelete) deleteChart(chartToDelete.id); setChartToDelete(null); }}
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
         </FullScreenFrame>
     );

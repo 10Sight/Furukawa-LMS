@@ -35,6 +35,8 @@ import {
     shiftSpan, shiftFormulaBands
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { forEachCellId, cellIdsOf, createCellMap, cellCountOf } from "../../../utils/spreadsheets/chunkedCells.js";
+import { uploadSheetVideo, videoFileProblem, SHEET_VIDEO_TYPES, VIDEO_MAX_BYTES } from "../../../utils/spreadsheets/sheetMediaUpload.js";
+import { getMediaUrl } from "../../../utils/mediaUtils.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { FUNCTION_CATALOG } from "../../../constants/spreadsheets/formulaCatalog.js";
 import { createPortal } from "react-dom";
@@ -68,7 +70,7 @@ import {
 } from "../../../utils/spreadsheets/commentEngine.js";
 import {
     parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, usedBoundsWithin, clearCellBlock, readClipboardHtmlStyles,
-    MAX_PASTE_CELLS, DENSE_WALK_CELLS, MAX_STYLED_PASTE_CELLS
+    mergesAfterPaste, shapesForPaste, MAX_PASTE_CELLS, DENSE_WALK_CELLS, MAX_STYLED_PASTE_CELLS
 } from "../../../utils/spreadsheets/clipboardInterop.js";
 import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
@@ -1182,8 +1184,9 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                 ) : (
                     <>
                         <video
-                            src={item.src}
+                            src={getMediaUrl(item.src)}
                             controls
+                            preload="metadata"
                             className={cn("bg-black", item.crop ? undefined : "w-full h-full")}
                             style={item.crop ? mediaCropStyle(item.crop) : undefined}
                         />
@@ -1202,7 +1205,7 @@ const DraggableMedia = ({ item, colOffsets, rowOffsets, columnCount, rowCount, o
                         {item.type === "image" ? (
                             <img src={item.src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain opacity-35 select-none pointer-events-none" />
                         ) : (
-                            <video src={item.src} muted className="absolute inset-0 w-full h-full object-contain opacity-35 pointer-events-none" />
+                            <video src={getMediaUrl(item.src)} muted preload="metadata" className="absolute inset-0 w-full h-full object-contain opacity-35 pointer-events-none" />
                         )}
                         <div
                             className="absolute border-2 border-indigo-400 bg-indigo-400/10"
@@ -1341,6 +1344,15 @@ const getDecimalPlaces = (numFmt) => {
     if (!numFmt) return undefined;
     const match = numFmt.match(/\.([0#]+)/);
     return match ? match[1].length : 0;
+};
+
+// A style read off pasted HTML (see clipboardInterop.js), with its Excel number
+// format code (`numFmt`) turned into this grid's number format, as an import does.
+const pastedCellStyle = (style) => {
+    if (!style?.numFmt) return style;
+    const { numFmt, ...rest } = style;
+    const numberFormat = mapNumberFormat(numFmt);
+    return numberFormat ? { ...rest, numberFormat, decimalPlaces: getDecimalPlaces(numFmt) } : rest;
 };
 
 // Hands control back to the browser for a frame so a progress-bar state
@@ -1841,9 +1853,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const isScrollingRef = useRef(false); // true while the grid is being scrolled, and for a moment after
     const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
 
-    // Import/export progress dialog. { title, label, current, total } | null —
+    // Import/export progress dialog. { title, label, current, total, unit?, onCancel? } | null —
     // total === 0 means an indeterminate phase (spinner only), since ExcelJS
-    // doesn't expose progress callbacks for its own parse/write step.
+    // doesn't expose progress callbacks for its own parse/write step. `unit` names
+    // what current/total count ("rows" by default); `onCancel` adds a Cancel button.
     const [ioProgress, setIoProgress] = useState(null);
 
     const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
@@ -2994,8 +3007,34 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         });
     }, [activeCell, activeSheetName, updateSheets]);
 
+    // A video is uploaded to the server and the sheet keeps its URL (see
+    // sheetMediaUpload.js); it's placed once the upload is done.
+    const insertVideoFile = useCallback(async (file) => {
+        const problem = videoFileProblem(file);
+        if (problem) { toast.error(problem); return; }
+        if (!meetingId && !sectionId) { toast.error("Save the sheet before adding a video file."); return; }
+        const controller = new AbortController();
+        const totalMb = Math.max(1, Math.ceil(file.size / (1024 * 1024)));
+        const progress = (loadedMb) => setIoProgress({
+            title: "Uploading Video", label: file.name, current: loadedMb, total: totalMb, unit: "MB", onCancel: () => controller.abort(),
+        });
+        progress(0);
+        try {
+            const uploaded = await uploadSheetVideo({
+                meetingId, sectionId, file, signal: controller.signal,
+                onProgress: (loaded) => progress(Math.min(totalMb, Math.floor(loaded / (1024 * 1024)))),
+            });
+            handleInsertMedia("video", uploaded.url, { name: uploaded.name });
+        } catch (err) {
+            if (!err.canceled) toast.error(err.message);
+        } finally {
+            setIoProgress(null);
+        }
+    }, [meetingId, sectionId, handleInsertMedia]);
+
     const handleInsertMediaFile = useCallback((type, file) => {
         if (!file) return;
+        if (type === "video") { insertVideoFile(file); return; }
         if (file.size > MEDIA_MAX_BYTES) {
             toast.error("File is too large to embed (max 8MB).");
             return;
@@ -3004,7 +3043,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         reader.onload = (evt) => handleInsertMedia(type, evt.target.result);
         reader.onerror = () => toast.error("Failed to read file.");
         reader.readAsDataURL(file);
-    }, [handleInsertMedia]);
+    }, [handleInsertMedia, insertVideoFile]);
 
     const handleUpdateMedia = useCallback((id, patch) => {
         updateSheets((next) => {
@@ -3389,9 +3428,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // value fills the whole selection, as in Excel. One undo step.
     //
     // `html` is the table the same copy put on the clipboard, if it did. The cells'
-    // colours, bold, italic, underline and alignment are taken from it, on top of the
-    // formatting each cell has — provided it has exactly the rows and columns the text
-    // has. Anything else about it is ignored: the values always come from the text.
+    // look is taken from it — colours, fonts, borders, alignment, wrap, number format —
+    // on top of the formatting each cell has, and so are its merged cells (replacing
+    // any the pasted block overlaps, as in Excel) and the shapes Excel drew over it,
+    // provided it has exactly the rows and columns the text has. The values always
+    // come from the text.
     const pasteExternalText = useCallback((text, html = "") => {
         if (!selectionBounds) return;
         if (isSheetReadOnly) { if (!readOnly) toast.info("This is a PivotTable — edit the source data instead."); return; }
@@ -3407,7 +3448,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
         const read = html && height * width <= MAX_STYLED_PASTE_CELLS ? readClipboardHtmlStyles(html) : null;
-        const styles = read && read.height === height && read.width === width ? read.styles : null;
+        const matched = read && read.height === height && read.width === width ? read : null;
+        const styles = matched ? matched.styles : null;
+        // A single value filling a selection doesn't bring its table's layout along.
+        const layout = matched && !single ? matched : null;
 
         updateSheets((workbook) => {
             const sheet = workbook[activeSheetName];
@@ -3419,7 +3463,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const sourceRow = single ? rows[0] : rows[r];
                 for (let c = 0; c < outWidth; c++) {
                     const value = (single ? sourceRow[0] : sourceRow[c]) ?? "";
-                    const style = styles ? styles[single ? 0 : r][single ? 0 : c] : null;
+                    const style = styles ? pastedCellStyle(styles[single ? 0 : r][single ? 0 : c]) : null;
                     const id = getCellId(targetRow + r, targetCol + c);
                     const existing = next[id];
                     if (!existing && !style && value === "") continue;
@@ -3429,7 +3473,23 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
                 }
             }
+            if (layout) {
+                sheet.merges = mergesAfterPaste(plainOf(sheet.merges) || [], layout.merges, { row: targetRow, col: targetCol, height: outHeight, width: outWidth });
+                const shapes = shapesForPaste(layout, {
+                    row: targetRow, col: targetCol, minSize: MEDIA_MIN_SIZE,
+                    widthOf: (col) => sheet.columnWidths?.[col] || DEFAULT_COLUMN_WIDTH,
+                    heightOf: (row) => sheet.rowHeights?.[row] || DEFAULT_ROW_HEIGHT,
+                });
+                if (shapes.length) {
+                    if (!sheet.media) sheet.media = [];
+                    for (const shape of shapes) sheet.media.push({ id: newMediaId(), ...shape });
+                }
+            }
         });
+        if (layout?.skippedPictures) {
+            const n = layout.skippedPictures;
+            toast.info(`${n} picture${n === 1 ? " wasn't" : "s weren't"} pasted — Excel doesn't share pictures with the browser. Add ${n === 1 ? "it" : "them"} with Insert > Picture.`);
+        }
 
         setSelectedMediaId(null);
         setSelection({ start: getCellId(targetRow, targetCol), end: getCellId(targetRow + outHeight - 1, targetCol + outWidth - 1) });
@@ -3488,6 +3548,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
             const text = e.clipboardData.getData("text/plain");
             const html = e.clipboardData.getData("text/html");
+            // Development aid: with localStorage "excelClone.captureClipboard" set to "1",
+            // each paste's raw text and HTML is kept in window.__excelCloneClipboard, to
+            // save as a test sample (server/test/fixtures/excel-clipboard).
+            if (import.meta.env?.DEV) {
+                try {
+                    if (localStorage.getItem("excelClone.captureClipboard") === "1") {
+                        window.__excelCloneClipboard = { text, html, types: [...(e.clipboardData.types || [])] };
+                        console.info("Clipboard captured: copy(JSON.stringify(window.__excelCloneClipboard)) to save it.");
+                    }
+                } catch { /* storage blocked: nothing to capture */ }
+            }
             if (clipboard && isOwnClip(ownClipRef.current, { text, html })) {
                 e.preventDefault();
                 handlePaste();
@@ -7215,10 +7286,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <Button variant="outline" size="sm" className="w-full h-7 text-xs cursor-pointer" onClick={() => mediaVideoInputRef.current?.click()}>
                                 <IconUpload className="w-3.5 h-3.5" /> Choose Video File
                             </Button>
+                            <p className="text-[10px] text-slate-400 px-1">MP4, WebM, Ogg or QuickTime, up to {VIDEO_MAX_BYTES / (1024 * 1024)} MB</p>
                             <input
                                 ref={mediaVideoInputRef}
                                 type="file"
-                                accept="video/*"
+                                accept={SHEET_VIDEO_TYPES.join(",")}
                                 className="hidden"
                                 onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleInsertMediaFile("video", f); setVideoPopoverOpen(false); } e.target.value = ""; }}
                             />
@@ -7866,11 +7938,16 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             {ioProgress.total > 0 ? (
                                 <>
                                     <Progress value={Math.round((ioProgress.current / ioProgress.total) * 100)} />
-                                    <p className="text-xs text-slate-400 text-right">{ioProgress.current.toLocaleString()} / {ioProgress.total.toLocaleString()} rows</p>
+                                    <p className="text-xs text-slate-400 text-right">{ioProgress.current.toLocaleString()} / {ioProgress.total.toLocaleString()} {ioProgress.unit || "rows"}</p>
                                 </>
                             ) : (
                                 <div className="flex justify-center py-2">
                                     <IconLoader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                                </div>
+                            )}
+                            {ioProgress.onCancel && (
+                                <div className="flex justify-end">
+                                    <Button variant="outline" size="sm" className="cursor-pointer" onClick={ioProgress.onCancel}>Cancel</Button>
                                 </div>
                             )}
                         </div>

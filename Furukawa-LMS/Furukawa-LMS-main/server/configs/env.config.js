@@ -83,6 +83,9 @@ const ENV = {
     // formats express does ("50mb", "1gb"). See middlewares/bodyLimits.middleware.js.
     JSON_BODY_LIMIT: process.env.JSON_BODY_LIMIT || "100mb",
     SHEET_BODY_LIMIT: process.env.SHEET_BODY_LIMIT || "1gb",
+    // Largest video file a spreadsheet takes (in bytes). Videos are uploaded as
+    // files and the sheet keeps only their URL; see middlewares/sheetMedia.middleware.js.
+    SHEET_VIDEO_MAX_BYTES: Number(process.env.SHEET_VIDEO_MAX_BYTES) || 200 * 1024 * 1024,
 
     INSTRUCTOR_URL: process.env.INSTRUCTOR_URL,
     STUDENT_URL: process.env.STUDENT_URL,

@@ -29,6 +29,8 @@ import {
     deleteCommentMessage,
     deleteCommentThread
 } from "../controllers/sheetComment.controller.js";
+import { requireMeetingSheetWrite, uploadSheetMedia } from "../controllers/sheetMedia.controller.js";
+import { sheetVideoUpload } from "../middlewares/sheetMedia.middleware.js";
 
 const router = Router();
 
@@ -57,6 +59,8 @@ router.post("/:id/clone", authorizeRoles("daily_meeting:create", "isAdmin", "SUP
 router.put("/:id", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), updateMeeting);
 router.post("/:id/sheet", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), saveMeetingSheet);
 router.post("/:id/sheet/patch", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), saveMeetingSheetPatch);
+// A video for the sheet, uploaded as a file; the sheet stores only its URL.
+router.post("/:id/sheet/media", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), requireMeetingSheetWrite, sheetVideoUpload, uploadSheetMedia);
 router.post("/:id/migrate-to-m365", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), migrateMeetingToM365);
 router.post("/:id/refresh-embed-url", authorizeRoles("daily_meeting:update", "isAdmin", "SUPERADMIN"), refreshMeetingEmbedUrl);
 // Reconciliation creates new rows for files found in SharePoint, so it's gated

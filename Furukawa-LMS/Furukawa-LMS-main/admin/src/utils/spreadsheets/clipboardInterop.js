@@ -266,11 +266,60 @@ const wrappedIn = (cell, tags) => {
     return false;
 };
 
+// CSS lengths, as screen pixels (96 per inch).
+const PX_PER_UNIT = { px: 1, pt: 96 / 72, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, pc: 16 };
+const lengthToPx = (value) => {
+    const m = /^\s*(-?[\d.]+)\s*(px|pt|in|cm|mm|pc)?\s*$/i.exec(String(value ?? ""));
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    return Number.isFinite(n) ? n * PX_PER_UNIT[(m[2] || "px").toLowerCase()] : null;
+};
+
+// One side of a cell border ("0.5pt solid windowtext", "1px solid #000", "none")
+// as the grid draws it: "thin", "thick" or "double", or null for none. Excel's
+// thin is .5pt and its medium 1pt; the grid shows medium and thick alike as thick.
+const borderSideOf = (value) => {
+    const v = String(value ?? "").trim().toLowerCase();
+    if (!v || /^(none|hidden|0)\b/.test(v) || /\bnone\b/.test(v)) return null;
+    if (/\bdouble\b/.test(v)) return "double";
+    // Excel writes widths in points (thin .5pt, medium 1pt, thick 1.5pt), Google
+    // Sheets in pixels (1px, 2px, 3px).
+    const width = /(-?[\d.]+)\s*(px|pt)/.exec(v);
+    if (width) {
+        const n = parseFloat(width[1]);
+        if (!(n > 0)) return null;
+        return n >= (width[2] === "pt" ? 1 : 2) ? "thick" : "thin";
+    }
+    if (/\b(thick|medium)\b/.test(v)) return "thick";
+    return "thin";
+};
+
+// Excel's `mso-number-format`, a CSS string holding a number format code with its
+// own characters escaped ("\#\,\#\#0\.00", "\0022$\0022\#\,\#\#0") or one of the
+// names Excel's HTML uses for its built-in formats.
+const NAMED_NUMBER_FORMATS = {
+    general: "General", "general number": "General", fixed: "0.00", standard: "#,##0.00", percent: "0.00%",
+    scientific: "0.00E+00", "short date": "m/d/yyyy", "medium date": "d-mmm-yy", "long date": "dddd, mmmm d, yyyy",
+    "short time": "h:mm", "medium time": "h:mm AM/PM", "long time": "h:mm:ss AM/PM", "@": "@",
+};
+const numberFormatOf = (value) => {
+    let v = String(value ?? "").trim();
+    if (!v) return null;
+    if (/^".*"$/.test(v) || /^'.*'$/.test(v)) v = v.slice(1, -1);
+    v = v.replace(/\\([0-9a-f]{1,6}) ?/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16))).replace(/\\(.)/g, "$1");
+    const named = NAMED_NUMBER_FORMATS[v.toLowerCase()];
+    const code = named || v;
+    return code === "General" ? null : code;
+};
+
 // A table cell's formatting as the grid stores it, or null when it has none.
+// `numFmt` is an Excel number format code, for the caller to turn into the grid's
+// own number formats.
 const cellStyleOf = (cell, classRules) => {
-    let css = {};
-    for (const name of String(cell.getAttribute("class") || "").split(/\s+/)) if (classRules[name]) css = { ...css, ...classRules[name] };
-    css = { ...css, ...parseDeclarations(cell.getAttribute("style")) };
+    let fromClasses = {};
+    for (const name of String(cell.getAttribute("class") || "").split(/\s+/)) if (classRules[name]) fromClasses = { ...fromClasses, ...classRules[name] };
+    const inline = parseDeclarations(cell.getAttribute("style"));
+    const css = { ...fromClasses, ...inline };
 
     const style = {};
     const bg = cssColorToHex(css["background-color"]) || backgroundColorOf(css.background);
@@ -285,26 +334,227 @@ const cellStyleOf = (cell, classRules) => {
     if (decoration.includes("line-through") || wrappedIn(cell, "s, strike, del")) style.strike = true;
     const align = String(css["text-align"] || "").toLowerCase();
     if (align === "left" || align === "center" || align === "right") style.align = align;
+
+    // Excel says how far a cell's own formatting reaches through classes; Google
+    // Sheets writes its defaults (bottom alignment, say) into every cell's style.
+    const valign = String(css["vertical-align"] || "").toLowerCase();
+    if (valign === "top" || valign === "middle" || (valign === "bottom" && String(fromClasses["vertical-align"] || "").toLowerCase() === "bottom")) style.valign = valign;
+    if (String(css["white-space"] || "").toLowerCase() === "normal") style.wrap = true;
+    const size = lengthToPx(css["font-size"]);
+    if (size && /pt\s*$/i.test(css["font-size"])) style.fontSize = Math.round(parseFloat(css["font-size"]));
+    else if (size) style.fontSize = Math.round(size * 72 / 96);
+    const family = String(css["font-family"] || "").split(",")[0].trim().replace(/^["']|["']$/g, "");
+    if (family && !/^(serif|sans-serif|monospace|inherit)$/i.test(family)) style.fontFamily = family;
+
+    const border = {};
+    const all = borderSideOf(css.border);
+    for (const side of ["top", "right", "bottom", "left"]) {
+        const own = css[`border-${side}`];
+        const value = own !== undefined ? borderSideOf(own) : all;
+        if (value) border[side] = value;
+    }
+    if (Object.keys(border).length) style.border = border;
+
+    const numFmt = numberFormatOf(css["mso-number-format"]);
+    if (numFmt) style.numFmt = numFmt;
+    const rotate = parseInt(css["mso-rotate"], 10);
+    if (Number.isFinite(rotate) && rotate !== 0) style.rotation = rotate;
+    const indent = parseInt(css["mso-char-indent-count"], 10);
+    if (Number.isFinite(indent) && indent > 0) style.indent = indent;
     return Object.keys(style).length ? style : null;
 };
 
+// --- Shapes in Excel's HTML ---
+// Excel writes the shapes over a copied range as VML, inside conditional comments
+// (`<!--[if gte vml 1]> ... <![endif]-->`) in the cell each one starts in. Their
+// kind is the element (v:rect, v:oval, ...) or, for v:shape, the number of the
+// built-in shape type it names (`type="#_x0000_t5"`, `o:spt="5"`).
+
+// Excel's built-in shape types (MSO_SPT) and the grid's shape for each.
+const SHAPE_BY_SPT = {
+    1: "rect", 2: "roundRect", 3: "ellipse", 4: "diamond", 5: "triangle", 6: "rightTriangle", 7: "parallelogram",
+    8: "trapezoid", 9: "hexagon", 10: "octagon", 11: "cross", 12: "star5", 13: "arrowRight", 15: "pentagon",
+    20: "lineStraight", 32: "lineStraight", 33: "connectorElbow", 34: "connectorElbow", 55: "chevron", 56: "pentagon",
+    58: "star8", 61: "callout", 62: "callout", 63: "callout", 66: "arrowLeft", 67: "arrowDown", 68: "arrowUp",
+    69: "arrowLeftRight", 187: "star4", 202: "rect",
+};
+const PICTURE_SPT = 75;
+const SHAPE_ELEMENTS = { "v:rect": "rect", "v:roundrect": "roundRect", "v:oval": "ellipse", "v:line": "lineStraight", "v:shape": null };
+const LINE_SHAPES = new Set(["lineStraight", "connectorElbow"]);
+
+// The first descendant of `el` with this tag name ("v:stroke"), looked up by name:
+// a CSS selector can't be counted on to read the colon in it.
+const firstTag = (el, name) => {
+    for (const child of el.getElementsByTagName("*")) if (String(child.tagName).toLowerCase() === name) return child;
+    return null;
+};
+const SHAPE_CONTAINERS = new Set(["v:group", "v:shape", "v:rect", "v:oval", "v:roundrect", "v:line"]);
+// Whether `el` sits inside another shape, or a group (whose coordinates are its own).
+const insideShape = (el, holder) => {
+    for (let p = el.parentElement; p && p !== holder; p = p.parentElement) if (SHAPE_CONTAINERS.has(String(p.tagName).toLowerCase())) return true;
+    return false;
+};
+
+// A VML colour ("#4472c4 [3204]", "white [3212]", "red") as "#rrggbb", or null.
+const vmlColorOf = (value) => {
+    const first = String(value ?? "").trim().split(/\s+/)[0];
+    return first ? cssColorToHex(first) : null;
+};
+const isOff = (value) => /^(f|false|0)$/i.test(String(value ?? "").trim());
+
+// The comment nodes directly inside `el` that hold VML.
+const vmlCommentsIn = (el) => [...el.childNodes].filter((n) => n.nodeType === 8 && /^\[if gte vml 1\]>/i.test(n.data || ""));
+
+// The elements of one VML comment, parsed on their own.
+const vmlElementsOf = (comment, doc) => {
+    const markup = String(comment.data).replace(/^\[if gte vml 1\]>/i, "").replace(/<!\[endif\]\s*$/i, "")
+        // VML is XML: `<v:oval .../>` is a whole element, which HTML would read as an
+        // opening tag and put everything after it inside.
+        .replace(/<([a-z]+:[\w-]+)(\s[^<>]*?)?\/>/gi, "<$1$2></$1>");
+    const holder = doc.createElement("div");
+    holder.innerHTML = markup; // a detached element: nothing in it is loaded or run
+    return holder;
+};
+
+// The text in a shape's v:textbox, with its first run's look.
+const shapeTextOf = (vml, classRules) => {
+    const box = firstTag(vml, "v:textbox");
+    if (!box) return null;
+    const lines = [...box.querySelectorAll("div, p")].map((el) => String(el.textContent || "").replace(/\s+/g, " ").trim());
+    const text = (lines.length ? lines : [String(box.textContent || "").trim()]).join("\n").trim();
+    if (!text) return null;
+    const textStyle = {};
+    const run = box.querySelector("font, span");
+    if (run) {
+        const rules = {};
+        for (const name of String(run.getAttribute("class") || "").split(/\s+/)) Object.assign(rules, classRules[name]);
+        Object.assign(rules, parseDeclarations(run.getAttribute("style")));
+        const color = cssColorToHex(rules.color);
+        if (color) textStyle.color = color;
+        const weight = String(rules["font-weight"] || "").toLowerCase();
+        if (weight === "bold" || Number(weight) >= 600) textStyle.bold = true;
+        if (/^italic/i.test(rules["font-style"] || "")) textStyle.italic = true;
+        if (/pt\s*$/i.test(rules["font-size"] || "")) textStyle.fontSize = Math.round(parseFloat(rules["font-size"]));
+    }
+    const align = String(parseDeclarations(box.querySelector("div, p")?.getAttribute("style"))["text-align"] || "").toLowerCase();
+    if (align === "left" || align === "center" || align === "right") textStyle.align = align;
+    return { text, textStyle };
+};
+
+// The shapes in one VML comment, with their position in pixels from the top-left
+// of the cell the comment is in. `types` maps a v:shapetype's id to its MSO_SPT.
+const shapesOfComment = (holder, types, classRules, counts) => {
+    const shapes = [];
+    for (const el of holder.getElementsByTagName("*")) {
+        const tag = el.tagName.toLowerCase();
+        if (tag === "v:shapetype") {
+            const spt = parseInt(el.getAttribute("o:spt"), 10);
+            if (el.id && Number.isFinite(spt)) types[el.id] = spt;
+            continue;
+        }
+        if (!(tag in SHAPE_ELEMENTS) || insideShape(el, holder)) continue;
+        const css = parseDeclarations(el.getAttribute("style"));
+        if (String(css.visibility || "").toLowerCase() === "hidden") continue;
+
+        let shape = SHAPE_ELEMENTS[tag];
+        if (tag === "v:shape") {
+            const typeRef = String(el.getAttribute("type") || "").replace(/^#/, "");
+            const spt = parseInt(el.getAttribute("o:spt"), 10) || types[typeRef] || parseInt(/_x0000_t(\d+)$/.exec(typeRef)?.[1], 10);
+            if (spt === PICTURE_SPT || firstTag(el, "v:imagedata")) { counts.pictures++; continue; }
+            shape = SHAPE_BY_SPT[spt] || "rect";
+        }
+
+        let x = lengthToPx(css["margin-left"]) ?? lengthToPx(css.left) ?? 0;
+        let y = lengthToPx(css["margin-top"]) ?? lengthToPx(css.top) ?? 0;
+        let width = lengthToPx(css.width), height = lengthToPx(css.height);
+        if (tag === "v:line") {
+            const point = (v) => String(v || "0,0").split(",").map((p) => lengthToPx(p) ?? 0);
+            const [x1, y1] = point(el.getAttribute("from")), [x2, y2] = point(el.getAttribute("to"));
+            x = Math.min(x1, x2); y = Math.min(y1, y2);
+            width = Math.abs(x2 - x1); height = Math.abs(y2 - y1);
+        }
+        if (!(width >= 0) || !(height >= 0)) continue;
+
+        const stroke = firstTag(el, "v:stroke");
+        const fill = firstTag(el, "v:fill");
+        const strokeOn = !isOff(el.getAttribute("stroked")) && !isOff(stroke?.getAttribute("on"));
+        const strokeColor = vmlColorOf(stroke?.getAttribute("color") || el.getAttribute("strokecolor")) || "#000000";
+        const strokeWidth = lengthToPx(stroke?.getAttribute("weight") || el.getAttribute("strokeweight") || "0.75pt");
+        const arrowAtEnd = /\S/.test(stroke?.getAttribute("endarrow") || "") && !/^none$/i.test(stroke.getAttribute("endarrow"));
+        const arrowAtStart = /\S/.test(stroke?.getAttribute("startarrow") || "") && !/^none$/i.test(stroke.getAttribute("startarrow"));
+
+        let rotation = parseFloat(css.rotation) || 0;
+        if (shape === "lineStraight" && width > 0 && height > 0) {
+            // The grid draws a straight line across the middle of its box and turns the
+            // box; Excel gives the box the line runs corner to corner in (flipped when it
+            // runs up instead of down).
+            const flip = String(css.flip || "").toLowerCase();
+            const rising = flip.includes("y") !== flip.includes("x");
+            const length = Math.hypot(width, height);
+            const cx = x + width / 2, cy = y + height / 2;
+            rotation += (rising ? -1 : 1) * (Math.atan2(height, width) * 180) / Math.PI;
+            x = cx - length / 2; y = cy; width = length; height = 0;
+        }
+        const item = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+        if (LINE_SHAPES.has(shape)) {
+            // A line has the one colour, its fill; arrowheads are separate shapes in the grid.
+            if (shape === "lineStraight") shape = arrowAtStart && arrowAtEnd ? "lineArrowDouble" : arrowAtEnd || arrowAtStart ? "lineArrow" : "lineStraight";
+            else if (arrowAtEnd || arrowAtStart) shape = "connectorElbowArrow";
+            item.fill = strokeOn ? strokeColor : "none";
+        } else {
+            const fillOn = !isOff(el.getAttribute("filled")) && !isOff(fill?.getAttribute("on"));
+            item.fill = fillOn ? vmlColorOf(fill?.getAttribute("color") || el.getAttribute("fillcolor")) || "#ffffff" : "none";
+            item.stroke = strokeOn ? strokeColor : "none";
+        }
+        item.shape = shape;
+        if (strokeWidth) item.strokeWidth = Math.max(1, Math.round(strokeWidth));
+        if (Number.isFinite(rotation) && Math.round(rotation) % 360 !== 0) item.rotation = Math.round(rotation);
+        const text = shape.startsWith("line") || shape.startsWith("connector") ? null : shapeTextOf(el, classRules);
+        if (text) {
+            item.text = text.text;
+            const anchor = String(css["v-text-anchor"] || "").toLowerCase();
+            const valign = anchor.startsWith("top") ? "top" : anchor.startsWith("bottom") ? "bottom" : null;
+            item.textStyle = { ...text.textStyle, ...(valign && { valign }) };
+        }
+        shapes.push(item);
+    }
+    return shapes;
+};
+
 /**
- * The formatting of the cells of the first table in a parsed HTML document, row by
- * row: { height, width, styles }, where `styles[row][col]` is what to merge into that
- * cell ({ bg, color, bold, italic, underline, strike, align }, only those it has) or
- * null. A cell spanning several rows or columns gives its formatting to all of them.
- * null when the document has no table, or no cell of it has any formatting.
+ * What a parsed HTML document's first table says about the cells it holds, row by
+ * row: { height, width, styles, merges?, shapes?, columnWidths?, rowHeights?,
+ * skippedPictures? }.
+ *   styles[row][col]  what to merge into that cell (see cellStyleOf), or null. A
+ *                     cell spanning several rows or columns gives it to all of them.
+ *   merges            [{ row, col, rowSpan, colSpan }] — the table's merged cells.
+ *                     A span Excel only uses to let text run on into empty cells
+ *                     (`mso-ignore:colspan`) isn't one.
+ *   shapes            Excel's shapes over the range: { row, col, x, y, width,
+ *                     height, shape, fill, stroke?, strokeWidth?, rotation?, text?,
+ *                     textStyle? }, at (x, y) pixels from the top-left of cell (row, col).
+ *   columnWidths, rowHeights   the table's own sizes in pixels (null where it
+ *                     gives none), for placing the shapes — only with shapes.
+ *   skippedPictures   how many pictures were over the range: Excel's HTML refers
+ *                     to them as files on the copying computer, out of reach here.
+ * null when the document has no table, or nothing of the above to give.
  */
 export const parseClipboardHtmlStyles = (doc) => {
     const table = doc?.querySelector?.("table");
     if (!table) return null;
     const classRules = classRulesOf(doc);
     const styles = [];
+    const merges = [];
+    const shapes = [];
+    const rowHeights = [];
+    const counts = { pictures: 0 };
+    const types = {};
     let width = 0, any = false;
     // Rows of this table only, not of a table nested in one of its cells.
     const rows = [...table.querySelectorAll("tr")].filter((tr) => tr.closest("table") === table);
     rows.forEach((tr, r) => {
         const row = styles[r] || (styles[r] = []);
+        rowHeights[r] = lengthToPx(parseDeclarations(tr.getAttribute("style")).height) ?? lengthToPx(tr.getAttribute("height"));
         let c = 0;
         for (const cell of tr.children) {
             const tag = String(cell.tagName).toLowerCase();
@@ -314,16 +564,81 @@ export const parseClipboardHtmlStyles = (doc) => {
             const rowSpan = span("rowspan"), colSpan = span("colspan");
             const style = cellStyleOf(cell, classRules);
             if (style) any = true;
+            const classCss = String(cell.getAttribute("class") || "").split(/\s+/).map((n) => classRules[n]?.["mso-ignore"] || "").join(" ");
+            const overflowOnly = /colspan/i.test(`${parseDeclarations(cell.getAttribute("style"))["mso-ignore"] || ""} ${classCss}`);
             for (let dr = 0; dr < rowSpan && r + dr < rows.length; dr++) {
                 const into = styles[r + dr] || (styles[r + dr] = []);
-                for (let dc = 0; dc < colSpan; dc++) into[c + dc] = style;
+                // Text running on into empty cells doesn't give them its cell's look.
+                for (let dc = 0; dc < colSpan; dc++) into[c + dc] = overflowOnly && dc > 0 ? null : style;
+            }
+            if (rowSpan > 1 || (colSpan > 1 && !overflowOnly)) merges.push({ row: r, col: c, rowSpan: Math.min(rowSpan, rows.length - r), colSpan });
+            for (const comment of vmlCommentsIn(cell)) {
+                for (const shape of shapesOfComment(vmlElementsOf(comment, doc), types, classRules, counts)) shapes.push({ row: r, col: c, ...shape });
             }
             c += colSpan;
         }
         width = Math.max(width, row.length);
     });
-    if (!any) return null;
-    return { height: styles.length, width, styles: styles.map((row) => Array.from({ length: width }, (_, c) => row[c] ?? null)) };
+    if (!any && !merges.length && !shapes.length && !counts.pictures) return null;
+    const out = { height: styles.length, width, styles: styles.map((row) => Array.from({ length: width }, (_, c) => row[c] ?? null)) };
+    if (merges.length) out.merges = merges;
+    if (shapes.length) {
+        out.shapes = shapes;
+        const columnWidths = Array(width).fill(null);
+        let c = 0;
+        for (const col of [...table.querySelectorAll("col")].filter((el) => el.closest("table") === table)) {
+            const px = lengthToPx(parseDeclarations(col.getAttribute("style")).width) ?? lengthToPx(col.getAttribute("width"));
+            const n = Math.max(1, parseInt(col.getAttribute("span"), 10) || 1);
+            for (let i = 0; i < n && c < width; i++) columnWidths[c++] = px;
+        }
+        out.columnWidths = columnWidths;
+        out.rowHeights = rowHeights.map((h) => h ?? null);
+    }
+    if (counts.pictures) out.skippedPictures = counts.pictures;
+    return out;
+};
+
+// Where a shape read off Excel's HTML goes in the grid: its corners are found
+// within the source's cells (as a cell and a fraction of it) and put at the same
+// place within the target's cells, so a shape that sat over two columns of the
+// source sits over the same two columns here whatever their widths.
+//   shape         one of parseClipboardHtmlStyles' `shapes`
+//   source        { columnWidths, rowHeights } from it (null entries: Excel's defaults)
+//   targetWidth(c), targetHeight(r)   the target's sizes, c and r counted from the
+//                 top-left of the paste
+// Returns { row, col, offsetX, offsetY, width, height }, row and col counted from
+// the top-left of the paste.
+const EXCEL_DEFAULT_COLUMN_PX = 64;
+const EXCEL_DEFAULT_ROW_PX = 20;
+export const placeClipboardShape = (shape, source, targetWidth, targetHeight) => {
+    const sourceWidth = (c) => source.columnWidths?.[c] || EXCEL_DEFAULT_COLUMN_PX;
+    const sourceHeight = (r) => source.rowHeights?.[r] || EXCEL_DEFAULT_ROW_PX;
+    // `offset` pixels from the start of line `start` -> { index, fraction } of a line.
+    const locate = (start, offset, size) => {
+        let index = start, left = offset;
+        while (left < 0 && index > 0) { index--; left += size(index); }
+        while (left >= size(index) && index < start + 10000) { left -= size(index); index++; }
+        return { index, fraction: Math.max(0, left) / size(index) };
+    };
+    // The same place in the target, in pixels from the paste's top-left edge.
+    const position = ({ index, fraction }, size) => {
+        let px = 0;
+        for (let i = 0; i < index; i++) px += size(i);
+        return px + fraction * size(index);
+    };
+    const x1 = position(locate(shape.col, shape.x, sourceWidth), targetWidth);
+    const y1 = position(locate(shape.row, shape.y, sourceHeight), targetHeight);
+    const x2 = position(locate(shape.col, shape.x + shape.width, sourceWidth), targetWidth);
+    const y2 = position(locate(shape.row, shape.y + shape.height, sourceHeight), targetHeight);
+    // The cell the top-left corner falls in, and how far into it.
+    const start = (px, size) => {
+        let index = 0, left = px;
+        while (left >= size(index) && index < 100000) { left -= size(index); index++; }
+        return [index, Math.round(left)];
+    };
+    const [col, offsetX] = start(x1, targetWidth);
+    const [row, offsetY] = start(y1, targetHeight);
+    return { row, col, offsetX, offsetY, width: Math.max(1, Math.round(x2 - x1)), height: Math.max(1, Math.round(y2 - y1)) };
 };
 
 /**
@@ -338,3 +653,42 @@ export const readClipboardHtmlStyles = (html) => {
         return null;
     }
 };
+
+/**
+ * A sheet's merges after a paste of `pasted` (parseClipboardHtmlStyles' `merges`,
+ * relative to the paste) at (row, col) over a block `height` x `width`: those
+ * overlapping the block are gone, as in Excel, and the pasted ones are added.
+ * @param {Array<{ start: string, end: string }>} existing
+ * @returns {Array<{ start: string, end: string }>}
+ */
+export const mergesAfterPaste = (existing, pasted, { row, col, height, width }) => {
+    const overlaps = (m) => {
+        const a = parseCellRef(m.start), b = parseCellRef(m.end);
+        if (!a || !b) return false;
+        const r1 = Math.min(a.row, b.row), r2 = Math.max(a.row, b.row), c1 = Math.min(a.col, b.col), c2 = Math.max(a.col, b.col);
+        return r1 < row + height && r2 >= row && c1 < col + width && c2 >= col;
+    };
+    const kept = (existing || []).filter((m) => !overlaps(m));
+    for (const m of pasted || []) {
+        const lastRow = Math.min(m.row + m.rowSpan, height) - 1, lastCol = Math.min(m.col + m.colSpan, width) - 1;
+        if (lastRow <= m.row && lastCol <= m.col) continue; // cut down to one cell by the block's edge
+        kept.push({ start: getCellId(row + m.row, col + m.col), end: getCellId(row + lastRow, col + lastCol) });
+    }
+    return kept;
+};
+
+/**
+ * The floating shapes a paste at (row, col) adds: parseClipboardHtmlStyles' `shapes`
+ * placed over the target's cells (see placeClipboardShape), as media items without
+ * ids. `widthOf(col)` / `heightOf(row)` are the sheet's sizes, in sheet coordinates;
+ * a shape smaller than `minSize` either way is grown to it about its centre (a
+ * line's box, say, which Excel gives no height).
+ */
+export const shapesForPaste = (read, { row, col, widthOf, heightOf, minSize = 1 }) => (read?.shapes || []).map((shape) => {
+    const at = placeClipboardShape(shape, read, (c) => widthOf(col + c), (r) => heightOf(row + r));
+    const width = Math.max(minSize, at.width), height = Math.max(minSize, at.height);
+    const offsetX = at.offsetX - Math.round((width - at.width) / 2), offsetY = at.offsetY - Math.round((height - at.height) / 2);
+    const item = { type: "shape", shape: shape.shape, row: row + at.row, col: col + at.col, offsetX, offsetY, width, height, fill: shape.fill };
+    for (const key of ["stroke", "strokeWidth", "rotation", "text", "textStyle"]) if (shape[key] !== undefined) item[key] = shape[key];
+    return item;
+});

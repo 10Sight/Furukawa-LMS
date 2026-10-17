@@ -8,7 +8,7 @@ import {
 import ccTemplate from './ccTemplate.json' with { type: 'json' };
 
 test('1. Observation dropdown contains exactly four options: O, △, ×, NA', () => {
-  assert.deepEqual(OBSERVATION_OPTIONS, ['O', '△', '×', 'NA']);
+  assert.deepEqual(OBSERVATION_OPTIONS, ['Ο', 'Δ', 'Χ', 'NA']);
   assert.equal(OBSERVATION_OPTIONS.length, 4);
 });
 

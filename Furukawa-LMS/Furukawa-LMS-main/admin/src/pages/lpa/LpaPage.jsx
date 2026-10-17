@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx';
 import { useOutletContext } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord } from './ccTemplate';
@@ -49,12 +49,27 @@ function LpaPageContent({ viewContext }) {
   const [activeSubTab, setActiveSubTab] = useState('lpa');
   const [customPdcaTopic, setCustomPdcaTopic] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showUnsavedAlert, setShowUnsavedAlert] = useState(false);
+  const showUnsavedAlertRef = useRef(false);
+  showUnsavedAlertRef.current = showUnsavedAlert;
+  const initialSnapshotRef = useRef(null);
   const uploadSection = useRef('assembly');
   const fileInput = useRef(null);
   const requestInFlight = useRef(false);
   const seededSampleScopes = useRef(new Set());
   const dirtyRef = useRef(false);
-  dirtyRef.current = dirty || Boolean(pendingUpload) || busy;
+
+  const hasUnsavedChanges = useCallback(() => {
+    if (!dirty || !editor) return false;
+    if (!initialSnapshotRef.current) return true;
+    try {
+      return JSON.stringify(editor) !== initialSnapshotRef.current;
+    } catch {
+      return true;
+    }
+  }, [dirty, editor]);
+
+  dirtyRef.current = hasUnsavedChanges() || Boolean(pendingUpload) || busy;
   const draftKey = useCallback(id => `lpa_draft_${userId}_${id}`, [userId]);
   const uploadDraftKey = `lpa_upload_draft_${userId}`;
 
@@ -101,7 +116,8 @@ function LpaPageContent({ viewContext }) {
     catch { /* The live editor is retained; Back still requires a successful save. */ }
   }, [editor, dirty, draftKey]);
 
-  const openSheet = async (record, index) => {
+  const openSheet = async (recordInput, index) => {
+    let record = recordInput?.section === 'assembly' ? upgradeAssemblyRecord(recordInput) : recordInput;
     const needsTemplateUpgrade = Boolean(record._needsTemplateUpgrade);
     if (needsTemplateUpgrade) {
       record = { ...record };
@@ -137,9 +153,77 @@ function LpaPageContent({ viewContext }) {
     setSheetIndex(index);
     setZoom(150);
     setEditor(next);
+    initialSnapshotRef.current = JSON.stringify(next);
   };
+  const authUser = useSelector(state => state.auth?.user);
+  const isAdmin = Boolean(
+    authUser?.isAdmin ||
+    authUser?.role === 'ADMIN' ||
+    authUser?.role === 'SUPERADMIN' ||
+    authUser?.role === 'superadmin' ||
+    authUser?.role === 'admin'
+  );
+
+  const updateSheetMetadata = useCallback((metadata) => {
+    setEditor(previous => {
+      if (!previous) return previous;
+      const updatedSheets = previous.sheets.map((s, idx) => {
+        if (idx !== sheetIndex) return s;
+        const nextRows = [...s.rows];
+        if (nextRows[0] && Array.isArray(nextRows[0])) {
+          const row0 = [...nextRows[0]];
+          if (metadata.date || metadata.shift) {
+            const d = metadata.date || s.date || previous.auditDate || '';
+            const sh = metadata.shift || s.shift || '';
+            row0[0] = { ...row0[0], value: `Date: ${d} | Shift: ${sh}`, formatted: `Date: ${d} | Shift: ${sh}`, type: 's' };
+          }
+          if (metadata.auditors || metadata.department || metadata.sectionName || metadata.line) {
+            const aud = (metadata.auditors || s.auditors || []).filter(Boolean).join(', ');
+            const dept = metadata.department || s.department || '';
+            const sec = metadata.sectionName || s.sectionName || '';
+            const ln = metadata.line || s.line || '';
+            row0[5] = { ...row0[5], value: `Auditor: ${aud} | Dept: ${dept}${sec ? ' | Sec: ' + sec : ''}${ln ? ' | Line: ' + ln : ''}`, formatted: `Auditor: ${aud} | Dept: ${dept}${sec ? ' | Sec: ' + sec : ''}${ln ? ' | Line: ' + ln : ''}`, type: 's' };
+          }
+          nextRows[0] = row0;
+        }
+        return {
+          ...s,
+          ...metadata,
+          rows: nextRows
+        };
+      });
+      return {
+        ...previous,
+        ...metadata,
+        sheets: updatedSheets
+      };
+    });
+    setDirty(true);
+  }, [sheetIndex]);
+
   const saveEditor = async () => {
     if (!editor || requestInFlight.current) return false;
+
+    // Mandatory validation for Assembly check sheet: Date, Shift, Department
+    if (editor.section === 'assembly' && isAssemblyCheckSheet(sheet)) {
+      const formDate = sheet?.date || editor?.date || editor?.auditDate;
+      const formShift = sheet?.shift || editor?.shift;
+      const formDept = sheet?.department || editor?.department;
+
+      if (!formDate) {
+        setMessage({ error: true, text: 'Date is mandatory. Please select an audit date.' });
+        return false;
+      }
+      if (!formShift) {
+        setMessage({ error: true, text: 'Shift is mandatory. Please select a shift (A, B, C, or G).' });
+        return false;
+      }
+      if (!formDept) {
+        setMessage({ error: true, text: 'Department is mandatory. Please select a department.' });
+        return false;
+      }
+    }
+
     requestInFlight.current = true;
     setBusy(true);
     try {
@@ -147,6 +231,7 @@ function LpaPageContent({ viewContext }) {
       setRecords(previous => previous.map(record => record.id === saved.id ? saved : record));
       setEditor(saved);
       setDirty(false);
+      initialSnapshotRef.current = JSON.stringify(saved);
       try { localStorage.removeItem(draftKey(saved.id)); } catch { /* Browser storage save already succeeded. */ }
       setMessage({ text: 'LPA changes saved successfully.' });
       return true;
@@ -166,17 +251,52 @@ function LpaPageContent({ viewContext }) {
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
     finally { requestInFlight.current = false; setBusy(false); }
   };
-  const back = async () => {
-    if (busy) return;
-    if (dirty && !await saveEditor()) return;
+  const discardAndExit = useCallback(() => {
+    setShowUnsavedAlert(false);
+    if (editor?.id) {
+      try { localStorage.removeItem(draftKey(editor.id)); } catch { /* Cleaned up local draft */ }
+    }
     setEditor(null);
     setDirty(false);
-  };
+    initialSnapshotRef.current = null;
+  }, [editor?.id, draftKey]);
+
+  const handleStayOnPage = useCallback(() => {
+    setShowUnsavedAlert(false);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    if (busy) return;
+    if (hasUnsavedChanges()) {
+      setShowUnsavedAlert(true);
+      return;
+    }
+    discardAndExit();
+  }, [busy, hasUnsavedChanges, discardAndExit]);
+
+  // Handle browser Back button popstate
+  useEffect(() => {
+    if (!editor) return;
+    window.history.pushState({ lpaEditor: true }, '');
+    const handlePopState = () => {
+      if (hasUnsavedChanges()) {
+        window.history.pushState({ lpaEditor: true }, '');
+        if (!showUnsavedAlertRef.current) {
+          setShowUnsavedAlert(true);
+        }
+      } else {
+        discardAndExit();
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [Boolean(editor), hasUnsavedChanges, discardAndExit]);
   const upload = async workbook => {
-    if (!selectedUnit || !selectedLevel) { setMessage({ error: true, text: 'Please select Unit and Level before uploading a workbook.' }); return; }
+    if (!selectedUnit) { setMessage({ error: true, text: 'Please select Unit before uploading a workbook.' }); return; }
     if (workbook.unit && workbook.unit !== selectedUnit) { setMessage({ error: true, text: `Select ${workbook.unit} to retry this workbook upload.` }); return; }
-    if (workbook.level && workbook.level !== selectedLevel) { setMessage({ error: true, text: `Select ${workbook.level} to retry this workbook upload.` }); return; }
-    workbook = { ...workbook, unit: workbook.unit || selectedUnit, level: workbook.level || selectedLevel };
+    workbook = { ...workbook, unit: workbook.unit || selectedUnit, level: workbook.level || 'L1' };
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setBusy(true);
@@ -200,28 +320,31 @@ function LpaPageContent({ viewContext }) {
     event.target.value = '';
     if (!file) return;
     try {
-      if (!selectedUnit || !selectedLevel) throw new Error('Please select Unit and Level before uploading a workbook.');
+      if (!selectedUnit) throw new Error('Please select Unit before uploading a workbook.');
       if (!/\.xlsx?$/i.test(file.name)) throw new Error('Please upload an .xlsx or .xls Excel file.');
       if (file.size > 15 * 1024 * 1024) throw new Error('The Excel file must be smaller than 15 MB.');
-    const imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate };
+    let imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit, level: 'L1', auditDate: pdcaDate };
+    if (uploadSection.current === 'assembly') {
+      imported = upgradeAssemblyRecord(imported);
+    }
       await upload(imported);
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
   };
   const sheet = editor?.sheets?.[sheetIndex];
-  const scopedRecords = records.filter(record => record.unit === selectedUnit && (record.level || 'L1') === selectedLevel);
+  const scopedRecords = records.filter(record => record.unit === selectedUnit);
   const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
   const sectionRecords = scopedRecords.filter(record => record.section === activeSection);
-  const displayRecords = !selectedUnit || !selectedLevel ? [] : activeSection === 'assembly'
-    ? (sectionRecords.length ? sectionRecords : [...sectionRecords, { ...assemblyTemplate, unit: selectedUnit, level: selectedLevel }])
+  const displayRecords = !selectedUnit ? [] : activeSection === 'assembly'
+    ? (sectionRecords.length ? sectionRecords.map(upgradeAssemblyRecord) : [...sectionRecords, { ...assemblyTemplate, unit: selectedUnit, level: 'L1' }])
     : matchingCcTemplate
       ? sectionRecords.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
-      : [...sectionRecords, { ...ccTemplate, unit: selectedUnit, level: selectedLevel }];
-  const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && (record.level || 'L1') === selectedLevel && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
+      : [...sectionRecords, { ...ccTemplate, unit: selectedUnit, level: 'L1' }];
+  const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
   const visibleRecords = baseVisibleRecords.length > 0 ? baseVisibleRecords : (
-    !selectedUnit || !selectedLevel ? [] : [
+    !selectedUnit ? [] : [
       activeSection === 'assembly'
-        ? { ...assemblyTemplate, unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate, name: `${assemblyTemplate.name} · ${pdcaDate}` }
-        : { ...ccTemplate, unit: selectedUnit, level: selectedLevel, auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
+        ? { ...assemblyTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${assemblyTemplate.name} · ${pdcaDate}` }
+        : { ...ccTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
     ]
   );
   const exportAllRecords = () => {
@@ -266,16 +389,16 @@ function LpaPageContent({ viewContext }) {
 
   const pdcaTopic = useMemo(() => {
     if (customPdcaTopic) return customPdcaTopic;
-    if (!selectedUnit || !selectedLevel) return null;
+    if (!selectedUnit) return null;
     return getLpaPdcaTopic({
       section: activeSection,
       unit: selectedUnit,
-      level: selectedLevel,
+      level: 'L1',
       date: pdcaDate,
       records,
       templates: { assemblyTemplate, ccTemplate }
     });
-  }, [customPdcaTopic, activeSection, selectedUnit, selectedLevel, pdcaDate, records]);
+  }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records]);
 
   const handleBackFromPDCA = () => {
     setCustomPdcaTopic(null);
@@ -370,7 +493,7 @@ function LpaPageContent({ viewContext }) {
   if (editor && sheet) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden">
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 bg-white shrink-0">
       <button type="button" disabled={busy} onClick={saveEditor} className={primary}><Save size={16} />{busy ? 'Saving…' : 'Save'}</button>
-      <button type="button" disabled={busy} onClick={back} className={button}><ArrowLeft size={16} />Back</button>
+      <button type="button" disabled={busy} onClick={handleBack} className={button}><ArrowLeft size={16} />Back</button>
       <span className="text-xs text-slate-500 truncate max-w-xs">{editor.name} · {sheet.name}{dirty ? ' · Unsaved changes' : ''}</span>
       <div className="ml-auto flex items-center gap-2">
         <button type="button" onClick={() => setZoom(value => Math.min(200, value + 10))} disabled={zoom >= 200} className={button} title="Zoom In"><ZoomIn size={16} /><span className="sr-only">Zoom In</span></button>
@@ -381,7 +504,14 @@ function LpaPageContent({ viewContext }) {
     </div>
     <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
       {editor.section === 'assembly' && isAssemblyCheckSheet(sheet) ? <div style={{ zoom: `${zoom}%` }}>
-        <AssemblySheet sheet={sheet} disabled={busy} onChange={changeCell} />
+        <AssemblySheet
+          sheet={sheet}
+          editor={editor}
+          disabled={busy}
+          onChange={changeCell}
+          onMetadataChange={updateSheetMetadata}
+          isAdmin={isAdmin}
+        />
       </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
         <div style={{ zoom: `${zoom}%` }}>
           <CcSheet sheet={sheet} disabled={busy} onChange={changeCell} />
@@ -406,6 +536,48 @@ function LpaPageContent({ viewContext }) {
         </table>
       </div>}
     </div>
+
+    {/* Unsaved Changes Confirmation Modal */}
+    {showUnsavedAlert && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unsaved-alert-title"
+      >
+        <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-full bg-amber-100 text-amber-600 shrink-0">
+              <AlertTriangle size={22} />
+            </div>
+            <div>
+              <h3 id="unsaved-alert-title" className="text-base font-semibold text-slate-900">
+                Unsaved Changes
+              </h3>
+              <p className="text-sm text-slate-600 mt-1">
+                You have unsaved changes. Are you sure you want to go back without saving?
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleStayOnPage}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            >
+              Stay on Page
+            </button>
+            <button
+              type="button"
+              onClick={discardAndExit}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>;
 
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-slate-800">
@@ -428,23 +600,6 @@ function LpaPageContent({ viewContext }) {
             <ChevronDown size={16} className="pointer-events-none absolute right-3 text-slate-400" />
           </div>
         </div>
-
-        {/* Levels Option - down side of unit option */}
-        <div className="pt-1">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Levels</label>
-          <div className="relative inline-flex items-center">
-            <select
-              value={selectedLevel}
-              onChange={event => setSelectedLevel(event.target.value)}
-              className={`${button} min-w-[200px] appearance-none pr-9 text-left font-medium`}
-              aria-label="Select level"
-            >
-              <option value="">Select Level</option>
-              {LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
-            </select>
-            <ChevronDown size={16} className="pointer-events-none absolute right-3 text-slate-400" />
-          </div>
-        </div>
       </div>
 
       <div className="flex items-center gap-3">
@@ -454,53 +609,66 @@ function LpaPageContent({ viewContext }) {
     <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />
     {loading ? <p role="status" className="text-sm text-slate-500">Loading saved LPA workbooks…</p> : <section className="space-y-5">
       {status}
-      {pendingUpload && selectedUnit && selectedLevel && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy || (pendingUpload.unit && pendingUpload.unit !== selectedUnit) || (pendingUpload.level && pendingUpload.level !== selectedLevel)} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
-      {(!selectedUnit || !selectedLevel) ? (
+      {pendingUpload && selectedUnit && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy || (pendingUpload.unit && pendingUpload.unit !== selectedUnit)} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
+      {!selectedUnit ? (
         <p className="rounded-xl border border-blue-100 bg-blue-50 p-8 text-center text-sm font-medium text-blue-800">
-          {!selectedUnit ? 'Please select Unit to view data.' : 'Please select Level to view data.'}
+          Please select Unit to view data.
         </p>
       ) : <>
-      <div className="flex flex-wrap gap-1 rounded-2xl bg-slate-50 p-2 shadow-sm" role="tablist" aria-label="LPA pages">
-        {SECTIONS.map(section => (
-          <button
-            key={section.id}
-            type="button"
-            role="tab"
-            aria-selected={activeSection === section.id}
-            onClick={() => {
-              setActiveSection(section.id);
-              setActiveSubTab('lpa');
-              setCustomPdcaTopic(null);
-            }}
-            className={`rounded-xl px-5 py-3 text-sm font-semibold transition-colors ${activeSection === section.id ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/70'}`}
-          >
-            {section.label}
-          </button>
-        ))}
+      <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label="LPA pages">
+        {SECTIONS.map(section => {
+          const isActive = activeSection === section.id;
+          return (
+            <button
+              key={section.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => {
+                setActiveSection(section.id);
+                setActiveSubTab('lpa');
+                setCustomPdcaTopic(null);
+              }}
+              className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                isActive
+                  ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+              }`}
+            >
+              <span>{section.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="space-y-5">
         {['assembly', 'cc'].includes(activeSection) && (
-          <div className="flex gap-1 border-b border-slate-200" role="tablist" aria-label={`${activeSection === 'assembly' ? 'Assembly' : 'C&C'} form views`}>
+          <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label={`${activeSection === 'assembly' ? 'Assembly' : 'C&C'} form views`}>
             {[
               { id: 'lpa', label: 'LPA' },
-              { id: 'pdca', label: 'LPA Observation (PDCA)' },
-              { id: 'all_pdca', label: 'All PDCA' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeSubTab === tab.id}
-                onClick={() => {
-                  setActiveSubTab(tab.id);
-                  setCustomPdcaTopic(null);
-                }}
-                className={`border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${activeSubTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+              { id: 'pdca', label: 'LPA Observation (PDCA)' }
+            ].map(tab => {
+              const isActive = activeSubTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => {
+                    setActiveSubTab(tab.id);
+                    setCustomPdcaTopic(null);
+                  }}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -511,16 +679,6 @@ function LpaPageContent({ viewContext }) {
             selectedUnit={selectedUnit}
             mode="observations"
             pdcaDate={pdcaDate}
-            onOpenRecord={handleOpenPdcaRecord}
-            onEditRecord={handleEditPdcaRecord}
-            onCreateNew={handleCreateNewPdca}
-          />
-        ) : ['assembly', 'cc'].includes(activeSection) && activeSubTab === 'all_pdca' ? (
-          <LpaPdcaTableView
-            section={activeSection}
-            sectionLabel={activeSection === 'assembly' ? 'Assembly' : 'C&C'}
-            selectedUnit={selectedUnit}
-            mode="all"
             onOpenRecord={handleOpenPdcaRecord}
             onEditRecord={handleEditPdcaRecord}
             onCreateNew={handleCreateNewPdca}
@@ -552,7 +710,7 @@ function LpaPageContent({ viewContext }) {
               </button>
               <button
                 type="button"
-                disabled={busy || !selectedUnit || !selectedLevel}
+                disabled={busy || !selectedUnit}
                 onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
                 className={primary}
               >
@@ -560,7 +718,7 @@ function LpaPageContent({ viewContext }) {
               </button>
               <button
                 type="button"
-                disabled={busy || !selectedUnit || !selectedLevel}
+                disabled={busy || !selectedUnit}
                 onClick={() => {
                   setActiveSubTab('pdca');
                   setCustomPdcaTopic(null);
@@ -580,7 +738,6 @@ function LpaPageContent({ viewContext }) {
                     <th className="px-4 py-3 text-left">Worksheet</th>
                     <th className="px-4 py-3 text-left">Audit date</th>
                     <th className="px-4 py-3 text-left">Unit</th>
-                    <th className="px-4 py-3 text-left">Level</th>
                     <th className="px-4 py-3 text-left">Rows</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -593,7 +750,6 @@ function LpaPageContent({ viewContext }) {
                       <td className="px-4 py-4">{current.name}</td>
                       <td className="px-4 py-4">{record.auditDate || 'Legacy workbook'}</td>
                       <td className="px-4 py-4">{record.unit || 'Bawal'}</td>
-                      <td className="px-4 py-4">{record.level || 'L1'}</td>
                       <td className="px-4 py-4">{current.rows.length}</td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
@@ -612,7 +768,7 @@ function LpaPageContent({ viewContext }) {
               </table>
               {visibleRecords.length === 0 && (
                 <p className="p-8 text-center text-sm text-slate-500">
-                  No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} · {selectedLevel} on {pdcaDate}. Upload an Excel workbook to get started.
+                  No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Upload an Excel workbook to get started.
                 </p>
               )}
             </div>

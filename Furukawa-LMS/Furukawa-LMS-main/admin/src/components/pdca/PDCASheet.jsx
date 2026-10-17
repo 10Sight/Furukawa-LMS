@@ -84,7 +84,11 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageAfter: customDefaults.imageAfter || null,
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
+  stdDurationMin: customDefaults.stdDurationMin !== undefined ? customDefaults.stdDurationMin : (customDefaults.stdDuration !== undefined ? customDefaults.stdDuration : ''),
   responseDate: customDefaults.responseDate || '',
+  noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : (customDefaults.noOfTimesRevised !== undefined ? customDefaults.noOfTimesRevised : 0),
+  respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
+  responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
   responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
   staffEmployee: customDefaults.staffEmployee || '',
   staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
@@ -405,13 +409,26 @@ export default function PDCASheet({
       status = 'In - Progress';
     }
 
-    // Section P Unit: only retained if Department is present
-    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (department ? (row.unit || '') : '');
+    // Section P Unit
+    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (row.unit || '');
+    const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
+      ? row.stdDurationMin
+      : (row.stdDuration !== undefined && row.stdDuration !== null ? row.stdDuration : '');
+    const noOfTimeRevised = (row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null)
+      ? row.noOfTimeRevised
+      : (row.noOfTimesRevised !== undefined && row.noOfTimesRevised !== null ? row.noOfTimesRevised : 0);
+    const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
+      ? row.respUnit
+      : (row.responsiblePersonUnit || row.respUnit || '');
 
     return {
       ...row,
       department,
       unit,
+      stdDurationMin,
+      noOfTimeRevised,
+      respUnit,
+      responsiblePersonUnit: respUnit,
       confirmation,
       status,
       section,
@@ -2366,7 +2383,7 @@ export default function PDCASheet({
     return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
-  const totalCols = effectiveReadOnly ? 17 : 18;
+  const totalCols = effectiveReadOnly ? 21 : 22;
 
   return (
     <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
@@ -2473,6 +2490,7 @@ export default function PDCASheet({
             <col style={{ width: '38px', minWidth: '34px' }} />
             <col style={{ width: '34px', minWidth: '30px' }} />
             <col style={{ width: '82px', minWidth: '78px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '95px', minWidth: '90px' }} />
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
@@ -2481,7 +2499,10 @@ export default function PDCASheet({
             <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
             <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '56px', minWidth: '52px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '85px', minWidth: '75px' }} />
             <col style={{ width: '155px', minWidth: '140px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
@@ -2512,7 +2533,7 @@ export default function PDCASheet({
                 会議名
               </th>
               <th
-                colSpan={9}
+                colSpan={11}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2533,7 +2554,7 @@ export default function PDCASheet({
                 作成者 :
               </th>
               <th
-                colSpan={totalCols - 13}
+                colSpan={totalCols - 15}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2558,7 +2579,7 @@ export default function PDCASheet({
                 出席者
               </th>
               <th
-                colSpan={9}
+                colSpan={11}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2579,7 +2600,7 @@ export default function PDCASheet({
                 議事録No
               </th>
               <th
-                colSpan={totalCols - 13}
+                colSpan={totalCols - 15}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2603,7 +2624,7 @@ export default function PDCASheet({
 
               {/* P: Plan */}
               <th
-                colSpan={7}
+                colSpan={8}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Plan (P)"
               >
@@ -2612,7 +2633,7 @@ export default function PDCASheet({
 
               {/* D: Do */}
               <th
-                colSpan={3}
+                colSpan={5}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Do (D)"
               >
@@ -2621,7 +2642,7 @@ export default function PDCASheet({
 
               {/* C: Check */}
               <th
-                colSpan={3}
+                colSpan={4}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Check (C)"
               >
@@ -2630,7 +2651,7 @@ export default function PDCASheet({
 
               {/* A: Act */}
               <th
-                colSpan={totalCols - 16}
+                colSpan={totalCols - 20}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Act (A)"
               >
@@ -2650,6 +2671,9 @@ export default function PDCASheet({
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Status</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                <span>Unit</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Department</span>
@@ -2783,11 +2807,19 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 Image After
               </th>
+              <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]">
+                <div className="font-semibold text-slate-800">Std. Duration</div>
+                <div className="font-semibold text-[9.5px] text-slate-600">in min</div>
+              </th>
               <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
                 <div className="text-[10px] leading-tight font-semibold">Response</div>
                 <div className="text-[10px] leading-tight font-semibold">Date</div>
               </th>
-              <th colSpan={3} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
+              <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]">
+                <div className="font-semibold text-slate-800">No. of time</div>
+                <div className="font-semibold text-slate-800">Revised</div>
+              </th>
+              <th colSpan={4} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
                 <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
                   Responsible Person Confirmation
                 </div>
@@ -2803,6 +2835,9 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[9.5px] select-none text-center">
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[80px] min-w-[75px]">
+                Unit
+              </th>
               <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[85px] min-w-[75px]">
                 Dept
               </th>
@@ -2885,47 +2920,45 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 5. Department (Dropdown with the 13 required departments) & Dependent Unit Dropdown */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px] focus-within:bg-blue-50/30">
-                      <div className="w-full flex flex-col items-center justify-center gap-0.5 py-0.5">
-                        <div className="relative w-full flex items-center justify-center">
-                          <select
-                            disabled={effectiveReadOnly}
-                            value={row.department || ''}
-                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                            title={row.department || 'Select Department'}
-                          >
-                            <option value="">Dept...</option>
-                            {departmentsList.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
-                            ))}
-                          </select>
-                          {!effectiveReadOnly && (
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          )}
-                        </div>
+                    {/* 5. Unit (Section P) - Immediately before Department */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                      <div className="relative w-full flex items-center justify-center">
+                        <select
+                          disabled={effectiveReadOnly}
+                          value={row.unit || ''}
+                          onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                          title={row.unit || 'Select Unit'}
+                        >
+                          <option value="">Unit...</option>
+                          <option value="Bawal">Bawal</option>
+                          <option value="Gujrat">Gujrat</option>
+                        </select>
+                        {!effectiveReadOnly && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
+                      </div>
+                    </td>
 
-                        {/* Dependent Unit Dropdown: Displayed ONLY after a Department has been selected */}
-                        {Boolean(row.department) && (
-                          <div className="relative w-full flex items-center justify-center border-t border-slate-200/80 pt-0.5">
-                            <select
-                              disabled={effectiveReadOnly}
-                              value={row.unit || ''}
-                              onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
-                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-0.5 text-[10px] text-blue-700 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
-                              title={row.unit ? `Unit: ${row.unit}` : 'Select Unit'}
-                            >
-                              <option value="">Unit...</option>
-                              <option value="Bawal">Bawal</option>
-                              <option value="Gujrat">Gujrat</option>
-                            </select>
-                            {!effectiveReadOnly && (
-                              <ChevronDown className="w-2.5 h-2.5 text-blue-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            )}
-                          </div>
+                    {/* 6. Department (Dropdown with the 13 required departments) */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px] focus-within:bg-blue-50/30">
+                      <div className="relative w-full flex items-center justify-center">
+                        <select
+                          disabled={effectiveReadOnly}
+                          value={row.department || ''}
+                          onChange={(e) => handleDepartmentChange(idx, e.target.value)}
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                          title={row.department || 'Select Department'}
+                        >
+                          <option value="">Dept...</option>
+                          {departmentsList.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                        {!effectiveReadOnly && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         )}
                       </div>
                     </td>
@@ -3269,7 +3302,39 @@ export default function PDCASheet({
                       })()}
                     </td>
 
-                    {/* 11. Response Date (Stacked: Format on top, Calendar icon below, centered) */}
+                    {/* Std. Duration in min - Immediately after Image After */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                      <div className="w-full flex items-center justify-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={row.stdDurationMin !== undefined && row.stdDurationMin !== null ? row.stdDurationMin : ''}
+                          readOnly={effectiveReadOnly}
+                          disabled={effectiveReadOnly}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') {
+                              handleCellChange(idx, 'stdDurationMin', '');
+                              return;
+                            }
+                            const num = parseFloat(raw);
+                            if (isNaN(num) || num < 0) return;
+                            handleCellChange(idx, 'stdDurationMin', raw);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+                              e.preventDefault();
+                            }
+                          }}
+                          placeholder={effectiveReadOnly ? '-' : '0'}
+                          className={`w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors ${effectiveReadOnly ? 'cursor-default' : ''}`}
+                          title="Standard duration in minutes"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
@@ -3280,7 +3345,111 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 14. Department Dropdown in Responsible Person Confirmation */}
+                    {/* No. of time Revised - Immediately after Response date */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                      <div className="w-full flex items-center justify-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null ? row.noOfTimeRevised : ''}
+                          readOnly={effectiveReadOnly}
+                          disabled={effectiveReadOnly}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') {
+                              handleCellChange(idx, 'noOfTimeRevised', '');
+                              return;
+                            }
+                            const num = parseInt(raw, 10);
+                            if (isNaN(num) || num < 0) return;
+                            handleCellChange(idx, 'noOfTimeRevised', num);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === '.' || e.key === 'e' || e.key === 'E') {
+                              e.preventDefault();
+                            }
+                          }}
+                          placeholder={effectiveReadOnly ? '-' : '0'}
+                          className={`w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors ${effectiveReadOnly ? 'cursor-default' : ''}`}
+                          title="Number of times response has been revised"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Unit in Responsible Person Confirmation - Immediately before Dept */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
+                      {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {row.staffEmployees.map((emp, empIdx) => (
+                            <div
+                              key={empIdx}
+                              className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
+                            >
+                              <select
+                                disabled={effectiveReadOnly}
+                                value={emp.unit || row.respUnit || ''}
+                                onChange={(e) => {
+                                  const newUnit = e.target.value;
+                                  setRows((prev) => {
+                                    const updated = [...prev];
+                                    const curr = updated[idx];
+                                    const newEmps = [...curr.staffEmployees];
+                                    newEmps[empIdx] = { ...newEmps[empIdx], unit: newUnit };
+                                    updated[idx] = {
+                                      ...curr,
+                                      staffEmployees: newEmps,
+                                      respUnit: empIdx === 0 ? newUnit : curr.respUnit,
+                                      responsiblePersonUnit: empIdx === 0 ? newUnit : curr.responsiblePersonUnit
+                                    };
+                                    return updated;
+                                  });
+                                }}
+                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                                title={emp.unit || row.respUnit || 'Select Unit'}
+                              >
+                                <option value="">Unit...</option>
+                                <option value="Bawal">Bawal</option>
+                                <option value="Gujrat">Gujrat</option>
+                              </select>
+                              {!effectiveReadOnly && (
+                                <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
+                          <select
+                            disabled={effectiveReadOnly}
+                            value={row.respUnit || row.responsiblePersonUnit || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRows((prev) => {
+                                const updated = [...prev];
+                                updated[idx] = {
+                                  ...updated[idx],
+                                  respUnit: val,
+                                  responsiblePersonUnit: val
+                                };
+                                return updated;
+                              });
+                            }}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                            title={row.respUnit || row.responsiblePersonUnit || 'Select Unit'}
+                          >
+                            <option value="">Unit...</option>
+                            <option value="Bawal">Bawal</option>
+                            <option value="Gujrat">Gujrat</option>
+                          </select>
+                          {!effectiveReadOnly && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Department Dropdown in Responsible Person Confirmation */}
                     <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[85px] min-w-[75px]">
                       {row.staffEmployees && row.staffEmployees.length > 1 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">

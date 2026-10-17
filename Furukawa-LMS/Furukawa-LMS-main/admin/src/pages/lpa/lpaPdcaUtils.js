@@ -1,26 +1,50 @@
-export const OBSERVATION_OPTIONS = ['O', '△', '×', 'NA'];
+export const OBSERVATION_OPTIONS = ['Ο', 'Δ', 'Χ', 'NA'];
 
 export function normalizeObservationSymbol(val) {
   if (val === null || val === undefined || val === '') return '';
   const trimmed = String(val).trim();
-  // Match Latin O/o, Greek Ο, white circle ○, heavy circle ⭕
-  if (['O', 'o', 'Ο', '○', '⭕'].includes(trimmed)) return 'O';
-  // Match White Triangle △, Greek Δ, Black Triangle ▲
-  if (['△', 'Δ', '▲'].includes(trimmed)) return '△';
-  // Match Multiplication ×, Latin X/x, Greek Χ, Cross ❌
-  if (['×', 'X', 'x', 'Χ', '❌'].includes(trimmed)) return '×';
+  // Match Greek Ο, Latin O/o, white circle ○, heavy circle ⭕
+  if (['Ο', 'O', 'o', '○', '⭕'].includes(trimmed)) return 'Ο';
+  // Match Greek Δ, White Triangle △, Black Triangle ▲
+  if (['Δ', '△', '▲'].includes(trimmed)) return 'Δ';
+  // Match Greek Χ, Multiplication ×, Latin X/x, Cross ❌
+  if (['Χ', '×', 'X', 'x', '❌'].includes(trimmed)) return 'Χ';
   if (trimmed.toUpperCase() === 'NA') return 'NA';
   return trimmed;
 }
 
-export function getScoreForObservation(val) {
-  const normalized = normalizeObservationSymbol(val);
-  if (normalized === 'O') return 3;
-  if (normalized === '△') return 3;
-  if (normalized === '×') return 0;
+export function calculateAssemblyScore(observation, marks) {
+  const normalized = normalizeObservationSymbol(observation);
+  if (!normalized) return '';
   if (normalized === 'NA') return 'NA';
+  if (normalized === 'Χ') return 0;
+
+  const numMarks = Number(marks);
+  const baseMarks = Number.isFinite(numMarks) ? numMarks : 0;
+
+  if (normalized === 'Ο') {
+    return Math.max(0, baseMarks);
+  }
+  if (normalized === 'Δ') {
+    return Math.max(0, baseMarks - 1);
+  }
   return '';
 }
+
+export function getScoreForObservation(val, marks) {
+  const normalized = normalizeObservationSymbol(val);
+  if (!normalized) return '';
+  if (normalized === 'NA') return 'NA';
+  if (normalized === 'Χ') return 0;
+
+  if (marks !== undefined && marks !== null && marks !== '') {
+    return calculateAssemblyScore(val, marks);
+  }
+  if (normalized === 'Ο') return 3;
+  if (normalized === 'Δ') return 3;
+  return '';
+}
+
 
 export function createEmptyPdcaRow(customDefaults = {}) {
   return {
@@ -94,7 +118,7 @@ export function extractObservationsFromSheet(sheet, record, date) {
     const normObs = normalizeObservationSymbol(obsVal);
     // Findings (non-conformance or items marked with symbols)
     const hasSymbol = Boolean(normObs);
-    const isIssue = ['×', '△', 'Χ', 'Δ', 'X', 'x'].includes(normObs);
+    const isIssue = ['Χ', 'Δ'].includes(normObs);
 
     if (hasSymbol) {
       const lineArea = currentArea || focusVal || sectionVal || (section === 'assembly' ? 'Assembly Area' : 'C&C Area');

@@ -506,7 +506,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                                 </div>
                             )}
                             <ExcelErrorBoundary key={selectedMeeting.id} title="Spreadsheet failed to render" description="The spreadsheet hit an unexpected error. Changes you already saved are not affected.">
-                                <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} />
+                                <ExcelClone ref={excelRef} meetingId={String(selectedMeeting.id)} readOnly={mode === "view"} onDataChange={setExcelState} scrollPageFirst />
                             </ExcelErrorBoundary>
                         </CardContent>
                     </Card>

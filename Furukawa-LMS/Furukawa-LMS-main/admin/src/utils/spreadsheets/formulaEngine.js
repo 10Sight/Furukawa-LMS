@@ -742,6 +742,12 @@ const usedRangeOf = (cells) => {
     return index.used;
 };
 
+/**
+ * The last row and column holding a value ({ maxRow, maxCol }, 0-based; 0 for an
+ * empty sheet). Remembered per cell map like the formula index, so cheap to ask again.
+ */
+export const sheetUsedRange = (cells) => usedRangeOf(cells);
+
 // Tells the engine that `nextCells` is `prevCells` with only `changedIds`
 // added, replaced or removed, so its index can be derived instead of rebuilt.
 // Purely an optimization: skipping the call (or calling it for a sheet that

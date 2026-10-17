@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/common/ui/button.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { Checkbox } from "@/components/forms/primitives/checkbox.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 import {
-    IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette,
+    IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette, IconTrash,
     IconLayoutAlignTop, IconLayoutAlignBottom, IconLayoutAlignLeft, IconLayoutAlignRight, IconEyeOff,
     IconChevronDown, IconChevronUp, IconMaximize, IconMinimize, IconChartBar,
     IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal,
@@ -891,6 +891,16 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
         [activeSheet?.charts, activeSheet?.chartConfig, columnCount, rowCount]
     );
     const config = charts.find((c) => c.id === activeChartId) || charts[0];
+    // The charts as of the last render, for an Undo clicked after they've changed.
+    const chartsRef = useRef(charts);
+    chartsRef.current = charts;
+    // A deleted chart's Undo is offered only while its sheet is still the one shown:
+    // charts are saved to the active sheet, so it would land on the wrong one.
+    const undoToastRef = useRef(null);
+    useEffect(() => {
+        if (undoToastRef.current !== null) toast.dismiss(undoToastRef.current);
+        undoToastRef.current = null;
+    }, [excelData?.activeSheetName]);
 
     const columnOptions = useMemo(() => Array.from({ length: columnCount }, (_, i) => indexToCol(i)), [columnCount]);
 
@@ -1111,10 +1121,26 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
         return [...new Set(list)].slice(0, 8);
     }, [dialogPrepared]);
 
+    // Chart edits aren't steps of the grid's undo history, so a deleted chart (one
+    // inserted by mistake, say) can be put back from the toast that says it's gone.
     const deleteChart = (id) => {
+        const index = charts.findIndex((c) => c.id === id);
+        if (index === -1) return;
+        const removed = charts[index];
         const nextCharts = charts.filter((c) => c.id !== id);
-        if (activeChartId === id) setActiveChartId(nextCharts[0]?.id ?? null);
+        if (config?.id === id) setActiveChartId(nextCharts[Math.min(index, nextCharts.length - 1)]?.id ?? null);
         onChartsChange?.(nextCharts);
+        const restore = () => {
+            undoToastRef.current = null;
+            const current = chartsRef.current;
+            if (current.some((c) => c.id === removed.id)) return;
+            const restored = [...current];
+            restored.splice(Math.min(index, restored.length), 0, removed);
+            setActiveChartId(removed.id);
+            onChartsChange?.(restored);
+        };
+        if (undoToastRef.current !== null) toast.dismiss(undoToastRef.current);
+        undoToastRef.current = toast.success(`Deleted "${removed.name}".`, { action: { label: "Undo", onClick: restore }, duration: 8000 });
     };
 
     const startRenameChart = (chart) => { setRenamingChartId(chart.id); setRenameValue(chart.name); };
@@ -1657,11 +1683,16 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         )}
                         {!readOnly && renamingChartId !== chart.id && (
                             <button
-                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
+                                className={cn(
+                                    "p-0.5 -mr-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer",
+                                    // Always there on the chart being shown (and on touch screens); on the others, on hover.
+                                    chart.id === config?.id ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                                )}
                                 onClick={(e) => { e.stopPropagation(); deleteChart(chart.id); }}
-                                title="Delete chart"
+                                title={`Delete ${chart.name}`}
+                                aria-label={`Delete ${chart.name}`}
                             >
-                                <IconX className="w-3 h-3" />
+                                <IconX className="w-3.5 h-3.5" />
                             </button>
                         )}
                     </div>
@@ -2220,6 +2251,13 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                     <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Change Chart Type" onClick={() => openInsertDialog("all")}>
                         <IconChartBar className="w-8 h-8 text-blue-700" strokeWidth={1.3} />
                         <span className="text-xs leading-tight text-center">Change<br />Chart Type</span>
+                    </RibbonBtn>
+                </RibbonGroup>
+
+                <RibbonGroup label="Delete">
+                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5 hover:bg-red-50" title="Delete Chart: remove this chart (the data in the sheet stays)" onClick={() => deleteChart(config.id)}>
+                        <IconTrash className="w-8 h-8 text-red-600" strokeWidth={1.3} />
+                        <span className="text-xs leading-tight text-center">Delete<br />Chart</span>
                     </RibbonBtn>
                 </RibbonGroup>
 

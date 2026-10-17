@@ -102,12 +102,24 @@ const escapeHtml = (value) => String(value ?? "")
  * their line breaks intact. The table carries `clipId`, so that a paste back into the
  * grid can tell this copy from whatever else may be on the clipboard by then.
  * `styleAt(rowIndex, colIndex)`, if given, is a cell's formatting as inline CSS ("" for
- * none), which is how its colours and font reach the program pasted into.
+ * none), which is how its colours and font reach the program pasted into. `merges`
+ * ([{ row, col, rowSpan, colSpan }], relative to the rows) become cells spanning
+ * rows and columns, as Excel writes merged cells.
  */
-export const serializeCellsToHtml = (rows, clipId, styleAt = null) => {
+export const serializeCellsToHtml = (rows, clipId, styleAt = null, merges = []) => {
+    const height = rows.length, width = gridSize(rows).width;
+    const covered = new Set(); // cells a merge spans, other than its top-left one
+    const spans = new Map(); // "row,col" of a merge's top-left cell -> its span attributes
+    for (const m of merges || []) {
+        const rowSpan = Math.min(m.rowSpan, height - m.row), colSpan = Math.min(m.colSpan, width - m.col);
+        if (m.row >= height || m.col >= width || (rowSpan < 2 && colSpan < 2)) continue;
+        spans.set(`${m.row},${m.col}`, `${rowSpan > 1 ? ` rowspan="${rowSpan}"` : ""}${colSpan > 1 ? ` colspan="${colSpan}"` : ""}`);
+        for (let r = m.row; r < m.row + rowSpan; r++) for (let c = m.col; c < m.col + colSpan; c++) if (r !== m.row || c !== m.col) covered.add(`${r},${c}`);
+    }
     const body = rows.map((row, r) => `<tr>${row.map((value, c) => {
+        if (covered.has(`${r},${c}`)) return "";
         const style = styleAt ? styleAt(r, c) : "";
-        return `<td${style ? ` style="${escapeHtml(style)}"` : ""}>${escapeHtml(value).replace(/\r\n?|\n/g, "<br>")}</td>`;
+        return `<td${spans.get(`${r},${c}`) || ""}${style ? ` style="${escapeHtml(style)}"` : ""}>${escapeHtml(value).replace(/\r\n?|\n/g, "<br>")}</td>`;
     }).join("")}</tr>`).join("");
     return `<table ${CLIP_ATTRIBUTE}="${escapeHtml(clipId)}"><tbody>${body}</tbody></table>`;
 };
@@ -119,18 +131,67 @@ export const readClipMarker = (html) => {
 };
 
 /**
- * What a copy of `rows` puts on the clipboard. `styleAt` is as for serializeCellsToHtml,
- * and is only asked when the table is written.
+ * What a copy of `rows` puts on the clipboard. `styleAt` and `merges` are as for
+ * serializeCellsToHtml; `styleAt` is only asked when the table is written.
  * @returns {{ id: string, text: string, html: string|null }}
  */
-export const buildClipboardPayload = (rows, styleAt = null) => {
+export const buildClipboardPayload = (rows, styleAt = null, merges = []) => {
     const id = newClipId();
     const { height, width } = gridSize(rows);
     return {
         id,
         text: serializeCellsToText(rows),
-        html: height * width <= MAX_HTML_CELLS ? serializeCellsToHtml(rows, id, styleAt) : null,
+        html: height * width <= MAX_HTML_CELLS ? serializeCellsToHtml(rows, id, styleAt, merges) : null,
     };
+};
+
+// --- Merged cells in a selection ---
+
+const mergeBounds = (m) => {
+    const a = parseCellRef(m.start), b = parseCellRef(m.end);
+    if (!a || !b) return null;
+    return { minRow: Math.min(a.row, b.row), maxRow: Math.max(a.row, b.row), minCol: Math.min(a.col, b.col), maxCol: Math.max(a.col, b.col) };
+};
+const overlap = (a, b) => a.minRow <= b.maxRow && a.maxRow >= b.minRow && a.minCol <= b.maxCol && a.maxCol >= b.minCol;
+
+/**
+ * `bounds` grown to take in every merged cell ({ start, end }) it covers part of —
+ * as Excel does, so that selecting a merged cell selects all of it. `bounds` itself
+ * when no merge reaches out of it.
+ */
+export const growBoundsToMerges = (bounds, merges) => {
+    if (!bounds || !merges?.length) return bounds;
+    const boxes = merges.map(mergeBounds).filter(Boolean);
+    let grown = bounds;
+    for (let changed = true; changed;) {
+        changed = false;
+        for (const m of boxes) {
+            if (!overlap(m, grown)) continue;
+            if (m.minRow < grown.minRow || m.maxRow > grown.maxRow || m.minCol < grown.minCol || m.maxCol > grown.maxCol) {
+                grown = {
+                    minRow: Math.min(grown.minRow, m.minRow), maxRow: Math.max(grown.maxRow, m.maxRow),
+                    minCol: Math.min(grown.minCol, m.minCol), maxCol: Math.max(grown.maxCol, m.maxCol),
+                };
+                changed = true;
+            }
+        }
+    }
+    return grown;
+};
+
+/**
+ * The merged cells lying wholly inside `bounds`, relative to its top-left cell:
+ * [{ row, col, rowSpan, colSpan }], the form mergesAfterPaste and
+ * serializeCellsToHtml take.
+ */
+export const mergesWithin = (merges, bounds) => {
+    const out = [];
+    for (const merge of merges || []) {
+        const m = mergeBounds(merge);
+        if (!m || m.minRow < bounds.minRow || m.maxRow > bounds.maxRow || m.minCol < bounds.minCol || m.maxCol > bounds.maxCol) continue;
+        out.push({ row: m.minRow - bounds.minRow, col: m.minCol - bounds.minCol, rowSpan: m.maxRow - m.minRow + 1, colSpan: m.maxCol - m.minCol + 1 });
+    }
+    return out;
 };
 
 // --- Large blocks ---

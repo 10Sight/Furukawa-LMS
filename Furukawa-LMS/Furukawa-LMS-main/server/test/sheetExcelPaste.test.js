@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
     parseClipboardHtmlStyles, parseDelimitedText, gridSize, mergesAfterPaste, shapesForPaste, placeClipboardShape,
+    growBoundsToMerges, mergesWithin, serializeCellsToHtml,
 } from "../../admin/src/utils/spreadsheets/clipboardInterop.js";
 
 const { JSDOM } = await import("jsdom").catch(() => ({}));
@@ -112,4 +113,35 @@ domTest("number formats are unescaped, and Excel's named formats read as their c
     assert.equal(fmtOf("mso-number-format:Standard"), "#,##0.00");
     assert.equal(fmtOf('mso-number-format:"\\@"'), "@");
     assert.equal(fmtOf("mso-number-format:General"), undefined);
+});
+
+// --- Copying merged cells inside the grid ---
+
+test("a range touching a merged cell takes in all of it, however the merges chain", () => {
+    const merges = [{ start: "B2", end: "C3" }, { start: "D3", end: "E3" }, { start: "H8", end: "H9" }];
+    // Clicking B2 (the top-left cell of B2:C3) selects the whole merge.
+    assert.deepEqual(growBoundsToMerges({ minRow: 1, maxRow: 1, minCol: 1, maxCol: 1 }, merges), { minRow: 1, maxRow: 2, minCol: 1, maxCol: 2 });
+    // C3:D3 touches both B2:C3 and D3:E3.
+    assert.deepEqual(growBoundsToMerges({ minRow: 2, maxRow: 2, minCol: 2, maxCol: 3 }, merges), { minRow: 1, maxRow: 2, minCol: 1, maxCol: 4 });
+    const alone = { minRow: 0, maxRow: 0, minCol: 0, maxCol: 0 };
+    assert.equal(growBoundsToMerges(alone, merges), alone);
+});
+
+test("a copy carries the merges inside it, relative to its top-left cell", () => {
+    const merges = [{ start: "B2", end: "C3" }, { start: "E1", end: "F1" }, { start: "A9", end: "B9" }];
+    assert.deepEqual(mergesWithin(merges, { minRow: 0, maxRow: 4, minCol: 1, maxCol: 5 }), [
+        { row: 1, col: 0, rowSpan: 2, colSpan: 2 },
+        { row: 0, col: 3, rowSpan: 1, colSpan: 2 },
+    ]);
+});
+
+domTest("the grid's own clipboard table carries its merges and colours, and reads back the same", () => {
+    const rows = [["Title", "", ""], ["1", "2", "3"]];
+    const merges = [{ row: 0, col: 0, rowSpan: 1, colSpan: 3 }];
+    const html = serializeCellsToHtml(rows, "clip1", (r, c) => (r === 0 && c === 0 ? "background:#ffff00;font-weight:bold;" : ""), merges);
+    assert.match(html, /<td colspan="3" style="background:#ffff00;font-weight:bold;">Title<\/td><\/tr>/);
+    const back = read(html);
+    assert.deepEqual([back.height, back.width], [2, 3]);
+    assert.deepEqual(back.merges, merges);
+    assert.deepEqual(back.styles[0], [{ bg: "#ffff00", bold: true }, { bg: "#ffff00", bold: true }, { bg: "#ffff00", bold: true }]);
 });

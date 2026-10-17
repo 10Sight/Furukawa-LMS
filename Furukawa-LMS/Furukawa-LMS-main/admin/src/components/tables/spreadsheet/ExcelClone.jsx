@@ -31,12 +31,13 @@ import {
 } from "@/services/api/DepartmentApi.js";
 import {
     getCellId, parseCellRef, indexToCol, expandRange, buildRawValueGrid, adjustFormula, extrapolateSeries,
-    evaluateSheet, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE,
+    evaluateSheet, sheetUsedRange, extractFormulaReferences, cycleReferenceAt, isFormula, cellPosOf, CELL_POS_STRIDE,
     shiftSpan, shiftFormulaBands
 } from "../../../utils/spreadsheets/formulaEngine.js";
 import { forEachCellId, cellIdsOf, createCellMap, cellCountOf } from "../../../utils/spreadsheets/chunkedCells.js";
 import { uploadSheetVideo, videoFileProblem, SHEET_VIDEO_TYPES, VIDEO_MAX_BYTES } from "../../../utils/spreadsheets/sheetMediaUpload.js";
 import { getMediaUrl } from "../../../utils/mediaUtils.js";
+import { fitZoom, pageShareOfScroll, wheelPixels, scrollParentOf } from "../../../utils/spreadsheets/gridViewport.js";
 import { patternWithDecimals } from "../../../constants/spreadsheets/numberFormatCatalog.js";
 import { FUNCTION_CATALOG } from "../../../constants/spreadsheets/formulaCatalog.js";
 import { createPortal } from "react-dom";
@@ -70,7 +71,7 @@ import {
 } from "../../../utils/spreadsheets/commentEngine.js";
 import {
     parseDelimitedText, gridSize, buildClipboardPayload, isOwnClip, usedBoundsWithin, clearCellBlock, readClipboardHtmlStyles,
-    mergesAfterPaste, shapesForPaste, MAX_PASTE_CELLS, DENSE_WALK_CELLS, MAX_STYLED_PASTE_CELLS
+    mergesAfterPaste, shapesForPaste, growBoundsToMerges, mergesWithin, MAX_PASTE_CELLS, DENSE_WALK_CELLS, MAX_STYLED_PASTE_CELLS
 } from "../../../utils/spreadsheets/clipboardInterop.js";
 import { normalizeAngle, snapAngle, pointerAngle, toLocalDelta, resizeRotatedBox, rotatedBounds } from "../../../utils/spreadsheets/mediaGeometry.js";
 import { cn } from "@/utils/classNames.js";
@@ -1724,7 +1725,10 @@ const GridRow = React.memo(function GridRow({ rowIdx, renderRow }) {
     return renderRow.current(rowIdx);
 });
 
-const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange }, ref) {
+// `scrollPageFirst`: on a page that scrolls around the grid (a meeting's page),
+// scrolling down over the grid moves the page first, until it's at its end, and
+// only then the grid; the grid is sized to fill the page's height there.
+const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOnly = false, onDataChange, scrollPageFirst = false }, ref) {
     const { data: sectionSheetData, isLoading: isSectionLoading } = useGetDailyMeetingSheetQuery(sectionId, { skip: !sectionId || !!meetingId });
     const { data: meetingSheetData, isLoading: isMeetingLoading, refetch: refetchMeeting } = useGetDailyMorningMeetingDetailQuery(meetingId, { skip: !meetingId });
     const [saveSectionSheet, { isLoading: isSavingSection }] = useSaveDailyMeetingSheetMutation();
@@ -1766,6 +1770,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [isFormulaBarExpanded, setIsFormulaBarExpanded] = useState(false);
     const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
+    const [fitToScreen, setFitToScreen] = useState(true); // full screen fits the data to the screen (see below)
     const [coordInputValue, setCoordInputValue] = useState("A1");
 
     const [fillPreview, setFillPreview] = useState(null); // { axis: 'vertical'|'horizontal', extraCount }
@@ -2227,8 +2232,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // The selection is kept as rectangles only — never expanded into a list of
     // cell ids, which for a whole column or Ctrl+A on a large sheet would be
     // hundreds of thousands of strings rebuilt on every drag tick.
-    const selectionBounds = useMemo(() => rangeBounds(selection), [selection]);
-    const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean), [extraRanges]);
+    // A range that covers part of a merged cell covers all of it, as in Excel: so
+    // that clicking a merged cell selects (and copies, fills, formats) the whole of it.
+    const selectionBounds = useMemo(() => growBoundsToMerges(rangeBounds(selection), merges), [selection, merges]);
+    const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean).map((b) => growBoundsToMerges(b, merges)), [extraRanges, merges]);
     const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
     const hasMultipleRanges = extraRanges.length > 0;
     const isCellSelected = (row, col) => {
@@ -2463,6 +2470,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Zoom: shown at once, and (in edit mode) recorded on the sheet so a save
     // keeps it. In view mode it changes only what this viewer sees.
     const setZoom = useCallback((value) => {
+        setFitToScreen(false); // a zoom chosen by hand wins over full screen's fit
         const next = Math.round(clamp(Number(value) || 1, 0.1, 4.0) * 10) / 10;
         setZoomState(next);
         if (readOnly) return;
@@ -2486,7 +2494,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             if (!sheet) return;
-            mutator(sheet.cells);
+            mutator(sheet.cells, sheet);
         });
     }, [updateSheets, activeSheetName, isSheetReadOnly]);
 
@@ -3270,8 +3278,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 }
             }
         }
+        // The merged cells inside the copy go with it, to a paste here and to other programs.
+        const copiedMerges = mergesWithin(merges, selectionBounds);
         setClipboard({
             cellsByRelPos, valuesByRelPos, height, width, type, sourceBounds: selectionBounds, sourceSheetName: activeSheetName,
+            merges: copiedMerges,
             // The comment threads on the copied cells; a paste gives each cell one of its own.
             commentsByRelPos: commentAnchorsInBlock(commentAnchors, selectionBounds),
         });
@@ -3281,7 +3292,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const payload = buildClipboardPayload(shownRows, (r, c) => {
             const id = getCellId(minRow + r, minCol + c);
             return cells[id] || conditionalMap[id] ? cellInlineCss(cells[id], conditionalMap[id]) : "";
-        });
+        }, copiedMerges);
         const own = { id: payload.id, text: payload.text, written: false };
         ownClipRef.current = own;
         if (clipboardData) {
@@ -3296,7 +3307,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         writeSystemClipboard(payload).then((ok) => { if (ok) own.written = true; });
         return false;
-    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid, rowCount, columnCount, activeSheetName, commentAnchors, conditionalMap]);
+    }, [selectionBounds, hasMultipleRanges, cells, rawGrid, evaluation, displayGrid, rowCount, columnCount, activeSheetName, commentAnchors, conditionalMap, merges]);
     const copySelectionRef = useRef(copySelection);
     copySelectionRef.current = copySelection;
 
@@ -3372,6 +3383,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const newValue = sourceIsFormula ? adjustFormula(sourceCell.value, rowOffset, colOffset) : sourceCell.value;
                 next[targetId] = { ...sourceCell, value: newValue };
             }
+
+            // Merged cells go where the cells go: the ones the block lands on are
+            // replaced by those copied, and a cut takes them away from where they were.
+            const block = (b) => ({ row: b.minRow, col: b.minCol, height: clipboard.height, width: clipboard.width });
+            if (moveFrom) moveFrom.merges = mergesAfterPaste(plainOf(moveFrom.merges) || [], [], block(src));
+            sheet.merges = mergesAfterPaste(plainOf(sheet.merges) || [], clipboard.merges || [], block(target));
 
             // Conditional formatting goes where the cells go: stretched over them on
             // the same sheet, copied as rules of its own on another.
@@ -5267,17 +5284,132 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // In full screen the grid fills whatever height is left under the ribbon /
     // formula bar and above the sheet tabs, instead of the fixed inline cap.
     const [gridAreaEl, setGridAreaEl] = useState(null);
-    const [gridAreaHeight, setGridAreaHeight] = useState(0);
+    const [gridAreaSize, setGridAreaSize] = useState({ width: 0, height: 0 });
+    const gridAreaHeight = gridAreaSize.height;
     useEffect(() => {
         if (!gridAreaEl || !isFullScreen) return;
-        const update = () => setGridAreaHeight(gridAreaEl.clientHeight);
+        const update = () => setGridAreaSize((prev) => (prev.width === gridAreaEl.clientWidth && prev.height === gridAreaEl.clientHeight
+            ? prev : { width: gridAreaEl.clientWidth, height: gridAreaEl.clientHeight }));
         update();
         const ro = new ResizeObserver(update);
         ro.observe(gridAreaEl);
         return () => ro.disconnect();
     }, [gridAreaEl, isFullScreen]);
+
+    // Full screen shows the sheet's data at the zoom that fits it to the screen (see
+    // gridViewport.js), worked out again when the window or the data's extent
+    // changes. That zoom is this viewer's only: it isn't saved to the sheet, and
+    // leaving full screen goes back to the sheet's own. Choosing a zoom by hand (or
+    // the Fit button) turns it off.
+    useEffect(() => {
+        if (isFullScreen) {
+            setFitToScreen(true);
+            // On a narrow screen the ribbon's rows would leave the grid little room.
+            if (typeof window !== "undefined" && window.innerWidth < 768) setIsToolbarExpanded(false);
+            return;
+        }
+        setZoomState(sheetsRef.current[activeSheetName]?.zoom || 1);
+    }, [isFullScreen]); // eslint-disable-line react-hooks/exhaustive-deps
+    // The used part of the sheet with its headers, in unzoomed pixels: through the
+    // last value, merged cell and floating picture or shape.
+    const fitContent = useMemo(() => {
+        if (!isFullScreen) return null;
+        const used = sheetUsedRange(cells);
+        let lastRow = used.maxRow, lastCol = used.maxCol;
+        for (const m of merges) {
+            const end = parseCellRef(m.end);
+            if (end) { lastRow = Math.max(lastRow, end.row); lastCol = Math.max(lastCol, end.col); }
+        }
+        for (const item of media) {
+            const right = (colOffsets[item.col] ?? 0) + (item.offsetX || 0) + (item.width || 0);
+            const bottom = (rowOffsets[item.row] ?? 0) + (item.offsetY || 0) + (item.height || 0);
+            lastCol = Math.max(lastCol, bandIndexForPixel(colOffsets, right));
+            lastRow = Math.max(lastRow, bandIndexForPixel(rowOffsets, bottom));
+        }
+        const cols = Math.min(columnCount, lastCol + 1), rows = Math.min(rowCount, lastRow + 1);
+        return { width: colOffsets[cols] ?? colOffsets[colOffsets.length - 1], height: rowOffsets[rows] ?? rowOffsets[rowOffsets.length - 1] };
+    }, [isFullScreen, cells, merges, media, colOffsets, rowOffsets, columnCount, rowCount]);
+    useEffect(() => {
+        if (!isFullScreen || !fitToScreen) return;
+        const next = fitZoom({ width: gridAreaSize.width, height: gridAreaSize.height - 2 }, fitContent);
+        if (next !== null) setZoomState(next);
+    }, [isFullScreen, fitToScreen, gridAreaSize, fitContent]);
+    const toggleFitToScreen = useCallback(() => {
+        if (fitToScreen) {
+            setFitToScreen(false);
+            setZoomState(sheetsRef.current[activeSheetName]?.zoom || 1);
+        } else {
+            setFitToScreen(true);
+        }
+    }, [fitToScreen, activeSheetName, sheetsRef]);
+
+    // On a page that scrolls around the grid (`scrollPageFirst`), the grid is as tall
+    // as the page's visible height less the ribbon, formula bar and sheet tabs, so
+    // that once the page has scrolled to its end the grid fills the screen.
+    const [pageGridHeight, setPageGridHeight] = useState(0);
+    useEffect(() => {
+        const root = rootRef.current, grid = gridContainerRef.current;
+        if (!scrollPageFirst || isFullScreen || !root || !grid || !gridAreaEl) return;
+        const page = scrollParentOf(root);
+        const update = () => {
+            const chrome = root.getBoundingClientRect().height - grid.getBoundingClientRect().height;
+            const next = Math.max(240, Math.floor(page.clientHeight - chrome - 16));
+            setPageGridHeight((prev) => (prev === next ? prev : next));
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(page);
+        ro.observe(root);
+        return () => ro.disconnect();
+    }, [scrollPageFirst, isFullScreen, gridAreaEl]);
+    // Scrolling down over the grid moves the page until it's at its end (see
+    // pageShareOfScroll); scrolling up is the browser's own (grid first, then page).
+    // A key that moves around the grid first brings the grid fully into view.
+    useEffect(() => {
+        const grid = gridContainerRef.current;
+        if (!scrollPageFirst || isFullScreen || !grid || !gridAreaEl) return;
+        const page = scrollParentOf(grid);
+        const room = () => page.scrollHeight - page.clientHeight - page.scrollTop;
+        const onWheel = (e) => {
+            if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            const share = pageShareOfScroll(wheelPixels(e, page.clientHeight), room());
+            if (!share) return;
+            e.preventDefault();
+            page.scrollTop += share;
+        };
+        let lastY = null;
+        const onTouchStart = (e) => { lastY = e.touches.length === 1 ? e.touches[0].clientY : null; };
+        const onTouchMove = (e) => {
+            if (lastY === null || e.touches.length !== 1) return;
+            const y = e.touches[0].clientY;
+            const share = pageShareOfScroll(lastY - y, room());
+            lastY = y;
+            if (!share) return;
+            e.preventDefault();
+            page.scrollTop += share;
+        };
+        const NAV_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp", "Home", "End", "Enter", "Tab"]);
+        const onKeyDown = (e) => {
+            if (!NAV_KEYS.has(e.key)) return;
+            const below = grid.getBoundingClientRect().bottom - page.getBoundingClientRect().bottom;
+            if (below > 0) page.scrollTop += Math.min(below + 8, room());
+        };
+        grid.addEventListener("wheel", onWheel, { passive: false });
+        grid.addEventListener("touchstart", onTouchStart, { passive: true });
+        grid.addEventListener("touchmove", onTouchMove, { passive: false });
+        grid.addEventListener("keydown", onKeyDown);
+        return () => {
+            grid.removeEventListener("wheel", onWheel);
+            grid.removeEventListener("touchstart", onTouchStart);
+            grid.removeEventListener("touchmove", onTouchMove);
+            grid.removeEventListener("keydown", onKeyDown);
+        };
+    }, [scrollPageFirst, isFullScreen, gridAreaEl]);
+
     // -2 for the grid wrapper's top/bottom border.
-    const gridMaxHeight = isFullScreen && gridAreaHeight > 0 ? Math.max(120, gridAreaHeight - 2) : 560;
+    const gridMaxHeight = isFullScreen && gridAreaHeight > 0
+        ? Math.max(120, gridAreaHeight - 2)
+        : scrollPageFirst && pageGridHeight > 0 ? pageGridHeight : 560;
 
     const guardEditable = () => {
         if (readOnly) return false;
@@ -5816,7 +5948,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         };
         const asText = (v) => (v === true ? "TRUE" : v === false ? "FALSE" : v === null || v === undefined ? undefined : String(v));
 
-        mutateActiveCells((next) => {
+        mutateActiveCells((next, sheet) => {
+            // "All" and "Formats" bring the copied cells' merges along (turned, for Transpose).
+            if ((paste === "all" || paste === "formats") && operation === "none") {
+                const copied = (clipboard.merges || []).map((m) => (transpose ? { row: m.col, col: m.row, rowSpan: m.colSpan, colSpan: m.rowSpan } : m));
+                sheet.merges = mergesAfterPaste(plainOf(sheet.merges) || [], copied, { row: targetRow, col: targetCol, height: outHeight, width: outWidth });
+            }
             for (let r = 0; r < outHeight; r++) {
                 for (let c = 0; c < outWidth; c++) {
                     const [sr, sc] = transpose ? [c, r] : [r, c];
@@ -7906,6 +8043,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 >
                     <IconPlus className="w-3.5 h-3.5" />
                 </button>
+                {isFullScreen && (
+                    <button
+                        className={cn(
+                            "px-1.5 py-0.5 rounded border text-[11px] font-medium cursor-pointer transition-colors",
+                            fitToScreen ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-200"
+                        )}
+                        onClick={toggleFitToScreen}
+                        title={fitToScreen ? "Fitting the sheet's data to the screen. Click to go back to the sheet's own zoom" : "Fit the sheet's data to the screen"}
+                    >
+                        Fit
+                    </button>
+                )}
                 <button
                     className="min-w-[40px] text-right font-medium hover:text-indigo-600 hover:underline cursor-pointer"
                     onClick={() => setZoom(1.0)}

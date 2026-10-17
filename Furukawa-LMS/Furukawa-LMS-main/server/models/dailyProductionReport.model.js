@@ -68,6 +68,7 @@ class DailyProductionReport {
 
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
 
         this.createdAt = data.createdAt;
@@ -103,6 +104,7 @@ class DailyProductionReport {
                         checkedByUserId INT,
                         docNo VARCHAR(255) NULL,
                         revNo VARCHAR(255) NULL,
+                        issueDate VARCHAR(255) NULL,
                         revDate VARCHAR(255) NULL,
                         createdAt DATETIME DEFAULT GETDATE(),
                         updatedAt DATETIME DEFAULT GETDATE(),
@@ -119,10 +121,11 @@ class DailyProductionReport {
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'internalDefectDetails', 'NVARCHAR(MAX)');
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'manpowerAttendance', 'NVARCHAR(MAX)');
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'kaizenDetails', 'NVARCHAR(MAX)');
-                // Doc/revision snapshot: frozen at creation from the Revision Table, never
-                // updated afterwards (see upsert() below).
+                // Doc/revision copy: taken at creation from the Revision Table and kept
+                // in sync by revisionPropagation.service.js.
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'docNo', 'VARCHAR(255) NULL');
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'revNo', 'VARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('daily_production_reports', 'issueDate', 'VARCHAR(255) NULL');
                 await migrationHelper.ensureColumnExists('daily_production_reports', 'revDate', 'VARCHAR(255) NULL');
             }
         } catch (error) {
@@ -243,13 +246,13 @@ class DailyProductionReport {
                 data.date, data.department, data.line, data.shift
             ]);
         } else {
-            // INSERT — docNo/revNo/revDate are frozen here (caller passes the current
-            // Revision Table snapshot for a brand-new record) and never touched by the
-            // UPDATE branch above, so they stay immutable for the life of the record.
+            // INSERT — docNo/revNo/issueDate/revDate are copied here (caller passes the
+            // current Revision Table values for a brand-new record). The UPDATE branch
+            // above never writes them; Revision Table edits do, via revisionPropagation.service.js.
             await executeQuery(`
                 INSERT INTO daily_production_reports
-                (date, department_id, line_id, shift, leaderName, delivery, quality, downTime, shiftCommunication, moral, directEfficiency, customerEndDefectDetails, internalDefectDetails, manpowerAttendance, kaizenDetails, madeBy, checkedBy, isSubmitted, submittedBy, status, checkedByUserId, docNo, revNo, revDate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (date, department_id, line_id, shift, leaderName, delivery, quality, downTime, shiftCommunication, moral, directEfficiency, customerEndDefectDetails, internalDefectDetails, manpowerAttendance, kaizenDetails, madeBy, checkedBy, isSubmitted, submittedBy, status, checkedByUserId, docNo, revNo, issueDate, revDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 data.date, data.department, data.line, data.shift,
                 data.leaderName || null,
@@ -260,7 +263,7 @@ class DailyProductionReport {
                 data.madeBy || null, data.checkedBy || null,
                 data.isSubmitted ? 1 : 0, data.submittedBy || null,
                 data.status || 'DRAFT', data.checkedByUserId || null,
-                data.docNo || null, data.revNo || null, data.revDate || null
+                data.docNo || null, data.revNo || null, data.issueDate || null, data.revDate || null
             ]);
         }
 

@@ -99,7 +99,7 @@ const ThreeDayMonitoringSheet = ({
 }) => {
     // No sectionId prop reaches this component today — department-level scoping
     // only; the backend still resolves the student's own section at freeze time.
-    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", revDate: "16.10.20" }, { departmentId });
+    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", issueDate: "16.10.20", revDate: "16.10.20" }, { departmentId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (not-yet-created) attempt shows the live value.
@@ -266,7 +266,7 @@ const ThreeDayMonitoringSheet = ({
                         setStatus(data.status || "Draft");
                         setSelectedAttemptId(data.id);
                         setIsForceNewAttempt(false);
-                        setSavedRevisionInfo({ docNo: data.docNo, revNo: data.revNo, revDate: data.revDate });
+                        setSavedRevisionInfo({ docNo: data.docNo, revNo: data.revNo, issueDate: data.issueDate, revDate: data.revDate });
                         setHeaderInfo(prev => ({
                             ...prev,
                             attemptNumber: data.attemptNumber || 1
@@ -1999,7 +1999,7 @@ const ThreeDayMonitoringSheet = ({
                                         <div className="mt-2 flex justify-between text-[12px] font-bold border-t border-black pt-2 pb-2 px-4">
                                             <div className="w-1/4">{revisionInfo.docNo}</div>
                                             <div className="w-1/4 text-center">Rev No {revisionInfo.revNo}</div>
-                                            <div className="w-1/4 text-center">Issue Date: {revisionInfo.revDate}</div>
+                                            <div className="w-1/4 text-center">Issue Date: {revisionInfo.issueDate || revisionInfo.revDate}</div>
                                             <div className="w-1/4 text-right">PG: 1 OF 1</div>
                                         </div>
                                     </td>

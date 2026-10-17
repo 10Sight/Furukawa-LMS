@@ -28,6 +28,7 @@ class OperatorObservance {
 
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
 
         this.createdAt = data.createdAt;
@@ -51,6 +52,10 @@ class OperatorObservance {
                     preparedBy VARCHAR(255),
                     status VARCHAR(50) DEFAULT 'Draft',
                     revHistory NVARCHAR(MAX),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_observance FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
@@ -59,9 +64,10 @@ class OperatorObservance {
         } else {
             await migrationHelper.ensureColumnExists('operator_observances', 'preparedBy', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('operator_observances', 'status', 'VARCHAR(50) NULL');
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('operator_observances', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('operator_observances', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('operator_observances', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('operator_observances', 'revDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('operator_observances', 'level2Date', 'DATETIME NULL');
         }
@@ -83,14 +89,14 @@ class OperatorObservance {
         const {
             studentId, lineName, processName, level1Date, level2Date, operatorNameCode,
             observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory,
-            docNo, revNo, revDate
+            docNo, revNo, issueDate, revDate
         } = data;
 
         const query = `
             INSERT INTO operator_observances
-            (studentId, lineName, processName, level1Date, level2Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory, docNo, revNo, revDate)
+            (studentId, lineName, processName, level1Date, level2Date, operatorNameCode, observanceData, checkedBy, verifiedBy, preparedBy, status, revHistory, docNo, revNo, issueDate, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -108,6 +114,7 @@ class OperatorObservance {
             JSON.stringify(revHistory || []),
             docNo || null,
             revNo || null,
+            issueDate || null,
             revDate || null
         ];
 

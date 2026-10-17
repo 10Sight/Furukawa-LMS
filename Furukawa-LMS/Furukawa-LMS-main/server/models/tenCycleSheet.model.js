@@ -33,6 +33,7 @@ class TenCycleSheet {
         this.lastEditRemark = data.lastEditRemark || "";
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -64,6 +65,10 @@ class TenCycleSheet {
                     reviewedAt DATETIME,
                     createdBy NVARCHAR(255),
                     updatedBy NVARCHAR(255),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE CASCADE
@@ -84,9 +89,10 @@ class TenCycleSheet {
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'reviewedStatus', 'NVARCHAR(50)');
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'reviewedAt', 'DATETIME');
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'lastEditRemark', 'NVARCHAR(MAX)');
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('ten_cycle_sheets', 'revDate', 'VARCHAR(255) NULL');
         }
     }
@@ -150,14 +156,15 @@ class TenCycleSheet {
             createdBy,
             docNo,
             revNo,
+            issueDate,
             revDate,
         } = data;
 
         const [rows] = await executeQuery(
             `INSERT INTO ten_cycle_sheets
-             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, status, checkedBy, verifiedBy, verifiedStatus, verifiedAt, reviewedBy, reviewedStatus, reviewedAt, createdBy, updatedBy, docNo, revNo, revDate)
+             (departmentId, sectionId, lineId, subSectionId, formType, qualityEngineer, qualityEngineerSign, dojoEngineer, dojoEngineerSign, entries, status, checkedBy, verifiedBy, verifiedStatus, verifiedAt, reviewedBy, reviewedStatus, reviewedAt, createdBy, updatedBy, docNo, revNo, issueDate, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId || null,
@@ -181,6 +188,7 @@ class TenCycleSheet {
                 createdBy || "",
                 docNo || null,
                 revNo || null,
+                issueDate || null,
                 revDate || null,
             ]
         );

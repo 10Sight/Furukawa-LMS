@@ -49,14 +49,14 @@ export const saveSkillUpgradationPlanByDepartment = asyncHandler(async (req, res
         year ? parseInt(year) : null
     );
 
-    // Brand-new plan: freeze whatever the Revision Table currently says for this
-    // form. Existing plans are untouched — upsert()'s UPDATE branch never writes
-    // these columns, regardless of what's passed in.
+    // Brand-new plan: copy whatever the Revision Table currently says for this
+    // form. upsert()'s UPDATE branch never writes these columns; Revision Table
+    // edits keep them in sync via revisionPropagation.service.js.
     let revisionSnapshot = {};
     if (!existing) {
         const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan', parseInt(departmentId), sectionId ? parseInt(sectionId) : null);
         if (revision?.docNo) {
-            revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate };
+            revisionSnapshot = { docNo: revision.docNo, revNo: revision.revNo, issueDate: revision.issueDate, revDate: revision.revDate };
         }
     }
 

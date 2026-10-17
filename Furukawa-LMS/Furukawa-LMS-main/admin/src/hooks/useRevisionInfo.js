@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axiosInstance from "@/services/requests/axiosInstance.js";
 
-// Fetches the live docNo/revNo/revDate for a form from the Revision Table
+// Fetches the live docNo/revNo/issueDate/revDate for a form from the Revision Table
 // (revision_records, keyed by sheetKey), optionally scoped to a department
 // and/or section — resolves to the most specific match (department+section ->
 // department-only -> global default). Falls back to whatever the caller
@@ -26,6 +26,7 @@ export default function useRevisionInfo(sheetKey, fallback, { departmentId, sect
                     ...prev,
                     ...(record.docNo ? { docNo: record.docNo } : {}),
                     ...(record.revNo ? { revNo: record.revNo } : {}),
+                    ...(record.issueDate ? { issueDate: record.issueDate } : {}),
                     ...(record.revDate ? { revDate: record.revDate } : {}),
                 }));
             })

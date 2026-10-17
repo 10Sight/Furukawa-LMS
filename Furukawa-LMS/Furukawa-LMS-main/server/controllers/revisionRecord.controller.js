@@ -55,6 +55,23 @@ export const getRecordBySheetKey = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    How many already-saved forms a revision record at this scope governs,
+ *          i.e. how many a save would rewrite — shown in the confirm step
+ * @route   GET /api/revision-records/propagation-preview?sheetKey=&departmentId=&sectionId=
+ * @access  Private (Admin/SuperAdmin)
+ */
+export const getPropagationPreview = asyncHandler(async (req, res) => {
+    const { sheetKey } = req.query;
+    if (!sheetKey) throw new ApiError("sheetKey is required", 400);
+    const preview = await RevisionRecordService.previewPropagation(
+        sheetKey,
+        toId(req.query.departmentId),
+        toId(req.query.sectionId)
+    );
+    res.json(new ApiResponse(200, preview, "Propagation preview fetched successfully"));
+});
+
+/**
  * @desc    Update a revision record (by id) and log the change to history. The
  *          record's own department/section scope is fixed and not changed here.
  * @route   PUT /api/revision-records/:id
@@ -62,7 +79,7 @@ export const getRecordBySheetKey = asyncHandler(async (req, res) => {
  */
 export const updateRecord = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi } = req.body;
+    const { docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi } = req.body;
 
     if (!docNo || !revNo) {
         throw new ApiError("Document No. and Revision No. are required", 400);
@@ -70,7 +87,7 @@ export const updateRecord = asyncHandler(async (req, res) => {
 
     const updated = await RevisionRecordService.updateRecord(
         id,
-        { docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi },
+        { docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi },
         req.user
     );
     res.json(new ApiResponse(200, updated, "Revision record updated successfully"));
@@ -86,7 +103,7 @@ export const upsertRecordForScope = asyncHandler(async (req, res) => {
     const { sheetKey } = req.params;
     const {
         sheetName, departmentId, sectionId,
-        docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi
+        docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi
     } = req.body;
 
     if (!docNo || !revNo) {
@@ -100,7 +117,7 @@ export const upsertRecordForScope = asyncHandler(async (req, res) => {
         sheetKey,
         parseInt(departmentId),
         sectionId ? parseInt(sectionId) : null,
-        { sheetName, docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi },
+        { sheetName, docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi },
         req.user
     );
     res.json(new ApiResponse(200, saved, "Revision record saved successfully"));

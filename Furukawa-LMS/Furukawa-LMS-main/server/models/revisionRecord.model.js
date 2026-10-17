@@ -18,8 +18,10 @@ import logger from "../logger/winston.logger.js";
 //   than a deliberate shared document — worth confirming with whoever owns document
 //   control.
 // - three-day-monitoring's component labels its date "Issue Date" (16.10.20), not
-//   "Rev Date" — mapped into revDate here since that's the closest fit, but it may
-//   not mean the same thing.
+//   "Rev Date". It was originally mapped into revDate (no issueDate column existed
+//   then); it's now also seeded as issueDate, which is what the sheet prints.
+// - handover-sheet's issueDate (01.06.09) was hardcoded in department.controller.js
+//   and HandoverSheet.jsx before issueDate existed here.
 // - ten-cycle-sheet and mentee-feedback have no doc/rev header anywhere in their
 //   components (checked both the frontend print components and the server models) —
 //   still blank pending someone with the real paperwork filling them in via Edit.
@@ -29,13 +31,13 @@ import logger from "../logger/winston.logger.js";
 const DEFAULT_SHEETS = [
     { sheetKey: "daily-production-report", sheetName: "Daily Production Report", docNo: "FRM-PR-274", revNo: "03" },
     { sheetKey: "ten-cycle-sheet", sheetName: "10 Cycle Sheet" },
-    { sheetKey: "handover-sheet", sheetName: "Handover Sheet", docNo: "FRM-HR-003", revNo: "05", revDate: "30.01.2024" },
+    { sheetKey: "handover-sheet", sheetName: "Handover Sheet", docNo: "FRM-HR-003", revNo: "05", issueDate: "01.06.09", revDate: "30.01.2024" },
     { sheetKey: "abnormal-condition", sheetName: "Abnormal Condition", docNo: "FRM/QA/155-A", revNo: "01", revDate: "10.04.15" },
     { sheetKey: "skill-matrix", sheetName: "Skill Matrix", docNo: "FRM-WH-PR-009", revNo: "02", revDate: "02.05.2022" },
     { sheetKey: "multi-skilling-plan", sheetName: "Multi Skilling Plan", docNo: "FRM-WH-QA-236" },
     { sheetKey: "skill-upgradation-plan", sheetName: "Skill Upgradation Plan", docNo: "FRM-WH-QA-236" },
     { sheetKey: "sixteen-day-monitoring", sheetName: "16 Day Monitoring", docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" },
-    { sheetKey: "three-day-monitoring", sheetName: "3 Day Monitoring", docNo: "FRM-WH-QA-240", revNo: "00", revDate: "16.10.20" },
+    { sheetKey: "three-day-monitoring", sheetName: "3 Day Monitoring", docNo: "FRM-WH-QA-240", revNo: "00", issueDate: "16.10.20", revDate: "16.10.20" },
     { sheetKey: "daily-5m", sheetName: "Daily 5M Record", docNo: "FRM-WH-QA-241", revNo: "02", revDate: "27.01.2023" },
     { sheetKey: "operator-observance", sheetName: "Operator Observance", docNo: "FRM-WH-QA-277", revNo: "00", revDate: "01.04.2025" },
     { sheetKey: "mentee-feedback", sheetName: "Mentee Feedback" },
@@ -72,6 +74,7 @@ class RevisionRecord {
         this.sectionName = data.sectionName;
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.affectedSrNoPage = data.affectedSrNoPage;
         this.affectedSrNoPageHi = data.affectedSrNoPageHi;
@@ -93,6 +96,7 @@ class RevisionRecord {
                         sectionId INT NULL,
                         docNo VARCHAR(255) NULL,
                         revNo VARCHAR(255) NULL,
+                        issueDate VARCHAR(255) NULL,
                         revDate VARCHAR(255) NULL,
                         affectedSrNoPage VARCHAR(255) NULL,
                         affectedSrNoPageHi NVARCHAR(255) NULL,
@@ -110,6 +114,8 @@ class RevisionRecord {
                 // (both NULL) plus per-department and per-department+section overrides.
                 await migrationHelper.ensureColumnExists('revision_records', 'departmentId', 'INT NULL');
                 await migrationHelper.ensureColumnExists('revision_records', 'sectionId', 'INT NULL');
+                // Issue Date sits alongside Rev. No. on the printed doc-control header.
+                await migrationHelper.ensureColumnExists('revision_records', 'issueDate', 'VARCHAR(255) NULL');
 
                 // Drop the old single-column UNIQUE(sheetKey) constraint, if present —
                 // it would block inserting department/section-specific overrides for a
@@ -178,8 +184,8 @@ class RevisionRecord {
             const missing = DEFAULT_SHEETS.filter(s => !existingKeys.has(s.sheetKey));
             for (const sheet of missing) {
                 await executeQuery(
-                    `INSERT INTO [revision_records] (sheetKey, sheetName, docNo, revNo, revDate) VALUES (?, ?, ?, ?, ?)`,
-                    [sheet.sheetKey, sheet.sheetName, sheet.docNo ?? null, sheet.revNo ?? null, sheet.revDate ?? null]
+                    `INSERT INTO [revision_records] (sheetKey, sheetName, docNo, revNo, issueDate, revDate) VALUES (?, ?, ?, ?, ?, ?)`,
+                    [sheet.sheetKey, sheet.sheetName, sheet.docNo ?? null, sheet.revNo ?? null, sheet.issueDate ?? null, sheet.revDate ?? null]
                 );
             }
             if (missing.length > 0) {
@@ -201,6 +207,17 @@ class RevisionRecord {
                      WHERE sheetKey = ? AND departmentId IS NULL AND sectionId IS NULL
                        AND (docNo = 'TBD' OR docNo IS NULL OR docNo = '')`,
                     [known.docNo, known.revNo ?? null, known.revDate ?? null, known.sheetKey]
+                );
+            }
+
+            // issueDate was added after the register first shipped — fill it on the
+            // GLOBAL row wherever it's still empty, never overwriting an admin's value.
+            for (const known of DEFAULT_SHEETS.filter(s => s.issueDate)) {
+                await executeQuery(
+                    `UPDATE [revision_records] SET issueDate = ?, updatedAt = GETDATE()
+                     WHERE sheetKey = ? AND departmentId IS NULL AND sectionId IS NULL
+                       AND (issueDate IS NULL OR issueDate = '')`,
+                    [known.issueDate, known.sheetKey]
                 );
             }
         } catch (error) {
@@ -333,9 +350,9 @@ class RevisionRecord {
     static async create(data) {
         const query = `
             INSERT INTO [revision_records]
-            (sheetKey, sheetName, departmentId, sectionId, docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi)
+            (sheetKey, sheetName, departmentId, sectionId, docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const [rows] = await executeQuery(query, [
             data.sheetKey,
@@ -344,6 +361,7 @@ class RevisionRecord {
             data.sectionId || null,
             data.docNo || null,
             data.revNo || null,
+            data.issueDate || null,
             data.revDate || null,
             data.affectedSrNoPage || null,
             data.affectedSrNoPageHi || null,
@@ -357,7 +375,7 @@ class RevisionRecord {
         const fields = [];
         const values = [];
 
-        const editable = ["docNo", "revNo", "revDate", "affectedSrNoPage", "affectedSrNoPageHi", "changeDetails", "changeDetailsHi"];
+        const editable = ["docNo", "revNo", "issueDate", "revDate", "affectedSrNoPage", "affectedSrNoPageHi", "changeDetails", "changeDetailsHi"];
         for (const key of editable) {
             if (data[key] !== undefined) {
                 fields.push(`${key} = ?`);

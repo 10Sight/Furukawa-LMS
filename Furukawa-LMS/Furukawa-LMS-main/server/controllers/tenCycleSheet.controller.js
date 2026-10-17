@@ -104,9 +104,9 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
         }
     }
 
-    // Freeze whatever the Revision Table currently says for this form — this sheet
-    // keeps this snapshot for its whole lifetime; updateTenCycleSheetById never
-    // touches these columns.
+    // Copy whatever the Revision Table currently says for this form;
+    // updateTenCycleSheetById never touches these columns, and Revision Table edits
+    // keep them in sync via revisionPropagation.service.js.
     const revision = await RevisionRecordService.getLatestForSheet('ten-cycle-sheet', departmentId, sectionId);
 
     const sheet = await TenCycleSheet.create({
@@ -124,6 +124,7 @@ export const createTenCycleSheet = asyncHandler(async (req, res) => {
         createdBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
         docNo: revision?.docNo,
         revNo: revision?.revNo,
+        issueDate: revision?.issueDate,
         revDate: revision?.revDate,
     });
 
@@ -419,6 +420,7 @@ export const saveTenCycleSheetConfigWithRevision = asyncHandler(async (req, res)
             sheetName: "10 Cycle Sheet",
             docNo: revision.docNo,
             revNo: revision.revNo,
+            issueDate: revision.issueDate,
             revDate: revision.revDate,
             affectedSrNoPage: revision.affectedSrNoPage,
             affectedSrNoPageHi: revision.affectedSrNoPageHi,

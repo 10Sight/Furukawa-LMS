@@ -1479,12 +1479,12 @@ export const getHandoverSheet = asyncHandler(async (req, res) => {
     }
 
     if (!sheet) {
-        // A brand-new sheet picks up whatever docNo/revNo/revDate is current in the
-        // Revision Table at creation time; once saved, HandoverSheet.jsx freezes this
-        // into the record's own metadata and never re-syncs it on later loads.
+        // A brand-new sheet picks up whatever docNo/revNo/issueDate/revDate is current
+        // in the Revision Table at creation time; once saved it lives in the record's own
+        // metadata, which Revision Table edits rewrite via revisionPropagation.service.js.
         const revision = await RevisionRecordService.getLatestForSheet('handover-sheet', departmentId, sectionId ? parseInt(sectionId) : null);
         const metadata = revision?.docNo
-            ? { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate, issueDate: "01.06.09" }
+            ? { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate, issueDate: revision.issueDate || "01.06.09" }
             : undefined;
 
         return res.status(200).json(

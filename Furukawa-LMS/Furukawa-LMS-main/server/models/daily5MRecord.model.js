@@ -29,6 +29,7 @@ class Daily5MRecord {
         this.adminRemarksHistory = data.adminRemarksHistory || [];
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
     }
 
@@ -103,6 +104,7 @@ class Daily5MRecord {
             // forward onto every later row of that same session (see upsert() below).
             await migrationHelper.ensureColumnExists('daily_5m_records', 'docNo', "VARCHAR(255) NULL");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'revNo', "VARCHAR(255) NULL");
+            await migrationHelper.ensureColumnExists('daily_5m_records', 'issueDate', "VARCHAR(255) NULL");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'revDate', "VARCHAR(255) NULL");
 
             // Remove unique constraints to allow full history (every save = new row)
@@ -178,16 +180,17 @@ class Daily5MRecord {
         // mid-session edits would silently pick up whatever the Revision Table says
         // at that moment instead of staying consistent for the whole session.
         let finalSubmittedBy = submittedBy;
-        let docNo = null, revNo = null, revDate = null;
+        let docNo = null, revNo = null, issueDate = null, revDate = null;
         if (sessionId) {
             const [originalRows] = await executeQuery(
-                `SELECT TOP 1 submittedBy, docNo, revNo, revDate FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt ASC`,
+                `SELECT TOP 1 submittedBy, docNo, revNo, issueDate, revDate FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt ASC`,
                 [sessionId]
             );
             if (originalRows && originalRows.length > 0) {
                 if (originalRows[0].submittedBy) finalSubmittedBy = originalRows[0].submittedBy;
                 docNo = originalRows[0].docNo;
                 revNo = originalRows[0].revNo;
+                issueDate = originalRows[0].issueDate;
                 revDate = originalRows[0].revDate;
             }
         } else {
@@ -203,18 +206,19 @@ class Daily5MRecord {
             if (revision?.docNo) {
                 docNo = revision.docNo;
                 revNo = revision.revNo;
+                issueDate = revision.issueDate;
                 revDate = revision.revDate;
             }
         }
 
         const query = `
-            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, docNo, revNo, revDate, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, docNo, revNo, issueDate, revDate, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
 
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null, docNo, revNo, revDate
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null, docNo, revNo, issueDate, revDate
         ]);
 
         const newId = rows[0].id;

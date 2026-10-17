@@ -23,6 +23,8 @@ const RevisionHistoryTable = ({ logs, showSheetName = true }) => (
                     <TableHead>Department / Section</TableHead>
                     <TableHead>Doc. No.</TableHead>
                     <TableHead>Rev. No.</TableHead>
+                    <TableHead>Issue Date</TableHead>
+                    <TableHead>Rev. Date</TableHead>
                     <TableHead>Changed By</TableHead>
                     <TableHead>Change Details</TableHead>
                 </TableRow>
@@ -44,10 +46,17 @@ const RevisionHistoryTable = ({ logs, showSheetName = true }) => (
                         </TableCell>
                         <TableCell>{log.docNo || "-"}</TableCell>
                         <TableCell>{log.revNo || "-"}</TableCell>
+                        <TableCell>{log.issueDate || "-"}</TableCell>
+                        <TableCell>{log.revDate || "-"}</TableCell>
                         <TableCell>
                             <div>{log.updatedByName || "Unknown"}</div>
                             {log.updatedBy && (
                                 <div className="text-muted-foreground text-xs">ID: {log.updatedBy}</div>
+                            )}
+                            {log.propagatedCount > 0 && (
+                                <div className="text-muted-foreground text-xs">
+                                    Updated {log.propagatedCount} saved sheet{log.propagatedCount === 1 ? "" : "s"}
+                                </div>
                             )}
                         </TableCell>
                         <TableCell className="max-w-md whitespace-pre-wrap">

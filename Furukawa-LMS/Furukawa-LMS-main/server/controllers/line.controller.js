@@ -3,7 +3,6 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
-import fs from "fs";
 
 const lineCountSql = `
     (SELECT COUNT(*)
@@ -299,15 +298,6 @@ export const deleteLine = asyncHandler(async (req, res) => {
 // @access  Private
 export const getAllLines = asyncHandler(async (req, res) => {
     const { sectionId, departmentId } = req.query;
-    const logFile = "server_all_lines_debug.log";
-    const log = (msg) => {
-        const timestamp = new Date().toISOString();
-        const line = `[${timestamp}] ${msg}\n`;
-        try { fs.appendFileSync(logFile, line); } catch (e) { }
-        console.log(msg);
-    };
-
-    log(`[DEBUG] getAllLines params: sectionId=${sectionId}, departmentId=${departmentId}`);
 
     let querySQL = `
         SELECT l.*, s.name as sectionName,
@@ -357,16 +347,7 @@ export const getAllLines = asyncHandler(async (req, res) => {
 
     querySQL += " ORDER BY l.createdAt DESC";
 
-    log(`[DEBUG] Executing SQL: ${querySQL}`);
-    log(`[DEBUG] SQL Params: ${JSON.stringify(params)}`);
-
     const [lines] = await executeQuery(querySQL, params);
-
-    log(`[DEBUG] Lines found count: ${lines?.length}`);
-    if (lines?.length === 0) {
-        const [totalLines] = await executeQuery("SELECT COUNT(*) as count FROM [lines]");
-        log(`[DEBUG] Total lines in database: ${totalLines[0].count}`);
-    }
 
     res.status(200).json(
         new ApiResponse(200, lines, "Lines fetched successfully")

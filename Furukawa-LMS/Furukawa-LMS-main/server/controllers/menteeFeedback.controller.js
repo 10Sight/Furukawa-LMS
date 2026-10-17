@@ -82,10 +82,10 @@ export const saveMenteeFeedback = asyncHandler(async (req, res) => {
         feedback.updatedBy = req.user?.fullName || req.user?.name;
         await feedback.save();
     } else {
-        // Freeze whatever the Revision Table currently says for this form; the
-        // update branch above never touches these columns. This model has no
-        // department/section of its own, so resolve the student's current
-        // assignment (frozen at creation, same as everything else here).
+        // Copy whatever the Revision Table currently says for this form; the update
+        // branch above never touches these columns (Revision Table edits keep them in
+        // sync via revisionPropagation.service.js). This model has no department/section of its
+        // own, so resolve the student's current assignment.
         const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [sid]);
         const student = studentRows[0] || {};
         const revision = await RevisionRecordService.getLatestForSheet('mentee-feedback', student.departmentId || null, student.sectionId || null);
@@ -98,6 +98,7 @@ export const saveMenteeFeedback = asyncHandler(async (req, res) => {
             status: status || "Draft",
             docNo: revision?.docNo,
             revNo: revision?.revNo,
+            issueDate: revision?.issueDate,
             revDate: revision?.revDate,
         });
     }

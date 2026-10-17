@@ -74,9 +74,9 @@ export const saveDailyProductionReport = asyncHandler(async (req, res, next) => 
         status: isSubmitted ? 'SUBMITTED' : (existingReport?.status || 'DRAFT')
     };
 
-    // Brand-new report: freeze whatever the Revision Table currently says for this
-    // form. Existing reports are untouched — the model's UPDATE branch never writes
-    // these columns, regardless of what's in updateData.
+    // Brand-new report: copy whatever the Revision Table currently says for this
+    // form. The model's UPDATE branch never writes these columns; Revision Table
+    // edits keep them in sync via revisionPropagation.service.js.
     if (!existingReport) {
         const [lineRows] = await executeQuery("SELECT sectionId FROM [lines] WHERE id = ?", [line]);
         const sectionId = lineRows[0]?.sectionId || null;
@@ -84,6 +84,7 @@ export const saveDailyProductionReport = asyncHandler(async (req, res, next) => 
         if (revision?.docNo) {
             updateData.docNo = revision.docNo;
             updateData.revNo = revision.revNo;
+            updateData.issueDate = revision.issueDate;
             updateData.revDate = revision.revDate;
         }
     }

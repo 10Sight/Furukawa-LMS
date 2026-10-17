@@ -30,6 +30,7 @@ class ThreeDayMonitoring {
         this.updatedBy = data.updatedBy;
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -62,11 +63,14 @@ class ThreeDayMonitoring {
             await migrationHelper.ensureColumnExists('three_day_monitorings', 'status', "VARCHAR(50) DEFAULT 'Draft'");
             // Add attemptNumber column if missing
             await migrationHelper.ensureColumnExists('three_day_monitorings', 'attemptNumber', 'INT DEFAULT 1');
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
-            await migrationHelper.ensureColumnExists('three_day_monitorings', 'docNo', 'VARCHAR(255) NULL');
-            await migrationHelper.ensureColumnExists('three_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
-            await migrationHelper.ensureColumnExists('three_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
         }
+
+        // Doc/revision copy: taken at creation, kept in sync by revisionPropagation.service.js. Runs on
+        // both paths — the CREATE TABLE above doesn't declare these columns.
+        await migrationHelper.ensureColumnExists('three_day_monitorings', 'docNo', 'VARCHAR(255) NULL');
+        await migrationHelper.ensureColumnExists('three_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
+        await migrationHelper.ensureColumnExists('three_day_monitorings', 'issueDate', 'VARCHAR(255) NULL');
+        await migrationHelper.ensureColumnExists('three_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
 
         // Indexes for the 3-Day stack list (listThreeDayMonitoring) and latest-attempt lookups.
         // Failures are logged, not thrown, so a slow first-time build never blocks startup.
@@ -116,14 +120,14 @@ class ThreeDayMonitoring {
     static async create(data) {
         const {
             studentId, attemptNumber, processName, lineName, entries, evaluation,
-            checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, revDate
+            checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, issueDate, revDate
         } = data;
 
         const query = `
             INSERT INTO three_day_monitorings
-            (studentId, attemptNumber, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, revDate)
+            (studentId, attemptNumber, processName, lineName, entries, evaluation, checkedBy, verifiedBy, approvedBy, status, createdBy, docNo, revNo, issueDate, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -140,6 +144,7 @@ class ThreeDayMonitoring {
             createdBy,
             docNo || null,
             revNo || null,
+            issueDate || null,
             revDate || null
         ];
 

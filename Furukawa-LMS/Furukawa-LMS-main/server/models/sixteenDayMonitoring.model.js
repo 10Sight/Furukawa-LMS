@@ -34,6 +34,7 @@ class SixteenDayMonitoring {
             : (data.adminRemarksHistory || []);
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -60,6 +61,10 @@ class SixteenDayMonitoring {
                     gridData NVARCHAR(MAX),
                     createdBy VARCHAR(255),
                     updatedBy VARCHAR(255),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_16day FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
@@ -74,9 +79,10 @@ class SixteenDayMonitoring {
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'startDate', 'VARCHAR(255)');
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'adminRemarksHistory', 'NVARCHAR(MAX)');
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'verifiedByEduCell', 'VARCHAR(255)');
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('sixteen_day_monitorings', 'revDate', 'VARCHAR(255) NULL');
         }
 
@@ -116,14 +122,14 @@ class SixteenDayMonitoring {
             studentId, attemptNumber, employeeName, employeeCode, processName, dept,
             handoverDate, trgResult, workingWith, lineLeaderName,
             gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate,
-            adminRemarksHistory, docNo, revNo, revDate
+            adminRemarksHistory, docNo, revNo, issueDate, revDate
         } = data;
 
         const query = `
             INSERT INTO sixteen_day_monitorings
-            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate, adminRemarksHistory, docNo, revNo, revDate)
+            (studentId, attemptNumber, employeeName, employeeCode, processName, dept, handoverDate, trgResult, workingWith, lineLeaderName, gridData, checkedBy, verifiedBy, approvedBy, verifiedByEduCell, createdBy, status, startDate, adminRemarksHistory, docNo, revNo, issueDate, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -148,6 +154,7 @@ class SixteenDayMonitoring {
             Array.isArray(adminRemarksHistory) ? JSON.stringify(adminRemarksHistory) : (adminRemarksHistory || "[]"),
             docNo || null,
             revNo || null,
+            issueDate || null,
             revDate || null
         ];
 

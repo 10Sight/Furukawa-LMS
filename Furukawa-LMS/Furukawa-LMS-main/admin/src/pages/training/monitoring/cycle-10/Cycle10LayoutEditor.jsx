@@ -9,6 +9,8 @@ import { Textarea } from "@/components/forms/primitives/textarea.jsx";
 import { Plus, Loader2, Save, History, ArrowLeft, CalendarDays } from "lucide-react";
 import axiosInstance from "@/services/requests/axiosInstance.js";
 import { toast } from "sonner";
+import PropagationNotice from "@/pages/reports/components/revision/PropagationNotice.jsx";
+import usePropagationPreview, { formatPropagatedToast } from "@/hooks/usePropagationPreview.js";
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import { useGetLinesBySectionQuery } from "@/services/api/LineApi.js";
@@ -131,12 +133,21 @@ const Cycle10LayoutEditor = () => {
     // pre-populated from the Revision Table for the active scope.
     const [docNo, setDocNo] = useState("");
     const [revNo, setRevNo] = useState("");
+    const [issueDate, setIssueDate] = useState("");
     const [revDate, setRevDate] = useState("");
     const [affectedSrNoPage, setAffectedSrNoPage] = useState("");
     const [loadingRevisionInfo, setLoadingRevisionInfo] = useState(false);
 
     // Single-field remark confirmation modal — the only thing asked at save time.
     const [saveModalOpen, setSaveModalOpen] = useState(false);
+    // Saving also rewrites the doc/revision header on every already-saved sheet this
+    // scope governs — shown in the confirm modal so the reach is visible before saving.
+    const { count: affectedCount, loading: loadingPreview } = usePropagationPreview(
+        SHEET_KEY,
+        isGlobal ? null : deptId,
+        isGlobal ? null : sectionId,
+        saveModalOpen && (isGlobal || !!deptId)
+    );
     const [remarkText, setRemarkText] = useState("");
     const [saving, setSaving] = useState(false);
 
@@ -190,7 +201,7 @@ const Cycle10LayoutEditor = () => {
 
     const fetchRevisionInfo = async () => {
         if (!isGlobal && !deptId) {
-            setDocNo(""); setRevNo(""); setRevDate(""); setAffectedSrNoPage("");
+            setDocNo(""); setRevNo(""); setIssueDate(""); setRevDate(""); setAffectedSrNoPage("");
             return;
         }
         try {
@@ -202,10 +213,11 @@ const Cycle10LayoutEditor = () => {
             const record = response.data?.data || {};
             setDocNo(record.docNo || "");
             setRevNo(record.revNo || "");
+            setIssueDate(record.issueDate || "");
             setRevDate(record.revDate || "");
             setAffectedSrNoPage(record.affectedSrNoPage || "");
         } catch {
-            setDocNo(""); setRevNo(""); setRevDate(""); setAffectedSrNoPage("");
+            setDocNo(""); setRevNo(""); setIssueDate(""); setRevDate(""); setAffectedSrNoPage("");
         } finally {
             setLoadingRevisionInfo(false);
         }
@@ -324,7 +336,7 @@ const Cycle10LayoutEditor = () => {
         try {
             setSaving(true);
             const newConfig = normalizeConfig(fullConfig);
-            await axiosInstance.post(`/api/ten-cycle-sheets/config/save-with-revision`, {
+            const saveRes = await axiosInstance.post(`/api/ten-cycle-sheets/config/save-with-revision`, {
                 departmentId: isGlobal ? null : deptId,
                 sectionId: isGlobal ? 0 : (sectionId || 0),
                 lineId: isGlobal ? 0 : (lineId || 0),
@@ -334,6 +346,7 @@ const Cycle10LayoutEditor = () => {
                 revision: {
                     docNo: docNo.trim(),
                     revNo: revNo.trim(),
+                    issueDate,
                     revDate,
                     affectedSrNoPage,
                     changeDetails: remarkText.trim(),
@@ -343,7 +356,7 @@ const Cycle10LayoutEditor = () => {
             setSavedSnapshot(JSON.stringify(newConfig));
             setSaveModalOpen(false);
             setRemarkText("");
-            toast.success("Layout and revision updated successfully");
+            toast.success(`Layout and revision updated successfully${formatPropagatedToast(saveRes.data?.data?.revision?.propagatedCount)}`);
 
             logAction({
                 action: "SAVE_TEN_CYCLE_SHEET_LAYOUT_CONFIG",
@@ -505,7 +518,7 @@ const Cycle10LayoutEditor = () => {
                 {/* Document Control */}
                 <div className="border rounded p-4 space-y-3">
                     <Label className="text-xs font-bold uppercase tracking-wide">Document Control (Revision Table)</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div>
                             <Label className="text-xs mb-1 block">Doc. No. *</Label>
                             <Input className="h-9 text-sm" value={docNo} onChange={(e) => setDocNo(e.target.value)} disabled={loadingRevisionInfo} />
@@ -513,6 +526,10 @@ const Cycle10LayoutEditor = () => {
                         <div>
                             <Label className="text-xs mb-1 block">Rev. No. *</Label>
                             <Input className="h-9 text-sm" value={revNo} onChange={(e) => setRevNo(e.target.value)} disabled={loadingRevisionInfo} />
+                        </div>
+                        <div>
+                            <Label className="text-xs mb-1 block">Issue Date</Label>
+                            <Input className="h-9 text-sm" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} placeholder="DD.MM.YYYY" disabled={loadingRevisionInfo} />
                         </div>
                         <div>
                             <Label className="text-xs mb-1 block">Rev. Date</Label>
@@ -859,10 +876,11 @@ const Cycle10LayoutEditor = () => {
                                 placeholder="e.g. Renamed 'Linear Scale' to 'Caliper' for this line"
                                 autoFocus
                             />
+                            <PropagationNotice count={affectedCount} loading={loadingPreview} />
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setSaveModalOpen(false)}>Cancel</Button>
-                            <Button onClick={handleConfirmSave} disabled={saving || !remarkText.trim()} className="bg-blue-600 hover:bg-blue-700">
+                            <Button onClick={handleConfirmSave} disabled={saving || loadingPreview || !remarkText.trim()} className="bg-blue-600 hover:bg-blue-700">
                                 {saving ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
                                 Confirm & Save
                             </Button>

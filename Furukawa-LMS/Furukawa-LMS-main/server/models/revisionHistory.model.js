@@ -14,6 +14,7 @@ class RevisionHistory {
         this.sectionName = data.sectionName;
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.affectedSrNoPage = data.affectedSrNoPage;
         this.affectedSrNoPageHi = data.affectedSrNoPageHi;
@@ -21,6 +22,9 @@ class RevisionHistory {
         this.changeDetailsHi = data.changeDetailsHi;
         this.updatedBy = data.updatedBy;
         this.updatedByName = data.updatedByName;
+        // Saved forms rewritten by this edit; NULL when propagation failed or the
+        // entry predates propagation.
+        this.propagatedCount = data.propagatedCount;
         this.updatedAt = data.updatedAt;
     }
 
@@ -37,6 +41,7 @@ class RevisionHistory {
                         sectionId INT NULL,
                         docNo VARCHAR(255) NULL,
                         revNo VARCHAR(255) NULL,
+                        issueDate VARCHAR(255) NULL,
                         revDate VARCHAR(255) NULL,
                         affectedSrNoPage VARCHAR(255) NULL,
                         affectedSrNoPageHi NVARCHAR(255) NULL,
@@ -44,6 +49,7 @@ class RevisionHistory {
                         changeDetailsHi NVARCHAR(MAX) NULL,
                         updatedBy INT NULL,
                         updatedByName NVARCHAR(255) NULL,
+                        propagatedCount INT NULL,
                         updatedAt DATETIME DEFAULT GETDATE(),
                         FOREIGN KEY (revisionRecordId) REFERENCES [revision_records](id) ON DELETE CASCADE,
                         FOREIGN KEY (updatedBy) REFERENCES users(id) ON DELETE SET NULL
@@ -54,6 +60,8 @@ class RevisionHistory {
             } else {
                 await migrationHelper.ensureColumnExists('revision_history', 'departmentId', 'INT NULL');
                 await migrationHelper.ensureColumnExists('revision_history', 'sectionId', 'INT NULL');
+                await migrationHelper.ensureColumnExists('revision_history', 'issueDate', 'VARCHAR(255) NULL');
+                await migrationHelper.ensureColumnExists('revision_history', 'propagatedCount', 'INT NULL');
             }
             logger.info("Checked/Created revision_history table in MSSQL");
         } catch (error) {
@@ -64,8 +72,8 @@ class RevisionHistory {
     static async create(data) {
         const query = `
             INSERT INTO [revision_history]
-            (revisionRecordId, sheetKey, sheetName, departmentId, sectionId, docNo, revNo, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi, updatedBy, updatedByName, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+            (revisionRecordId, sheetKey, sheetName, departmentId, sectionId, docNo, revNo, issueDate, revDate, affectedSrNoPage, affectedSrNoPageHi, changeDetails, changeDetailsHi, updatedBy, updatedByName, propagatedCount, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
         `;
         await executeQuery(query, [
             data.revisionRecordId,
@@ -75,6 +83,7 @@ class RevisionHistory {
             data.sectionId ?? null,
             data.docNo ?? null,
             data.revNo ?? null,
+            data.issueDate ?? null,
             data.revDate ?? null,
             data.affectedSrNoPage ?? null,
             data.affectedSrNoPageHi ?? null,
@@ -82,6 +91,7 @@ class RevisionHistory {
             data.changeDetailsHi ?? null,
             data.updatedBy ?? null,
             data.updatedByName ?? null,
+            data.propagatedCount ?? null,
         ]);
     }
 

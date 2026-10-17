@@ -358,9 +358,9 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
         const latest = await ThreeDayMonitoring.findByStudentId(sid);
         const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
 
-        // Freeze whatever the Revision Table currently says for this form — each new
-        // attempt is a fresh physical copy of the form; the update branch above never
-        // touches these columns afterwards. This model has no department/section of
+        // Copy whatever the Revision Table currently says for this form; the update
+        // branch above never touches these columns afterwards (Revision Table edits
+        // keep them in sync via revisionPropagation.service.js). This model has no department/section of
         // its own, so resolve the student's current assignment.
         const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [sid]);
         const student = studentRows[0] || {};
@@ -380,6 +380,7 @@ export const saveThreeDayMonitoring = asyncHandler(async (req, res) => {
             createdBy: req.user?.fullName || req.user?.name,
             docNo: revision?.docNo,
             revNo: revision?.revNo,
+            issueDate: revision?.issueDate,
             revDate: revision?.revDate,
         });
     }

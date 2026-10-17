@@ -510,9 +510,9 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         const latest = await SixteenDayMonitoring.findByStudentId(sid);
         const nextAttempt = latest ? (latest.attemptNumber + 1) : 1;
 
-        // Freeze whatever the Revision Table currently says for this form — each new
-        // attempt is a fresh physical copy of the form, so it gets the current
-        // revision; the update branch above never touches these columns afterwards.
+        // Copy whatever the Revision Table currently says for this form; the update
+        // branch above never touches these columns afterwards (Revision Table edits
+        // keep them in sync via revisionPropagation.service.js).
         // This model has no department/section of its own, so resolve the student's
         // current assignment.
         const [studentRows] = await executeQuery("SELECT departmentId, sectionId FROM users WHERE id = ?", [sid]);
@@ -541,6 +541,7 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
             adminRemarksHistory: updatedHistory,
             docNo: revision?.docNo,
             revNo: revision?.revNo,
+            issueDate: revision?.issueDate,
             revDate: revision?.revDate,
         });
     }
@@ -782,6 +783,7 @@ export const saveSixteenDayMonitoringConfigWithRevision = asyncHandler(async (re
             sheetName: "16 Day Monitoring",
             docNo: revision.docNo,
             revNo: revision.revNo,
+            issueDate: revision.issueDate,
             revDate: revision.revDate,
             affectedSrNoPage: revision.affectedSrNoPage,
             affectedSrNoPageHi: revision.affectedSrNoPageHi,

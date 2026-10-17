@@ -24,6 +24,7 @@ class MenteeFeedback {
 
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
     }
 
@@ -38,15 +39,20 @@ class MenteeFeedback {
                     status VARCHAR(50) DEFAULT 'Draft',
                     createdBy VARCHAR(255),
                     updatedBy VARCHAR(255),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT fk_student_mentee_feedback FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
                 )
             `);
         } else {
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('mentee_feedbacks', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('mentee_feedbacks', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('mentee_feedbacks', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('mentee_feedbacks', 'revDate', 'VARCHAR(255) NULL');
         }
     }
@@ -59,14 +65,14 @@ class MenteeFeedback {
 
     static async create(data) {
         const {
-            studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, revDate
+            studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, issueDate, revDate
         } = data;
 
         const query = `
             INSERT INTO mentee_feedbacks
-            (studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, revDate)
+            (studentId, topTableData, dailyLogs, createdBy, status, docNo, revNo, issueDate, revDate)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -77,6 +83,7 @@ class MenteeFeedback {
             status || "Draft",
             docNo || null,
             revNo || null,
+            issueDate || null,
             revDate || null
         ];
 

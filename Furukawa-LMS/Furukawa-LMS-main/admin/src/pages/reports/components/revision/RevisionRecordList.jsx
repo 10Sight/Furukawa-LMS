@@ -42,6 +42,7 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, 
                         <TableHead>Department / Section</TableHead>
                         <TableHead>Doc. No.</TableHead>
                         <TableHead>Rev. No.</TableHead>
+                        <TableHead>Issue Date</TableHead>
                         <TableHead>Rev. Date</TableHead>
                         <TableHead>Affected Sr. No. / Page</TableHead>
                         <TableHead>Change Details</TableHead>
@@ -70,6 +71,7 @@ const RevisionRecordList = ({ records, loading, canEdit, onEdit, onAddOverride, 
                             </TableCell>
                             <TableCell>{record.docNo || "-"}</TableCell>
                             <TableCell>{record.revNo || "-"}</TableCell>
+                            <TableCell>{record.issueDate || "-"}</TableCell>
                             <TableCell>{record.revDate || "-"}</TableCell>
                             <TableCell className="max-w-xs">
                                 <div>{record.affectedSrNoPage || "-"}</div>

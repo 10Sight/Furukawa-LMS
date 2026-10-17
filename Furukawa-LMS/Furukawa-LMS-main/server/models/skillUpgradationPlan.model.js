@@ -23,6 +23,7 @@ class SkillUpgradationPlan {
         this.sectionName = data.sectionName || "";
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -41,6 +42,10 @@ class SkillUpgradationPlan {
                     tableData NVARCHAR(MAX),
                     createdBy NVARCHAR(255),
                     updatedBy NVARCHAR(255),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_upgradation_year_plan UNIQUE (departmentId, sectionId, year)
@@ -85,9 +90,10 @@ class SkillUpgradationPlan {
                 END
             `);
 
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('skill_upgradation_plans', 'revDate', 'VARCHAR(255) NULL');
         }
     }
@@ -143,7 +149,7 @@ class SkillUpgradationPlan {
     }
 
     // Upsert skill upgradation plan by department, section and year
-    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, revDate }) {
+    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, issueDate, revDate }) {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 
         if (existing) {
@@ -175,9 +181,9 @@ class SkillUpgradationPlan {
 
         const [rows] = await executeQuery(
             `INSERT INTO skill_upgradation_plans
-             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
+             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, issueDate, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId,
@@ -188,6 +194,7 @@ class SkillUpgradationPlan {
                 userName || "",
                 docNo || null,
                 revNo || null,
+                issueDate || null,
                 revDate || null,
             ]
         );
@@ -285,12 +292,13 @@ class SkillUpgradationPlan {
             const revision = await RevisionRecordService.getLatestForSheet('skill-upgradation-plan', student.departmentId, student.sectionId);
             const docNo = revision?.docNo || null;
             const revNo = revision?.revNo || null;
+            const issueDate = revision?.issueDate || null;
             const revDate = revision?.revDate || null;
 
             await executeQuery(
                 `INSERT INTO skill_upgradation_plans
-                 (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, issueDate, revDate)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     student.departmentId,
                     student.sectionId,
@@ -301,6 +309,7 @@ class SkillUpgradationPlan {
                     "System",
                     docNo,
                     revNo,
+                    issueDate,
                     revDate
                 ]
             );

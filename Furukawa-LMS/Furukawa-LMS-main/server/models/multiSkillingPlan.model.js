@@ -20,6 +20,7 @@ class MultiSkillingPlan {
         this.sectionName = data.sectionName || "";
         this.docNo = data.docNo;
         this.revNo = data.revNo;
+        this.issueDate = data.issueDate;
         this.revDate = data.revDate;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
@@ -38,6 +39,10 @@ class MultiSkillingPlan {
                     tableData NVARCHAR(MAX),
                     createdBy NVARCHAR(255),
                     updatedBy NVARCHAR(255),
+                    docNo VARCHAR(255) NULL,
+                    revNo VARCHAR(255) NULL,
+                    issueDate VARCHAR(255) NULL,
+                    revDate VARCHAR(255) NULL,
                     createdAt DATETIME DEFAULT GETDATE(),
                     updatedAt DATETIME DEFAULT GETDATE(),
                     CONSTRAINT unique_dept_section_year_plan UNIQUE (departmentId, sectionId, year)
@@ -82,9 +87,10 @@ class MultiSkillingPlan {
                 END
             `);
 
-            // Doc/revision snapshot: frozen at creation from the Revision Table.
+            // Doc/revision copy: taken at creation from the Revision Table, kept in sync by revisionPropagation.service.js.
             await migrationHelper.ensureColumnExists('multi_skilling_plans', 'docNo', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('multi_skilling_plans', 'revNo', 'VARCHAR(255) NULL');
+            await migrationHelper.ensureColumnExists('multi_skilling_plans', 'issueDate', 'VARCHAR(255) NULL');
             await migrationHelper.ensureColumnExists('multi_skilling_plans', 'revDate', 'VARCHAR(255) NULL');
         }
     }
@@ -135,7 +141,7 @@ class MultiSkillingPlan {
         return rows.map(r => new MultiSkillingPlan(r));
     }
 
-    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, revDate }) {
+    static async upsert({ departmentId, sectionId = null, year = null, selectedLines, tableData, userName, docNo, revNo, issueDate, revDate }) {
         const existing = await this.findByHierarchy(departmentId, sectionId, year);
 
         if (existing) {
@@ -167,9 +173,9 @@ class MultiSkillingPlan {
 
         const [rows] = await executeQuery(
             `INSERT INTO multi_skilling_plans
-             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, revDate)
+             (departmentId, sectionId, year, selectedLines, tableData, createdBy, updatedBy, docNo, revNo, issueDate, revDate)
              OUTPUT INSERTED.id
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 departmentId,
                 sectionId,
@@ -180,6 +186,7 @@ class MultiSkillingPlan {
                 userName || "",
                 docNo || null,
                 revNo || null,
+                issueDate || null,
                 revDate || null,
             ]
         );

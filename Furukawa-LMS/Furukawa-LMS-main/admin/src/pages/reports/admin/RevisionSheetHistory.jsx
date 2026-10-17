@@ -11,6 +11,7 @@ import RevisionRecordList from "@/pages/reports/components/revision/RevisionReco
 import RevisionHistoryList from "@/pages/reports/components/revision/RevisionHistoryList.jsx";
 import RevisionEditModal from "@/pages/reports/components/revision/RevisionEditModal.jsx";
 import RevisionHistoryModal from "@/pages/reports/components/revision/RevisionHistoryModal.jsx";
+import { formatPropagatedToast } from "@/hooks/usePropagationPreview.js";
 
 // Sheets whose revisions are tied to structural layout changes (questions/instruments/
 // columns for 10-Cycle, categories/checkpoints/weightages for 16-Day) deep-link Edit/Add
@@ -125,7 +126,7 @@ const RevisionSheetHistory = () => {
                 });
 
             if (res.data?.success) {
-                toast.success("Revision record saved");
+                toast.success(`Revision record saved${formatPropagatedToast(res.data.data?.propagatedCount)}`);
                 handleModalOpenChange(false);
                 await Promise.all([fetchRecords(), fetchHistory()]);
             }

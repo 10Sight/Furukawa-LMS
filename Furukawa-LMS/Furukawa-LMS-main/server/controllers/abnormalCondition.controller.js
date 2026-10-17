@@ -60,15 +60,16 @@ export const getAbnormalConditionSheet = asyncHandler(async (req, res) => {
 
     // Auto-create sheet if not found
     if (!sheet) {
-        // New sheets pick up whatever docNo/revNo/revDate is current in the Revision
-        // Table at creation time; once saved, that snapshot is frozen on the record
-        // (matches how a physical document-controlled form works) — never touched here.
+        // New sheets copy whatever docNo/revNo/issueDate/revDate is current in the
+        // Revision Table at creation time; later Revision Table edits rewrite that copy
+        // on every saved sheet via revisionPropagation.service.js.
         // Abnormal Condition has no section concept — always department-only scope.
         const revision = await RevisionRecordService.getLatestForSheet('abnormal-condition', parseInt(departmentId), null);
         const metadata = revision?.docNo
             ? {
                 docNo: revision.docNo,
                 revNo: revision.revNo,
+                issueDate: revision.issueDate,
                 revDate: revision.revDate,
                 remarks: "NG product will be handled as the defective product handling system"
             }

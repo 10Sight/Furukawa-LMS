@@ -18,13 +18,26 @@ import { Input } from "@/components/forms/primitives/input.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 import { Textarea } from "@/components/forms/primitives/textarea.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/common/ui/alert-dialog.jsx";
 import { Loader2 } from 'lucide-react';
+import PropagationNotice from "./PropagationNotice.jsx";
+import usePropagationPreview from "@/hooks/usePropagationPreview.js";
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 
 const emptyForm = {
     docNo: "",
     revNo: "",
+    issueDate: "",
     revDate: "",
     affectedSrNoPage: "",
     changeDetails: "",
@@ -50,11 +63,24 @@ const RevisionEditModal = ({ record, overrideTarget, open, onOpenChange, onSave,
     );
     const sections = sectionData?.data || [];
 
+    // Scope this save will apply to: the record's own fixed scope, or the
+    // department/section being picked for a new override.
+    const previewDeptId = isOverrideMode ? departmentId : record?.departmentId;
+    const previewSectionId = isOverrideMode ? sectionId : record?.sectionId;
+    const { count: affectedCount, loading: loadingPreview } = usePropagationPreview(
+        record?.sheetKey || overrideTarget?.sheetKey,
+        previewDeptId,
+        previewSectionId,
+        open && (!isOverrideMode || !!departmentId)
+    );
+    const [confirmOpen, setConfirmOpen] = useState(false);
+
     useEffect(() => {
         if (record) {
             setForm({
                 docNo: record.docNo || "",
                 revNo: record.revNo || "",
+                issueDate: record.issueDate || "",
                 revDate: record.revDate || "",
                 affectedSrNoPage: record.affectedSrNoPage || "",
                 changeDetails: record.changeDetails || "",
@@ -74,6 +100,16 @@ const RevisionEditModal = ({ record, overrideTarget, open, onOpenChange, onSave,
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // Editing reaches already-saved sheets — make the admin confirm that first.
+        if (affectedCount > 0) {
+            setConfirmOpen(true);
+            return;
+        }
+        doSave();
+    };
+
+    const doSave = () => {
+        setConfirmOpen(false);
         if (isOverrideMode) {
             onSave({ ...form, departmentId, sectionId: sectionId || null });
         } else {
@@ -147,9 +183,17 @@ const RevisionEditModal = ({ record, overrideTarget, open, onOpenChange, onSave,
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <Label htmlFor="revDate">Revision Date</Label>
-                        <Input id="revDate" type="date" value={form.revDate} onChange={handleChange("revDate")} />
+                    {/* Plain text, not type="date": stored values are free-form paper-header
+                        dates like "30.01.2024" / "16.10.20", which a date input can't display. */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="issueDate">Issue Date</Label>
+                            <Input id="issueDate" value={form.issueDate} onChange={handleChange("issueDate")} placeholder="DD.MM.YYYY" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="revDate">Revision Date</Label>
+                            <Input id="revDate" value={form.revDate} onChange={handleChange("revDate")} placeholder="DD.MM.YYYY" />
+                        </div>
                     </div>
 
                     <div className="space-y-2">
@@ -162,17 +206,36 @@ const RevisionEditModal = ({ record, overrideTarget, open, onOpenChange, onSave,
                         <Textarea id="changeDetails" rows={4} value={form.changeDetails} onChange={handleChange("changeDetails")} />
                     </div>
 
+                    <PropagationNotice count={affectedCount} loading={loadingPreview} />
+
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={saving || (isOverrideMode && !departmentId)}>
+                        <Button type="submit" disabled={saving || loadingPreview || (isOverrideMode && !departmentId)}>
                             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Save
                         </Button>
                     </DialogFooter>
                 </form>
             </DialogContent>
+
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Update {affectedCount} saved sheet{affectedCount === 1 ? "" : "s"}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            The new Doc. No., Rev. No., Issue Date and Rev. Date will replace the values on{" "}
+                            {affectedCount} already-saved {record?.sheetName || overrideTarget?.sheetName} sheet{affectedCount === 1 ? "" : "s"},
+                            including submitted and approved ones. This can&apos;t be undone automatically.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={doSave}>Save &amp; Update Sheets</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Dialog>
     );
 };

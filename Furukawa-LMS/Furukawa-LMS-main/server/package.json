@@ -19,7 +19,11 @@
     "ignore": [
       "backups/**",
       "uploads/**",
-      "logs/**"
+      "logs/**",
+      "db/lpa/**",
+      "db/pdca/**",
+      "test/**",
+      "*.test.js"
     ]
   },
   "dependencies": {

@@ -1,0 +1,24 @@
+{
+  "watch": [
+    "controllers",
+    "db",
+    "middlewares",
+    "models",
+    "routes",
+    "services",
+    "utils",
+    "index.js",
+    "constants.js"
+  ],
+  "ignore": [
+    "backups/**",
+    "uploads/**",
+    "logs/**",
+    "db/lpa/**",
+    "db/pdca/**",
+    "test/**",
+    "*.test.js",
+    "*.json"
+  ],
+  "ext": "js,mjs,cjs"
+}

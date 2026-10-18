@@ -92,7 +92,9 @@ import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 import contractorRoutes from "./routes/contractor.routes.js";
 import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
 import pdcaRoutes from "./routes/pdca/pdca.routes.js";
+import lpaRoutes from "./routes/lpa/lpa.routes.js";
 import PDCAModel from "./models/pdca/pdca.model.js";
+import LpaRecord from "./models/lpaRecord.model.js";
 import RevisionRecord from "./models/revisionRecord.model.js";
 import RevisionHistory from "./models/revisionHistory.model.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
@@ -374,6 +376,8 @@ app.use("/api/contractors", contractorRoutes);
 app.use("/api/revision-records", revisionRecordRoutes);
 app.use("/api/v1/pdca", pdcaRoutes);
 app.use("/api/pdca", pdcaRoutes);
+app.use("/api/v1/lpa", lpaRoutes);
+app.use("/api/lpa", lpaRoutes);
 
 
 // Initialize Socket.IO service
@@ -598,6 +602,7 @@ const startServer = async () => {
                 await import("./models/abnormalCondition.model.js").then(m => m.default.init());
                 await import("./models/designationShutter.model.js").then(m => m.default.init());
                 await DojoStageHistory.init();
+                await LpaRecord.init().catch(err => logger.error("LPA table init error:", err));
 
                 // Initialize Schedulers only after every table/migration init above has completed, so
                 // their cron ticks can never race a still-running migration for locks on the same tables.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import { calculateSheetSummary, normalizeObservation } from '../utils/lpaScoring.js';
+import { calculateSheetSummary, normalizeObservation } from '../utils/lpa/lpaScoring.js';
 
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET || 'supersecretjwtkeyforfurukawaminda2026!';
 const BASE_URL = 'http://127.0.0.1:3000/api/v1/lpa';

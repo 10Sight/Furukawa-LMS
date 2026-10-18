@@ -1,8 +1,8 @@
-import LpaRecord from "../../models/lpaRecord.model.js";
+import LpaRecord from "../../models/lpa/lpaRecord.model.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
-import { calculateSheetSummary } from "../../utils/lpaScoring.js";
+import { calculateSheetSummary } from "../../utils/lpa/lpaScoring.js";
 import XLSX from "xlsx";
 import fs from "fs";
 import logger from "../../logger/winston.logger.js";

@@ -94,7 +94,7 @@ import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
 import pdcaRoutes from "./routes/pdca/pdca.routes.js";
 import lpaRoutes from "./routes/lpa/lpa.routes.js";
 import PDCAModel from "./models/pdca/pdca.model.js";
-import LpaRecord from "./models/lpaRecord.model.js";
+import LpaRecord from "./models/lpa/lpaRecord.model.js";
 import RevisionRecord from "./models/revisionRecord.model.js";
 import RevisionHistory from "./models/revisionHistory.model.js";
 // import cleanupOldFiles from './scripts/cleanup.js';

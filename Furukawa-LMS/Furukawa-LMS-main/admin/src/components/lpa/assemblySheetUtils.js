@@ -366,3 +366,39 @@ export function upgradeAssemblyRecord(record) {
     sheets: record.sheets.map(sheet => (sheet.columnCount !== 7 ? normalizeAssemblySheet(sheet) : sheet))
   };
 }
+
+export function createBlankAssemblySheet(baseSheet, date) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const normalized = normalizeAssemblySheet(baseSheet);
+  const newRows = normalized.rows.map((row, rIdx) => {
+    if (!Array.isArray(row)) return row;
+    const nextRow = [...row];
+    // Rows 3 to 36: Checklist rows (Obs col 5, Score col 6)
+    if (rIdx >= 3 && rIdx <= 36) {
+      if (nextRow[5]) nextRow[5] = { value: '', formatted: '', type: 'z' };
+      if (nextRow[6]) nextRow[6] = { value: '', formatted: '', type: 'z' };
+    }
+    // Row 37: Total Marks & Score
+    if (rIdx === 37) {
+      if (nextRow[4]) nextRow[4] = { value: '70/', formatted: '70/', type: 's' };
+      if (nextRow[6]) nextRow[6] = { value: '0', formatted: '0', type: 's' };
+    }
+    // Row 38: Percentage (%)
+    if (rIdx === 38) {
+      if (nextRow[4]) nextRow[4] = { value: '0.00%', formatted: '0.00%', type: 's' };
+    }
+    return nextRow;
+  });
+
+  return {
+    ...normalized,
+    rows: newRows,
+    date: targetDate,
+    shift: '',
+    department: '',
+    sectionName: '',
+    line: '',
+    auditors: [''],
+    auditor: ''
+  };
+}

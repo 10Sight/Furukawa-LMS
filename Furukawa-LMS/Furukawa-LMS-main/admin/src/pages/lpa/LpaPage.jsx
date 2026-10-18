@@ -7,10 +7,10 @@ import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet, upgradeAssemblyRecord } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
-import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord } from './ccTemplate';
+import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
 import LpaPdcaSheet from '../../components/lpa/LpaPdcaSheet';
 import LpaPdcaTableView from '../../components/lpa/LpaPdcaTableView';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
@@ -341,47 +341,19 @@ function LpaPageContent({ viewContext }) {
 
     const isAssembly = activeSection === 'assembly';
     const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
-    const upgraded = isAssembly ? upgradeAssemblyRecord(baseTpl) : upgradeCcTemplateRecord(baseTpl);
-
-    // Create fresh blank sheets: clear observation, score, and all form inputs
-    const blankSheets = upgraded.sheets.map(sheetItem => {
-      const nextRows = sheetItem.rows.map((row, rIdx) => {
-        if (!Array.isArray(row)) return row;
-        // In checklist rows, clear observation (col 5) and score (col 6)
-        if (isAssembly && rIdx >= 3 && rIdx <= 36) {
-          const nextRow = [...row];
-          if (nextRow[5]) nextRow[5] = { value: '', formatted: '', type: 'z' };
-          if (nextRow[6]) nextRow[6] = { value: '', formatted: '', type: 'z' };
-          return nextRow;
-        }
-        return row;
-      });
-
-      return {
-        ...sheetItem,
-        rows: nextRows,
-        date: pdcaDate,
-        shift: '',
-        department: '',
-        sectionName: '',
-        line: '',
-        auditors: [''],
-        auditor: ''
-      };
-    });
+    const blankSheets = isAssembly
+      ? baseTpl.sheets.map(s => createBlankAssemblySheet(s, pdcaDate))
+      : baseTpl.sheets.map(s => createBlankCcSheet(s, pdcaDate));
 
     const newRecord = {
-      ...upgraded,
-      id: undefined,
-      _id: undefined,
-      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${pdcaDate}`,
       section: activeSection,
+      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${pdcaDate}`,
       unit: selectedUnit,
       level: selectedLevel || 'L1',
       auditDate: pdcaDate,
       date: pdcaDate,
       shift: '',
-      department: '',
+      department: isAssembly ? '' : 'C&C',
       sectionName: '',
       line: '',
       auditors: [''],
@@ -392,21 +364,31 @@ function LpaPageContent({ viewContext }) {
     await openSheet(newRecord, 0);
   };
 
+  const blankAssemblyTemplate = useMemo(() => ({
+    ...assemblyTemplate,
+    sheets: assemblyTemplate.sheets.map(s => createBlankAssemblySheet(s, pdcaDate))
+  }), [pdcaDate]);
+
+  const blankCcTemplate = useMemo(() => ({
+    ...ccTemplate,
+    sheets: ccTemplate.sheets.map(s => createBlankCcSheet(s, pdcaDate))
+  }), [pdcaDate]);
+
   const sheet = editor?.sheets?.[sheetIndex];
   const scopedRecords = records.filter(record => record.unit === selectedUnit);
   const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
   const sectionRecords = scopedRecords.filter(record => record.section === activeSection);
   const displayRecords = !selectedUnit ? [] : activeSection === 'assembly'
-    ? (sectionRecords.length ? sectionRecords.map(upgradeAssemblyRecord) : [...sectionRecords, { ...assemblyTemplate, unit: selectedUnit, level: 'L1' }])
+    ? (sectionRecords.length ? sectionRecords.map(upgradeAssemblyRecord) : [...sectionRecords, { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1' }])
     : matchingCcTemplate
       ? sectionRecords.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
-      : [...sectionRecords, { ...ccTemplate, unit: selectedUnit, level: 'L1' }];
+      : [...sectionRecords, { ...blankCcTemplate, unit: selectedUnit, level: 'L1' }];
   const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
   const visibleRecords = baseVisibleRecords.length > 0 ? baseVisibleRecords : (
     !selectedUnit ? [] : [
       activeSection === 'assembly'
-        ? { ...assemblyTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${assemblyTemplate.name} · ${pdcaDate}` }
-        : { ...ccTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
+        ? { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${assemblyTemplate.name.replace(/\.[^/.]+$/, '')} · ${pdcaDate}` }
+        : { ...blankCcTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
     ]
   );
   const exportAllRecords = () => {

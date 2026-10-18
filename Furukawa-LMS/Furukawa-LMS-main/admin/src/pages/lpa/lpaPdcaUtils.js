@@ -37,11 +37,15 @@ export function getScoreForObservation(val, marks) {
   if (normalized === 'NA') return 'NA';
   if (normalized === 'Χ') return 0;
 
-  if (marks !== undefined && marks !== null && marks !== '') {
-    return calculateAssemblyScore(val, marks);
+  const numMarks = Number(marks);
+  const baseMarks = Number.isFinite(numMarks) ? numMarks : (marks === undefined || marks === null || marks === '' ? 3 : 0);
+
+  if (normalized === 'Ο') {
+    return Math.max(0, baseMarks);
   }
-  if (normalized === 'Ο') return 3;
-  if (normalized === 'Δ') return 3;
+  if (normalized === 'Δ') {
+    return Math.max(0, baseMarks - 1);
+  }
   return '';
 }
 

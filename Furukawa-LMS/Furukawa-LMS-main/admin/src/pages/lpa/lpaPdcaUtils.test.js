@@ -30,12 +30,14 @@ test('normalizeObservationSymbol normalizes variations of circle, delta, cross a
   assert.equal(normalizeObservationSymbol(null), '');
 });
 
-test('getScoreForObservation returns specified fixed scores', () => {
+test('getScoreForObservation returns specified fixed scores based on marks', () => {
+  // Default marks = 3
   assert.equal(getScoreForObservation('Ο'), 3);
   assert.equal(getScoreForObservation('O'), 3);
 
-  assert.equal(getScoreForObservation('Δ'), 3);
-  assert.equal(getScoreForObservation('△'), 3);
+  // △ is marks - 1 (decreased value)
+  assert.equal(getScoreForObservation('Δ'), 2);
+  assert.equal(getScoreForObservation('△'), 2);
 
   assert.equal(getScoreForObservation('Χ'), 0);
   assert.equal(getScoreForObservation('×'), 0);
@@ -45,6 +47,13 @@ test('getScoreForObservation returns specified fixed scores', () => {
   assert.equal(getScoreForObservation('na'), 'NA');
 
   assert.equal(getScoreForObservation(''), '');
+
+  // With explicit marks column value
+  assert.equal(getScoreForObservation('O', 5), 5);
+  assert.equal(getScoreForObservation('△', 5), 4);
+  assert.equal(getScoreForObservation('△', 1), 0);
+  assert.equal(getScoreForObservation('×', 5), 0);
+  assert.equal(getScoreForObservation('NA', 5), 'NA');
 });
 
 test('getLpaPdcaTopic returns topic with at least 10 rows for Assembly, C&C and All', () => {

@@ -16,12 +16,19 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     return Math.round((source?.wpx || (source?.wch || 10) * 7) * WIDTH_SCALE);
   }), [sheet.columnCount, sheet.columns]);
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
+  const marksColumn = useMemo(() => {
+    for (const row of sheet.rows.slice(0, 8)) {
+      const index = row.findIndex(cell => /^marks$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
+      if (index >= 0) return index;
+    }
+    return 6;
+  }, [sheet.rows]);
   const observationColumn = useMemo(() => {
     for (const row of sheet.rows.slice(0, 8)) {
       const index = row.findIndex(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
       if (index >= 0) return index;
     }
-    return -1;
+    return 7;
   }, [sheet.rows]);
   const scoreColumn = useMemo(() => {
     for (const row of sheet.rows.slice(0, 8)) {
@@ -31,8 +38,42 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     return 8;
   }, [sheet.rows]);
 
+  // Dynamic live summary & percentage for C&C form
+  const { totalMarks, totalScore, percentageText } = useMemo(() => {
+    let applicableMarks = 0;
+    let scoreSum = 0;
+    for (let r = 4; r <= 34; r++) {
+      const row = sheet.rows[r];
+      if (!row) continue;
+      const obs = normalizeObservationSymbol(row[observationColumn]?.value ?? row[observationColumn]?.formatted);
+      if (obs === 'NA') continue;
+
+      const marksNum = Number(row[marksColumn]?.value ?? row[marksColumn]?.formatted ?? 0);
+      if (Number.isFinite(marksNum) && marksNum > 0) {
+        applicableMarks += marksNum;
+      }
+
+      const scoreVal = row[scoreColumn]?.value ?? row[scoreColumn]?.formatted;
+      if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
+        const numScore = Number(scoreVal);
+        if (Number.isFinite(numScore)) {
+          scoreSum += numScore;
+        }
+      }
+    }
+
+    const pct = applicableMarks > 0 ? `${((scoreSum / applicableMarks) * 100).toFixed(2)}%` : '0.00%';
+    return {
+      totalMarks: applicableMarks,
+      totalScore: scoreSum,
+      percentageText: pct
+    };
+  }, [sheet.rows, marksColumn, observationColumn, scoreColumn]);
+
   const handleObservationChange = (r, c, newVal) => {
-    const scoreVal = getScoreForObservation(newVal);
+    const row = sheet.rows[r];
+    const marksVal = marksColumn >= 0 ? (row?.[marksColumn]?.value ?? row?.[marksColumn]?.formatted) : 3;
+    const scoreVal = getScoreForObservation(newVal, marksVal);
     const extraUpdates = scoreColumn >= 0 ? [{ rowIndex: r, columnIndex: scoreColumn, value: scoreVal }] : [];
     onChange(r, c, newVal, extraUpdates);
     if (scoreColumn >= 0) {
@@ -112,6 +153,14 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                   : rowHeights[rowIndex];
                 const verticalWidth = Math.max(32, Math.ceil(value.length * 5.2));
                 const verticalScale = Math.min(1, mergedHeight / verticalWidth);
+                let cellDisplay = value;
+                if (rowIndex === 35) {
+                  if (columnIndex === 6) cellDisplay = String(totalMarks);
+                  else if (columnIndex === 8) cellDisplay = String(totalScore);
+                } else if (rowIndex === 36) {
+                  if (columnIndex === 6) cellDisplay = percentageText;
+                }
+
                 return (
                   <td key={columnIndex} rowSpan={merge ? merge.e.r - rowIndex + 1 : 1} colSpan={merge ? merge.e.c - columnIndex + 1 : 1} className={classes} style={{ backgroundColor }}>
                     {isVertical && <div className="cc-vertical-editor">
@@ -120,7 +169,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                         style={{ width: `${verticalWidth}px`, height: '18px', transform: `rotate(-90deg) scale(${verticalScale})` }}
                         aria-label={`${sheet.name} ${columnName(columnIndex)}${rowIndex + 1}`}
                         disabled={disabled}
-                        value={value}
+                        value={cellDisplay}
                         onChange={event => onChange(rowIndex, columnIndex, event.target.value)}
                         spellCheck={false}
                         rows={1}
@@ -140,7 +189,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                     {!isVertical && !isObservation && <textarea
                       aria-label={`${sheet.name} ${columnName(columnIndex)}${rowIndex + 1}`}
                       disabled={disabled}
-                      value={value}
+                      value={cellDisplay}
                       onKeyDown={event => {
                         if ((event.key === 'Enter' && event.shiftKey) || event.key === 'Backspace') {
                           const textarea = event.currentTarget;

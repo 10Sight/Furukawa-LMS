@@ -1,4 +1,4 @@
-import template from './ccTemplate.json';
+import template from './ccTemplate.json' with { type: 'json' };
 
 export const ccTemplate = template;
 
@@ -32,5 +32,50 @@ export function upgradeCcTemplateRecord(record) {
     ...record,
     _needsTemplateUpgrade: true,
     sheets: record.sheets.map(sheet => sheet === legacySheet ? replacementSheet : sheet),
+  };
+}
+
+export function createBlankCcSheet(baseSheet, date) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const sheet = structuredClone(baseSheet || ccTemplate.sheets[0]);
+  const newRows = sheet.rows.map((row, rIdx) => {
+    if (!Array.isArray(row)) return row;
+    const nextRow = [...row];
+    // Rows 4 to 34 are checklist rows (Observation col 7, Score col 8)
+    if (rIdx >= 4 && rIdx <= 34) {
+      if (nextRow[7]) nextRow[7] = { ...nextRow[7], value: '', formatted: '', type: 'z' };
+      if (nextRow[8]) nextRow[8] = { ...nextRow[8], value: '', formatted: '', type: 'z', formula: undefined };
+    }
+    // Row 35: Total Marks (col 6) & Total Score (col 8)
+    if (rIdx === 35) {
+      if (nextRow[8]) nextRow[8] = { ...nextRow[8], value: 0, formatted: '0', type: 'n' };
+    }
+    // Row 36: Percentage (%)
+    if (rIdx === 36) {
+      if (nextRow[6]) nextRow[6] = { ...nextRow[6], value: 0, formatted: '0.00%', type: 's' };
+    }
+    // Row 1: Date & Auditor/Line header
+    if (rIdx === 1) {
+      if (nextRow[0]) nextRow[0] = { ...nextRow[0], value: `Date :-${targetDate}`, formatted: `Date :-${targetDate}`, type: 's' };
+      if (nextRow[5]) nextRow[5] = { ...nextRow[5], value: 'Auditor/Audtee-                                                                                                                         Line-', formatted: 'Auditor/Audtee-                                                                                                                         Line-', type: 's' };
+    }
+    // Row 44: Signatures & Date
+    if (rIdx === 44) {
+      if (nextRow[2]) nextRow[2] = { ...nextRow[2], value: '', formatted: '', type: 'z' };
+      if (nextRow[6]) nextRow[6] = { ...nextRow[6], value: targetDate, formatted: targetDate, type: 's' };
+    }
+    return nextRow;
+  });
+
+  return {
+    ...sheet,
+    rows: newRows,
+    date: targetDate,
+    shift: '',
+    department: 'C&C',
+    sectionName: '',
+    line: '',
+    auditors: [''],
+    auditor: ''
   };
 }

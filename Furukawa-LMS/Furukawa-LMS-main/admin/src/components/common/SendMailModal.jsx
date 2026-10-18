@@ -30,7 +30,7 @@ export default function SendMailModal({
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState([]);
   const [ccEmails, setCcEmails] = useState(['']);
-  const [showCc, setShowCc] = useState(true);
+  const [showCc, setShowCc] = useState(false);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [includeExcel, setIncludeExcel] = useState(true);
@@ -38,7 +38,7 @@ export default function SendMailModal({
   const [sentSuccess, setSentSuccess] = useState(false);
   const ccInputsRef = useRef([]);
 
-  // When modal opens, all input fields are reset to blank as requested
+  // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
     if (!isOpen) {
       setSending(false);
@@ -48,7 +48,7 @@ export default function SendMailModal({
     setToInput('');
     setRecipients([]);
     setCcEmails(['']);
-    setShowCc(true);
+    setShowCc(false);
     setSubject('');
     setMessage('');
   }, [isOpen]);
@@ -240,9 +240,10 @@ export default function SendMailModal({
                 <button
                   type="button"
                   onClick={handleOpenCcSection}
-                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold text-[11px] cursor-pointer"
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2.5 py-0.5 rounded-md font-semibold text-xs border border-transparent hover:border-blue-200 transition-all cursor-pointer"
+                  title="Add CC recipients (optional)"
                 >
-                  <Plus className="w-3 h-3 stroke-[2.5]" />
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Add CC</span>
                 </button>
               )}

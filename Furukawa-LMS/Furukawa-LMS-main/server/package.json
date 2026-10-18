@@ -6,7 +6,7 @@
   "scripts": {
     "start": "nodemon index.js",
     "build": "echo \"No build step for server; skipping.\"",
-    "dev": "nodemon index.js",
+    "dev": "nodemon --ext js,mjs,cjs index.js",
     "migrate:backfill-slides": "node scripts/backfillLessonSlides.js",
     "reconvert:monthly-report-slides": "node scripts/reconvertMonthlyReportSlides.js",
     "db:init": "node scripts/initializeTables.js",
@@ -16,14 +16,16 @@
   "license": "ISC",
   "description": "",
   "nodemonConfig": {
+    "ext": "js,mjs,cjs",
     "ignore": [
       "backups/**",
       "uploads/**",
       "logs/**",
-      "db/lpa/**",
-      "db/pdca/**",
+      "db/**",
       "test/**",
-      "*.test.js"
+      "*.test.js",
+      "**/*.json",
+      "**/*.log"
     ]
   },
   "dependencies": {

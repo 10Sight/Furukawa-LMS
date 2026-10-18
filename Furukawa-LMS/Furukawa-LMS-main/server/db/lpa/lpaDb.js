@@ -5,7 +5,8 @@ import logger from "../../logger/winston.logger.js";
 import fs from "fs";
 import path from "path";
 
-export const LPA_STORE_PATH = path.join(process.cwd(), "db", "lpa", "lpa_persistence_store.json");
+export const LPA_STORE_PATH = path.join(process.cwd(), "uploads", "lpa", "lpa_persistence_store.json");
+const LEGACY_STORE_PATH = path.join(process.cwd(), "db", "lpa", "lpa_persistence_store.json");
 
 /**
  * Checks if central MSSQL pool is connected and active
@@ -27,6 +28,12 @@ export function readLpaStore() {
         if (fs.existsSync(LPA_STORE_PATH)) {
             const raw = fs.readFileSync(LPA_STORE_PATH, "utf-8");
             return JSON.parse(raw);
+        }
+        if (fs.existsSync(LEGACY_STORE_PATH)) {
+            const raw = fs.readFileSync(LEGACY_STORE_PATH, "utf-8");
+            const parsed = JSON.parse(raw);
+            writeLpaStore(parsed);
+            return parsed;
         }
     } catch (e) {
         logger.warn("Failed reading LPA persistence store:", e.message);

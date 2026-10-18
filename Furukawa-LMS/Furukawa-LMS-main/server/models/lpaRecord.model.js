@@ -19,6 +19,7 @@ export class LpaRecord {
     try {
       const store = readLpaStore();
       const sections = ["assembly", "cc"];
+      let changed = false;
       for (const sec of sections) {
         const existing = store.templates.find(t => t.section === sec);
         if (!existing) {
@@ -29,9 +30,12 @@ export class LpaRecord {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
+          changed = true;
         }
       }
-      writeLpaStore(store);
+      if (changed) {
+        writeLpaStore(store);
+      }
 
       const dbActive = await isDbConnected();
       if (dbActive) {

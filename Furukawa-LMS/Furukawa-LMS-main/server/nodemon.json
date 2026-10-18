@@ -1,7 +1,6 @@
 {
   "watch": [
     "controllers",
-    "db",
     "middlewares",
     "models",
     "routes",
@@ -14,11 +13,12 @@
     "backups/**",
     "uploads/**",
     "logs/**",
-    "db/lpa/**",
-    "db/pdca/**",
+    "db/**",
     "test/**",
     "*.test.js",
-    "*.json"
+    "**/*.json",
+    "**/*.log"
   ],
   "ext": "js,mjs,cjs"
 }
+

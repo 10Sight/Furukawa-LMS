@@ -1,3 +1,5 @@
+import { getScoreForObservation } from '../../pages/lpa/lpaPdcaUtils.js';
+
 export function isAssemblyCheckSheet(sheet) {
   if (!sheet || !Array.isArray(sheet.rows)) return false;
 
@@ -152,7 +154,32 @@ export function normalizeAssemblySheet(sheet) {
 
   // If already exactly 7 columns in the required order, format legend and return
   if (sheet.columnCount === 7) {
-    return ensureAssemblyLegend(sheet);
+    const updatedRows = sheet.rows.map((row, r) => {
+      if (r < 3 || r > 36 || !Array.isArray(row)) return row;
+      const obsCell = row[5] || { value: '', formatted: '', type: 'z' };
+      let scoreCell = row[6] || { value: '', formatted: '', type: 'z' };
+      const marksCell = row[4] || { value: '', formatted: '', type: 'z' };
+
+      const obsText = String(obsCell.value ?? obsCell.formatted ?? '').trim();
+      const scoreText = String(scoreCell.value ?? scoreCell.formatted ?? '').trim();
+      const marksVal = Number(marksCell.value ?? marksCell.formatted ?? 0);
+
+      if (obsText && !scoreText) {
+        const autoScore = getScoreForObservation(obsText, marksVal);
+        if (autoScore !== '') {
+          scoreCell = {
+            value: autoScore === 'NA' ? 'NA' : Number(autoScore),
+            formatted: String(autoScore),
+            type: autoScore === 'NA' ? 's' : 'n'
+          };
+          const nextRow = [...row];
+          nextRow[6] = scoreCell;
+          return nextRow;
+        }
+      }
+      return row;
+    });
+    return ensureAssemblyLegend({ ...sheet, rows: updatedRows });
   }
 
   const rows = sheet.rows;
@@ -235,14 +262,33 @@ export function normalizeAssemblySheet(sheet) {
 
     // Checklist rows (3 to 36)
     // Map to required order: [Sl No (0), Focus (1), Checks (2), Area (oldAreaCol), Marks (oldMarksCol), Obs (oldObsCol), Score (oldScoreCol)]
+    const obsCell = row[oldObsCol] || { value: '', formatted: '', type: 'z' };
+    let scoreCell = row[oldScoreCol] || { value: '', formatted: '', type: 'z' };
+    const marksCell = row[oldMarksCol] || { value: '', formatted: '', type: 'z' };
+
+    const obsText = String(obsCell.value ?? obsCell.formatted ?? '').trim();
+    const scoreText = String(scoreCell.value ?? scoreCell.formatted ?? '').trim();
+    const marksVal = Number(marksCell.value ?? marksCell.formatted ?? 0);
+
+    if (obsText && !scoreText) {
+      const autoScore = getScoreForObservation(obsText, marksVal);
+      if (autoScore !== '') {
+        scoreCell = {
+          value: autoScore === 'NA' ? 'NA' : Number(autoScore),
+          formatted: String(autoScore),
+          type: autoScore === 'NA' ? 's' : 'n'
+        };
+      }
+    }
+
     return [
       row[0] || { value: '', formatted: '', type: 'z' },
       row[1] || { value: '', formatted: '', type: 'z' },
       row[2] || { value: '', formatted: '', type: 'z' },
       row[oldAreaCol] || { value: '', formatted: '', type: 'z' },
-      row[oldMarksCol] || { value: '', formatted: '', type: 'z' },
-      row[oldObsCol] || { value: '', formatted: '', type: 'z' },
-      row[oldScoreCol] || { value: '', formatted: '', type: 'z' }
+      marksCell,
+      obsCell,
+      scoreCell
     ];
   });
 

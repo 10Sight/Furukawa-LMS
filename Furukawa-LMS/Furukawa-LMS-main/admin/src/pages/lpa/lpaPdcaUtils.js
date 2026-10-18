@@ -45,6 +45,80 @@ export function getScoreForObservation(val, marks) {
   return '';
 }
 
+export function getWorksheetScore(sheet) {
+  if (!sheet || !Array.isArray(sheet.rows) || sheet.rows.length === 0) return '-';
+  if (sheet.scorePercentage) return sheet.scorePercentage;
+
+  // 1. Check if any row has explicit percentage cell e.g. "Percentage (%):"
+  for (let r = 0; r < Math.min(sheet.rows.length, 50); r++) {
+    const row = sheet.rows[r];
+    if (!Array.isArray(row)) continue;
+    const isPctLabel = row.some(c => /percentage\s*\(/i.test(String(c?.value ?? c?.formatted ?? '')));
+    if (isPctLabel) {
+      for (const cell of row) {
+        const text = String(cell?.value ?? cell?.formatted ?? '').trim();
+        if (/^\d+(\.\d+)?%$/.test(text)) {
+          return text;
+        }
+      }
+    }
+  }
+
+  // 2. Dynamically locate marks, observation, and score columns
+  let marksCol = -1;
+  let obsCol = -1;
+  let scoreCol = -1;
+  for (const row of sheet.rows.slice(0, 8)) {
+    if (!Array.isArray(row)) continue;
+    const mIdx = row.findIndex(c => /^marks$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (mIdx >= 0 && marksCol < 0) marksCol = mIdx;
+    const oIdx = row.findIndex(c => /^observation$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (oIdx >= 0 && obsCol < 0) obsCol = oIdx;
+    const sIdx = row.findIndex(c => /^score$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (sIdx >= 0 && scoreCol < 0) scoreCol = sIdx;
+  }
+
+  if (marksCol < 0) marksCol = 4;
+  if (obsCol < 0) obsCol = 5;
+  if (scoreCol < 0) scoreCol = 6;
+
+  // Find legendStart
+  const legendStart = sheet.merges?.find(merge => merge.s.c === 0 && merge.e.c <= 2 && merge.s.r > 25)?.s.r ?? -1;
+  const endRow = legendStart > 0 ? Math.min(legendStart, 37) : Math.min(sheet.rows.length, 37);
+
+  let applicableMarksSum = 0;
+  let scoreSum = 0;
+
+  for (let r = 2; r < endRow; r++) {
+    const row = sheet.rows[r];
+    if (!row) continue;
+    const isTotal = row.some(c => /total/i.test(String(c?.value ?? c?.formatted ?? '')));
+    if (isTotal) break;
+    const marksNum = Number(row[marksCol]?.value ?? row[marksCol]?.formatted);
+    if (Number.isFinite(marksNum) && marksNum > 20) break; // Reached summary total row
+
+    const obs = normalizeObservationSymbol(row[obsCol]?.value ?? row[obsCol]?.formatted);
+    const scoreVal = row[scoreCol]?.value ?? row[scoreCol]?.formatted;
+
+    if (obs === 'NA') continue;
+
+    if (Number.isFinite(marksNum) && marksNum > 0) {
+      applicableMarksSum += marksNum;
+    }
+    if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
+      const numScore = Number(scoreVal);
+      if (Number.isFinite(numScore)) {
+        scoreSum += numScore;
+      }
+    }
+  }
+
+  if (applicableMarksSum > 0) {
+    return `${((scoreSum / applicableMarksSum) * 100).toFixed(2)}%`;
+  }
+  return '0.00%';
+}
+
 
 export function createEmptyPdcaRow(customDefaults = {}) {
   return {

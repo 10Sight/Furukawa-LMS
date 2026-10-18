@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx';
 import { useOutletContext } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
-import { columnName, editLPACell, importLPAWorkbook } from './lpaWorkbook';
+import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
 import { isAssemblyCheckSheet, upgradeAssemblyRecord } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
@@ -16,7 +16,7 @@ import LpaPdcaTableView from '../../components/lpa/LpaPdcaTableView';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
-import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow } from './lpaPdcaUtils';
+import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore } from './lpaPdcaUtils';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -320,16 +320,78 @@ function LpaPageContent({ viewContext }) {
     event.target.value = '';
     if (!file) return;
     try {
+      if (!isAdmin) throw new Error('Only administrators are authorized to upload Excel workbooks.');
       if (!selectedUnit) throw new Error('Please select Unit before uploading a workbook.');
       if (!/\.xlsx?$/i.test(file.name)) throw new Error('Please upload an .xlsx or .xls Excel file.');
       if (file.size > 15 * 1024 * 1024) throw new Error('The Excel file must be smaller than 15 MB.');
-    let imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit, level: 'L1', auditDate: pdcaDate };
-    if (uploadSection.current === 'assembly') {
-      imported = upgradeAssemblyRecord(imported);
-    }
+      let imported = { ...importLPAWorkbook(await file.arrayBuffer(), file.name, uploadSection.current), unit: selectedUnit, level: 'L1', auditDate: pdcaDate };
+      if (uploadSection.current === 'assembly') {
+        imported = upgradeAssemblyRecord(imported);
+      }
+      imported = extractWorkbookMetadata(imported, pdcaDate);
       await upload(imported);
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
   };
+
+  const handleCreateLPA = async () => {
+    if (!selectedUnit) {
+      setMessage({ error: true, text: 'Please select Unit before creating an LPA check sheet.' });
+      return;
+    }
+
+    const isAssembly = activeSection === 'assembly';
+    const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
+    const upgraded = isAssembly ? upgradeAssemblyRecord(baseTpl) : upgradeCcTemplateRecord(baseTpl);
+
+    // Create fresh blank sheets: clear observation, score, and all form inputs
+    const blankSheets = upgraded.sheets.map(sheetItem => {
+      const nextRows = sheetItem.rows.map((row, rIdx) => {
+        if (!Array.isArray(row)) return row;
+        // In checklist rows, clear observation (col 5) and score (col 6)
+        if (isAssembly && rIdx >= 3 && rIdx <= 36) {
+          const nextRow = [...row];
+          if (nextRow[5]) nextRow[5] = { value: '', formatted: '', type: 'z' };
+          if (nextRow[6]) nextRow[6] = { value: '', formatted: '', type: 'z' };
+          return nextRow;
+        }
+        return row;
+      });
+
+      return {
+        ...sheetItem,
+        rows: nextRows,
+        date: pdcaDate,
+        shift: '',
+        department: '',
+        sectionName: '',
+        line: '',
+        auditors: [''],
+        auditor: ''
+      };
+    });
+
+    const newRecord = {
+      ...upgraded,
+      id: undefined,
+      _id: undefined,
+      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${pdcaDate}`,
+      section: activeSection,
+      unit: selectedUnit,
+      level: selectedLevel || 'L1',
+      auditDate: pdcaDate,
+      date: pdcaDate,
+      shift: '',
+      department: '',
+      sectionName: '',
+      line: '',
+      auditors: [''],
+      auditor: '',
+      sheets: blankSheets
+    };
+
+    await openSheet(newRecord, 0);
+  };
+
   const sheet = editor?.sheets?.[sheetIndex];
   const scopedRecords = records.filter(record => record.unit === selectedUnit);
   const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
@@ -705,65 +767,93 @@ function LpaPageContent({ viewContext }) {
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
                 />
               </label>
+              <button
+                type="button"
+                disabled={busy || !selectedUnit}
+                onClick={handleCreateLPA}
+                className={primary}
+                title="Create a new blank LPA check sheet"
+              >
+                <Plus size={16} />Create LPA
+              </button>
               <button type="button" onClick={exportAllRecords} className={button}>
                 <Download size={16} />Export Excel
               </button>
-              <button
-                type="button"
-                disabled={busy || !selectedUnit}
-                onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
-                className={primary}
-              >
-                <Upload size={16} />Upload Excel
-              </button>
-              <button
-                type="button"
-                disabled={busy || !selectedUnit}
-                onClick={() => {
-                  setActiveSubTab('pdca');
-                  setCustomPdcaTopic(null);
-                }}
-                className={button}
-              >
-                LPA Observation (PDCA)
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={busy || !selectedUnit}
+                  onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
+                  className={button}
+                  title="Upload Excel workbook (Admin only)"
+                >
+                  <Upload size={16} />Upload Excel
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3 text-left">S.No</th>
-                    <th className="px-4 py-3 text-left">Form</th>
+                    <th className="px-4 py-3 text-left">S.NO.</th>
                     <th className="px-4 py-3 text-left">Worksheet</th>
-                    <th className="px-4 py-3 text-left">Audit date</th>
                     <th className="px-4 py-3 text-left">Unit</th>
-                    <th className="px-4 py-3 text-left">Rows</th>
+                    <th className="px-4 py-3 text-left">Score</th>
+                    <th className="px-4 py-3 text-left">department</th>
+                    <th className="px-4 py-3 text-left">Section</th>
+                    <th className="px-4 py-3 text-left">Line</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {visibleRecords.flatMap((record, recordIndex) => record.sheets.map((current, index) => (
-                    <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-4 text-slate-500">{recordIndex + 1}</td>
-                      <td className="px-4 py-4 font-semibold text-blue-700">{record.name}</td>
-                      <td className="px-4 py-4">{current.name}</td>
-                      <td className="px-4 py-4">{record.auditDate || 'Legacy workbook'}</td>
-                      <td className="px-4 py-4">{record.unit || 'Bawal'}</td>
-                      <td className="px-4 py-4">{current.rows.length}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => openSheet(record, index)} className={button}>Open</button>
-                          <button type="button" onClick={() => openRecordPDCA(record, index)} className={button}>PDCA</button>
-                          {record.id && (
-                            <button type="button" disabled={busy} onClick={() => deleteWorkbook(record)} className={`${button} border-red-200 text-red-700 hover:bg-red-50`} title="Delete form">
+                  {visibleRecords.flatMap((record) => record.sheets.map((current, index) => ({ record, current, index }))).map(({ record, current, index }, rowIndex) => {
+                    const unitVal = record.unit || selectedUnit || 'Bawal';
+                    const scoreVal = getWorksheetScore(current);
+                    const deptVal = current.department || record.department || '-';
+                    const secVal = current.sectionName || current.section || record.sectionName || record.section || '-';
+                    const lineVal = current.line || record.line || '-';
+
+                    return (
+                      <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
+                        <td className="px-4 py-4 text-slate-500 font-medium">{rowIndex + 1}</td>
+                        <td className="px-4 py-4 font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => openSheet(record, index)}
+                            className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                            title={`Open ${current.name}`}
+                          >
+                            {current.name}
+                          </button>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">{unitVal}</td>
+                        <td className="px-4 py-4">
+                          <span className="font-semibold text-slate-800">
+                            {scoreVal}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">{deptVal}</td>
+                        <td className="px-4 py-4 text-slate-700">{secVal}</td>
+                        <td className="px-4 py-4 text-slate-700">{lineVal}</td>
+                        <td className="px-4 py-4 text-right">
+                          {record.id ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => deleteWorkbook(record)}
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50 cursor-pointer transition-colors"
+                              title="Delete form"
+                            >
                               <Trash2 size={15} />
                             </button>
+                          ) : (
+                            <span className="text-slate-300">-</span>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  )))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               {visibleRecords.length === 0 && (

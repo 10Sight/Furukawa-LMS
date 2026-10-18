@@ -61,11 +61,14 @@ const createEmptyRow = (customDefaults = {}) => ({
   shift: customDefaults.shift || '',
   status: customDefaults.status || 'Open',
   department: customDefaults.department || '',
+  departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
   section: customDefaults.section || '',
+  sections: Array.isArray(customDefaults.sections) ? customDefaults.sections : (customDefaults.section ? [{ section: customDefaults.section, sectionId: customDefaults.sectionId ?? null, sectionCode: customDefaults.sectionCode || '' }] : []),
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
   sectionCode: customDefaults.sectionCode || '',
   lineArea: customDefaults.lineArea || '',
+  lineAreas: Array.isArray(customDefaults.lineAreas) ? customDefaults.lineAreas : (customDefaults.lineArea ? [{ lineArea: customDefaults.lineArea, lineAreaId: customDefaults.lineAreaId ?? null, lineAreaCode: customDefaults.lineAreaCode || '', sectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null }] : []),
   lineAreaSectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null,
   lineAreaId: customDefaults.lineAreaId ?? null,
   lineAreaCode: customDefaults.lineAreaCode || '',
@@ -86,6 +89,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
   stdDurationMin: customDefaults.stdDurationMin !== undefined ? customDefaults.stdDurationMin : (customDefaults.stdDuration !== undefined ? customDefaults.stdDuration : ''),
   responseDate: customDefaults.responseDate || '',
+  revisedDates: Array.isArray(customDefaults.revisedDates) ? customDefaults.revisedDates : (customDefaults.responseDate ? [customDefaults.responseDate] : []),
   noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : (customDefaults.noOfTimesRevised !== undefined ? customDefaults.noOfTimesRevised : 0),
   respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
   responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
@@ -182,19 +186,20 @@ function AutoResizeTextarea({
   );
 }
 
-// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is displayed)
+// Format ISO date (YYYY-MM-DD) into display string (DD/MM/YY)
+export const formatDisplayDate = (isoStr) => {
+  if (!isoStr) return '';
+  const parts = String(isoStr).split('-');
+  if (parts.length === 3) {
+    const [year, month, day] = parts;
+    return `${day}/${month}/${year.slice(-2)}`;
+  }
+  return String(isoStr);
+};
+
+// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is fully displayed without truncation)
 function CompactDateCell({ value, onChange, readOnly = false }) {
   const inputRef = useRef(null);
-
-  const formatDisplayDate = (isoStr) => {
-    if (!isoStr) return '';
-    const parts = isoStr.split('-');
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
-      return `${day}/${month}/${year.slice(-2)}`;
-    }
-    return isoStr;
-  };
 
   const handleOpenPicker = () => {
     if (readOnly) return;
@@ -213,8 +218,8 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
 
   if (readOnly) {
     return (
-      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none">
-        <span className="text-[10.5px] font-semibold text-slate-800 text-center tracking-tight truncate">
+      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none whitespace-nowrap">
+        <span className="text-[11px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
           {display || '-'}
         </span>
       </div>
@@ -245,9 +250,9 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
       />
 
       {display ? (
-        // When date is selected: Date is shown perfectly center-aligned, calendar icon is removed
-        <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-1">
-          <span className="text-[10.5px] font-semibold text-slate-800 text-center tracking-tight truncate">
+        // When date is selected: Date is shown perfectly center-aligned and fully visible without cutting off
+        <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
+          <span className="text-[11px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
             {display}
           </span>
           <button
@@ -267,6 +272,292 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
         <div className="w-full flex items-center justify-center text-center pointer-events-none">
           <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors mx-auto" />
         </div>
+      )}
+    </div>
+  );
+}
+
+// Std. Duration in min cell with automatic 'min' suffix
+function DurationMinCell({ value, readOnly, onChange }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editVal, setEditVal] = useState('');
+
+  const numStr = value !== undefined && value !== null ? String(value).replace(/[^0-9.]/g, '') : '';
+  const displayVal = numStr ? `${numStr} min` : '';
+
+  if (readOnly) {
+    return <span className="text-xs text-slate-800 font-medium whitespace-nowrap">{displayVal || '-'}</span>;
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={editVal}
+        onChange={(e) => {
+          const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+          setEditVal(cleaned);
+        }}
+        onBlur={() => {
+          setIsEditing(false);
+          const finalVal = editVal.trim();
+          onChange(finalVal ? `${finalVal} min` : '');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            setIsEditing(false);
+            const finalVal = editVal.trim();
+            onChange(finalVal ? `${finalVal} min` : '');
+          }
+        }}
+        placeholder="0"
+        className="w-full bg-white border border-blue-500 rounded px-1 py-0.5 text-xs text-slate-800 text-center font-semibold outline-none"
+      />
+    );
+  }
+
+  return (
+    <div
+      onClick={() => {
+        setEditVal(numStr);
+        setIsEditing(true);
+      }}
+      className="w-full py-1 text-xs text-slate-800 text-center font-medium cursor-text hover:bg-blue-50/50 rounded transition-colors whitespace-nowrap"
+      title="Click to enter duration (min)"
+    >
+      {displayVal ? (
+        <span className="font-semibold text-slate-800">{displayVal}</span>
+      ) : (
+        <span className="text-slate-300">-</span>
+      )}
+    </div>
+  );
+}
+
+// Custom Dropdown for Responsible Person Instructions, etc. column
+function ResponsiblePersonInstructionDropdown({
+  value,
+  onChange,
+  row,
+  dbEmployees = [],
+  currentUser,
+  readOnly = false,
+  sNo = 1
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [manualText, setManualText] = useState('');
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  // Candidate name(s) fetched by ID (showing ONLY name, no ID)
+  const candidateNames = useMemo(() => {
+    const list = [];
+
+    // Assigned staff in this row
+    if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
+      row.staffEmployees.forEach((emp) => {
+        if (emp.name && !list.includes(emp.name.trim())) {
+          list.push(emp.name.trim());
+        }
+      });
+    } else if (row.staffEmployee) {
+      const parsed = parseStaffEmployee(row.staffEmployee);
+      const name = parsed?.name || row.staffName;
+      if (name && !list.includes(name.trim())) {
+        list.push(name.trim());
+      }
+    } else if (row.staffName && !list.includes(row.staffName.trim())) {
+      list.push(row.staffName.trim());
+    }
+
+    // Lookup by employee ID in master
+    const staffId = row.staffId || row.employeeId;
+    if (staffId) {
+      const found = (dbEmployees || []).find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId))
+        || VERIFIED_EMPLOYEE_MASTER.find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId));
+      if (found?.name && !list.includes(found.name.trim())) {
+        list.push(found.name.trim());
+      }
+    }
+
+    // Current logged-in user
+    const curName = currentUser?.fullName || currentUser?.name;
+    if (curName && !list.includes(curName.trim())) {
+      list.push(curName.trim());
+    }
+
+    if (list.length === 0) {
+      list.push('Responsible User');
+    }
+
+    return list;
+  }, [row, dbEmployees, currentUser]);
+
+  const toggleDropdown = (e) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const popoverWidth = 220;
+      let left = rect.left + window.scrollX - (popoverWidth - rect.width) / 2;
+      left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, left));
+      let top = rect.bottom + window.scrollY + 4;
+      setPopoverPos({ top, left });
+      setManualText('');
+      setIsOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutsideClick = (e) => {
+      if (
+        (triggerRef.current && triggerRef.current.contains(e.target)) ||
+        (popoverRef.current && popoverRef.current.contains(e.target))
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen]);
+
+  const handleSelectOption = (opt) => {
+    onChange(opt);
+    setIsOpen(false);
+  };
+
+  const handleApplyManual = () => {
+    if (manualText.trim()) {
+      onChange(manualText.trim());
+    }
+    setIsOpen(false);
+  };
+
+  const displayVal = value || row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : row.responsiblePersonConfirmation);
+
+  const isConfirmed = displayVal === 'Confirmed';
+  const isNotConfirmed = displayVal === 'Not - Confirmed';
+  const hasCustomValue = Boolean(displayVal && !isConfirmed && !isNotConfirmed);
+
+  return (
+    <div className="relative w-full flex items-center justify-center">
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={readOnly}
+        onClick={toggleDropdown}
+        aria-label={`Responsible person instructions for row ${sNo}`}
+        className={`w-full rounded-md border px-1.5 py-1 text-[10.5px] font-semibold outline-none text-center flex items-center justify-between gap-1 transition-all ${
+          readOnly ? 'cursor-default' : 'cursor-pointer hover:border-blue-400 focus:ring-2 focus:ring-blue-300'
+        } ${
+          isConfirmed
+            ? 'bg-green-50 text-green-700 border-green-300'
+            : isNotConfirmed
+            ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
+            : hasCustomValue
+            ? 'bg-blue-50 text-blue-700 border-blue-300'
+            : 'bg-slate-50 text-slate-700 border-slate-300'
+        }`}
+        title={displayVal || 'Select Instruction / Confirmation'}
+      >
+        <span className="truncate flex-1 text-center font-medium">
+          {displayVal || 'Select...'}
+        </span>
+        {!readOnly && (
+          <ChevronDown className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
+        )}
+      </button>
+
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={popoverRef}
+          style={{
+            position: 'absolute',
+            top: `${popoverPos.top}px`,
+            left: `${popoverPos.left}px`,
+            width: '220px',
+            zIndex: 99999
+          }}
+          className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Upside: User name(s) fetched by ID (no ID shown) */}
+          <div className="p-1.5 bg-slate-50 border-b border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5 block">
+              Responsible Person
+            </span>
+            {candidateNames.map((name, nIdx) => (
+              <button
+                key={nIdx}
+                type="button"
+                onClick={() => handleSelectOption(name)}
+                className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title={`Select ${name}`}
+              >
+                <User className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <span className="truncate">{name}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Middle Options: Confirmed / Not Confirmed */}
+          <div className="p-1.5 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => handleSelectOption('Confirmed')}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+              <span>Confirmed</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectOption('Not - Confirmed')}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Not - Confirmed</span>
+            </button>
+          </div>
+
+          {/* Downwards: Manual Input by User */}
+          <div className="p-2 border-t border-slate-200 bg-slate-50">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Manual Instruction
+            </span>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleApplyManual();
+                  }
+                }}
+                placeholder="Type instruction..."
+                className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleApplyManual}
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+              >
+                Set
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -380,14 +671,31 @@ export default function PDCASheet({
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
 
-    const department = row.department || '';
+    const departments = Array.isArray(row.departments) && row.departments.length > 0
+      ? row.departments
+      : (row.department ? [row.department] : []);
+    const department = departments[0] || row.department || '';
+
     const section = row.section || '';
     const sectionId = row.sectionId ?? row.lineAreaSectionId ?? null;
     const sectionCode = row.sectionCode || '';
+    const sections = Array.isArray(row.sections) && row.sections.length > 0
+      ? row.sections
+      : (section ? [{ section, sectionId, sectionCode }] : []);
+
     const lineArea = row.lineArea || '';
     const lineAreaId = row.lineAreaId ?? null;
     const lineAreaCode = row.lineAreaCode || '';
     const lineAreaSectionId = row.lineAreaSectionId ?? sectionId;
+    const lineAreas = Array.isArray(row.lineAreas) && row.lineAreas.length > 0
+      ? row.lineAreas
+      : (lineArea ? [{ lineArea, lineAreaId, lineAreaCode, sectionId: lineAreaSectionId }] : []);
+
+    const responseDate = row.responseDate || '';
+    const revisedDates = Array.isArray(row.revisedDates) && row.revisedDates.length > 0
+      ? row.revisedDates
+      : (responseDate ? [responseDate] : []);
+
     const resolvedDbDept = staffEmployees[0]?.department || (staffEmployee ? (findEmployeeDepartment(staffEmployee, dbEmployees) || findEmployeeDepartment(staffEmployee, VERIFIED_EMPLOYEE_MASTER)) : '') || '';
     const responsiblePersonDept = (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
       ? row.responsiblePersonDept
@@ -414,9 +722,11 @@ export default function PDCASheet({
     const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
       ? row.stdDurationMin
       : (row.stdDuration !== undefined && row.stdDuration !== null ? row.stdDuration : '');
-    const noOfTimeRevised = (row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null)
-      ? row.noOfTimeRevised
-      : (row.noOfTimesRevised !== undefined && row.noOfTimesRevised !== null ? row.noOfTimesRevised : 0);
+    const noOfTimeRevised = revisedDates.length > 1
+      ? revisedDates.length - 1
+      : ((row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null)
+        ? row.noOfTimeRevised
+        : (row.noOfTimesRevised !== undefined && row.noOfTimesRevised !== null ? row.noOfTimesRevised : 0));
     const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
       ? row.respUnit
       : (row.responsiblePersonUnit || row.respUnit || '');
@@ -424,20 +734,25 @@ export default function PDCASheet({
     return {
       ...row,
       department,
+      departments,
       unit,
       stdDurationMin,
+      responseDate,
+      revisedDates,
       noOfTimeRevised,
       respUnit,
       responsiblePersonUnit: respUnit,
       confirmation,
       status,
-      section,
-      sectionId,
-      sectionCode,
-      lineArea,
-      lineAreaId,
-      lineAreaCode,
-      lineAreaSectionId,
+      section: sections[0]?.section || section,
+      sectionId: sections[0]?.sectionId ?? sectionId,
+      sectionCode: sections[0]?.sectionCode || sectionCode,
+      sections,
+      lineArea: lineAreas[0]?.lineArea || lineArea,
+      lineAreaId: lineAreas[0]?.lineAreaId ?? lineAreaId,
+      lineAreaCode: lineAreas[0]?.lineAreaCode || lineAreaCode,
+      lineAreaSectionId: lineAreas[0]?.sectionId ?? lineAreaSectionId,
+      lineAreas,
       responsiblePersonDept,
       imagesBefore,
       imagesAfter,
@@ -807,6 +1122,7 @@ export default function PDCASheet({
         r.date?.trim() ||
         r.shift?.trim() ||
         r.lineArea?.trim() ||
+        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
         r.observation?.trim() ||
         r.imageBefore ||
         (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
@@ -816,6 +1132,8 @@ export default function PDCASheet({
         (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
         r.responseDate?.trim() ||
         r.department?.trim() ||
+        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
+        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
         r.staffEmployee?.trim() ||
         r.cftTopic?.trim() ||
         r.responsiblePersonConfirmation?.trim()
@@ -825,7 +1143,8 @@ export default function PDCASheet({
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
         if (!r.status?.trim()) missing.push('Status');
-        if (!r.lineArea?.trim()) missing.push('Line/Area');
+        const activeLineArea = (r.lineAreas?.[0]?.lineArea || r.lineArea || '').trim();
+        if (!activeLineArea) missing.push('Line/Area');
         if (!r.observation?.trim()) missing.push('Observation');
 
         if (missing.length > 0) {
@@ -1652,6 +1971,227 @@ export default function PDCASheet({
         lineAreaId: nextLineAreaId,
         lineAreaCode: nextLineAreaCode,
         lineAreaSectionId: nextLineAreaSectionId
+      };
+      return updated;
+    });
+  };
+
+  const handleAddDepartment = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const depts = Array.isArray(curr.departments) && curr.departments.length > 0
+        ? [...curr.departments]
+        : (curr.department ? [curr.department] : ['']);
+      depts.push('');
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: depts[0] || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveDepartment = (rowIndex, dIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let depts = Array.isArray(curr.departments) ? [...curr.departments] : (curr.department ? [curr.department] : []);
+      depts.splice(dIdx, 1);
+      if (depts.length === 0) depts = [''];
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: depts[0] || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateDepartment = (rowIndex, dIdx, val) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let depts = Array.isArray(curr.departments) ? [...curr.departments] : (curr.department ? [curr.department] : []);
+      if (depts.length === 0) depts = [''];
+      depts[dIdx] = val;
+      const primary = depts[0] || '';
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: primary
+      };
+      return updated;
+    });
+  };
+
+  const handleAddSection = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const secs = Array.isArray(curr.sections) && curr.sections.length > 0
+        ? [...curr.sections]
+        : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]);
+      secs.push({ section: '', sectionId: null, sectionCode: '' });
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: secs[0]?.section || '',
+        sectionId: secs[0]?.sectionId ?? null,
+        sectionCode: secs[0]?.sectionCode || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveSection = (rowIndex, sIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
+      secs.splice(sIdx, 1);
+      if (secs.length === 0) secs = [{ section: '', sectionId: null, sectionCode: '' }];
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: secs[0]?.section || '',
+        sectionId: secs[0]?.sectionId ?? null,
+        sectionCode: secs[0]?.sectionCode || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateSection = (rowIndex, sIdx, sectionName, meta = {}) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
+      if (secs.length === 0) secs = [{ section: '', sectionId: null, sectionCode: '' }];
+      secs[sIdx] = {
+        section: sectionName,
+        sectionId: meta?.sectionId ?? null,
+        sectionCode: meta?.sectionCode || ''
+      };
+      const primary = secs[0] || { section: '', sectionId: null, sectionCode: '' };
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: primary.section || '',
+        sectionId: primary.sectionId ?? null,
+        sectionCode: primary.sectionCode || '',
+        lineAreaSectionId: primary.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleAddLineArea = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const las = Array.isArray(curr.lineAreas) && curr.lineAreas.length > 0
+        ? [...curr.lineAreas]
+        : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]);
+      las.push({ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null });
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: las[0]?.lineArea || '',
+        lineAreaId: las[0]?.lineAreaId ?? null,
+        lineAreaCode: las[0]?.lineAreaCode || '',
+        lineAreaSectionId: las[0]?.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveLineArea = (rowIndex, laIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let las = Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []);
+      las.splice(laIdx, 1);
+      if (las.length === 0) las = [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }];
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: las[0]?.lineArea || '',
+        lineAreaId: las[0]?.lineAreaId ?? null,
+        lineAreaCode: las[0]?.lineAreaCode || '',
+        lineAreaSectionId: las[0]?.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateLineArea = (rowIndex, laIdx, val, meta = {}) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let las = Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []);
+      if (las.length === 0) las = [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }];
+      const lineSectionId = meta?.sectionId ?? curr.sections?.[laIdx]?.sectionId ?? curr.sectionId ?? null;
+      las[laIdx] = {
+        lineArea: val,
+        lineAreaId: meta?.lineAreaId ?? meta?.lineId ?? null,
+        lineAreaCode: meta?.lineAreaCode || '',
+        sectionId: lineSectionId
+      };
+      const primary = las[0] || { lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null };
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: primary.lineArea || '',
+        lineAreaId: primary.lineAreaId ?? null,
+        lineAreaCode: primary.lineAreaCode || '',
+        lineAreaSectionId: primary.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleResponseDateChange = (rowIndex, newDate) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      const oldDate = curr.responseDate || '';
+      let revisedDates = Array.isArray(curr.revisedDates) && curr.revisedDates.length > 0
+        ? [...curr.revisedDates]
+        : (oldDate ? [oldDate] : []);
+
+      if (!newDate) {
+        updated[rowIndex] = {
+          ...curr,
+          responseDate: '',
+          revisedDates
+        };
+        return updated;
+      }
+
+      if (revisedDates.length === 0) {
+        revisedDates = [newDate];
+      } else if (curr.responseDate !== newDate) {
+        revisedDates = [...revisedDates, newDate];
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        responseDate: newDate,
+        revisedDates,
+        noOfTimeRevised: revisedDates.length > 1 ? revisedDates.length - 1 : 0
       };
       return updated;
     });
@@ -2660,7 +3200,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[11px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
@@ -2811,7 +3351,7 @@ export default function PDCASheet({
                 <div className="font-semibold text-slate-800">Std. Duration</div>
                 <div className="font-semibold text-[9.5px] text-slate-600">in min</div>
               </th>
-              <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
+              <th rowSpan={2} className="py-1 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
                 <div className="text-[10px] leading-tight font-semibold">Response</div>
                 <div className="text-[10px] leading-tight font-semibold">Date</div>
               </th>
@@ -2861,7 +3401,7 @@ export default function PDCASheet({
                     className="group/row transition-colors"
                   >
                     {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.date}
@@ -2940,87 +3480,159 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 6. Department (Dropdown with the 13 required departments) */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px] focus-within:bg-blue-50/30">
-                      <div className="relative w-full flex items-center justify-center">
-                        <select
-                          disabled={effectiveReadOnly}
-                          value={row.department || ''}
-                          onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                          title={row.department || 'Select Department'}
-                        >
-                          <option value="">Dept...</option>
-                          {departmentsList.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
+                    {/* 6. Department (Multi-select support with + button) */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.departments) && row.departments.length > 0) ? row.departments : (row.department ? [row.department] : [''])).map((dVal, dIdx, arr) => (
+                            <div key={dIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/dept focus-within:bg-blue-50/30">
+                              <div className="relative w-full flex items-center justify-center">
+                                <select
+                                  disabled={effectiveReadOnly}
+                                  value={dVal || ''}
+                                  onChange={(e) => handleUpdateDepartment(idx, dIdx, e.target.value)}
+                                  className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                                  title={dVal || 'Select Department'}
+                                >
+                                  <option value="">Dept...</option>
+                                  {departmentsList.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}
+                                    </option>
+                                  ))}
+                                </select>
+                                {!effectiveReadOnly && (
+                                  <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                )}
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDepartment(idx, dIdx)}
+                                  className="opacity-0 group-hover/dept:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2"
+                                  title="Remove Department"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
                           ))}
-                        </select>
+                        </div>
                         {!effectiveReadOnly && (
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddDepartment(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Department"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     </td>
 
-                    {/* 6. Section (Searchable Dropdown with Section Name & Code) */}
+                    {/* 7. Section (Multi-select support with + button) */}
                     <td
                       style={{
                         width: `${sectionColWidth}px`,
                         minWidth: `${sectionColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
+                      className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
-                      <div className="w-full flex items-center justify-center">
-                        <SearchableSectionSelect
-                          disabled={effectiveReadOnly}
-                          value={row.section}
-                          sectionId={row.sectionId ?? row.lineAreaSectionId}
-                          sectionCode={row.sectionCode}
-                          department={row.department}
-                          onChange={(sectionName, meta) => handleSectionChange(idx, sectionName, meta)}
-                          placeholder="Section..."
-                        />
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.sections) && row.sections.length > 0) ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }])).map((sVal, sIdx, arr) => (
+                            <div key={sIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/sec">
+                              <div className="w-full flex items-center justify-center">
+                                <SearchableSectionSelect
+                                  disabled={effectiveReadOnly}
+                                  value={sVal.section}
+                                  sectionId={sVal.sectionId}
+                                  sectionCode={sVal.sectionCode}
+                                  department={row.departments?.[sIdx] || row.department}
+                                  onChange={(sectionName, meta) => handleUpdateSection(idx, sIdx, sectionName, meta)}
+                                  placeholder="Section..."
+                                />
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSection(idx, sIdx)}
+                                  className="opacity-0 group-hover/sec:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
+                                  title="Remove Section"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {!effectiveReadOnly && (
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddSection(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Section"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
 
-                    {/* 7. Line/Area (Searchable Dropdown scoped to Section, centered) */}
+                    {/* 8. Line/Area (Multi-select support with + button) */}
                     <td
                       style={{
                         width: `${lineAreaColWidth}px`,
                         minWidth: `${lineAreaColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
+                      className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
-                      <div className="w-full flex items-center justify-center">
-                        <SearchableLineAreaSelect
-                          disabled={effectiveReadOnly}
-                          value={row.lineArea}
-                          sectionId={row.sectionId ?? row.lineAreaSectionId}
-                          lineId={row.lineAreaId}
-                          onChange={(val, meta) =>
-                            setRows((prev) => {
-                              const updated = [...prev];
-                              const curr = updated[idx];
-                              const newSectionId = meta?.sectionId ?? curr.sectionId;
-                              const newSection = meta?.section || curr.section;
-                              const newSectionCode = meta?.sectionCode || curr.sectionCode;
-
-                              updated[idx] = {
-                                ...curr,
-                                lineArea: val,
-                                lineAreaSectionId: newSectionId,
-                                lineAreaId: meta?.lineId ?? null,
-                                lineAreaCode: meta?.lineCode ?? '',
-                                section: newSection,
-                                sectionId: newSectionId,
-                                sectionCode: newSectionCode
-                              };
-                              return updated;
-                            })
-                          }
-                          placeholder="Line/Area..."
-                        />
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.lineAreas) && row.lineAreas.length > 0) ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }])).map((laVal, laIdx, arr) => (
+                            <div key={laIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/line">
+                              <div className="w-full flex items-center justify-center">
+                                <SearchableLineAreaSelect
+                                  disabled={effectiveReadOnly}
+                                  value={laVal.lineArea}
+                                  sectionId={laVal.sectionId ?? row.sections?.[laIdx]?.sectionId ?? row.sectionId}
+                                  lineId={laVal.lineAreaId}
+                                  onChange={(val, meta) => handleUpdateLineArea(idx, laIdx, val, meta)}
+                                />
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineArea(idx, laIdx)}
+                                  className="opacity-0 group-hover/line:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
+                                  title="Remove Line/Area"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {!effectiveReadOnly && (
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddLineArea(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Line/Area"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -3302,79 +3914,49 @@ export default function PDCASheet({
                       })()}
                     </td>
 
-                    {/* Std. Duration in min - Immediately after Image After */}
+                    {/* Std. Duration in min - Automatically formats with 'min' suffix */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
                       <div className="w-full flex items-center justify-center">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={row.stdDurationMin !== undefined && row.stdDurationMin !== null ? row.stdDurationMin : ''}
+                        <DurationMinCell
+                          value={row.stdDurationMin}
                           readOnly={effectiveReadOnly}
-                          disabled={effectiveReadOnly}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            if (raw === '') {
-                              handleCellChange(idx, 'stdDurationMin', '');
-                              return;
-                            }
-                            const num = parseFloat(raw);
-                            if (isNaN(num) || num < 0) return;
-                            handleCellChange(idx, 'stdDurationMin', raw);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === '-' || e.key === 'e' || e.key === 'E') {
-                              e.preventDefault();
-                            }
-                          }}
-                          placeholder={effectiveReadOnly ? '-' : '0'}
-                          className={`w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors ${effectiveReadOnly ? 'cursor-default' : ''}`}
-                          title="Standard duration in minutes"
+                          onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
                         />
                       </div>
                     </td>
 
                     {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.responseDate}
                           readOnly={effectiveReadOnly}
-                          onChange={(val) => handleCellChange(idx, 'responseDate', val)}
+                          onChange={(val) => handleResponseDateChange(idx, val)}
                         />
                       </div>
                     </td>
 
-                    {/* No. of time Revised - Immediately after Response date */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
-                      <div className="w-full flex items-center justify-center">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null ? row.noOfTimeRevised : ''}
-                          readOnly={effectiveReadOnly}
-                          disabled={effectiveReadOnly}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            if (raw === '') {
-                              handleCellChange(idx, 'noOfTimeRevised', '');
-                              return;
-                            }
-                            const num = parseInt(raw, 10);
-                            if (isNaN(num) || num < 0) return;
-                            handleCellChange(idx, 'noOfTimeRevised', num);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === '-' || e.key === '.' || e.key === 'e' || e.key === 'E') {
-                              e.preventDefault();
-                            }
-                          }}
-                          placeholder={effectiveReadOnly ? '-' : '0'}
-                          className={`w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors ${effectiveReadOnly ? 'cursor-default' : ''}`}
-                          title="Number of times response has been revised"
-                        />
-                      </div>
+                    {/* No. of time Revised - Stacked past and current response dates */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
+                      {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {row.revisedDates.map((rDate, rIdx) => (
+                            <div
+                              key={rIdx}
+                              className="w-full py-1 px-1 flex items-center justify-center text-center min-h-[26px]"
+                              title={`Revision ${rIdx + 1}: ${formatDisplayDate(rDate)}`}
+                            >
+                              <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap">
+                                {formatDisplayDate(rDate)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
+                          -
+                        </div>
+                      )}
                     </td>
 
                     {/* Unit in Responsible Person Confirmation - Immediately before Dept */}
@@ -3709,39 +4291,18 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 15. Responsible Person Instruction, etc. Column: Confirmation Dropdown & Connected Status */}
+                    {/* 15. Responsible Person Instruction, etc. Column: Custom Dropdown with User fetched by ID (upside) and Manual input (downwards) */}
                     <td className="p-1 align-middle border-r border-b border-[#64748B] w-[120px] min-w-[110px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
                       <div className="w-full flex flex-col items-center justify-center gap-1">
-                        <div className="relative w-full flex items-center justify-center">
-                          <select
-                            disabled={effectiveReadOnly}
-                            aria-label={`Confirmation for row ${sNo}`}
-                            value={row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : '')}
-                            onChange={(e) => handleConfirmationChange(idx, e.target.value)}
-                            className={`w-full rounded-md border px-1 py-1 text-[10.5px] font-semibold outline-none text-center appearance-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
-                              row.confirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Confirmed'
-                                ? 'bg-green-50 text-green-700 border-green-300'
-                                : row.confirmation === 'Not - Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed'
-                                ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
-                                : 'bg-slate-50 text-slate-700 border-slate-300'
-                            }`}
-                            title={row.confirmation || 'Select Confirmation'}
-                          >
-                            <option value="">Select...</option>
-                            <option value="Confirmed">Confirmed</option>
-                            <option value="Not - Confirmed">Not - Confirmed</option>
-                          </select>
-                          {!effectiveReadOnly && (
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          )}
-                        </div>
-
-                        {/* Preserved Instructions / Remarks Text (Preserves historical notes without overwriting) */}
-                        {Boolean(row.responsiblePersonConfirmation && row.responsiblePersonConfirmation !== 'Confirmed' && row.responsiblePersonConfirmation !== 'Not - Confirmed') && (
-                          <div className="w-full text-[9px] text-slate-500 italic truncate px-0.5 text-center" title={row.responsiblePersonConfirmation}>
-                            {row.responsiblePersonConfirmation}
-                          </div>
-                        )}
+                        <ResponsiblePersonInstructionDropdown
+                          value={row.confirmation}
+                          onChange={(val) => handleConfirmationChange(idx, val)}
+                          row={row}
+                          dbEmployees={dbEmployees}
+                          currentUser={effectiveUser}
+                          readOnly={effectiveReadOnly}
+                          sNo={sNo}
+                        />
                       </div>
                     </td>
 

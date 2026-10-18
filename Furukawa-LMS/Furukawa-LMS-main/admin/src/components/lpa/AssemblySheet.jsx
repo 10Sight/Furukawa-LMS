@@ -207,12 +207,12 @@ export default function AssemblySheet({
 
   // Auditors State (multiple auditors)
   const initialAuditors = useMemo(() => {
-    if (Array.isArray(rawSheet?.auditors) && rawSheet.auditors.length > 0) return rawSheet.auditors;
-    if (Array.isArray(editor?.auditors) && editor.auditors.length > 0) return editor.auditors;
-    if (rawSheet?.auditor && typeof rawSheet.auditor === 'string') return [rawSheet.auditor];
-    if (editor?.auditor && typeof editor.auditor === 'string') return [editor.auditor];
-    return [currentUserName || ''];
-  }, [rawSheet?.auditors, editor?.auditors, rawSheet?.auditor, editor?.auditor, currentUserName]);
+    if (Array.isArray(rawSheet?.auditors) && rawSheet.auditors.length > 0 && rawSheet.auditors.some(Boolean)) return rawSheet.auditors;
+    if (Array.isArray(editor?.auditors) && editor.auditors.length > 0 && editor.auditors.some(Boolean)) return editor.auditors;
+    if (rawSheet?.auditor && typeof rawSheet.auditor === 'string' && rawSheet.auditor.trim()) return [rawSheet.auditor.trim()];
+    if (editor?.auditor && typeof editor.auditor === 'string' && editor.auditor.trim()) return [editor.auditor.trim()];
+    return [''];
+  }, [rawSheet?.auditors, editor?.auditors, rawSheet?.auditor, editor?.auditor]);
 
   const [auditorList, setAuditorList] = useState(initialAuditors);
 
@@ -233,7 +233,13 @@ export default function AssemblySheet({
     if (rawSheet?.line || editor?.line) {
       setFormLine(rawSheet?.line || editor?.line);
     }
-  }, [rawSheet?.date, rawSheet?.shift, rawSheet?.department, rawSheet?.sectionName, rawSheet?.line, editor?.date, editor?.shift, editor?.department, editor?.sectionName, editor?.line]);
+    const incomingAuditors = (Array.isArray(rawSheet?.auditors) && rawSheet.auditors.length > 0 && rawSheet.auditors.some(Boolean))
+      ? rawSheet.auditors
+      : (Array.isArray(editor?.auditors) && editor.auditors.length > 0 && editor.auditors.some(Boolean))
+        ? editor.auditors
+        : (rawSheet?.auditor?.trim?.() ? [rawSheet.auditor.trim()] : (editor?.auditor?.trim?.() ? [editor.auditor.trim()] : ['']));
+    setAuditorList(incomingAuditors);
+  }, [rawSheet?.date, rawSheet?.shift, rawSheet?.department, rawSheet?.sectionName, rawSheet?.line, rawSheet?.auditors, rawSheet?.auditor, editor?.date, editor?.shift, editor?.department, editor?.sectionName, editor?.line, editor?.auditors, editor?.auditor]);
 
   // Master Data: Sections and Employees
   const [sectionsMaster, setSectionsMaster] = useState(VERIFIED_SECTION_MASTER);
@@ -352,7 +358,7 @@ export default function AssemblySheet({
   };
 
   const handleAddAuditor = () => {
-    const next = [...auditorList, currentUserName || ''];
+    const next = [...auditorList, ''];
     setAuditorList(next);
     notifyMetadataChange({ auditors: next });
   };
@@ -514,6 +520,12 @@ export default function AssemblySheet({
 
   const pdcaStart = sheet.merges?.find(merge => merge.s.c === 0 && merge.e.c >= 6 && merge.s.r === merge.e.r && merge.s.r > 40)?.s.r ?? -1;
   const legendStart = sheet.merges?.find(merge => merge.s.c === 0 && merge.e.c === 2 && merge.s.r > 30)?.s.r ?? -1;
+
+  // Locate the FRM-WH-QA-246 row so that the table ends directly after it and completely removes the subsequent LPA PDCA form
+  const frmRowIndex = sheet.rows.findIndex(row =>
+    Array.isArray(row) && row.some(cell => String(cell?.value ?? cell?.formatted ?? '').includes('FRM-WH-QA-246'))
+  );
+  const checklistEnd = frmRowIndex >= 0 ? frmRowIndex + 1 : (pdcaStart >= 0 ? pdcaStart : sheet.rows.length);
 
   // Total Marks, Total Score, and Percentage calculation across observation rows (handling NA correctly)
   const { totalMarks, totalScore, totalApplicableMarks, percentageText } = useMemo(() => {
@@ -943,9 +955,8 @@ export default function AssemblySheet({
         </div>
       </div>
 
-      {/* 2. Checklist Table (Starts at row 1 headers: Sl No, Focus, CHECKS POINTS, Area, Marks, Observation, Score) */}
-      {table(1, pdcaStart < 0 ? sheet.rows.length : pdcaStart, 'assembly-audit-table')}
+      {/* 2. Checklist Table (Ends directly after FRM-WH-QA-246 row, omitting the subsequent LPA PDCA table) */}
+      {table(1, checklistEnd, 'assembly-audit-table')}
     </div>
-    {pdcaStart >= 0 && table(pdcaStart, sheet.rows.length, 'assembly-pdca-table')}
   </div>;
 }

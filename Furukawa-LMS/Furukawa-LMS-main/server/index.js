@@ -217,6 +217,9 @@ app.use("/uploads", express.static(uploadPath, {
             '.mp3': 'audio/mpeg'
         };
 
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+
         if (typeMap[ext]) {
             res.setHeader('Content-Type', typeMap[ext]);
             res.setHeader('Content-Disposition', 'inline');

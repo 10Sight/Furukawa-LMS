@@ -306,7 +306,9 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // F: Department
     const cellDept = rowObj.getCell(6);
-    cellDept.value = r.department || '';
+    cellDept.value = Array.isArray(r.departments) && r.departments.length > 0
+      ? r.departments.filter(Boolean).join(', ')
+      : (r.department || '');
     applyCellStyle(cellDept, { align: 'center', size: 9 });
     cellDept.dataValidation = {
       type: 'list',
@@ -316,12 +318,16 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // G: Section
     const cellSec = rowObj.getCell(7);
-    cellSec.value = r.section || '';
+    cellSec.value = Array.isArray(r.sections) && r.sections.length > 0
+      ? r.sections.map((s) => (typeof s === 'object' ? s?.section : s)).filter(Boolean).join(', ')
+      : (r.section || '');
     applyCellStyle(cellSec, { align: 'center', size: 9 });
 
     // H: Line / Area
     const cellLine = rowObj.getCell(8);
-    cellLine.value = r.lineArea || '';
+    cellLine.value = Array.isArray(r.lineAreas) && r.lineAreas.length > 0
+      ? r.lineAreas.map((l) => (typeof l === 'object' ? l?.lineArea : l)).filter(Boolean).join(', ')
+      : (r.lineArea || '');
     applyCellStyle(cellLine, { align: 'center', size: 9 });
 
     // I: Observation
@@ -351,9 +357,9 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // N: Std. Duration in min
     const cellDuration = rowObj.getCell(14);
-    cellDuration.value = r.stdDurationMin !== undefined && r.stdDurationMin !== null && r.stdDurationMin !== ''
-      ? Number(r.stdDurationMin)
-      : (r.stdDuration ? Number(r.stdDuration) : '');
+    const durRaw = r.stdDurationMin !== undefined && r.stdDurationMin !== null ? String(r.stdDurationMin) : (r.stdDuration ? String(r.stdDuration) : '');
+    const durNum = Number(durRaw.replace(/[^0-9.]/g, ''));
+    cellDuration.value = !isNaN(durNum) && durRaw.trim() !== '' ? `${durNum} min` : '';
     applyCellStyle(cellDuration, { align: 'center', size: 9 });
 
     // O: Response Date
@@ -363,9 +369,13 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // P: No. of time Revised
     const cellRevised = rowObj.getCell(16);
-    cellRevised.value = r.noOfTimeRevised !== undefined && r.noOfTimeRevised !== null && r.noOfTimeRevised !== ''
-      ? Number(r.noOfTimeRevised)
-      : (r.noOfTimesRevised !== undefined ? Number(r.noOfTimesRevised) : 0);
+    if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0) {
+      cellRevised.value = r.revisedDates.join(', ');
+    } else {
+      cellRevised.value = r.noOfTimeRevised !== undefined && r.noOfTimeRevised !== null && r.noOfTimeRevised !== ''
+        ? (isNaN(Number(r.noOfTimeRevised)) ? String(r.noOfTimeRevised) : Number(r.noOfTimeRevised))
+        : 0;
+    }
     applyCellStyle(cellRevised, { align: 'center', size: 9 });
 
     // Q: Unit (Section C / Responsible Person Confirmation)

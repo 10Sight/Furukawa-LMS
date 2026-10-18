@@ -579,6 +579,38 @@ export default function PDCASheet({
 }) {
   const { data, setData, showToast, userContext } = usePDCA();
   const effectiveUser = currentUser || userContext?.user;
+
+  // Determine if the current user has Administrator privileges
+  const isAdmin = useMemo(() => {
+    const u = effectiveUser || userContext?.user;
+    if (u) {
+      if (
+        u.isAdmin === true ||
+        u.isAdmin === 1 ||
+        String(u.role || '').toUpperCase() === 'ADMIN' ||
+        String(u.role || '').toUpperCase() === 'SUPERADMIN'
+      ) {
+        return true;
+      }
+    }
+    try {
+      const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                     (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          parsed?.isAdmin === true ||
+          parsed?.isAdmin === 1 ||
+          String(parsed?.role || '').toUpperCase() === 'ADMIN' ||
+          String(parsed?.role || '').toUpperCase() === 'SUPERADMIN'
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, [effectiveUser, userContext?.user]);
+
   const effectiveReadOnly = Boolean(
     readOnly || (topic?.id && !isRecordCreator(topic, effectiveUser))
   );
@@ -2209,6 +2241,37 @@ export default function PDCASheet({
     });
   };
 
+  // Delete a specific revision date from No. of time Revised column (Restricted to Administrators only)
+  const handleDeleteRevisedDate = (rowIndex, dateIndex) => {
+    if (!isAdmin) {
+      if (typeof showToast === 'function') {
+        showToast('Access Denied: Only administrators have access to delete revised dates.');
+      }
+      return;
+    }
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr || !Array.isArray(curr.revisedDates)) return prev;
+
+      const remaining = curr.revisedDates.filter((_, i) => i !== dateIndex);
+      const latestDate = remaining.length > 0 ? remaining[remaining.length - 1] : '';
+
+      updated[rowIndex] = {
+        ...curr,
+        revisedDates: remaining,
+        responseDate: latestDate,
+        noOfTimeRevised: remaining.length > 1 ? remaining.length - 1 : 0
+      };
+      return updated;
+    });
+
+    if (typeof showToast === 'function') {
+      showToast('Revised date deleted successfully.');
+    }
+  };
+
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   // Rule A: Confirmed -> Status = Closed
   // Rule B: Not - Confirmed -> Status = In - Progress
@@ -3402,9 +3465,20 @@ export default function PDCASheet({
                 <div className="text-[10px] leading-tight font-semibold">Response</div>
                 <div className="text-[10px] leading-tight font-semibold">Date</div>
               </th>
-              <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]">
+              <th
+                rowSpan={2}
+                className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]"
+                title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
+              >
                 <div className="font-semibold text-slate-800">No. of time</div>
-                <div className="font-semibold text-slate-800">Revised</div>
+                <div className="font-semibold text-slate-800 flex items-center justify-center gap-1">
+                  <span>Revised</span>
+                  {isAdmin && (
+                    <span className="text-[8px] font-bold text-amber-700 bg-amber-100/90 px-1 py-0.2 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
+                      Admin
+                    </span>
+                  )}
+                </div>
               </th>
               <th colSpan={4} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
                 <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
@@ -3990,12 +4064,25 @@ export default function PDCASheet({
                           {row.revisedDates.map((rDate, rIdx) => (
                             <div
                               key={rIdx}
-                              className="w-full py-1 px-1 flex items-center justify-center text-center min-h-[26px]"
-                              title={`Revision ${rIdx + 1}: ${formatDisplayDate(rDate)}`}
+                              className="group/rev w-full py-1 px-1 flex items-center justify-between text-center min-h-[26px] hover:bg-slate-50 transition-colors"
+                              title={`Revision ${rIdx + 1}: ${formatDisplayDate(rDate)}${isAdmin ? ' (Admin: Click ✕ to delete)' : ''}`}
                             >
-                              <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap">
+                              <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                 {formatDisplayDate(rDate)}
                               </span>
+                              {isAdmin && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRevisedDate(idx, rIdx);
+                                  }}
+                                  title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(rDate)}) - Admin only`}
+                                  className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
+                                >
+                                  <X className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>

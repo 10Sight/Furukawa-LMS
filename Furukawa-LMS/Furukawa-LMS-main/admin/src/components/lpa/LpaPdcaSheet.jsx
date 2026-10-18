@@ -453,11 +453,15 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   }, [counterMeasureWidth]);
 
   // Editable Sheet Header Details
-  const [headerInfo, setHeaderInfo] = useState(topic?.sheet?.headerInfo || {
-    topicName: '',
-    preparedBy: '',
-    auditNo: '',
-    attendees: ''
+  const defaultLpaTopic = topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)');
+  const [headerInfo, setHeaderInfo] = useState(() => {
+    const raw = topic?.sheet?.headerInfo || {};
+    return {
+      topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : defaultLpaTopic,
+      preparedBy: raw.preparedBy || '',
+      auditNo: raw.auditNo || '',
+      attendees: raw.attendees || ''
+    };
   });
 
   // Load saved sheet from backend on mount or when topic changes
@@ -1472,7 +1476,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     colSpan={17}
                     className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
                   >
-                    {topic?.topic || 'PDCA - M Tanaka San Audit'}
+                    {headerInfo.topicName || topic?.topic || defaultLpaTopic}
                   </th>
                 </tr>
 

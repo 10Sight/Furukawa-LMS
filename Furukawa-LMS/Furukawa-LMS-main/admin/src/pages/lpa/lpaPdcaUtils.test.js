@@ -70,11 +70,14 @@ test('getScoreForObservation returns specified fixed scores based on marks', () 
 
 test('getLpaPdcaTopic returns topic with at least 10 rows for Assembly, C&C and All', () => {
   const assemblyTopic = getLpaPdcaTopic({ section: 'assembly', unit: 'Bawal', level: 'L1', date: '2026-10-09' });
-  assert.equal(assemblyTopic.topic, 'PDCA - M Tanaka San Audit');
+  assert.equal(assemblyTopic.topic, 'Assembly - LPA Observation (PDCA)');
+  assert.equal(assemblyTopic.sheet.headerInfo.topicName, 'Assembly - LPA Observation (PDCA)');
   assert.ok(assemblyTopic.sheet.rows.length >= 10);
   assert.ok(assemblyTopic.sheet.rows[0].shift);
 
   const ccTopic = getLpaPdcaTopic({ section: 'cc', unit: 'Bawal', level: 'L1', date: '2026-10-09' });
+  assert.equal(ccTopic.topic, 'C&C - LPA Observation (PDCA)');
+  assert.equal(ccTopic.sheet.headerInfo.topicName, 'C&C - LPA Observation (PDCA)');
   assert.ok(ccTopic.sheet.rows.length >= 10);
 
   const allTopic = getLpaPdcaTopic({ section: 'all', unit: 'Bawal', level: 'L1', date: '2026-10-09' });

@@ -225,6 +225,7 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
   // Single permanent PDCA sheet per section (Assembly and C&C)
   const storageId = `PDCA-LPA-${secUpper}-${plant}`;
   const localCacheKey = `lpa_pdca_saved_${storageId}`;
+  const targetTopicName = sec === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)';
 
   // Check saved copy in localStorage first
   if (typeof localStorage !== 'undefined') {
@@ -233,9 +234,13 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.rows)) {
+          if (!parsed.headerInfo) parsed.headerInfo = {};
+          if (!parsed.headerInfo.topicName || parsed.headerInfo.topicName === 'PDCA - M Tanaka San Audit') {
+            parsed.headerInfo.topicName = targetTopicName;
+          }
           return {
             id: storageId,
-            topic: 'PDCA - M Tanaka San Audit',
+            topic: targetTopicName,
             section: sec,
             scope: 'Company',
             plant,
@@ -255,10 +260,14 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
         if (legSaved) {
           const parsed = JSON.parse(legSaved);
           if (parsed && Array.isArray(parsed.rows)) {
-            localStorage.setItem(localCacheKey, legSaved);
+            if (!parsed.headerInfo) parsed.headerInfo = {};
+            if (!parsed.headerInfo.topicName || parsed.headerInfo.topicName === 'PDCA - M Tanaka San Audit') {
+              parsed.headerInfo.topicName = targetTopicName;
+            }
+            localStorage.setItem(localCacheKey, JSON.stringify(parsed));
             return {
               id: storageId,
-              topic: 'PDCA - M Tanaka San Audit',
+              topic: targetTopicName,
               section: sec,
               scope: 'Company',
               plant,
@@ -350,14 +359,14 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
   }
   const defaultTopic = {
     id: storageId,
-    topic: 'PDCA - M Tanaka San Audit',
+    topic: targetTopicName,
     section: sec,
     scope: 'Company',
     plant,
     sheet: {
       rows: finalRows,
       headerInfo: {
-        topicName: '',
+        topicName: targetTopicName,
         preparedBy: '',
         auditNo: '',
         attendees: ''

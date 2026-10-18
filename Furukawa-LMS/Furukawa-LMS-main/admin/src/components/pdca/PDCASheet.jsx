@@ -788,13 +788,15 @@ export default function PDCASheet({
   }, []);
 
   const initialHeaderInfo = useMemo(() => {
-    return topic?.sheet?.headerInfo || {
-      topicName: '',
-      preparedBy: '',
-      auditNo: '',
-      attendees: ''
+    const raw = topic?.sheet?.headerInfo || {};
+    const fallback = topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)');
+    return {
+      topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : fallback,
+      preparedBy: raw.preparedBy || '',
+      auditNo: raw.auditNo || '',
+      attendees: raw.attendees || ''
     };
-  }, []);
+  }, [topic?.sheet?.headerInfo, topic?.topic, topic?.section]);
 
   // Initialize rows with 10 empty items by default
   const [rows, setRows] = useState(initialRows);
@@ -1071,7 +1073,11 @@ export default function PDCASheet({
       if (!active || !savedSheet) return;
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
-        finalHeader = { ...headerInfo, ...savedSheet.headerInfo };
+        const loadedTopicName = savedSheet.headerInfo.topicName;
+        const normalizedTopicName = (!loadedTopicName || loadedTopicName === 'PDCA - M Tanaka San Audit')
+          ? (topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'))
+          : loadedTopicName;
+        finalHeader = { ...headerInfo, ...savedSheet.headerInfo, topicName: normalizedTopicName };
         setHeaderInfo(finalHeader);
       }
       let finalRows = rows;
@@ -3058,7 +3064,7 @@ export default function PDCASheet({
                 colSpan={totalCols}
                 className="py-4 px-6 text-center font-extrabold text-slate-900 text-2xl sm:text-3xl md:text-4xl tracking-wide select-none bg-white border-r border-b border-[#94A3B8]"
               >
-                {topic?.topic || 'PDCA - M Tanaka San Audit'}
+                {headerInfo.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)')}
               </th>
             </tr>
 

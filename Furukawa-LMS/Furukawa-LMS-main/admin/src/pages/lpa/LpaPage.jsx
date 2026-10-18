@@ -516,9 +516,10 @@ function LpaPageContent({ viewContext }) {
         if (parsed?.rows) loadedSheet = parsed;
       }
     } catch {}
+    const secName = (record.section || activeSection) === 'cc' ? 'C&C' : 'Assembly';
     setCustomPdcaTopic({
       id: recordTopicId,
-      topic: 'PDCA - M Tanaka San Audit',
+      topic: `${secName} - LPA Observation (PDCA)`,
       scope: 'Company',
       plant: record.unit || selectedUnit || 'Bawal',
       sheet: loadedSheet

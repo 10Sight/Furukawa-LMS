@@ -3,20 +3,16 @@ import {
   Mail,
   Send,
   X,
-  Paperclip,
   Check,
   Loader2,
   FileSpreadsheet,
-  Plus,
-  Users,
-  Building,
   Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
  * SendMailModal
- * Elegant, production-ready frontend email modal for:
+ * Clean frontend email modal with blank input fields:
  *  - LPA Assembly Form
  *  - LPA C&C Form
  *  - PDCA / LPA Observation Form
@@ -27,7 +23,6 @@ export default function SendMailModal({
   formType = 'assembly', // 'assembly' | 'cc' | 'pdca'
   title = 'LPA Check Sheet',
   metadata = {},
-  defaultRecipients = [],
   onSendSuccess
 }) {
   const [toInput, setToInput] = useState('');
@@ -38,104 +33,24 @@ export default function SendMailModal({
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [includeExcel, setIncludeExcel] = useState(true);
-  const [includePdf, setIncludePdf] = useState(false);
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
 
-  // Suggested quick-add email tags
-  const QUICK_RECIPIENTS = [
-    { label: 'Quality Lead', email: 'qa.lead@furukawaminda.com' },
-    { label: 'Section Head', email: 'section.head@furukawaminda.com' },
-    { label: 'Line Incharge', email: 'line.incharge@furukawaminda.com' },
-    { label: 'Plant QA Manager', email: 'plant.qa@furukawaminda.com' }
-  ];
-
-  // Initialize and pre-fill email fields whenever modal opens
+  // When modal opens, all input fields are reset to blank as requested
   useEffect(() => {
     if (!isOpen) {
       setSending(false);
       setSentSuccess(false);
       return;
     }
-
-    const dateStr = metadata.auditDate || metadata.date || new Date().toISOString().slice(0, 10);
-    const shiftStr = metadata.shift ? ` [Shift ${metadata.shift}]` : '';
-    const scoreStr = metadata.scorePercentage || metadata.percentage ? ` - Score: ${metadata.scorePercentage || metadata.percentage}` : '';
-    const deptStr = metadata.department ? ` - ${metadata.department}` : '';
-
-    let generatedSubject = '';
-    let generatedBody = '';
-    let initialRecipients = [];
-
-    if (Array.isArray(defaultRecipients) && defaultRecipients.length > 0) {
-      initialRecipients = [...defaultRecipients];
-    } else if (metadata.auditorEmail) {
-      initialRecipients = [metadata.auditorEmail];
-    }
-
-    if (formType === 'pdca') {
-      const topicName = metadata.topicName || title || 'Assembly - LPA Observation (PDCA)';
-      generatedSubject = `[PDCA Report] ${topicName} - ${dateStr}${shiftStr}`;
-      generatedBody = `Dear Team,
-
-Please find attached the latest Layered Process Audit (PDCA Observation) record for review and action planning.
-
---- AUDIT DETAILS ---
-• Topic: ${topicName}
-• Date: ${dateStr}
-• Unit: ${metadata.unit || 'Bawal'}
-• Plant / Section: ${metadata.section || metadata.sectionName || 'Assembly'}
-• Status: Active Observations Recorded
-
-Please review the attached observation sheet and ensure required countermeasures are implemented before the next review cycle.
-
-Best regards,
-Quality Assurance & Production Engineering
-Furukawa Minda Electric Portal`;
-    } else if (formType === 'cc') {
-      generatedSubject = `[LPA Report] C&C LPA Check Sheet Level-3 - ${dateStr}${shiftStr}${scoreStr}`;
-      generatedBody = `Dear Team,
-
-Please find attached the completed Layered Process Audit (C&C QA/Production) check sheet.
-
---- AUDIT SUMMARY ---
-• Check Sheet: LPA CHECK SHEET LEVEL-3 C&C QA/Prod.
-• Date: ${dateStr}${shiftStr}
-• Department: ${metadata.department || 'C&C'}
-• Auditor: ${metadata.auditors || metadata.auditor || 'Assigned Auditor'}
-• Compliance Score: ${metadata.scorePercentage || metadata.percentage || 'Recorded'}
-
-Please find the detailed checklist with item scores and observations in the attachment.
-
-Best regards,
-C&C QA Audit Team
-Furukawa Minda Electric Portal`;
-    } else {
-      // Default: Assembly LPA Check Sheet
-      generatedSubject = `[LPA Report] Assembly LPA Check Sheet - ${dateStr}${shiftStr}${deptStr}${scoreStr}`;
-      generatedBody = `Dear Team,
-
-Please find attached the completed Layered Process Audit (Assembly Quality & Production) check sheet.
-
---- AUDIT SUMMARY ---
-• Check Sheet: ${title || 'Assembly LPA Check Sheet.xls - Assy QC & Pro REV 06'}
-• Date: ${dateStr}${shiftStr}
-• Department / Section: ${metadata.department || 'Production'} ${metadata.sectionName ? `(${metadata.sectionName})` : ''}
-• Line: ${metadata.line || 'Assembly Line'}
-• Auditor: ${metadata.auditors || metadata.auditor || 'Assigned Auditor'}
-• Total Compliance Score: ${metadata.scorePercentage || metadata.percentage || 'Evaluated'}
-
-All verified check points and observation notes have been authoritatively recorded.
-
-Best regards,
-Assembly Audit Team
-Furukawa Minda Electric Portal`;
-    }
-
-    setSubject(generatedSubject);
-    setMessage(generatedBody);
-    setRecipients(initialRecipients.length > 0 ? initialRecipients : ['qa.team@furukawaminda.com']);
-  }, [isOpen, formType, title, metadata, defaultRecipients]);
+    setToInput('');
+    setRecipients([]);
+    setCcInput('');
+    setCcList([]);
+    setShowCc(false);
+    setSubject('');
+    setMessage('');
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -185,7 +100,6 @@ Furukawa Minda Electric Portal`;
       return;
     }
 
-    // Add any remaining text in toInput
     const finalRecipients = [...recipients];
     if (toInput.trim() && !finalRecipients.includes(toInput.trim())) {
       finalRecipients.push(toInput.trim());
@@ -193,7 +107,7 @@ Furukawa Minda Electric Portal`;
 
     setSending(true);
 
-    // Simulate modern mail dispatch interaction with animated feedback
+    // Frontend send simulation
     setTimeout(() => {
       setSending(false);
       setSentSuccess(true);
@@ -206,16 +120,15 @@ Furukawa Minda Electric Portal`;
           subject,
           message,
           attachments: [
-            includeExcel ? `${getAttachmentBaseName()}.xlsx` : null,
-            includePdf ? `${getAttachmentBaseName()}.pdf` : null
+            includeExcel ? `${getAttachmentBaseName()}.xlsx` : null
           ].filter(Boolean)
         });
       }
 
       setTimeout(() => {
         onClose();
-      }, 1000);
-    }, 1100);
+      }, 900);
+    }, 1000);
   };
 
   const getAttachmentBaseName = () => {
@@ -247,7 +160,7 @@ Furukawa Minda Electric Portal`;
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
-                Email this completed sheet and summary directly to team members.
+                Email this completed sheet directly to team members.
               </p>
             </div>
           </div>
@@ -304,30 +217,9 @@ Furukawa Minda Electric Portal`;
                 onChange={(e) => setToInput(e.target.value)}
                 onKeyDown={handleKeyDownTo}
                 onBlur={() => toInput.trim() && addRecipient()}
-                placeholder={recipients.length === 0 ? "Type email and press Enter..." : "Add more emails..."}
-                className="flex-1 min-w-[140px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
+                placeholder={recipients.length === 0 ? "Type recipient email and press Enter..." : "Add more emails..."}
+                className="flex-1 min-w-[160px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
               />
-            </div>
-
-            {/* Quick Add Buttons */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              <span className="text-[11px] text-slate-400 font-medium">Quick Add:</span>
-              {QUICK_RECIPIENTS.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => addRecipient(item.email)}
-                  disabled={recipients.includes(item.email)}
-                  className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                    recipients.includes(item.email)
-                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-default'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
-                  }`}
-                >
-                  <Plus className="w-2.5 h-2.5" />
-                  {item.label}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -366,8 +258,8 @@ Furukawa Minda Electric Portal`;
                   onChange={(e) => setCcInput(e.target.value)}
                   onKeyDown={handleKeyDownCc}
                   onBlur={() => ccInput.trim() && addCc()}
-                  placeholder="Add CC email..."
-                  className="flex-1 min-w-[140px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
+                  placeholder="Type CC email and press Enter..."
+                  className="flex-1 min-w-[160px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -382,8 +274,8 @@ Furukawa Minda Electric Portal`;
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Email subject..."
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 font-medium"
+              placeholder="Enter email subject..."
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 font-medium placeholder:text-slate-400"
             />
           </div>
 
@@ -422,11 +314,11 @@ Furukawa Minda Electric Portal`;
               Message Body
             </label>
             <textarea
-              rows={7}
+              rows={6}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Write custom message or instructions..."
-              className="w-full p-3 text-xs font-mono border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 leading-relaxed resize-y bg-slate-50/50"
+              placeholder="Type message body here..."
+              className="w-full p-3 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 leading-relaxed resize-y bg-white placeholder:text-slate-400 font-normal"
             />
           </div>
         </div>

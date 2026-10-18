@@ -543,9 +543,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       }
       persistSheet(sheetSnapshot);
       notify('PDCA form saved successfully.', 'success');
-      setTimeout(() => {
-        onBack?.();
-      }, 500);
+      onSave?.(sheetSnapshot);
       return true;
     } catch (error) {
       notify(error.message || 'Could not save PDCA form. Please try again.', 'error');
@@ -1274,17 +1272,20 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
   // Add Row
   const handleAddRow = () => {
+    const defaultDept = topic?.section === 'cc' ? 'C&C' : (topic?.section === 'assembly' ? 'Assembly' : '');
     setRows((prev) => [
       ...prev,
       createEmptyRow({
         date: currentDate || new Date().toISOString().slice(0, 10),
-        status: 'Open'
+        status: 'Open',
+        department: defaultDept
       })
     ]);
   };
 
   // Insert Row Above
   const handleInsertRowAbove = (idx) => {
+    const defaultDept = topic?.section === 'cc' ? 'C&C' : (topic?.section === 'assembly' ? 'Assembly' : '');
     setRows((prev) => {
       const updated = [...prev];
       updated.splice(
@@ -1292,7 +1293,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         0,
         createEmptyRow({
           date: currentDate || new Date().toISOString().slice(0, 10),
-          status: 'Open'
+          status: 'Open',
+          department: defaultDept
         })
       );
       return updated;

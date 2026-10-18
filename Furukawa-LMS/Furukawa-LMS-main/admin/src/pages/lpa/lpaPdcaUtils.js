@@ -218,8 +218,12 @@ export function extractObservationsFromSheet(sheet, record, date) {
 /**
  * Builds or loads PDCA Topic and rows from Assembly and/or C&C records.
  */
-export function getLpaPdcaTopic({ section, unit, level, date, records = [], templates = {} }) {
-  const storageId = `PDCA-LPA-${(section || 'all').toUpperCase()}-${unit || 'Bawal'}-${level || 'L1'}-${date || 'latest'}`;
+export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 'L1', date, records = [], templates = {} }) {
+  const sec = (section || 'assembly').toLowerCase();
+  const secUpper = sec.toUpperCase();
+  const plant = unit || 'Bawal';
+  // Single permanent PDCA sheet per section (Assembly and C&C)
+  const storageId = `PDCA-LPA-${secUpper}-${plant}`;
   const localCacheKey = `lpa_pdca_saved_${storageId}`;
 
   // Check saved copy in localStorage first
@@ -232,10 +236,35 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
           return {
             id: storageId,
             topic: 'PDCA - M Tanaka San Audit',
+            section: sec,
             scope: 'Company',
-            plant: unit || 'Bawal',
+            plant,
             sheet: parsed
           };
+        }
+      }
+
+      // Check legacy caches if single cache not yet created
+      const legacyKeys = [
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-${level || 'L1'}-${date || 'latest'}`,
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-${level || 'L1'}-latest`,
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-L1-${date || 'latest'}`
+      ];
+      for (const lk of legacyKeys) {
+        const legSaved = localStorage.getItem(lk);
+        if (legSaved) {
+          const parsed = JSON.parse(legSaved);
+          if (parsed && Array.isArray(parsed.rows)) {
+            localStorage.setItem(localCacheKey, legSaved);
+            return {
+              id: storageId,
+              topic: 'PDCA - M Tanaka San Audit',
+              section: sec,
+              scope: 'Company',
+              plant,
+              sheet: parsed
+            };
+          }
         }
       }
     } catch (err) {
@@ -322,8 +351,9 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
   const defaultTopic = {
     id: storageId,
     topic: 'PDCA - M Tanaka San Audit',
+    section: sec,
     scope: 'Company',
-    plant: unit || 'Bawal',
+    plant,
     sheet: {
       rows: finalRows,
       headerInfo: {

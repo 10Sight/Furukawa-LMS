@@ -26,12 +26,14 @@ import {
   Users,
   RefreshCw,
   Layers,
-  Mail
+  Mail,
+  BarChart3
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
 import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
+import PDCAMonthlyGraph from '../pdca/PDCAMonthlyGraph';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
@@ -219,6 +221,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   // Database-backed employee master records
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
+  const [showMonthlyGraph, setShowMonthlyGraph] = useState(true);
 
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
@@ -1446,6 +1449,20 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
               <Mail className="w-3.5 h-3.5 text-blue-600" />
               <span>Send Mail</span>
             </button>
+            {/* Monthly Graph Button */}
+            <button
+              type="button"
+              onClick={() => setShowMonthlyGraph(prev => !prev)}
+              title="Toggle Monthly PDCA Graph (Total, Opened, Closed)"
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${
+                showMonthlyGraph
+                  ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
+                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Monthly Graph</span>
+            </button>
           </div>
 
           {/* Right: Search & Add Row */}
@@ -1474,6 +1491,17 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
           </div>
         </div>
       </div>
+
+      {/* Monthly PDCA Status Analytics Graph */}
+      {showMonthlyGraph && (
+        <PDCAMonthlyGraph
+          rows={rows}
+          allPDCARecords={data}
+          currentDate={formDate}
+          topic={topic}
+          onToggleCollapse={() => setShowMonthlyGraph(false)}
+        />
+      )}
 
       {/* Spreadsheet Matrix Table Grid */}
       <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto">

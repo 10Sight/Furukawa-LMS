@@ -25,12 +25,14 @@ import {
   Users,
   Image as ImageIcon,
   Images,
-  AlertCircle
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
 import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
+import SendMailModal from '../common/SendMailModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
@@ -836,6 +838,7 @@ export default function PDCASheet({
     headerInfo: { ...initialHeaderInfo }
   });
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
 
   // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
   const [observationWidth, setObservationWidth] = useState(() => {
@@ -2992,6 +2995,16 @@ export default function PDCASheet({
               <Download className="w-3.5 h-3.5" />
               <span>Export Excel</span>
             </button>
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsSendMailOpen(true)}
+              title="Send PDCA report by email"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>Send Mail</span>
+            </button>
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -5058,6 +5071,23 @@ export default function PDCASheet({
         </div>,
         document.body
       )}
+
+      {/* Send Mail Modal */}
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType="pdca"
+        title={topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)'}
+        metadata={{
+          date: formDate,
+          auditDate: formDate,
+          unit: topic?.plant || 'Bawal',
+          section: headerInfo?.section || 'Assembly',
+          sectionName: headerInfo?.section || 'Assembly',
+          topicName: topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)',
+          auditNo: headerInfo?.auditNo
+        }}
+      />
     </div>
   );
 }

@@ -25,11 +25,13 @@ import {
   User,
   Users,
   RefreshCw,
-  Layers
+  Layers,
+  Mail
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
 import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
+import SendMailModal from '../common/SendMailModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
@@ -216,6 +218,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
   // Database-backed employee master records
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
 
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
@@ -1433,6 +1436,16 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
               </span>
             ) : null}
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsSendMailOpen(true)}
+              title="Send PDCA report by email"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>Send Mail</span>
+            </button>
           </div>
 
           {/* Right: Search & Add Row */}
@@ -2814,6 +2827,23 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
           </button>
         </div>
       )}
+
+      {/* Send Mail Modal */}
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType="pdca"
+        title={topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)'}
+        metadata={{
+          date: currentDate,
+          auditDate: currentDate,
+          unit: topic?.plant || 'Bawal',
+          section: topic?.section || 'Assembly',
+          sectionName: topic?.section || 'Assembly',
+          topicName: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
+          auditNo: headerInfo?.auditNo
+        }}
+      />
     </div>
   );
 }

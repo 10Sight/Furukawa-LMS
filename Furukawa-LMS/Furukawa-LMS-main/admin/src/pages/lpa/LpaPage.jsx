@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx';
 import { useOutletContext } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
@@ -13,6 +13,7 @@ import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
 import PDCASheet from '../../components/pdca/PDCASheet';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
+import SendMailModal from '../../components/common/SendMailModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore } from './lpaPdcaUtils';
@@ -50,6 +51,7 @@ function LpaPageContent({ viewContext }) {
   const [isPdcaSheetOpen, setIsPdcaSheetOpen] = useState(false);
   const [pdcaSaveVersion, setPdcaSaveVersion] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
   const [showUnsavedAlert, setShowUnsavedAlert] = useState(false);
   const showUnsavedAlertRef = useRef(false);
   showUnsavedAlertRef.current = showUnsavedAlert;
@@ -546,6 +548,15 @@ function LpaPageContent({ viewContext }) {
       <button type="button" disabled={busy} onClick={handleBack} className={button}><ArrowLeft size={16} />Back</button>
       <span className="text-xs text-slate-500 truncate max-w-xs">{editor.name} · {sheet.name}{dirty ? ' · Unsaved changes' : ''}</span>
       <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsSendMailOpen(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer"
+          title="Send check sheet by email"
+        >
+          <Mail size={15} className="text-blue-600" />
+          <span>Send Mail</span>
+        </button>
         <button type="button" onClick={() => setZoom(value => Math.min(200, value + 10))} disabled={zoom >= 200} className={button} title="Zoom In"><ZoomIn size={16} /><span className="sr-only">Zoom In</span></button>
         <span className="text-xs w-10 text-center">{zoom}%</span>
         <button type="button" onClick={() => setZoom(value => Math.max(50, value - 10))} disabled={zoom <= 50} className={button} title="Zoom Out"><ZoomOut size={16} /><span className="sr-only">Zoom Out</span></button>
@@ -628,6 +639,26 @@ function LpaPageContent({ viewContext }) {
         </div>
       </div>
     )}
+
+    {/* Send Mail Modal */}
+    <SendMailModal
+      isOpen={isSendMailOpen}
+      onClose={() => setIsSendMailOpen(false)}
+      formType={editor.section === 'cc' ? 'cc' : 'assembly'}
+      title={editor.name || (editor.section === 'cc' ? 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.' : 'Assembly LPA Check Sheet')}
+      metadata={{
+        auditDate: sheet?.date || editor.auditDate || editor.date,
+        shift: sheet?.shift || editor.shift,
+        department: sheet?.department || editor.department,
+        sectionName: sheet?.sectionName || editor.sectionName,
+        line: sheet?.line || editor.line,
+        unit: editor.unit || selectedUnit,
+        auditors: Array.isArray(sheet?.auditors) ? sheet.auditors.join(', ') : (sheet?.auditors || editor.auditor || editor.auditors),
+        scorePercentage: sheet?.scorePercentage || sheet?.percentage || editor.scorePercentage || editor.percentage,
+        totalMarks: sheet?.totalMarks || editor.totalMarks,
+        totalScore: sheet?.totalScore || editor.totalScore
+      }}
+    />
   </div>;
 
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-slate-800">

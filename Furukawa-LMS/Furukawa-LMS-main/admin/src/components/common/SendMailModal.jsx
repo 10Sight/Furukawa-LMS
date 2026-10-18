@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mail,
   Send,
@@ -6,13 +6,15 @@ import {
   Check,
   Loader2,
   FileSpreadsheet,
-  Info
+  Info,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
  * SendMailModal
- * Clean frontend email modal with blank input fields:
+ * Clean frontend email modal with blank input fields & multi-CC support:
  *  - LPA Assembly Form
  *  - LPA C&C Form
  *  - PDCA / LPA Observation Form
@@ -27,14 +29,14 @@ export default function SendMailModal({
 }) {
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState([]);
-  const [ccInput, setCcInput] = useState('');
-  const [ccList, setCcList] = useState([]);
-  const [showCc, setShowCc] = useState(false);
+  const [ccEmails, setCcEmails] = useState(['']);
+  const [showCc, setShowCc] = useState(true);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [includeExcel, setIncludeExcel] = useState(true);
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
+  const ccInputsRef = useRef([]);
 
   // When modal opens, all input fields are reset to blank as requested
   useEffect(() => {
@@ -45,9 +47,8 @@ export default function SendMailModal({
     }
     setToInput('');
     setRecipients([]);
-    setCcInput('');
-    setCcList([]);
-    setShowCc(false);
+    setCcEmails(['']);
+    setShowCc(true);
     setSubject('');
     setMessage('');
   }, [isOpen]);
@@ -55,29 +56,22 @@ export default function SendMailModal({
   if (!isOpen) return null;
 
   const addRecipient = (email) => {
-    const trimmed = (email || toInput).trim().replace(/[,;]$/, '');
-    if (!trimmed) return;
-    if (!recipients.includes(trimmed)) {
-      setRecipients([...recipients, trimmed]);
-    }
+    const raw = email !== undefined ? email : toInput;
+    if (!raw) return;
+    const parts = raw.split(/[,;\s]+/).map(s => s.trim().replace(/[,;]$/, '')).filter(Boolean);
+    if (parts.length === 0) return;
+    setRecipients(prev => {
+      const next = [...prev];
+      parts.forEach(p => {
+        if (!next.includes(p)) next.push(p);
+      });
+      return next;
+    });
     setToInput('');
   };
 
   const removeRecipient = (index) => {
     setRecipients(recipients.filter((_, i) => i !== index));
-  };
-
-  const addCc = (email) => {
-    const trimmed = (email || ccInput).trim().replace(/[,;]$/, '');
-    if (!trimmed) return;
-    if (!ccList.includes(trimmed)) {
-      setCcList([...ccList, trimmed]);
-    }
-    setCcInput('');
-  };
-
-  const removeCc = (index) => {
-    setCcList(ccList.filter((_, i) => i !== index));
   };
 
   const handleKeyDownTo = (e) => {
@@ -87,10 +81,67 @@ export default function SendMailModal({
     }
   };
 
-  const handleKeyDownCc = (e) => {
+  // Multiple CC handlers
+  const handleAddCcRow = () => {
+    setShowCc(true);
+    setCcEmails((prev) => {
+      const next = [...prev, ''];
+      setTimeout(() => {
+        const lastInput = ccInputsRef.current[next.length - 1];
+        if (lastInput) lastInput.focus();
+      }, 50);
+      return next;
+    });
+  };
+
+  const handleRemoveCcRow = (index) => {
+    setCcEmails((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.length > 0 ? next : [''];
+    });
+  };
+
+  const handleRemoveCcSection = () => {
+    setShowCc(false);
+    setCcEmails(['']);
+  };
+
+  const handleOpenCcSection = () => {
+    setShowCc(true);
+    setTimeout(() => {
+      const firstInput = ccInputsRef.current[0];
+      if (firstInput) firstInput.focus();
+    }, 50);
+  };
+
+  const handleCcChange = (index, value) => {
+    // If user pastes comma/semicolon-separated emails, split into multiple rows
+    if (value.includes(',') || value.includes(';')) {
+      const parts = value.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        setCcEmails((prev) => {
+          const next = [...prev];
+          next.splice(index, 1, ...parts);
+          return next;
+        });
+        return;
+      }
+    }
+    setCcEmails((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const handleCcKeyDown = (index, e) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
-      addCc();
+      if (index === ccEmails.length - 1) {
+        handleAddCcRow();
+      } else if (ccInputsRef.current[index + 1]) {
+        ccInputsRef.current[index + 1].focus();
+      }
     }
   };
 
@@ -105,6 +156,8 @@ export default function SendMailModal({
       finalRecipients.push(toInput.trim());
     }
 
+    const finalCcList = ccEmails.map(e => e.trim()).filter(Boolean);
+
     setSending(true);
 
     // Frontend send simulation
@@ -116,7 +169,7 @@ export default function SendMailModal({
       if (typeof onSendSuccess === 'function') {
         onSendSuccess({
           recipients: finalRecipients,
-          cc: ccList,
+          cc: finalCcList,
           subject,
           message,
           attachments: [
@@ -186,10 +239,11 @@ export default function SendMailModal({
               {!showCc && (
                 <button
                   type="button"
-                  onClick={() => setShowCc(true)}
-                  className="text-blue-600 hover:text-blue-700 font-medium text-[11px] cursor-pointer"
+                  onClick={handleOpenCcSection}
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold text-[11px] cursor-pointer"
                 >
-                  + Add CC
+                  <Plus className="w-3 h-3 stroke-[2.5]" />
+                  <span>Add CC</span>
                 </button>
               )}
             </div>
@@ -223,44 +277,75 @@ export default function SendMailModal({
             </div>
           </div>
 
-          {/* CC Field (Collapsible) */}
+          {/* CC Field (Multi-CC with Rows & Add More Button) */}
           {showCc && (
-            <div className="animate-in fade-in duration-100">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="font-semibold text-slate-700">CC</label>
+            <div className="animate-in fade-in duration-100 bg-slate-50/70 p-3 rounded-xl border border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <label className="font-semibold text-slate-700">CC (Carbon Copy)</label>
+                  {ccEmails.filter(e => e.trim()).length > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700">
+                      {ccEmails.filter(e => e.trim()).length}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleAddCcRow}
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold text-[11px] cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3 stroke-[2.5]" />
+                    <span>Add Another CC</span>
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCcSection}
+                    className="text-slate-400 hover:text-rose-600 text-[11px] cursor-pointer transition-colors"
+                  >
+                    Remove CC
+                  </button>
+                </div>
+              </div>
+
+              {/* Multiple CC Input Rows */}
+              <div className="space-y-1.5">
+                {ccEmails.map((email, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      ref={(el) => (ccInputsRef.current[idx] = el)}
+                      type="email"
+                      value={email}
+                      onChange={(e) => handleCcChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleCcKeyDown(idx, e)}
+                      placeholder={idx === 0 ? "Type CC email..." : `Type CC email ${idx + 1}...`}
+                      className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 placeholder:text-slate-400 shadow-2xs"
+                    />
+                    {ccEmails.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCcRow(idx)}
+                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Remove this CC"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Add another CC Button */}
+              <div className="pt-0.5">
                 <button
                   type="button"
-                  onClick={() => setShowCc(false)}
-                  className="text-slate-400 hover:text-slate-600 text-[11px] cursor-pointer"
+                  onClick={handleAddCcRow}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/60 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
                 >
-                  Remove CC
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Add another CC</span>
                 </button>
-              </div>
-              <div className="min-h-[36px] p-1.5 border border-slate-300 rounded-lg bg-white flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-600 transition-all">
-                {ccList.map((email, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium"
-                  >
-                    {email}
-                    <button
-                      type="button"
-                      onClick={() => removeCc(idx)}
-                      className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  type="email"
-                  value={ccInput}
-                  onChange={(e) => setCcInput(e.target.value)}
-                  onKeyDown={handleKeyDownCc}
-                  onBlur={() => ccInput.trim() && addCc()}
-                  placeholder="Type CC email and press Enter..."
-                  className="flex-1 min-w-[160px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
-                />
               </div>
             </div>
           )}

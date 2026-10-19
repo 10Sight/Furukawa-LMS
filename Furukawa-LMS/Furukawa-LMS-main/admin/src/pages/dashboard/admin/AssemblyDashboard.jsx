@@ -1,23 +1,17 @@
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect, useMemo } from 'react';
+import { useDispatch } from "react-redux";
 import { format } from 'date-fns';
-import { IconClock, IconRefresh, IconCalendar, IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
+import { IconClock, IconRefresh, IconInfoCircle } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate.js";
 import { dashboardApi, useGetAssemblyDashboardStatsQuery } from "@/services/api/DashboardApi.js";
 import { useLogActionMutation } from "@/services/api/AuditApi.js";
 import AssemblyDepartmentChart from "@/components/dashboard/assembly/AssemblyDepartmentChart.jsx";
 import AssemblySectionLineChart from "@/components/dashboard/assembly/AssemblySectionLineChart.jsx";
-import { WIDE_SECTION_LINE_COUNT } from "@/components/dashboard/assembly/assemblyChartUtils.jsx";
-
-const SHIFT_OPTIONS = ["ALL", "A", "B", "C", "G"];
-
-// Dashboard days follow India time, same as the server.
-const getIstDateString = (offsetDays = 0) => {
-  const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const [y, m, d] = todayIst.split('-').map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d + offsetDays));
-  return date.toISOString().slice(0, 10);
-};
+import { ChartLoader } from "@/components/dashboard/assembly/assemblyChartShared.jsx";
+import {
+  SHIFT_OPTIONS, WIDE_SECTION_LINE_COUNT, getIstDateString,
+} from "@/components/dashboard/assembly/assemblyChartUtils.jsx";
 
 const DashboardClock = () => {
   const [now, setNow] = useState(new Date());
@@ -38,62 +32,30 @@ const DashboardClock = () => {
   );
 };
 
-// FME logo, pulsing, centred while Assembly data loads
-const LogoLoader = () => (
-  <div className="flex min-h-[60vh] items-center justify-center" role="status" aria-live="polite" aria-label="Loading">
-    <img src={brandLogoUrl} alt="" className="h-20 w-20 object-contain animate-pulse" />
-  </div>
-);
-
-const Notice = ({ tone = "info", children }) => {
-  const styles = tone === "warning"
-    ? "border-amber-200 bg-amber-50 text-amber-800"
-    : tone === "error"
-      ? "border-rose-200 bg-rose-50 text-rose-700"
-      : "border-sky-200 bg-sky-50 text-sky-800";
-  const Icon = tone === "info" ? IconInfoCircle : IconAlertTriangle;
-  return (
-    <div className={`flex items-start gap-2 rounded-lg border px-4 py-2.5 text-sm ${styles}`}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <span>{children}</span>
-    </div>
-  );
-};
-
-const QuickDateButton = ({ active, onClick, children }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active
-      ? "bg-slate-900 text-white"
-      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
-  >
-    {children}
-  </button>
-);
-
 const AssemblyDashboard = () => {
   const { t } = useTranslate();
+  const dispatch = useDispatch();
   const [logAction] = useLogActionMutation();
 
-  const todayStr = getIstDateString(0);
-  const yesterdayStr = getIstDateString(-1);
-  const [date, setDate] = useState(yesterdayStr);
+  // Every chart owns its date and starts on yesterday; the shift applies to all of them.
+  const [defaultDate] = useState(() => getIstDateString(-1));
   const [shift, setShift] = useState("ALL");
 
-  const { data, error, isFetching, refetch } = useGetAssemblyDashboardStatsQuery({ date, shift });
-  const stats = data?.data;
+  // The default-date result decides which section cards exist and how wide they are.
+  // `data` keeps the previous result while a new shift loads, so cards don't vanish.
+  const { data, error, isLoading } = useGetAssemblyDashboardStatsQuery({ date: defaultDate, shift });
+  const layoutSections = useMemo(() => data?.data?.sections || [], [data]);
 
-  // Once a date has loaded, fetch its other shifts in the background so the
-  // shift switch answers from cache instead of waiting on the server.
+  // Fetch the default date's other shifts in the background so the shift switch
+  // answers from cache instead of waiting on the server.
   const prefetchStats = dashboardApi.usePrefetch("getAssemblyDashboardStats");
-  const loadedDate = stats?.date;
+  const layoutLoaded = Boolean(data);
   useEffect(() => {
-    if (!loadedDate) return;
+    if (!layoutLoaded) return;
     SHIFT_OPTIONS
       .filter(option => option !== shift)
-      .forEach(option => prefetchStats({ date: loadedDate, shift: option }));
-  }, [loadedDate, shift, prefetchStats]);
+      .forEach(option => prefetchStats({ date: defaultDate, shift: option }));
+  }, [layoutLoaded, defaultDate, shift, prefetchStats]);
 
   useEffect(() => {
     logAction({ action: "VIEW_ASSEMBLY_DASHBOARD", details: { page: "Assembly Dashboard" } })
@@ -101,13 +63,13 @@ const AssemblyDashboard = () => {
       .catch((err) => console.error("Failed to log page view:", err));
   }, [logAction]);
 
-  const sections = useMemo(() => stats?.sections || [], [stats]);
   // Full-width cards first so the half-width ones pair up without gaps; Unassigned stays last.
   const isWide = (section) => section.lines.length > WIDE_SECTION_LINE_COUNT;
-  const orderedSections = useMemo(() => [...sections].sort((a, b) =>
+  const orderedSections = useMemo(() => [...layoutSections].sort((a, b) =>
     Number(a.isUnassigned) - Number(b.isUnassigned) || Number(isWide(b)) - Number(isWide(a))
-  ), [sections]);
-  const showNoAttendance = stats && !stats.holiday && stats.attendanceRecords === 0;
+  ), [layoutSections]);
+
+  const refreshAll = () => dispatch(dashboardApi.util.invalidateTags(["AssemblyStats"]));
 
   return (
     <div className="space-y-6">
@@ -123,20 +85,6 @@ const AssemblyDashboard = () => {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-          <IconCalendar className="h-4 w-4 text-slate-400" />
-          <span className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{t('assembly.date')}</span>
-          <input
-            type="date"
-            value={date}
-            max={todayStr}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="w-32 cursor-pointer bg-transparent text-[13px] text-slate-700 outline-none"
-          />
-        </label>
-        <QuickDateButton active={date === yesterdayStr} onClick={() => setDate(yesterdayStr)}>{t('assembly.yesterday')}</QuickDateButton>
-        <QuickDateButton active={date === todayStr} onClick={() => setDate(todayStr)}>{t('assembly.today')}</QuickDateButton>
-
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label={t('assembly.shift')}>
           <span className="px-2 text-[12px] font-bold uppercase tracking-wider text-slate-400">{t('assembly.shift')}</span>
           {SHIFT_OPTIONS.map(option => (
@@ -157,25 +105,30 @@ const AssemblyDashboard = () => {
 
         <button
           type="button"
-          onClick={refetch}
-          disabled={isFetching}
-          className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          onClick={refreshAll}
+          className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
         >
           <IconRefresh className="h-4 w-4" />
           {t('assembly.refresh')}
         </button>
       </div>
 
-      {error && <Notice tone="error">{error?.data?.message || t('assembly.loadError')}</Notice>}
-      {!isFetching && stats?.holiday && <Notice tone="warning">{stats.date} ({stats.holiday.name}) {t('assembly.holidayNotice')}</Notice>}
-      {!isFetching && showNoAttendance && <Notice tone="warning">{t('assembly.noAttendance')}</Notice>}
-      {!isFetching && stats && shift !== "ALL" && <Notice>{t('assembly.shiftNote')}</Notice>}
+      {shift !== "ALL" && (
+        <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
+          <IconInfoCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{t('assembly.shiftNote')}</span>
+        </div>
+      )}
 
-      {isFetching ? (
-        <LogoLoader />
-      ) : stats && (
+      {isLoading ? (
+        <ChartLoader minHeight="60vh" />
+      ) : error && !data ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
+          {error?.data?.message || t('assembly.loadError')}
+        </div>
+      ) : (
         <div className="space-y-6">
-          <AssemblyDepartmentChart department={stats.department} sections={sections} />
+          <AssemblyDepartmentChart shift={shift} defaultDate={defaultDate} />
 
           <div>
             <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-500">{t('assembly.sectionBreakdown')}</h2>
@@ -185,7 +138,12 @@ const AssemblyDashboard = () => {
                   key={section.sectionId ?? "unassigned"}
                   className={isWide(section) ? "lg:col-span-2" : ""}
                 >
-                  <AssemblySectionLineChart section={section} />
+                  <AssemblySectionLineChart
+                    sectionId={section.sectionId}
+                    sectionName={section.sectionName}
+                    shift={shift}
+                    defaultDate={defaultDate}
+                  />
                 </div>
               ))}
             </div>

@@ -4,6 +4,7 @@ import axiosBaseQuery from "@/services/requests/axiosBaseQuery.js";
 export const dashboardApi = createApi({
     reducerPath: "dashboardApi",
     baseQuery: axiosBaseQuery,
+    tagTypes: ["AssemblyStats"],
     endpoints: (builder) => ({
         getDashboardStats: builder.query({
             query: ({
@@ -54,6 +55,7 @@ export const dashboardApi = createApi({
                 method: "GET",
                 params: { date, shift },
             }),
+            providesTags: ["AssemblyStats"],
             keepUnusedDataFor: 60,
         }),
     }),

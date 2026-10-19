@@ -1,6 +1,85 @@
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React from 'react';
+import { IconCalendar, IconAlertTriangle } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate.js";
-import { TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, formatCount, formatPercent } from "./assemblyChartUtils.jsx";
+import {
+    TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, AXIS_TICK,
+    formatCount, formatPercent, getIstDateString, wrapLabel,
+} from "./assemblyChartUtils.jsx";
+
+// FME logo, pulsing, centred in its chart while that chart's data loads
+export const ChartLoader = ({ minHeight = 300 }) => (
+    <div className="flex items-center justify-center" style={{ minHeight }} role="status" aria-live="polite" aria-label="Loading">
+        <img src={brandLogoUrl} alt="" className="h-20 w-20 object-contain animate-pulse" />
+    </div>
+);
+
+const QuickDateButton = ({ active, onClick, children }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${active
+            ? "bg-slate-900 text-white"
+            : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+    >
+        {children}
+    </button>
+);
+
+// Date filter owned by a single chart
+export const ChartDateFilter = ({ value, onChange }) => {
+    const { t } = useTranslate();
+    const todayStr = getIstDateString(0);
+    const yesterdayStr = getIstDateString(-1);
+    return (
+        <div className="flex flex-wrap items-center gap-1.5">
+            <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
+                <IconCalendar className="h-3.5 w-3.5 text-slate-400" />
+                <span className="sr-only">{t('assembly.date')}</span>
+                <input
+                    type="date"
+                    value={value}
+                    max={todayStr}
+                    onChange={(e) => e.target.value && onChange(e.target.value)}
+                    className="w-[7.5rem] cursor-pointer bg-transparent text-xs text-slate-700 outline-none"
+                />
+            </label>
+            <QuickDateButton active={value === yesterdayStr} onClick={() => onChange(yesterdayStr)}>{t('assembly.yesterday')}</QuickDateButton>
+            <QuickDateButton active={value === todayStr} onClick={() => onChange(todayStr)}>{t('assembly.today')}</QuickDateButton>
+        </div>
+    );
+};
+
+// Holiday / missing-upload / error message for the date a chart is showing
+export const ChartStatusNotice = ({ stats, error }) => {
+    const { t } = useTranslate();
+    let message = null;
+    if (error) message = error?.data?.message || t('assembly.loadError');
+    else if (stats?.holiday) message = `${stats.date} (${stats.holiday.name}) ${t('assembly.holidayNotice')}`;
+    else if (stats && stats.attendanceRecords === 0) message = t('assembly.noAttendance');
+    if (!message) return null;
+    return (
+        <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${error
+            ? "border-rose-200 bg-rose-50 text-rose-700"
+            : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{message}</span>
+        </div>
+    );
+};
+
+// Horizontal, word-wrapped category label; the full name shows on hover.
+export const WrappedNameTick = ({ x, y, payload, charsPerLine = 14, maxLines = 2 }) => {
+    const name = String(payload?.value || '');
+    return (
+        <text x={x} y={y + 14} textAnchor="middle" fill={AXIS_TICK.fill} fontSize={AXIS_TICK.fontSize} fontWeight={AXIS_TICK.fontWeight}>
+            <title>{name}</title>
+            {wrapLabel(name, charsPerLine, maxLines).map((row, index) => (
+                <tspan key={index} x={x} dy={index === 0 ? 0 : 14}>{row}</tspan>
+            ))}
+        </text>
+    );
+};
 
 export const SeriesLegend = () => {
     const { t } = useTranslate();

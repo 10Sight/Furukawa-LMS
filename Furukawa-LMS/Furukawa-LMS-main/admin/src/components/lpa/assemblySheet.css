@@ -1,4 +1,4 @@
-.assembly-sheet { width: 100%; min-width: 1200px; color: #000; font-family: Arial, Calibri, sans-serif; background: #fff; }
+.assembly-sheet { width: 100%; min-width: 780px; max-width: 1200px; margin: 0 auto; color: #000; font-family: Arial, Calibri, sans-serif; background: #fff; }
 .assembly-audit-paper { position: relative; background: white; border: 2px solid #172bff; }
 .assembly-form-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8px; line-height: 1.1; }
 .assembly-form-table td { position: relative; padding: 0; border: 1px solid #555; vertical-align: middle; }
@@ -14,11 +14,13 @@
 .assembly-audit-table tr:first-child td:first-child, .assembly-audit-table tr:first-child td:last-child { font-size: 9px; }
 .assembly-audit-table tr:first-child td:first-child textarea, .assembly-audit-table tr:first-child td:last-child textarea { text-align: left; }
 .assembly-form-table .assembly-vertical textarea { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; padding: 2px; }
-.assembly-form-table .assembly-check textarea { text-align: left; }
+.assembly-form-table td.assembly-check { font-size: 11.5px !important; line-height: 1.35 !important; }
+.assembly-form-table .assembly-check textarea { text-align: left; font-size: 11.5px !important; line-height: 1.35 !important; padding: 3px 5px !important; }
 .assembly-form-table .assembly-requirement textarea { font-size: 6px; line-height: 1.05; }
-.assembly-check-preview { position: absolute; inset: 0; padding: 1px 2px; white-space: pre-wrap; overflow: hidden; pointer-events: none; }
-.assembly-form-table .assembly-rich-check textarea { color: transparent; caret-color: #000; }
-.assembly-form-table .assembly-rich-check textarea:focus { z-index: 2; color: #000; background: white; }
+.assembly-check-preview { position: absolute; inset: 0; padding: 3px 5px !important; white-space: pre-wrap; overflow: hidden; pointer-events: none; font-size: 11.5px !important; line-height: 1.35 !important; color: #0f172a; }
+.assembly-check-preview strong { font-size: 11.5px !important; font-weight: 700 !important; color: #0f172a !important; }
+.assembly-form-table .assembly-rich-check textarea { color: transparent; caret-color: #000; font-size: 11.5px !important; line-height: 1.35 !important; }
+.assembly-form-table .assembly-rich-check textarea:focus { z-index: 2; color: #000; background: white; font-size: 11.5px !important; line-height: 1.35 !important; }
 .assembly-form-table .assembly-completion textarea { text-align: center; }
 .assembly-form-table .assembly-number textarea { text-align: center; }
 .assembly-form-table .assembly-outside-legend, .assembly-form-table .assembly-outside-symbols { border-color: transparent; }
@@ -33,3 +35,419 @@
 .assembly-pdca-table tr:first-child { font-size: 16px; }
 .assembly-pdca-table tr:last-child td { border-bottom-color: transparent; }
 .assembly-pdca-table .assembly-tail-blank td { border-color: transparent; }
+
+/* LPA Assembly Form Header & Drawing Layout Styles */
+.assembly-form-header,
+.assembly-form-header-box {
+  background: #ffffff;
+  border-bottom: 2px solid #2563eb;
+}
+
+.assembly-header-top-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.assembly-header-title-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  padding: 6px 8px;
+  text-align: center;
+  background: #ffffff;
+}
+
+.assembly-header-title-frame {
+  border: 2px solid #0f172a;
+  border-radius: 6px;
+  padding: 10px 18px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.assembly-header-title-text {
+  font-size: 23px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #0f172a;
+  text-transform: uppercase;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.assembly-header-subtitle-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #475569;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  margin: 4px 0 0 0;
+}
+
+.assembly-header-auditor-box {
+  width: 340px;
+  max-width: 42%;
+  border-left: 1px solid #e2e8f0;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #f8fafc;
+}
+
+.assembly-header-bottom-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  background: #f8fafc;
+}
+
+.assembly-header-field-col {
+  padding: 8px 10px;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.assembly-header-field-col:last-child {
+  border-right: none;
+}
+
+@media (max-width: 768px) {
+  .assembly-header-top-row {
+    flex-direction: column;
+  }
+  .assembly-header-auditor-box {
+    width: 100%;
+    max-width: 100%;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+  }
+  .assembly-header-bottom-row {
+    grid-template-columns: 1fr;
+  }
+  .assembly-header-field-col {
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .assembly-header-field-col:last-child {
+    border-bottom: none;
+  }
+}
+
+.assembly-form-header label,
+.assembly-form-header-box label {
+  color: #475569;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.assembly-header-input,
+.assembly-header-select {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 32px;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  outline: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: all 150ms ease;
+}
+
+.assembly-header-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  padding-right: 28px;
+  cursor: pointer;
+}
+
+.assembly-header-input:hover,
+.assembly-header-select:hover {
+  border-color: #94a3b8;
+}
+
+.assembly-header-input:focus,
+.assembly-header-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.assembly-header-input:disabled,
+.assembly-header-select:disabled {
+  background-color: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+/* Summary Area: Total Marks & Percentage Row */
+.assembly-form-table .assembly-total-label {
+  font-size: 16px;
+  font-weight: 900;
+  color: #0f172a;
+  padding: 4px 10px;
+  text-align: left;
+  letter-spacing: -0.01em;
+}
+
+.assembly-form-table .assembly-percentage-cell {
+  background: #f8fafc;
+  font-weight: 900;
+  font-size: 14px;
+  color: #1d4ed8;
+  text-align: center;
+  vertical-align: middle;
+}
+.assembly-readonly textarea,
+.assembly-form-table td.assembly-readonly textarea {
+  cursor: default !important;
+  user-select: text;
+  pointer-events: none;
+  background: transparent !important;
+  color: #000 !important;
+}
+.assembly-readonly textarea:focus,
+.assembly-form-table td.assembly-readonly textarea:focus {
+  outline: none !important;
+  background: transparent !important;
+}
+
+/* Centered Score Column */
+.assembly-form-table .assembly-score-cell,
+.assembly-form-table td.assembly-score-cell,
+.assembly-form-table th.assembly-score-cell {
+  text-align: center !important;
+  vertical-align: middle !important;
+  padding: 0 !important;
+}
+
+.assembly-score-container {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 26px !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  margin: 0 auto !important;
+}
+
+.assembly-score-value {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  text-align: center !important;
+  font-weight: 600;
+  font-size: 11px;
+  color: #111827;
+  line-height: 1;
+}
+
+.assembly-score-header .assembly-score-value {
+  font-weight: bold !important;
+  font-size: 8px !important;
+  text-transform: uppercase;
+  color: #000 !important;
+}
+
+.assembly-score-total .assembly-score-value {
+  font-size: 18px !important;
+  font-weight: bold !important;
+  color: #000 !important;
+}
+
+.assembly-score-input {
+  width: 100% !important;
+  height: 100% !important;
+  text-align: center !important;
+  border: none !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  outline: none !important;
+  padding: 0 !important;
+  color: #111827 !important;
+}
+
+.assembly-score-input:focus {
+  background: #e8f3e8 !important;
+  outline: 2px solid #168443 !important;
+  outline-offset: -2px !important;
+}
+
+/* Focus Column (Column 1) & Area Column (Column 3) Centering and Enhanced Typography */
+.assembly-form-table td.assembly-focus-cell,
+.assembly-form-table th.assembly-focus-cell,
+.assembly-form-table td.assembly-area-cell,
+.assembly-form-table th.assembly-area-cell {
+  position: relative !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  padding: 0 !important;
+}
+
+.assembly-vertical-cell-wrapper {
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 4px 2px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.assembly-vertical-cell-text {
+  writing-mode: vertical-rl !important;
+  transform: rotate(180deg) !important;
+  text-align: center !important;
+  font-weight: 800 !important;
+  font-size: 12.5px !important;
+  color: #0f172a !important;
+  letter-spacing: 0.04em !important;
+  line-height: 1.2 !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  max-height: 98% !important;
+  max-width: 98% !important;
+  display: inline-block !important;
+  outline: none !important;
+}
+
+.assembly-focus-text {
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+}
+
+.assembly-area-text {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+}
+
+.assembly-form-table td.assembly-area-cell textarea,
+.assembly-form-table .assembly-area-cell textarea,
+.assembly-form-table td.assembly-focus-cell textarea,
+.assembly-form-table .assembly-focus-cell textarea {
+  writing-mode: vertical-rl !important;
+  transform: rotate(180deg) !important;
+  text-align: center !important;
+  font-weight: bold !important;
+  padding: 2px 1px !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.15 !important;
+  font-size: 11.5px !important;
+}
+
+/* Assembly Form Legend Section */
+.assembly-form-table tr.assembly-legend-row td,
+.assembly-form-table td.assembly-legend-cell,
+.assembly-form-table td.assembly-legend-cell * {
+  writing-mode: horizontal-tb !important;
+  transform: none !important;
+  line-height: 1.25;
+}
+
+.assembly-form-table td.assembly-legend-cell {
+  background: #ffffff;
+  vertical-align: middle !important;
+  padding: 0 !important;
+}
+
+.assembly-form-table td.assembly-legend-header {
+  background: #f8fafc !important;
+  font-weight: 700 !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  color: #1e293b !important;
+}
+
+.assembly-legend-content {
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 20px !important;
+  box-sizing: border-box !important;
+  padding: 2px 4px !important;
+  font-size: 8px;
+  color: #1e293b;
+  writing-mode: horizontal-tb !important;
+  transform: none !important;
+}
+
+.assembly-legend-header-box {
+  justify-content: center !important;
+  text-align: center !important;
+  font-weight: 700 !important;
+  font-size: 8.5px !important;
+  text-transform: uppercase;
+}
+
+.assembly-legend-symbol-box {
+  justify-content: center !important;
+  text-align: center !important;
+  font-weight: 700 !important;
+  font-size: 9.5px !important;
+  color: #0f172a;
+}
+
+.assembly-legend-desc-box {
+  justify-content: flex-start !important;
+  text-align: left !important;
+  font-size: 8px !important;
+  line-height: 1.2 !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  color: #334155;
+  padding: 2px 5px !important;
+}
+
+.assembly-legend-footer-box {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  text-align: left !important;
+  font-size: 8px !important;
+  color: #475569;
+  padding: 3px 8px !important;
+  width: 100% !important;
+}
+
+
+
+

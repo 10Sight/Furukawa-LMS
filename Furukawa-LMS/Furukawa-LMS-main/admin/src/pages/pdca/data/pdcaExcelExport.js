@@ -74,19 +74,23 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     { key: 'shift', width: 10 },           // B
     { key: 'sno', width: 8 },              // C
     { key: 'status', width: 15 },          // D
-    { key: 'department', width: 16 },      // E
-    { key: 'section', width: 18 },         // F
-    { key: 'lineArea', width: 18 },        // G
-    { key: 'observation', width: 35 },     // H
-    { key: 'imageBefore', width: 22 },     // I
-    { key: 'rootCause', width: 25 },       // J
-    { key: 'counterMeasure', width: 28 },   // K
-    { key: 'imageAfter', width: 22 },      // L
-    { key: 'responseDate', width: 14 },    // M
-    { key: 'respDept', width: 14 },        // N
-    { key: 'respStaff', width: 24 },       // O
-    { key: 'cft', width: 16 },             // P
-    { key: 'remarks', width: 30 },         // Q
+    { key: 'unit', width: 12 },            // E (Unit - Section P)
+    { key: 'department', width: 16 },      // F
+    { key: 'section', width: 18 },         // G
+    { key: 'lineArea', width: 18 },        // H
+    { key: 'observation', width: 35 },     // I
+    { key: 'imageBefore', width: 22 },     // J
+    { key: 'rootCause', width: 25 },       // K
+    { key: 'counterMeasure', width: 28 },   // L
+    { key: 'imageAfter', width: 22 },      // M
+    { key: 'stdDurationMin', width: 18 },   // N (Std. Duration in min)
+    { key: 'responseDate', width: 14 },    // O
+    { key: 'noOfTimeRevised', width: 18 }, // P (No. of time Revised)
+    { key: 'respUnit', width: 12 },        // Q (Unit - Section C)
+    { key: 'respDept', width: 14 },        // R
+    { key: 'respStaff', width: 24 },       // S
+    { key: 'cft', width: 16 },             // T
+    { key: 'remarks', width: 30 },         // U
   ];
 
   // Helper for applying cell border & font
@@ -116,7 +120,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   };
 
   // Row 1: Main Title
-  worksheet.mergeCells('A1:Q1');
+  worksheet.mergeCells('A1:U1');
   const titleCell = worksheet.getCell('A1');
   titleCell.value = `${topicTitle.toUpperCase()} ${id ? `[${id}]` : ''} ${plant ? `· Plant: ${plant}` : ''}`.trim();
   applyCellStyle(titleCell, { bg: 'FFFFFF', bold: true, size: 16, align: 'center', color: '1E293B' });
@@ -128,18 +132,18 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   r2Label1.value = '会議名 (Meeting)';
   applyCellStyle(r2Label1, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('C2:K2');
+  worksheet.mergeCells('C2:M2');
   const r2Val1 = worksheet.getCell('C2');
   r2Val1.value = topicTitle;
   applyCellStyle(r2Val1, { bg: 'FFFFFF', bold: true, size: 10, align: 'left' });
 
-  worksheet.mergeCells('L2:M2');
-  const r2Label2 = worksheet.getCell('L2');
+  worksheet.mergeCells('N2:O2');
+  const r2Label2 = worksheet.getCell('N2');
   r2Label2.value = '作成者 (Prepared By)';
   applyCellStyle(r2Label2, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('N2:Q2');
-  const r2Val2 = worksheet.getCell('N2');
+  worksheet.mergeCells('P2:U2');
+  const r2Val2 = worksheet.getCell('P2');
   r2Val2.value = preparedBy;
   applyCellStyle(r2Val2, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
   worksheet.getRow(2).height = 24;
@@ -150,18 +154,18 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   r3Label1.value = '出席者 (Attendees)';
   applyCellStyle(r3Label1, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('C3:K3');
+  worksheet.mergeCells('C3:M3');
   const r3Val1 = worksheet.getCell('C3');
   r3Val1.value = attendees;
   applyCellStyle(r3Val1, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
 
-  worksheet.mergeCells('L3:M3');
-  const r3Label2 = worksheet.getCell('L3');
+  worksheet.mergeCells('N3:O3');
+  const r3Label2 = worksheet.getCell('N3');
   r3Label2.value = '議事録No (Audit No)';
   applyCellStyle(r3Label2, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('N3:Q3');
-  const r3Val2 = worksheet.getCell('N3');
+  worksheet.mergeCells('P3:U3');
+  const r3Val2 = worksheet.getCell('P3');
   r3Val2.value = auditNo;
   applyCellStyle(r3Val2, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
   worksheet.getRow(3).height = 24;
@@ -170,22 +174,22 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   worksheet.mergeCells('A4:C4');
   applyCellStyle(worksheet.getCell('A4'), { bg: 'F1F5F9', bold: true });
 
-  worksheet.mergeCells('D4:J4');
+  worksheet.mergeCells('D4:K4');
   const pCell = worksheet.getCell('D4');
   pCell.value = 'P (PLAN)';
   applyCellStyle(pCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  worksheet.mergeCells('K4:M4');
-  const dCell = worksheet.getCell('K4');
+  worksheet.mergeCells('L4:P4');
+  const dCell = worksheet.getCell('L4');
   dCell.value = 'D (DO)';
   applyCellStyle(dCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  worksheet.mergeCells('N4:P4');
-  const cCell = worksheet.getCell('N4');
+  worksheet.mergeCells('Q4:T4');
+  const cCell = worksheet.getCell('Q4');
   cCell.value = 'C (CHECK)';
   applyCellStyle(cCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  const aCell = worksheet.getCell('Q4');
+  const aCell = worksheet.getCell('U4');
   aCell.value = 'A (ACT)';
   applyCellStyle(aCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
   worksheet.getRow(4).height = 24;
@@ -196,6 +200,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     'Shift *',
     'S.No',
     'Status *',
+    'Unit',
     'Department',
     'Section',
     'Line / Area',
@@ -204,8 +209,10 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     'Root Cause',
     'Counter Measure',
     'Image After',
+    'Std. Duration in min',
     'Response Date',
-    'Responsible Person Confirmation', '', '', // N, O, P merged across 3 subcolumns
+    'No. of time Revised',
+    'Responsible Person Confirmation', '', '', '', // Q, R, S, T merged across 4 subcolumns
     '(Responsible person instructions, etc.)'
   ];
 
@@ -216,27 +223,29 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     cell.value = hdr;
     applyCellStyle(cell, { bg: 'ECEFF1', bold: true, size: 10, align: 'center', color: '1E293B' });
   });
-  worksheet.mergeCells('N5:P5');
+  worksheet.mergeCells('Q5:T5');
 
-  // Row 6: Subheaders for Responsible Person (Dept / Staff / CFT)
+  // Row 6: Subheaders for Responsible Person (Unit / Dept / Staff / CFT)
   const r6 = worksheet.getRow(6);
   r6.height = 20;
-  for (let c = 1; c <= 17; c++) {
+  for (let c = 1; c <= 21; c++) {
     const cell = r6.getCell(c);
     applyCellStyle(cell, { bg: 'ECEFF1', bold: true, size: 9, align: 'center', color: '334155' });
   }
   // Set subheader labels
-  r6.getCell(14).value = 'Dept';
-  r6.getCell(15).value = 'Staff Name';
-  r6.getCell(16).value = 'CFT';
+  r6.getCell(17).value = 'Unit';
+  r6.getCell(18).value = 'Dept';
+  r6.getCell(19).value = 'Staff Name';
+  r6.getCell(20).value = 'CFT';
 
   // Merge rows 5 and 6 for non-subdivided columns
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'Q'].forEach(col => {
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'U'].forEach(col => {
     worksheet.mergeCells(`${col}5:${col}6`);
   });
 
   // Prepare Data Validation Dropdowns
   const deptListStr = `"${PDCA_DEPARTMENTS.join(',')}"`;
+  const unitListStr = '"Bawal,Gujrat"';
   const statusListStr = '"Open,In - Progress,Closed,Delay"';
   const shiftListStr = '"A,B,C,General"';
 
@@ -285,9 +294,21 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       formulae: [statusListStr]
     };
 
-    // E: Department & Unit
-    const cellDept = rowObj.getCell(5);
-    cellDept.value = r.unit ? (r.department ? `${r.department} (${r.unit})` : r.unit) : (r.department || '');
+    // E: Unit (Section P)
+    const cellUnitP = rowObj.getCell(5);
+    cellUnitP.value = r.unit || '';
+    applyCellStyle(cellUnitP, { align: 'center', size: 9 });
+    cellUnitP.dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [unitListStr]
+    };
+
+    // F: Department
+    const cellDept = rowObj.getCell(6);
+    cellDept.value = Array.isArray(r.departments) && r.departments.length > 0
+      ? r.departments.filter(Boolean).join(', ')
+      : (r.department || '');
     applyCellStyle(cellDept, { align: 'center', size: 9 });
     cellDept.dataValidation = {
       type: 'list',
@@ -295,69 +316,101 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       formulae: [deptListStr]
     };
 
-    // F: Section
-    const cellSec = rowObj.getCell(6);
-    cellSec.value = r.section || '';
+    // G: Section
+    const cellSec = rowObj.getCell(7);
+    cellSec.value = Array.isArray(r.sections) && r.sections.length > 0
+      ? r.sections.map((s) => (typeof s === 'object' ? s?.section : s)).filter(Boolean).join(', ')
+      : (r.section || '');
     applyCellStyle(cellSec, { align: 'center', size: 9 });
 
-    // G: Line / Area
-    const cellLine = rowObj.getCell(7);
-    cellLine.value = r.lineArea || '';
+    // H: Line / Area
+    const cellLine = rowObj.getCell(8);
+    cellLine.value = Array.isArray(r.lineAreas) && r.lineAreas.length > 0
+      ? r.lineAreas.map((l) => (typeof l === 'object' ? l?.lineArea : l)).filter(Boolean).join(', ')
+      : (r.lineArea || '');
     applyCellStyle(cellLine, { align: 'center', size: 9 });
 
-    // H: Observation
-    const cellObs = rowObj.getCell(8);
+    // I: Observation
+    const cellObs = rowObj.getCell(9);
     cellObs.value = r.observation || '';
     applyCellStyle(cellObs, { align: 'left', size: 9 });
 
-    // I: Image Before (placeholder text or image embedded below)
-    const cellImgBefore = rowObj.getCell(9);
+    // J: Image Before (placeholder text or image embedded below)
+    const cellImgBefore = rowObj.getCell(10);
     cellImgBefore.value = '';
     applyCellStyle(cellImgBefore, { align: 'center', size: 8, color: '64748B' });
 
-    // J: Root Cause
-    const cellRoot = rowObj.getCell(10);
+    // K: Root Cause
+    const cellRoot = rowObj.getCell(11);
     cellRoot.value = r.rootCause || '';
     applyCellStyle(cellRoot, { align: 'left', size: 9 });
 
-    // K: Counter Measure
-    const cellCounter = rowObj.getCell(11);
+    // L: Counter Measure
+    const cellCounter = rowObj.getCell(12);
     cellCounter.value = r.counterMeasure || '';
     applyCellStyle(cellCounter, { align: 'left', size: 9 });
 
-    // L: Image After (placeholder text or image embedded below)
-    const cellImgAfter = rowObj.getCell(12);
+    // M: Image After (placeholder text or image embedded below)
+    const cellImgAfter = rowObj.getCell(13);
     cellImgAfter.value = '';
     applyCellStyle(cellImgAfter, { align: 'center', size: 8, color: '64748B' });
 
-    // M: Response Date
-    const cellRespDate = rowObj.getCell(13);
+    // N: Std. Duration in min
+    const cellDuration = rowObj.getCell(14);
+    const durRaw = r.stdDurationMin !== undefined && r.stdDurationMin !== null ? String(r.stdDurationMin) : (r.stdDuration ? String(r.stdDuration) : '');
+    const durNum = Number(durRaw.replace(/[^0-9.]/g, ''));
+    cellDuration.value = !isNaN(durNum) && durRaw.trim() !== '' ? `${durNum} min` : '';
+    applyCellStyle(cellDuration, { align: 'center', size: 9 });
+
+    // O: Response Date
+    const cellRespDate = rowObj.getCell(15);
     cellRespDate.value = r.responseDate || '';
     applyCellStyle(cellRespDate, { align: 'center', size: 9 });
 
-    // N: Responsible Person Dept
-    const cellRespDept = rowObj.getCell(14);
+    // P: No. of time Revised
+    const cellRevised = rowObj.getCell(16);
+    if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0) {
+      cellRevised.value = r.revisedDates.join(', ');
+    } else {
+      cellRevised.value = r.noOfTimeRevised !== undefined && r.noOfTimeRevised !== null && r.noOfTimeRevised !== ''
+        ? (isNaN(Number(r.noOfTimeRevised)) ? String(r.noOfTimeRevised) : Number(r.noOfTimeRevised))
+        : 0;
+    }
+    applyCellStyle(cellRevised, { align: 'center', size: 9 });
+
+    // Q: Unit (Section C / Responsible Person Confirmation)
+    const cellUnitC = rowObj.getCell(17);
+    cellUnitC.value = r.respUnit || r.responsiblePersonUnit || '';
+    applyCellStyle(cellUnitC, { align: 'center', size: 9 });
+    cellUnitC.dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [unitListStr]
+    };
+
+    // R: Responsible Person Dept
+    const cellRespDept = rowObj.getCell(18);
     cellRespDept.value = r.responsiblePersonDept || r.department || '';
     applyCellStyle(cellRespDept, { align: 'center', size: 9 });
 
-    // O: Staff Employee
-    const cellStaff = rowObj.getCell(15);
+    // S: Staff Employee
+    const cellStaff = rowObj.getCell(19);
     cellStaff.value = r.staffEmployee || r.responsiblePersonConfirmation || '';
     applyCellStyle(cellStaff, { align: 'left', size: 9 });
 
-    // P: CFT
-    const cellCft = rowObj.getCell(16);
+    // T: CFT
+    const cellCft = rowObj.getCell(20);
     cellCft.value = r.cftTopic || r.cftSelectedName || '';
     applyCellStyle(cellCft, { align: 'center', size: 9 });
 
-    // Q: Responsible Person Instruction / Confirmation
-    const cellRemarks = rowObj.getCell(17);
+    // U: Responsible Person Instruction / Confirmation
+    const cellRemarks = rowObj.getCell(21);
     const confVal = r.confirmation || (r.responsiblePersonConfirmation === 'Confirmed' || r.responsiblePersonConfirmation === 'Not - Confirmed' ? r.responsiblePersonConfirmation : '');
     const otherRemarks = r.responsiblePersonConfirmation && r.responsiblePersonConfirmation !== 'Confirmed' && r.responsiblePersonConfirmation !== 'Not - Confirmed' ? r.responsiblePersonConfirmation : (r.remarks || '');
     cellRemarks.value = confVal ? (otherRemarks ? `${confVal} - ${otherRemarks}` : confVal) : (otherRemarks || '');
     applyCellStyle(cellRemarks, { align: 'center', size: 9 });
 
-    // Embed Before Image if available
+    // Embed Before Image if available (Column J is index 10, so 0-based col is 9.1)
     const beforeUrl = r.imageBefore || (Array.isArray(r.imagesBefore) && r.imagesBefore[0]?.url);
     if (beforeUrl) {
       try {
@@ -368,7 +421,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
             extension: imgData.extension
           });
           worksheet.addImage(imageId, {
-            tl: { col: 8.1, row: rowNum - 1 + 0.1 },
+            tl: { col: 9.1, row: rowNum - 1 + 0.1 },
             ext: { width: 110, height: 75 },
             editAs: 'oneCell'
           });
@@ -382,7 +435,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       cellImgBefore.value = '-';
     }
 
-    // Embed After Image if available
+    // Embed After Image if available (Column M is index 13, so 0-based col is 12.1)
     const afterUrl = r.imageAfter || (Array.isArray(r.imagesAfter) && r.imagesAfter[0]?.url);
     if (afterUrl) {
       try {
@@ -393,7 +446,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
             extension: imgData.extension
           });
           worksheet.addImage(imageId, {
-            tl: { col: 11.1, row: rowNum - 1 + 0.1 },
+            tl: { col: 12.1, row: rowNum - 1 + 0.1 },
             ext: { width: 110, height: 75 },
             editAs: 'oneCell'
           });

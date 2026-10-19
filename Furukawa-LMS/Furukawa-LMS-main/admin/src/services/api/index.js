@@ -344,3 +344,8 @@ export {
     useApproveAbnormalConditionEntryMutation,
     useDeleteAbnormalConditionSheetMutation,
 } from "./AbnormalConditionApi.js";
+
+// LPA API exports
+export { lpaApi } from "./lpaApi.js";
+export { default as defaultLpaApi } from "./lpaApi.js";
+

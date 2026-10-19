@@ -25,12 +25,16 @@ import {
   Users,
   Image as ImageIcon,
   Images,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  BarChart3
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
 import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
+import SendMailModal from '../common/SendMailModal';
+import PDCAMonthlyGraph from './PDCAMonthlyGraph';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
@@ -61,11 +65,14 @@ const createEmptyRow = (customDefaults = {}) => ({
   shift: customDefaults.shift || '',
   status: customDefaults.status || 'Open',
   department: customDefaults.department || '',
+  departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
   section: customDefaults.section || '',
+  sections: Array.isArray(customDefaults.sections) ? customDefaults.sections : (customDefaults.section ? [{ section: customDefaults.section, sectionId: customDefaults.sectionId ?? null, sectionCode: customDefaults.sectionCode || '' }] : []),
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
   sectionCode: customDefaults.sectionCode || '',
   lineArea: customDefaults.lineArea || '',
+  lineAreas: Array.isArray(customDefaults.lineAreas) ? customDefaults.lineAreas : (customDefaults.lineArea ? [{ lineArea: customDefaults.lineArea, lineAreaId: customDefaults.lineAreaId ?? null, lineAreaCode: customDefaults.lineAreaCode || '', sectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null }] : []),
   lineAreaSectionId: customDefaults.lineAreaSectionId ?? customDefaults.sectionId ?? null,
   lineAreaId: customDefaults.lineAreaId ?? null,
   lineAreaCode: customDefaults.lineAreaCode || '',
@@ -84,7 +91,12 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageAfter: customDefaults.imageAfter || null,
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
+  stdDurationMin: customDefaults.stdDurationMin !== undefined ? customDefaults.stdDurationMin : (customDefaults.stdDuration !== undefined ? customDefaults.stdDuration : ''),
   responseDate: customDefaults.responseDate || '',
+  revisedDates: Array.isArray(customDefaults.revisedDates) ? customDefaults.revisedDates : (customDefaults.responseDate ? [customDefaults.responseDate] : []),
+  noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : (customDefaults.noOfTimesRevised !== undefined ? customDefaults.noOfTimesRevised : 0),
+  respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
+  responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
   responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
   staffEmployee: customDefaults.staffEmployee || '',
   staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
@@ -178,19 +190,20 @@ function AutoResizeTextarea({
   );
 }
 
-// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is displayed)
+// Format ISO date (YYYY-MM-DD) into display string (DD/MM/YY)
+export const formatDisplayDate = (isoStr) => {
+  if (!isoStr) return '';
+  const parts = String(isoStr).split('-');
+  if (parts.length === 3) {
+    const [year, month, day] = parts;
+    return `${day}/${month}/${year.slice(-2)}`;
+  }
+  return String(isoStr);
+};
+
+// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is fully displayed without truncation)
 function CompactDateCell({ value, onChange, readOnly = false }) {
   const inputRef = useRef(null);
-
-  const formatDisplayDate = (isoStr) => {
-    if (!isoStr) return '';
-    const parts = isoStr.split('-');
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
-      return `${day}/${month}/${year.slice(-2)}`;
-    }
-    return isoStr;
-  };
 
   const handleOpenPicker = () => {
     if (readOnly) return;
@@ -209,8 +222,8 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
 
   if (readOnly) {
     return (
-      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none">
-        <span className="text-[10.5px] font-semibold text-slate-800 text-center tracking-tight truncate">
+      <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none whitespace-nowrap">
+        <span className="text-[11px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
           {display || '-'}
         </span>
       </div>
@@ -241,9 +254,9 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
       />
 
       {display ? (
-        // When date is selected: Date is shown perfectly center-aligned, calendar icon is removed
-        <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-1">
-          <span className="text-[10.5px] font-semibold text-slate-800 text-center tracking-tight truncate">
+        // When date is selected: Date is shown perfectly center-aligned and fully visible without cutting off
+        <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
+          <span className="text-[11px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
             {display}
           </span>
           <button
@@ -268,6 +281,292 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
   );
 }
 
+// Std. Duration in min cell with automatic 'min' suffix
+function DurationMinCell({ value, readOnly, onChange }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editVal, setEditVal] = useState('');
+
+  const numStr = value !== undefined && value !== null ? String(value).replace(/[^0-9.]/g, '') : '';
+  const displayVal = numStr ? `${numStr} min` : '';
+
+  if (readOnly) {
+    return <span className="text-xs text-slate-800 font-medium whitespace-nowrap">{displayVal || '-'}</span>;
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={editVal}
+        onChange={(e) => {
+          const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+          setEditVal(cleaned);
+        }}
+        onBlur={() => {
+          setIsEditing(false);
+          const finalVal = editVal.trim();
+          onChange(finalVal ? `${finalVal} min` : '');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            setIsEditing(false);
+            const finalVal = editVal.trim();
+            onChange(finalVal ? `${finalVal} min` : '');
+          }
+        }}
+        placeholder="0"
+        className="w-full bg-white border border-blue-500 rounded px-1 py-0.5 text-xs text-slate-800 text-center font-semibold outline-none"
+      />
+    );
+  }
+
+  return (
+    <div
+      onClick={() => {
+        setEditVal(numStr);
+        setIsEditing(true);
+      }}
+      className="w-full py-1 text-xs text-slate-800 text-center font-medium cursor-text hover:bg-blue-50/50 rounded transition-colors whitespace-nowrap"
+      title="Click to enter duration (min)"
+    >
+      {displayVal ? (
+        <span className="font-semibold text-slate-800">{displayVal}</span>
+      ) : (
+        <span className="text-slate-300">-</span>
+      )}
+    </div>
+  );
+}
+
+// Custom Dropdown for Responsible Person Instructions, etc. column
+function ResponsiblePersonInstructionDropdown({
+  value,
+  onChange,
+  row,
+  dbEmployees = [],
+  currentUser,
+  readOnly = false,
+  sNo = 1
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [manualText, setManualText] = useState('');
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  // Candidate name(s) fetched by ID (showing ONLY name, no ID)
+  const candidateNames = useMemo(() => {
+    const list = [];
+
+    // Assigned staff in this row
+    if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
+      row.staffEmployees.forEach((emp) => {
+        if (emp.name && !list.includes(emp.name.trim())) {
+          list.push(emp.name.trim());
+        }
+      });
+    } else if (row.staffEmployee) {
+      const parsed = parseStaffEmployee(row.staffEmployee);
+      const name = parsed?.name || row.staffName;
+      if (name && !list.includes(name.trim())) {
+        list.push(name.trim());
+      }
+    } else if (row.staffName && !list.includes(row.staffName.trim())) {
+      list.push(row.staffName.trim());
+    }
+
+    // Lookup by employee ID in master
+    const staffId = row.staffId || row.employeeId;
+    if (staffId) {
+      const found = (dbEmployees || []).find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId))
+        || VERIFIED_EMPLOYEE_MASTER.find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId));
+      if (found?.name && !list.includes(found.name.trim())) {
+        list.push(found.name.trim());
+      }
+    }
+
+    // Current logged-in user
+    const curName = currentUser?.fullName || currentUser?.name;
+    if (curName && !list.includes(curName.trim())) {
+      list.push(curName.trim());
+    }
+
+    if (list.length === 0) {
+      list.push('Responsible User');
+    }
+
+    return list;
+  }, [row, dbEmployees, currentUser]);
+
+  const toggleDropdown = (e) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const popoverWidth = 220;
+      let left = rect.left + window.scrollX - (popoverWidth - rect.width) / 2;
+      left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, left));
+      let top = rect.bottom + window.scrollY + 4;
+      setPopoverPos({ top, left });
+      setManualText('');
+      setIsOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutsideClick = (e) => {
+      if (
+        (triggerRef.current && triggerRef.current.contains(e.target)) ||
+        (popoverRef.current && popoverRef.current.contains(e.target))
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen]);
+
+  const handleSelectOption = (opt) => {
+    onChange(opt);
+    setIsOpen(false);
+  };
+
+  const handleApplyManual = () => {
+    if (manualText.trim()) {
+      onChange(manualText.trim());
+    }
+    setIsOpen(false);
+  };
+
+  const displayVal = value || row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : row.responsiblePersonConfirmation);
+
+  const isConfirmed = displayVal === 'Confirmed';
+  const isNotConfirmed = displayVal === 'Not - Confirmed';
+  const hasCustomValue = Boolean(displayVal && !isConfirmed && !isNotConfirmed);
+
+  return (
+    <div className="relative w-full flex items-center justify-center">
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={readOnly}
+        onClick={toggleDropdown}
+        aria-label={`Responsible person instructions for row ${sNo}`}
+        className={`w-full rounded-md border px-1.5 py-1 text-[10.5px] font-semibold outline-none text-center flex items-center justify-between gap-1 transition-all ${
+          readOnly ? 'cursor-default' : 'cursor-pointer hover:border-blue-400 focus:ring-2 focus:ring-blue-300'
+        } ${
+          isConfirmed
+            ? 'bg-green-50 text-green-700 border-green-300'
+            : isNotConfirmed
+            ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
+            : hasCustomValue
+            ? 'bg-blue-50 text-blue-700 border-blue-300'
+            : 'bg-slate-50 text-slate-700 border-slate-300'
+        }`}
+        title={displayVal || 'Select Instruction / Confirmation'}
+      >
+        <span className="truncate flex-1 text-center font-medium">
+          {displayVal || 'Select...'}
+        </span>
+        {!readOnly && (
+          <ChevronDown className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
+        )}
+      </button>
+
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={popoverRef}
+          style={{
+            position: 'absolute',
+            top: `${popoverPos.top}px`,
+            left: `${popoverPos.left}px`,
+            width: '220px',
+            zIndex: 99999
+          }}
+          className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Upside: User name(s) fetched by ID (no ID shown) */}
+          <div className="p-1.5 bg-slate-50 border-b border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5 block">
+              Responsible Person
+            </span>
+            {candidateNames.map((name, nIdx) => (
+              <button
+                key={nIdx}
+                type="button"
+                onClick={() => handleSelectOption(name)}
+                className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title={`Select ${name}`}
+              >
+                <User className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <span className="truncate">{name}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Middle Options: Confirmed / Not Confirmed */}
+          <div className="p-1.5 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => handleSelectOption('Confirmed')}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+              <span>Confirmed</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectOption('Not - Confirmed')}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Not - Confirmed</span>
+            </button>
+          </div>
+
+          {/* Downwards: Manual Input by User */}
+          <div className="p-2 border-t border-slate-200 bg-slate-50">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Manual Instruction
+            </span>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleApplyManual();
+                  }
+                }}
+                placeholder="Type instruction..."
+                className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleApplyManual}
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+              >
+                Set
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function PDCASheet({
   topic,
   onBack,
@@ -280,6 +579,38 @@ export default function PDCASheet({
 }) {
   const { data, setData, showToast, userContext } = usePDCA();
   const effectiveUser = currentUser || userContext?.user;
+
+  // Determine if the current user has Administrator privileges
+  const isAdmin = useMemo(() => {
+    const u = effectiveUser || userContext?.user;
+    if (u) {
+      if (
+        u.isAdmin === true ||
+        u.isAdmin === 1 ||
+        String(u.role || '').toUpperCase() === 'ADMIN' ||
+        String(u.role || '').toUpperCase() === 'SUPERADMIN'
+      ) {
+        return true;
+      }
+    }
+    try {
+      const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                     (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          parsed?.isAdmin === true ||
+          parsed?.isAdmin === 1 ||
+          String(parsed?.role || '').toUpperCase() === 'ADMIN' ||
+          String(parsed?.role || '').toUpperCase() === 'SUPERADMIN'
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, [effectiveUser, userContext?.user]);
+
   const effectiveReadOnly = Boolean(
     readOnly || (topic?.id && !isRecordCreator(topic, effectiveUser))
   );
@@ -376,14 +707,31 @@ export default function PDCASheet({
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
 
-    const department = row.department || '';
+    const departments = Array.isArray(row.departments) && row.departments.length > 0
+      ? row.departments
+      : (row.department ? [row.department] : []);
+    const department = departments[0] || row.department || '';
+
     const section = row.section || '';
     const sectionId = row.sectionId ?? row.lineAreaSectionId ?? null;
     const sectionCode = row.sectionCode || '';
+    const sections = Array.isArray(row.sections) && row.sections.length > 0
+      ? row.sections
+      : (section ? [{ section, sectionId, sectionCode }] : []);
+
     const lineArea = row.lineArea || '';
     const lineAreaId = row.lineAreaId ?? null;
     const lineAreaCode = row.lineAreaCode || '';
     const lineAreaSectionId = row.lineAreaSectionId ?? sectionId;
+    const lineAreas = Array.isArray(row.lineAreas) && row.lineAreas.length > 0
+      ? row.lineAreas
+      : (lineArea ? [{ lineArea, lineAreaId, lineAreaCode, sectionId: lineAreaSectionId }] : []);
+
+    const responseDate = row.responseDate || '';
+    const revisedDates = Array.isArray(row.revisedDates) && row.revisedDates.length > 0
+      ? row.revisedDates
+      : (responseDate ? [responseDate] : []);
+
     const resolvedDbDept = staffEmployees[0]?.department || (staffEmployee ? (findEmployeeDepartment(staffEmployee, dbEmployees) || findEmployeeDepartment(staffEmployee, VERIFIED_EMPLOYEE_MASTER)) : '') || '';
     const responsiblePersonDept = (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
       ? row.responsiblePersonDept
@@ -405,22 +753,42 @@ export default function PDCASheet({
       status = 'In - Progress';
     }
 
-    // Section P Unit: only retained if Department is present
-    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (department ? (row.unit || '') : '');
+    // Section P Unit
+    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (row.unit || '');
+    const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
+      ? row.stdDurationMin
+      : (row.stdDuration !== undefined && row.stdDuration !== null ? row.stdDuration : '');
+    const noOfTimeRevised = revisedDates.length > 1
+      ? revisedDates.length - 1
+      : ((row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null)
+        ? row.noOfTimeRevised
+        : (row.noOfTimesRevised !== undefined && row.noOfTimesRevised !== null ? row.noOfTimesRevised : 0));
+    const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
+      ? row.respUnit
+      : (row.responsiblePersonUnit || row.respUnit || '');
 
     return {
       ...row,
       department,
+      departments,
       unit,
+      stdDurationMin,
+      responseDate,
+      revisedDates,
+      noOfTimeRevised,
+      respUnit,
+      responsiblePersonUnit: respUnit,
       confirmation,
       status,
-      section,
-      sectionId,
-      sectionCode,
-      lineArea,
-      lineAreaId,
-      lineAreaCode,
-      lineAreaSectionId,
+      section: sections[0]?.section || section,
+      sectionId: sections[0]?.sectionId ?? sectionId,
+      sectionCode: sections[0]?.sectionCode || sectionCode,
+      sections,
+      lineArea: lineAreas[0]?.lineArea || lineArea,
+      lineAreaId: lineAreas[0]?.lineAreaId ?? lineAreaId,
+      lineAreaCode: lineAreas[0]?.lineAreaCode || lineAreaCode,
+      lineAreaSectionId: lineAreas[0]?.sectionId ?? lineAreaSectionId,
+      lineAreas,
       responsiblePersonDept,
       imagesBefore,
       imagesAfter,
@@ -456,13 +824,15 @@ export default function PDCASheet({
   }, []);
 
   const initialHeaderInfo = useMemo(() => {
-    return topic?.sheet?.headerInfo || {
-      topicName: '',
-      preparedBy: '',
-      auditNo: '',
-      attendees: ''
+    const raw = topic?.sheet?.headerInfo || {};
+    const fallback = topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)');
+    return {
+      topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : fallback,
+      preparedBy: raw.preparedBy || '',
+      auditNo: raw.auditNo || '',
+      attendees: raw.attendees || ''
     };
-  }, []);
+  }, [topic?.sheet?.headerInfo, topic?.topic, topic?.section]);
 
   // Initialize rows with 10 empty items by default
   const [rows, setRows] = useState(initialRows);
@@ -502,6 +872,8 @@ export default function PDCASheet({
     headerInfo: { ...initialHeaderInfo }
   });
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
+  const [showMonthlyGraph, setShowMonthlyGraph] = useState(true);
 
   // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
   const [observationWidth, setObservationWidth] = useState(() => {
@@ -739,7 +1111,11 @@ export default function PDCASheet({
       if (!active || !savedSheet) return;
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
-        finalHeader = { ...headerInfo, ...savedSheet.headerInfo };
+        const loadedTopicName = savedSheet.headerInfo.topicName;
+        const normalizedTopicName = (!loadedTopicName || loadedTopicName === 'PDCA - M Tanaka San Audit')
+          ? (topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'))
+          : loadedTopicName;
+        finalHeader = { ...headerInfo, ...savedSheet.headerInfo, topicName: normalizedTopicName };
         setHeaderInfo(finalHeader);
       }
       let finalRows = rows;
@@ -790,6 +1166,7 @@ export default function PDCASheet({
         r.date?.trim() ||
         r.shift?.trim() ||
         r.lineArea?.trim() ||
+        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
         r.observation?.trim() ||
         r.imageBefore ||
         (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
@@ -799,6 +1176,8 @@ export default function PDCASheet({
         (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
         r.responseDate?.trim() ||
         r.department?.trim() ||
+        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
+        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
         r.staffEmployee?.trim() ||
         r.cftTopic?.trim() ||
         r.responsiblePersonConfirmation?.trim()
@@ -808,7 +1187,8 @@ export default function PDCASheet({
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
         if (!r.status?.trim()) missing.push('Status');
-        if (!r.lineArea?.trim()) missing.push('Line/Area');
+        const activeLineArea = (r.lineAreas?.[0]?.lineArea || r.lineArea || '').trim();
+        if (!activeLineArea) missing.push('Line/Area');
         if (!r.observation?.trim()) missing.push('Observation');
 
         if (missing.length > 0) {
@@ -1640,6 +2020,258 @@ export default function PDCASheet({
     });
   };
 
+  const handleAddDepartment = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const depts = Array.isArray(curr.departments) && curr.departments.length > 0
+        ? [...curr.departments]
+        : (curr.department ? [curr.department] : ['']);
+      depts.push('');
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: depts[0] || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveDepartment = (rowIndex, dIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let depts = Array.isArray(curr.departments) ? [...curr.departments] : (curr.department ? [curr.department] : []);
+      depts.splice(dIdx, 1);
+      if (depts.length === 0) depts = [''];
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: depts[0] || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateDepartment = (rowIndex, dIdx, val) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let depts = Array.isArray(curr.departments) ? [...curr.departments] : (curr.department ? [curr.department] : []);
+      if (depts.length === 0) depts = [''];
+      depts[dIdx] = val;
+      const primary = depts[0] || '';
+      updated[rowIndex] = {
+        ...curr,
+        departments: depts,
+        department: primary
+      };
+      return updated;
+    });
+  };
+
+  const handleAddSection = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const secs = Array.isArray(curr.sections) && curr.sections.length > 0
+        ? [...curr.sections]
+        : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]);
+      secs.push({ section: '', sectionId: null, sectionCode: '' });
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: secs[0]?.section || '',
+        sectionId: secs[0]?.sectionId ?? null,
+        sectionCode: secs[0]?.sectionCode || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveSection = (rowIndex, sIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
+      secs.splice(sIdx, 1);
+      if (secs.length === 0) secs = [{ section: '', sectionId: null, sectionCode: '' }];
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: secs[0]?.section || '',
+        sectionId: secs[0]?.sectionId ?? null,
+        sectionCode: secs[0]?.sectionCode || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateSection = (rowIndex, sIdx, sectionName, meta = {}) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
+      if (secs.length === 0) secs = [{ section: '', sectionId: null, sectionCode: '' }];
+      secs[sIdx] = {
+        section: sectionName,
+        sectionId: meta?.sectionId ?? null,
+        sectionCode: meta?.sectionCode || ''
+      };
+      const primary = secs[0] || { section: '', sectionId: null, sectionCode: '' };
+      updated[rowIndex] = {
+        ...curr,
+        sections: secs,
+        section: primary.section || '',
+        sectionId: primary.sectionId ?? null,
+        sectionCode: primary.sectionCode || '',
+        lineAreaSectionId: primary.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleAddLineArea = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      const las = Array.isArray(curr.lineAreas) && curr.lineAreas.length > 0
+        ? [...curr.lineAreas]
+        : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]);
+      las.push({ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null });
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: las[0]?.lineArea || '',
+        lineAreaId: las[0]?.lineAreaId ?? null,
+        lineAreaCode: las[0]?.lineAreaCode || '',
+        lineAreaSectionId: las[0]?.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveLineArea = (rowIndex, laIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let las = Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []);
+      las.splice(laIdx, 1);
+      if (las.length === 0) las = [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }];
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: las[0]?.lineArea || '',
+        lineAreaId: las[0]?.lineAreaId ?? null,
+        lineAreaCode: las[0]?.lineAreaCode || '',
+        lineAreaSectionId: las[0]?.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleUpdateLineArea = (rowIndex, laIdx, val, meta = {}) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      let las = Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []);
+      if (las.length === 0) las = [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }];
+      const lineSectionId = meta?.sectionId ?? curr.sections?.[laIdx]?.sectionId ?? curr.sectionId ?? null;
+      las[laIdx] = {
+        lineArea: val,
+        lineAreaId: meta?.lineAreaId ?? meta?.lineId ?? null,
+        lineAreaCode: meta?.lineAreaCode || '',
+        sectionId: lineSectionId
+      };
+      const primary = las[0] || { lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null };
+      updated[rowIndex] = {
+        ...curr,
+        lineAreas: las,
+        lineArea: primary.lineArea || '',
+        lineAreaId: primary.lineAreaId ?? null,
+        lineAreaCode: primary.lineAreaCode || '',
+        lineAreaSectionId: primary.sectionId ?? null
+      };
+      return updated;
+    });
+  };
+
+  const handleResponseDateChange = (rowIndex, newDate) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      const oldDate = curr.responseDate || '';
+      let revisedDates = Array.isArray(curr.revisedDates) && curr.revisedDates.length > 0
+        ? [...curr.revisedDates]
+        : (oldDate ? [oldDate] : []);
+
+      if (!newDate) {
+        updated[rowIndex] = {
+          ...curr,
+          responseDate: '',
+          revisedDates
+        };
+        return updated;
+      }
+
+      if (revisedDates.length === 0) {
+        revisedDates = [newDate];
+      } else if (curr.responseDate !== newDate) {
+        revisedDates = [...revisedDates, newDate];
+      }
+
+      updated[rowIndex] = {
+        ...curr,
+        responseDate: newDate,
+        revisedDates,
+        noOfTimeRevised: revisedDates.length > 1 ? revisedDates.length - 1 : 0
+      };
+      return updated;
+    });
+  };
+
+  // Delete a specific revision date from No. of time Revised column (Restricted to Administrators only)
+  const handleDeleteRevisedDate = (rowIndex, dateIndex) => {
+    if (!isAdmin) {
+      if (typeof showToast === 'function') {
+        showToast('Access Denied: Only administrators have access to delete revised dates.');
+      }
+      return;
+    }
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr || !Array.isArray(curr.revisedDates)) return prev;
+
+      const remaining = curr.revisedDates.filter((_, i) => i !== dateIndex);
+      const latestDate = remaining.length > 0 ? remaining[remaining.length - 1] : '';
+
+      updated[rowIndex] = {
+        ...curr,
+        revisedDates: remaining,
+        responseDate: latestDate,
+        noOfTimeRevised: remaining.length > 1 ? remaining.length - 1 : 0
+      };
+      return updated;
+    });
+
+    if (typeof showToast === 'function') {
+      showToast('Revised date deleted successfully.');
+    }
+  };
+
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   // Rule A: Confirmed -> Status = Closed
   // Rule B: Not - Confirmed -> Status = In - Progress
@@ -2366,7 +2998,7 @@ export default function PDCASheet({
     return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
-  const totalCols = effectiveReadOnly ? 17 : 18;
+  const totalCols = effectiveReadOnly ? 21 : 22;
 
   return (
     <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
@@ -2429,6 +3061,30 @@ export default function PDCASheet({
               <Download className="w-3.5 h-3.5" />
               <span>Export Excel</span>
             </button>
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsSendMailOpen(true)}
+              title="Send PDCA report by email"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>Send Mail</span>
+            </button>
+            {/* Monthly Graph Button */}
+            <button
+              type="button"
+              onClick={() => setShowMonthlyGraph(prev => !prev)}
+              title="Toggle Monthly PDCA Graph (Total, Opened, Closed)"
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${
+                showMonthlyGraph
+                  ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
+                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Monthly Graph</span>
+            </button>
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -2465,6 +3121,17 @@ export default function PDCASheet({
         </div>
       </div>
 
+      {/* Monthly PDCA Status Analytics Graph */}
+      {showMonthlyGraph && (
+        <PDCAMonthlyGraph
+          rows={rows}
+          allPDCARecords={data}
+          currentDate={formDate}
+          topic={topic}
+          onToggleCollapse={() => setShowMonthlyGraph(false)}
+        />
+      )}
+
       {/* Spreadsheet Matrix Table Grid */}
       <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-140px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
@@ -2473,6 +3140,7 @@ export default function PDCASheet({
             <col style={{ width: '38px', minWidth: '34px' }} />
             <col style={{ width: '34px', minWidth: '30px' }} />
             <col style={{ width: '82px', minWidth: '78px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '95px', minWidth: '90px' }} />
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
@@ -2481,7 +3149,10 @@ export default function PDCASheet({
             <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
             <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '56px', minWidth: '52px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
+            <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '85px', minWidth: '75px' }} />
             <col style={{ width: '155px', minWidth: '140px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
@@ -2497,7 +3168,7 @@ export default function PDCASheet({
                 colSpan={totalCols}
                 className="py-4 px-6 text-center font-extrabold text-slate-900 text-2xl sm:text-3xl md:text-4xl tracking-wide select-none bg-white border-r border-b border-[#94A3B8]"
               >
-                {topic?.topic || 'PDCA - M Tanaka San Audit'}
+                {headerInfo.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)')}
               </th>
             </tr>
 
@@ -2512,7 +3183,7 @@ export default function PDCASheet({
                 会議名
               </th>
               <th
-                colSpan={9}
+                colSpan={11}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2533,7 +3204,7 @@ export default function PDCASheet({
                 作成者 :
               </th>
               <th
-                colSpan={totalCols - 13}
+                colSpan={totalCols - 15}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2558,7 +3229,7 @@ export default function PDCASheet({
                 出席者
               </th>
               <th
-                colSpan={9}
+                colSpan={11}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2579,7 +3250,7 @@ export default function PDCASheet({
                 議事録No
               </th>
               <th
-                colSpan={totalCols - 13}
+                colSpan={totalCols - 15}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -2603,7 +3274,7 @@ export default function PDCASheet({
 
               {/* P: Plan */}
               <th
-                colSpan={7}
+                colSpan={8}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Plan (P)"
               >
@@ -2612,7 +3283,7 @@ export default function PDCASheet({
 
               {/* D: Do */}
               <th
-                colSpan={3}
+                colSpan={5}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Do (D)"
               >
@@ -2621,7 +3292,7 @@ export default function PDCASheet({
 
               {/* C: Check */}
               <th
-                colSpan={3}
+                colSpan={4}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Check (C)"
               >
@@ -2630,7 +3301,7 @@ export default function PDCASheet({
 
               {/* A: Act */}
               <th
-                colSpan={totalCols - 16}
+                colSpan={totalCols - 20}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Act (A)"
               >
@@ -2639,7 +3310,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[11px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
@@ -2650,6 +3321,9 @@ export default function PDCASheet({
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Status</span> <span className="text-red-500 font-bold">*</span>
+              </th>
+              <th rowSpan={2} className="py-1.5 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
+                <span>Unit</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 <span>Department</span>
@@ -2783,11 +3457,30 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px]">
                 Image After
               </th>
-              <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
+              <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]">
+                <div className="font-semibold text-slate-800">Std. Duration</div>
+                <div className="font-semibold text-[9.5px] text-slate-600">in min</div>
+              </th>
+              <th rowSpan={2} className="py-1 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
                 <div className="text-[10px] leading-tight font-semibold">Response</div>
                 <div className="text-[10px] leading-tight font-semibold">Date</div>
               </th>
-              <th colSpan={3} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
+              <th
+                rowSpan={2}
+                className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]"
+                title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
+              >
+                <div className="font-semibold text-slate-800">No. of time</div>
+                <div className="font-semibold text-slate-800 flex items-center justify-center gap-1">
+                  <span>Revised</span>
+                  {isAdmin && (
+                    <span className="text-[8px] font-bold text-amber-700 bg-amber-100/90 px-1 py-0.2 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
+                      Admin
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th colSpan={4} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
                 <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
                   Responsible Person Confirmation
                 </div>
@@ -2803,6 +3496,9 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[9.5px] select-none text-center">
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[80px] min-w-[75px]">
+                Unit
+              </th>
               <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[85px] min-w-[75px]">
                 Dept
               </th>
@@ -2826,7 +3522,7 @@ export default function PDCASheet({
                     className="group/row transition-colors"
                   >
                     {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.date}
@@ -2885,109 +3581,179 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 5. Department (Dropdown with the 13 required departments) & Dependent Unit Dropdown */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px] focus-within:bg-blue-50/30">
-                      <div className="w-full flex flex-col items-center justify-center gap-0.5 py-0.5">
-                        <div className="relative w-full flex items-center justify-center">
-                          <select
-                            disabled={effectiveReadOnly}
-                            value={row.department || ''}
-                            onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                            title={row.department || 'Select Department'}
-                          >
-                            <option value="">Dept...</option>
-                            {departmentsList.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
-                            ))}
-                          </select>
-                          {!effectiveReadOnly && (
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          )}
-                        </div>
+                    {/* 5. Unit (Section P) - Immediately before Department */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                      <div className="relative w-full flex items-center justify-center">
+                        <select
+                          disabled={effectiveReadOnly}
+                          value={row.unit || ''}
+                          onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                          title={row.unit || 'Select Unit'}
+                        >
+                          <option value="">Unit...</option>
+                          <option value="Bawal">Bawal</option>
+                          <option value="Gujrat">Gujrat</option>
+                        </select>
+                        {!effectiveReadOnly && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
+                      </div>
+                    </td>
 
-                        {/* Dependent Unit Dropdown: Displayed ONLY after a Department has been selected */}
-                        {Boolean(row.department) && (
-                          <div className="relative w-full flex items-center justify-center border-t border-slate-200/80 pt-0.5">
-                            <select
-                              disabled={effectiveReadOnly}
-                              value={row.unit || ''}
-                              onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
-                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-0.5 text-[10px] text-blue-700 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
-                              title={row.unit ? `Unit: ${row.unit}` : 'Select Unit'}
+                    {/* 6. Department (Multi-select support with + button) */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.departments) && row.departments.length > 0) ? row.departments : (row.department ? [row.department] : [''])).map((dVal, dIdx, arr) => (
+                            <div key={dIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/dept focus-within:bg-blue-50/30">
+                              <div className="relative w-full flex items-center justify-center">
+                                <select
+                                  disabled={effectiveReadOnly}
+                                  value={dVal || ''}
+                                  onChange={(e) => handleUpdateDepartment(idx, dIdx, e.target.value)}
+                                  className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                                  title={dVal || 'Select Department'}
+                                >
+                                  <option value="">Dept...</option>
+                                  {departmentsList.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}
+                                    </option>
+                                  ))}
+                                </select>
+                                {!effectiveReadOnly && (
+                                  <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                )}
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDepartment(idx, dIdx)}
+                                  className="opacity-0 group-hover/dept:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2"
+                                  title="Remove Department"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {!effectiveReadOnly && (
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddDepartment(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Department"
                             >
-                              <option value="">Unit...</option>
-                              <option value="Bawal">Bawal</option>
-                              <option value="Gujrat">Gujrat</option>
-                            </select>
-                            {!effectiveReadOnly && (
-                              <ChevronDown className="w-2.5 h-2.5 text-blue-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            )}
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
                           </div>
                         )}
                       </div>
                     </td>
 
-                    {/* 6. Section (Searchable Dropdown with Section Name & Code) */}
+                    {/* 7. Section (Multi-select support with + button) */}
                     <td
                       style={{
                         width: `${sectionColWidth}px`,
                         minWidth: `${sectionColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
+                      className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
-                      <div className="w-full flex items-center justify-center">
-                        <SearchableSectionSelect
-                          disabled={effectiveReadOnly}
-                          value={row.section}
-                          sectionId={row.sectionId ?? row.lineAreaSectionId}
-                          sectionCode={row.sectionCode}
-                          department={row.department}
-                          onChange={(sectionName, meta) => handleSectionChange(idx, sectionName, meta)}
-                          placeholder="Section..."
-                        />
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.sections) && row.sections.length > 0) ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }])).map((sVal, sIdx, arr) => (
+                            <div key={sIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/sec">
+                              <div className="w-full flex items-center justify-center">
+                                <SearchableSectionSelect
+                                  disabled={effectiveReadOnly}
+                                  value={sVal.section}
+                                  sectionId={sVal.sectionId}
+                                  sectionCode={sVal.sectionCode}
+                                  department={row.departments?.[sIdx] || row.department}
+                                  onChange={(sectionName, meta) => handleUpdateSection(idx, sIdx, sectionName, meta)}
+                                  placeholder="Section..."
+                                />
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSection(idx, sIdx)}
+                                  className="opacity-0 group-hover/sec:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
+                                  title="Remove Section"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {!effectiveReadOnly && (
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddSection(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Section"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
 
-                    {/* 7. Line/Area (Searchable Dropdown scoped to Section, centered) */}
+                    {/* 8. Line/Area (Multi-select support with + button) */}
                     <td
                       style={{
                         width: `${lineAreaColWidth}px`,
                         minWidth: `${lineAreaColWidth}px`
                       }}
-                      className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
+                      className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
                     >
-                      <div className="w-full flex items-center justify-center">
-                        <SearchableLineAreaSelect
-                          disabled={effectiveReadOnly}
-                          value={row.lineArea}
-                          sectionId={row.sectionId ?? row.lineAreaSectionId}
-                          lineId={row.lineAreaId}
-                          onChange={(val, meta) =>
-                            setRows((prev) => {
-                              const updated = [...prev];
-                              const curr = updated[idx];
-                              const newSectionId = meta?.sectionId ?? curr.sectionId;
-                              const newSection = meta?.section || curr.section;
-                              const newSectionCode = meta?.sectionCode || curr.sectionCode;
-
-                              updated[idx] = {
-                                ...curr,
-                                lineArea: val,
-                                lineAreaSectionId: newSectionId,
-                                lineAreaId: meta?.lineId ?? null,
-                                lineAreaCode: meta?.lineCode ?? '',
-                                section: newSection,
-                                sectionId: newSectionId,
-                                sectionCode: newSectionCode
-                              };
-                              return updated;
-                            })
-                          }
-                          placeholder="Line/Area..."
-                        />
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((Array.isArray(row.lineAreas) && row.lineAreas.length > 0) ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }])).map((laVal, laIdx, arr) => (
+                            <div key={laIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/line">
+                              <div className="w-full flex items-center justify-center">
+                                <SearchableLineAreaSelect
+                                  disabled={effectiveReadOnly}
+                                  value={laVal.lineArea}
+                                  sectionId={laVal.sectionId ?? row.sections?.[laIdx]?.sectionId ?? row.sectionId}
+                                  lineId={laVal.lineAreaId}
+                                  onChange={(val, meta) => handleUpdateLineArea(idx, laIdx, val, meta)}
+                                />
+                              </div>
+                              {arr.length > 1 && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineArea(idx, laIdx)}
+                                  className="opacity-0 group-hover/line:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
+                                  title="Remove Line/Area"
+                                >
+                                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {!effectiveReadOnly && (
+                          <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
+                            <button
+                              type="button"
+                              onClick={() => handleAddLineArea(idx)}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
+                              title="Add another Line/Area"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -3269,18 +4035,137 @@ export default function PDCASheet({
                       })()}
                     </td>
 
-                    {/* 11. Response Date (Stacked: Format on top, Calendar icon below, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[56px] min-w-[52px]">
+                    {/* Std. Duration in min - Automatically formats with 'min' suffix */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
                       <div className="w-full flex items-center justify-center">
-                        <CompactDateCell
-                          value={row.responseDate}
+                        <DurationMinCell
+                          value={row.stdDurationMin}
                           readOnly={effectiveReadOnly}
-                          onChange={(val) => handleCellChange(idx, 'responseDate', val)}
+                          onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
                         />
                       </div>
                     </td>
 
-                    {/* 14. Department Dropdown in Responsible Person Confirmation */}
+                    {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
+                      <div className="w-full flex items-center justify-center">
+                        <CompactDateCell
+                          value={row.responseDate}
+                          readOnly={effectiveReadOnly}
+                          onChange={(val) => handleResponseDateChange(idx, val)}
+                        />
+                      </div>
+                    </td>
+
+                    {/* No. of time Revised - Stacked past and current response dates */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
+                      {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {row.revisedDates.map((rDate, rIdx) => (
+                            <div
+                              key={rIdx}
+                              className="group/rev w-full py-1 px-1 flex items-center justify-between text-center min-h-[26px] hover:bg-slate-50 transition-colors"
+                              title={`Revision ${rIdx + 1}: ${formatDisplayDate(rDate)}${isAdmin ? ' (Admin: Click ✕ to delete)' : ''}`}
+                            >
+                              <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                {formatDisplayDate(rDate)}
+                              </span>
+                              {isAdmin && !effectiveReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRevisedDate(idx, rIdx);
+                                  }}
+                                  title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(rDate)}) - Admin only`}
+                                  className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
+                                >
+                                  <X className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
+                          -
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Unit in Responsible Person Confirmation - Immediately before Dept */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
+                      {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {row.staffEmployees.map((emp, empIdx) => (
+                            <div
+                              key={empIdx}
+                              className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
+                            >
+                              <select
+                                disabled={effectiveReadOnly}
+                                value={emp.unit || row.respUnit || ''}
+                                onChange={(e) => {
+                                  const newUnit = e.target.value;
+                                  setRows((prev) => {
+                                    const updated = [...prev];
+                                    const curr = updated[idx];
+                                    const newEmps = [...curr.staffEmployees];
+                                    newEmps[empIdx] = { ...newEmps[empIdx], unit: newUnit };
+                                    updated[idx] = {
+                                      ...curr,
+                                      staffEmployees: newEmps,
+                                      respUnit: empIdx === 0 ? newUnit : curr.respUnit,
+                                      responsiblePersonUnit: empIdx === 0 ? newUnit : curr.responsiblePersonUnit
+                                    };
+                                    return updated;
+                                  });
+                                }}
+                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                                title={emp.unit || row.respUnit || 'Select Unit'}
+                              >
+                                <option value="">Unit...</option>
+                                <option value="Bawal">Bawal</option>
+                                <option value="Gujrat">Gujrat</option>
+                              </select>
+                              {!effectiveReadOnly && (
+                                <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
+                          <select
+                            disabled={effectiveReadOnly}
+                            value={row.respUnit || row.responsiblePersonUnit || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRows((prev) => {
+                                const updated = [...prev];
+                                updated[idx] = {
+                                  ...updated[idx],
+                                  respUnit: val,
+                                  responsiblePersonUnit: val
+                                };
+                                return updated;
+                              });
+                            }}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                            title={row.respUnit || row.responsiblePersonUnit || 'Select Unit'}
+                          >
+                            <option value="">Unit...</option>
+                            <option value="Bawal">Bawal</option>
+                            <option value="Gujrat">Gujrat</option>
+                          </select>
+                          {!effectiveReadOnly && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Department Dropdown in Responsible Person Confirmation */}
                     <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[85px] min-w-[75px]">
                       {row.staffEmployees && row.staffEmployees.length > 1 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
@@ -3540,39 +4425,18 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 15. Responsible Person Instruction, etc. Column: Confirmation Dropdown & Connected Status */}
+                    {/* 15. Responsible Person Instruction, etc. Column: Custom Dropdown with User fetched by ID (upside) and Manual input (downwards) */}
                     <td className="p-1 align-middle border-r border-b border-[#64748B] w-[120px] min-w-[110px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
                       <div className="w-full flex flex-col items-center justify-center gap-1">
-                        <div className="relative w-full flex items-center justify-center">
-                          <select
-                            disabled={effectiveReadOnly}
-                            aria-label={`Confirmation for row ${sNo}`}
-                            value={row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : '')}
-                            onChange={(e) => handleConfirmationChange(idx, e.target.value)}
-                            className={`w-full rounded-md border px-1 py-1 text-[10.5px] font-semibold outline-none text-center appearance-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
-                              row.confirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Confirmed'
-                                ? 'bg-green-50 text-green-700 border-green-300'
-                                : row.confirmation === 'Not - Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed'
-                                ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
-                                : 'bg-slate-50 text-slate-700 border-slate-300'
-                            }`}
-                            title={row.confirmation || 'Select Confirmation'}
-                          >
-                            <option value="">Select...</option>
-                            <option value="Confirmed">Confirmed</option>
-                            <option value="Not - Confirmed">Not - Confirmed</option>
-                          </select>
-                          {!effectiveReadOnly && (
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          )}
-                        </div>
-
-                        {/* Preserved Instructions / Remarks Text (Preserves historical notes without overwriting) */}
-                        {Boolean(row.responsiblePersonConfirmation && row.responsiblePersonConfirmation !== 'Confirmed' && row.responsiblePersonConfirmation !== 'Not - Confirmed') && (
-                          <div className="w-full text-[9px] text-slate-500 italic truncate px-0.5 text-center" title={row.responsiblePersonConfirmation}>
-                            {row.responsiblePersonConfirmation}
-                          </div>
-                        )}
+                        <ResponsiblePersonInstructionDropdown
+                          value={row.confirmation}
+                          onChange={(val) => handleConfirmationChange(idx, val)}
+                          row={row}
+                          dbEmployees={dbEmployees}
+                          currentUser={effectiveUser}
+                          readOnly={effectiveReadOnly}
+                          sNo={sNo}
+                        />
                       </div>
                     </td>
 
@@ -4322,6 +5186,23 @@ export default function PDCASheet({
         </div>,
         document.body
       )}
+
+      {/* Send Mail Modal */}
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType="pdca"
+        title={topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)'}
+        metadata={{
+          date: formDate,
+          auditDate: formDate,
+          unit: topic?.plant || 'Bawal',
+          section: headerInfo?.section || 'Assembly',
+          sectionName: headerInfo?.section || 'Assembly',
+          topicName: topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)',
+          auditNo: headerInfo?.auditNo
+        }}
+      />
     </div>
   );
 }

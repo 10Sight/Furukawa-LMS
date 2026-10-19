@@ -5,80 +5,89 @@ import {
   normalizeObservationSymbol,
   getScoreForObservation
 } from './lpaPdcaUtils.js';
+import { createBlankCcSheet } from './ccTemplate.js';
 import ccTemplate from './ccTemplate.json' with { type: 'json' };
 
 test('1. Observation dropdown contains exactly four options: O, △, ×, NA', () => {
-  assert.deepEqual(OBSERVATION_OPTIONS, ['O', '△', '×', 'NA']);
+  assert.deepEqual(OBSERVATION_OPTIONS, ['Ο', 'Δ', 'Χ', 'NA']);
   assert.equal(OBSERVATION_OPTIONS.length, 4);
 });
 
-test('2. Score mapping logic adheres to Rules A, B, C, D', () => {
-  // Rule A — Observation = O -> Score = 3
-  assert.equal(getScoreForObservation('O'), 3);
-  assert.equal(getScoreForObservation('o'), 3);
-  assert.equal(getScoreForObservation('Ο'), 3); // Greek Omicron fallback
-  assert.equal(getScoreForObservation('○'), 3); // Circle fallback
+test('2. Score mapping logic adheres to Rules: O=Marks, △=Marks-1, ×=0, NA=NA', () => {
+  // Rule: Observation = O -> same value of Marks column
+  assert.equal(getScoreForObservation('O', 3), 3);
+  assert.equal(getScoreForObservation('o', 3), 3);
+  assert.equal(getScoreForObservation('Ο', 3), 3); // Greek Omicron fallback
+  assert.equal(getScoreForObservation('○', 3), 3); // Circle fallback
+  assert.equal(getScoreForObservation('O', 5), 5); // Marks = 5
 
-  // Rule B — Observation = △ -> Score = 3
-  assert.equal(getScoreForObservation('△'), 3);
-  assert.equal(getScoreForObservation('Δ'), 3); // Greek Delta fallback
-  assert.equal(getScoreForObservation('▲'), 3);
+  // Rule: Observation = △ -> minus 1 from Marks column (decreased value)
+  assert.equal(getScoreForObservation('△', 3), 2);
+  assert.equal(getScoreForObservation('Δ', 3), 2); // Greek Delta fallback
+  assert.equal(getScoreForObservation('▲', 3), 2);
+  assert.equal(getScoreForObservation('△', 5), 4);
+  assert.equal(getScoreForObservation('△', 1), 0);
+  assert.equal(getScoreForObservation('△', 0), 0);
 
-  // Rule C — Observation = × -> Score = 0
-  assert.equal(getScoreForObservation('×'), 0);
-  assert.equal(getScoreForObservation('X'), 0);
-  assert.equal(getScoreForObservation('x'), 0);
-  assert.equal(getScoreForObservation('Χ'), 0); // Greek Chi fallback
+  // Rule: Observation = × -> 0
+  assert.equal(getScoreForObservation('×', 3), 0);
+  assert.equal(getScoreForObservation('X', 3), 0);
+  assert.equal(getScoreForObservation('x', 3), 0);
+  assert.equal(getScoreForObservation('Χ', 3), 0); // Greek Chi fallback
 
-  // Rule D — Observation = NA -> Score = 'NA' (literal value, not zero)
-  assert.equal(getScoreForObservation('NA'), 'NA');
-  assert.equal(getScoreForObservation('na'), 'NA');
-  assert.notEqual(getScoreForObservation('NA'), 0);
+  // Rule: Observation = NA -> 'NA'
+  assert.equal(getScoreForObservation('NA', 3), 'NA');
+  assert.equal(getScoreForObservation('na', 3), 'NA');
+  assert.notEqual(getScoreForObservation('NA', 3), 0);
 
   // Blank/Unselected Observation leaves Score blank
-  assert.equal(getScoreForObservation(''), '');
-  assert.equal(getScoreForObservation(null), '');
-  assert.equal(getScoreForObservation(undefined), '');
+  assert.equal(getScoreForObservation('', 3), '');
+  assert.equal(getScoreForObservation(null, 3), '');
+  assert.equal(getScoreForObservation(undefined, 3), '');
 });
 
 test('3. Dynamic Score & Summary calculation logic (including NA handling)', () => {
-  // Simulate 31 checklist rows with varying marks and observations
+  // Simulate checklist rows with varying marks and observations
   const testRows = [
-    { marks: 3, obs: 'O' }, // score = 3
-    { marks: 3, obs: '△' }, // score = 3
-    { marks: 1, obs: '×' }, // score = 0
-    { marks: 1, obs: 'O' }, // score = 3
-    { marks: 3, obs: '×' }, // score = 0
+    { marks: 3, obs: 'O' },  // score = 3
+    { marks: 3, obs: '△' },  // score = 3 - 1 = 2
+    { marks: 1, obs: '×' },  // score = 0
+    { marks: 1, obs: 'O' },  // score = 1
+    { marks: 3, obs: '×' },  // score = 0
     { marks: 2, obs: 'NA' }, // score = NA, marks excluded from denominator
-    { marks: 2, obs: 'O' }, // score = 3
-    { marks: 3, obs: '△' }, // score = 3
+    { marks: 2, obs: 'O' },  // score = 2
+    { marks: 3, obs: '△' },  // score = 3 - 1 = 2
   ];
 
   let totalScore = 0;
   let totalMarks = 0;
 
   for (const row of testRows) {
-    const scoreVal = getScoreForObservation(row.obs);
+    const scoreVal = getScoreForObservation(row.obs, row.marks);
     if (row.obs === 'NA') {
       assert.equal(scoreVal, 'NA');
       continue; // Excluded from denominator
     }
     totalMarks += row.marks;
-    if (row.obs === 'O' || row.obs === '△') {
-      assert.equal(scoreVal, 3);
-      totalScore += 3;
+    if (row.obs === 'O') {
+      assert.equal(scoreVal, row.marks);
+      totalScore += row.marks;
+    } else if (row.obs === '△') {
+      assert.equal(scoreVal, row.marks - 1);
+      totalScore += (row.marks - 1);
     } else if (row.obs === '×') {
       assert.equal(scoreVal, 0);
       totalScore += 0;
     }
   }
 
-  // 6 evaluated rows (3+3+1+1+3+2+3 = 16 marks total)
-  // Scores: 3 + 3 + 0 + 3 + 0 + 3 + 3 = 15
-  assert.equal(totalScore, 15);
+  // 7 evaluated rows (excluding NA):
+  // totalMarks = 3 + 3 + 1 + 1 + 3 + 2 + 3 = 16
+  // totalScore = 3 + 2 + 0 + 1 + 0 + 2 + 2 = 10
+  assert.equal(totalScore, 10);
   assert.equal(totalMarks, 16);
   const percentage = Math.round((totalScore / totalMarks) * 100);
-  assert.equal(percentage, 94);
+  assert.equal(percentage, 63);
 });
 
 test('4. C&C check sheet template structure matches Excel reference', () => {
@@ -109,4 +118,28 @@ test('4. C&C check sheet template structure matches Excel reference', () => {
   assert.equal(sheet.rows[35][8].formula, 'SUM(I5:I34)');
   assert.equal(sheet.rows[36][5].value, '%');
   assert.equal(sheet.rows[36][6].formula, 'I36/G36*100');
+});
+
+test('5. createBlankCcSheet produces completely blank values for New LPA check sheet', () => {
+  const blankSheet = createBlankCcSheet();
+  assert.equal(blankSheet.name, 'C&C');
+  assert.equal(blankSheet.shift, '');
+  assert.equal(blankSheet.sectionName, '');
+  assert.equal(blankSheet.line, '');
+  assert.deepEqual(blankSheet.auditors, ['']);
+
+  // All 31 checklist rows (from index 4 to 34) must have blank observation and blank score
+  for (let r = 4; r <= 34; r++) {
+    const obsCell = blankSheet.rows[r][7];
+    const scoreCell = blankSheet.rows[r][8];
+    assert.equal(obsCell.value, '', `Row ${r} observation must be blank`);
+    assert.equal(obsCell.formatted, '', `Row ${r} observation formatted must be blank`);
+    assert.equal(scoreCell.value, '', `Row ${r} score must be blank`);
+    assert.equal(scoreCell.formatted, '', `Row ${r} score formatted must be blank`);
+  }
+
+  // Row 35 Total Score should be 0
+  assert.equal(blankSheet.rows[35][8].value, 0);
+  // Row 36 Percentage should be '0.00%'
+  assert.equal(blankSheet.rows[36][6].formatted, '0.00%');
 });

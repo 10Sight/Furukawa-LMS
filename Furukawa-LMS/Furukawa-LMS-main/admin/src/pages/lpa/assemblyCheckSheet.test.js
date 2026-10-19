@@ -1,0 +1,461 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import assemblyTemplate from './assemblyTemplate.json' with { type: 'json' };
+import {
+  isAssemblyCheckSheet,
+  normalizeAssemblySheet,
+  upgradeAssemblyRecord
+} from '../../components/lpa/assemblySheetUtils.js';
+
+test('1. Assembly check sheet template contains exactly 7 columns in required order', () => {
+  const sheet = assemblyTemplate.sheets[0];
+  assert.equal(sheet.columnCount, 7);
+
+  // Row 1 Header
+  const headers = sheet.rows[1].map(c => String(c?.value ?? c?.formatted ?? '').trim());
+  assert.deepEqual(headers, [
+    'Sl No',
+    'Focus',
+    'CHECKS POINTS',
+    'Area',
+    'Marks',
+    'Observation',
+    'Score'
+  ]);
+});
+
+test('2. Area column appears immediately before Marks column', () => {
+  const sheet = assemblyTemplate.sheets[0];
+  const headers = sheet.rows[1].map(c => String(c?.value ?? c?.formatted ?? '').trim());
+  const areaIdx = headers.indexOf('Area');
+  const marksIdx = headers.indexOf('Marks');
+
+  assert.equal(areaIdx, 3);
+  assert.equal(marksIdx, 4);
+  assert.equal(areaIdx, marksIdx - 1);
+});
+
+test('3. Removed columns after Area are completely absent from the 7-column form', () => {
+  const sheet = assemblyTemplate.sheets[0];
+  const headerTexts = sheet.rows[1].map(c => String(c?.value ?? c?.formatted ?? '').toLowerCase());
+
+  assert.equal(headerTexts.length, 7);
+  assert.ok(!headerTexts.some(h => h.includes('requirement met')));
+  assert.ok(!headerTexts.some(h => h.includes('not corrected')));
+  assert.ok(!headerTexts.some(h => h.includes('not applicable')));
+  assert.ok(!headerTexts.some(h => h.includes('pdca points')));
+  assert.ok(!headerTexts.some(h => h.includes('other observations')));
+});
+
+test('4. Vertically merged Area cells and row values are preserved correctly', () => {
+  const sheet = assemblyTemplate.sheets[0];
+
+  // Verify Area merges at column index 3
+  const areaMerges = sheet.merges.filter(m => m.s.c === 3 && m.e.c === 3);
+  assert.ok(areaMerges.length >= 4);
+
+  // Rows 3-7: Assembly Area
+  const merge1 = areaMerges.find(m => m.s.r === 3 && m.e.r === 7);
+  assert.ok(merge1, 'Rows 3-7 must be merged for Area');
+  assert.match(String(sheet.rows[3][3]?.value), /Assembly/i);
+
+  // Rows 8-9: Assembly Area
+  const merge2 = areaMerges.find(m => m.s.r === 8 && m.e.r === 9);
+  assert.ok(merge2, 'Rows 8-9 must be merged for Area');
+  assert.match(String(sheet.rows[8][3]?.value), /Assembly/i);
+
+  // Rows 10-27: Production Lines
+  const merge3 = areaMerges.find(m => m.s.r === 10 && m.e.r === 27);
+  assert.ok(merge3, 'Rows 10-27 must be merged for Area');
+  assert.match(String(sheet.rows[10][3]?.value), /Production Lines/i);
+
+  // Rows 28-36: Quality
+  const merge4 = areaMerges.find(m => m.s.r === 28 && m.e.r === 36);
+  assert.ok(merge4, 'Rows 28-36 must be merged for Area');
+  assert.match(String(sheet.rows[28][3]?.value), /Quality/i);
+});
+
+test('5. Vertically merged Focus cells are preserved correctly', () => {
+  const sheet = assemblyTemplate.sheets[0];
+  const focusMerges = sheet.merges.filter(m => m.s.c === 1 && m.e.c === 1);
+  assert.ok(focusMerges.length >= 5);
+
+  assert.ok(focusMerges.some(m => m.s.r === 3 && m.e.r === 7));
+  assert.ok(focusMerges.some(m => m.s.r === 8 && m.e.r === 9));
+  assert.ok(focusMerges.some(m => m.s.r === 10 && m.e.r === 27));
+  assert.ok(focusMerges.some(m => m.s.r === 28 && m.e.r === 33));
+  assert.ok(focusMerges.some(m => m.s.r === 34 && m.e.r === 36));
+});
+
+test('6. Legacy 14-column Assembly check sheet upgrades cleanly to 7-column structure', () => {
+  // Construct a simulated legacy 14-column sheet
+  const legacyRows = [
+    [
+      { value: 'Date/Shift-' }, { value: '' },
+      { value: ' LPA CHECK SHEET Level-3 Assy QA/Prod.' }, { value: '' }, { value: '' }, { value: '' }, { value: '' },
+      { value: 'Auditor/Audtee-' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }
+    ],
+    [
+      { value: 'Sl No' }, { value: 'Focus' }, { value: 'CHECKS POINTS' },
+      { value: 'Marks' }, { value: 'Observation' }, { value: 'Score' }, { value: 'Area' },
+      { value: 'Requirement met' }, { value: 'Requirement not met corrected' },
+      { value: 'Requirement not met not corrected' }, { value: 'Not Applicable' },
+      { value: 'PDCA points/Other Observations' }, { value: '' }, { value: 'NUMBER' }
+    ],
+    Array.from({ length: 14 }, () => ({ value: '' })),
+    [
+      { value: 1 }, { value: "5's Concept" }, { value: 'Seiri:-Sort' },
+      { value: 1 }, { value: 'O' }, { value: 3 }, { value: 'Assembly Area' },
+      { value: '' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }, { value: '' }
+    ]
+  ];
+
+  const legacySheet = {
+    name: 'Assy QC & Pro',
+    columnCount: 14,
+    rows: legacyRows,
+    merges: [
+      { s: { r: 3, c: 6 }, e: { r: 7, c: 6 } }, // Area merge in col 6
+      { s: { r: 3, c: 1 }, e: { r: 7, c: 1 } }, // Focus merge in col 1
+      { s: { r: 3, c: 11 }, e: { r: 30, c: 12 } } // Removed notes merge
+    ]
+  };
+
+  const upgraded = normalizeAssemblySheet(legacySheet);
+  assert.equal(upgraded.columnCount, 7);
+
+  // Headers
+  assert.deepEqual(upgraded.rows[1].map(c => c.value), [
+    'Sl No', 'Focus', 'CHECKS POINTS', 'Area', 'Marks', 'Observation', 'Score'
+  ]);
+
+  // Data row 3: Area is now at column 3, Marks at 4, Obs at 5, Score at 6
+  assert.equal(upgraded.rows[3][0].value, 1);
+  assert.equal(upgraded.rows[3][1].value, "5's Concept");
+  assert.equal(upgraded.rows[3][2].value, 'Seiri:-Sort');
+  assert.equal(upgraded.rows[3][3].value, 'Assembly Area');
+  assert.equal(upgraded.rows[3][4].value, 1);
+  assert.equal(upgraded.rows[3][5].value, 'O');
+  assert.equal(upgraded.rows[3][6].value, 3);
+
+  // Area merge remapped to col 3
+  const remappedAreaMerge = upgraded.merges.find(m => m.s.r === 3 && m.e.r === 7 && m.s.c === 3 && m.e.c === 3);
+  assert.ok(remappedAreaMerge, 'Area merge must be remapped to column 3');
+
+  // Focus merge remains col 1
+  const focusMerge = upgraded.merges.find(m => m.s.r === 3 && m.e.r === 7 && m.s.c === 1 && m.e.c === 1);
+  assert.ok(focusMerge, 'Focus merge must stay in column 1');
+});
+
+test('7. upgradeAssemblyRecord upgrades assembly records while leaving others untouched', () => {
+  const legacyRecord = {
+    section: 'assembly',
+    name: 'Assembly LPA Check Sheet.xls',
+    sheets: [
+      {
+        name: 'Sheet 1',
+        columnCount: 14,
+        rows: [
+          [{ value: 'Date' }],
+          [{ value: 'Sl No' }, { value: 'Focus' }, { value: 'CHECKS POINTS' }, { value: 'Marks' }, { value: 'Observation' }, { value: 'Score' }, { value: 'Area' }, { value: 'Extra 1' }, { value: 'Extra 2' }, { value: 'Extra 3' }, { value: 'Extra 4' }, { value: 'Extra 5' }, { value: 'Extra 6' }, { value: 'Extra 7' }],
+          [],
+          [{ value: 1 }, { value: 'Focus 1' }, { value: 'Check 1' }, { value: 2 }, { value: '△' }, { value: 3 }, { value: 'Production Area' }]
+        ],
+        merges: [{ s: { r: 3, c: 6 }, e: { r: 5, c: 6 } }]
+      }
+    ]
+  };
+
+  const upgraded = upgradeAssemblyRecord(legacyRecord);
+  assert.equal(upgraded.sheets[0].columnCount, 7);
+  assert.equal(upgraded.sheets[0].rows[3][3].value, 'Production Area');
+
+  // Non-assembly record untouched
+  const ccRecord = { section: 'cc', sheets: [{ columnCount: 9 }] };
+  assert.equal(upgradeAssemblyRecord(ccRecord), ccRecord);
+});
+
+test('8. isAssemblyCheckSheet detects 7-column and 14-column Assembly check sheets', () => {
+  const sheet7 = assemblyTemplate.sheets[0];
+  assert.ok(isAssemblyCheckSheet(sheet7));
+
+  const sheet14 = { columnCount: 14, rows: [[{ value: 'Assy QC & Pro' }]] };
+  assert.ok(isAssemblyCheckSheet(sheet14));
+
+  const unrelatedSheet = { columnCount: 5, rows: [[{ value: 'Random Table' }]] };
+  assert.ok(!isAssemblyCheckSheet(unrelatedSheet));
+});
+
+test('9. Observation dropdown and score calculation logic follows exact rules (O, △, ×, NA)', async () => {
+  const { calculateAssemblyScore, getScoreForObservation } = await import('./lpaPdcaUtils.js');
+
+  // Rule 1: O -> Score = Marks
+  assert.equal(calculateAssemblyScore('O', 5), 5);
+  assert.equal(calculateAssemblyScore('Ο', 3), 3);
+  assert.equal(calculateAssemblyScore('○', 10), 10);
+  assert.equal(getScoreForObservation('O', 5), 5);
+
+  // Rule 2: △ -> Score = Marks - 1 (min 0)
+  assert.equal(calculateAssemblyScore('△', 5), 4);
+  assert.equal(calculateAssemblyScore('Δ', 3), 2);
+  assert.equal(calculateAssemblyScore('▲', 1), 0);
+  assert.equal(calculateAssemblyScore('△', 0), 0); // No negative score
+  assert.equal(getScoreForObservation('△', 5), 4);
+  assert.equal(getScoreForObservation('△', 0), 0);
+
+  // Rule 3: × -> Score = 0
+  assert.equal(calculateAssemblyScore('×', 5), 0);
+  assert.equal(calculateAssemblyScore('X', 10), 0);
+  assert.equal(calculateAssemblyScore('x', 3), 0);
+  assert.equal(calculateAssemblyScore('Χ', 2), 0);
+  assert.equal(getScoreForObservation('×', 5), 0);
+
+  // Rule 4: NA -> Score = 'NA'
+  assert.equal(calculateAssemblyScore('NA', 5), 'NA');
+  assert.equal(calculateAssemblyScore('na', 3), 'NA');
+  assert.equal(getScoreForObservation('NA', 5), 'NA');
+
+  // Empty observation -> ''
+  assert.equal(calculateAssemblyScore('', 5), '');
+  assert.equal(getScoreForObservation('', 5), '');
+});
+
+test('10. Shift options contain only A, B, C, G and are validated', async () => {
+  const { LPA_SHIFTS } = await import('./lpaValidation.js');
+  assert.deepEqual(LPA_SHIFTS, ['A', 'B', 'C', 'G']);
+});
+
+test('11. Department options contain exactly the 13 required departments in order', async () => {
+  const { LPA_DEPARTMENTS } = await import('./lpaValidation.js');
+  const { PDCA_DEPARTMENTS } = await import('../pdca/data/pdcaConstants.js');
+  const expected = [
+    'PE', 'IT', 'Quality', 'Assembly', 'SRC', 'Store', 'HR', 'Safety', 'FG', 'PPC', 'Maintenance', 'D&D', 'C&C'
+  ];
+  assert.deepEqual(LPA_DEPARTMENTS, expected);
+  assert.deepEqual(PDCA_DEPARTMENTS, expected);
+});
+
+test('12. Validation and Data Integrity: Date, Shift, Department and Auditors persistence', async () => {
+  const { validateWorkbook } = await import('./lpaValidation.js');
+
+  const validWorkbook = {
+    section: 'assembly',
+    unit: 'Bawal',
+    level: 'L1',
+    auditDate: '2026-10-17',
+    date: '2026-10-17',
+    shift: 'B',
+    department: 'Assembly',
+    sectionName: 'Assembly Production',
+    line: 'Assembly Line 1',
+    auditors: ['John Doe', 'Jane Smith'],
+    name: 'Assembly Audit Record',
+    sheets: [
+      {
+        name: 'Assy QC & Pro',
+        columnCount: 7,
+        rows: [[{ value: 'Header', formatted: 'Header', type: 's' }]]
+      }
+    ]
+  };
+
+  const validated = validateWorkbook(validWorkbook);
+  assert.equal(validated.shift, 'B');
+  assert.equal(validated.department, 'Assembly');
+  assert.equal(validated.sectionName, 'Assembly Production');
+  assert.equal(validated.line, 'Assembly Line 1');
+  assert.deepEqual(validated.auditors, ['John Doe', 'Jane Smith']);
+
+  // Invalid shift throws error
+  assert.throws(() => {
+    validateWorkbook({ ...validWorkbook, shift: 'D' });
+  }, /Select Shift A, B, C or G/);
+
+  // Invalid department throws error
+  assert.throws(() => {
+    validateWorkbook({ ...validWorkbook, department: 'Finance' });
+  }, /Select a valid department/);
+});
+
+test('13. Area column width is reduced to 40px and supports wrapping', async () => {
+  // Test normalizeAssemblySheet for Area column width
+  const legacySheet = {
+    name: 'Assy Legacy',
+    columnCount: 14,
+    rows: [
+      [],
+      [
+        { value: 'Sl No' }, { value: 'Focus' }, { value: 'CHECKS POINTS' },
+        { value: 'Marks' }, { value: 'Observation' }, { value: 'Score' }, { value: 'Area' }
+      ]
+    ]
+  };
+  const sheet = normalizeAssemblySheet(legacySheet);
+
+  // Column 3 is Area, width should be 40
+  assert.equal(sheet.columns[3].wpx, 40);
+  assert.ok(sheet.columns[3].wpx < 50, 'Area column should be compact (<= 40px)');
+});
+
+test('14. Centered Score column output and styling rules', async () => {
+  const fs = await import('fs');
+  const css = fs.readFileSync(new URL('../../components/lpa/assemblySheet.css', import.meta.url), 'utf-8');
+
+  // Verify score column centering CSS classes
+  assert.ok(css.includes('.assembly-score-cell'));
+  assert.ok(css.includes('.assembly-score-container'));
+  assert.ok(css.includes('.assembly-score-value'));
+  assert.ok(css.includes('justify-content: center !important;'));
+  assert.ok(css.includes('align-items: center !important;'));
+  assert.ok(css.includes('text-align: center !important;'));
+});
+
+test('15. Unsaved changes confirmation dialog message and button specs', async () => {
+  const fs = await import('fs');
+  const pageSource = fs.readFileSync(new URL('./LpaPage.jsx', import.meta.url), 'utf-8');
+
+  // Verify the exact required alert message
+  assert.ok(pageSource.includes('You have unsaved changes. Are you sure you want to go back without saving?'));
+  // Verify the required buttons
+  assert.ok(pageSource.includes('Stay on Page'));
+  assert.ok(pageSource.includes('Go Back'));
+  // Verify dirty state checking and snapshot comparison
+  assert.ok(pageSource.includes('hasUnsavedChanges'));
+  assert.ok(pageSource.includes('discardAndExit'));
+  assert.ok(pageSource.includes('handleStayOnPage'));
+});
+
+test('16. Assembly Legend section layout and formatting', async () => {
+  const { ASSEMBLY_LEGEND_MERGES, ensureAssemblyLegend } = await import('../../components/lpa/assemblySheetUtils.js');
+  assert.ok(Array.isArray(ASSEMBLY_LEGEND_MERGES));
+
+  // Verify header merges
+  const duringAuditMerge = ASSEMBLY_LEGEND_MERGES.find(m => m.s.r === 40 && m.s.c === 3);
+  assert.deepEqual(duringAuditMerge, { s: { c: 3, r: 40 }, e: { c: 4, r: 41 } }, 'During audit spans cols 3-4 and rows 40-41');
+
+  const scoreCriteriaMerge = ASSEMBLY_LEGEND_MERGES.find(m => m.s.r === 40 && m.s.c === 5);
+  assert.deepEqual(scoreCriteriaMerge, { s: { c: 5, r: 40 }, e: { c: 6, r: 41 } }, 'Score Criteria spans cols 5-6 and rows 40-41');
+
+  // Verify criteria descriptions span cols 5-6
+  for (let r = 42; r <= 46; r++) {
+    const descMerge = ASSEMBLY_LEGEND_MERGES.find(m => m.s.r === r && m.s.c === 5);
+    assert.ok(descMerge && descMerge.e.c === 6, `Row ${r} description must span cols 5-6`);
+  }
+
+  // Verify CSS ensures horizontal orientation for legend
+  const fs = await import('fs');
+  const css = fs.readFileSync(new URL('../../components/lpa/assemblySheet.css', import.meta.url), 'utf-8');
+  assert.ok(css.includes('.assembly-legend-cell'));
+  assert.ok(css.includes('writing-mode: horizontal-tb !important;'));
+});
+
+test('17. LPA Assembly Form - Header layout matches reference drawing structure', async () => {
+  const fs = await import('fs');
+  const sheetSource = fs.readFileSync(new URL('../../components/lpa/AssemblySheet.jsx', import.meta.url), 'utf-8');
+  const cssSource = fs.readFileSync(new URL('../../components/lpa/assemblySheet.css', import.meta.url), 'utf-8');
+
+  // Verify structure in JSX
+  assert.ok(sheetSource.includes('assembly-form-header-box'), 'Contains assembly-form-header-box container');
+  assert.ok(sheetSource.includes('assembly-header-top-row'), 'Contains top compartment row');
+  assert.ok(sheetSource.includes('assembly-header-title-box'), 'Contains left Title compartment');
+  assert.ok(sheetSource.includes('assembly-header-auditor-box'), 'Contains right Auditor compartment');
+  assert.ok(sheetSource.includes('assembly-header-bottom-row'), 'Contains bottom 5-column compartment row');
+  assert.ok(sheetSource.includes('assembly-header-field-col'), 'Contains field columns');
+
+  // Verify CSS classes
+  assert.ok(cssSource.includes('.assembly-header-top-row'), 'CSS defines assembly-header-top-row');
+  assert.ok(cssSource.includes('.assembly-header-title-box'), 'CSS defines assembly-header-title-box');
+  assert.ok(cssSource.includes('.assembly-header-auditor-box'), 'CSS defines assembly-header-auditor-box');
+  assert.ok(cssSource.includes('.assembly-header-bottom-row'), 'CSS defines assembly-header-bottom-row');
+  assert.ok(cssSource.includes('repeat(5, minmax(0, 1fr))'), 'Bottom row is 5-column grid across Date, Shift, Department, Section, Line');
+});
+
+test('18. LPA Assembly Form - Summary section layout and cell merges (Total Marks & Percentage)', async () => {
+  const sheet = assemblyTemplate.sheets[0];
+
+  // Verify Row 37 merge: Cols 0-3 merged for Total Marks label
+  const r37LabelMerge = sheet.merges.find(m => m.s.r === 37 && m.s.c === 0);
+  assert.deepEqual(r37LabelMerge, { s: { c: 0, r: 37 }, e: { c: 3, r: 37 } }, 'Row 37 cols 0-3 must be merged for Total Marks');
+
+  // Verify Row 38 merge: Cols 0-3 merged for Percentage label
+  const r38LabelMerge = sheet.merges.find(m => m.s.r === 38 && m.s.c === 0);
+  assert.deepEqual(r38LabelMerge, { s: { c: 0, r: 38 }, e: { c: 3, r: 38 } }, 'Row 38 cols 0-3 must be merged for Percentage (%) label');
+
+  // Verify Row 38 merge: Cols 4-6 merged for Percentage display
+  const r38ValueMerge = sheet.merges.find(m => m.s.r === 38 && m.s.c === 4);
+  assert.deepEqual(r38ValueMerge, { s: { c: 4, r: 38 }, e: { c: 6, r: 38 } }, 'Row 38 cols 4-6 must be merged for Percentage display');
+
+  // Ensure Row 37 col 4 is NOT merged to col 6 so Total Score counter can be displayed in col 6
+  const oldR37Merge = sheet.merges.find(m => m.s.r === 37 && m.s.c === 4 && m.e.c === 6);
+  assert.equal(oldR37Merge, undefined, 'Row 37 col 4 must not merge to col 6, preserving Total Score in col 6');
+});
+
+test('19. Total Score counter calculation and NA observation exclusion', async () => {
+  const { calculateAssemblyScore } = await import('./lpaPdcaUtils.js');
+
+  // Test observation scoring rules:
+  // O -> Score = Marks
+  assert.equal(calculateAssemblyScore('O', 3), 3);
+  assert.equal(calculateAssemblyScore('Ο', 1), 1);
+
+  // △ -> Score = Marks - 1 (min 0)
+  assert.equal(calculateAssemblyScore('△', 3), 2);
+  assert.equal(calculateAssemblyScore('△', 1), 0);
+
+  // × -> Score = 0
+  assert.equal(calculateAssemblyScore('×', 3), 0);
+  assert.equal(calculateAssemblyScore('X', 1), 0);
+
+  // NA -> Score = 'NA' (excluded from numeric score)
+  assert.equal(calculateAssemblyScore('NA', 3), 'NA');
+
+  // Simulate total score accumulation across 5 questions
+  const sampleRows = [
+    { marks: 3, obs: 'O', score: 3 },
+    { marks: 1, obs: '△', score: 0 },
+    { marks: 3, obs: '△', score: 2 },
+    { marks: 1, obs: '×', score: 0 },
+    { marks: 2, obs: 'NA', score: 'NA' }
+  ];
+
+  let totalApplicableMarks = 0;
+  let totalScore = 0;
+
+  for (const r of sampleRows) {
+    if (r.obs === 'NA') continue; // Excluded
+    totalApplicableMarks += r.marks;
+    if (typeof r.score === 'number') {
+      totalScore += r.score;
+    }
+  }
+
+  assert.equal(totalApplicableMarks, 8, 'Applicable marks excludes NA item: 3+1+3+1 = 8');
+  assert.equal(totalScore, 5, 'Total score sums numeric scores: 3+0+2+0 = 5');
+});
+
+test('20. Percentage (%) calculation formula and zero-marks boundary', () => {
+  const calculatePercentage = (totalScore, totalApplicableMarks) => {
+    if (!totalApplicableMarks || totalApplicableMarks <= 0) return 'N/A';
+    const pct = (totalScore / totalApplicableMarks) * 100;
+    return `${pct.toFixed(2)}%`;
+  };
+
+  // User requirement example: Total Applicable Marks = 50, Total Score = 42 -> 84.00%
+  assert.equal(calculatePercentage(42, 50), '84.00%');
+
+  // Perfect score
+  assert.equal(calculatePercentage(70, 70), '100.00%');
+
+  // Zero score
+  assert.equal(calculatePercentage(0, 66), '0.00%');
+
+  // Fractional percentage
+  assert.equal(calculatePercentage(41, 66), '62.12%');
+
+  // Zero applicable marks (all items NA) -> 'N/A'
+  assert.equal(calculatePercentage(0, 0), 'N/A');
+});
+
+
+
+

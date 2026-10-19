@@ -1,26 +1,128 @@
-export const OBSERVATION_OPTIONS = ['O', '△', '×', 'NA'];
+export const OBSERVATION_OPTIONS = ['Ο', 'Δ', 'Χ', 'NA'];
 
 export function normalizeObservationSymbol(val) {
   if (val === null || val === undefined || val === '') return '';
   const trimmed = String(val).trim();
-  // Match Latin O/o, Greek Ο, white circle ○, heavy circle ⭕
-  if (['O', 'o', 'Ο', '○', '⭕'].includes(trimmed)) return 'O';
-  // Match White Triangle △, Greek Δ, Black Triangle ▲
-  if (['△', 'Δ', '▲'].includes(trimmed)) return '△';
-  // Match Multiplication ×, Latin X/x, Greek Χ, Cross ❌
-  if (['×', 'X', 'x', 'Χ', '❌'].includes(trimmed)) return '×';
+  // Match Greek Ο, Latin O/o, white circle ○, heavy circle ⭕
+  if (['Ο', 'O', 'o', '○', '⭕'].includes(trimmed)) return 'Ο';
+  // Match Greek Δ, White Triangle △, Black Triangle ▲
+  if (['Δ', '△', '▲'].includes(trimmed)) return 'Δ';
+  // Match Greek Χ, Multiplication ×, Latin X/x, Cross ❌
+  if (['Χ', '×', 'X', 'x', '❌'].includes(trimmed)) return 'Χ';
   if (trimmed.toUpperCase() === 'NA') return 'NA';
   return trimmed;
 }
 
-export function getScoreForObservation(val) {
-  const normalized = normalizeObservationSymbol(val);
-  if (normalized === 'O') return 3;
-  if (normalized === '△') return 3;
-  if (normalized === '×') return 0;
+export function calculateAssemblyScore(observation, marks) {
+  const normalized = normalizeObservationSymbol(observation);
+  if (!normalized) return '';
   if (normalized === 'NA') return 'NA';
+  if (normalized === 'Χ') return 0;
+
+  const numMarks = Number(marks);
+  const baseMarks = Number.isFinite(numMarks) ? numMarks : 0;
+
+  if (normalized === 'Ο') {
+    return Math.max(0, baseMarks);
+  }
+  if (normalized === 'Δ') {
+    return Math.max(0, baseMarks - 1);
+  }
   return '';
 }
+
+export function getScoreForObservation(val, marks) {
+  const normalized = normalizeObservationSymbol(val);
+  if (!normalized) return '';
+  if (normalized === 'NA') return 'NA';
+  if (normalized === 'Χ') return 0;
+
+  const numMarks = Number(marks);
+  const baseMarks = Number.isFinite(numMarks) ? numMarks : (marks === undefined || marks === null || marks === '' ? 3 : 0);
+
+  if (normalized === 'Ο') {
+    return Math.max(0, baseMarks);
+  }
+  if (normalized === 'Δ') {
+    return Math.max(0, baseMarks - 1);
+  }
+  return '';
+}
+
+export function getWorksheetScore(sheet) {
+  if (!sheet || !Array.isArray(sheet.rows) || sheet.rows.length === 0) return '-';
+  if (sheet.scorePercentage) return sheet.scorePercentage;
+
+  // 1. Check if any row has explicit percentage cell e.g. "Percentage (%):"
+  for (let r = 0; r < Math.min(sheet.rows.length, 50); r++) {
+    const row = sheet.rows[r];
+    if (!Array.isArray(row)) continue;
+    const isPctLabel = row.some(c => /percentage\s*\(/i.test(String(c?.value ?? c?.formatted ?? '')));
+    if (isPctLabel) {
+      for (const cell of row) {
+        const text = String(cell?.value ?? cell?.formatted ?? '').trim();
+        if (/^\d+(\.\d+)?%$/.test(text)) {
+          return text;
+        }
+      }
+    }
+  }
+
+  // 2. Dynamically locate marks, observation, and score columns
+  let marksCol = -1;
+  let obsCol = -1;
+  let scoreCol = -1;
+  for (const row of sheet.rows.slice(0, 8)) {
+    if (!Array.isArray(row)) continue;
+    const mIdx = row.findIndex(c => /^marks$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (mIdx >= 0 && marksCol < 0) marksCol = mIdx;
+    const oIdx = row.findIndex(c => /^observation$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (oIdx >= 0 && obsCol < 0) obsCol = oIdx;
+    const sIdx = row.findIndex(c => /^score$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
+    if (sIdx >= 0 && scoreCol < 0) scoreCol = sIdx;
+  }
+
+  if (marksCol < 0) marksCol = 4;
+  if (obsCol < 0) obsCol = 5;
+  if (scoreCol < 0) scoreCol = 6;
+
+  // Find legendStart
+  const legendStart = sheet.merges?.find(merge => merge.s.c === 0 && merge.e.c <= 2 && merge.s.r > 25)?.s.r ?? -1;
+  const endRow = legendStart > 0 ? Math.min(legendStart, 37) : Math.min(sheet.rows.length, 37);
+
+  let applicableMarksSum = 0;
+  let scoreSum = 0;
+
+  for (let r = 2; r < endRow; r++) {
+    const row = sheet.rows[r];
+    if (!row) continue;
+    const isTotal = row.some(c => /total/i.test(String(c?.value ?? c?.formatted ?? '')));
+    if (isTotal) break;
+    const marksNum = Number(row[marksCol]?.value ?? row[marksCol]?.formatted);
+    if (Number.isFinite(marksNum) && marksNum > 20) break; // Reached summary total row
+
+    const obs = normalizeObservationSymbol(row[obsCol]?.value ?? row[obsCol]?.formatted);
+    const scoreVal = row[scoreCol]?.value ?? row[scoreCol]?.formatted;
+
+    if (obs === 'NA') continue;
+
+    if (Number.isFinite(marksNum) && marksNum > 0) {
+      applicableMarksSum += marksNum;
+    }
+    if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
+      const numScore = Number(scoreVal);
+      if (Number.isFinite(numScore)) {
+        scoreSum += numScore;
+      }
+    }
+  }
+
+  if (applicableMarksSum > 0) {
+    return `${((scoreSum / applicableMarksSum) * 100).toFixed(2)}%`;
+  }
+  return '0.00%';
+}
+
 
 export function createEmptyPdcaRow(customDefaults = {}) {
   return {
@@ -94,7 +196,7 @@ export function extractObservationsFromSheet(sheet, record, date) {
     const normObs = normalizeObservationSymbol(obsVal);
     // Findings (non-conformance or items marked with symbols)
     const hasSymbol = Boolean(normObs);
-    const isIssue = ['×', '△', 'Χ', 'Δ', 'X', 'x'].includes(normObs);
+    const isIssue = ['Χ', 'Δ'].includes(normObs);
 
     if (hasSymbol) {
       const lineArea = currentArea || focusVal || sectionVal || (section === 'assembly' ? 'Assembly Area' : 'C&C Area');
@@ -116,9 +218,14 @@ export function extractObservationsFromSheet(sheet, record, date) {
 /**
  * Builds or loads PDCA Topic and rows from Assembly and/or C&C records.
  */
-export function getLpaPdcaTopic({ section, unit, level, date, records = [], templates = {} }) {
-  const storageId = `PDCA-LPA-${(section || 'all').toUpperCase()}-${unit || 'Bawal'}-${level || 'L1'}-${date || 'latest'}`;
+export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 'L1', date, records = [], templates = {} }) {
+  const sec = (section || 'assembly').toLowerCase();
+  const secUpper = sec.toUpperCase();
+  const plant = unit || 'Bawal';
+  // Single permanent PDCA sheet per section (Assembly and C&C)
+  const storageId = `PDCA-LPA-${secUpper}-${plant}`;
   const localCacheKey = `lpa_pdca_saved_${storageId}`;
+  const targetTopicName = sec === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)';
 
   // Check saved copy in localStorage first
   if (typeof localStorage !== 'undefined') {
@@ -127,13 +234,46 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.rows)) {
+          if (!parsed.headerInfo) parsed.headerInfo = {};
+          if (!parsed.headerInfo.topicName || parsed.headerInfo.topicName === 'PDCA - M Tanaka San Audit') {
+            parsed.headerInfo.topicName = targetTopicName;
+          }
           return {
             id: storageId,
-            topic: 'PDCA - M Tanaka San Audit',
+            topic: targetTopicName,
+            section: sec,
             scope: 'Company',
-            plant: unit || 'Bawal',
+            plant,
             sheet: parsed
           };
+        }
+      }
+
+      // Check legacy caches if single cache not yet created
+      const legacyKeys = [
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-${level || 'L1'}-${date || 'latest'}`,
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-${level || 'L1'}-latest`,
+        `lpa_pdca_saved_PDCA-LPA-${secUpper}-${plant}-L1-${date || 'latest'}`
+      ];
+      for (const lk of legacyKeys) {
+        const legSaved = localStorage.getItem(lk);
+        if (legSaved) {
+          const parsed = JSON.parse(legSaved);
+          if (parsed && Array.isArray(parsed.rows)) {
+            if (!parsed.headerInfo) parsed.headerInfo = {};
+            if (!parsed.headerInfo.topicName || parsed.headerInfo.topicName === 'PDCA - M Tanaka San Audit') {
+              parsed.headerInfo.topicName = targetTopicName;
+            }
+            localStorage.setItem(localCacheKey, JSON.stringify(parsed));
+            return {
+              id: storageId,
+              topic: targetTopicName,
+              section: sec,
+              scope: 'Company',
+              plant,
+              sheet: parsed
+            };
+          }
         }
       }
     } catch (err) {
@@ -219,13 +359,14 @@ export function getLpaPdcaTopic({ section, unit, level, date, records = [], temp
   }
   const defaultTopic = {
     id: storageId,
-    topic: 'PDCA - M Tanaka San Audit',
+    topic: targetTopicName,
+    section: sec,
     scope: 'Company',
-    plant: unit || 'Bawal',
+    plant,
     sheet: {
       rows: finalRows,
       headerInfo: {
-        topicName: '',
+        topicName: targetTopicName,
         preparedBy: '',
         auditNo: '',
         attendees: ''

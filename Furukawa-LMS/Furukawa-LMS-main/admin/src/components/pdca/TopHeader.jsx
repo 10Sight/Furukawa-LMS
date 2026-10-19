@@ -35,7 +35,7 @@ export default function TopHeader({ collapsed, onExport, activeSheetTopic, onBac
               M Tanaka San Audit
             </span>
           </>
-        )}
+        )} 
       </div>
 
       {/* Right Utility Icons matching screenshot - desktop full icons, mobile responsive compact */}

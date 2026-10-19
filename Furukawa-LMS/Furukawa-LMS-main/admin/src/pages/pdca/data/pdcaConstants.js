@@ -14,6 +14,11 @@ export const PDCA_DEPARTMENTS = [
   'C&C'
 ];
 
+export const PDCA_UNITS = [
+  'Bawal',
+  'Gujrat'
+];
+
 export const DEFAULT_LINE_AREAS = [
   'Assembly Area',
   'Assembly Line 1',

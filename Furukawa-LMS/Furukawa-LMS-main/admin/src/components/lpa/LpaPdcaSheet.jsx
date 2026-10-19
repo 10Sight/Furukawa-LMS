@@ -25,11 +25,15 @@ import {
   User,
   Users,
   RefreshCw,
-  Layers
+  Layers,
+  Mail,
+  BarChart3
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
 import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
+import SendMailModal from '../common/SendMailModal';
+import PDCAMonthlyGraph from '../pdca/PDCAMonthlyGraph';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
@@ -216,6 +220,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
   // Database-backed employee master records
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
+  const [showMonthlyGraph, setShowMonthlyGraph] = useState(true);
 
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
@@ -453,11 +459,15 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   }, [counterMeasureWidth]);
 
   // Editable Sheet Header Details
-  const [headerInfo, setHeaderInfo] = useState(topic?.sheet?.headerInfo || {
-    topicName: '',
-    preparedBy: '',
-    auditNo: '',
-    attendees: ''
+  const defaultLpaTopic = topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)');
+  const [headerInfo, setHeaderInfo] = useState(() => {
+    const raw = topic?.sheet?.headerInfo || {};
+    return {
+      topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : defaultLpaTopic,
+      preparedBy: raw.preparedBy || '',
+      auditNo: raw.auditNo || '',
+      attendees: raw.attendees || ''
+    };
   });
 
   // Load saved sheet from backend on mount or when topic changes
@@ -543,9 +553,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       }
       persistSheet(sheetSnapshot);
       notify('PDCA form saved successfully.', 'success');
-      setTimeout(() => {
-        onBack?.();
-      }, 500);
+      onSave?.(sheetSnapshot);
       return true;
     } catch (error) {
       notify(error.message || 'Could not save PDCA form. Please try again.', 'error');
@@ -1274,17 +1282,20 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
 
   // Add Row
   const handleAddRow = () => {
+    const defaultDept = topic?.section === 'cc' ? 'C&C' : (topic?.section === 'assembly' ? 'Assembly' : '');
     setRows((prev) => [
       ...prev,
       createEmptyRow({
         date: currentDate || new Date().toISOString().slice(0, 10),
-        status: 'Open'
+        status: 'Open',
+        department: defaultDept
       })
     ]);
   };
 
   // Insert Row Above
   const handleInsertRowAbove = (idx) => {
+    const defaultDept = topic?.section === 'cc' ? 'C&C' : (topic?.section === 'assembly' ? 'Assembly' : '');
     setRows((prev) => {
       const updated = [...prev];
       updated.splice(
@@ -1292,7 +1303,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         0,
         createEmptyRow({
           date: currentDate || new Date().toISOString().slice(0, 10),
-          status: 'Open'
+          status: 'Open',
+          department: defaultDept
         })
       );
       return updated;
@@ -1427,6 +1439,30 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
               </span>
             ) : null}
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsSendMailOpen(true)}
+              title="Send PDCA report by email"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>Send Mail</span>
+            </button>
+            {/* Monthly Graph Button */}
+            <button
+              type="button"
+              onClick={() => setShowMonthlyGraph(prev => !prev)}
+              title="Toggle Monthly PDCA Graph (Total, Opened, Closed)"
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${
+                showMonthlyGraph
+                  ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
+                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Monthly Graph</span>
+            </button>
           </div>
 
           {/* Right: Search & Add Row */}
@@ -1456,6 +1492,17 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
         </div>
       </div>
 
+      {/* Monthly PDCA Status Analytics Graph */}
+      {showMonthlyGraph && (
+        <PDCAMonthlyGraph
+          rows={rows}
+          allPDCARecords={data}
+          currentDate={formDate}
+          topic={topic}
+          onToggleCollapse={() => setShowMonthlyGraph(false)}
+        />
+      )}
+
       {/* Spreadsheet Matrix Table Grid */}
       <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto">
         <div className="flex items-stretch w-full overflow-x-auto max-w-full">
@@ -1470,7 +1517,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     colSpan={17}
                     className="py-2.5 px-4 text-center font-bold text-slate-900 text-sm md:text-base tracking-wide select-none"
                   >
-                    {topic?.topic || 'PDCA - M Tanaka San Audit'}
+                    {headerInfo.topicName || topic?.topic || defaultLpaTopic}
                   </th>
                 </tr>
 
@@ -2808,6 +2855,23 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
           </button>
         </div>
       )}
+
+      {/* Send Mail Modal */}
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType="pdca"
+        title={topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)'}
+        metadata={{
+          date: currentDate,
+          auditDate: currentDate,
+          unit: topic?.plant || 'Bawal',
+          section: topic?.section || 'Assembly',
+          sectionName: topic?.section || 'Assembly',
+          topicName: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
+          auditNo: headerInfo?.auditNo
+        }}
+      />
     </div>
   );
 }

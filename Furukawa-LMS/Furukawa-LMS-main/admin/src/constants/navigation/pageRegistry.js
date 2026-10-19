@@ -7,6 +7,9 @@ export const MIS_MORNING_MEETING_KEY = "mis-morning-meeting";
 export const MIS_MONTHLY_REPORT_KEY = "mis-monthly-report";
 const MIS_PAGE_KEYS = [MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY];
 
+// The efficiency charts used to live on the admin Dashboard.
+export const MANPOWER_EFFICIENCY_KEY = "manpower-efficiency";
+
 // Page registry — single source of truth for all assignable pages.
 // layout: which layout the page belongs to (determines which sidebar it appears in)
 // key: unique identifier used in customRole.allowedPages[]
@@ -32,6 +35,12 @@ const normalizeAllowedPages = (user) => {
     // assigned one by one.
     if (pages.includes(MIS_PORTAL_KEY) && !MIS_PAGE_KEYS.some((key) => pages.includes(key))) {
         pages = [...pages, ...MIS_PAGE_KEYS];
+    }
+
+    // Roles with the admin Dashboard keep the efficiency charts that moved off it
+    // onto their own page.
+    if (pages.includes('dashboard') && !pages.includes(MANPOWER_EFFICIENCY_KEY)) {
+        pages = [...pages, MANPOWER_EFFICIENCY_KEY];
     }
     return pages;
 };
@@ -254,6 +263,7 @@ export const getFirstAllowedPage = (layout, user, t) => {
 export const PAGE_REGISTRY = [
     // Admin layout
     { key: "dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "admin", link: "/admin", icon: "IconLayoutDashboardFilled" },
+    { key: MANPOWER_EFFICIENCY_KEY, label: "Manpower Efficiency", labelKey: "nav.manpowerEfficiency", layout: "admin", link: "/admin/manpower-efficiency", icon: "IconChartBar" },
     { key: "dojo-hiring", label: "DOJO Hiring", labelKey: "nav.dojoHiring", layout: "admin", link: "/admin/dojo-hiring", icon: "IconUser" },
     // { key: "trainers", label: "Instructors", labelKey: "nav.instructors", layout: "admin", link: "/admin/trainers", icon: "IconUser" },
     { key: "courses", layout: "admin", link: "/admin/courses" },

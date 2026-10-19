@@ -196,11 +196,21 @@ export const blockChartRange = (displayGrid, { minRow, maxRow, minCol, maxCol })
     return { xAxisCol, valueCols, rowStart: minRow + 1, rowEnd: maxRow + 1, hasHeaderRow };
 };
 
+// One row of cells as chart settings: a single series running across the row. Its
+// first cell names the series when it is text and more cells follow it.
+const rowChartRange = (displayGrid, { minRow, minCol, maxCol }) => {
+    const list = [{ start: getCellId(minRow, minCol), end: getCellId(minRow, maxCol) }];
+    const first = displayGrid[getCellId(minRow, minCol)];
+    const hasHeaderRow = maxCol > minCol && first !== undefined && first !== "" && parseNumericCell(first) === null;
+    return { rangeString: formatRangeString(list), plotBy: "rows", hasHeaderRow, valueCols: seriesIdsForRanges(list, "rows", hasHeaderRow) };
+};
+
 // What a new chart plots, going by what is selected in the grid:
 //   several Ctrl-selected ranges   those ranges, as a range list
-//   a block of cells               that block
-//   one cell, row or column        the block of data it sits in
-// Null when that leaves nothing to chart (an empty area), so the defaults apply.
+//   a block, row or column         the filled part of it (so a whole-column
+//                                  selection stops where the data does)
+//   one cell                       the block of data it sits in
+// Null when that leaves nothing to chart (an empty area).
 export const newChartRange = ({ selection, ranges, activeCell, displayGrid, rowCount, columnCount }) => {
     if (Array.isArray(ranges) && ranges.length > 1) {
         const list = parseRangeString(formatRangeString(ranges));
@@ -215,11 +225,15 @@ export const newChartRange = ({ selection, ranges, activeCell, displayGrid, rowC
         minRow: Math.min(start.row, end.row), maxRow: Math.max(start.row, end.row),
         minCol: Math.min(start.col, end.col), maxCol: Math.max(start.col, end.col),
     } : null;
-    if (!bounds || bounds.minRow === bounds.maxRow || bounds.minCol === bounds.maxCol) {
+    if (!bounds || (bounds.minRow === bounds.maxRow && bounds.minCol === bounds.maxCol)) {
         const at = (activeCell && parseCellRef(activeCell)) || start;
         if (!at) return null;
         bounds = trimEmptyEdges(displayGrid, dataRegionAround(displayGrid, at.row, at.col, rowCount, columnCount));
         if (!bounds || bounds.minRow === bounds.maxRow) return null;
+        return blockChartRange(displayGrid, bounds);
     }
+    bounds = trimEmptyEdges(displayGrid, bounds);
+    if (!bounds || (bounds.minRow === bounds.maxRow && bounds.minCol === bounds.maxCol)) return null;
+    if (bounds.minRow === bounds.maxRow) return rowChartRange(displayGrid, bounds);
     return blockChartRange(displayGrid, bounds);
 };

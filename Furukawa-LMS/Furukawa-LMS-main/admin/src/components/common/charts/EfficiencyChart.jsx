@@ -1,45 +1,34 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/common/ui/card.jsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LabelList, Cell, PieChart, Pie, Tooltip, Legend, ReferenceLine } from 'recharts';
 import { useGetSkillMatrixEfficiencySummaryQuery } from "@/services/api/SkillMatrixApi.js";
-import { useGetSubSectionsQuery } from "@/services/api/SubSectionApi.js";
-import { Skeleton } from "@/components/common/ui/skeleton.jsx";
 import { IconChartBar, IconChartPie, IconFilter, IconX, IconEye, IconEyeOff } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate.js";
+import {
+    PRESENT_STATUSES, CHART_EFFICIENCY_CAP, getAvg, calculateUserEfficiency,
+    countLoggedDays, buildSkillSplit, buildHierarchicalData,
+} from "@/utils/efficiencyMath.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SHIFT_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
-const PRESENT_STATUSES = new Set(['Present', 'Late', 'Half Day']);
 const ATTENDANCE_COLORS = { 'Present': 'blue', 'Absent': 'red', 'Late': '#f59e0b', 'Half Day': '#8b5cf6' };
 const getAttendanceColor = (status, idx) => ATTENDANCE_COLORS[status] || SHIFT_COLORS[idx % SHIFT_COLORS.length];
-const ATT_BAR_COLORS = { 'Total Efficiency': '#f59e0b', 'Present Efficiency': 'blue', 'Absent Efficiency': 'red', 'Min Efficiency': '#386641', 'Max Efficiency': '#a855f7' };
-// Colors for bars
-const getAttBarColor = (name) => {
-    if (!name) return '#8b5cf6';
-    if (name.includes('Min')) return '#386641';
-    if (name.includes('Total')) return '#f59e0b';
-    if (name.includes('Present')) return 'blue';
-    if (name.includes('Absent')) return 'red';
-    return '#8b5cf6';
-};
+// Total-population bars are yellow, present-population bars blue
+const TOTAL_COLOR = '#f59e0b';
+const PRESENT_COLOR = '#2563eb';
+// Chart 1 pie: the unskilled / skilled split of Total Efficiency
+const SKILL_PIE_COLORS = { 'Unskilled Manpower': '#8b5cf6', 'Skilled Manpower': '#0d9488' };
 // Frozen Legend
-const FrozenLegend = ({ minEffVisible, allUsersColor = "#f59e0b", allUsersLabel, presentLabel, absentLabel }) => {
+const FrozenLegend = ({ allUsersColor = TOTAL_COLOR, allUsersLabel, presentLabel }) => {
     const { t } = useTranslate();
     return (
         <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
-            {minEffVisible && (
-                <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
-                    <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> {t('charts.minEff')}
-                </span>
-            )}
             <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
                 <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: allUsersColor }} /> {allUsersLabel || t('charts.totalEff')}
             </span>
             <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
-                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {presentLabel || t('charts.presentEff')}
-            </span>
-            <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-slate-500">
-                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {absentLabel || t('charts.absentEff')}
+                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: PRESENT_COLOR }} /> {presentLabel || t('charts.presentEff')}
             </span>
         </div>
     );
@@ -55,24 +44,16 @@ const GRAD = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const calculateUserEfficiency = (op) => {
-    if (!op) return 0;
-    if (op.currentEffeciency != null) return parseFloat(op.currentEffeciency) || 0;
-    const evalData = op.evalData;
-    if (!evalData) return 0;
-    let parsed = evalData;
-    if (typeof evalData === 'string') { try { parsed = JSON.parse(evalData); } catch { return 0; } }
-    // L4: '3-5', L3: '2-0', L2: '1-2', L1: '0-2'
-    for (const key of ['3-5', '2-0', '1-2', '0-2']) {
-        const d = parsed[key];
-        if (d?.standard === 'OK') return parseFloat(d.okVal) || 0;
-    }
-    return 0;
-};
+// Charts 1–5 Y axis: efficiency is capped per operator, so bars stay within 0–100%
+const CAPPED_Y_DOMAIN = [0, CHART_EFFICIENCY_CAP];
+const CAPPED_Y_TICKS = [0, 25, 50, 75, 100];
 
-const getAvg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0;
-const getSum = (arr) => arr.reduce((a, b) => a + b, 0);
 const getOpDate = (op) => op.attendanceDate || op.date || op.logDate || '';
+// Logged attendance days within a chart filter's date range (default: today)
+const loggedDaysInRange = (rows, f) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    return countLoggedDays(rows, f.dateFrom || today, f.dateTo || today);
+};
 const getDateText = (f, t) => {
     const today = new Date().toLocaleDateString('en-CA');
     const from = f.dateFrom || today;
@@ -82,9 +63,11 @@ const getDateText = (f, t) => {
 };
 
 // Bar label renderer: always outside and above the bar with the respective outsideColor.
+// The font shrinks on narrow bars so side-by-side "100%" labels don't run into each other.
 const barLabel = (staggerPx, outsideColor) => ({ x, y, width, height, value }) => {
     if (value == null) return null;
-    return <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={outsideColor} fontSize={15} fontWeight={900}>{Math.round(value)}%</text>;
+    const fontSize = Math.max(11, Math.min(15, (width + 4) / 2.7));
+    return <text x={x + width / 2} y={y - 6} textAnchor="middle" fill={outsideColor} fontSize={fontSize} fontWeight={900}>{Math.round(value)}%</text>;
 };
 
 const isTemporaryUser = (op) => op.isTemporary === 1 || op.isTemporary === true || op.isTemporary === '1';
@@ -127,125 +110,6 @@ const applyFiltersNoDate = (ops, f) => {
     if (f.subSectionIds?.length) r = r.filter(op => f.subSectionIds.includes(String(op.subSectionId || op.subSectionName)));
     if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
     return r;
-};
-
-// Shapes a rollup row into the flat item contract consumed by the charts/summary capsules.
-const shapeGroupRow = (row) => {
-    const allEff = row.allEfficiency ?? 0;
-    const presEff = row.presEfficiency ?? 0;
-    const absEff = row.absEfficiency ?? 0;
-    return {
-        id: row.id, name: row.name, displayName: row.name,
-        allEfficiency: allEff, presEfficiency: presEff, absEfficiency: absEff,
-        allTotal: allEff, presTotal: presEff, absTotal: absEff,
-    };
-};
-
-// Ensures every filter-selected group key is represented (as 0%) even when it has no active children.
-const withAllGroupKeys = (rows, allGroupKeys) => {
-    const map = {};
-    rows.forEach(r => { map[r.id] = r; });
-    (allGroupKeys || []).forEach(gk => {
-        if (gk.id && gk.name && !map[gk.id]) {
-            map[gk.id] = { id: gk.id, name: gk.name, allEfficiency: 0, presEfficiency: 0, absEfficiency: 0 };
-        }
-    });
-    return Object.values(map).map(shapeGroupRow).sort((a, b) => b.allEfficiency - a.allEfficiency);
-};
-
-// Averages a list of child rows' three efficiency metrics into a parent row, keyed by parent id/name.
-const rollUp = (childRows, getParentId, getParentName) => {
-    const map = {};
-    childRows.forEach(child => {
-        const pId = getParentId(child);
-        if (!pId) return;
-        if (!map[pId]) map[pId] = { id: pId, name: getParentName(child), allArr: [], presArr: [], absArr: [] };
-        map[pId].allArr.push(child.allEfficiency);
-        map[pId].presArr.push(child.presEfficiency);
-        map[pId].absArr.push(child.absEfficiency);
-    });
-    return Object.values(map).map(row => ({
-        ...row,
-        allEfficiency: getAvg(row.allArr),
-        presEfficiency: getAvg(row.presArr),
-        absEfficiency: getAvg(row.absArr),
-        headcount: row.allArr.length,
-    }));
-};
-
-// Hierarchical rollup: Sub-Section = avg of its users; Line = avg of its active sub-sections;
-// Section = avg of its active lines; Department = avg of its active sections.
-const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = []) => {
-    const ssMap = {};
-    const ensureSS = (op) => {
-        const ssId = String(op.subSectionId || op.subSectionName || '');
-        if (!ssId) return null;
-        if (!ssMap[ssId]) {
-            ssMap[ssId] = {
-                id: ssId, name: op.subSectionName,
-                lineId: String(op.lineId || op.lineName || ''), lineName: op.lineName,
-                sectionId: String(op.sectionId || op.sectionName || ''),
-                sectionName: op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName,
-                deptId: String(op.departmentId || op.departmentName || ''), deptName: op.departmentName,
-                allArr: [], presArr: [], absArr: [],
-            };
-        }
-        return ssMap[ssId];
-    };
-
-    // Base: Total Efficiency per sub-section using opsAll (unfiltered by date)
-    opsAll.forEach(op => {
-        const row = ensureSS(op);
-        if (!row) return;
-        row.allArr.push(calculateUserEfficiency(op));
-    });
-
-    // Base: Attendance-based metrics per sub-section using opsAtt (filtered by date)
-    opsAtt.forEach(op => {
-        const row = ensureSS(op);
-        if (!row) return;
-        const eff = calculateUserEfficiency(op);
-        const hasLogStatus = op.logStatus != null && op.logStatus !== '';
-        const isPres = hasLogStatus && PRESENT_STATUSES.has(op.logStatus);
-        const isAbs = hasLogStatus && !PRESENT_STATUSES.has(op.logStatus);
-        if (isPres) row.presArr.push(eff);
-        if (isAbs) row.absArr.push(eff);
-    });
-
-    const ssRows = Object.values(ssMap).map(row => {
-        const total = row.allArr.length;
-        return {
-            ...row,
-            allEfficiency: getAvg(row.allArr),
-            presEfficiency: total ? Math.round((getSum(row.presArr) / total) * 100) / 100 : 0,
-            absEfficiency: total ? Math.round((getSum(row.absArr) / total) * 100) / 100 : 0,
-            headcount: total,
-        };
-    });
-
-    if (level === 'subsection') return withAllGroupKeys(ssRows, allGroupKeys);
-
-    const lineRows = rollUp(ssRows.filter(r => r.headcount > 0), r => r.lineId, r => r.lineName);
-    if (level === 'line') return withAllGroupKeys(lineRows, allGroupKeys);
-
-    // Line rows carry sectionId/sectionName/deptId/deptName from their active sub-sections
-    const lineToParent = {};
-    ssRows.forEach(r => { if (r.lineId && !lineToParent[r.lineId]) lineToParent[r.lineId] = r; });
-    const sectionRows = rollUp(
-        lineRows.filter(r => r.headcount > 0),
-        r => lineToParent[r.id]?.sectionId,
-        r => lineToParent[r.id]?.sectionName
-    );
-    if (level === 'section') return withAllGroupKeys(sectionRows, allGroupKeys);
-
-    const sectionToParent = {};
-    ssRows.forEach(r => { if (r.sectionId && !sectionToParent[r.sectionId]) sectionToParent[r.sectionId] = r; });
-    const deptRows = rollUp(
-        sectionRows.filter(r => r.headcount > 0),
-        r => sectionToParent[r.id]?.deptId,
-        r => sectionToParent[r.id]?.deptName
-    );
-    return withAllGroupKeys(deptRows, allGroupKeys);
 };
 
 // ─── MultiSelectDropdown ──────────────────────────────────────────────────────
@@ -391,12 +255,11 @@ const ShiftLegend = ({ shifts }) => {
 };
 
 // ─── Summary capsules below each chart ────────────────────────────────────────
-const SummaryCapsules = ({ data, dotColor = "#f59e0b", label }) => {
+const SummaryCapsules = ({ data, dotColor = TOTAL_COLOR, label }) => {
     const { t } = useTranslate();
     if (!data.length) return null;
     const overallAll = getAvg(data.map(d => d.allEfficiency));
     const overallPres = getAvg(data.map(d => d.presEfficiency));
-    const overallAbs = getAvg(data.map(d => d.absEfficiency));
     return (
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-5 border-t border-slate-100">
             {data.map(item => (
@@ -408,23 +271,30 @@ const SummaryCapsules = ({ data, dotColor = "#f59e0b", label }) => {
                     <div className="flex flex-col items-end flex-shrink-0 ml-2">
                         <span className="text-[13px] font-bold text-slate-800">{item.allEfficiency}%</span>
                         <span className="text-[12px] text-emerald-600">{t('charts.present')[0]}: {item.presEfficiency}%</span>
-                        <span className="text-[11px] text-rose-500">{t('charts.absent')[0]}: {item.absEfficiency}%</span>
                     </div>
                 </div>
             ))}
             <div className="col-span-2 sm:col-span-3 lg:col-span-4 flex items-center justify-between p-3.5 rounded-xl mt-1"
                 style={{ backgroundColor: `${dotColor}15`, border: `1px solid ${dotColor}30` }}>
-                <span className="text-sm font-bold" style={{ color: dotColor }}>{label} — {t('charts.total')}: {overallAll}% | {t('charts.present')}: {overallPres}% | {t('charts.absent')}: {overallAbs}%</span>
+                <span className="text-sm font-bold" style={{ color: dotColor }}>{label} — {t('charts.total')}: {overallAll}% | {t('charts.present')}: {overallPres}%</span>
             </div>
         </div>
     );
 };
 
 // ─── Chart Section Wrapper ────────────────────────────────────────────────────
-const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, children }) => {
+// FME logo, pulsing, centred in its container while efficiency data loads
+const ChartLoader = ({ className = '' }) => (
+    <div className={`flex items-center justify-center ${className}`} role="status" aria-live="polite" aria-label="Loading">
+        <img src={brandLogoUrl} alt="" className="h-20 w-20 object-contain animate-pulse" />
+    </div>
+);
+
+const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, loading = false, children }) => {
     const { t } = useTranslate();
     return (
-        <div className="space-y-3 p-7 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+        <div className="relative space-y-3 p-7 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+            {loading && <ChartLoader className="absolute inset-0 z-30 rounded-2xl bg-white/75" />}
             <div className="flex items-center justify-between border-b pb-4 border-slate-100">
                 <div className="flex flex-col">
                     <h4 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
@@ -478,6 +348,60 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     );
 };
 
+// ─── Grouped axis ticks: sub-label per bar pair, group name centred under its pairs ──
+// `rows` is the flattened chart data; each row carries `sub` (label key) and `groupName`.
+const GroupSubTick = ({ x, y, payload, rows, labelOf }) => {
+    const row = rows[payload.index];
+    const words = (row ? labelOf(row.sub) : '').split(' ');
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <text textAnchor="middle" fill="#334155" fontSize={14} fontWeight={800}>
+                {words.map((word, i) => (
+                    <tspan key={i} x={0} dy={i === 0 ? 14 : 15}>{word}</tspan>
+                ))}
+            </text>
+        </g>
+    );
+};
+
+// Word-wraps a group name to two lines of about GROUP_NAME_LINE_CHARS (one group's width at
+// the minimum chart width); anything longer is cut with an ellipsis and shown in full on hover.
+const GROUP_NAME_LINE_CHARS = 36;
+const wrapGroupName = (name) => {
+    const lines = [''];
+    String(name ?? '').split(' ').forEach(word => {
+        const last = lines[lines.length - 1];
+        if (!last || `${last} ${word}`.length <= GROUP_NAME_LINE_CHARS) lines[lines.length - 1] = last ? `${last} ${word}` : word;
+        else lines.push(word);
+    });
+    if (lines.length <= 2) return lines;
+    return [lines[0], `${lines[1].slice(0, GROUP_NAME_LINE_CHARS - 1)}…`];
+};
+
+const GroupNameTick = ({ x, y, payload, rows, groupSize }) => {
+    // Only the middle pair of each group draws the name, so it sits centred under the group
+    if (payload.index % groupSize !== Math.floor(groupSize / 2)) return null;
+    const name = rows[payload.index]?.groupName;
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <title>{name}</title>
+            <text textAnchor="middle" fill="#3730a3" fontSize={16} fontWeight={900}>
+                {wrapGroupName(name).map((line, i) => (
+                    <tspan key={i} x={0} dy={18}>{line}</tspan>
+                ))}
+            </text>
+        </g>
+    );
+};
+
+// Flattens rollup rows into Total / Unskilled / Skilled manpower bar pairs per group
+const SKILL_GROUP_SIZE = 3;
+const toSkillGroups = (rows) => rows.flatMap(row => [
+    { key: `${row.id}|total`, sub: 'Total Manpower', groupName: row.name, total: row.allEfficiency, present: row.presEfficiency },
+    { key: `${row.id}|unskilled`, sub: 'Unskilled Manpower', groupName: row.name, total: row.allUnskilled, present: row.presUnskilled },
+    { key: `${row.id}|skilled`, sub: 'Skilled Manpower', groupName: row.name, total: row.allSkilled, present: row.presSkilled },
+]);
+
 // ─── View Toggle (Bar / Pie) ──────────────────────────────────────────────────
 const ViewToggle = ({ view, onChange }) => (
     <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit">
@@ -506,144 +430,52 @@ const EfficiencyChart = () => {
     const [attendanceView, setAttendanceView] = useState('bar');
 
     const translateStatus = (name) => {
-        if (name === 'Min Efficiency') return t('charts.minEff');
-        if (name === 'Total Efficiency') return t('charts.totalEff');
-        if (name === 'Present Efficiency') return t('charts.presentEff');
-        if (name === 'Absent Efficiency') return t('charts.absentEff');
+        if (name === 'Total Manpower') return t('charts.totalManpower');
+        if (name === 'Unskilled Manpower') return t('charts.unskilledManpower');
+        if (name === 'Skilled Manpower') return t('charts.skilledManpower');
         if (name === 'Present') return t('charts.present');
         if (name === 'Absent') return t('charts.absent');
         return name;
     };
 
-    const { data: summaryData, isLoading, error } = useGetSkillMatrixEfficiencySummaryQuery();
-    const rawOps = useMemo(() => summaryData?.data || [], [summaryData]);
+    // Attendance is fetched only for the span the six charts' date filters cover (default: today)
+    const fetchRange = useMemo(() => {
+        const today = new Date().toLocaleDateString('en-CA');
+        const filters = [f1, f2, f3, f4, f5, f6];
+        const froms = filters.map(f => f.dateFrom || today);
+        const tos = filters.map(f => f.dateTo || today);
+        return { dateFrom: froms.reduce((a, b) => (b < a ? b : a)), dateTo: tos.reduce((a, b) => (b > a ? b : a)) };
+    }, [f1, f2, f3, f4, f5, f6]);
 
-    // Defaulting to the current date (today) as per user request. useEffect that used mostRecentDateWithAttendance is removed since today's date is initialized in initF.
-
-    const { data: subSectionsRaw } = useGetSubSectionsQuery({});
-    const subSections = useMemo(() => subSectionsRaw?.data || [], [subSectionsRaw]);
-
-    // Global average min/max efficiency across sub-sections that have values set — used as Chart 1 reference lines
-    const globalEffTarget = useMemo(() => {
-        const withMin = subSections.filter(s => s.minEfficiency != null);
-        const withMax = subSections.filter(s => s.maxEfficiency != null);
-        const avg = (arr, key) => arr.length
-            ? Math.round(arr.reduce((a, s) => a + parseFloat(s[key]), 0) / arr.length * 100) / 100
-            : null;
-        return { min: avg(withMin, 'minEfficiency'), max: avg(withMax, 'maxEfficiency') };
-    }, [subSections]);
-
-    // lineId → sectionId / departmentId, sectionId → departmentId (built from rawOps — no extra API call)
-    const hierarchyMap = useMemo(() => {
-        const lineToSection = {};
-        const lineToDept = {};
-        const sectionToDept = {};
-        rawOps.forEach(op => {
-            const lid = String(op.lineId || '');
-            const sid = String(op.sectionId || '');
-            const did = String(op.departmentId || op.departmentName || '');
-
-            if (lid) {
-                if (sid) lineToSection[lid] = sid;
-                if (did) lineToDept[lid] = did;
-            }
-            if (sid && did) {
-                sectionToDept[sid] = did;
-            }
-        });
-        return { lineToSection, lineToDept, sectionToDept };
-    }, [rawOps]);
-
-    // Sub-section min/max targets aggregated per line / section / department
-    // Line Target: Average of sub-section targets under each line (rounded to nearest integer)
-    const targetsByLine = useMemo(() => {
-        const map = {};
-        subSections.forEach(ss => {
-            const lid = String(ss.lineId || '');
-            if (!lid) return;
-            if (!map[lid]) map[lid] = { minArr: [], maxArr: [] };
-            map[lid].minArr.push(parseFloat(ss.minEfficiency) || 0);
-            map[lid].maxArr.push(parseFloat(ss.maxEfficiency) || 0);
-        });
-
-        const averages = {};
-        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-
-        Object.entries(map).forEach(([lid, val]) => {
-            averages[lid] = {
-                min: roundedAvg(val.minArr),
-                max: roundedAvg(val.maxArr)
-            };
-        });
-        return averages;
-    }, [subSections]);
-
-    // Section Target: Average of Line targets under each section (rounded to nearest integer)
-    const targetsBySection = useMemo(() => {
-        const sectionLinesMap = {};
-        Object.entries(hierarchyMap.lineToSection).forEach(([lid, sid]) => {
-            if (!sectionLinesMap[sid]) sectionLinesMap[sid] = [];
-            sectionLinesMap[sid].push(lid);
-        });
-
-        const averages = {};
-        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-
-        Object.entries(sectionLinesMap).forEach(([sid, lineIds]) => {
-            if (!lineIds.length) return;
-            const minVals = lineIds.map(lid => targetsByLine[lid]?.min ?? 0);
-            const maxVals = lineIds.map(lid => targetsByLine[lid]?.max ?? 0);
-            averages[sid] = {
-                min: roundedAvg(minVals),
-                max: roundedAvg(maxVals)
-            };
-        });
-        return averages;
-    }, [hierarchyMap.lineToSection, targetsByLine]);
-
-    // Department Target: Average of Section targets under each department (rounded to nearest integer)
-    const targetsByDept = useMemo(() => {
-        const deptSectionsMap = {};
-        Object.entries(hierarchyMap.sectionToDept).forEach(([sid, did]) => {
-            if (!deptSectionsMap[did]) deptSectionsMap[did] = [];
-            deptSectionsMap[did].push(sid);
-        });
-
-        const averages = {};
-        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-
-        Object.entries(deptSectionsMap).forEach(([did, sectionIds]) => {
-            if (!sectionIds.length) return;
-            const minVals = sectionIds.map(sid => targetsBySection[sid]?.min ?? 0);
-            const maxVals = sectionIds.map(sid => targetsBySection[sid]?.max ?? 0);
-            averages[did] = {
-                min: roundedAvg(minVals),
-                max: roundedAvg(maxVals)
-            };
-        });
-        return averages;
-    }, [hierarchyMap.sectionToDept, targetsBySection]);
+    const { data: summaryData, isLoading, isFetching, error } = useGetSkillMatrixEfficiencySummaryQuery(fetchRange);
+    // One row per operator (user-level fields; `shift` is their shift on the latest logged date)
+    const users = useMemo(() => summaryData?.data?.users || [], [summaryData]);
+    // Attendance logs in the fetched window, joined to their operator: [userId, date, status, shift]
+    const rawOps = useMemo(() => {
+        const byId = new Map(users.map(u => [u.userId, u]));
+        return (summaryData?.data?.attendance || []).reduce((rows, [userId, attendanceDate, logStatus, shift]) => {
+            const user = byId.get(userId);
+            if (user) rows.push({ ...user, attendanceDate, logStatus, shift });
+            return rows;
+        }, []);
+    }, [summaryData, users]);
 
     // All unique shifts
-    const allShifts = useMemo(() => {
-        const s = new Set();
-        rawOps.forEach(op => { const sh = op.shift || op.shiftName; if (sh) s.add(String(sh)); });
-        return [...s].sort();
-    }, [rawOps]);
+    const allShifts = useMemo(() => summaryData?.data?.shifts || [], [summaryData]);
 
     // Option builders
     const allDeptOpts = useMemo(() => {
         const m = {};
-        rawOps.forEach(op => {
+        users.forEach(op => {
             const id = String(op.departmentId || op.departmentName || '');
             if (id && op.departmentName) m[id] = op.departmentName;
         });
         return Object.entries(m).map(([value, label]) => ({ value, label }));
-    }, [rawOps]);
+    }, [users]);
 
     const getSectionOpts = (deptIds) => {
         const m = {};
-        rawOps.forEach(op => {
+        users.forEach(op => {
             if (deptIds?.length && !deptIds.includes(String(op.departmentId || op.departmentName))) return;
             const id = String(op.sectionId || op.sectionName || '');
             if (id && op.sectionName) {
@@ -655,7 +487,7 @@ const EfficiencyChart = () => {
 
     const getLineOpts = (deptIds, sectionIds) => {
         const m = {};
-        rawOps.forEach(op => {
+        users.forEach(op => {
             if (deptIds?.length && !deptIds.includes(String(op.departmentId || op.departmentName))) return;
             if (sectionIds?.length && !sectionIds.includes(String(op.sectionId || op.sectionName))) return;
             const id = String(op.lineId || op.lineName || '');
@@ -666,7 +498,7 @@ const EfficiencyChart = () => {
 
     const getSubSectionOpts = (deptIds, sectionIds, lineIds) => {
         const m = {};
-        rawOps.forEach(op => {
+        users.forEach(op => {
             if (deptIds?.length && !deptIds.includes(String(op.departmentId || op.departmentName))) return;
             if (sectionIds?.length && !sectionIds.includes(String(op.sectionId || op.sectionName))) return;
             if (lineIds?.length && !lineIds.includes(String(op.lineId || op.lineName))) return;
@@ -677,30 +509,19 @@ const EfficiencyChart = () => {
     };
 
     // Memoised option lists per chart (deps use JSON key to avoid stale array refs)
-    const s2Opts = useMemo(() => getSectionOpts(f2.deptIds), [rawOps, f2.deptIds]);
-    const s3Opts = useMemo(() => getSectionOpts(f3.deptIds), [rawOps, f3.deptIds]);
-    const l3Opts = useMemo(() => getLineOpts(f3.deptIds, f3.sectionIds), [rawOps, f3.deptIds, f3.sectionIds]);
-    const s4Opts = useMemo(() => getSectionOpts(f4.deptIds), [rawOps, f4.deptIds]);
-    const l4Opts = useMemo(() => getLineOpts(f4.deptIds, f4.sectionIds), [rawOps, f4.deptIds, f4.sectionIds]);
-    const s5Opts = useMemo(() => getSectionOpts(f5.deptIds), [rawOps, f5.deptIds]);
-    const l5Opts = useMemo(() => getLineOpts(f5.deptIds, f5.sectionIds), [rawOps, f5.deptIds, f5.sectionIds]);
-    const s6Opts = useMemo(() => getSectionOpts(f6.deptIds), [rawOps, f6.deptIds]);
-    const l6Opts = useMemo(() => getLineOpts(f6.deptIds, f6.sectionIds), [rawOps, f6.deptIds, f6.sectionIds]);
-    const ss6Opts = useMemo(() => getSubSectionOpts(f6.deptIds, f6.sectionIds, f6.lineIds), [rawOps, f6.deptIds, f6.sectionIds, f6.lineIds]);
+    const s2Opts = useMemo(() => getSectionOpts(f2.deptIds), [users, f2.deptIds]);
+    const s3Opts = useMemo(() => getSectionOpts(f3.deptIds), [users, f3.deptIds]);
+    const l3Opts = useMemo(() => getLineOpts(f3.deptIds, f3.sectionIds), [users, f3.deptIds, f3.sectionIds]);
+    const s4Opts = useMemo(() => getSectionOpts(f4.deptIds), [users, f4.deptIds]);
+    const l4Opts = useMemo(() => getLineOpts(f4.deptIds, f4.sectionIds), [users, f4.deptIds, f4.sectionIds]);
+    const s5Opts = useMemo(() => getSectionOpts(f5.deptIds), [users, f5.deptIds]);
+    const l5Opts = useMemo(() => getLineOpts(f5.deptIds, f5.sectionIds), [users, f5.deptIds, f5.sectionIds]);
+    const s6Opts = useMemo(() => getSectionOpts(f6.deptIds), [users, f6.deptIds]);
+    const l6Opts = useMemo(() => getLineOpts(f6.deptIds, f6.sectionIds), [users, f6.deptIds, f6.sectionIds]);
+    const ss6Opts = useMemo(() => getSubSectionOpts(f6.deptIds, f6.sectionIds, f6.lineIds), [users, f6.deptIds, f6.sectionIds, f6.lineIds]);
 
-    // Unique operators list representing the overall software user database (latest record per userId):
-    const uniqueOps = useMemo(() => {
-        const map = {};
-        rawOps.forEach(op => {
-            const uid = op.userId;
-            if (!uid) return;
-            const d = getOpDate(op);
-            if (!map[uid] || d > map[uid].date) {
-                map[uid] = { op, date: d };
-            }
-        });
-        return Object.values(map).map(item => item.op);
-    }, [rawOps]);
+    // Unique operators list representing the overall software user database
+    const uniqueOps = users;
 
     // Filtered ops per chart (All unique database operators vs date-based attendance logs)
     const opsAll1 = useMemo(() => applyFiltersNoDate(uniqueOps, f1), [uniqueOps, f1]);
@@ -806,105 +627,37 @@ const EfficiencyChart = () => {
         return Object.values(m);
     }, [uniqueOps, f6.deptIds, f6.sectionIds, f6.lineIds, f6.subSectionIds]);
 
+    // Logged attendance days in each chart's date range — Present is averaged over these
+    const days1 = useMemo(() => loggedDaysInRange(rawOps, f1), [rawOps, f1]);
+    const days2 = useMemo(() => loggedDaysInRange(rawOps, f2), [rawOps, f2]);
+    const days3 = useMemo(() => loggedDaysInRange(rawOps, f3), [rawOps, f3]);
+    const days4 = useMemo(() => loggedDaysInRange(rawOps, f4), [rawOps, f4]);
+    const days5 = useMemo(() => loggedDaysInRange(rawOps, f5), [rawOps, f5]);
+
     // Chart data — hierarchical rollups (Sub-Section ← users; Line ← sub-sections; Section ← lines; Department ← sections)
-    const d1 = useMemo(() => {
-        const base = buildHierarchicalData(opsAll1, opsAtt1, 'department', allDepts);
-        return base.map(item => {
-            const tgt = targetsByDept[item.id] || {};
-            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
-        });
-    }, [opsAll1, opsAtt1, targetsByDept, allDepts]);
+    const d1 = useMemo(() => buildHierarchicalData(opsAll1, opsAtt1, 'department', allDepts, days1), [opsAll1, opsAtt1, allDepts, days1]);
+    const d2 = useMemo(() => buildHierarchicalData(opsAll2, opsAtt2, 'section', allSections, days2), [opsAll2, opsAtt2, allSections, days2]);
+    const d3 = useMemo(() => buildHierarchicalData(opsAll3, opsAtt3, 'line', allLines, days3), [opsAll3, opsAtt3, allLines, days3]);
+    const d4 = useMemo(() => buildHierarchicalData(opsAll4, opsAtt4, 'subsection', allSubSections, days4), [opsAll4, opsAtt4, allSubSections, days4]);
 
-    const d2 = useMemo(() => {
-        const base = buildHierarchicalData(opsAll2, opsAtt2, 'section', allSections);
-        return base.map(item => {
-            const tgt = targetsBySection[item.id] || {};
-            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
-        });
-    }, [opsAll2, opsAtt2, targetsBySection, allSections]);
+    // Charts 2–5 bars: Total / Unskilled / Skilled manpower pairs for each group
+    const d1Grouped = useMemo(() => toSkillGroups(d1), [d1]);
+    const d2Grouped = useMemo(() => toSkillGroups(d2), [d2]);
+    const d3Grouped = useMemo(() => toSkillGroups(d3), [d3]);
+    const d4Grouped = useMemo(() => toSkillGroups(d4), [d4]);
 
-    const d3 = useMemo(() => {
-        const base = buildHierarchicalData(opsAll3, opsAtt3, 'line', allLines);
-        return base.map(item => {
-            const tgt = targetsByLine[item.id] || {};
-            return { ...item, minEffTarget: tgt.min ?? null, maxEffTarget: tgt.max ?? null };
-        });
-    }, [opsAll3, opsAtt3, targetsByLine, allLines]);
+    // Chart 1: Total / Unskilled / Skilled manpower, each with a Total and a Present bar.
+    // Unskilled = default config's first level or unevaluated; skilled = higher levels
+    // (isSkilled comes from the server).
+    const d5 = useMemo(() => buildSkillSplit(opsAll5, opsAtt5, days5), [opsAll5, opsAtt5, days5]);
 
-    const d4 = useMemo(() => {
-        const base = buildHierarchicalData(opsAll4, opsAtt4, 'subsection', allSubSections);
-        return base.map(item => {
-            const ss = subSections.find(s => String(s.id) === String(item.id));
-            return {
-                ...item,
-                minEffTarget: ss?.minEfficiency != null ? Math.round(parseFloat(ss.minEfficiency)) : null,
-                maxEffTarget: ss?.maxEfficiency != null ? Math.round(parseFloat(ss.maxEfficiency)) : null,
-            };
-        });
-    }, [opsAll4, opsAtt4, subSections, allSubSections]);
-
-    // Helper to calculate dynamic target based on hierarchy filters
-    const getFilteredMinTarget = (filter) => {
-        const roundedAvg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-
-        if (filter.lineIds?.length) {
-            const mins = filter.lineIds.map(id => targetsByLine[id]?.min ?? 0);
-            if (mins.length) return roundedAvg(mins);
-        }
-        if (filter.sectionIds?.length) {
-            const mins = filter.sectionIds.map(id => targetsBySection[id]?.min ?? 0);
-            if (mins.length) return roundedAvg(mins);
-        }
-        if (filter.deptIds?.length) {
-            const mins = filter.deptIds.map(id => targetsByDept[id]?.min ?? 0);
-            if (mins.length) return roundedAvg(mins);
-        }
-
-        // Fallback: Average of all departments in the system, treating unconfigured ones as 0
-        if (allDeptOpts.length) {
-            const mins = allDeptOpts.map(d => targetsByDept[d.value]?.min ?? 0);
-            return roundedAvg(mins);
-        }
-
-        return globalEffTarget.min != null ? Math.round(globalEffTarget.min) : null;
-    };
-
-    // Chart 1: Attendance-wise — fixed buckets: Min (if configured), Total, Present, Absent
-    const d5 = useMemo(() => {
-        const presOps = opsAtt5.filter(op => PRESENT_STATUSES.has(op.logStatus));
-        const absOps = opsAtt5.filter(op => op.logStatus && !PRESENT_STATUSES.has(op.logStatus));
-
-        const allEffs = opsAll5.map(calculateUserEfficiency);
-        const presEffs = presOps.map(calculateUserEfficiency);
-        const absEffs = absOps.map(calculateUserEfficiency);
-
-        const items = [];
-        const tMin = getFilteredMinTarget(f5);
-        const totalCount = opsAll5.length;
-        const tAll = totalCount ? getAvg(allEffs) : 0;
-        const tPres = totalCount ? Math.round((getSum(presEffs) / totalCount) * 100) / 100 : 0;
-        const tAbs = totalCount ? Math.round((getSum(absEffs) / totalCount) * 100) / 100 : 0;
-
-        if (tMin != null) {
-            items.push({
-                name: 'Min Efficiency',
-                displayName: 'Min Efficiency',
-                efficiency: tMin,
-                isTarget: true,
-                count: 0,
-                evaluated: 0
-            });
-        }
-
-        items.push(
-            { name: 'Total Efficiency', displayName: 'Total Efficiency', efficiency: tAll, count: opsAll5.length, evaluated: opsAll5.filter(op => op.currentEffeciency != null || op.evalData != null).length },
-            { name: 'Present Efficiency', displayName: 'Present Efficiency', efficiency: tPres, count: presOps.length, evaluated: presOps.filter(op => op.currentEffeciency != null || op.evalData != null).length },
-            { name: 'Absent Efficiency', displayName: 'Absent Efficiency', efficiency: tAbs, count: absOps.length, evaluated: absOps.filter(op => op.currentEffeciency != null || op.evalData != null).length },
-        );
-        return items;
-    }, [opsAll5, opsAtt5, f5, targetsByLine, targetsBySection, targetsByDept, globalEffTarget]);
+    const unclassifiedCount5 = useMemo(() => opsAll5.filter(op => op.isUnclassifiedLevel).length, [opsAll5]);
 
     const d5Mapped = useMemo(() => d5.map(item => ({ ...item, displayName: translateStatus(item.name) })), [d5, t]);
+    // Pie view shows only the true split — Unskilled + Skilled = Total Manpower efficiency
+    const d5Pie = useMemo(() => d5Mapped
+        .filter(item => item.name !== 'Total Manpower')
+        .map(item => ({ ...item, efficiency: item.total })), [d5Mapped]);
 
     // Chart 6: Operator-wise (single bar — overall efficiency, color-coded by attendance)
     const d6 = useMemo(() => {
@@ -923,14 +676,8 @@ const EfficiencyChart = () => {
     }, [allOperators, opsAtt6]);
 
     if (isLoading) return (
-        <Card className="col-span-1 lg:col-span-2 border border-slate-100 shadow-sm rounded-3xl bg-white p-6">
-            <CardHeader className="pb-6 border-b border-slate-50">
-                <Skeleton className="h-6 w-48 rounded-lg" />
-                <Skeleton className="h-4 w-32 rounded-lg mt-2" />
-            </CardHeader>
-            <CardContent className="p-6">
-                <Skeleton className="h-[300px] w-full rounded-2xl" />
-            </CardContent>
+        <Card className="col-span-1 lg:col-span-2 border border-slate-100 shadow-sm rounded-3xl bg-white">
+            <ChartLoader className="min-h-[480px]" />
         </Card>
     );
 
@@ -945,14 +692,37 @@ const EfficiencyChart = () => {
     const commonMargin = { top: 42, right: 24, left: -10, bottom: 56 };
     const axisTick = { fill: '#334155', fontSize: 16, fontWeight: 900 };
 
-    const ChartWrapper = ({ data, minW = 110, children }) => (
+    const ChartWrapper = ({ data, minW = 110, height = 340, children }) => (
         <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 pb-2 mt-4">
-            <div style={{ width: '100%', minWidth: `${Math.max(480, data.length * minW)}px` }} className="h-[340px]">
+            <div style={{ width: '100%', minWidth: `${Math.max(480, data.length * minW)}px`, height }}>
                 <ResponsiveContainer width="100%" height="100%">
                     {children}
                 </ResponsiveContainer>
             </div>
         </div>
+    );
+
+    // Three bar pairs per group, the group name centred under them, dashed lines between groups
+    const renderSkillGroupedChart = (rows) => (
+        <ChartWrapper data={rows} minW={130} height={420}>
+            <BarChart data={rows} margin={{ ...commonMargin, bottom: 8 }} barCategoryGap="12%" barGap={6}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
+                <XAxis dataKey="key" height={48} tick={<GroupSubTick rows={rows} labelOf={translateStatus} />} tickLine={false} axisLine={false} interval={0} />
+                <XAxis xAxisId="group" dataKey="key" height={54} tick={<GroupNameTick rows={rows} groupSize={SKILL_GROUP_SIZE} />} tickLine={false} axisLine={false} interval={0} />
+                <YAxis domain={CAPPED_Y_DOMAIN} ticks={CAPPED_Y_TICKS} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                {rows
+                    .filter((row, i) => i % SKILL_GROUP_SIZE === SKILL_GROUP_SIZE - 1 && i < rows.length - 1)
+                    .map(row => (
+                        <ReferenceLine key={row.key} x={row.key} position="end" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 4" />
+                    ))}
+                <Bar dataKey="total" name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={44} minPointSize={3}>
+                    <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
+                </Bar>
+                <Bar dataKey="present" name={t('charts.presentEff')} fill={PRESENT_COLOR} radius={[10, 10, 0, 0]} maxBarSize={44} minPointSize={3}>
+                    <LabelList dataKey="present" content={barLabel(38, PRESENT_COLOR)} />
+                </Bar>
+            </BarChart>
+        </ChartWrapper>
     );
 
     return (
@@ -974,6 +744,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 1: Attendance-Wise Efficiency ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-violet-600">{t('charts.chart1')}</span>}
                         title={t('charts.attendanceWiseEff')}
                         dateText={getDateText(f5, t)}
@@ -987,51 +758,31 @@ const EfficiencyChart = () => {
                             deptOpts={allDeptOpts} sectionOpts={s5Opts} lineOpts={l5Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} hideLegend={true} />
-                        {(globalEffTarget.min != null) && (
-                            <div className="flex flex-wrap items-center gap-4 mt-3">
-                                <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgAll')}</span>
-                            </div>
-                        )}
                         {d5Mapped.length > 0 ? (
                             <>
                                 {attendanceView === 'bar' ? (
                                     <>
-                                        <ChartWrapper data={d5Mapped} minW={160}>
-                                            <BarChart data={d5Mapped} margin={commonMargin} barCategoryGap="35%">
+                                        <ChartWrapper data={d5Mapped} minW={240}>
+                                            <BarChart data={d5Mapped} margin={commonMargin} barCategoryGap="25%" barGap={10}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
                                                 <XAxis dataKey="displayName" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                                <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                                <Bar dataKey="efficiency" radius={[10, 10, 0, 0]} maxBarSize={52}>
-                                                    {d5Mapped.map((entry, i) => (
-                                                        <Cell key={i} fill={getAttBarColor(entry.name)} opacity={entry.isTarget ? 0.65 : 1} />
-                                                    ))}
-                                                    <LabelList dataKey="efficiency" content={barLabel(0, '#1e293b')} />
+                                                <YAxis domain={CAPPED_Y_DOMAIN} ticks={CAPPED_Y_TICKS} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+                                                <Bar dataKey="total" name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                                    <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
+                                                </Bar>
+                                                <Bar dataKey="present" name={t('charts.presentEff')} fill={PRESENT_COLOR} radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                                    <LabelList dataKey="present" content={barLabel(38, PRESENT_COLOR)} />
                                                 </Bar>
                                             </BarChart>
                                         </ChartWrapper>
-                                        <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
-                                            {d5Mapped.some(item => item.isTarget) && (
-                                                <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                    <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#386641' }} /> {t('charts.minEff')}
-                                                </span>
-                                            )}
-                                            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: '#f59e0b' }} /> {t('charts.totalEff')}
-                                            </span>
-                                            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'blue' }} /> {t('charts.presentEff')}
-                                            </span>
-                                            <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                                <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: 'red' }} /> {t('charts.absentEff')}
-                                            </span>
-                                        </div>
+                                        <FrozenLegend />
                                     </>
                                 ) : (
                                     <div className="w-full mt-4 h-[360px]">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
-                                                    data={d5Mapped.filter(item => !item.isTarget)}
+                                                    data={d5Pie}
                                                     dataKey="efficiency"
                                                     nameKey="displayName"
                                                     cx="50%"
@@ -1050,8 +801,8 @@ const EfficiencyChart = () => {
                                                     }}
                                                     labelLine
                                                 >
-                                                    {d5Mapped.filter(item => !item.isTarget).map((entry, idx) => (
-                                                        <Cell key={`att-${idx}`} fill={getAttBarColor(entry.name)} />
+                                                    {d5Pie.map((entry, idx) => (
+                                                        <Cell key={`att-${idx}`} fill={SKILL_PIE_COLORS[entry.name]} />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip formatter={(v) => `${v}%`} />
@@ -1060,22 +811,30 @@ const EfficiencyChart = () => {
                                         </ResponsiveContainer>
                                     </div>
                                 )}
+                                {unclassifiedCount5 > 0 && (
+                                    <p className="mt-3 text-center text-[12px] font-semibold text-amber-600">
+                                        {t('charts.unclassifiedLevels').replace('{count}', unclassifiedCount5)}
+                                    </p>
+                                )}
                                 {statVis.c5 && (
                                     <div className="mt-5 grid grid-cols-3 gap-3 pt-5 border-t border-slate-100">
-                                        {d5Mapped.filter(item => !item.isTarget).map(item => (
-                                            <div key={item.name}
-                                                className="flex flex-col gap-1 p-3.5 rounded-xl border"
-                                                style={{ backgroundColor: `${getAttBarColor(item.name)}15`, borderColor: `${getAttBarColor(item.name)}30` }}>
+                                        {d5Mapped.map(item => (
+                                            <div key={item.name} className="flex flex-col gap-1 p-3.5 rounded-xl border bg-slate-50 border-slate-100">
+                                                <p className="text-sm font-bold text-slate-700">{item.displayName}</p>
                                                 <div className="flex items-center justify-between">
-                                                    <p className="text-sm font-bold" style={{ color: getAttBarColor(item.name) }}>{item.displayName}</p>
-                                                    <span className="text-lg font-black text-slate-800">{item.efficiency}%</span>
+                                                    <span className="text-[12px] font-bold" style={{ color: TOTAL_COLOR }}>{t('charts.totalEff')}</span>
+                                                    <span className="text-lg font-black text-slate-800">{item.total}%</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[12px] font-bold" style={{ color: PRESENT_COLOR }}>{t('charts.presentEff')}</span>
+                                                    <span className="text-lg font-black text-slate-800">{item.present}%</span>
                                                 </div>
                                                 <p className="text-[12px] text-slate-500">
-                                                    {item.evaluated} {t('charts.evaluatedOf')} {item.count} {t('charts.totalLower')}
+                                                    {item.evaluated} {t('charts.evaluatedOf')} {item.totalCount} {t('charts.totalLower')} · {t('charts.present')}: {item.presentCount}
                                                 </p>
-                                                {item.count > item.evaluated && (
+                                                {item.totalCount > item.evaluated && (
                                                     <p className="text-[11px] font-semibold text-amber-500">
-                                                        {item.count - item.evaluated} {t('charts.notYetEvaluated')}
+                                                        {item.totalCount - item.evaluated} {t('charts.notYetEvaluated')}
                                                     </p>
                                                 )}
                                             </div>
@@ -1088,6 +847,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 2: Department Averages ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-indigo-600">{t('charts.chart2')}</span>}
                         title={t('charts.deptWiseEff')}
                         dateText={getDateText(f1, t)}
@@ -1098,31 +858,10 @@ const EfficiencyChart = () => {
                             deptOpts={allDeptOpts} sectionOpts={[]} lineOpts={[]}
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
-                        <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgDept')}</span>
-                        </div>
                         {d1.length > 0 ? (
                             <>
-                                <ChartWrapper data={d1} minW={300}>
-                                    <BarChart data={d1} margin={commonMargin} barCategoryGap="25%" barGap={10}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
-                                        <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
-                                        </Bar>
-                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
-                                        </Bar>
-                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
-                                        </Bar>
-                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
-                                        </Bar>
-                                    </BarChart>
-                                </ChartWrapper>
-                                <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
+                                {renderSkillGroupedChart(d1Grouped)}
+                                <FrozenLegend />
                                 {statVis.c1 && <SummaryCapsules data={d1} dotColor="#f59e0b" label={t('charts.deptEfficiency')} />}
                             </>
                         ) : <EmptyState msg={t('charts.noDeptData')} />}
@@ -1130,6 +869,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 3: Section Averages ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-emerald-600">{t('charts.chart3')}</span>}
                         title={t('charts.sectionWiseEff')}
                         dateText={getDateText(f2, t)}
@@ -1140,31 +880,10 @@ const EfficiencyChart = () => {
                             deptOpts={allDeptOpts} sectionOpts={s2Opts} lineOpts={[]}
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
-                        <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgSection')}</span>
-                        </div>
                         {d2.length > 0 ? (
                             <>
-                                <ChartWrapper data={d2} minW={300}>
-                                    <BarChart data={d2} margin={commonMargin} barCategoryGap="25%" barGap={10}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
-                                        <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
-                                        </Bar>
-                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
-                                        </Bar>
-                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
-                                        </Bar>
-                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
-                                        </Bar>
-                                    </BarChart>
-                                </ChartWrapper>
-                                <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
+                                {renderSkillGroupedChart(d2Grouped)}
+                                <FrozenLegend />
                                 {statVis.c2 && <SummaryCapsules data={d2} dotColor="#f59e0b" label={t('charts.sectionEfficiency')} />}
                             </>
                         ) : <EmptyState msg={t('charts.noSectionData')} sub={t('charts.selectDeptSections')} />}
@@ -1172,6 +891,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 4: Line Averages ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-amber-600">{t('charts.chart4')}</span>}
                         title={t('charts.lineWiseEff')}
                         dateText={getDateText(f3, t)}
@@ -1182,31 +902,10 @@ const EfficiencyChart = () => {
                             deptOpts={allDeptOpts} sectionOpts={s3Opts} lineOpts={l3Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={false} hideShift={false} />
-                        <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetAvgLine')}</span>
-                        </div>
                         {d3.length > 0 ? (
                             <>
-                                <ChartWrapper data={d3} minW={300}>
-                                    <BarChart data={d3} margin={commonMargin} barCategoryGap="25%" barGap={10}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
-                                        <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
-                                        </Bar>
-                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
-                                        </Bar>
-                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
-                                        </Bar>
-                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
-                                        </Bar>
-                                    </BarChart>
-                                </ChartWrapper>
-                                <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
+                                {renderSkillGroupedChart(d3Grouped)}
+                                <FrozenLegend />
                                 {statVis.c3 && <SummaryCapsules data={d3} dotColor="#f59e0b" label={t('charts.lineEfficiency')} />}
                             </>
                         ) : <EmptyState msg={t('charts.noLineData')} sub={t('charts.selectSectionLines')} />}
@@ -1214,6 +913,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 5: Sub-section Averages ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-amber-600">{t('charts.chart5')}</span>}
                         title={t('charts.subsectionWiseEff')}
                         dateText={getDateText(f4, t)}
@@ -1224,31 +924,10 @@ const EfficiencyChart = () => {
                             deptOpts={allDeptOpts} sectionOpts={s4Opts} lineOpts={l4Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} hideShift={false} />
-                        <div className="flex flex-wrap items-center gap-4 mt-3">
-                            <span className="text-[12px] text-slate-400 italic">{t('charts.minEffTargetShownOnly')}</span>
-                        </div>
                         {d4.length > 0 ? (
                             <>
-                                <ChartWrapper data={d4} minW={300}>
-                                    <BarChart data={d4} margin={commonMargin} barCategoryGap="25%" barGap={10}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
-                                        <XAxis dataKey="name" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
-                                        <YAxis domain={[0, dataMax => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                                        <Bar dataKey="minEffTarget" name={t('charts.minEff')} fill="#386641" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="minEffTarget" content={barLabel(6, '#386641')} />
-                                        </Bar>
-                                        <Bar dataKey="allEfficiency" name={t('charts.totalEff')} fill="#f59e0b" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="allEfficiency" content={barLabel(22, '#1e293b')} />
-                                        </Bar>
-                                        <Bar dataKey="presEfficiency" name={t('charts.presentEff')} fill="blue" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="presEfficiency" content={barLabel(38, 'blue')} />
-                                        </Bar>
-                                        <Bar dataKey="absEfficiency" name={t('charts.absentEff')} fill="red" radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
-                                            <LabelList dataKey="absEfficiency" content={barLabel(54, 'red')} />
-                                        </Bar>
-                                    </BarChart>
-                                </ChartWrapper>
-                                <FrozenLegend minEffVisible={true} allUsersColor="#f59e0b" />
+                                {renderSkillGroupedChart(d4Grouped)}
+                                <FrozenLegend />
                                 {statVis.c4 && <SummaryCapsules data={d4} dotColor="#f59e0b" label={t('charts.subsectionEfficiency')} />}
                             </>
                         ) : <EmptyState msg={t('charts.noSubsectionData')} sub={t('charts.selectLineSubsections')} />}
@@ -1256,6 +935,7 @@ const EfficiencyChart = () => {
 
                     {/* ── CHART 6: Operator-Wise Efficiency ── */}
                     <ChartSection
+                        loading={isFetching}
                         badge={<span className="text-sky-600">{t('charts.chart6')}</span>}
                         title={t('charts.operatorWiseEff')}
                         dateText={getDateText(f6, t)}

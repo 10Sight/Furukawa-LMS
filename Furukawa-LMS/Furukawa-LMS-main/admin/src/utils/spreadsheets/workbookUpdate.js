@@ -78,6 +78,15 @@ export const plainOf = (value) => {
     return isDraft(value) ? original(value) : value;
 };
 
+// Inside an updater, the ids of the cells written to (or removed from) a sheet's
+// cell map so far: an empty set when it is untouched. Null when that isn't known —
+// past CHANGE_TRACK_LIMIT, or for a map the updater put in place of the sheet's own.
+export const changedCellIdsOf = (cells) => {
+    const state = cells?.[CELLS_STATE];
+    if (!state || state.bulk) return null;
+    return state.changed;
+};
+
 const isSheetObject = (sheet) => !!sheet && typeof sheet === "object" && !Array.isArray(sheet);
 
 const isPlainMap = (value) => !!value && typeof value === "object" && !Array.isArray(value);

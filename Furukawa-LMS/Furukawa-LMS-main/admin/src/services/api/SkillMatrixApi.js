@@ -58,9 +58,10 @@ export const skillMatrixApi = createApi({
             providesTags: ["SkillMatrix"],
         }),
         getSkillMatrixEfficiencySummary: builder.query({
-            query: () => ({
+            query: ({ dateFrom, dateTo } = {}) => ({
                 url: "/api/skill-matrix/evaluations/summary",
                 method: "GET",
+                params: { dateFrom, dateTo },
             }),
             providesTags: ["SkillMatrix"],
         }),

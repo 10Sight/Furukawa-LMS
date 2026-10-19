@@ -46,6 +46,7 @@ import { continueTextSeries } from "../../../utils/spreadsheets/fillSeries.js";
 import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, InsertDeleteDialog, UnhideSheetDialog } from "./ExcelDialogs.jsx";
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf, reorderSheets, canOrderSheets, isIndexLikeName } from "../../../utils/spreadsheets/workbookUpdate.js";
+import { GRID_MAX_ROWS, GRID_MAX_COLS, viewExtent, fitSheetsToContent } from "../../../utils/spreadsheets/gridExtent.js";
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
 import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, stampRules, subtractBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
@@ -57,6 +58,7 @@ import { useSheetComments } from "./useSheetComments.js";
 import CellCommentCard from "./CellCommentCard.jsx";
 import TableFilterPopover from "./TableFilterPopover.jsx";
 import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
+import { cellTextHeight, contentRowHeights } from "../../../utils/spreadsheets/rowAutoHeight.js";
 import {
     lineArrowSvg, elbowConnectorSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
     LINE_STROKE_WIDTH, OUTLINE_STROKE_WIDTH, SHAPE_OUTLINE_WEIGHTS
@@ -222,15 +224,15 @@ const TableStyleSwatch = ({ preset }) => (
 );
 
 // Drag-select auto-scroll: how close to the grid's right/bottom edge the
-// pointer must be, how far each tick scrolls, and how much the sheet grows
-// when the drag reaches its end.
+// pointer must be, and how far each tick scrolls.
 const DRAG_SCROLL_EDGE = 20;
 const DRAG_SCROLL_INTERVAL_MS = 50;
 const DRAG_SCROLL_STEP_X = 60;
 const DRAG_SCROLL_STEP_Y = 30;
-const DRAG_GROW_ROWS = 10;
-const DRAG_GROW_COLUMNS = 5;
-const DRAG_GROW_INTERVAL_MS = 300;
+// How far past what has to show the grid is drawn, and the steps it grows and
+// shrinks by (see gridExtent.js).
+const VIEW_ROW_CHUNK = 50;
+const VIEW_COL_CHUNK = 10;
 
 const emptySheet = () => ({ cells: {}, rowCount: DEFAULT_ROW_COUNT, columnCount: DEFAULT_COLUMN_COUNT, conditionalRules: [], merges: [], columnWidths: {}, rowHeights: {}, tables: [], media: [], commentAnchors: {} });
 const EMPTY_ANCHORS = Object.freeze({}); // for sheets saved before comments existed
@@ -389,6 +391,32 @@ const rotationStyleFor = (rotation) => {
     if (rotation === -90) return { writingMode: "vertical-rl" };
     if (typeof rotation === "number" && rotation !== 0) return { transform: `rotate(${-rotation}deg)` };
     return null;
+};
+// The width in px of the widest line of `text` in `cell`'s font, measured on a canvas.
+let measureContext = null;
+const measureTextWidth = (text, cell) => {
+    if (!measureContext) measureContext = document.createElement("canvas").getContext("2d");
+    measureContext.font = `${cell?.italic ? "italic " : ""}${cell?.bold ? "bold " : ""}${cell?.fontSize || 12}px ${cell?.fontFamily ? `"${cell.fontFamily}", ` : ""}ui-sans-serif, system-ui, sans-serif`;
+    return Math.max(0, ...String(text).split("\n").map((line) => measureContext.measureText(line).width));
+};
+// Whether typed text should turn Wrap Text on: it is too wide for its column, so
+// wrapping lets the row grow to show all of it (see rowAutoHeight.js) where it
+// would otherwise be cut off. Numbers and formulas are left alone, and so is a
+// cell whose Wrap Text was turned off on purpose (`wrap: false`).
+const wrapsToFit = (cell, columnWidth) => {
+    const { value } = cell;
+    if (cell.wrap !== undefined || typeof value !== "string" || value.trim() === "" || isFormula(value) || !Number.isNaN(Number(value))) return false;
+    return measureTextWidth(value, cell) > columnWidth - 12 - (cell.indent || 0) * 9;
+};
+// A row with a height of its own that is too short for the wrapped text just typed
+// into it goes back to fitting its contents, so none of that text is cut off.
+// Rows only ever grow this way.
+const growRowToFit = (sheet, row, cell, columnWidth) => {
+    const height = sheet.rowHeights?.[row];
+    if (!height || !cell.wrap || typeof cell.value !== "string" || isFormula(cell.value)) return;
+    if (cellTextHeight(measureTextWidth, cell.value, cell, columnWidth) <= height) return;
+    sheet.rowHeights = { ...sheet.rowHeights };
+    delete sheet.rowHeights[row];
 };
 const cellStyleFor = (cell) => ({
     fontWeight: cell?.bold ? "bold" : "normal",
@@ -1856,6 +1884,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const [scrollLeft, setScrollLeft] = useState(0);
     const [viewportWidth, setViewportWidth] = useState(0);
     const isScrollingRef = useRef(false); // true while the grid is being scrolled, and for a moment after
+    const [scrollIdleTick, setScrollIdleTick] = useState(0); // bumped each time scrolling stops
+    // How far scrolling has taken the grid past the saved sheet (see rowCount below),
+    // for the sheet named: another sheet starts again from its own saved size.
+    const [viewSize, setViewSize] = useState({ sheet: null, rows: 0, cols: 0 });
     const lastScrolledCellRef = useRef(null); // last activeCell we auto-scrolled into view, so a resize-triggered rowOffsets/colOffsets change doesn't re-trigger a scroll jump
 
     // Import/export progress dialog. { title, label, current, total, unit?, onCancel? } | null —
@@ -2175,8 +2207,46 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const activeSheet = sheets[activeSheetName] || emptySheet();
     const cells = activeSheet.cells;
-    const rowCount = activeSheet.rowCount;
-    const columnCount = activeSheet.columnCount;
+    // The sheet's saved size, and the grid as drawn (rowCount/columnCount, what
+    // the rest of this component works in): the saved size, as far as scrolling
+    // has taken it (viewSize), and some way past the cursor, the selection and a
+    // fill being dragged, so moving any of them on never meets an edge. That last
+    // part is worked out here rather than in an effect, so a jump (Ctrl+Down, Go To)
+    // lands on a row that is already drawn. A whole-row/column selection runs to the
+    // GRID_MAX_* end and is cut to the drawn grid (selectionBounds), so its far end
+    // doesn't count.
+    const savedRowCount = activeSheet.rowCount;
+    const savedColumnCount = activeSheet.columnCount;
+    const anchorReach = useMemo(() => {
+        let rows = 0, cols = 0;
+        const take = (id) => {
+            const ref = id && parseCellRef(id);
+            if (!ref) return;
+            if (ref.row < GRID_MAX_ROWS - 1) rows = Math.max(rows, ref.row + 1);
+            if (ref.col < GRID_MAX_COLS - 1) cols = Math.max(cols, ref.col + 1);
+        };
+        take(activeCell);
+        take(editingCell);
+        for (const range of [selection, ...extraRanges]) { take(range.start); take(range.end); }
+        const src = fillSourceRange.current;
+        if (src && fillPreview?.axis === "vertical") rows = Math.max(rows, src.maxRow + fillPreview.extraCount + 1);
+        if (src && fillPreview?.axis === "horizontal") cols = Math.max(cols, src.maxCol + fillPreview.extraCount + 1);
+        return { rows, cols };
+    }, [activeCell, editingCell, selection, extraRanges, fillPreview]);
+    const scrolledSize = viewSize.sheet === activeSheetName ? viewSize : { rows: 0, cols: 0 };
+    const rowCount = Math.max(scrolledSize.rows, viewExtent({ current: 0, saved: savedRowCount, reach: anchorReach.rows, chunk: VIEW_ROW_CHUNK, max: GRID_MAX_ROWS, idle: true }));
+    const columnCount = Math.max(scrolledSize.cols, viewExtent({ current: 0, saved: savedColumnCount, reach: anchorReach.cols, chunk: VIEW_COL_CHUNK, max: GRID_MAX_COLS, idle: true }));
+    // A whole-row or whole-column selection runs to the end of the grid (GRID_MAX_*);
+    // it is cut here to the rows and columns drawn, so it keeps covering them all as
+    // the grid grows, and what acts on the selection only goes as far as they do.
+    const drawnBounds = useCallback((range) => {
+        const b = rangeBounds(range);
+        return b && { ...b, maxRow: Math.min(b.maxRow, rowCount - 1), maxCol: Math.min(b.maxCol, columnCount - 1) };
+    }, [rowCount, columnCount]);
+    const drawnRange = useCallback((range) => {
+        const b = drawnBounds(range);
+        return b ? { start: getCellId(b.minRow, b.minCol), end: getCellId(b.maxRow, b.maxCol) } : range;
+    }, [drawnBounds]);
     const storedConditionalRules = activeSheet.conditionalRules;
     const conditionalRules = useMemo(() => normalizeRules(storedConditionalRules), [storedConditionalRules]);
     const merges = activeSheet.merges || EMPTY_LIST;
@@ -2219,7 +2289,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (!onDataChange) return;
         // `selection` stays the active range for existing consumers; `ranges`
         // lists every range of a Ctrl+click multi-selection (active one last).
-        const snapshot = { sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, ranges: [...extraRanges, selection], activeCell };
+        // The saved size, as that is as far as the sheet holds anything; ranges as
+        // drawn (a whole column runs to the last drawn row, not GRID_MAX_ROWS).
+        const shownSelection = drawnRange(selection);
+        const snapshot = {
+            sheets, activeSheetName, displayGrid, rowCount: savedRowCount, columnCount: savedColumnCount,
+            selection: shownSelection, ranges: [...extraRanges.map(drawnRange), shownSelection], activeCell,
+        };
         if (broadcastNowRef.current) {
             broadcastNowRef.current = false;
             onDataChange(snapshot);
@@ -2227,15 +2303,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         const timer = setTimeout(() => onDataChange(snapshot), DATA_BROADCAST_DEBOUNCE_MS);
         return () => clearTimeout(timer);
-    }, [sheets, activeSheetName, displayGrid, rowCount, columnCount, selection, extraRanges, activeCell, onDataChange]);
+    }, [sheets, activeSheetName, displayGrid, savedRowCount, savedColumnCount, selection, extraRanges, drawnRange, activeCell, onDataChange]);
 
     // The selection is kept as rectangles only — never expanded into a list of
     // cell ids, which for a whole column or Ctrl+A on a large sheet would be
     // hundreds of thousands of strings rebuilt on every drag tick.
     // A range that covers part of a merged cell covers all of it, as in Excel: so
     // that clicking a merged cell selects (and copies, fills, formats) the whole of it.
-    const selectionBounds = useMemo(() => growBoundsToMerges(rangeBounds(selection), merges), [selection, merges]);
-    const extraBounds = useMemo(() => extraRanges.map(rangeBounds).filter(Boolean).map((b) => growBoundsToMerges(b, merges)), [extraRanges, merges]);
+    const selectionBounds = useMemo(() => growBoundsToMerges(drawnBounds(selection), merges), [selection, merges, drawnBounds]);
+    const extraBounds = useMemo(() => extraRanges.map(drawnBounds).filter(Boolean).map((b) => growBoundsToMerges(b, merges)), [extraRanges, merges, drawnBounds]);
     const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
     const hasMultipleRanges = extraRanges.length > 0;
     const isCellSelected = (row, col) => {
@@ -2454,7 +2530,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             recomputePivotSheets(withPivots, buildRawValueGrid);
             return withPivots;
         };
-        const { next, undo: record } = applyWorkbookUpdate(sheetsRef.current, updater, recomputePivots);
+        const { next, undo: record } = applyWorkbookUpdate(sheetsRef.current, (draft) => { updater(draft); fitSheetsToContent(draft); }, recomputePivots);
         if (!record) return; // the updater changed nothing
 
         if (history) {
@@ -2561,10 +2637,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         return resizePreview?.type === "col" && resizePreview.index === colIdx ? resizePreview.size : (columnWidths[colIdx] || DEFAULT_COLUMN_WIDTH);
     }, [resizePreview, columnWidths, hiddenColSet]);
 
+    // Rows without a height of their own, sized to their Wrap Text and large-font
+    // cells (see rowAutoHeight.js): { row: height } where that beats the default.
+    const rowFitCache = useRef(new WeakMap());
+    const contentHeights = useMemo(() => contentRowHeights({
+        cells, display: displayGrid, columnWidths, rowHeights, mergeMap,
+        defaultHeight: DEFAULT_ROW_HEIGHT, defaultColumnWidth: DEFAULT_COLUMN_WIDTH, measure: measureTextWidth, cache: rowFitCache.current,
+    }), [cells, displayGrid, columnWidths, rowHeights, mergeMap]);
+
     const heightForRow = useCallback((rowIdx) => {
         if (hiddenRowSet.has(rowIdx)) return 0;
-        return resizePreview?.type === "row" && resizePreview.index === rowIdx ? resizePreview.size : (rowHeights[rowIdx] || DEFAULT_ROW_HEIGHT);
-    }, [resizePreview, rowHeights, hiddenRowSet]);
+        return resizePreview?.type === "row" && resizePreview.index === rowIdx ? resizePreview.size : (rowHeights[rowIdx] || contentHeights[rowIdx] || DEFAULT_ROW_HEIGHT);
+    }, [resizePreview, rowHeights, contentHeights, hiddenRowSet]);
 
     // Cumulative pixel offsets per column/row (including the fixed header
     // width/height), used to place floating media at its anchor cell and to
@@ -2642,7 +2726,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             isScrollingRef.current = true;
             setHoveredCell(null);
             clearTimeout(scrollEndTimer);
-            scrollEndTimer = setTimeout(() => { isScrollingRef.current = false; }, 150);
+            scrollEndTimer = setTimeout(() => { isScrollingRef.current = false; setScrollIdleTick((t) => t + 1); }, 150);
         };
         el.addEventListener("scroll", onScroll, { passive: true });
         setScrollTop(snapScroll(el.scrollTop, SCROLL_STEP_Y));
@@ -2726,6 +2810,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         }
         return { startCol, endCol };
     }, [scrollLeft, viewportWidth, colOffsets, columnCount, merges, visibleRowRange]);
+
+    // Scrolling near the end of the drawn grid draws more of it, before the end is
+    // reached; once scrolling stops, what was drawn past the screen (and the saved
+    // sheet, cursor and selection) is let go again.
+    useEffect(() => {
+        const idle = !isScrollingRef.current;
+        setViewSize((prev) => {
+            const current = prev.sheet === activeSheetName ? prev : { rows: 0, cols: 0 };
+            const rows = viewExtent({ current: current.rows, saved: savedRowCount, reach: visibleRowRange.endRow + 1, chunk: VIEW_ROW_CHUNK, max: GRID_MAX_ROWS, idle });
+            const cols = viewExtent({ current: current.cols, saved: savedColumnCount, reach: visibleColRange.endCol + 1, chunk: VIEW_COL_CHUNK, max: GRID_MAX_COLS, idle });
+            return prev.sheet === activeSheetName && rows === prev.rows && cols === prev.cols ? prev : { sheet: activeSheetName, rows, cols };
+        });
+    }, [visibleRowRange.endRow, visibleColRange.endCol, activeSheetName, savedRowCount, savedColumnCount, scrollIdleTick]);
     // The column indexes to render (hidden ones left out), and the widths of the
     // spacers standing in for the columns before and after them.
     // Keyed on the two ends rather than the range object, which is rebuilt on every
@@ -2806,10 +2903,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const startRowResize = useCallback((e, rowIdx) => {
         e.preventDefault();
         e.stopPropagation();
-        const startSize = rowHeights[rowIdx] || DEFAULT_ROW_HEIGHT;
+        const startSize = rowHeights[rowIdx] || contentHeights[rowIdx] || DEFAULT_ROW_HEIGHT;
         resizeRef.current = { type: "row", index: rowIdx, startPos: e.clientY, startSize, currentSize: startSize };
         setResizePreview({ type: "row", index: rowIdx, size: startSize });
-    }, [rowHeights]);
+    }, [rowHeights, contentHeights]);
 
     useEffect(() => {
         const onMouseMove = (e) => {
@@ -3107,20 +3204,26 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const runs = editRich && typeof value === "string" && value !== "" && !isFormula(value)
             ? shiftRunsForEdit(editRich.runs, editRich.text, value)
             : undefined;
-        mutateActiveCells((next) => {
+        mutateActiveCells((next, sheet) => {
             const { rich: _stale, ...kept } = next[cellId] || {};
             const merged = { ...kept, value };
             if (runs) merged.rich = { t: value, runs };
             // An Alt+Enter line break turns on Wrap Text, as in Excel, so the
             // second line is actually visible.
             if (typeof value === "string" && value.includes("\n") && !isFormula(value)) merged.wrap = true;
+            const ref = parseCellRef(cellId);
+            const width = columnWidths[ref?.col] || DEFAULT_COLUMN_WIDTH;
+            if (ref && !mergeMap[cellId]) {
+                if (wrapsToFit(merged, width)) merged.wrap = true;
+                growRowToFit(sheet, ref.row, merged, width);
+            }
             if (isBlankCell(merged)) delete next[cellId];
             else next[cellId] = merged;
         });
         setEditingCell(null);
         setEditValue("");
         formulaInsertRange.current = null;
-    }, [editingCell, editValue, mutateActiveCells]);
+    }, [editingCell, editValue, mutateActiveCells, mergeMap, columnWidths]);
 
     // The editor losing focus ends the edit. When what took the focus is a control
     // outside the grid (a ribbon button, the font size box) and some of the text was
@@ -3495,7 +3598,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 const shapes = shapesForPaste(layout, {
                     row: targetRow, col: targetCol, minSize: MEDIA_MIN_SIZE,
                     widthOf: (col) => sheet.columnWidths?.[col] || DEFAULT_COLUMN_WIDTH,
-                    heightOf: (row) => sheet.rowHeights?.[row] || DEFAULT_ROW_HEIGHT,
+                    heightOf: (row) => sheet.rowHeights?.[row] || contentHeights[row] || DEFAULT_ROW_HEIGHT,
                 });
                 if (shapes.length) {
                     if (!sheet.media) sheet.media = [];
@@ -3512,7 +3615,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         setSelection({ start: getCellId(targetRow, targetCol), end: getCellId(targetRow + outHeight - 1, targetCol + outWidth - 1) });
         // Something else has been copied since: a pending cut here is off.
         setClipboard((c) => (c?.type === "cut" ? null : c));
-    }, [selectionBounds, isSheetReadOnly, readOnly, updateSheets, activeSheetName, setSelection]);
+    }, [selectionBounds, isSheetReadOnly, readOnly, updateSheets, activeSheetName, setSelection, contentHeights]);
 
     // The Paste buttons. There is no paste event to read from here, so: what was
     // copied in the grid if anything was, otherwise the system clipboard's text where
@@ -3875,21 +3978,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // Drag-selecting — or dragging the fill handle — to (or past) the grid's
     // edge keeps scrolling that way and extends the selection (or the fill) to
-    // the cell under the pointer, like Excel. At the end of the sheet it
-    // appends rows/columns so the drag can keep going — in batches, so a long
-    // drag leaves a few undo steps rather than hundreds.
+    // the cell under the pointer, like Excel. There is no end to drag into: the
+    // drawn grid keeps going past the selection or the fill (see rowCount), and
+    // nothing is saved until the fill or whatever acts on the selection writes.
     const dragScrollState = useRef(null);
-    dragScrollState.current = {
-        rowOffsets, colOffsets, rowCount, columnCount, zoom,
-        grow: readOnly || isSheetReadOnly ? null : (axis) => updateSheets((next) => {
-            const sheet = next[activeSheetName];
-            if (!sheet) return;
-            if (axis === "row") sheet.rowCount += DRAG_GROW_ROWS;
-            else sheet.columnCount += DRAG_GROW_COLUMNS;
-        }),
-    };
+    dragScrollState.current = { rowOffsets, colOffsets, rowCount, columnCount, zoom };
     useEffect(() => {
-        let pointer = null, timer = null, lastGrowAt = 0;
+        let pointer = null, timer = null;
         const stop = () => { clearInterval(timer); timer = null; };
         const tick = () => {
             const el = gridContainerRef.current;
@@ -3904,13 +3999,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
             el.scrollLeft += dx * DRAG_SCROLL_STEP_X;
             el.scrollTop += dy * DRAG_SCROLL_STEP_Y;
-            const atRightEnd = dx > 0 && el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
-            const atBottomEnd = dy > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-            if (state.grow && (atRightEnd || atBottomEnd) && Date.now() - lastGrowAt > DRAG_GROW_INTERVAL_MS) {
-                lastGrowAt = Date.now();
-                if (atBottomEnd) state.grow("row");
-                if (atRightEnd) state.grow("col");
-            }
 
             // The cell under the pointer, held just inside the visible grid.
             const x = clamp(pointer.x, headerRight + 1, rect.right - DRAG_SCROLL_EDGE);
@@ -3953,37 +4041,37 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         if (editingCell) commitEdit();
         const anchorRow = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : rowIdx;
         const start = getCellId(Math.min(anchorRow, rowIdx), 0);
-        const end = getCellId(Math.max(anchorRow, rowIdx), columnCount - 1);
+        const end = getCellId(Math.max(anchorRow, rowIdx), GRID_MAX_COLS - 1);
         setSelectedMediaId(null);
         setActiveCell(start);
         if (additive) setExtraRanges((prev) => [...prev, selection]);
         if (extend || additive) setSelectionRaw({ start, end });
         else setSelection({ start, end });
         gridContainerRef.current?.focus();
-    }, [columnCount, editingCell, commitEdit, selection, setSelection]);
+    }, [editingCell, commitEdit, selection, setSelection]);
 
     const selectColumn = useCallback((colIdx, extend = false, additive = false) => {
         if (editingCell) commitEdit();
         const anchorCol = extend && headerSelectAnchor.current !== null ? headerSelectAnchor.current : colIdx;
         const start = getCellId(0, Math.min(anchorCol, colIdx));
-        const end = getCellId(rowCount - 1, Math.max(anchorCol, colIdx));
+        const end = getCellId(GRID_MAX_ROWS - 1, Math.max(anchorCol, colIdx));
         setSelectedMediaId(null);
         setActiveCell(start);
         if (additive) setExtraRanges((prev) => [...prev, selection]);
         if (extend || additive) setSelectionRaw({ start, end });
         else setSelection({ start, end });
         gridContainerRef.current?.focus();
-    }, [rowCount, editingCell, commitEdit, selection, setSelection]);
+    }, [editingCell, commitEdit, selection, setSelection]);
 
     const selectAllCells = useCallback(() => {
         if (editingCell) commitEdit();
         const start = getCellId(0, 0);
-        const end = getCellId(rowCount - 1, columnCount - 1);
+        const end = getCellId(GRID_MAX_ROWS - 1, GRID_MAX_COLS - 1);
         setSelectedMediaId(null);
         setActiveCell(start);
         setSelection({ start, end });
         gridContainerRef.current?.focus();
-    }, [rowCount, columnCount, editingCell, commitEdit]);
+    }, [editingCell, commitEdit]);
 
     // Right-click on a header opens the grid menu for that row/column. On one
     // that is already part of a whole-row/column selection it leaves the
@@ -4463,8 +4551,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     const shiftBands = (axis, at, count) => {
         if (!guardEditable()) return;
-        const newRowCount = axis === "row" ? Math.max(1, rowCount + count) : rowCount;
-        const newColumnCount = axis === "col" ? Math.max(1, columnCount + count) : columnCount;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             const oldCells = plainOf(sheet.cells);
@@ -4555,7 +4641,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const clampId = (id) => {
             const ref = parseCellRef(id);
             if (!ref) return "A1";
-            return getCellId(Math.min(ref.row, newRowCount - 1), Math.min(ref.col, newColumnCount - 1));
+            return getCellId(Math.min(ref.row, GRID_MAX_ROWS - 1), Math.min(ref.col, GRID_MAX_COLS - 1));
         };
         setActiveCell((prev) => clampId(prev));
         setSelection((prev) => ({ start: clampId(prev.start), end: clampId(prev.end) }));
@@ -4987,7 +5073,14 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 for (const [colIdxStr, width] of Object.entries(sheet.columnWidths || {})) {
                     worksheet.getColumn(Number(colIdxStr) + 1).width = pxToExcelWidth(width);
                 }
-                for (const [rowIdxStr, height] of Object.entries(sheet.rowHeights || {})) {
+                // Rows sized to their contents go out at that size too, as Excel
+                // doesn't re-fit them when it opens the file.
+                const sheetContentHeights = sheetName === activeSheetName ? contentHeights : contentRowHeights({
+                    cells: sheetCells, display: evaluateSheet(sheetCells).display, columnWidths: sheet.columnWidths, rowHeights: sheet.rowHeights,
+                    mergeMap: Object.fromEntries((sheet.merges || []).flatMap((m) => expandRange(m.start, m.end).map((id) => [id, m]))),
+                    defaultHeight: DEFAULT_ROW_HEIGHT, defaultColumnWidth: DEFAULT_COLUMN_WIDTH, measure: measureTextWidth,
+                });
+                for (const [rowIdxStr, height] of Object.entries({ ...sheetContentHeights, ...sheet.rowHeights })) {
                     worksheet.getRow(Number(rowIdxStr) + 1).height = pxToExcelHeight(height);
                 }
                 for (const m of sheet.merges || []) {
@@ -5018,7 +5111,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 // this sheet's own sizes, since a drag can leave an item's offset
                 // spanning past its anchor cell and Excel expects it within.
                 const colWidthPx = (i) => sheet.columnWidths?.[i] || DEFAULT_COLUMN_WIDTH;
-                const rowHeightPx = (i) => sheet.rowHeights?.[i] || DEFAULT_ROW_HEIGHT;
+                const rowHeightPx = (i) => sheet.rowHeights?.[i] || sheetContentHeights[i] || DEFAULT_ROW_HEIGHT;
                 for (const item of sheet.media || []) {
                     const prepared = await prepareImageForExport(item);
                     if (!prepared) { skippedMedia++; continue; }
@@ -5406,6 +5499,19 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         };
     }, [scrollPageFirst, isFullScreen, gridAreaEl]);
 
+    // The sheet tabs stay pinned to the bottom of a scrolling page (position: sticky),
+    // which keeps clear of that page's own bottom padding and so leaves a strip of
+    // the grid showing under them; this moves them down over that strip.
+    const [tabBarBottom, setTabBarBottom] = useState(0);
+    useEffect(() => {
+        if (isFullScreen || !rootRef.current) return;
+        const page = scrollParentOf(rootRef.current);
+        setTabBarBottom(-(parseFloat(getComputedStyle(page).paddingBottom) || 0));
+    }, [isFullScreen, isLoading]);
+    // How far the pinned tabs are kept below the top of the grid: its column-header
+    // row (A, B, C...) as drawn at the current zoom, plus its top border.
+    const tabBarClearance = Math.ceil(HEADER_ROW_HEIGHT * zoom) + 1;
+
     // -2 for the grid wrapper's top/bottom border.
     const gridMaxHeight = isFullScreen && gridAreaHeight > 0
         ? Math.max(120, gridAreaHeight - 2)
@@ -5421,7 +5527,9 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const v = displayGrid[getCellId(row, col)];
         return v !== undefined && v !== "";
     };
-    const inSheet = (row, col) => row >= 0 && row < rowCount && col >= 0 && col < columnCount;
+    // The cursor can go anywhere in the grid, not just as far as it is drawn: the
+    // drawn grid follows it (see rowCount). Ctrl+Arrow past the data goes to the end.
+    const inSheet = (row, col) => row >= 0 && row < Math.max(rowCount, GRID_MAX_ROWS) && col >= 0 && col < Math.max(columnCount, GRID_MAX_COLS);
     const isBandVisible = (row, col) => !hiddenRowSet.has(row) && !hiddenColSet.has(col);
 
     // Next visible cell in a direction (hidden rows/columns are skipped).
@@ -5576,13 +5684,17 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const value = editValue;
         const { minRow, maxRow, minCol, maxCol } = selectionBounds;
         editSessionRef.current = null;
-        mutateActiveCells((next) => {
+        mutateActiveCells((next, sheet) => {
             for (let r = minRow; r <= maxRow; r++) {
                 for (let c = minCol; c <= maxCol; c++) {
                     if (hiddenRowSet.has(r) || hiddenColSet.has(c)) continue;
                     const id = getCellId(r, c);
                     const v = isFormula(value) ? adjustFormula(value, r - origin.row, c - origin.col) : value;
                     const merged = { ...(next[id] || {}), value: v };
+                    if (!mergeMap[id]) {
+                        if (wrapsToFit(merged, columnWidths[c] || DEFAULT_COLUMN_WIDTH)) merged.wrap = true;
+                        growRowToFit(sheet, r, merged, columnWidths[c] || DEFAULT_COLUMN_WIDTH);
+                    }
                     if (isBlankCell(merged)) delete next[id]; else next[id] = merged;
                 }
             }
@@ -5690,14 +5802,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
 
     // --- AutoFit ---
 
-    const measureCanvasRef = useRef(null);
-    const measureTextWidth = (text, cell) => {
-        if (!measureCanvasRef.current) measureCanvasRef.current = document.createElement("canvas").getContext("2d");
-        const ctx = measureCanvasRef.current;
-        ctx.font = `${cell?.italic ? "italic " : ""}${cell?.bold ? "bold " : ""}${cell?.fontSize || 12}px ${cell?.fontFamily ? `"${cell.fontFamily}", ` : ""}ui-sans-serif, system-ui, sans-serif`;
-        return Math.max(0, ...String(text).split("\n").map((line) => ctx.measureText(line).width));
-    };
-
     const autoFitColumnRange = (minCol, maxCol) => {
         if (readOnly) return;
         const widest = {};
@@ -5734,31 +5838,30 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         else autoFitColumnRange(colIdx, colIdx);
     };
 
-    const autoFitRows = () => {
-        if (readOnly || !selectionBounds) return;
-        const { minRow, maxRow } = selectionBounds;
-        const tallest = {};
-        forEachFilledCell((id, row, col) => {
-            if (row < minRow || row > maxRow || mergeMap[id]) return;
-            const text = displayGrid[id];
-            if (text === "") return;
-            const cell = cells[id];
-            const fontSize = cell?.fontSize || 12;
-            let lines = 1;
-            if (cell?.wrap) {
-                const available = Math.max(20, (columnWidths[col] || DEFAULT_COLUMN_WIDTH) - 12);
-                lines = String(text).split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(measureTextWidth(line, cell) / available)), 0);
-            }
-            tallest[row] = Math.max(tallest[row] || 0, Math.ceil(lines * fontSize * 1.35 + 10));
-        });
+    // AutoFit Row Height drops the rows' own heights, so they go back to being
+    // sized to what they hold (see contentHeights) and keep following it.
+    const autoFitRowRange = (minRow, maxRow) => {
+        if (readOnly) return;
+        if (!Object.keys(rowHeights).some((r) => Number(r) >= minRow && Number(r) <= maxRow)) return;
         updateSheets((next) => {
             const sheet = next[activeSheetName];
             sheet.rowHeights = { ...(sheet.rowHeights || {}) };
-            for (let r = minRow; r <= maxRow; r++) {
-                if (!tallest[r] || tallest[r] <= DEFAULT_ROW_HEIGHT) delete sheet.rowHeights[r];
-                else sheet.rowHeights[r] = Math.max(MIN_ROW_HEIGHT, tallest[r]);
-            }
+            for (const r of Object.keys(sheet.rowHeights)) if (Number(r) >= minRow && Number(r) <= maxRow) delete sheet.rowHeights[r];
         });
+    };
+
+    const autoFitRows = () => {
+        if (!selectionBounds) return;
+        autoFitRowRange(selectionBounds.minRow, selectionBounds.maxRow);
+    };
+
+    // Double-clicking a row's bottom border fits it to its contents; when that
+    // row is part of a whole-row selection, every selected row is fitted.
+    const handleRowBorderDoubleClick = (rowIdx) => {
+        const b = selectionBounds;
+        const inRowSelection = b && b.minCol === 0 && b.maxCol === columnCount - 1 && rowIdx >= b.minRow && rowIdx <= b.maxRow;
+        if (inRowSelection) autoFitRowRange(b.minRow, b.maxRow);
+        else autoFitRowRange(rowIdx, rowIdx);
     };
 
     // --- View: Freeze Panes ---
@@ -6014,15 +6117,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const s = parseCellRef(a || ""), e = parseCellRef(b || "");
         if (!s || !e) return "Enter a cell like B12 or a range like A1:D20.";
         const maxRow = Math.max(s.row, e.row), maxCol = Math.max(s.col, e.col);
-        if (maxRow >= rowCount || maxCol >= columnCount) {
-            if (readOnly || isSheetReadOnly) return `That's outside this sheet (last cell ${indexToCol(columnCount - 1)}${rowCount}).`;
-            // Excel's grid is effectively unbounded — grow the sheet to reach it.
-            updateSheets((next) => {
-                const sheet = next[activeSheetName];
-                sheet.rowCount = Math.max(sheet.rowCount, maxRow + 1);
-                sheet.columnCount = Math.max(sheet.columnCount, maxCol + 1);
-            });
-        }
+        // The drawn grid grows to take in the selection (see rowCount); only the
+        // grid's own end is a limit.
+        const lastRow = Math.max(rowCount, GRID_MAX_ROWS), lastCol = Math.max(columnCount, GRID_MAX_COLS);
+        if (maxRow >= lastRow || maxCol >= lastCol) return `That's outside the sheet (last cell ${indexToCol(lastCol - 1)}${lastRow}).`;
         const bounds = { minRow: Math.min(s.row, e.row), maxRow, minCol: Math.min(s.col, e.col), maxCol };
         selectBounds(bounds);
         requestAnimationFrame(() => scrollCellIntoView(getCellId(bounds.minRow, bounds.minCol)));
@@ -6286,7 +6384,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             return;
         }
 
-        const cursor = shift ? (parseCellRef(selection.end) || ref) : ref;
+        // Extending a whole-row/column selection keeps it whole along the way it
+        // isn't moving; along the way it is, it moves from the last drawn row/column.
+        const selectionEnd = parseCellRef(selection.end);
+        const cursor = shift && selectionEnd
+            ? { row: key === "ArrowUp" || key === "ArrowDown" ? Math.min(selectionEnd.row, rowCount - 1) : selectionEnd.row,
+                col: key === "ArrowLeft" || key === "ArrowRight" ? Math.min(selectionEnd.col, columnCount - 1) : selectionEnd.col }
+            : ref;
         const arrow = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[key];
         if (arrow && !alt) {
             handled();
@@ -6459,7 +6563,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     const rowHandlers = useRef(null);
     rowHandlers.current = {
         handleRowHeaderMouseDown, handleRowHeaderMouseEnter, startRowResize, handleCellMouseDown, handleCellMouseEnter,
-        startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit, handleEditorBlur,
+        startEditing, openColumnFilter, handleFillHandleMouseDown, commitEdit, handleEditorBlur, handleRowBorderDoubleClick,
     };
     // A cell in a frozen row and/or column sticks to the top/left, just past the
     // headers (the offsets already count them), on an opaque backdrop so what
@@ -6698,9 +6802,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
                     <div
                         onMouseDown={(e) => rowHandlers.current.startRowResize(e, rowIdx)}
+                        onDoubleClick={(e) => { e.stopPropagation(); rowHandlers.current.handleRowBorderDoubleClick(rowIdx); }}
                         onClick={(e) => e.stopPropagation()}
                         className="absolute bottom-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-indigo-400/60 z-10"
-                        title="Drag to resize row"
+                        title="Drag to resize row, double-click to fit it to its contents"
                     />
                 </td>
                 {visibleCols.slice(0, frozenColsRendered).map(renderCell)}
@@ -7197,8 +7302,6 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             <MenuSeparator />
                             <MenuItem icon={IconRowInsertBottom} label="Insert Row Below" onClick={() => insertRowAt(parseCellRef(activeCell).row + 1)} />
                             <MenuItem icon={IconColumnInsertRight} label="Insert Column Right" onClick={() => insertColumnAt(parseCellRef(activeCell).col + 1)} />
-                            <MenuItem icon={IconPlus} label="Add Row at End" onClick={() => updateSheets((next) => { next[activeSheetName].rowCount += 1; })} />
-                            <MenuItem icon={IconPlus} label="Add Column at End" onClick={() => updateSheets((next) => { next[activeSheetName].columnCount += 1; })} />
                             <MenuSeparator />
                             <MenuItem icon={IconTable} label="Insert Sheet" shortcut="Shift+F11" onClick={addSheet} />
                         </RibbonSplit>
@@ -7602,8 +7705,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 document.body
             )}
 
+            {/* The grid and the sheet tabs under it, in a box of their own: the pinned
+                tabs can't rise out of it, so they never cover the ribbon, the formula
+                bar or (with the top inset, which the grid's negative margin takes back)
+                the grid's column headers. Not a box at all in full screen. */}
+            <div className={cn(isFullScreen && "contents")} style={isFullScreen ? undefined : { paddingTop: tabBarClearance }}>
             {/* Grid (+ PivotTable Fields panel, when a pivot sheet is active) */}
-            <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")}>
+            <div ref={setGridAreaEl} className={cn("flex items-start gap-2", isFullScreen && "flex-1 min-h-0")} style={isFullScreen ? undefined : { marginTop: -tabBarClearance }}>
             <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 min-w-0">
                 {/* One menu for the whole grid rather than one per cell: a right-click
                     first selects the cell under it (handleCellMouseDown), and the menu
@@ -7883,8 +7991,13 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             )}
             </div>
 
-            {/* Sheet tabs + zoom controls */}
-            <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none">
+            {/* Sheet tabs + zoom controls. On a page that scrolls, they stay pinned to
+                the bottom of the screen while the sheet is in view, rather than showing
+                only once the page has scrolled down past the grid. */}
+            <div
+                className={cn("flex items-center justify-between gap-2 px-2 py-1.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none", !isFullScreen && "sticky z-30")}
+                style={isFullScreen ? undefined : { bottom: tabBarBottom }}
+            >
             <div
                 className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0"
                 // Out of the tab strip altogether: no tab is the landing place any more.
@@ -8071,6 +8184,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 </button>
             </div>
             </div>
+            </div>
 
             {/* Import/export progress — non-dismissible while active; ExcelJS gives no
                 progress callback for its own parse/write step, so those phases show an
@@ -8122,7 +8236,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             <GoToDialog
                 open={goToOpen}
                 onOpenChange={(open) => { setGoToOpen(open); if (!open) focusGrid(); }}
-                defaultValue={selection.start === selection.end ? activeCell : `${selection.start}:${selection.end}`}
+                defaultValue={selection.start === selection.end ? activeCell : `${drawnRange(selection).start}:${drawnRange(selection).end}`}
                 onGo={goToReference}
             />
             <PasteSpecialDialog open={pasteSpecialOpen} onOpenChange={(open) => { setPasteSpecialOpen(open); if (!open) focusGrid(); }} onApply={applyPasteSpecial} />

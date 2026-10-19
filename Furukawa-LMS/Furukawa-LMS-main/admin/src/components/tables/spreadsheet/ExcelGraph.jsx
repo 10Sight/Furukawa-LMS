@@ -977,18 +977,27 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
         applyConfig({ textStyles: styles });
     };
 
-    const selectionForNewChart = {
-        selection: excelData?.selection, ranges: excelData?.ranges, activeCell: excelData?.activeCell,
-        displayGrid, rowCount, columnCount,
-    };
-    // A new chart starts on what is selected in the grid (see newChartRange), unless
-    // the caller names its own range, as PivotChart does. `patch` may be a function
-    // of the chart so far, for settings that depend on which series it ends up with.
+    // What a chart inserted now would plot (see newChartRange); null when the
+    // selection holds nothing to chart.
+    const { selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell } = excelData || {};
+    const newChartSource = useMemo(
+        () => newChartRange({ selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell, displayGrid, rowCount, columnCount }),
+        [gridSelection, gridRanges, gridActiveCell, displayGrid, rowCount, columnCount]
+    );
+    // A new chart starts on what is selected in the grid, unless the caller names
+    // its own range, as PivotChart does. With nothing selected to chart, none is
+    // inserted: a chart of some other data would only mislead. `patch` may be a
+    // function of the chart so far, for settings that depend on which series it
+    // ends up with.
     const addChart = (patch = {}) => {
         const ownRange = typeof patch !== "function" && (patch.xAxisCol || patch.rangeString);
+        if (!ownRange && !newChartSource) {
+            toast.info("Select the data you want to chart in the sheet first.");
+            return;
+        }
         const base = {
             ...buildDefaultChart(columnCount, rowCount, nextChartId(), `Chart ${charts.length + 1}`),
-            ...(ownRange ? null : newChartRange(selectionForNewChart)),
+            ...(ownRange ? null : newChartSource),
         };
         const newChart = { ...base, ...(typeof patch === "function" ? patch(base) : patch) };
         setActiveChartId(newChart.id);
@@ -1040,20 +1049,19 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
     // insert: its previews, recommendations and series table all describe that
     // one. Only worked out while the dialog is open.
     const insertDialogOpen = !!insertDialog;
-    const { selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell } = excelData || {};
     const insertBase = useMemo(() => (insertDialogOpen && !config ? {
         ...buildDefaultChart(columnCount, rowCount),
-        ...newChartRange({ selection: gridSelection, ranges: gridRanges, activeCell: gridActiveCell, displayGrid, rowCount, columnCount }),
-    } : null), [insertDialogOpen, config, gridSelection, gridRanges, gridActiveCell, displayGrid, rowCount, columnCount]);
+        ...newChartSource,
+    } : null), [insertDialogOpen, config, newChartSource, columnCount, rowCount]);
     const dialogChart = config || insertBase;
-    // The selection as the zero state names it: a block or a list of ranges. A lone
-    // cell, row or column isn't named, since the chart then takes the data around
-    // the active cell instead (see newChartRange).
+    // The selection as the zero state names it: a list of ranges, or a block, row or
+    // column. A lone cell isn't named, since the chart then takes the data around it
+    // instead (see newChartRange).
     const newChartSourceLabel = (() => {
         if (Array.isArray(gridRanges) && gridRanges.length > 1) return formatRangeString(gridRanges);
         const start = gridSelection && parseCellRef(gridSelection.start);
         const end = gridSelection && parseCellRef(gridSelection.end);
-        return start && end && start.row !== end.row && start.col !== end.col ? `${gridSelection.start}:${gridSelection.end}` : null;
+        return start && end && (start.row !== end.row || start.col !== end.col) ? `${gridSelection.start}:${gridSelection.end}` : null;
     })();
     const dialogPrepared = useMemo(
         () => (insertBase ? prepareChartData(activeSheet, displayGrid, insertBase) : prepared),
@@ -2486,7 +2494,9 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                                 <IconPlus className="w-3.5 h-3.5" /> Create chart
                             </Button>
                             <span className="text-xs text-slate-400">
-                                {newChartSourceLabel
+                                {!newChartSource
+                                    ? <>Select the data to chart in the sheet below first</>
+                                    : newChartSourceLabel
                                     ? <>from <span className="font-medium text-slate-600">{newChartSourceLabel}</span>, or pick a chart type above</>
                                     : <>from the data around {gridActiveCell ? <span className="font-medium text-slate-600">{gridActiveCell}</span> : "the selected cell"}, or pick a chart type above</>}
                             </span>

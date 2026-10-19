@@ -11,7 +11,6 @@ import DailyJoiningHandoverCohortChart from "@/components/common/charts/DailyJoi
 import DojoTemporaryMetricsChart from "@/components/common/charts/DojoTemporaryMetricsChart.jsx";
 import LeftUsersLeavingReasonChart from "@/components/common/charts/LeftUsersLeavingReasonChart.jsx";
 import TestPaperPassChart from "@/components/common/charts/TestPaperPassChart.jsx";
-import EfficiencyChart from "@/components/common/charts/EfficiencyChart.jsx";
 import DojoHandoverComparisonChart from "@/components/common/charts/DojoHandoverComparisonChart.jsx";
 import SixteenDayMonitoringComparisonChart from "@/components/common/charts/SixteenDayMonitoringComparisonChart.jsx";
 import ThreeDayMonitoringComparisonChart from "@/components/common/charts/ThreeDayMonitoringComparisonChart.jsx";
@@ -123,9 +122,6 @@ const Home = () => {
         </LazyContainer>
         <LazyContainer minHeight={isTablet ? 580 : isMobile ? 560 : 640}>
           <DepartmentQuizChart departments={departments} departmentsLoading={departmentsLoading} />
-        </LazyContainer>
-        <LazyContainer minHeight={600}>
-          <EfficiencyChart />
         </LazyContainer>
       </div>
     </div>

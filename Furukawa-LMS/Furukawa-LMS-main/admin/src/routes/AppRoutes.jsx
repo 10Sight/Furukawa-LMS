@@ -11,6 +11,7 @@ const InstructorLayout = lazy(() => import("../components/layout/InstructorLayou
 const SuperAdminLayout = lazy(() => import("../components/layout/SuperAdminLayout.jsx").then(m => ({ default: m.SuperAdminLayout })));
 const StudentLayout = lazy(() => import("../components/layout/StudentLayout.jsx").then(m => ({ default: m.StudentLayout })));
 const Home = lazy(() => import("../pages/dashboard/admin/Home.jsx"));
+const ManpowerEfficiency = lazy(() => import("../pages/dashboard/admin/ManpowerEfficiency.jsx"));
 const Login = lazy(() => import("../pages/login/Login.jsx"));
 const LandingPage = lazy(() => import("../pages/home/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("../components/layout/DashboardLayout.jsx"));
@@ -252,6 +253,7 @@ const AppRoutes = () => {
             }
           >
             <Route index element={<Home />} />
+            <Route path="manpower-efficiency" element={<ManpowerEfficiency />} />
             <Route path="trainers" element={<Instructor pageName="Instructor" />} />
             <Route path="trainers/:id" element={<InstructorDetail />} />
             <Route path="courses" element={<Course pageName="Courses" />} />

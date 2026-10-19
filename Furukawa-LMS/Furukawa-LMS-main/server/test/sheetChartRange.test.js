@@ -53,11 +53,9 @@ test("a selected block is charted as selected: first column the categories, the 
     assert.deepEqual(pick({ start: "B4", end: "D7" }), { xAxisCol: "B", valueCols: ["C", "D"], rowStart: 4, rowEnd: 7, hasHeaderRow: false });
 });
 
-test("one cell, row or column selected charts the whole block of data around the active cell", () => {
+test("one cell selected charts the whole block of data around the active cell", () => {
     const table = { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true };
     assert.deepEqual(pick({ start: "D5", end: "D5" }), table);
-    assert.deepEqual(pick({ start: "C3", end: "C7" }), table, "one column");
-    assert.deepEqual(pick({ start: "B5", end: "E5" }), table, "one row");
     // From an empty cell just under or beside the table: the table, without that cell's empty row or column.
     assert.deepEqual(pick({ start: "C8", end: "C8" }), table);
     assert.deepEqual(pick({ start: "A5", end: "A5" }), table);
@@ -65,7 +63,30 @@ test("one cell, row or column selected charts the whole block of data around the
     assert.deepEqual(pick({ start: "A1", end: "A1" }, { activeCell: "I4" }), { xAxisCol: "H", valueCols: ["I"], rowStart: 3, rowEnd: 5, hasHeaderRow: true });
 });
 
-test("nothing to chart leaves the defaults in place", () => {
+test("a selected column charts just that column", () => {
+    assert.deepEqual(pick({ start: "C3", end: "C7" }), { xAxisCol: "C", valueCols: ["C"], rowStart: 3, rowEnd: 7, hasHeaderRow: true });
+    assert.deepEqual(pick({ start: "D4", end: "D7" }), { xAxisCol: "D", valueCols: ["D"], rowStart: 4, rowEnd: 7, hasHeaderRow: false });
+});
+
+test("a selected row charts that row as one series", () => {
+    // A text label first: it names the series, and the numbers after it are the points.
+    assert.deepEqual(pick({ start: "B5", end: "E5" }), { rangeString: "B5:E5", plotBy: "rows", hasHeaderRow: true, valueCols: ["5"] });
+    // All numbers: every cell is a point.
+    assert.deepEqual(pick({ start: "C5", end: "E5" }), { rangeString: "C5:E5", plotBy: "rows", hasHeaderRow: false, valueCols: ["5"] });
+});
+
+test("whole rows, columns or the whole sheet stop where the data does", () => {
+    assert.deepEqual(pick({ start: "D1", end: "D30" }), { xAxisCol: "D", valueCols: ["D"], rowStart: 3, rowEnd: 7, hasHeaderRow: true }, "column D");
+    assert.deepEqual(pick({ start: "B1", end: "E30" }), { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true }, "columns B:E");
+    assert.deepEqual(pick({ start: "A6", end: "O6" }), { rangeString: "B6:E6", plotBy: "rows", hasHeaderRow: true, valueCols: ["6"] }, "row 6");
+    // The whole sheet takes in both tables and the gap between them.
+    assert.deepEqual(pick({ start: "A1", end: "O30" }), { xAxisCol: "B", valueCols: ["C", "D", "E", "F", "G", "H", "I"], rowStart: 3, rowEnd: 7, hasHeaderRow: false });
+});
+
+test("nothing to chart gives null", () => {
+    assert.equal(pick({ start: "K10", end: "M20" }), null, "an empty block");
+    assert.equal(pick({ start: "B10", end: "B20" }), null, "an empty part of a column");
+    assert.equal(pick({ start: "B3", end: "B30" }, { displayGrid: { B3: "alone" } }), null, "a column with one filled cell");
     assert.equal(pick({ start: "M20", end: "M20" }), null, "an empty cell on its own");
     assert.equal(newChartRange({ ...sheet, displayGrid: {}, selection: { start: "A1", end: "A1" }, activeCell: "A1" }), null, "an empty sheet");
     assert.equal(newChartRange({ ...sheet, displayGrid: { C3: "alone" }, selection: { start: "C3", end: "C3" }, activeCell: "C3" }), null, "a single filled cell");

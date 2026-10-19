@@ -47,10 +47,20 @@ export const dashboardApi = createApi({
             }),
             keepUnusedDataFor: 0,
         }),
+
+        getAssemblyDashboardStats: builder.query({
+            query: ({ date, shift } = {}) => ({
+                url: "/api/dashboard/assembly-stats",
+                method: "GET",
+                params: { date, shift },
+            }),
+            keepUnusedDataFor: 60,
+        }),
     }),
 });
 
 export const {
     useGetDashboardStatsQuery,
     useGetDashboardAttendanceQuery,
+    useGetAssemblyDashboardStatsQuery,
 } = dashboardApi;

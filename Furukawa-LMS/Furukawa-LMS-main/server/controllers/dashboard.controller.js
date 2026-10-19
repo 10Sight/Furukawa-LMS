@@ -343,6 +343,25 @@ const getFirstGraphTotalManpowerEligibilitySql = (alias = "u") => `
 `;
 
 
+// Shift matching shared by every dashboard shift filter.
+// "A" accepts A / SHIFTA / ASHIFT once spaces, hyphens and underscores are removed;
+// "G" also accepts the General-shift spellings.
+const compactShiftValue = (value) => String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s\-_]/g, "");
+
+const getAcceptedShiftCompacts = (shiftValue) => {
+    const selectedCompact = compactShiftValue(shiftValue);
+    return selectedCompact === "G"
+        ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
+        : Array.from(new Set([
+            selectedCompact,
+            `SHIFT${selectedCompact}`,
+            `${selectedCompact}SHIFT`,
+        ]));
+};
+
 // Attendance employee identity validation.
 // Keep the existing attendance_logs.userId -> users.id join untouched,
 // and additionally require attendance payCode to match users.empId for PRESENT attendance counts.
@@ -693,20 +712,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
         const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
-        const selectedCompact = String(selectedShiftValue)
-            .trim()
-            .toUpperCase()
-            .replace(/[\s\-_]/g, "");
 
         // Same accepted values as the previous OR-chain, but normalize the selected
         // shift once in Node and evaluate the DB column expression once per row.
-        const acceptedShiftCompacts = selectedCompact === "G"
-            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
-            : Array.from(new Set([
-                selectedCompact,
-                `SHIFT${selectedCompact}`,
-                `${selectedCompact}SHIFT`,
-            ]));
+        const acceptedShiftCompacts = getAcceptedShiftCompacts(selectedShiftValue);
 
         sqlText += `
             AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
@@ -725,18 +734,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
         const shiftColumn = `UPPER(LTRIM(RTRIM(CAST(${alias}.shift AS NVARCHAR(100)))))`;
         const shiftColumnCompact = `REPLACE(REPLACE(REPLACE(${shiftColumn}, ' ', ''), '-', ''), '_', '')`;
-        const selectedCompact = String(selectedShiftValue)
-            .trim()
-            .toUpperCase()
-            .replace(/[\s\-_]/g, "");
-
-        const acceptedShiftCompacts = selectedCompact === "G"
-            ? ["G", "GEN", "GENERAL", "GENERALSHIFT", "SHIFTG", "GSHIFT"]
-            : Array.from(new Set([
-                selectedCompact,
-                `SHIFT${selectedCompact}`,
-                `${selectedCompact}SHIFT`,
-            ]));
+        const acceptedShiftCompacts = getAcceptedShiftCompacts(selectedShiftValue);
 
         sqlText += `
             AND ${shiftColumnCompact} IN (${acceptedShiftCompacts.map(() => "?").join(",")})
@@ -5221,5 +5219,370 @@ export const getDashboardLines = asyncHandler(async (req, res) => {
 
     return res.status(200).json(
         new ApiResponse(200, { lines }, "Lines fetched successfully")
+    );
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Assembly Dashboard (MPS Portal → /dashboard/assembly)
+|--------------------------------------------------------------------------
+| Department → section → line headcount and attendance for one date.
+|
+| Counting rules mirror getDashboardStats so the numbers reconcile with the
+| main dashboard filtered to the same department:
+| - Total Users: Total Manpower population (getTotalManpowerBaseEligibilitySql)
+|   that is active on the date per statusHistory (isUserActiveForManpowerDate).
+|   With a shift selected, a user counts when users.shiftSchedule[date] (or
+|   users.shift when the schedule has no entry) matches, OR when the user's
+|   attendance row for the date is in that shift. Most users have no roster
+|   shift, so the attendance shift is what usually places them in a shift.
+| - Present Users: attendance_logs.status P / PRESENT (HALF DAY is not present),
+|   attendance payCode = users.empId, user is in the Total Manpower population
+|   and active on the date. With a shift selected, attendance_logs.shift must match.
+| - Dashboard holidays carry no attendance, same as the main dashboard.
+| - Section uses the canonical one-section rule of getSectionHierarchyMatchSql:
+|   valid users.sectionId → section of the user's line/sub-section line →
+|   lowest section id whose sections.users JSON lists the user.
+| - Users with no resolvable section / line are reported in "Unassigned"
+|   buckets so line totals always add up to the section and department totals.
+*/
+const ASSEMBLY_DEPARTMENT_NAME = "ASSEMBLY";
+const ASSEMBLY_SHIFT_OPTIONS = ["ALL", "A", "B", "C", "G"];
+
+const toPositiveInt = (value) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const getAttendancePercentage = (present, total) =>
+    total > 0 ? Number(((present / total) * 100).toFixed(1)) : 0;
+
+const buildAttendanceCounts = (bucket) => {
+    const totalUsers = bucket.totalUsers.size;
+    const presentUsers = bucket.presentUsers.size;
+    return {
+        totalUsers,
+        presentUsers,
+        absentUsers: Math.max(totalUsers - presentUsers, 0),
+        attendancePercentage: getAttendancePercentage(presentUsers, totalUsers),
+    };
+};
+
+const compareNamesNaturally = (a, b) =>
+    String(a || "").localeCompare(String(b || ""), undefined, { numeric: true, sensitivity: "base" });
+
+const parseJsonIdList = (value) => {
+    if (!value) return [];
+    try {
+        const parsed = typeof value === "string" ? JSON.parse(value) : value;
+        return Array.isArray(parsed) ? parsed.map(toPositiveInt).filter(Boolean) : [];
+    } catch (_) {
+        return [];
+    }
+};
+
+export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
+    const dbPool = await poolPromise;
+    if (!dbPool) { return res.status(503).json({ success: false, message: "Database unavailable. Please try again later." }); }
+
+    const { date, shift, departmentId } = req.query;
+
+    // Dashboard day follows India timezone even when Node/VPS runs in UTC.
+    const todayIst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    todayIst.setHours(0, 0, 0, 0);
+    const yesterdayIst = new Date(todayIst);
+    yesterdayIst.setDate(yesterdayIst.getDate() - 1);
+    const toDateKeyString = (dateObj) => [
+        dateObj.getFullYear(),
+        String(dateObj.getMonth() + 1).padStart(2, "0"),
+        String(dateObj.getDate()).padStart(2, "0"),
+    ].join("-");
+    const todayStr = toDateKeyString(todayIst);
+
+    const selectedDate = String(date || "").trim() || toDateKeyString(yesterdayIst);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate) || parseManpowerDateKey(selectedDate) === null) {
+        return res.status(400).json({ success: false, message: "Invalid date. Use YYYY-MM-DD." });
+    }
+    if (selectedDate > todayStr) {
+        return res.status(400).json({ success: false, message: "Date cannot be in the future." });
+    }
+
+    const requestedShift = compactShiftValue(shift || "ALL") || "ALL";
+    if (!ASSEMBLY_SHIFT_OPTIONS.includes(requestedShift)) {
+        return res.status(400).json({ success: false, message: `Invalid shift. Use one of: ${ASSEMBLY_SHIFT_OPTIONS.join(", ")}.` });
+    }
+    const selectedShift = requestedShift === "ALL" ? null : requestedShift;
+    const acceptedShiftCompacts = selectedShift ? new Set(getAcceptedShiftCompacts(selectedShift)) : null;
+
+    const requestedDepartmentId = toPositiveInt(departmentId);
+    const [departmentRows] = requestedDepartmentId
+        ? await executeQuery(`SELECT TOP (1) id, name FROM departments WHERE id = ?`, [requestedDepartmentId])
+        : await executeQuery(
+            `SELECT TOP (1) id, name FROM departments WHERE UPPER(LTRIM(RTRIM(name))) = ? ORDER BY id`,
+            [ASSEMBLY_DEPARTMENT_NAME]
+        );
+    const department = departmentRows?.[0];
+    if (!department) {
+        return res.status(404).json({ success: false, message: "Assembly department not found." });
+    }
+    const deptId = Number(department.id);
+
+    // selectedDate is validated as YYYY-MM-DD above, so it is safe inside the JSON path literal.
+    const scheduledShiftSql = `
+        CASE
+            WHEN ISJSON(CAST(u.shiftSchedule AS NVARCHAR(MAX))) = 1
+            THEN JSON_VALUE(CAST(u.shiftSchedule AS NVARCHAR(MAX)), '$."${selectedDate}"')
+        END
+    `;
+
+    let attendanceSql = `
+        SELECT al.userId, al.payCode, al.status
+        FROM attendance_logs al
+        INNER JOIN users u ON al.userId = u.id
+        WHERE al.[date] >= CONVERT(DATE, ?, 23)
+          AND al.[date] < DATEADD(DAY, 1, CONVERT(DATE, ?, 23))
+          AND u.departmentId = ?
+    `;
+    const attendanceParams = [selectedDate, selectedDate, deptId];
+    if (acceptedShiftCompacts) {
+        attendanceSql += `
+          AND REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))), ' ', ''), '-', ''), '_', '')
+              IN (${[...acceptedShiftCompacts].map(() => "?").join(",")})
+        `;
+        attendanceParams.push(...acceptedShiftCompacts);
+    }
+
+    // PERFORMANCE: every query below depends only on deptId/date/shift, so run them
+    // together. Attendance is fetched alongside the holiday lookup and discarded
+    // afterwards when the date turns out to be a holiday.
+    const [
+        [sectionRows],
+        [lineRows],
+        [subSectionRows],
+        [userRows],
+        holidayRows,
+        [attendanceRows],
+    ] = await Promise.all([
+        executeQuery(
+            `
+            SELECT s.id, s.name, CAST(s.[users] AS NVARCHAR(MAX)) AS usersJson
+            FROM sections s
+            WHERE s.departmentId = ?
+              AND ISNULL(s.isActive, 1) = 1
+            `,
+            [deptId]
+        ),
+        executeQuery(
+            `
+            SELECT l.id, l.name, l.sectionId
+            FROM [lines] l
+            INNER JOIN sections s ON s.id = l.sectionId
+            WHERE s.departmentId = ?
+              AND ISNULL(s.isActive, 1) = 1
+              AND ISNULL(l.isActive, 1) = 1
+            `,
+            [deptId]
+        ),
+        executeQuery(
+            `
+            SELECT ss.id, ss.lineId
+            FROM sub_sections ss
+            INNER JOIN [lines] l ON l.id = ss.lineId
+            INNER JOIN sections s ON s.id = l.sectionId
+            WHERE s.departmentId = ?
+            `,
+            [deptId]
+        ),
+        executeQuery(
+            `
+            SELECT
+                u.id,
+                u.empId,
+                u.status,
+                u.joiningDate,
+                u.leavingDate,
+                u.statusHistory,
+                u.sectionId,
+                u.lineId,
+                u.subSectionId,
+                u.shift,
+                ${scheduledShiftSql} AS scheduledShift
+            FROM users u
+            WHERE u.departmentId = ?
+              ${getTotalManpowerBaseEligibilitySql("u")}
+            `,
+            [deptId]
+        ),
+        getDashboardHolidaysForRange(selectedDate, selectedDate),
+        executeQuery(attendanceSql, attendanceParams),
+    ]);
+
+    const holiday = (holidayRows || []).find(item => item.holidayDate === selectedDate) || null;
+
+    // ---- Hierarchy lookup tables -------------------------------------------------
+    const sectionsById = new Map();
+    const jsonSectionIdByUserId = new Map();
+    for (const row of [...(sectionRows || [])].sort((a, b) => Number(a.id) - Number(b.id))) {
+        const sectionId = Number(row.id);
+        sectionsById.set(sectionId, { sectionId, sectionName: String(row.name || "").trim() });
+        // Lowest section id wins when stale JSON lists a user in several sections.
+        for (const userId of parseJsonIdList(row.usersJson)) {
+            if (!jsonSectionIdByUserId.has(userId)) jsonSectionIdByUserId.set(userId, sectionId);
+        }
+    }
+
+    const linesById = new Map(
+        (lineRows || []).map(row => [
+            Number(row.id),
+            { lineId: Number(row.id), lineName: String(row.name || "").trim(), sectionId: Number(row.sectionId) },
+        ])
+    );
+    const subSectionLineIdById = new Map(
+        (subSectionRows || []).map(row => [Number(row.id), toPositiveInt(row.lineId)])
+    );
+
+    const resolveUserPlacement = (userRow) => {
+        const userId = Number(userRow.id);
+        const directSectionId = toPositiveInt(userRow.sectionId);
+        const userLineId = toPositiveInt(userRow.lineId);
+        // Same as COALESCE(u.lineId, subSection.lineId) in getSectionHierarchyMatchSql.
+        const resolvedLineId = userLineId ?? subSectionLineIdById.get(toPositiveInt(userRow.subSectionId)) ?? null;
+        const resolvedLine = resolvedLineId ? linesById.get(resolvedLineId) : null;
+
+        let sectionId = null;
+        if (directSectionId && sectionsById.has(directSectionId)) {
+            sectionId = directSectionId;
+        } else if (resolvedLine) {
+            sectionId = resolvedLine.sectionId;
+        } else {
+            sectionId = jsonSectionIdByUserId.get(userId) ?? null;
+        }
+
+        const lineId = sectionId && resolvedLine && resolvedLine.sectionId === sectionId
+            ? resolvedLine.lineId
+            : null;
+
+        return { sectionId, lineId };
+    };
+
+    // ---- Buckets -------------------------------------------------------------------
+    const UNASSIGNED_KEY = "unassigned";
+    const newBucket = () => ({ totalUsers: new Set(), presentUsers: new Set() });
+    const departmentBucket = newBucket();
+    const sectionBuckets = new Map();
+    const getSectionBucket = (sectionId) => {
+        const key = sectionId ?? UNASSIGNED_KEY;
+        if (!sectionBuckets.has(key)) {
+            sectionBuckets.set(key, { ...newBucket(), lines: new Map() });
+        }
+        return sectionBuckets.get(key);
+    };
+    const getLineBucket = (sectionBucket, lineId) => {
+        const key = lineId ?? UNASSIGNED_KEY;
+        if (!sectionBucket.lines.has(key)) sectionBucket.lines.set(key, newBucket());
+        return sectionBucket.lines.get(key);
+    };
+    const addToBuckets = (placement, field, userId) => {
+        const sectionBucket = getSectionBucket(placement.sectionId);
+        departmentBucket[field].add(userId);
+        sectionBucket[field].add(userId);
+        getLineBucket(sectionBucket, placement.lineId)[field].add(userId);
+    };
+
+    // Every active section and line gets a card / bar even when it has nobody in it.
+    for (const sectionId of sectionsById.keys()) getSectionBucket(sectionId);
+    for (const line of linesById.values()) getLineBucket(getSectionBucket(line.sectionId), line.lineId);
+
+    // ---- Total Users -----------------------------------------------------------
+    const populationById = new Map();
+    for (const userRow of userRows || []) {
+        const userId = Number(userRow.id);
+        if (!Number.isInteger(userId) || userId <= 0) continue;
+
+        const prepared = prepareManpowerUser(userRow);
+        if (!isUserActiveForManpowerDate(prepared, selectedDate)) continue;
+
+        const placement = resolveUserPlacement(userRow);
+        populationById.set(userId, {
+            empIdKey: String(userRow.empId || "").trim().toUpperCase(),
+            placement,
+        });
+
+        if (acceptedShiftCompacts) {
+            const userShift = compactShiftValue(userRow.scheduledShift) || compactShiftValue(userRow.shift);
+            if (!acceptedShiftCompacts.has(userShift)) continue;
+        }
+
+        addToBuckets(placement, "totalUsers", userId);
+    }
+
+    // ---- Present Users ---------------------------------------------------------
+    let attendanceRecords = 0;
+    if (!holiday) {
+        attendanceRecords = (attendanceRows || []).length;
+
+        for (const row of attendanceRows || []) {
+            const userId = Number(row.userId);
+            const userInfo = populationById.get(userId);
+            if (!userInfo) continue;
+
+            const payCodeKey = String(row.payCode || "").trim().toUpperCase();
+            if (!payCodeKey || payCodeKey !== userInfo.empIdKey) continue;
+
+            // Rows here are already limited to the selected shift, so anyone who
+            // worked (or was marked absent in) that shift belongs to its headcount.
+            if (acceptedShiftCompacts) addToBuckets(userInfo.placement, "totalUsers", userId);
+
+            const attendanceStatus = String(row.status || "").trim().toUpperCase();
+            if (!["P", "PRESENT"].includes(attendanceStatus)) continue;
+
+            addToBuckets(userInfo.placement, "presentUsers", userId);
+        }
+    }
+
+    // ---- Response -------------------------------------------------------------
+    const hasUsers = (bucket) => bucket.totalUsers.size > 0 || bucket.presentUsers.size > 0;
+    const sections = [...sectionBuckets.entries()]
+        .filter(([key, bucket]) => key !== UNASSIGNED_KEY || hasUsers(bucket))
+        .map(([key, bucket]) => {
+            const lines = [...bucket.lines.entries()]
+                .filter(([lineKey, lineBucket]) => lineKey !== UNASSIGNED_KEY || hasUsers(lineBucket))
+                .map(([lineKey, lineBucket]) => ({
+                    lineId: lineKey === UNASSIGNED_KEY ? null : lineKey,
+                    lineName: lineKey === UNASSIGNED_KEY ? null : linesById.get(lineKey)?.lineName || "",
+                    isUnassigned: lineKey === UNASSIGNED_KEY,
+                    ...buildAttendanceCounts(lineBucket),
+                }))
+                .sort((a, b) => Number(a.isUnassigned) - Number(b.isUnassigned) || compareNamesNaturally(a.lineName, b.lineName));
+
+            return {
+                sectionId: key === UNASSIGNED_KEY ? null : key,
+                sectionName: key === UNASSIGNED_KEY ? null : sectionsById.get(key)?.sectionName || "",
+                isUnassigned: key === UNASSIGNED_KEY,
+                ...buildAttendanceCounts(bucket),
+                lines,
+            };
+        })
+        .sort((a, b) => Number(a.isUnassigned) - Number(b.isUnassigned) || compareNamesNaturally(a.sectionName, b.sectionName));
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            {
+                date: selectedDate,
+                shift: requestedShift,
+                availableShifts: ASSEMBLY_SHIFT_OPTIONS,
+                holiday: holiday ? { name: holiday.holidayName, shortCode: holiday.shortCode } : null,
+                attendanceRecords,
+                department: {
+                    id: deptId,
+                    name: String(department.name || "").trim(),
+                    ...buildAttendanceCounts(departmentBucket),
+                },
+                sections,
+            },
+            "Assembly stats fetched successfully"
+        )
     );
 }); 

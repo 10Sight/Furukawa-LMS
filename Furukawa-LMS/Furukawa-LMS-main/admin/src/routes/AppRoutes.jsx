@@ -28,6 +28,7 @@ const DailyMeeting = lazy(() => import("../pages/meetings/DailyMeeting.jsx"));
 const MisPortalHub = lazy(() => import("../pages/meetings/MisPortalHub.jsx"));
 const MonthlyMeetingReport = lazy(() => import("../pages/meetings/MonthlyMeetingReport.jsx"));
 const DashboardHome = lazy(() => import("../pages/dashboard/admin/DashboardHome.jsx"));
+const AssemblyDashboard = lazy(() => import("../pages/dashboard/admin/AssemblyDashboard.jsx"));
 const Attendance = lazy(() => import("../pages/attendance/Attendance.jsx"));
 const UserManagement = lazy(() => import("../pages/users/admin/UserManagement.jsx"));
 const SetRequirements = lazy(() => import("../pages/requirements/SetRequirements.jsx"));
@@ -229,6 +230,7 @@ const AppRoutes = () => {
             }
           >
             <Route index element={<DashboardHome />} />
+            <Route path="assembly" element={<AssemblyDashboard />} />
             <Route path="onboarding-id" element={<OnboardingID />} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="users" element={<UserManagement />} />

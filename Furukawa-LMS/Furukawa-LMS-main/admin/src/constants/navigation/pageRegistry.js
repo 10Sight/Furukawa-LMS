@@ -304,6 +304,7 @@ export const PAGE_REGISTRY = [
 
     // Dashboard-specific pages (often considered core Admin functions)
     { key: "dashboard-home", label: "Dashboard", labelKey: "nav.dashboard", layout: "dashboard", link: "/dashboard", icon: "IconLayoutDashboardFilled" },
+    { key: "assembly-dashboard", label: "Assembly", labelKey: "nav.assembly", layout: "dashboard", link: "/dashboard/assembly", icon: "IconBuildingFactory2" },
     // { key: "onboarding-id", label: "Onboarding & ID", layout: "dashboard", link: "/dashboard/onboarding-id", icon: "IconId" },
     { key: "attendance", label: "Attendance", layout: "dashboard", link: "/dashboard/attendance", icon: "IconFingerprint" },
     { key: "requirements", label: "Set Requirements", layout: "dashboard", link: "/dashboard/requirements", icon: "IconSettings" },

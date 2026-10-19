@@ -7,6 +7,7 @@ import {
     getDashboardDepartments,
     getDashboardSections,
     getDashboardLines,
+    getAssemblyDashboardStats,
 
     // Dashboard holiday controllers
     getDashboardHolidays,
@@ -107,8 +108,14 @@ router.get(
     getDashboardLines
 );
 
+router.get(
+    "/assembly-stats",
+    ...dashboardAdminAccess,
+    getAssemblyDashboardStats
+);
+
 console.log(
-    "[DASHBOARD ROUTES] Loaded: /stats, /attendance, /tenure-stats, /sections, /lines, /holidays"
+    "[DASHBOARD ROUTES] Loaded: /stats, /attendance, /tenure-stats, /sections, /lines, /holidays, /assembly-stats"
 );
 
 export default router;

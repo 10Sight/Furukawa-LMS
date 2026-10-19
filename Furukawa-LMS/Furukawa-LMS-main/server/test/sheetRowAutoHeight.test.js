@@ -72,3 +72,11 @@ test("an unchanged cell is measured once", () => {
     fit({ A1: cell }, { measure: counting, cache, columnWidths: { 0: 120 } });
     assert.ok(calls > first, "a new column width measures again");
 });
+
+test("text given a larger font in part is sized by that font", () => {
+    const rich = (size) => ({ value: "Title here", rich: { t: "Title here", runs: [{ start: 0, end: 5, fontSize: size }] } });
+    assert.deepEqual(fit({ A1: rich(24) }), { 0: linesHigh(1, 24) }, "unwrapped, still taller");
+    // 10 characters at 24px (12px each) are 120px: too wide for a 96px column, so 2 lines.
+    assert.deepEqual(fit({ A1: { ...rich(24), wrap: true } }), { 0: linesHigh(2, 24) });
+    assert.deepEqual(fit({ A1: rich(10) }), {}, "a smaller part changes nothing");
+});

@@ -51,6 +51,7 @@ import {
     DEFAULT_MONITORING_CONFIG_16,
     DEFAULT_SCORE_RANGES,
     DEFAULT_EVALUATION_LEGENDS,
+    DEFAULT_EVALUATION_LEGEND_TITLES,
     normalizeConfig,
 } from "@/constants/monitoring/compatibility/sixteenDayMonitoringConfig.js";
 
@@ -2037,7 +2038,7 @@ const SixteenDayMonitoringSheet = ({
                                         <table className="w-full border-collapse text-[14px]">
                                             <thead>
                                                 <tr className="bg-gray-50 border-b border-black">
-                                                    <th colSpan="2" className="p-2 font-bold uppercase text-left bg-gray-100">Evaluation Criteria: Cycle time</th>
+                                                    <th colSpan="2" className="p-2 font-bold uppercase text-left bg-gray-100">{evaluationLegends.titles?.cycleTime || DEFAULT_EVALUATION_LEGEND_TITLES.cycleTime}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -2054,7 +2055,7 @@ const SixteenDayMonitoringSheet = ({
                                         <table className="w-full border-collapse text-[14px]">
                                             <thead>
                                                 <tr className="bg-gray-50 border-b border-black">
-                                                    <th colSpan="2" className="p-2 font-bold uppercase text-left bg-gray-100">Evaluation Criteria: Quality / System, Discipline, 5S & Safety, 10 Cycle check</th>
+                                                    <th colSpan="2" className="p-2 font-bold uppercase text-left bg-gray-100">{evaluationLegends.titles?.otherCriteria || DEFAULT_EVALUATION_LEGEND_TITLES.otherCriteria}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>

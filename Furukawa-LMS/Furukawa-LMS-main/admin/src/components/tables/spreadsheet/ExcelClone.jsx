@@ -58,7 +58,7 @@ import { useSheetComments } from "./useSheetComments.js";
 import CellCommentCard from "./CellCommentCard.jsx";
 import TableFilterPopover from "./TableFilterPopover.jsx";
 import { readableTextColor, wrapTextLines } from "../../../utils/spreadsheets/shapeText.js";
-import { cellTextHeight, contentRowHeights } from "../../../utils/spreadsheets/rowAutoHeight.js";
+import { cellTextHeight, contentRowHeights, largestFontSize } from "../../../utils/spreadsheets/rowAutoHeight.js";
 import {
     lineArrowSvg, elbowConnectorSvg, shapeColor, shapeStrokeWidth, shapeFillPatch, shapeOutlinePatch,
     LINE_STROKE_WIDTH, OUTLINE_STROKE_WIDTH, SHAPE_OUTLINE_WEIGHTS
@@ -406,7 +406,7 @@ const measureTextWidth = (text, cell) => {
 const wrapsToFit = (cell, columnWidth) => {
     const { value } = cell;
     if (cell.wrap !== undefined || typeof value !== "string" || value.trim() === "" || isFormula(value) || !Number.isNaN(Number(value))) return false;
-    return measureTextWidth(value, cell) > columnWidth - 12 - (cell.indent || 0) * 9;
+    return measureTextWidth(value, { ...cell, fontSize: largestFontSize(cell) }) > columnWidth - 12 - (cell.indent || 0) * 9;
 };
 // A row with a height of its own that is too short for the wrapped text just typed
 // into it goes back to fitting its contents, so none of that text is cut off.
@@ -4111,7 +4111,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     }, [selectColumn]);
 
     const applyToSelection = useCallback((mutator) => {
-        mutateActiveCells((next) => {
+        mutateActiveCells((next, sheet) => {
             const current = plainOf(next);
             allSelectionBounds.forEach((b, i) => {
                 for (let r = b.minRow; r <= b.maxRow; r++) {
@@ -4124,7 +4124,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         }
                         if (seen) continue;
                         const id = getCellId(r, c);
-                        const merged = mutator({ ...(current[id] || {}) }, id);
+                        const merged = mutator({ ...(current[id] || {}) }, id, sheet);
                         if (isBlankCell(merged)) {
                             if (current[id]) delete next[id];
                             continue;
@@ -4198,17 +4198,29 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // Applies a font change to those characters. `change` is the keys to set, or a
     // function of (the cell, its runs) that gives them — for a toggle, which has to
     // look at what the characters are now.
-    const applyRichTextStyle = (target, change) => {
-        mutateActiveCells((next) => {
+    const applyRichTextStyle = (target, change, fit = false) => {
+        mutateActiveCells((next, sheet) => {
             const cell = next[target.cellId];
             if (!cell || cell.value !== target.text) return;
             const patch = typeof change === "function" ? change(cell, cellRuns(cell)) : change;
-            next[target.cellId] = withRunStyle(cell, target.start, target.end, patch);
+            const styled = withRunStyle(cell, target.start, target.end, patch);
+            next[target.cellId] = fit ? fitToColumn(styled, target.cellId, sheet) : styled;
         });
     };
     // A font change for the whole of each selected cell (or the selected shape's
     // text): parts of a cell's text that had their own setting for `keys` give it up.
-    const applyFontStyle = (keys, mutator) => applyTextStyle((cell) => withoutRunKeys(mutator(cell), keys));
+    // `id` and `sheet` are given for a cell, not for a shape.
+    const applyFontStyle = (keys, mutator) => applyTextStyle((cell, id, sheet) => withoutRunKeys(mutator(cell, id, sheet), keys));
+    // After a font change, a cell whose text no longer fits its column wraps, and
+    // its row grows to show it, as with typed text (wrapsToFit, growRowToFit).
+    const fitToColumn = (cell, id, sheet) => {
+        const ref = id && parseCellRef(id);
+        if (!ref || !sheet || mergeMap[id]) return cell;
+        const width = columnWidths[ref.col] || DEFAULT_COLUMN_WIDTH;
+        const fitted = wrapsToFit(cell, width) ? { ...cell, wrap: true } : cell;
+        growRowToFit(sheet, ref.row, fitted, width);
+        return fitted;
+    };
 
     const toggleStyle = (key) => {
         const target = richTextTarget();
@@ -4314,8 +4326,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         const n = Number(fontSize);
         if (fontSize !== "" && fontSize != null && !(n >= 1 && n <= 409)) { toast.error("Font size must be a number between 1 and 409."); return; }
         const target = richTextTarget();
-        if (target) { applyRichTextStyle(target, { fontSize: fontSize ? n : undefined }); return; }
-        applyFontStyle(["fontSize"], (cell) => ({ ...cell, fontSize: fontSize ? n : undefined }));
+        if (target) { applyRichTextStyle(target, { fontSize: fontSize ? n : undefined }, true); return; }
+        applyFontStyle(["fontSize"], (cell, id, sheet) => fitToColumn({ ...cell, fontSize: fontSize ? n : undefined }, id, sheet));
     };
     // Increase / Decrease Font Size step through the size list, like Excel.
     const stepFontSize = (dir) => {

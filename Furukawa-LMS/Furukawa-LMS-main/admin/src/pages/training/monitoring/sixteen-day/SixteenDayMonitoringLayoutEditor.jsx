@@ -33,6 +33,7 @@ import {
     buildDefaultConfig,
     computeTotalWeightage,
     ROW_SCORING_TYPES,
+    DEFAULT_EVALUATION_LEGEND_TITLES,
 } from "@/constants/monitoring/compatibility/sixteenDayMonitoringConfig.js";
 import { EditableCell, EditableSelect } from "@/components/common/training/LayoutEditorCells.jsx";
 
@@ -328,6 +329,15 @@ const SixteenDayMonitoringLayoutEditor = () => {
             if (!prev) return prev;
             const next = JSON.parse(JSON.stringify(prev));
             next.evaluationLegends[group].push({ score: next.evaluationLegends[group].length, label: 'New criteria' });
+            return next;
+        });
+    };
+
+    const updateLegendTitle = (group, value) => {
+        setConfig(prev => {
+            if (!prev) return prev;
+            const next = JSON.parse(JSON.stringify(prev));
+            next.evaluationLegends.titles = { ...next.evaluationLegends.titles, [group]: value };
             return next;
         });
     };
@@ -793,19 +803,25 @@ const SixteenDayMonitoringLayoutEditor = () => {
                                                 Total weightage: {totalWeightage} {totalWeightage === 1 ? '' : '(should typically add up to 1.0 / 100%)'}
                                             </p>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {[{ key: 'cycleTime', title: 'Cycle Time' }, { key: 'otherCriteria', title: 'Quality/Discipline/Safety' }].map(({ key, title }) => (
+                                        {/* Stacked like the printed sheet's Evaluation Legend Tables */}
+                                        <div className="space-y-2">
+                                            {['cycleTime', 'otherCriteria'].map((key) => (
                                                 <div key={key} className="border border-black overflow-hidden">
                                                     <table className="w-full border-collapse text-[10px]">
                                                         <thead>
                                                             <tr className="bg-gray-50 border-b border-black">
-                                                                <th colSpan={2} className="p-1 font-bold uppercase text-left bg-gray-100">{title}</th>
+                                                                <th colSpan={2} className="p-1 font-bold uppercase text-left bg-gray-100">
+                                                                    <EditableCell
+                                                                        value={config.evaluationLegends.titles?.[key] || DEFAULT_EVALUATION_LEGEND_TITLES[key]}
+                                                                        onCommit={(v) => updateLegendTitle(key, v)}
+                                                                    />
+                                                                </th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {config.evaluationLegends[key].map((item, idx) => (
-                                                                <tr key={idx} className="border-b border-black">
-                                                                    <td className="w-8 border-r border-black text-center font-bold bg-gray-50">
+                                                            {config.evaluationLegends[key].map((item, idx, arr) => (
+                                                                <tr key={idx} className={idx < arr.length - 1 ? "border-b border-black" : ""}>
+                                                                    <td className="w-10 border-r border-black text-center font-bold bg-gray-50">
                                                                         <EditableCell value={String(item.score ?? '')} onCommit={(v) => updateLegendItem(key, idx, 'score', v)} />
                                                                     </td>
                                                                     <td className="relative group p-1 italic">

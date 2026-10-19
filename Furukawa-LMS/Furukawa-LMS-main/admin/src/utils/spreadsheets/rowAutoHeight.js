@@ -15,14 +15,25 @@ const PADDING_X = 12; // px-1.5 on each side
 const PADDING_Y = 10;
 const INDENT_PX = 9; // per indent level
 
+// The largest font in a cell: its own, or a bigger one given to part of its text
+// (rich text runs, see richText.js).
+export const largestFontSize = (cell) => {
+    let size = cell?.fontSize || DEFAULT_FONT_SIZE;
+    for (const run of cell?.rich?.runs || []) if (run?.fontSize > size) size = run.fontSize;
+    return size;
+};
+
 // The height the text of `cell` needs in a column `columnWidth` wide.
 // `measure(text, cell)` gives the width of one line of text in the cell's font.
+// Text in more than one size is measured as if all of it were the largest, so it
+// may wrap a little early but never runs past the column or gets cut off.
 export const cellTextHeight = (measure, text, cell, columnWidth) => {
-    const fontSize = cell?.fontSize || DEFAULT_FONT_SIZE;
+    const fontSize = largestFontSize(cell);
+    const font = fontSize === cell?.fontSize ? cell : { ...cell, fontSize };
     let lines = 1;
     if (cell?.wrap) {
         const available = Math.max(20, columnWidth - PADDING_X - (cell.indent || 0) * INDENT_PX);
-        lines = Math.max(1, wrapTextLines((line) => measure(line, cell), text, available).length);
+        lines = Math.max(1, wrapTextLines((line) => measure(line, font), text, available).length);
     }
     return Math.ceil(lines * fontSize * LINE_HEIGHT + PADDING_Y);
 };
@@ -34,7 +45,7 @@ export const cellTextHeight = (measure, text, cell, columnWidth) => {
 export const contentRowHeights = ({ cells, display, columnWidths, rowHeights, mergeMap, defaultHeight, defaultColumnWidth, measure, cache }) => {
     const heights = {};
     forEachCellId(cells, (id, cell) => {
-        if (!cell || !(cell.wrap || cell.fontSize > DEFAULT_FONT_SIZE) || mergeMap?.[id]) return;
+        if (!cell || !(cell.wrap || largestFontSize(cell) > DEFAULT_FONT_SIZE) || mergeMap?.[id]) return;
         const shown = display?.[id] ?? cell.value;
         if (shown === undefined || shown === null || shown === "") return;
         const ref = parseCellRef(id);

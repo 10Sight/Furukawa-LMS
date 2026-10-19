@@ -85,6 +85,19 @@ export const DEFAULT_EVALUATION_LEGENDS = {
     ]
 };
 
+// Header text for each evaluation legend table on the printed sheet.
+export const DEFAULT_EVALUATION_LEGEND_TITLES = {
+    cycleTime: 'Evaluation Criteria: Cycle time',
+    otherCriteria: 'Evaluation Criteria: Quality / System, Discipline, 5S & Safety, 10 Cycle check'
+};
+
+// Falls back to the default title per group when a saved one is missing/blank
+// (configs saved before titles existed have no `titles` key at all).
+const normalizeLegendTitles = (titles) => ({
+    cycleTime: typeof titles?.cycleTime === 'string' && titles.cycleTime.trim() ? titles.cycleTime : DEFAULT_EVALUATION_LEGEND_TITLES.cycleTime,
+    otherCriteria: typeof titles?.otherCriteria === 'string' && titles.otherCriteria.trim() ? titles.otherCriteria : DEFAULT_EVALUATION_LEGEND_TITLES.otherCriteria,
+});
+
 // The scoring types a check-item row can have — drives how the printed sheet
 // renders its Day 1-16 cells (10-reading + average vs. a single cell per day).
 export const ROW_SCORING_TYPES = [
@@ -106,6 +119,7 @@ export const normalizeConfig = (raw) => {
             evaluationLegends: {
                 cycleTime: DEFAULT_EVALUATION_LEGENDS.cycleTime.map(x => ({ ...x })),
                 otherCriteria: DEFAULT_EVALUATION_LEGENDS.otherCriteria.map(x => ({ ...x })),
+                titles: normalizeLegendTitles(),
             },
         };
     }
@@ -120,6 +134,7 @@ export const normalizeConfig = (raw) => {
             evaluationLegends: {
                 cycleTime: cycleTime.map(x => ({ ...x })),
                 otherCriteria: otherCriteria.map(x => ({ ...x })),
+                titles: normalizeLegendTitles(raw.evaluationLegends?.titles),
             },
         };
     }
@@ -129,6 +144,7 @@ export const normalizeConfig = (raw) => {
         evaluationLegends: {
             cycleTime: DEFAULT_EVALUATION_LEGENDS.cycleTime.map(x => ({ ...x })),
             otherCriteria: DEFAULT_EVALUATION_LEGENDS.otherCriteria.map(x => ({ ...x })),
+            titles: normalizeLegendTitles(),
         },
     };
 };

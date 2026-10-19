@@ -1,4 +1,4 @@
-import { getCellId, colToIndex, indexToCol, parseCellRef } from "./formulaEngine.js";
+import { getCellId, colToIndex, indexToCol, parseCellRef, shiftSpan } from "./formulaEngine.js";
 
 // Chart data for non-adjacent (Ctrl-selected) ranges such as "A1:A10, C1:C10".
 // The selected ranges are reduced to the set of rows and the set of columns
@@ -146,29 +146,8 @@ const hasContent = (displayGrid, row, col) => {
     return value !== undefined && value !== "";
 };
 
-// The block of filled cells around (row, col), grown outward until empty rows and
-// columns border it — Excel's "current region", which is what it charts when a single
-// cell is selected. The same walk as ExcelClone's currentRegion.
-export const dataRegionAround = (displayGrid, row, col, rowCount, columnCount) => {
-    let top = row, bottom = row, left = col, right = col;
-    const anyContent = (r1, r2, c1, c2) => {
-        for (let r = Math.max(0, r1); r <= Math.min(rowCount - 1, r2); r++) {
-            for (let c = Math.max(0, c1); c <= Math.min(columnCount - 1, c2); c++) if (hasContent(displayGrid, r, c)) return true;
-        }
-        return false;
-    };
-    for (let changed = true; changed;) {
-        changed = false;
-        if (top > 0 && anyContent(top - 1, top - 1, left - 1, right + 1)) { top--; changed = true; }
-        if (bottom < rowCount - 1 && anyContent(bottom + 1, bottom + 1, left - 1, right + 1)) { bottom++; changed = true; }
-        if (left > 0 && anyContent(top - 1, bottom + 1, left - 1, left - 1)) { left--; changed = true; }
-        if (right < columnCount - 1 && anyContent(top - 1, bottom + 1, right + 1, right + 1)) { right++; changed = true; }
-    }
-    return { minRow: top, maxRow: bottom, minCol: left, maxCol: right };
-};
-
-// `bounds` without the wholly empty rows and columns at its edges (the region around
-// an empty cell includes that cell's own row and column). Null when all of it is empty.
+// `bounds` without the wholly empty rows and columns at its edges. Null when all of
+// it is empty.
 const trimEmptyEdges = (displayGrid, bounds) => {
     let { minRow, maxRow, minCol, maxCol } = bounds;
     const rowEmpty = (r) => { for (let c = minCol; c <= maxCol; c++) if (hasContent(displayGrid, r, c)) return false; return true; };
@@ -209,9 +188,9 @@ const rowChartRange = (displayGrid, { minRow, minCol, maxCol }) => {
 //   several Ctrl-selected ranges   those ranges, as a range list
 //   a block, row or column         the filled part of it (so a whole-column
 //                                  selection stops where the data does)
-//   one cell                       the block of data it sits in
-// Null when that leaves nothing to chart (an empty area).
-export const newChartRange = ({ selection, ranges, activeCell, displayGrid, rowCount, columnCount }) => {
+// Null when that leaves nothing to chart: an empty area, or a single cell. Only data
+// the user has selected is charted, never the data around a lone selected cell.
+export const newChartRange = ({ selection, ranges, displayGrid }) => {
     if (Array.isArray(ranges) && ranges.length > 1) {
         const list = parseRangeString(formatRangeString(ranges));
         if (list) {
@@ -221,19 +200,86 @@ export const newChartRange = ({ selection, ranges, activeCell, displayGrid, rowC
     }
     const start = selection && parseCellRef(selection.start);
     const end = selection && parseCellRef(selection.end);
-    let bounds = start && end ? {
+    if (!start || !end) return null;
+    const bounds = trimEmptyEdges(displayGrid, {
         minRow: Math.min(start.row, end.row), maxRow: Math.max(start.row, end.row),
         minCol: Math.min(start.col, end.col), maxCol: Math.max(start.col, end.col),
-    } : null;
-    if (!bounds || (bounds.minRow === bounds.maxRow && bounds.minCol === bounds.maxCol)) {
-        const at = (activeCell && parseCellRef(activeCell)) || start;
-        if (!at) return null;
-        bounds = trimEmptyEdges(displayGrid, dataRegionAround(displayGrid, at.row, at.col, rowCount, columnCount));
-        if (!bounds || bounds.minRow === bounds.maxRow) return null;
-        return blockChartRange(displayGrid, bounds);
-    }
-    bounds = trimEmptyEdges(displayGrid, bounds);
+    });
     if (!bounds || (bounds.minRow === bounds.maxRow && bounds.minCol === bounds.maxCol)) return null;
     if (bounds.minRow === bounds.maxRow) return rowChartRange(displayGrid, bounds);
     return blockChartRange(displayGrid, bounds);
+};
+
+// --- Inserting and deleting rows or columns --------------------------------------------
+// A chart keeps plotting the same cells when rows or columns are inserted (count > 0)
+// or deleted (count < 0) at index `at`, as a formula's references do: its range moves,
+// an insert inside it widens it and a delete trims it. Settings kept per series (by
+// column letter, or by row number for a chart plotted by rows) move with the series;
+// those of a deleted series go with it.
+
+const SERIES_SETTINGS = ["seriesColors", "comboSettings", "seriesLabels", "pointLabels", "pointColors"];
+
+const shiftBand = (i, at, count) => (count < 0 && i >= at && i < at - count ? null : i >= at ? i + count : i);
+
+// A series id after the shift: null when its row or column was deleted, and
+// unchanged when it is on the other axis (or isn't a series id at all).
+const shiftSeriesId = (id, axis, at, count) => {
+    const s = String(id);
+    if (/^\d+$/.test(s)) {
+        if (axis !== "row") return s;
+        const i = shiftBand(Number(s) - 1, at, count);
+        return i === null ? null : String(i + 1);
+    }
+    if (axis !== "col" || !/^[A-Z]+$/.test(s)) return s;
+    const i = shiftBand(colToIndex(s), at, count);
+    return i === null ? null : indexToCol(i);
+};
+
+const shiftSeriesMap = (map, axis, at, count) => {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return map;
+    const out = {};
+    for (const [id, value] of Object.entries(map)) {
+        const shifted = shiftSeriesId(id, axis, at, count);
+        if (shifted !== null) out[shifted] = value;
+    }
+    return out;
+};
+
+// One range of a range list after the shift; null when all of it was deleted.
+const shiftRangeRef = (range, axis, at, count) => {
+    const s = parseCellRef(range.start), e = parseCellRef(range.end);
+    if (!s || !e) return range;
+    let minRow = Math.min(s.row, e.row), maxRow = Math.max(s.row, e.row);
+    let minCol = Math.min(s.col, e.col), maxCol = Math.max(s.col, e.col);
+    const span = axis === "row" ? shiftSpan(minRow, maxRow, at, count) : shiftSpan(minCol, maxCol, at, count);
+    if (!span) return null;
+    if (axis === "row") [minRow, maxRow] = span; else [minCol, maxCol] = span;
+    return { start: getCellId(minRow, minCol), end: getCellId(maxRow, maxCol) };
+};
+
+// `chart` after inserting or deleting rows (axis "row") or columns ("col") of its
+// sheet. A chart left with none of its cells plots nothing.
+export const shiftChartBands = (chart, axis, at, count) => {
+    if (!chart || !count) return chart;
+    const next = { ...chart };
+    const valueCols = (chart.valueCols || []).map((id) => shiftSeriesId(id, axis, at, count)).filter((id) => id !== null);
+    const ranges = chartRanges(chart);
+    if (ranges) {
+        const shifted = ranges.map((r) => shiftRangeRef(r, axis, at, count)).filter(Boolean);
+        next.rangeString = formatRangeString(shifted);
+        if (Array.isArray(chart.ranges)) next.ranges = shifted;
+        next.valueCols = shifted.length ? valueCols : [];
+    } else if (axis === "row") {
+        const rowStart = Math.max(1, Number(chart.rowStart) || 1);
+        const rowEnd = Math.max(rowStart, Number(chart.rowEnd) || rowStart);
+        const span = shiftSpan(rowStart - 1, rowEnd - 1, at, count);
+        if (span) { next.rowStart = span[0] + 1; next.rowEnd = span[1] + 1; } else next.valueCols = [];
+    } else {
+        // The category column, when deleted, gives way to the first series left:
+        // a chart one column wide plots that column against itself.
+        next.xAxisCol = shiftSeriesId(chart.xAxisCol || "A", axis, at, count) ?? valueCols[0] ?? chart.xAxisCol;
+        next.valueCols = valueCols;
+    }
+    for (const key of SERIES_SETTINGS) if (chart[key]) next[key] = shiftSeriesMap(chart[key], axis, at, count);
+    return next;
 };

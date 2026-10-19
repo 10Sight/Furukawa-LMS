@@ -5,7 +5,7 @@
 // in the grid at that moment.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dataRegionAround, blockChartRange, newChartRange } from "../../admin/src/utils/spreadsheets/chartMatrixEngine.js";
+import { blockChartRange, newChartRange, shiftChartBands } from "../../admin/src/utils/spreadsheets/chartMatrixEngine.js";
 
 // A grid from rows of values, placed with its top-left corner at `origin` ("B3").
 const colOf = (index) => String.fromCharCode(65 + index);
@@ -27,23 +27,8 @@ const sales = gridAt(1, 2, [
 ]);
 const other = gridAt(7, 2, [["Shift", "Output"], ["A", 40], ["B", 55]]);
 const displayGrid = { ...sales, ...other };
-const sheet = { displayGrid, rowCount: 30, columnCount: 15 };
-const pick = (selection, extra = {}) => newChartRange({ ...sheet, selection, activeCell: selection?.start, ...extra });
-
-test("the region around a cell is the block of data it sits in, and no further", () => {
-    const table = { minRow: 2, maxRow: 6, minCol: 1, maxCol: 4 };
-    for (const [row, col] of [[2, 1], [4, 3], [6, 4]]) {
-        assert.deepEqual(dataRegionAround(displayGrid, row, col, 30, 15), table, `from ${row},${col}`);
-    }
-    // The other table is two empty columns away, so it stays out.
-    assert.deepEqual(dataRegionAround(displayGrid, 3, 7, 30, 15), { minRow: 2, maxRow: 4, minCol: 7, maxCol: 8 });
-    // An empty cell touching the table still finds it (and is itself part of the
-    // region); one out on its own finds nothing.
-    assert.deepEqual(dataRegionAround(displayGrid, 7, 2, 30, 15), { ...table, maxRow: 7 });
-    assert.deepEqual(dataRegionAround(displayGrid, 20, 12, 30, 15), { minRow: 20, maxRow: 20, minCol: 12, maxCol: 12 });
-    // The edges of the sheet are as far as it grows.
-    assert.deepEqual(dataRegionAround(gridAt(0, 0, [[1, 2], [3, 4]]), 0, 0, 2, 2), { minRow: 0, maxRow: 1, minCol: 0, maxCol: 1 });
-});
+const sheet = { displayGrid };
+const pick = (selection, extra = {}) => newChartRange({ ...sheet, selection, ...extra });
 
 test("a selected block is charted as selected: first column the categories, the rest the series", () => {
     assert.deepEqual(pick({ start: "B3", end: "E7" }), { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true });
@@ -51,16 +36,6 @@ test("a selected block is charted as selected: first column the categories, the 
     assert.deepEqual(pick({ start: "D6", end: "B3" }), { xAxisCol: "B", valueCols: ["C", "D"], rowStart: 3, rowEnd: 6, hasHeaderRow: true });
     // No header row inside the selection: the first row is data.
     assert.deepEqual(pick({ start: "B4", end: "D7" }), { xAxisCol: "B", valueCols: ["C", "D"], rowStart: 4, rowEnd: 7, hasHeaderRow: false });
-});
-
-test("one cell selected charts the whole block of data around the active cell", () => {
-    const table = { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true };
-    assert.deepEqual(pick({ start: "D5", end: "D5" }), table);
-    // From an empty cell just under or beside the table: the table, without that cell's empty row or column.
-    assert.deepEqual(pick({ start: "C8", end: "C8" }), table);
-    assert.deepEqual(pick({ start: "A5", end: "A5" }), table);
-    // The active cell decides which table, wherever the selection started.
-    assert.deepEqual(pick({ start: "A1", end: "A1" }, { activeCell: "I4" }), { xAxisCol: "H", valueCols: ["I"], rowStart: 3, rowEnd: 5, hasHeaderRow: true });
 });
 
 test("a selected column charts just that column", () => {
@@ -83,36 +58,91 @@ test("whole rows, columns or the whole sheet stop where the data does", () => {
     assert.deepEqual(pick({ start: "A1", end: "O30" }), { xAxisCol: "B", valueCols: ["C", "D", "E", "F", "G", "H", "I"], rowStart: 3, rowEnd: 7, hasHeaderRow: false });
 });
 
+test("one cell selected charts nothing, not the data around it", () => {
+    assert.equal(pick({ start: "D5", end: "D5" }), null, "inside a table");
+    assert.equal(pick({ start: "B3", end: "B3" }), null, "a table's corner");
+    assert.equal(pick({ start: "C8", end: "C8" }), null, "just under a table");
+});
+
+test("a block one column wide plots that column", () => {
+    const grid = gridAt(2, 1, [["Output"], [10], [20], [30]]);
+    assert.deepEqual(blockChartRange(grid, { minRow: 2, maxRow: 4, minCol: 2, maxCol: 2 }), { xAxisCol: "C", valueCols: ["C"], rowStart: 3, rowEnd: 5, hasHeaderRow: false });
+});
+
 test("nothing to chart gives null", () => {
     assert.equal(pick({ start: "K10", end: "M20" }), null, "an empty block");
     assert.equal(pick({ start: "B10", end: "B20" }), null, "an empty part of a column");
     assert.equal(pick({ start: "B3", end: "B30" }, { displayGrid: { B3: "alone" } }), null, "a column with one filled cell");
     assert.equal(pick({ start: "M20", end: "M20" }), null, "an empty cell on its own");
-    assert.equal(newChartRange({ ...sheet, displayGrid: {}, selection: { start: "A1", end: "A1" }, activeCell: "A1" }), null, "an empty sheet");
-    assert.equal(newChartRange({ ...sheet, displayGrid: { C3: "alone" }, selection: { start: "C3", end: "C3" }, activeCell: "C3" }), null, "a single filled cell");
-    assert.equal(newChartRange({ ...sheet, selection: null, activeCell: null }), null, "no selection at all");
-    assert.equal(newChartRange({ ...sheet, selection: { start: "??", end: "A1" }, activeCell: "bad" }), null, "a malformed one");
-});
-
-test("a single column of data plots that column", () => {
-    const grid = gridAt(2, 1, [["Output"], [10], [20], [30]]);
-    assert.deepEqual(
-        newChartRange({ displayGrid: grid, rowCount: 30, columnCount: 15, selection: { start: "C3", end: "C3" }, activeCell: "C3" }),
-        { xAxisCol: "C", valueCols: ["C"], rowStart: 2, rowEnd: 5, hasHeaderRow: true }
-    );
-    assert.deepEqual(blockChartRange(grid, { minRow: 2, maxRow: 4, minCol: 2, maxCol: 2 }), { xAxisCol: "C", valueCols: ["C"], rowStart: 3, rowEnd: 5, hasHeaderRow: false });
+    assert.equal(newChartRange({ ...sheet, displayGrid: {}, selection: { start: "A1", end: "A1" } }), null, "an empty sheet");
+    assert.equal(newChartRange({ ...sheet, displayGrid: { C3: "alone" }, selection: { start: "C3", end: "C3" } }), null, "a single filled cell");
+    assert.equal(newChartRange({ ...sheet, selection: null }), null, "no selection at all");
+    assert.equal(newChartRange({ ...sheet, selection: { start: "??", end: "A1" } }), null, "a malformed one");
 });
 
 test("several Ctrl-selected ranges are charted as a range list", () => {
     const ranges = [{ start: "B3", end: "B7" }, { start: "D3", end: "E7" }];
-    const range = newChartRange({ ...sheet, selection: ranges[1], ranges, activeCell: "D3" });
+    const range = newChartRange({ ...sheet, selection: ranges[1], ranges });
     assert.equal(range.rangeString, "B3:B7, D3:E7");
     assert.equal(range.plotBy, "columns");
     assert.equal(range.hasHeaderRow, true);
     assert.deepEqual(range.valueCols, ["D", "E"]);
     // The grid always reports the active range in `ranges`; one range is just a selection.
     assert.deepEqual(
-        newChartRange({ ...sheet, selection: { start: "B3", end: "E7" }, ranges: [{ start: "B3", end: "E7" }], activeCell: "B3" }),
+        newChartRange({ ...sheet, selection: { start: "B3", end: "E7" }, ranges: [{ start: "B3", end: "E7" }] }),
         { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true }
     );
+});
+
+// --- A chart keeps plotting the same cells as rows and columns are inserted or deleted ---
+// (axis, at = 0-based index, count > 0 inserts, < 0 deletes)
+const block = { xAxisCol: "B", valueCols: ["C", "D", "E"], rowStart: 3, rowEnd: 7, hasHeaderRow: true, seriesColors: { C: "red", E: "blue" } };
+const rowsOf = (chart) => [chart.rowStart, chart.rowEnd];
+
+test("rows inserted above, inside or below a chart's block", () => {
+    assert.deepEqual(rowsOf(shiftChartBands(block, "row", 0, 2)), [5, 9], "above: it moves down");
+    assert.deepEqual(rowsOf(shiftChartBands(block, "row", 4, 2)), [3, 9], "inside: it takes the new rows in");
+    assert.deepEqual(rowsOf(shiftChartBands(block, "row", 7, 2)), [3, 7], "just below: unchanged");
+    assert.deepEqual(shiftChartBands(block, "row", 4, 2).valueCols, ["C", "D", "E"], "its series stay");
+});
+
+test("rows deleted above, inside or across all of a chart's block", () => {
+    assert.deepEqual(rowsOf(shiftChartBands(block, "row", 0, -1)), [2, 6], "above: it moves up");
+    assert.deepEqual(rowsOf(shiftChartBands(block, "row", 4, -2)), [3, 5], "inside: it closes up");
+    assert.deepEqual(shiftChartBands(block, "row", 2, -5).valueCols, [], "all of it: nothing left to plot");
+});
+
+test("columns inserted or deleted move the series and their settings with them", () => {
+    const inserted = shiftChartBands(block, "col", 2, 1); // a new column C
+    assert.equal(inserted.xAxisCol, "B");
+    assert.deepEqual(inserted.valueCols, ["D", "E", "F"]);
+    assert.deepEqual(inserted.seriesColors, { D: "red", F: "blue" });
+
+    const deleted = shiftChartBands(block, "col", 3, -1); // column D goes
+    assert.deepEqual(deleted.valueCols, ["C", "D"], "E slides into D's place");
+    assert.deepEqual(deleted.seriesColors, { C: "red", D: "blue" });
+
+    const lostCategories = shiftChartBands(block, "col", 1, -1); // column B, the categories
+    assert.equal(lostCategories.xAxisCol, "B", "the first series left (C, now B) takes over");
+    assert.deepEqual(lostCategories.valueCols, ["B", "C", "D"]);
+});
+
+test("a chart of Ctrl-selected ranges, or plotted by rows, moves the same way", () => {
+    const list = { rangeString: "B3:B7, D3:E7", plotBy: "columns", hasHeaderRow: true, valueCols: ["D", "E"], comboSettings: { E: { type: "line" } } };
+    const moved = shiftChartBands(list, "col", 2, 1);
+    assert.equal(moved.rangeString, "B3:B7, E3:F7");
+    assert.deepEqual(moved.valueCols, ["E", "F"]);
+    assert.deepEqual(moved.comboSettings, { F: { type: "line" } });
+    assert.equal(shiftChartBands(list, "col", 3, -2).rangeString, "B3:B7", "a range deleted outright is dropped");
+
+    const byRows = { rangeString: "B5:E5", plotBy: "rows", hasHeaderRow: true, valueCols: ["5"], seriesColors: { 5: "green" } };
+    const down = shiftChartBands(byRows, "row", 0, 3);
+    assert.equal(down.rangeString, "B8:E8");
+    assert.deepEqual(down.valueCols, ["8"]);
+    assert.deepEqual(down.seriesColors, { 8: "green" });
+    assert.deepEqual(shiftChartBands(byRows, "col", 0, 1).valueCols, ["5"], "a column insert leaves row series alone");
+
+    const gone = shiftChartBands(byRows, "row", 4, -1);
+    assert.equal(gone.rangeString, "");
+    assert.deepEqual(gone.valueCols, []);
 });

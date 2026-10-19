@@ -47,6 +47,7 @@ import { CheatSheetDialog, GoToDialog, PasteSpecialDialog, FormatCellsDialog, In
 import { PIVOT_AGGREGATIONS, AGG_LABELS, getPivotSourceFields, recomputePivotSheets, renamePivotSourceReferences } from "../../../utils/spreadsheets/pivotEngine.js";
 import { applyWorkbookUpdate, applyHistoryRecord, plainOf, reorderSheets, canOrderSheets, isIndexLikeName } from "../../../utils/spreadsheets/workbookUpdate.js";
 import { GRID_MAX_ROWS, GRID_MAX_COLS, viewExtent, fitSheetsToContent } from "../../../utils/spreadsheets/gridExtent.js";
+import { shiftChartBands } from "../../../utils/spreadsheets/chartMatrixEngine.js";
 import { ConditionalFormatMenu, QuickRuleDialog, NewRuleDialog, RulesManagerDialog, CfIcon } from "./ConditionalFormatting.jsx";
 import { computeConditionalFormats, normalizeRules, clearRulesFromBounds, stampRules, subtractBounds, rangeOfBounds, newRuleId, blankRule } from "../../../utils/spreadsheets/conditionalFormat.js";
 import { rulesFromExcel, rulesToExcel, readStopIfTrue, writeStopIfTrue } from "../../../utils/spreadsheets/conditionalFormatExcel.js";
@@ -4627,6 +4628,10 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 }
                 return [{ ...rule, ...formulas, ranges }];
             });
+            // Charts keep plotting the same cells (the sheet's `charts`, or the
+            // single `chartConfig` of a sheet saved before there could be several).
+            if (Array.isArray(sheet.charts)) sheet.charts = plainOf(sheet.charts).map((chart) => shiftChartBands(chart, axis, at, count));
+            if (sheet.chartConfig) sheet.chartConfig = shiftChartBands(plainOf(sheet.chartConfig), axis, at, count);
             // Pivot sheets built from this sheet keep reading the same source cells.
             for (const other of Object.values(next)) {
                 const pivot = other?.pivotConfig;

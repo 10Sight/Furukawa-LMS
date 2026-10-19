@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { columnName } from '@pages/lpa/lpaWorkbook';
 import { OBSERVATION_OPTIONS, normalizeObservationSymbol, getScoreForObservation } from '@pages/lpa/lpaPdcaUtils';
+import { getActiveAuditColumns } from './assemblySheetUtils';
 import './ccSheet.css';
 
 const WIDTH_SCALE = 0.447;
 
-export default function CcSheet({ sheet, disabled, onChange }) {
+export default function CcSheet({ sheet, editor, disabled, onChange }) {
   const tableRef = useRef(null);
   const rowCount = sheet.rows.length;
   const baseRowHeights = useMemo(() => Array.from({ length: rowCount }, (_, rowIndex) =>
@@ -16,6 +17,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     return Math.round((source?.wpx || (source?.wch || 10) * 7) * WIDTH_SCALE);
   }), [sheet.columnCount, sheet.columns]);
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
+
   const marksColumn = useMemo(() => {
     for (const row of sheet.rows.slice(0, 8)) {
       const index = row.findIndex(cell => /^marks$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
@@ -23,63 +25,71 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     }
     return 6;
   }, [sheet.rows]);
-  const observationColumn = useMemo(() => {
-    for (const row of sheet.rows.slice(0, 8)) {
-      const index = row.findIndex(cell => /^observation$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
-      if (index >= 0) return index;
+
+  const auditColumns = useMemo(() => {
+    return getActiveAuditColumns(sheet, null, true);
+  }, [sheet]);
+
+  const sheetTargetLevel = sheet?.targetLevel || editor?.targetLevel || editor?.level || (auditColumns.some(c => c.level === 'L1') ? 'L1' : auditColumns.some(c => c.level === 'L2') ? 'L2' : 'L3');
+
+  const isLevelReadOnly = useCallback((colGroup) => {
+    if (!colGroup) return false;
+    if (sheetTargetLevel === 'L1') {
+      return colGroup.level === 'L3' || colGroup.level === 'L2';
     }
-    return 7;
-  }, [sheet.rows]);
-  const scoreColumn = useMemo(() => {
-    for (const row of sheet.rows.slice(0, 8)) {
-      const index = row.findIndex(cell => /^score$/i.test(cell?.formatted ?? String(cell?.value ?? '')));
-      if (index >= 0) return index;
+    if (sheetTargetLevel === 'L2') {
+      return colGroup.level === 'L3';
     }
-    return 8;
-  }, [sheet.rows]);
+    return false;
+  }, [sheetTargetLevel]);
 
-  // Dynamic live summary & percentage for C&C form
-  const { totalMarks, totalScore, percentageText } = useMemo(() => {
-    let applicableMarks = 0;
-    let scoreSum = 0;
-    for (let r = 4; r <= 34; r++) {
-      const row = sheet.rows[r];
-      if (!row) continue;
-      const obs = normalizeObservationSymbol(row[observationColumn]?.value ?? row[observationColumn]?.formatted);
-      if (obs === 'NA') continue;
+  // Dynamic live summary & percentage for each column group in C&C form
+  const columnScores = useMemo(() => {
+    const scores = {};
+    auditColumns.forEach((colGroup) => {
+      let applicableMarks = 0;
+      let scoreSum = 0;
+      for (let r = 4; r <= 34; r++) {
+        const row = sheet.rows[r];
+        if (!row) continue;
+        const obs = normalizeObservationSymbol(row[colGroup.obsCol]?.value ?? row[colGroup.obsCol]?.formatted);
+        if (obs === 'NA') continue;
 
-      const marksNum = Number(row[marksColumn]?.value ?? row[marksColumn]?.formatted ?? 0);
-      if (Number.isFinite(marksNum) && marksNum > 0) {
-        applicableMarks += marksNum;
-      }
+        const marksNum = Number(row[marksColumn]?.value ?? row[marksColumn]?.formatted ?? 0);
+        if (Number.isFinite(marksNum) && marksNum > 0) {
+          applicableMarks += marksNum;
+        }
 
-      const scoreVal = row[scoreColumn]?.value ?? row[scoreColumn]?.formatted;
-      if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
-        const numScore = Number(scoreVal);
-        if (Number.isFinite(numScore)) {
-          scoreSum += numScore;
+        const scoreVal = row[colGroup.scoreCol]?.value ?? row[colGroup.scoreCol]?.formatted;
+        if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
+          const numScore = Number(scoreVal);
+          if (Number.isFinite(numScore)) {
+            scoreSum += numScore;
+          }
         }
       }
-    }
 
-    const pct = applicableMarks > 0 ? `${((scoreSum / applicableMarks) * 100).toFixed(2)}%` : '0.00%';
-    return {
-      totalMarks: applicableMarks,
-      totalScore: scoreSum,
-      percentageText: pct
-    };
-  }, [sheet.rows, marksColumn, observationColumn, scoreColumn]);
+      const pct = applicableMarks > 0 ? `${((scoreSum / applicableMarks) * 100).toFixed(2)}%` : '0.00%';
+      scores[colGroup.id] = {
+        totalMarks: applicableMarks,
+        totalScore: scoreSum,
+        percentageText: pct
+      };
+    });
+    return scores;
+  }, [sheet.rows, marksColumn, auditColumns]);
 
-  const handleObservationChange = (r, c, newVal) => {
+  const handleObservationChange = (r, obsCol, scoreCol, newVal) => {
+    const colGroup = auditColumns.find(g => g.obsCol === obsCol);
+    if (isLevelReadOnly(colGroup)) return;
     const row = sheet.rows[r];
     const marksVal = marksColumn >= 0 ? (row?.[marksColumn]?.value ?? row?.[marksColumn]?.formatted) : 3;
     const scoreVal = getScoreForObservation(newVal, marksVal);
-    const extraUpdates = scoreColumn >= 0 ? [{ rowIndex: r, columnIndex: scoreColumn, value: scoreVal }] : [];
-    onChange(r, c, newVal, extraUpdates);
-    if (scoreColumn >= 0) {
-      onChange(r, scoreColumn, scoreVal);
-    }
+    const extraUpdates = [{ rowIndex: r, columnIndex: scoreCol, value: scoreVal }];
+    onChange(r, obsCol, newVal, extraUpdates);
+    onChange(r, scoreCol, scoreVal);
   };
+
   const merges = useMemo(() => {
     const anchors = new Map();
     const hidden = new Set();
@@ -93,6 +103,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     }
     return { anchors, hidden };
   }, [sheet.merges]);
+
   const measureRow = useCallback(rowIndex => {
     const row = tableRef.current?.rows[rowIndex];
     if (!row) return;
@@ -116,20 +127,32 @@ export default function CcSheet({ sheet, disabled, onChange }) {
     return () => cancelAnimationFrame(frame);
   }, [baseRowHeights, measureRow, sheet.name]);
 
+  const firstGroupId = auditColumns[0]?.id;
+  const firstTotalMarks = columnScores[firstGroupId]?.totalMarks ?? 62;
+
   return (
     <div className="cc-check-sheet" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
       <table ref={tableRef} className="cc-check-sheet-table" style={{ width: `${tableWidth}px` }} aria-label={`${sheet.name} editable C&C LPA form`}>
         <colgroup>{widths.map((width, column) => <col key={column} style={{ width: `${width}px` }} />)}</colgroup>
         <tbody>
           {sheet.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} style={{ height: `${rowHeights[rowIndex] ?? baseRowHeights[rowIndex]}px` }}>
+            <tr
+              key={rowIndex}
+              style={{ height: `${rowHeights[rowIndex] ?? baseRowHeights[rowIndex]}px` }}
+              className={rowIndex === 2 ? 'cc-header-row-2' : rowIndex === 3 ? 'cc-header-row-3' : undefined}
+            >
               {Array.from({ length: sheet.columnCount }, (_, columnIndex) => {
                 const key = `${rowIndex}:${columnIndex}`;
                 if (merges.hidden.has(key)) return null;
                 const merge = merges.anchors.get(key);
                 const value = row[columnIndex]?.formatted ?? String(row[columnIndex]?.value ?? '');
                 const style = row[columnIndex]?.style;
-                const isObservation = columnIndex === observationColumn && rowIndex >= 4 && rowIndex <= 34;
+
+                // Audit column group matching
+                const activeObsGroup = auditColumns.find(g => g.obsCol === columnIndex);
+                const activeScoreGroup = auditColumns.find(g => g.scoreCol === columnIndex);
+
+                const isObservation = Boolean(activeObsGroup) && rowIndex >= 4 && rowIndex <= 34;
                 const fill = style?.fgColor?.rgb;
                 const backgroundColor = fill && /^[0-9A-F]{6,8}$/i.test(fill) ? `#${fill.slice(-6)}` : undefined;
                 const classes = [
@@ -144,7 +167,7 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                   (columnIndex === 1 || columnIndex === 5) && merge?.e.r > rowIndex ? 'cc-vertical' : '',
                   columnIndex === 0 && rowIndex >= 4 && rowIndex <= 34 ? 'cc-number' : '',
                   columnIndex === 6 && rowIndex >= 4 && rowIndex <= 35 ? 'cc-mark' : '',
-                  (columnIndex === 7 || columnIndex === 8) && rowIndex >= 4 && rowIndex <= 36 ? 'cc-score-cell' : '',
+                  (Boolean(activeObsGroup) || Boolean(activeScoreGroup)) && rowIndex >= 4 && rowIndex <= 36 ? 'cc-score-cell' : '',
                   columnIndex === 2 && rowIndex >= 4 && rowIndex <= 34 ? 'cc-question' : '',
                 ].filter(Boolean).join(' ');
                 const isVertical = classes.split(' ').includes('cc-vertical');
@@ -154,11 +177,14 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                 const verticalWidth = Math.max(32, Math.ceil(value.length * 5.2));
                 const verticalScale = Math.min(1, mergedHeight / verticalWidth);
                 let cellDisplay = value;
+
+                // Row 35: Total Marks (col 6) and Total Scores for each group
                 if (rowIndex === 35) {
-                  if (columnIndex === 6) cellDisplay = String(totalMarks);
-                  else if (columnIndex === 8) cellDisplay = String(totalScore);
+                  if (columnIndex === 6) cellDisplay = String(firstTotalMarks);
+                  else if (activeScoreGroup) cellDisplay = String(columnScores[activeScoreGroup.id]?.totalScore ?? 0);
                 } else if (rowIndex === 36) {
-                  if (columnIndex === 6) cellDisplay = percentageText;
+                  if (columnIndex === 6) cellDisplay = columnScores[firstGroupId]?.percentageText ?? '0.00%';
+                  else if (activeObsGroup) cellDisplay = columnScores[activeObsGroup.id]?.percentageText ?? '0.00%';
                 }
 
                 return (
@@ -176,36 +202,55 @@ export default function CcSheet({ sheet, disabled, onChange }) {
                         title={row[columnIndex]?.formula ? `Excel formula: =${row[columnIndex].formula}` : undefined}
                       />
                     </div>}
-                    {!isVertical && isObservation && <select
-                      aria-label={`${sheet.name} Observation row ${rowIndex + 1}`}
-                      disabled={disabled}
-                      value={normalizeObservationSymbol(value)}
-                      onChange={event => handleObservationChange(rowIndex, columnIndex, event.target.value)}
-                      className="cc-observation-select"
-                    >
-                      <option value=""></option>
-                      {OBSERVATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-                    </select>}
-                    {!isVertical && !isObservation && <textarea
-                      aria-label={`${sheet.name} ${columnName(columnIndex)}${rowIndex + 1}`}
-                      disabled={disabled}
-                      value={cellDisplay}
-                      onKeyDown={event => {
-                        if ((event.key === 'Enter' && event.shiftKey) || event.key === 'Backspace') {
-                          const textarea = event.currentTarget;
-                          requestAnimationFrame(() => {
-                            if (textarea.isConnected) measureRow(rowIndex);
-                          });
-                        }
-                      }}
-                      onChange={event => {
-                        onChange(rowIndex, columnIndex, event.target.value);
-                        requestAnimationFrame(() => measureRow(rowIndex));
-                      }}
-                      spellCheck={false}
-                      rows={1}
-                      title={row[columnIndex]?.formula ? `Excel formula: =${row[columnIndex].formula}` : undefined}
-                    />}
+                    {!isVertical && isObservation && (
+                      isLevelReadOnly(activeObsGroup) ? (
+                        <div
+                          className="cc-observation-readonly flex items-center justify-center font-bold text-xs text-slate-700 bg-slate-100/70 py-1 select-none"
+                          title={`${activeObsGroup.name} Observation (View Only)`}
+                        >
+                          {normalizeObservationSymbol(value) || '-'}
+                        </div>
+                      ) : (
+                        <select
+                          aria-label={`${sheet.name} ${activeObsGroup.name} Observation row ${rowIndex + 1}`}
+                          disabled={disabled}
+                          value={normalizeObservationSymbol(value)}
+                          onChange={event => handleObservationChange(rowIndex, activeObsGroup.obsCol, activeObsGroup.scoreCol, event.target.value)}
+                          className="cc-observation-select"
+                        >
+                          <option value=""></option>
+                          {OBSERVATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      )
+                    )}
+                    {!isVertical && !isObservation && (
+                      (activeScoreGroup && isLevelReadOnly(activeScoreGroup)) ? (
+                        <div className="flex items-center justify-center font-bold text-xs text-slate-700 bg-slate-100/70 py-1 select-none">
+                          {cellDisplay}
+                        </div>
+                      ) : (
+                        <textarea
+                          aria-label={`${sheet.name} ${columnName(columnIndex)}${rowIndex + 1}`}
+                          disabled={disabled}
+                          value={cellDisplay}
+                          onKeyDown={event => {
+                            if ((event.key === 'Enter' && event.shiftKey) || event.key === 'Backspace') {
+                              const textarea = event.currentTarget;
+                              requestAnimationFrame(() => {
+                                if (textarea.isConnected) measureRow(rowIndex);
+                              });
+                            }
+                          }}
+                          onChange={event => {
+                            onChange(rowIndex, columnIndex, event.target.value);
+                            requestAnimationFrame(() => measureRow(rowIndex));
+                          }}
+                          spellCheck={false}
+                          rows={1}
+                          title={row[columnIndex]?.formula ? `Excel formula: =${row[columnIndex].formula}` : undefined}
+                        />
+                      )
+                    )}
                   </td>
                 );
               })}

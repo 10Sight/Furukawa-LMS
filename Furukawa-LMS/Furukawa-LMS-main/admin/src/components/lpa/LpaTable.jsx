@@ -10,7 +10,8 @@ export default function LpaTable({ sheet, onChange, zoom = 100 }) {
     return { starts, covered };
   }, [sheet.merges]);
   return <table className="lpa-table" style={{ zoom: zoom / 100 }} aria-label={`${sheet.name} LPA worksheet`}>
-    <colgroup><col style={{ width: 48 }} />{sheet.columns.map((col, c) => <col key={c} style={{ width: col.width }} />)}</colgroup>
+    <colgroup><col style={{ width: 48 }} />{sheet.columns.map((col, c) => 
+    <col key={c} style={{ width: col.width }} />)}</colgroup>
     <thead><tr><th aria-label="Excel row number" />{sheet.columns.map(col => <th key={col.label} scope="col">{col.label}</th>)}</tr></thead>
     <tbody>{sheet.rows.map((row, r) => <tr key={r}><th scope="row">{sheet.startRow + r + 1}</th>{row.map((cell, c) => {
       const key = `${r}:${c}`;

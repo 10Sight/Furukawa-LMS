@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import assemblyTemplate from './assemblyTemplate.json' with { type: 'json' };
 import {
   isAssemblyCheckSheet,
   normalizeAssemblySheet,
-  upgradeAssemblyRecord
+  upgradeAssemblyRecord,
+  createBlankAssemblySheet,
+  buildAuditColumnGroups,
+  getActiveAuditColumns
 } from '../../components/lpa/assemblySheetUtils.js';
 
 test('1. Assembly check sheet template contains exactly 7 columns in required order', () => {
@@ -456,6 +460,191 @@ test('20. Percentage (%) calculation formula and zero-marks boundary', () => {
   assert.equal(calculatePercentage(0, 0), 'N/A');
 });
 
+test('21. createBlankAssemblySheet creates dynamic columns for multiple levels (L1, L2, L3)', () => {
+  const baseSheet = assemblyTemplate.sheets[0];
 
+  // Test 1: L3 + L2 (Weekly) creates 9 columns
+  const twoLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2']);
+  assert.equal(twoLevelSheet.columnCount, 9);
+  assert.equal(twoLevelSheet.rows[1][0].value, 'Sl No');
+  assert.equal(twoLevelSheet.rows[1][1].value, 'Focus');
+  assert.equal(twoLevelSheet.rows[1][2].value, 'CHECKS POINTS');
+  assert.equal(twoLevelSheet.rows[1][3].value, 'Area');
+  assert.equal(twoLevelSheet.rows[1][4].value, 'Marks');
+  assert.equal(twoLevelSheet.rows[1][5].value, 'Level 3 Daily');
+  assert.equal(twoLevelSheet.rows[1][7].value, 'Level 2 Weekly');
+  assert.equal(twoLevelSheet.rows[2][5].value, 'Observation');
+  assert.equal(twoLevelSheet.rows[2][6].value, 'Score');
+  assert.equal(twoLevelSheet.rows[2][7].value, 'Observation');
+  assert.equal(twoLevelSheet.rows[2][8].value, 'Score');
 
+  // Test 2: L3 + L2 + L1 (Monthly) creates 11 columns
+  const threeLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1']);
+  assert.equal(threeLevelSheet.columnCount, 11);
+  assert.equal(threeLevelSheet.rows[1][5].value, 'Level 3 Daily');
+  assert.equal(threeLevelSheet.rows[1][7].value, 'Level 2 Weekly');
+  assert.equal(threeLevelSheet.rows[1][9].value, 'Level 1 Monthly');
+  assert.equal(threeLevelSheet.rows[2][9].value, 'Observation');
+  assert.equal(threeLevelSheet.rows[2][10].value, 'Score');
 
+  // Total Marks on row 37
+  assert.equal(threeLevelSheet.rows[37][0].value, 'Total Marks:');
+  assert.equal(threeLevelSheet.rows[37][4].value, '70/');
+  assert.equal(threeLevelSheet.rows[37][6].value, '0');
+  assert.equal(threeLevelSheet.rows[37][8].value, '0');
+  assert.equal(threeLevelSheet.rows[37][10].value, '0');
+
+  // Percentage on row 38
+  assert.equal(threeLevelSheet.rows[38][0].value, 'Percentage (%):');
+  assert.equal(threeLevelSheet.rows[38][5].value, '0.00%');
+  assert.equal(threeLevelSheet.rows[38][7].value, '0.00%');
+  assert.equal(threeLevelSheet.rows[38][9].value, '0.00%');
+});
+
+test('22. Table header row is fixed / sticky with the screen while scrolling', () => {
+  const cssSource = fs.readFileSync(new URL('../../components/lpa/assemblySheet.css', import.meta.url), 'utf-8');
+  assert.ok(cssSource.includes('.assembly-audit-table thead'));
+  assert.ok(cssSource.includes('position: sticky'));
+  assert.ok(cssSource.includes('.assembly-sticky-th'));
+  assert.ok(cssSource.includes('.assembly-header-row-1'));
+  assert.ok(cssSource.includes('.assembly-header-row-2'));
+
+  const componentSource = fs.readFileSync(new URL('../../components/lpa/AssemblySheet.jsx', import.meta.url), 'utf-8');
+  assert.ok(componentSource.includes('<thead'));
+  assert.ok(componentSource.includes('assembly-header-row-1'));
+  assert.ok(componentSource.includes('assembly-header-row-2'));
+  assert.ok(componentSource.includes('CHECKS POINTS'));
+  assert.ok(componentSource.includes('Observation'));
+  assert.ok(componentSource.includes('Score'));
+});
+
+test('23. Create LPA Modal supports mandatory Levels (L1, L2, L3), Date, Shift, Department', () => {
+  const modalSource = fs.readFileSync(new URL('../../components/lpa/CreateLpaModal.jsx', import.meta.url), 'utf-8');
+  assert.ok(modalSource.includes('Level 3 (Daily)'));
+  assert.ok(modalSource.includes('Level 2 (Weekly)'));
+  assert.ok(modalSource.includes('Level 1 (Monthly)'));
+  assert.ok(modalSource.includes('Levels is mandatory'));
+  assert.ok(modalSource.includes('Date is mandatory'));
+  assert.ok(modalSource.includes('Shift is mandatory'));
+  assert.ok(modalSource.includes('Department is mandatory'));
+  assert.ok(modalSource.includes('availableSections'));
+  assert.ok(modalSource.includes('availableLines'));
+});
+
+test('24. Create LPA Modal UI cleanup: removes Form Section, unnecessary helper badges, and configures shift defaults', () => {
+  const modalSource = fs.readFileSync(new URL('../../components/lpa/CreateLpaModal.jsx', import.meta.url), 'utf-8');
+  // Form Section toggle is removed
+  assert.equal(modalSource.includes('Form Section'), false);
+  assert.equal(modalSource.includes('Select one or more'), false);
+  assert.equal(modalSource.includes('Select which levels to include in this audit'), false);
+  // Compact no-scroll layout
+  assert.equal(modalSource.includes('overflow-y-auto'), false);
+  // Shift defaults by level: A, B, C for L3; G for L2 and L1
+  assert.ok(modalSource.includes("targetLevel === 'L3'"));
+  assert.ok(modalSource.includes("['A', 'B', 'C']"));
+  assert.ok(modalSource.includes("['G', 'A', 'B', 'C']"));
+});
+
+test('25. Level selection hierarchy: L1 includes L3+L2+L1, L2 includes L3+L2, L3 includes L3', () => {
+  // L3 selection
+  const groupsL3 = buildAuditColumnGroups(['L3'], ['A'], false);
+  assert.equal(groupsL3.length, 1);
+  assert.equal(groupsL3[0].level, 'L3');
+  assert.equal(groupsL3[0].name, 'Level 3 Daily');
+
+  // L2 selection
+  const groupsL2 = buildAuditColumnGroups(['L3', 'L2'], ['A'], false);
+  assert.equal(groupsL2.length, 2);
+  assert.equal(groupsL2[0].level, 'L3');
+  assert.equal(groupsL2[1].level, 'L2');
+  assert.equal(groupsL2[1].name, 'Level 2 Weekly');
+
+  // L1 selection
+  const groupsL1 = buildAuditColumnGroups(['L3', 'L2', 'L1'], ['A'], false);
+  assert.equal(groupsL1.length, 3);
+  assert.equal(groupsL1[0].level, 'L3');
+  assert.equal(groupsL1[1].level, 'L2');
+  assert.equal(groupsL1[2].level, 'L1');
+  assert.equal(groupsL1[2].name, 'Level 1 Monthly');
+});
+
+test('26. Multi-shift columns under Level 3 and same-day data merging', () => {
+  // 1. Single shift does NOT show shift-wise columns
+  const singleShiftGroups = buildAuditColumnGroups(['L3'], ['A'], false);
+  assert.equal(singleShiftGroups.length, 1);
+  assert.equal(singleShiftGroups[0].name, 'Level 3 Daily');
+
+  // 2. Multiple shifts (e.g. Shift A + Shift B on same day) show separate columns per shift
+  const multiShiftGroups = buildAuditColumnGroups(['L3'], ['A', 'B'], false);
+  assert.equal(multiShiftGroups.length, 2);
+  assert.equal(multiShiftGroups[0].name, 'Level 3 Daily (Shift A)');
+  assert.equal(multiShiftGroups[1].name, 'Level 3 Daily (Shift B)');
+
+  // 3. Merging existing sheet: Shift A had observations filled, Shift B is added
+  const baseSheet = assemblyTemplate.sheets[0];
+  const sheetShiftA = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3'], ['A']);
+  sheetShiftA.rows[3][5] = { value: 'Ο', formatted: 'Ο', type: 's' };
+  sheetShiftA.rows[3][6] = { value: 1, formatted: '1', type: 'n' };
+
+  // New session merges Shift A and Shift B
+  const mergedSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3'], ['A', 'B'], sheetShiftA);
+  assert.equal(mergedSheet.columnCount, 9); // 5 base + 2*2 shift cols
+  // Shift A data is preserved
+  assert.equal(mergedSheet.rows[3][5].value, 'Ο');
+  assert.equal(mergedSheet.rows[3][6].value, 1);
+  // Shift B data starts blank
+  assert.equal(mergedSheet.rows[3][7].value, '');
+  assert.equal(mergedSheet.rows[3][8].value, '');
+
+  // 4. Auditor later adds Level 1 for same day: fetches existing L3 Shift A and Shift B data
+  const mergedL1Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1'], ['A', 'B'], mergedSheet);
+  assert.equal(mergedL1Sheet.columnCount, 13); // 5 base + 2*2 (L3 A&B) + 2 (L2) + 2 (L1) = 13 cols
+  assert.equal(mergedL1Sheet.rows[3][5].value, 'Ο');
+  assert.equal(mergedL1Sheet.rows[3][6].value, 1);
+});
+
+test('27. Assembly Form Legend UI fix: complete cell borders and enlarged readable typography', () => {
+  const cssSource = fs.readFileSync(new URL('../../components/lpa/assemblySheet.css', import.meta.url), 'utf-8');
+  // Row 40 top border
+  assert.ok(cssSource.includes('border-top: 2px solid #0f172a !important'));
+  // Legend cells have solid borders
+  assert.ok(cssSource.includes('.assembly-form-table td.assembly-legend-cell'));
+  assert.ok(cssSource.includes('border: 1px solid #475569 !important'));
+  // Row 47 footer border
+  assert.ok(cssSource.includes('.assembly-form-table tr[data-row-index="47"] td'));
+  assert.ok(cssSource.includes('border: 1.5px solid #334155 !important'));
+  // Text size is increased from 8px to 11.5px+
+  assert.ok(cssSource.includes('font-size: 11.5px'));
+  assert.ok(cssSource.includes('font-size: 13px'));
+});
+
+test('28. Same-day data retrieval and read-only enforcement for Level 2 and Level 1 sheets', () => {
+  const baseSheet = assemblyTemplate.sheets[0];
+
+  // 1. Existing Level 3 sheet created on 2026-10-19 with observations
+  const l3Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3'], ['A']);
+  l3Sheet.rows[3][5] = { value: 'Ο', formatted: 'Ο', type: 's' };
+  l3Sheet.rows[3][6] = { value: 1, formatted: '1', type: 'n' };
+  l3Sheet.rows[4][5] = { value: '△', formatted: '△', type: 's' };
+  l3Sheet.rows[4][6] = { value: 0, formatted: '0', type: 'n' };
+
+  // 2. User creates a new Level 2 sheet on the same day:
+  // It receives existing L3 sheet as source:
+  const l2Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2'], ['A'], [l3Sheet]);
+  assert.equal(l2Sheet.columnCount, 9);
+  // Level 3 columns are pre-populated with same-day data
+  assert.equal(l2Sheet.rows[3][5].value, 'Ο');
+  assert.equal(l2Sheet.rows[3][6].value, 1);
+  assert.equal(l2Sheet.rows[4][5].value, '△');
+  assert.equal(l2Sheet.rows[4][6].value, 0);
+  // Level 2 columns start completely blank for user input
+  assert.equal(l2Sheet.rows[3][7].value, '');
+  assert.equal(l2Sheet.rows[3][8].value, '');
+
+  // 3. Check AssemblySheet.jsx component code has read-only guard and view-only rendering
+  const componentSource = fs.readFileSync(new URL('../../components/lpa/AssemblySheet.jsx', import.meta.url), 'utf-8');
+  assert.ok(componentSource.includes('isLevelReadOnly'));
+  assert.ok(componentSource.includes('sheetTargetLevel'));
+  assert.ok(componentSource.includes('assembly-readonly-observation'));
+  assert.ok(componentSource.includes('View Only'));
+});

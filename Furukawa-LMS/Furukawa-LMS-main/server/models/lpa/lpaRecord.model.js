@@ -189,7 +189,7 @@ export class LpaRecord {
         const formatted = rows.map(r => {
           let parsedWorkbook = null;
           if (r.fullWorkbookJson) {
-            try { parsedWorkbook = JSON.parse(r.fullWorkbookJson); } catch {}
+            try { parsedWorkbook = JSON.parse(r.fullWorkbookJson); } catch { }
           }
           const auditors = auditorsMap[r.id] || (parsedWorkbook?.sheets?.[0]?.auditors) || [r.createdBy || ''];
           return {
@@ -199,6 +199,8 @@ export class LpaRecord {
             name: r.name,
             unit: r.unit,
             level: r.level,
+            levels: parsedWorkbook?.levels || (r.level ? [r.level] : ['L3']),
+            shifts: parsedWorkbook?.shifts || (r.shift ? [r.shift] : ['A']),
             auditDate: r.auditDate ? new Date(r.auditDate).toISOString().slice(0, 10) : '',
             date: r.auditDate ? new Date(r.auditDate).toISOString().slice(0, 10) : '',
             shift: r.shift,
@@ -296,7 +298,7 @@ export class LpaRecord {
 
           let parsedWorkbook = null;
           if (r.fullWorkbookJson) {
-            try { parsedWorkbook = JSON.parse(r.fullWorkbookJson); } catch {}
+            try { parsedWorkbook = JSON.parse(r.fullWorkbookJson); } catch { }
           }
 
           const auditorNames = auditors.map(a => a.auditorName);
@@ -308,6 +310,8 @@ export class LpaRecord {
             name: r.name,
             unit: r.unit,
             level: r.level,
+            levels: parsedWorkbook?.levels || (r.level ? [r.level] : ['L3']),
+            shifts: parsedWorkbook?.shifts || (r.shift ? [r.shift] : ['A']),
             auditDate: r.auditDate ? new Date(r.auditDate).toISOString().slice(0, 10) : '',
             date: r.auditDate ? new Date(r.auditDate).toISOString().slice(0, 10) : '',
             shift: r.shift,
@@ -447,6 +451,7 @@ export class LpaRecord {
       name: defaultName,
       unit,
       level,
+      levels: Array.isArray(payload.levels) ? payload.levels : [level],
       auditDate,
       date: auditDate,
       shift,
@@ -644,6 +649,8 @@ export class LpaRecord {
       name: defaultName,
       unit,
       level,
+      levels: Array.isArray(payload.levels) ? payload.levels : (existing.levels || [level]),
+      shifts: Array.isArray(payload.shifts) && payload.shifts.length > 0 ? payload.shifts : (existing.shifts || (existing.shift ? [existing.shift] : [shift])),
       auditDate,
       date: auditDate,
       shift,
@@ -759,15 +766,15 @@ export class LpaRecord {
       try {
         const [dRows] = await executeQuery("SELECT id, name FROM departments ORDER BY name ASC");
         departments = dRows || [];
-      } catch {}
+      } catch { }
       try {
         const [sRows] = await executeQuery("SELECT id, name, departmentId FROM sections ORDER BY name ASC");
         sections = sRows || [];
-      } catch {}
+      } catch { }
       try {
         const [lRows] = await executeQuery("SELECT id, name, lineName, sectionId FROM lines ORDER BY name ASC");
         lines = lRows || [];
-      } catch {}
+      } catch { }
       try {
         const [uRows] = await executeQuery("SELECT id, fullName, userName, email, role FROM users WHERE status = 'PRESENT' OR status IS NULL ORDER BY fullName ASC");
         auditors = (uRows || []).map(u => ({
@@ -776,7 +783,7 @@ export class LpaRecord {
           code: u.userName,
           email: u.email
         }));
-      } catch {}
+      } catch { }
     }
 
     if (departments.length === 0) {

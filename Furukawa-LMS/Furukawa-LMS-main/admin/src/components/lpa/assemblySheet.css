@@ -1,40 +1,228 @@
-.assembly-sheet { width: 100%; min-width: 780px; max-width: 1200px; margin: 0 auto; color: #000; font-family: Arial, Calibri, sans-serif; background: #fff; }
-.assembly-audit-paper { position: relative; background: white; border: 2px solid #172bff; }
-.assembly-form-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8px; line-height: 1.1; }
-.assembly-form-table td { position: relative; padding: 0; border: 1px solid #555; vertical-align: middle; }
-.assembly-form-table textarea { display: block; position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 1px 2px; resize: none; border: 0; outline: 0; color: inherit; background: transparent; font: inherit; line-height: 1.1; overflow: hidden; white-space: pre-wrap; }
-.assembly-form-table textarea:focus { outline: 2px solid #168443; outline-offset: -2px; background: #e8f3e833; }
-.assembly-form-table .assembly-observation-select { display: block; position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); box-sizing: border-box; padding: 0 17px 0 5px; border: 1px solid #b8c8c0; border-radius: 5px; outline: 0; appearance: none; color: #18352a; background: linear-gradient(135deg, #fff 0%, #f4faf6 100%); box-shadow: 0 1px 2px rgb(16 48 32 / 12%); font: 700 9px Arial, Calibri, sans-serif; text-align: center; text-align-last: center; cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease; }
-.assembly-form-table .assembly-observation-select:hover:not(:disabled) { border-color: #168443; background: #f0f8f3; box-shadow: 0 2px 5px rgb(16 48 32 / 18%); }
-.assembly-form-table .assembly-observation-select:focus-visible { z-index: 2; border-color: #168443; outline: 2px solid rgb(22 132 67 / 35%); outline-offset: 1px; box-shadow: 0 0 0 3px rgb(22 132 67 / 12%); }
-.assembly-form-table .assembly-observation-select:disabled { opacity: .7; cursor: not-allowed; }
-.assembly-form-table .assembly-observation-select option { background: #fff; color: #18352a; }
-.assembly-form-table .assembly-heading textarea { text-align: center; font-weight: bold; }
-.assembly-audit-table tr:first-child td { font-size: 12px; }
-.assembly-audit-table tr:first-child td:first-child, .assembly-audit-table tr:first-child td:last-child { font-size: 9px; }
-.assembly-audit-table tr:first-child td:first-child textarea, .assembly-audit-table tr:first-child td:last-child textarea { text-align: left; }
-.assembly-form-table .assembly-vertical textarea { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; padding: 2px; }
-.assembly-form-table td.assembly-check { font-size: 11.5px !important; line-height: 1.35 !important; }
-.assembly-form-table .assembly-check textarea { text-align: left; font-size: 11.5px !important; line-height: 1.35 !important; padding: 3px 5px !important; }
-.assembly-form-table .assembly-requirement textarea { font-size: 6px; line-height: 1.05; }
-.assembly-check-preview { position: absolute; inset: 0; padding: 3px 5px !important; white-space: pre-wrap; overflow: hidden; pointer-events: none; font-size: 11.5px !important; line-height: 1.35 !important; color: #0f172a; }
-.assembly-check-preview strong { font-size: 11.5px !important; font-weight: 700 !important; color: #0f172a !important; }
-.assembly-form-table .assembly-rich-check textarea { color: transparent; caret-color: #000; font-size: 11.5px !important; line-height: 1.35 !important; }
-.assembly-form-table .assembly-rich-check textarea:focus { z-index: 2; color: #000; background: white; font-size: 11.5px !important; line-height: 1.35 !important; }
-.assembly-form-table .assembly-completion textarea { text-align: center; }
-.assembly-form-table .assembly-number textarea { text-align: center; }
-.assembly-form-table .assembly-outside-legend, .assembly-form-table .assembly-outside-symbols { border-color: transparent; }
-.assembly-form-table .assembly-hide-overflow { display: none; }
-.assembly-form-table .assembly-gap td { border-color: transparent; }
-.assembly-form-table .assembly-legend-label textarea { font-weight: bold; }
-.assembly-form-table .assembly-horizontal { background: #eeece0; }
-.assembly-form-table .assembly-notes { border: 1px solid #168443; }
-.assembly-form-table .assembly-footer textarea { font-size: 7px; text-align: center; }
-.assembly-form-table .assembly-total textarea { font-size: 22px; font-weight: bold; text-align: left; }
-.assembly-pdca-table { background: #fff; }
-.assembly-pdca-table tr:first-child { font-size: 16px; }
-.assembly-pdca-table tr:last-child td { border-bottom-color: transparent; }
-.assembly-pdca-table .assembly-tail-blank td { border-color: transparent; }
+.assembly-sheet {
+  width: 100%;
+  min-width: 780px;
+  max-width: 1200px;
+  margin: 0 auto;
+  color: #000;
+  font-family: Arial, Calibri, sans-serif;
+  background: #fff;
+}
+
+.assembly-audit-paper {
+  position: relative;
+  background: white;
+  border: 2px solid #172bff;
+}
+
+.assembly-form-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.assembly-form-table td {
+  position: relative;
+  padding: 0;
+  border: 1px solid #475569;
+  vertical-align: middle;
+}
+
+.assembly-form-table textarea {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 2px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.assembly-form-table textarea:focus {
+  outline: 2px solid #168443;
+  outline-offset: -2px;
+  background: #e8f3e833;
+}
+
+.assembly-form-table .assembly-observation-select {
+  display: block;
+  position: absolute;
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+  box-sizing: border-box;
+  padding: 0 17px 0 5px;
+  border: 1px solid #b8c8c0;
+  border-radius: 5px;
+  outline: 0;
+  appearance: none;
+  color: #18352a;
+  background: linear-gradient(135deg, #fff 0%, #f4faf6 100%);
+  box-shadow: 0 1px 2px rgb(16 48 32 / 12%);
+  font: 700 11px Arial, Calibri, sans-serif;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.assembly-form-table .assembly-observation-select:hover:not(:disabled) {
+  border-color: #168443;
+  background: #f0f8f3;
+  box-shadow: 0 2px 5px rgb(16 48 32 / 18%);
+}
+
+.assembly-form-table .assembly-observation-select:focus-visible {
+  z-index: 2;
+  border-color: #168443;
+  outline: 2px solid rgb(22 132 67 / 35%);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(22 132 67 / 12%);
+}
+
+.assembly-form-table .assembly-observation-select:disabled {
+  opacity: .7;
+  cursor: not-allowed;
+}
+
+.assembly-form-table .assembly-observation-select option {
+  background: #fff;
+  color: #18352a;
+  font-size: 11px;
+}
+
+.assembly-form-table .assembly-heading textarea {
+  text-align: center;
+  font-weight: bold;
+}
+
+.assembly-audit-table tr:first-child td {
+  font-size: 13px;
+}
+
+.assembly-audit-table tr:first-child td:first-child,
+.assembly-audit-table tr:first-child td:last-child {
+  font-size: 11px;
+}
+
+.assembly-audit-table tr:first-child td:first-child textarea,
+.assembly-audit-table tr:first-child td:last-child textarea {
+  text-align: left;
+}
+
+.assembly-form-table .assembly-vertical textarea {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  font-weight: bold;
+  padding: 2px;
+}
+
+.assembly-form-table td.assembly-check {
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  vertical-align: middle !important;
+  padding: 4px 6px !important;
+  height: auto !important;
+  text-align: left !important;
+}
+
+.assembly-check-cell-content {
+  display: block;
+  width: 100%;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #0f172a;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
+  outline: none;
+}
+
+.assembly-check-rich-text,
+.assembly-check-plain-text {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #0f172a;
+  outline: none;
+}
+
+.assembly-check-rich-text strong {
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+.assembly-form-table .assembly-completion textarea {
+  text-align: center;
+}
+
+.assembly-form-table .assembly-number textarea {
+  text-align: center;
+}
+
+.assembly-form-table .assembly-outside-legend,
+.assembly-form-table .assembly-outside-symbols {
+  border-color: transparent;
+}
+
+.assembly-form-table .assembly-hide-overflow {
+  display: none;
+}
+
+.assembly-form-table .assembly-gap td {
+  border-color: transparent;
+  border-top: 1px solid #475569;
+}
+
+.assembly-form-table .assembly-legend-label textarea {
+  font-weight: bold;
+}
+
+.assembly-form-table .assembly-horizontal {
+  background: #eeece0;
+}
+
+.assembly-form-table .assembly-notes {
+  border: 1px solid #168443;
+}
+
+.assembly-form-table .assembly-footer textarea {
+  font-size: 10px;
+  text-align: center;
+}
+
+.assembly-form-table .assembly-total textarea {
+  font-size: 22px;
+  font-weight: bold;
+  text-align: left;
+}
+
+.assembly-pdca-table {
+  background: #fff;
+}
+
+.assembly-pdca-table tr:first-child {
+  font-size: 16px;
+}
+
+.assembly-pdca-table tr:last-child td {
+  border-bottom-color: transparent;
+}
+
+.assembly-pdca-table .assembly-tail-blank td {
+  border-color: transparent;
+}
 
 /* LPA Assembly Form Header & Drawing Layout Styles */
 .assembly-form-header,
@@ -129,19 +317,23 @@
   .assembly-header-top-row {
     flex-direction: column;
   }
+
   .assembly-header-auditor-box {
     width: 100%;
     max-width: 100%;
     border-left: none;
     border-top: 1px solid #e2e8f0;
   }
+
   .assembly-header-bottom-row {
     grid-template-columns: 1fr;
   }
+
   .assembly-header-field-col {
     border-right: none;
     border-bottom: 1px solid #e2e8f0;
   }
+
   .assembly-header-field-col:last-child {
     border-bottom: none;
   }
@@ -225,6 +417,7 @@
   text-align: center;
   vertical-align: middle;
 }
+
 .assembly-readonly textarea,
 .assembly-form-table td.assembly-readonly textarea {
   cursor: default !important;
@@ -233,6 +426,7 @@
   background: transparent !important;
   color: #000 !important;
 }
+
 .assembly-readonly textarea:focus,
 .assembly-form-table td.assembly-readonly textarea:focus {
   outline: none !important;
@@ -266,15 +460,15 @@
   justify-content: center !important;
   width: 100% !important;
   text-align: center !important;
-  font-weight: 600;
-  font-size: 11px;
+  font-weight: 700;
+  font-size: 12px;
   color: #111827;
   line-height: 1;
 }
 
 .assembly-score-header .assembly-score-value {
   font-weight: bold !important;
-  font-size: 8px !important;
+  font-size: 11px !important;
   text-transform: uppercase;
   color: #000 !important;
 }
@@ -291,8 +485,8 @@
   text-align: center !important;
   border: none !important;
   background: transparent !important;
-  font-weight: 600 !important;
-  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-size: 12px !important;
   outline: none !important;
   padding: 0 !important;
   color: #111827 !important;
@@ -373,27 +567,39 @@
   font-size: 11.5px !important;
 }
 
-/* Assembly Form Legend Section */
+/* Assembly Form Legend Section with Solid Borders */
 .assembly-form-table tr.assembly-legend-row td,
 .assembly-form-table td.assembly-legend-cell,
 .assembly-form-table td.assembly-legend-cell * {
   writing-mode: horizontal-tb !important;
   transform: none !important;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .assembly-form-table td.assembly-legend-cell {
   background: #ffffff;
   vertical-align: middle !important;
   padding: 0 !important;
+  border: 1px solid #475569 !important;
 }
 
+.assembly-form-table tr[data-row-index="40"] td.assembly-legend-cell,
 .assembly-form-table td.assembly-legend-header {
-  background: #f8fafc !important;
-  font-weight: 700 !important;
+  border-top: 2px solid #0f172a !important;
+  border-bottom: 1.5px solid #475569 !important;
+  border-left: 1px solid #475569 !important;
+  border-right: 1px solid #475569 !important;
+  background: #f1f5f9 !important;
+  font-weight: 800 !important;
   text-align: center !important;
   vertical-align: middle !important;
-  color: #1e293b !important;
+  color: #0f172a !important;
+}
+
+.assembly-form-table tr[data-row-index="47"] td,
+.assembly-form-table td.assembly-form-footer {
+  border: 1.5px solid #334155 !important;
+  background: #ffffff !important;
 }
 
 .assembly-legend-content {
@@ -401,11 +607,11 @@
   align-items: center !important;
   width: 100% !important;
   height: 100% !important;
-  min-height: 20px !important;
+  min-height: 24px !important;
   box-sizing: border-box !important;
-  padding: 2px 4px !important;
-  font-size: 8px;
-  color: #1e293b;
+  padding: 4px 6px !important;
+  font-size: 11.5px;
+  color: #0f172a;
   writing-mode: horizontal-tb !important;
   transform: none !important;
 }
@@ -413,28 +619,31 @@
 .assembly-legend-header-box {
   justify-content: center !important;
   text-align: center !important;
-  font-weight: 700 !important;
-  font-size: 8.5px !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #0f172a;
 }
 
 .assembly-legend-symbol-box {
   justify-content: center !important;
   text-align: center !important;
-  font-weight: 700 !important;
-  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
   color: #0f172a;
 }
 
 .assembly-legend-desc-box {
   justify-content: flex-start !important;
   text-align: left !important;
-  font-size: 8px !important;
-  line-height: 1.2 !important;
+  font-size: 11.5px !important;
+  line-height: 1.3 !important;
   white-space: normal !important;
   word-break: break-word !important;
-  color: #334155;
-  padding: 2px 5px !important;
+  color: #1e293b;
+  padding: 4px 8px !important;
+  font-weight: 500;
 }
 
 .assembly-legend-footer-box {
@@ -442,12 +651,107 @@
   justify-content: space-between !important;
   align-items: center !important;
   text-align: left !important;
-  font-size: 8px !important;
-  color: #475569;
-  padding: 3px 8px !important;
+  font-size: 11.5px !important;
+  font-weight: 700;
+  color: #1e293b;
+  padding: 6px 14px !important;
   width: 100% !important;
+  box-sizing: border-box;
 }
 
+/* LPA Active Level Badge in Header */
+.assembly-level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 2px rgba(29, 78, 216, 0.08);
+  margin-top: 6px;
+  letter-spacing: 0.02em;
+}
 
+/* Sticky Table Header for LPA Assembly Form */
+.assembly-audit-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
 
+.assembly-audit-table thead tr.assembly-header-row-1 th,
+.assembly-audit-table thead tr.assembly-header-row-1 td,
+.assembly-sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 32;
+  background: #ffffff;
+  border: 1px solid #555;
+}
 
+.assembly-audit-table thead tr.assembly-header-row-2 th,
+.assembly-audit-table thead tr.assembly-header-row-2 td {
+  position: sticky;
+  top: 25px;
+  z-index: 31;
+  background: #f8fafc;
+  border: 1px solid #555;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.assembly-header-th {
+  text-align: center;
+  font-weight: 800;
+  font-size: 9.5px;
+  color: #0f172a;
+  padding: 4px 2px;
+  background: #ffffff;
+  vertical-align: middle;
+}
+
+.assembly-header-sub-th {
+  text-align: center;
+  font-weight: 700;
+  font-size: 8.5px;
+  color: #334155;
+  padding: 3px 2px;
+  background: #f8fafc;
+  vertical-align: middle;
+}
+
+.assembly-level-group-th {
+  background: #dbeafe !important;
+  color: #1e40af !important;
+  font-weight: 800 !important;
+  font-size: 10px !important;
+  border-bottom: 1px solid #bfdbfe !important;
+  text-align: center;
+  padding: 4px 2px;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+/* Read-Only Lower Level Audit Columns */
+.assembly-form-table td.assembly-readonly-level {
+  background-color: #f8fafc !important;
+  color: #334155 !important;
+}
+
+.assembly-readonly-observation {
+  width: 100%;
+  height: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  color: #334155;
+  background-color: #f1f5f9;
+  border-radius: 4px;
+  user-select: none;
+}

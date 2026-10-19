@@ -2,21 +2,22 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx';
 import { useOutletContext } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
 import PDCASheet from '../../components/pdca/PDCASheet';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
 import SendMailModal from '../../components/common/SendMailModal';
+import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
-import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore } from './lpaPdcaUtils';
+import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -29,7 +30,7 @@ const errorText = error => error.message || 'Could not save LPA data. Your edits
 function LpaPageContent({ viewContext }) {
   const outlet = useOutletContext();
   const layout = viewContext || outlet || {};
-  const { setIsFormView = () => {} } = layout;
+  const { setIsFormView = () => { } } = layout;
   const userId = useSelector(state => state.auth.user?.id || state.auth.user?._id || 'current');
   const { handleAddPDCA, handleUpdatePDCA, showToast, refreshData } = usePDCA();
   const [pdcaModalMode, setPdcaModalMode] = useState(null);
@@ -41,6 +42,7 @@ function LpaPageContent({ viewContext }) {
   const [sheetIndex, setSheetIndex] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [pendingUpload, setPendingUpload] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState('Bawal');
   const [selectedLevel, setSelectedLevel] = useState('L1');
@@ -336,35 +338,114 @@ function LpaPageContent({ viewContext }) {
     } catch (error) { setMessage({ error: true, text: errorText(error) }); }
   };
 
-  const handleCreateLPA = async () => {
+  const handleOpenCreateModal = () => {
     if (!selectedUnit) {
       setMessage({ error: true, text: 'Please select Unit before creating an LPA check sheet.' });
       return;
     }
+    setIsCreateModalOpen(true);
+  };
 
-    const isAssembly = activeSection === 'assembly';
+  const handleConfirmCreateLPA = async (formData) => {
+    setIsCreateModalOpen(false);
+    const targetUnit = selectedUnit || formData.unit || 'Bawal';
+    const isAssembly = formData.section === 'assembly';
+    setActiveSection(formData.section);
+    if (formData.date) {
+      setPdcaDate(formData.date);
+    }
+
+    const targetLevel = formData.targetLevel || formData.level || 'L3';
+
+    // 1. Hierarchy of levels:
+    // If user clicked L1 -> default columns Level 3, Level 2, Level 1
+    // If user clicked L2 -> default columns Level 3, Level 2
+    // If user clicked L3 -> default columns Level 3
+    let targetLevels = ['L3'];
+    if (targetLevel === 'L1') {
+      targetLevels = ['L3', 'L2', 'L1'];
+    } else if (targetLevel === 'L2') {
+      targetLevels = ['L3', 'L2'];
+    } else {
+      targetLevels = ['L3'];
+    }
+
+    const shift = formData.shift || 'A';
+    const l3Shifts = ['A', 'B', 'C'].includes(shift) ? [shift] : ['A'];
+
+    // 2. Fetch existing same-day data when creating Level 1 or Level 2:
+    // This allows the newly created Level 2 or Level 1 sheet to pre-populate and display
+    // existing Level 3 (and Level 2) audit records from that same day in read-only mode.
+    const existingSourceSheets = [];
+    if (targetLevel === 'L1' || targetLevel === 'L2') {
+      const sameDayRecords = records.filter(rec =>
+        rec.section === formData.section &&
+        (rec.unit === targetUnit || (!rec.unit && targetUnit === 'Bawal')) &&
+        (rec.auditDate === formData.date || rec.date === formData.date) &&
+        (!formData.department || !rec.department || rec.department.toLowerCase() === formData.department.toLowerCase()) &&
+        (!formData.line || !rec.line || rec.line === formData.line)
+      );
+
+      sameDayRecords.forEach(rec => {
+        if (Array.isArray(rec.sheets)) {
+          rec.sheets.forEach(s => existingSourceSheets.push(s));
+        }
+      });
+    }
+
+    // 3. Base Template & Clean New Sheet Creation
     const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
-    const blankSheets = isAssembly
-      ? baseTpl.sheets.map(s => createBlankAssemblySheet(s, pdcaDate))
-      : baseTpl.sheets.map(s => createBlankCcSheet(s, pdcaDate));
+    const newSheets = baseTpl.sheets.map((baseSheet) => {
+      const createdSheet = isAssembly
+        ? createBlankAssemblySheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets)
+        : createBlankCcSheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets);
+
+      return {
+        ...createdSheet,
+        targetLevel,
+        level: targetLevel,
+        date: formData.date,
+        shift: formData.shift,
+        department: formData.department,
+        sectionName: formData.sectionName || '',
+        line: formData.line || '',
+        auditors: formData.auditor ? [formData.auditor] : [''],
+        auditor: formData.auditor || ''
+      };
+    });
+
+    const levelNames = targetLevels.map(l => l === 'L3' ? 'Level 3 Daily' : l === 'L2' ? 'Level 2 Weekly' : l === 'L1' ? 'Level 1 Monthly' : l);
+    const levelLabel = levelNames.join(' + ');
 
     const newRecord = {
-      section: activeSection,
-      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${pdcaDate}`,
-      unit: selectedUnit,
-      level: selectedLevel || 'L1',
-      auditDate: pdcaDate,
-      date: pdcaDate,
-      shift: '',
-      department: isAssembly ? '' : 'C&C',
-      sectionName: '',
-      line: '',
-      auditors: [''],
-      auditor: '',
-      sheets: blankSheets
+      section: formData.section,
+      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${formData.date} (${levelLabel}) · Shift ${formData.shift || 'A'}`,
+      unit: targetUnit,
+      targetLevel,
+      level: targetLevel,
+      levels: targetLevels,
+      shifts: l3Shifts,
+      auditDate: formData.date,
+      date: formData.date,
+      shift: formData.shift,
+      department: formData.department,
+      sectionName: formData.sectionName || '',
+      line: formData.line || '',
+      auditors: formData.auditor ? [formData.auditor] : [''],
+      auditor: formData.auditor || '',
+      sheets: newSheets
     };
 
-    await openSheet(newRecord, 0);
+    let savedRecord = null;
+    try {
+      savedRecord = await createLPAWorkbook(userId, newRecord);
+      setRecords(prev => [savedRecord, ...prev]);
+      setMessage({ text: 'New LPA Check Sheet created successfully.' });
+    } catch (err) {
+      console.warn('Immediate creation of new LPA record failed:', err);
+    }
+
+    await openSheet(savedRecord || newRecord, 0);
   };
 
   const blankAssemblyTemplate = useMemo(() => ({
@@ -415,21 +496,23 @@ function LpaPageContent({ viewContext }) {
     return { anchors, hidden };
   }, [sheet?.merges]);
   const changeCell = (rowIndex, columnIndex, value, extraUpdates = []) => {
-    setEditor(previous => ({ ...previous, sheets: previous.sheets.map((current, index) => index !== sheetIndex ? current : {
-      ...current, rows: (() => {
-        let newRows = [...current.rows];
-        const allUpdates = [{ rowIndex, columnIndex, value }, ...(extraUpdates || [])];
-        for (const upd of allUpdates) {
-          const r = upd.rowIndex ?? upd.r;
-          const c = upd.columnIndex ?? upd.c;
-          const v = upd.value ?? upd.val;
-          if (newRows[r]) {
-            newRows[r] = Array.from({ length: current.columnCount }, (_, ci) => ci === c ? editLPACell(newRows[r][ci], v) : newRows[r][ci] || null);
+    setEditor(previous => ({
+      ...previous, sheets: previous.sheets.map((current, index) => index !== sheetIndex ? current : {
+        ...current, rows: (() => {
+          let newRows = [...current.rows];
+          const allUpdates = [{ rowIndex, columnIndex, value }, ...(extraUpdates || [])];
+          for (const upd of allUpdates) {
+            const r = upd.rowIndex ?? upd.r;
+            const c = upd.columnIndex ?? upd.c;
+            const v = upd.value ?? upd.val;
+            if (newRows[r]) {
+              newRows[r] = Array.from({ length: current.columnCount }, (_, ci) => ci === c ? editLPACell(newRows[r][ci], v) : newRows[r][ci] || null);
+            }
           }
-        }
-        return newRows;
-      })()
-    }) }));
+          return newRows;
+        })()
+      })
+    }));
     setDirty(true);
   };
   const status = message && <p role={message.error ? 'alert' : 'status'} className={`text-xs ${message.error ? 'text-red-600' : 'text-emerald-700'}`}>{message.text}</p>;
@@ -517,7 +600,7 @@ function LpaPageContent({ viewContext }) {
         const parsed = JSON.parse(saved);
         if (parsed?.rows) loadedSheet = parsed;
       }
-    } catch {}
+    } catch { }
     const secName = (record.section || activeSection) === 'cc' ? 'C&C' : 'Assembly';
     setCustomPdcaTopic({
       id: recordTopicId,
@@ -575,7 +658,7 @@ function LpaPageContent({ viewContext }) {
         />
       </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
         <div style={{ zoom: `${zoom}%` }}>
-          <CcSheet sheet={sheet} disabled={busy} onChange={changeCell} />
+          <CcSheet sheet={sheet} editor={editor} disabled={busy} onChange={changeCell} />
         </div>
       </div> : <div style={{ zoom: `${zoom}%` }} className="min-w-full w-max">
         <table className="border-collapse text-xs table-fixed bg-white" aria-label={`${sheet.name} editable LPA worksheet`}>
@@ -663,354 +746,399 @@ function LpaPageContent({ viewContext }) {
 
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-slate-800">
     <div className="p-6 space-y-6">
-    <div className="flex flex-wrap items-start justify-between gap-4 pb-2 border-b border-slate-100">
-      <div className="flex flex-col gap-3">
-        {/* Unit Option */}
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Unit</label>
-          <div className="relative inline-flex items-center">
-            <select
-              value={selectedUnit}
-              onChange={event => setSelectedUnit(event.target.value)}
-              className={`${button} min-w-[200px] appearance-none pr-9 text-left font-medium`}
-              aria-label="Select unit"
-            >
-              <option value="">Select Unit</option>
-              {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-            </select>
-            <ChevronDown size={16} className="pointer-events-none absolute right-3 text-slate-400" />
+      <div className="flex flex-wrap items-start justify-between gap-4 pb-2 border-b border-slate-100">
+        <div className="flex flex-col gap-3">
+          {/* Unit Option */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Unit</label>
+            <div className="relative inline-flex items-center">
+              <select
+                value={selectedUnit}
+                onChange={event => setSelectedUnit(event.target.value)}
+                className={`${button} min-w-[200px] appearance-none pr-9 text-left font-medium`}
+                aria-label="Select unit"
+              >
+                <option value="">Select Unit</option>
+                {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-3 text-slate-400" />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export All Records</button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export All Records</button>
+        </div>
       </div>
-    </div>
-    <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />
-    {loading ? <p role="status" className="text-sm text-slate-500">Loading saved LPA workbooks…</p> : <section className="space-y-5">
-      {status}
-      {pendingUpload && selectedUnit && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy || (pendingUpload.unit && pendingUpload.unit !== selectedUnit)} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
-      {!selectedUnit ? (
-        <p className="rounded-xl border border-blue-100 bg-blue-50 p-8 text-center text-sm font-medium text-blue-800">
-          Please select Unit to view data.
-        </p>
-      ) : <>
-      <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label="LPA pages">
-        {SECTIONS.map(section => {
-          const isActive = activeSection === section.id;
-          return (
-            <button
-              key={section.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => {
-                setActiveSection(section.id);
-                setActiveSubTab('lpa');
-                setCustomPdcaTopic(null);
-                setIsPdcaSheetOpen(false);
-              }}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                isActive
-                  ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
-              }`}
-            >
-              <span>{section.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-5">
-        {['assembly', 'cc'].includes(activeSection) && (
-          <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label={`${activeSection === 'assembly' ? 'Assembly' : 'C&C'} form views`}>
-            {[
-              { id: 'lpa', label: 'LPA' },
-              { id: 'pdca', label: 'LPA Observation (PDCA)' }
-            ].map(tab => {
-              const isActive = activeSubTab === tab.id;
+      <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />
+      {loading ? <p role="status" className="text-sm text-slate-500">Loading saved LPA workbooks…</p> : <section className="space-y-5">
+        {status}
+        {pendingUpload && selectedUnit && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span>{pendingUpload.name} has not been saved.</span><button type="button" disabled={busy || (pendingUpload.unit && pendingUpload.unit !== selectedUnit)} onClick={() => upload(pendingUpload)} className={button}>Retry Upload</button></div>}
+        {!selectedUnit ? (
+          <p className="rounded-xl border border-blue-100 bg-blue-50 p-8 text-center text-sm font-medium text-blue-800">
+            Please select Unit to view data.
+          </p>
+        ) : <>
+          <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label="LPA pages">
+            {SECTIONS.map(section => {
+              const isActive = activeSection === section.id;
               return (
                 <button
-                  key={tab.id}
+                  key={section.id}
                   type="button"
                   role="tab"
                   aria-selected={isActive}
                   onClick={() => {
-                    setActiveSubTab(tab.id);
+                    setActiveSection(section.id);
+                    setActiveSubTab('lpa');
                     setCustomPdcaTopic(null);
                     setIsPdcaSheetOpen(false);
                   }}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                    isActive
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${isActive
                       ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
-                  }`}
+                    }`}
                 >
-                  <span>{tab.label}</span>
+                  <span>{section.label}</span>
                 </button>
               );
             })}
           </div>
-        )}
 
-        {['assembly', 'cc'].includes(activeSection) && activeSubTab === 'pdca' ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 bg-white">
-              <div className="flex flex-wrap items-center gap-3 flex-1">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <CalendarDays size={17} />
-                  <span>Audit date</span>
-                  <input
-                    type="date"
-                    value={pdcaDate}
-                    onChange={event => setPdcaDate(event.target.value)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-                <label className="relative min-w-[240px] flex-1 max-w-md">
-                  <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={searchQuery}
-                    onChange={event => setSearchQuery(event.target.value)}
-                    placeholder="Search by worksheet or department…"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
-                  />
-                </label>
+          <div className="space-y-5">
+            {['assembly', 'cc'].includes(activeSection) && (
+              <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label={`${activeSection === 'assembly' ? 'Assembly' : 'C&C'} form views`}>
+                {[
+                  { id: 'lpa', label: 'LPA' },
+                  { id: 'pdca', label: 'LPA Observation (PDCA)' }
+                ].map(tab => {
+                  const isActive = activeSubTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => {
+                        setActiveSubTab(tab.id);
+                        setCustomPdcaTopic(null);
+                        setIsPdcaSheetOpen(false);
+                      }}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${isActive
+                          ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+                        }`}
+                    >
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                Single PDCA sheet for {activeSection === 'assembly' ? 'Assembly' : 'C&C'} · Add observations via rows inside the sheet
+            )}
+
+            {['assembly', 'cc'].includes(activeSection) && activeSubTab === 'pdca' ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 bg-white">
+                  <div className="flex flex-wrap items-center gap-3 flex-1">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                      <CalendarDays size={17} />
+                      <span>Audit date</span>
+                      <input
+                        type="date"
+                        value={pdcaDate}
+                        onChange={event => setPdcaDate(event.target.value)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </label>
+                    <label className="relative min-w-[240px] flex-1 max-w-md">
+                      <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={searchQuery}
+                        onChange={event => setSearchQuery(event.target.value)}
+                        placeholder="Search by worksheet or department…"
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
+                      />
+                    </label>
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                    Single PDCA sheet for {activeSection === 'assembly' ? 'Assembly' : 'C&C'} · Add observations via rows inside the sheet
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-2xl border border-[#ECEFF3] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+                  <table className="w-full min-w-[820px] text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">S.NO.</th>
+                        <th className="px-4 py-3 text-left">Worksheet</th>
+                        <th className="px-4 py-3 text-left">Unit</th>
+                        <th className="px-4 py-3 text-left">department</th>
+                        <th className="px-4 py-3 text-left">Observations</th>
+                        <th className="px-4 py-3 text-left">Status</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const sheetTitle = `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`;
+                        const query = searchQuery.trim().toLowerCase();
+                        const matchesSearch = !query ||
+                          sheetTitle.toLowerCase().includes(query) ||
+                          (selectedUnit || '').toLowerCase().includes(query) ||
+                          (activeSection === 'assembly' ? 'assembly' : 'c&c').includes(query);
+
+                        if (!matchesSearch) {
+                          return (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-sm text-slate-500">
+                                No PDCA sheets matching "{searchQuery}".
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        const rows = pdcaTopic?.sheet?.rows || [];
+                        const activeCount = rows.filter(r =>
+                          Boolean(
+                            r.observation?.trim() ||
+                            r.lineArea?.trim() ||
+                            (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
+                            r.rootCause?.trim() ||
+                            r.counterMeasure?.trim()
+                          )
+                        ).length;
+
+                        return (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-4 text-slate-500 font-medium">1</td>
+                            <td className="px-4 py-4 font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => setIsPdcaSheetOpen(true)}
+                                className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                title={`Open ${sheetTitle}`}
+                              >
+                                {sheetTitle}
+                              </button>
+                            </td>
+                            <td className="px-4 py-4 text-slate-700">{selectedUnit || 'Bawal'}</td>
+                            <td className="px-4 py-4 text-slate-700">{activeSection === 'assembly' ? 'Assembly' : 'C&C'}</td>
+                            <td className="px-4 py-4 text-slate-700">
+                              {activeCount > 0 ? (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                  {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
+                                  {rows.length} rows (Click to add observations)
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-slate-700">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Active
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setIsPdcaSheetOpen(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                                title="Open PDCA Sheet"
+                              >
+                                <Eye size={14} /> Open
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                    <CalendarDays size={17} />
+                    <span>Audit date</span>
+                    <input
+                      type="date"
+                      value={pdcaDate}
+                      onChange={event => setPdcaDate(event.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="relative min-w-[240px] flex-1">
+                    <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={searchQuery}
+                      onChange={event => setSearchQuery(event.target.value)}
+                      placeholder="Search by form or worksheet name…"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={busy || !selectedUnit}
+                    onClick={handleOpenCreateModal}
+                    className={primary}
+                    title="Create a new blank LPA check sheet"
+                  >
+                    <Plus size={16} />Create LPA
+                  </button>
+                  <button type="button" onClick={exportAllRecords} className={button}>
+                    <Download size={16} />Export Excel
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      disabled={busy || !selectedUnit}
+                      onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
+                      className={button}
+                      title="Upload Excel workbook (Admin only)"
+                    >
+                      <Upload size={16} />Upload Excel
+                    </button>
+                  )}
+                </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-[#ECEFF3] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-              <table className="w-full min-w-[820px] text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left">S.NO.</th>
-                    <th className="px-4 py-3 text-left">Worksheet</th>
-                    <th className="px-4 py-3 text-left">Unit</th>
-                    <th className="px-4 py-3 text-left">department</th>
-                    <th className="px-4 py-3 text-left">Observations</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(() => {
-                    const sheetTitle = `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`;
-                    const query = searchQuery.trim().toLowerCase();
-                    const matchesSearch = !query ||
-                      sheetTitle.toLowerCase().includes(query) ||
-                      (selectedUnit || '').toLowerCase().includes(query) ||
-                      (activeSection === 'assembly' ? 'assembly' : 'c&c').includes(query);
-
-                    if (!matchesSearch) {
-                      return (
-                        <tr>
-                          <td colSpan={7} className="p-8 text-center text-sm text-slate-500">
-                            No PDCA sheets matching "{searchQuery}".
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    const rows = pdcaTopic?.sheet?.rows || [];
-                    const activeCount = rows.filter(r =>
-                      Boolean(
-                        r.observation?.trim() ||
-                        r.lineArea?.trim() ||
-                        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-                        r.rootCause?.trim() ||
-                        r.counterMeasure?.trim()
-                      )
-                    ).length;
-
-                    return (
-                      <tr className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-4 text-slate-500 font-medium">1</td>
-                        <td className="px-4 py-4 font-semibold">
-                          <button
-                            type="button"
-                            onClick={() => setIsPdcaSheetOpen(true)}
-                            className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
-                            title={`Open ${sheetTitle}`}
-                          >
-                            {sheetTitle}
-                          </button>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{selectedUnit || 'Bawal'}</td>
-                        <td className="px-4 py-4 text-slate-700">{activeSection === 'assembly' ? 'Assembly' : 'C&C'}</td>
-                        <td className="px-4 py-4 text-slate-700">
-                          {activeCount > 0 ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                              {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
-                              {rows.length} rows (Click to add observations)
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Active
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setIsPdcaSheetOpen(true)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
-                            title="Open PDCA Sheet"
-                          >
-                            <Eye size={14} /> Open
-                          </button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-slate-600">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">S.NO.</th>
+                        <th className="px-4 py-3 text-left">Worksheet</th>
+                        <th className="px-4 py-3 text-left">Unit</th>
+                        <th className="px-4 py-3 text-left">Auditor Name</th>
+                        <th className="px-4 py-3 text-left">Score</th>
+                        <th className="px-4 py-3 text-left">Department</th>
+                        <th className="px-4 py-3 text-left">Section</th>
+                        <th className="px-4 py-3 text-left">Line</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
-                    );
-                  })()}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {visibleRecords.flatMap((record) => record.sheets.map((current, index) => ({ record, current, index }))).map(({ record, current, index }, rowIndex) => {
+                        const unitVal = record.unit || selectedUnit || 'Bawal';
+                        const scoresList = getWorksheetScoresList(current, record);
+                        const deptVal = current.department || record.department || '-';
+                        const secVal = current.sectionName || current.section || record.sectionName || record.section || '-';
+                        const lineVal = current.line || record.line || '-';
+                        const auditorVal = (current.auditors && current.auditors.length > 0 && current.auditors.some(Boolean))
+                          ? current.auditors.filter(Boolean).join(', ')
+                          : (current.auditor || (record.auditors && record.auditors.length > 0 && record.auditors.some(Boolean))
+                            ? record.auditors.filter(Boolean).join(', ')
+                            : record.auditor || record.createdBy || '-');
+
+                        const levelsList = Array.isArray(record.levels) && record.levels.length > 0
+                          ? record.levels
+                          : (record.level ? [record.level] : ['L3']);
+
+                        const shiftDisplay = Array.isArray(record.shifts) && record.shifts.length > 0
+                          ? record.shifts.join(', ')
+                          : (record.shift || current.shift || 'A');
+
+                        return (
+                          <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
+                            <td className="px-4 py-4 text-slate-500 font-medium">{rowIndex + 1}</td>
+                            <td className="px-4 py-4 font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => openSheet(record, index)}
+                                className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors block text-sm"
+                                title={`Open ${current.name}`}
+                              >
+                                {current.name}
+                              </button>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {levelsList.map(lvl => (
+                                  <span key={lvl} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    {lvl === 'L3' ? 'Level 3 Daily' : lvl === 'L2' ? 'Level 2 Weekly' : lvl === 'L1' ? 'Level 1 Monthly' : lvl}
+                                  </span>
+                                ))}
+                                {shiftDisplay && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                    Shift {shiftDisplay}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-slate-700">{unitVal}</td>
+                            <td className="px-4 py-4 text-slate-700">
+                              <div className="flex items-center gap-1.5 font-medium text-xs text-slate-800">
+                                <User size={13} className="text-slate-400 shrink-0" />
+                                <span className="truncate max-w-[170px]" title={auditorVal}>{auditorVal}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex flex-col gap-0.5 text-xs">
+                                {scoresList.map(s => (
+                                  <div key={s.label} className="whitespace-nowrap leading-tight">
+                                    <span className="text-slate-500 font-semibold">{s.label} - </span>
+                                    <span className="font-bold text-slate-900">{s.percentage}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-slate-700">{deptVal}</td>
+                            <td className="px-4 py-4 text-slate-700">{secVal}</td>
+                            <td className="px-4 py-4 text-slate-700">{lineVal}</td>
+                            <td className="px-4 py-4 text-right">
+                              {record.id ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => deleteWorkbook(record)}
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50 cursor-pointer transition-colors"
+                                  title="Delete form"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {visibleRecords.length === 0 && (
+                    <p className="p-8 text-center text-sm text-slate-500">
+                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Upload an Excel workbook to get started.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        ) : (
-          <div>
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                <CalendarDays size={17} />
-                <span>Audit date</span>
-                <input
-                  type="date"
-                  value={pdcaDate}
-                  onChange={event => setPdcaDate(event.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-              <label className="relative min-w-[240px] flex-1">
-                <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={searchQuery}
-                  onChange={event => setSearchQuery(event.target.value)}
-                  placeholder="Search by form or worksheet name…"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={busy || !selectedUnit}
-                onClick={handleCreateLPA}
-                className={primary}
-                title="Create a new blank LPA check sheet"
-              >
-                <Plus size={16} />Create LPA
-              </button>
-              <button type="button" onClick={exportAllRecords} className={button}>
-                <Download size={16} />Export Excel
-              </button>
-              {isAdmin && (
-                <button
-                  type="button"
-                  disabled={busy || !selectedUnit}
-                  onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
-                  className={button}
-                  title="Upload Excel workbook (Admin only)"
-                >
-                  <Upload size={16} />Upload Excel
-                </button>
-              )}
-            </div>
+        </>}
+        <p className="text-xs text-slate-500">Supports .xlsx and .xls. Uploaded forms are saved separately.</p>
+      </section>}
+      {!loading && message?.error && <button type="button" onClick={load} className={button}>Reload Saved Workbooks</button>}
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left">S.NO.</th>
-                    <th className="px-4 py-3 text-left">Worksheet</th>
-                    <th className="px-4 py-3 text-left">Unit</th>
-                    <th className="px-4 py-3 text-left">Score</th>
-                    <th className="px-4 py-3 text-left">department</th>
-                    <th className="px-4 py-3 text-left">Section</th>
-                    <th className="px-4 py-3 text-left">Line</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {visibleRecords.flatMap((record) => record.sheets.map((current, index) => ({ record, current, index }))).map(({ record, current, index }, rowIndex) => {
-                    const unitVal = record.unit || selectedUnit || 'Bawal';
-                    const scoreVal = getWorksheetScore(current);
-                    const deptVal = current.department || record.department || '-';
-                    const secVal = current.sectionName || current.section || record.sectionName || record.section || '-';
-                    const lineVal = current.line || record.line || '-';
+      {/* Add / Edit PDCA Modal */}
+      <AddPDCAModal
+        isOpen={pdcaModalMode !== null}
+        onClose={() => setPdcaModalMode(null)}
+        defaultPlant={selectedUnit}
+        defaultScope="Company"
+        onAdd={handleSaveNewPdca}
+        editData={pdcaModalMode !== 'add' ? pdcaModalMode : null}
+        onUpdate={handleUpdatePdca}
+      />
 
-                    return (
-                      <tr key={`${record.id || 'template'}-${index}`} className="hover:bg-slate-50">
-                        <td className="px-4 py-4 text-slate-500 font-medium">{rowIndex + 1}</td>
-                        <td className="px-4 py-4 font-semibold">
-                          <button
-                            type="button"
-                            onClick={() => openSheet(record, index)}
-                            className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
-                            title={`Open ${current.name}`}
-                          >
-                            {current.name}
-                          </button>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{unitVal}</td>
-                        <td className="px-4 py-4">
-                          <span className="font-semibold text-slate-800">
-                            {scoreVal}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{deptVal}</td>
-                        <td className="px-4 py-4 text-slate-700">{secVal}</td>
-                        <td className="px-4 py-4 text-slate-700">{lineVal}</td>
-                        <td className="px-4 py-4 text-right">
-                          {record.id ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => deleteWorkbook(record)}
-                              className="inline-flex items-center justify-center p-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50 cursor-pointer transition-colors"
-                              title="Delete form"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {visibleRecords.length === 0 && (
-                <p className="p-8 text-center text-sm text-slate-500">
-                  No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Upload an Excel workbook to get started.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </>}
-    <p className="text-xs text-slate-500">Supports .xlsx and .xls. Uploaded forms are saved separately.</p>
-  </section>}
-  {!loading && message?.error && <button type="button" onClick={load} className={button}>Reload Saved Workbooks</button>}
-
-  {/* Add / Edit PDCA Modal */}
-  <AddPDCAModal
-    isOpen={pdcaModalMode !== null}
-    onClose={() => setPdcaModalMode(null)}
-    defaultPlant={selectedUnit}
-    defaultScope="Company"
-    onAdd={handleSaveNewPdca}
-    editData={pdcaModalMode !== 'add' ? pdcaModalMode : null}
-    onUpdate={handleUpdatePdca}
-  />
-</div>
+      {/* Create LPA Modal */}
+      <CreateLpaModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreate={handleConfirmCreateLPA}
+        initialSection={activeSection}
+        initialUnit={selectedUnit}
+        initialDate={pdcaDate}
+      />
+    </div>
   </div>;
 }
 

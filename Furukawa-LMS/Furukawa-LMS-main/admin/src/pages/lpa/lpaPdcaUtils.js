@@ -49,78 +49,117 @@ export function getScoreForObservation(val, marks) {
   return '';
 }
 
-export function getWorksheetScore(sheet) {
-  if (!sheet || !Array.isArray(sheet.rows) || sheet.rows.length === 0) return '-';
-  if (sheet.scorePercentage) return sheet.scorePercentage;
-
-  // 1. Check if any row has explicit percentage cell e.g. "Percentage (%):"
-  for (let r = 0; r < Math.min(sheet.rows.length, 50); r++) {
-    const row = sheet.rows[r];
-    if (!Array.isArray(row)) continue;
-    const isPctLabel = row.some(c => /percentage\s*\(/i.test(String(c?.value ?? c?.formatted ?? '')));
-    if (isPctLabel) {
-      for (const cell of row) {
-        const text = String(cell?.value ?? cell?.formatted ?? '').trim();
-        if (/^\d+(\.\d+)?%$/.test(text)) {
-          return text;
-        }
-      }
-    }
+export function getWorksheetScoresList(sheet, record = null) {
+  if (!sheet || !Array.isArray(sheet.rows) || sheet.rows.length === 0) {
+    return [{ label: 'L3', percentage: '0%', rawPct: 0 }];
   }
 
-  // 2. Dynamically locate marks, observation, and score columns
-  let marksCol = -1;
-  let obsCol = -1;
-  let scoreCol = -1;
-  for (const row of sheet.rows.slice(0, 8)) {
-    if (!Array.isArray(row)) continue;
-    const mIdx = row.findIndex(c => /^marks$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
-    if (mIdx >= 0 && marksCol < 0) marksCol = mIdx;
-    const oIdx = row.findIndex(c => /^observation$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
-    if (oIdx >= 0 && obsCol < 0) obsCol = oIdx;
-    const sIdx = row.findIndex(c => /^score$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
-    if (sIdx >= 0 && scoreCol < 0) scoreCol = sIdx;
-  }
-
-  if (marksCol < 0) marksCol = 4;
-  if (obsCol < 0) obsCol = 5;
-  if (scoreCol < 0) scoreCol = 6;
+  const isCc = String(record?.section || sheet.section || '').toLowerCase() === 'cc';
+  const startRow = isCc ? 4 : 3;
+  const marksCol = isCc ? 5 : 4;
+  const startAuditCol = isCc ? 7 : 5;
 
   // Find legendStart
   const legendStart = sheet.merges?.find(merge => merge.s.c === 0 && merge.e.c <= 2 && merge.s.r > 25)?.s.r ?? -1;
-  const endRow = legendStart > 0 ? Math.min(legendStart, 37) : Math.min(sheet.rows.length, 37);
+  const endRow = legendStart > 0 ? Math.min(legendStart, 37) : (isCc ? 35 : 37);
 
-  let applicableMarksSum = 0;
-  let scoreSum = 0;
+  // Discover all audit column pairs (Observation + Score)
+  const colPairs = [];
+  const headerRow1 = sheet.rows[isCc ? 2 : 1] || [];
+  const colCount = Math.max(sheet.columnCount || 0, headerRow1.length);
 
-  for (let r = 2; r < endRow; r++) {
-    const row = sheet.rows[r];
-    if (!row) continue;
-    const isTotal = row.some(c => /total/i.test(String(c?.value ?? c?.formatted ?? '')));
-    if (isTotal) break;
-    const marksNum = Number(row[marksCol]?.value ?? row[marksCol]?.formatted);
-    if (Number.isFinite(marksNum) && marksNum > 20) break; // Reached summary total row
+  for (let c = startAuditCol; c < colCount; c += 2) {
+    const headerText = String(headerRow1[c]?.value ?? headerRow1[c]?.formatted ?? '').trim();
+    let level = 'L3';
+    let shift = null;
 
-    const obs = normalizeObservationSymbol(row[obsCol]?.value ?? row[obsCol]?.formatted);
-    const scoreVal = row[scoreCol]?.value ?? row[scoreCol]?.formatted;
-
-    if (obs === 'NA') continue;
-
-    if (Number.isFinite(marksNum) && marksNum > 0) {
-      applicableMarksSum += marksNum;
+    if (/l1/i.test(headerText) || /monthly/i.test(headerText)) {
+      level = 'L1';
+    } else if (/l2/i.test(headerText) || /weekly/i.test(headerText)) {
+      level = 'L2';
+    } else if (/l3/i.test(headerText) || /daily/i.test(headerText)) {
+      level = 'L3';
+      const m = headerText.match(/shift\s*([ABC])/i);
+      if (m) shift = m[1].toUpperCase();
+    } else if (c === startAuditCol && record?.level) {
+      level = record.level;
     }
-    if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
-      const numScore = Number(scoreVal);
-      if (Number.isFinite(numScore)) {
-        scoreSum += numScore;
+
+    colPairs.push({
+      obsCol: c,
+      scoreCol: c + 1,
+      level,
+      shift,
+      headerText
+    });
+  }
+
+  if (colPairs.length === 0) {
+    colPairs.push({
+      obsCol: startAuditCol,
+      scoreCol: startAuditCol + 1,
+      level: record?.level || 'L3',
+      shift: record?.shift || null,
+      headerText: 'L3 Daily'
+    });
+  }
+
+  const l3Count = colPairs.filter(p => p.level === 'L3').length;
+  const results = [];
+
+  for (const pair of colPairs) {
+    let applicableMarksSum = 0;
+    let scoreSum = 0;
+
+    for (let r = startRow; r < endRow; r++) {
+      const row = sheet.rows[r];
+      if (!row || !Array.isArray(row)) continue;
+      const isTotal = row.some(cell => /total/i.test(String(cell?.value ?? cell?.formatted ?? '')));
+      if (isTotal) break;
+
+      const marksNum = Number(row[marksCol]?.value ?? row[marksCol]?.formatted ?? 1);
+      const safeMarks = Number.isFinite(marksNum) && marksNum > 0 ? marksNum : 1;
+      const obs = normalizeObservationSymbol(row[pair.obsCol]?.value ?? row[pair.obsCol]?.formatted);
+      const scoreVal = row[pair.scoreCol]?.value ?? row[pair.scoreCol]?.formatted;
+
+      if (obs === 'NA') continue;
+
+      applicableMarksSum += safeMarks;
+
+      if (scoreVal !== '' && scoreVal !== 'NA' && scoreVal != null) {
+        const numScore = Number(scoreVal);
+        if (Number.isFinite(numScore)) {
+          scoreSum += numScore;
+        }
       }
     }
+
+    // Integer percentage like "68%" without decimal points
+    const pctNumber = applicableMarksSum > 0 ? Math.round((scoreSum / applicableMarksSum) * 100) : 0;
+    const fullLevelName = pair.level === 'L3' ? 'Level 3' : pair.level === 'L2' ? 'Level 2' : pair.level === 'L1' ? 'Level 1' : pair.level;
+    let label = fullLevelName;
+    if (pair.level === 'L3' && pair.shift && l3Count > 1) {
+      label = `Level 3 (Shift ${pair.shift})`;
+    }
+
+    results.push({
+      level: pair.level,
+      shift: pair.shift,
+      label,
+      percentage: `${pctNumber}%`,
+      rawPct: pctNumber
+    });
   }
 
-  if (applicableMarksSum > 0) {
-    return `${((scoreSum / applicableMarksSum) * 100).toFixed(2)}%`;
+  return results.length > 0 ? results : [{ label: 'Level 3', percentage: '0%', rawPct: 0 }];
+}
+
+export function getWorksheetScore(sheet, record = null) {
+  const scores = getWorksheetScoresList(sheet, record);
+  if (scores.length === 1) {
+    return scores[0].percentage;
   }
-  return '0.00%';
+  return scores.map(s => `${s.label} - ${s.percentage}`).join(' \n');
 }
 
 

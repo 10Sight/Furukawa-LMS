@@ -29,7 +29,6 @@ export function normalizeObservationSymbol(val) {
 
 export const normalizeObservation = normalizeObservationSymbol;
 
-
 /**
  * Calculates the score for an observation given marks.
  */
@@ -53,7 +52,7 @@ export function calculateObservationScore(observation, marks) {
 
 /**
  * Authoritatively calculates summary totals (Total Marks, Total Score, Percentage)
- * for a worksheet according to section rules.
+ * for a worksheet according to section rules and supports multiple audit levels.
  * 
  * NA observations are strictly excluded from applicable marks.
  */
@@ -73,11 +72,9 @@ export function calculateSheetSummary(sheet, section = 'assembly') {
   const isCc = String(section).toLowerCase() === 'cc';
   const rows = sheet.rows;
 
-  // Assembly: marksCol=4, obsCol=5, scoreCol=6, checklist rows 3 to 36
-  // C&C: marksCol=5, obsCol=7, scoreCol=8, checklist rows 4 to 34
   let marksCol = isCc ? 5 : 4;
-  let obsCol = isCc ? 7 : 5;
-  let scoreCol = isCc ? 8 : 6;
+  let defaultObsCol = isCc ? 7 : 5;
+  let defaultScoreCol = isCc ? 8 : 6;
 
   // Dynamically verify header column indices if available
   const headerSearchRows = rows.slice(0, 6);
@@ -86,90 +83,133 @@ export function calculateSheetSummary(sheet, section = 'assembly') {
     const mIdx = r.findIndex(c => /^marks$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
     if (mIdx >= 0) marksCol = mIdx;
     const oIdx = r.findIndex(c => /^observation$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
-    if (oIdx >= 0) obsCol = oIdx;
+    if (oIdx >= 0) defaultObsCol = oIdx;
     const sIdx = r.findIndex(c => /^score$/i.test(String(c?.formatted ?? c?.value ?? '').trim()));
-    if (sIdx >= 0) scoreCol = sIdx;
+    if (sIdx >= 0) defaultScoreCol = sIdx;
+  }
+
+  // Detect column pairs (Observation, Score) for all active levels
+  const colPairs = [];
+  if (!isCc && sheet.columnCount > 7) {
+    const numLevels = Math.floor((sheet.columnCount - 5) / 2);
+    for (let i = 0; i < numLevels; i++) {
+      colPairs.push({ obsCol: 5 + i * 2, scoreCol: 6 + i * 2 });
+    }
+  } else {
+    colPairs.push({ obsCol: defaultObsCol, scoreCol: defaultScoreCol });
   }
 
   const startRow = isCc ? 4 : 3;
   const maxEndRow = isCc ? 35 : 37;
 
-  let totalMarks = 0;
-  let totalScore = 0;
-  let applicableCount = 0;
-  let naCount = 0;
-  let observationsCount = 0;
+  let overallTotalMarks = 0;
+  let overallTotalScore = 0;
+  let overallApplicableCount = 0;
+  let overallNaCount = 0;
+  let overallObservationsCount = 0;
+
+  // Track per-pair stats
+  const pairStats = colPairs.map(() => ({
+    totalMarks: 0,
+    totalScore: 0,
+    applicableCount: 0,
+    naCount: 0,
+    observationsCount: 0
+  }));
 
   const updatedRows = rows.map((row, rIdx) => {
     if (!Array.isArray(row) || rIdx < startRow || rIdx >= maxEndRow) return row;
 
     const nextRow = [...row];
     const marksCell = nextRow[marksCol] || { value: 0, formatted: '0', type: 'n' };
-    const obsCell = nextRow[obsCol] || { value: '', formatted: '', type: 'z' };
-    const rawObs = String(obsCell.value ?? obsCell.formatted ?? '').trim();
-
-    if (!rawObs) {
-      // Empty observation
-      return nextRow;
-    }
-
-    const normalizedObs = normalizeObservationSymbol(rawObs);
     const marksNum = Number(marksCell.value ?? marksCell.formatted ?? 0);
     const baseMarks = Number.isFinite(marksNum) ? marksNum : 0;
-    const computedScore = calculateObservationScore(normalizedObs, baseMarks);
 
-    // Update observation cell to normalized symbol
-    nextRow[obsCol] = {
-      ...obsCell,
-      value: normalizedObs,
-      formatted: normalizedObs,
-      type: 's'
-    };
+    colPairs.forEach((pair, pairIdx) => {
+      const obsCell = nextRow[pair.obsCol] || { value: '', formatted: '', type: 'z' };
+      const rawObs = String(obsCell.value ?? obsCell.formatted ?? '').trim();
 
-    // Update score cell
-    nextRow[scoreCol] = {
-      value: computedScore,
-      formatted: String(computedScore),
-      type: computedScore === 'NA' ? 's' : 'n'
-    };
+      if (!rawObs) return;
 
-    observationsCount++;
+      const normalizedObs = normalizeObservationSymbol(rawObs);
+      const computedScore = calculateObservationScore(normalizedObs, baseMarks);
 
-    if (normalizedObs === 'NA') {
-      naCount++;
-    } else {
-      applicableCount++;
-      totalMarks += baseMarks;
-      if (typeof computedScore === 'number') {
-        totalScore += computedScore;
+      nextRow[pair.obsCol] = {
+        ...obsCell,
+        value: normalizedObs,
+        formatted: normalizedObs,
+        type: 's'
+      };
+
+      nextRow[pair.scoreCol] = {
+        value: computedScore,
+        formatted: String(computedScore),
+        type: computedScore === 'NA' ? 's' : 'n'
+      };
+
+      pairStats[pairIdx].observationsCount++;
+      if (normalizedObs === 'NA') {
+        pairStats[pairIdx].naCount++;
+      } else {
+        pairStats[pairIdx].applicableCount++;
+        pairStats[pairIdx].totalMarks += baseMarks;
+        if (typeof computedScore === 'number') {
+          pairStats[pairIdx].totalScore += computedScore;
+        }
       }
-    }
+    });
 
     return nextRow;
   });
 
-  const percentage = totalMarks > 0
-    ? `${((totalScore / totalMarks) * 100).toFixed(2)}%`
+  const primaryStats = pairStats[0] || {
+    totalMarks: 0,
+    totalScore: 0,
+    applicableCount: 0,
+    naCount: 0,
+    observationsCount: 0
+  };
+
+  overallTotalMarks = primaryStats.totalMarks;
+  overallTotalScore = primaryStats.totalScore;
+  overallApplicableCount = primaryStats.applicableCount;
+  overallNaCount = primaryStats.naCount;
+  overallObservationsCount = primaryStats.observationsCount;
+
+  const percentage = overallTotalMarks > 0
+    ? `${((overallTotalScore / overallTotalMarks) * 100).toFixed(2)}%`
     : '0.00%';
 
-  // Update footer summary cells if applicable
-  // Assembly: Row 37 col 4 (Total Marks) & col 6 (Total Score), Row 38 col 4 (Percentage)
-  // C&C: Row 35 col 8 (Total Score), Row 36 col 6 (Percentage)
+  // Update summary rows for Assembly
   if (!isCc && updatedRows[37] && Array.isArray(updatedRows[37])) {
     const row37 = [...updatedRows[37]];
-    row37[4] = { value: `${totalMarks}/`, formatted: `${totalMarks}/`, type: 's' };
-    row37[6] = { value: String(totalScore), formatted: String(totalScore), type: 's' };
+    row37[4] = { value: `${overallTotalMarks}/`, formatted: `${overallTotalMarks}/`, type: 's' };
+    colPairs.forEach((pair, pairIdx) => {
+      const stats = pairStats[pairIdx];
+      row37[pair.scoreCol] = { value: String(stats.totalScore), formatted: String(stats.totalScore), type: 's' };
+    });
     updatedRows[37] = row37;
   }
+
   if (!isCc && updatedRows[38] && Array.isArray(updatedRows[38])) {
     const row38 = [...updatedRows[38]];
-    row38[4] = { value: percentage, formatted: percentage, type: 's' };
+    colPairs.forEach((pair, pairIdx) => {
+      const stats = pairStats[pairIdx];
+      const pct = stats.totalMarks > 0
+        ? `${((stats.totalScore / stats.totalMarks) * 100).toFixed(2)}%`
+        : '0.00%';
+      row38[pair.obsCol] = { value: pct, formatted: pct, type: 's' };
+      if (pairIdx === 0 && row38[4]) {
+        row38[4] = { value: pct, formatted: pct, type: 's' };
+      }
+    });
     updatedRows[38] = row38;
   }
 
+  // Update summary rows for C&C
   if (isCc && updatedRows[35] && Array.isArray(updatedRows[35])) {
     const row35 = [...updatedRows[35]];
-    row35[8] = { value: totalScore, formatted: String(totalScore), type: 'n' };
+    row35[8] = { value: overallTotalScore, formatted: String(overallTotalScore), type: 'n' };
     updatedRows[35] = row35;
   }
   if (isCc && updatedRows[36] && Array.isArray(updatedRows[36])) {
@@ -179,12 +219,12 @@ export function calculateSheetSummary(sheet, section = 'assembly') {
   }
 
   return {
-    totalMarks,
-    totalScore,
+    totalMarks: overallTotalMarks,
+    totalScore: overallTotalScore,
     percentage,
-    applicableCount,
-    naCount,
-    observationsCount,
+    applicableCount: overallApplicableCount,
+    naCount: overallNaCount,
+    observationsCount: overallObservationsCount,
     rows: updatedRows
   };
 }

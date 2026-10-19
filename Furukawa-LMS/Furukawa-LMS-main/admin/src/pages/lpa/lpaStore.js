@@ -225,9 +225,15 @@ export async function saveLPAWorkbook(ownerIdOrWorkbook, maybeWorkbook) {
     return createLPAWorkbook(ownerId, validated);
   }
 
+  const payload = {
+    ...validated,
+    id: targetId,
+    ownerId: String(ownerId)
+  };
+
   try {
-    const updated = await lpaApi.updateRecord(targetId, validated);
-    const record = updated?.id ? updated : { ...validated, id: targetId, updatedAt: new Date().toISOString() };
+    const updated = await lpaApi.updateRecord(targetId, payload);
+    const record = updated?.id ? updated : { ...payload, id: targetId, updatedAt: new Date().toISOString() };
 
     // Cache locally
     await transaction('readwrite', (store, done) => {

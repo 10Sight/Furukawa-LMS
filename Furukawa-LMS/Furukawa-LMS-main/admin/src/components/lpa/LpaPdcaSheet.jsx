@@ -221,7 +221,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   // Database-backed employee master records
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
-  const [showMonthlyGraph, setShowMonthlyGraph] = useState(true);
+  const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
 
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();

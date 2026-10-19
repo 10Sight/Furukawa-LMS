@@ -930,7 +930,7 @@ export default function PDCASheet({
   });
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
-  const [showMonthlyGraph, setShowMonthlyGraph] = useState(true);
+  const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
 
   // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
   const [observationWidth, setObservationWidth] = useState(() => {

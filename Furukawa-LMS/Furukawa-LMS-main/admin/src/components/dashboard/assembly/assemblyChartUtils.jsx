@@ -44,10 +44,21 @@ export const getPresentShiftLabel = (t, key) => (key === "OTHER"
     ? t('assembly.presentOther')
     : t('assembly.presentShift').replace('{shift}', key));
 
-// Bar series for a chart: Total, then one Present bar per visible shift on ALL,
-// or a single Present bar in that shift's colour for a picked shift.
-export const getBarSeries = (t, shift, rows) => {
+// Present view toggle, offered only when a chart shows ALL shifts
+export const PRESENT_VIEW_TOTAL = "total";
+export const PRESENT_VIEW_SHIFT = "shift";
+
+// True when the chart should split Present into one bar per shift
+export const isShiftBreakup = (shift, presentView) => shift === "ALL" && presentView === PRESENT_VIEW_SHIFT;
+
+// Bar series for a chart: Total, then one Present bar per visible shift on ALL with the
+// shift breakup view, a single blue Present bar on ALL with the total view, or a single
+// Present bar in that shift's colour for a picked shift.
+export const getBarSeries = (t, shift, rows, presentView = PRESENT_VIEW_SHIFT) => {
     const totalSeries = { dataKey: 'totalUsers', label: t('assembly.totalUsers'), color: TOTAL_COLOR };
+    if (shift === "ALL" && presentView === PRESENT_VIEW_TOTAL) {
+        return [totalSeries, { dataKey: 'presentUsers', label: t('assembly.presentUsers'), color: PRESENT_COLOR }];
+    }
     if (shift !== "ALL") {
         return [totalSeries, {
             dataKey: 'presentUsers',

@@ -5,10 +5,11 @@ import { useGetAssemblyDashboardStatsQuery } from "@/services/api/DashboardApi.j
 import {
     TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, RATE_COLOR, PRESENT_SHIFT_COLORS,
     formatCount, formatPercent, getShiftCounts, getVisibleShiftKeys, getBarSeries,
+    PRESENT_VIEW_SHIFT, isShiftBreakup,
 } from "./assemblyChartUtils.jsx";
 import {
     AttendanceTable, TableToggle, ChartLoader, ChartDateFilter, ChartShiftFilter,
-    ChartStatusNotice, ShiftNote,
+    ChartStatusNotice, ShiftNote, PresentViewToggle,
 } from "./assemblyChartShared.jsx";
 import AssemblyAttendanceBarChart from "./AssemblyAttendanceBarChart.jsx";
 
@@ -39,6 +40,7 @@ const AssemblyDepartmentChart = ({ defaultDate }) => {
     const { t } = useTranslate();
     const [date, setDate] = useState(defaultDate);
     const [shift, setShift] = useState("ALL");
+    const [presentView, setPresentView] = useState(PRESENT_VIEW_SHIFT);
     const [showTable, setShowTable] = useState(false);
 
     // Shift is applied in the browser from byShift, so changing it needs no request.
@@ -55,7 +57,9 @@ const AssemblyDepartmentChart = ({ defaultDate }) => {
         }))
         .sort((a, b) => b.totalUsers - a.totalUsers), [stats, shift, t]);
     const shiftKeys = useMemo(() => getVisibleShiftKeys(rows), [rows]);
-    const series = useMemo(() => getBarSeries(t, shift, rows), [t, shift, rows]);
+    const series = useMemo(() => getBarSeries(t, shift, rows, presentView), [t, shift, rows, presentView]);
+    // Per-shift detail in tooltip / table / KPI only when the shift breakup is shown
+    const detailShiftKeys = isShiftBreakup(shift, presentView) ? shiftKeys : [];
     const presentColor = shift === "ALL" ? PRESENT_COLOR : PRESENT_SHIFT_COLORS[shift];
 
     return (
@@ -68,6 +72,7 @@ const AssemblyDepartmentChart = ({ defaultDate }) => {
                 <div className="flex flex-wrap items-center gap-2">
                     <ChartDateFilter value={date} onChange={setDate} />
                     <ChartShiftFilter value={shift} onChange={setShift} />
+                    <PresentViewToggle shift={shift} value={presentView} onChange={setPresentView} />
                     {!isFetching && rows.length > 0 && (
                         <TableToggle open={showTable} onToggle={() => setShowTable(v => !v)} />
                     )}
@@ -88,7 +93,7 @@ const AssemblyDepartmentChart = ({ defaultDate }) => {
                                 icon={<IconUserCheck className="h-4 w-4 shrink-0" style={{ color: presentColor }} />}
                                 label={t('assembly.presentUsers')}
                                 value={formatCount(kpi.presentUsers)}
-                                footer={shift === "ALL" && shiftKeys.length > 0 && <PresentByShift department={department} shiftKeys={shiftKeys} />}
+                                footer={detailShiftKeys.length > 0 && <PresentByShift department={department} shiftKeys={detailShiftKeys} />}
                             />
                             <KpiCard icon={<IconUserX className="h-4 w-4 shrink-0" style={{ color: ABSENT_COLOR }} />} label={t('assembly.absentUsers')} value={formatCount(kpi.absentUsers)} />
                             <KpiCard icon={<IconPercentage className="h-4 w-4 shrink-0" style={{ color: RATE_COLOR }} />} label={t('assembly.attendanceRate')} value={formatPercent(kpi.attendancePercentage)} />
@@ -96,13 +101,13 @@ const AssemblyDepartmentChart = ({ defaultDate }) => {
                     )}
 
                     {rows.length > 0 && (showTable ? (
-                        <AttendanceTable rows={rows} nameLabel={t('assembly.section')} shift={shift} shiftKeys={shiftKeys} />
+                        <AttendanceTable rows={rows} nameLabel={t('assembly.section')} shift={shift} shiftKeys={detailShiftKeys} />
                     ) : (
                         <AssemblyAttendanceBarChart
                             rows={rows}
                             series={series}
                             shift={shift}
-                            shiftKeys={shiftKeys}
+                            shiftKeys={detailShiftKeys}
                             nameLabel={t('assembly.section')}
                             groupWidth={150}
                             height={380}

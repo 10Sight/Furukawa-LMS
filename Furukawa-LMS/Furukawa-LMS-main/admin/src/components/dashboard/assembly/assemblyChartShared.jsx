@@ -4,6 +4,7 @@ import { IconCalendar, IconAlertTriangle, IconInfoCircle } from "@tabler/icons-r
 import useTranslate from "@/hooks/useTranslate.js";
 import {
     TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, AXIS_TICK, PRESENT_SHIFT_COLORS, SHIFT_OPTIONS,
+    PRESENT_VIEW_TOTAL, PRESENT_VIEW_SHIFT,
     formatCount, formatPercent, getIstDateString, wrapLabel, getPresentShiftLabel,
 } from "./assemblyChartUtils.jsx";
 
@@ -67,6 +68,33 @@ export const ChartShiftFilter = ({ value, onChange }) => {
                         : "text-slate-500 hover:text-slate-800"}`}
                 >
                     {option}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+// Total present vs per-shift breakup; only meaningful when the chart shows ALL shifts
+export const PresentViewToggle = ({ shift, value, onChange }) => {
+    const { t } = useTranslate();
+    if (shift !== "ALL") return null;
+    const options = [
+        { value: PRESENT_VIEW_TOTAL, label: t('assembly.viewTotalPresent') },
+        { value: PRESENT_VIEW_SHIFT, label: t('assembly.viewShiftBreakup') },
+    ];
+    return (
+        <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label={t('assembly.presentView')}>
+            {options.map(option => (
+                <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => onChange(option.value)}
+                    aria-pressed={value === option.value}
+                    className={`whitespace-nowrap rounded px-2.5 py-1 text-xs font-semibold transition-colors ${value === option.value
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"}`}
+                >
+                    {option.label}
                 </button>
             ))}
         </div>

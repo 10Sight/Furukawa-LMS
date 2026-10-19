@@ -5,10 +5,11 @@ import { useGetAssemblyDashboardStatsQuery } from "@/services/api/DashboardApi.j
 import {
     TOTAL_COLOR, PRESENT_COLOR, PRESENT_SHIFT_COLORS,
     formatCount, formatPercent, getShiftCounts, getVisibleShiftKeys, getBarSeries,
+    PRESENT_VIEW_SHIFT, isShiftBreakup,
 } from "./assemblyChartUtils.jsx";
 import {
     AttendanceTable, TableToggle, ChartLoader, ChartDateFilter, ChartShiftFilter,
-    ChartStatusNotice, ShiftNote,
+    ChartStatusNotice, ShiftNote, PresentViewToggle,
 } from "./assemblyChartShared.jsx";
 import AssemblyAttendanceBarChart from "./AssemblyAttendanceBarChart.jsx";
 
@@ -25,6 +26,7 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, defaul
     const { t } = useTranslate();
     const [date, setDate] = useState(defaultDate);
     const [shift, setShift] = useState("ALL");
+    const [presentView, setPresentView] = useState(PRESENT_VIEW_SHIFT);
     const [showTable, setShowTable] = useState(false);
 
     // Shift is applied in the browser from byShift, so changing it needs no request.
@@ -42,7 +44,9 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, defaul
         ...getShiftCounts(line, shift),
     })), [section, shift, t]);
     const shiftKeys = useMemo(() => getVisibleShiftKeys(rows), [rows]);
-    const series = useMemo(() => getBarSeries(t, shift, rows), [t, shift, rows]);
+    const series = useMemo(() => getBarSeries(t, shift, rows, presentView), [t, shift, rows, presentView]);
+    // Per-shift detail in tooltip / table / KPI only when the shift breakup is shown
+    const detailShiftKeys = isShiftBreakup(shift, presentView) ? shiftKeys : [];
 
     const sectionName = sectionId == null
         ? t('assembly.unassignedSection')
@@ -64,6 +68,7 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, defaul
                 <div className="flex flex-wrap items-center gap-2">
                     <ChartDateFilter value={date} onChange={setDate} />
                     <ChartShiftFilter value={shift} onChange={setShift} />
+                    <PresentViewToggle shift={shift} value={presentView} onChange={setPresentView} />
                 </div>
                 {!isFetching && (
                     <div className="flex flex-wrap gap-1.5">
@@ -86,13 +91,13 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, defaul
                             {t('assembly.noLines')}
                         </div>
                     ) : showTable ? (
-                        <AttendanceTable rows={rows} nameLabel={t('assembly.line')} shift={shift} shiftKeys={shiftKeys} />
+                        <AttendanceTable rows={rows} nameLabel={t('assembly.line')} shift={shift} shiftKeys={detailShiftKeys} />
                     ) : (
                         <AssemblyAttendanceBarChart
                             rows={rows}
                             series={series}
                             shift={shift}
-                            shiftKeys={shiftKeys}
+                            shiftKeys={detailShiftKeys}
                             nameLabel={t('assembly.line')}
                             groupWidth={120}
                             height={330}

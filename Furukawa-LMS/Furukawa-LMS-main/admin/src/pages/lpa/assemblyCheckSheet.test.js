@@ -648,3 +648,36 @@ test('28. Same-day data retrieval and read-only enforcement for Level 2 and Leve
   assert.ok(componentSource.includes('assembly-readonly-observation'));
   assert.ok(componentSource.includes('View Only'));
 });
+
+test('29. Editing and deletion rule: only creator and admin can edit/delete LPA records', async () => {
+  const { canEditRecord, isRecordCreator } = await import('../pdca/data/recordFilters.js');
+
+  const creatorUser = { id: 'usr_123', empId: 'BW039182', name: 'Pooja Nair', role: 'EMPLOYEE' };
+  const adminUser = { id: 'admin_999', empId: 'ADMIN01', name: 'Admin User', role: 'ADMIN', isAdmin: true };
+  const otherUser = { id: 'other_456', empId: 'BW044111', name: 'Other User', role: 'EMPLOYEE' };
+
+  const recordCreatedByUser = {
+    id: 'lpa_rec_001',
+    name: 'Assembly LPA Check Sheet · 2026-10-19',
+    ownerId: 'usr_123',
+    createdBy: 'Pooja Nair'
+  };
+
+  // Creator can edit
+  assert.equal(canEditRecord(recordCreatedByUser, creatorUser), true);
+  assert.equal(isRecordCreator(recordCreatedByUser, creatorUser), true);
+
+  // Admin can edit
+  assert.equal(canEditRecord(recordCreatedByUser, adminUser), true);
+
+  // Other ordinary user CANNOT edit
+  assert.equal(canEditRecord(recordCreatedByUser, otherUser), false);
+  assert.equal(isRecordCreator(recordCreatedByUser, otherUser), false);
+
+  // Verify LpaPage.jsx enforces the rule
+  const lpaPageSource = fs.readFileSync(new URL('./LpaPage.jsx', import.meta.url), 'utf-8');
+  assert.ok(lpaPageSource.includes('canEditCurrentRecord'));
+  assert.ok(lpaPageSource.includes('canEditRecord'));
+  assert.ok(lpaPageSource.includes('View Only'));
+  assert.ok(lpaPageSource.includes('You are in view-only mode'));
+});

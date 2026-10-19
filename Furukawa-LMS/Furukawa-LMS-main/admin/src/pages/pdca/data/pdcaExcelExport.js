@@ -246,7 +246,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   // Prepare Data Validation Dropdowns
   const deptListStr = `"${PDCA_DEPARTMENTS.join(',')}"`;
   const unitListStr = '"Bawal,Gujrat"';
-  const statusListStr = '"Open,In - Progress,Closed,Delay"';
+  const statusListStr = '"Not-Started,Done,In- Progress,Delay"';
   const shiftListStr = '"A,B,C,General"';
 
   // Data Rows (Starting at row 7)
@@ -281,12 +281,14 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // D: Status
     const cellStatus = rowObj.getCell(4);
-    cellStatus.value = r.status || 'Open';
+    const rawStatus = r.status || 'Not-Started';
+    const normStatus = rawStatus === 'Closed' ? 'Done' : (rawStatus === 'Open' ? 'Not-Started' : (rawStatus === 'In Progress' || rawStatus === 'In - Progress' ? 'In- Progress' : rawStatus));
+    cellStatus.value = normStatus;
     applyCellStyle(cellStatus, {
       align: 'center',
       size: 9,
       bold: true,
-      color: r.status === 'Closed' ? '15803D' : ((r.status === 'In Progress' || r.status === 'In - Progress') ? '2563EB' : 'D97706')
+      color: normStatus === 'Done' ? '15803D' : (normStatus === 'In- Progress' ? '2563EB' : (normStatus === 'Delay' ? 'DC2626' : '1D4ED8'))
     });
     cellStatus.dataValidation = {
       type: 'list',
@@ -370,11 +372,14 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     // P: No. of time Revised
     const cellRevised = rowObj.getCell(16);
     if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0) {
-      cellRevised.value = r.revisedDates.join(', ');
+      cellRevised.value = r.revisedDates.map((item, i) => {
+        if (typeof item === 'string') return `${i + 1}. ${item}`;
+        const dateStr = item?.date || '';
+        const reasonStr = item?.reason ? ` - ${item.reason}` : '';
+        return `${i + 1}. ${dateStr}${reasonStr}`;
+      }).join('\n');
     } else {
-      cellRevised.value = r.noOfTimeRevised !== undefined && r.noOfTimeRevised !== null && r.noOfTimeRevised !== ''
-        ? (isNaN(Number(r.noOfTimeRevised)) ? String(r.noOfTimeRevised) : Number(r.noOfTimeRevised))
-        : 0;
+      cellRevised.value = '';
     }
     applyCellStyle(cellRevised, { align: 'center', size: 9 });
 

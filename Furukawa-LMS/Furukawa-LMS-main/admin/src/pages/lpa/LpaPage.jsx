@@ -18,6 +18,8 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
+import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
+import LpaTable from '../../components/lpa/LpaTable';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -169,7 +171,13 @@ function LpaPageContent({ viewContext }) {
     authUser?.role === 'admin'
   );
 
+  const canEditCurrentRecord = useMemo(() => {
+    if (!editor) return true;
+    return canEditRecord(editor, authUser);
+  }, [editor, authUser]);
+
   const updateSheetMetadata = useCallback((metadata) => {
+    if (!canEditCurrentRecord) return;
     setEditor(previous => {
       if (!previous) return previous;
       const updatedSheets = previous.sheets.map((s, idx) => {
@@ -209,6 +217,11 @@ function LpaPageContent({ viewContext }) {
   const saveEditor = async () => {
     if (!editor || requestInFlight.current) return false;
 
+    if (!canEditCurrentRecord) {
+      setMessage({ error: true, text: 'You are in view-only mode. Only the record creator or an administrator can edit and save changes.' });
+      return false;
+    }
+
     // Mandatory validation for Assembly check sheet: Date, Shift, Department
     if (editor.section === 'assembly' && isAssemblyCheckSheet(sheet)) {
       const formDate = sheet?.date || editor?.date || editor?.auditDate;
@@ -244,7 +257,12 @@ function LpaPageContent({ viewContext }) {
     finally { requestInFlight.current = false; setBusy(false); }
   };
   const deleteWorkbook = async record => {
-    if (!record.id || requestInFlight.current || !confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
+    if (!record.id || requestInFlight.current) return;
+    if (!canEditRecord(record, authUser)) {
+      setMessage({ error: true, text: 'You do not have permission to delete this LPA record. Only the creator or an admin can delete it.' });
+      return;
+    }
+    if (!confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
     requestInFlight.current = true;
     setBusy(true);
     try {
@@ -496,6 +514,7 @@ function LpaPageContent({ viewContext }) {
     return { anchors, hidden };
   }, [sheet?.merges]);
   const changeCell = (rowIndex, columnIndex, value, extraUpdates = []) => {
+    if (!canEditCurrentRecord) return;
     setEditor(previous => ({
       ...previous, sheets: previous.sheets.map((current, index) => index !== sheetIndex ? current : {
         ...current, rows: (() => {
@@ -627,7 +646,14 @@ function LpaPageContent({ viewContext }) {
 
   if (editor && sheet) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden">
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 bg-white shrink-0">
-      <button type="button" disabled={busy} onClick={saveEditor} className={primary}><Save size={16} />{busy ? 'Saving…' : 'Save'}</button>
+      {canEditCurrentRecord ? (
+        <button type="button" disabled={busy} onClick={saveEditor} className={primary}><Save size={16} />{busy ? 'Saving…' : 'Save'}</button>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold" title="Only the creator and admin can edit this form">
+          <Eye size={14} className="text-amber-600" />
+          View Only
+        </span>
+      )}
       <button type="button" disabled={busy} onClick={handleBack} className={button}><ArrowLeft size={16} />Back</button>
       <span className="text-xs text-slate-500 truncate max-w-xs">{editor.name} · {sheet.name}{dirty ? ' · Unsaved changes' : ''}</span>
       <div className="ml-auto flex items-center gap-2">
@@ -651,33 +677,17 @@ function LpaPageContent({ viewContext }) {
         <AssemblySheet
           sheet={sheet}
           editor={editor}
-          disabled={busy}
+          disabled={busy || !canEditCurrentRecord}
           onChange={changeCell}
           onMetadataChange={updateSheetMetadata}
           isAdmin={isAdmin}
         />
       </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
         <div style={{ zoom: `${zoom}%` }}>
-          <CcSheet sheet={sheet} editor={editor} disabled={busy} onChange={changeCell} />
+          <CcSheet sheet={sheet} editor={editor} disabled={busy || !canEditCurrentRecord} onChange={changeCell} />
         </div>
       </div> : <div style={{ zoom: `${zoom}%` }} className="min-w-full w-max">
-        <table className="border-collapse text-xs table-fixed bg-white" aria-label={`${sheet.name} editable LPA worksheet`}>
-          <colgroup><col style={{ width: 40 }} />{Array.from({ length: sheet.columnCount }, (_, c) => <col key={c} style={{ width: Math.max(100, Math.min(380, (sheet.columns?.[c]?.wch || 20) * 7)) }} />)}</colgroup>
-          <thead><tr><th className="border border-slate-300 bg-slate-100" />{Array.from({ length: sheet.columnCount }, (_, c) => <th key={c} className="border border-slate-300 bg-slate-100 p-1 sticky top-0 z-10">{columnName(c)}</th>)}</tr></thead>
-          <tbody>{sheet.rows.map((row, r) => <tr key={r} style={{ height: sheet.rowSizes?.[r]?.hpt ? `${sheet.rowSizes[r].hpt}pt` : undefined }}>
-            <th className="border border-slate-300 bg-slate-100 p-1 text-slate-500">{r + 1}</th>
-            {Array.from({ length: sheet.columnCount }, (_, c) => {
-              const key = `${r}:${c}`;
-              if (mergeMap.hidden.has(key)) return null;
-              const merge = mergeMap.anchors.get(key);
-              const cell = row[c];
-              const fill = cell?.style?.fgColor?.rgb;
-              return <td key={c} rowSpan={merge ? merge.e.r - r + 1 : 1} colSpan={merge ? merge.e.c - c + 1 : 1} className="border border-slate-300 align-top p-0" style={{ backgroundColor: fill && /^[0-9A-F]{6,8}$/i.test(fill) ? `#${fill.slice(-6)}` : undefined }}>
-                <textarea disabled={busy} aria-label={`${sheet.name} ${columnName(c)}${r + 1}`} value={cell?.formatted ?? String(cell?.value ?? '')} onChange={event => changeCell(r, c, event.target.value)} rows={Math.max(2, Math.min(8, String(cell?.formatted || '').split('\n').length))} title={cell?.formula ? `Imported formula: =${cell.formula}. Editing replaces this calculated value.` : undefined} className="block w-full min-h-10 h-full resize-y bg-transparent p-2 outline-none focus:bg-blue-50 focus:ring-2 focus:ring-inset focus:ring-blue-500 whitespace-pre-wrap" />
-              </td>;
-            })}
-          </tr>)}</tbody>
-        </table>
+        <LpaTable sheet={sheet} onChange={changeCell} disabled={busy || !canEditCurrentRecord} zoom={zoom} />
       </div>}
     </div>
 
@@ -1085,7 +1095,7 @@ function LpaPageContent({ viewContext }) {
                             <td className="px-4 py-4 text-slate-700">{secVal}</td>
                             <td className="px-4 py-4 text-slate-700">{lineVal}</td>
                             <td className="px-4 py-4 text-right">
-                              {record.id ? (
+                              {record.id && canEditRecord(record, authUser) ? (
                                 <button
                                   type="button"
                                   disabled={busy}

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmptyRow, createDefaultRows } from './pdcaStore.js';
+import { PDCA_STATUS_OPTIONS, normalizePDCAStatus } from './pdcaConstants.js';
+import { isUserResponsibleForRow, canUserEditPDCARow, EDITABLE_RESPONSIBLE_COLUMNS } from './recordFilters.js';
 
 test('1. Section P Department and dependent Unit dropdown rules', () => {
   const row = createEmptyRow();
@@ -77,48 +79,48 @@ test('2. Changing Department revalidates Unit selection', () => {
 
 test('3. Section A Confirmation dropdown & Conditional Status Logic (Rules A, B, C)', () => {
   const row = createEmptyRow();
-  assert.equal(row.status, 'Open');
+  assert.equal(normalizePDCAStatus(row.status), 'Not-Started');
   assert.equal(row.confirmation, '');
 
-  // Rule A: When the user selects Confirmed -> Automatically set Status to 'Closed'
+  // Rule A: When the user selects Confirmed -> Automatically set Status to 'Done' (legacy Closed)
   const confirmedRow = {
     ...row,
     confirmation: 'Confirmed',
-    status: 'Closed'
+    status: 'Done'
   };
   assert.equal(confirmedRow.confirmation, 'Confirmed');
-  assert.equal(confirmedRow.status, 'Closed');
+  assert.equal(normalizePDCAStatus(confirmedRow.status), 'Done');
 
-  // Rule B: When the user selects Not - Confirmed -> Automatically set Status to 'In - Progress'
+  // Rule B: When the user selects Not - Confirmed -> Automatically set Status to 'In- Progress'
   const notConfirmedRow = {
     ...row,
     confirmation: 'Not - Confirmed',
-    status: 'In - Progress'
+    status: 'In- Progress'
   };
   assert.equal(notConfirmedRow.confirmation, 'Not - Confirmed');
-  assert.equal(notConfirmedRow.status, 'In - Progress');
+  assert.equal(normalizePDCAStatus(notConfirmedRow.status), 'In- Progress');
 
-  // Rule C: Changing from Confirmed to Not - Confirmed updates Status from Closed to In - Progress
+  // Rule C: Changing from Confirmed to Not - Confirmed updates Status from Done to In- Progress
   const switchedToNotConfirmed = {
     ...confirmedRow,
     confirmation: 'Not - Confirmed',
-    status: 'In - Progress'
+    status: 'In- Progress'
   };
   assert.equal(switchedToNotConfirmed.confirmation, 'Not - Confirmed');
-  assert.equal(switchedToNotConfirmed.status, 'In - Progress');
+  assert.equal(normalizePDCAStatus(switchedToNotConfirmed.status), 'In- Progress');
 
-  // Rule C: Changing from Not - Confirmed to Confirmed updates Status from In - Progress to Closed
+  // Rule C: Changing from Not - Confirmed to Confirmed updates Status from In- Progress to Done
   const switchedBackToConfirmed = {
     ...switchedToNotConfirmed,
     confirmation: 'Confirmed',
-    status: 'Closed'
+    status: 'Done'
   };
   assert.equal(switchedBackToConfirmed.confirmation, 'Confirmed');
-  assert.equal(switchedBackToConfirmed.status, 'Closed');
+  assert.equal(normalizePDCAStatus(switchedBackToConfirmed.status), 'Done');
 });
 
-test('4. Rule D: Existing and incomplete records handling', () => {
-  // Existing record with Confirmed value -> Status must be Closed
+test('4. Rule D: Existing and incomplete records handling with new Statuses', () => {
+  // Existing record with Confirmed value -> Status must be Done
   const existingConfirmed = {
     ...createEmptyRow(),
     responsiblePersonConfirmation: 'Confirmed'
@@ -126,12 +128,12 @@ test('4. Rule D: Existing and incomplete records handling', () => {
   const normalizedConfirmed = {
     ...existingConfirmed,
     confirmation: 'Confirmed',
-    status: 'Closed'
+    status: 'Done'
   };
   assert.equal(normalizedConfirmed.confirmation, 'Confirmed');
-  assert.equal(normalizedConfirmed.status, 'Closed');
+  assert.equal(normalizePDCAStatus(normalizedConfirmed.status), 'Done');
 
-  // Existing record with Not - Confirmed value -> Status must be In - Progress
+  // Existing record with Not - Confirmed value -> Status must be In- Progress
   const existingNotConfirmed = {
     ...createEmptyRow(),
     responsiblePersonConfirmation: 'Not - Confirmed'
@@ -139,10 +141,10 @@ test('4. Rule D: Existing and incomplete records handling', () => {
   const normalizedNotConfirmed = {
     ...existingNotConfirmed,
     confirmation: 'Not - Confirmed',
-    status: 'In - Progress'
+    status: 'In- Progress'
   };
   assert.equal(normalizedNotConfirmed.confirmation, 'Not - Confirmed');
-  assert.equal(normalizedNotConfirmed.status, 'In - Progress');
+  assert.equal(normalizePDCAStatus(normalizedNotConfirmed.status), 'In- Progress');
 
   // Missing or empty confirmation value -> Keep saved status without arbitrary overwrite
   const incompleteRecord = {
@@ -151,18 +153,17 @@ test('4. Rule D: Existing and incomplete records handling', () => {
     confirmation: '',
     responsiblePersonConfirmation: ''
   };
-  assert.equal(incompleteRecord.status, 'Delay');
+  assert.equal(normalizePDCAStatus(incompleteRecord.status), 'Delay');
   assert.equal(incompleteRecord.confirmation, '');
 
-  // Historical remarks (e.g. 'Verified on site') must not be silently overwritten
+  // Legacy 'Open' status normalizes to 'Not-Started'
   const historicalRecord = {
     ...createEmptyRow(),
     status: 'Open',
     responsiblePersonConfirmation: 'Verified on site'
   };
   assert.equal(historicalRecord.responsiblePersonConfirmation, 'Verified on site');
-  // Since 'Verified on site' is neither 'Confirmed' nor 'Not - Confirmed', status remains 'Open'
-  assert.equal(historicalRecord.status, 'Open');
+  assert.equal(normalizePDCAStatus(historicalRecord.status), 'Not-Started');
 });
 
 test('5. Round-trip data persistence for Department, Unit, Confirmation, and Status', () => {
@@ -170,7 +171,7 @@ test('5. Round-trip data persistence for Department, Unit, Confirmation, and Sta
     ...createEmptyRow(),
     date: '2026-10-16',
     shift: 'A',
-    status: 'Closed',
+    status: 'Done',
     department: 'Quality',
     unit: 'Bawal',
     confirmation: 'Confirmed',
@@ -183,23 +184,119 @@ test('5. Round-trip data persistence for Department, Unit, Confirmation, and Sta
   assert.equal(parsed[0].department, 'Quality');
   assert.equal(parsed[0].unit, 'Bawal');
   assert.equal(parsed[0].confirmation, 'Confirmed');
-  assert.equal(parsed[0].status, 'Closed');
+  assert.equal(normalizePDCAStatus(parsed[0].status), 'Done');
   assert.equal(parsed[0].responsiblePersonConfirmation, 'Confirmed');
 });
 
-test('6. Status column dropdown has exactly one In Progress option (\'In - Progress\') and normalizes legacy \'In Progress\'', () => {
-  const STATUS_OPTIONS = ['Open', 'Closed', 'In - Progress', 'Delay'];
+test('6. Renamed Status dropdown options (Not-Started, Done, In- Progress, Delay)', () => {
+  assert.deepEqual(PDCA_STATUS_OPTIONS, ['Not-Started', 'Done', 'In- Progress', 'Delay']);
 
-  // Verify only one In Progress option exists in the list of options
-  const inProgressMatches = STATUS_OPTIONS.filter(opt => opt.toLowerCase().includes('progress'));
-  assert.equal(inProgressMatches.length, 1);
-  assert.equal(inProgressMatches[0], 'In - Progress');
-
-  // Verify legacy 'In Progress' normalizes to 'In - Progress'
-  const normalizeStatus = (status) => status === 'In Progress' ? 'In - Progress' : (status || 'Open');
-  assert.equal(normalizeStatus('In Progress'), 'In - Progress');
-  assert.equal(normalizeStatus('In - Progress'), 'In - Progress');
-  assert.equal(normalizeStatus('Open'), 'Open');
-  assert.equal(normalizeStatus('Closed'), 'Closed');
-  assert.equal(normalizeStatus('Delay'), 'Delay');
+  // Normalizations
+  assert.equal(normalizePDCAStatus('Open'), 'Not-Started');
+  assert.equal(normalizePDCAStatus('Closed'), 'Done');
+  assert.equal(normalizePDCAStatus('Done'), 'Done');
+  assert.equal(normalizePDCAStatus('Not-Started'), 'Not-Started');
+  assert.equal(normalizePDCAStatus('Delay'), 'Delay');
+  assert.equal(normalizePDCAStatus('In- Progress'), 'In- Progress');
+  assert.equal(normalizePDCAStatus('In - Progress'), 'In- Progress');
+  assert.equal(normalizePDCAStatus('In Progress'), 'In- Progress');
 });
+
+test('7. Responsible staff permission rules (5 editable columns only)', () => {
+  const assignedRow = {
+    ...createEmptyRow(),
+    staffEmployees: [
+      { id: 'emp-101', name: 'John Doe', code: 'EMP101' },
+      { id: 'emp-102', name: 'Jane Smith', code: 'EMP102' }
+    ],
+    rootCause: 'Machine vibration',
+    counterMeasure: 'Tightened bolt',
+    imageAfter: null,
+    stdDurationMin: 15,
+    responseDate: '2026-10-20'
+  };
+
+  const responsibleUser = { employeeId: 'EMP101', name: 'John Doe' };
+  const otherResponsibleUser = { employeeId: 'EMP102', name: 'Jane Smith' };
+  const unassignedUser = { employeeId: 'EMP999', name: 'Random Person' };
+  const adminUser = { role: 'admin', employeeId: 'ADMIN1' };
+
+  // Responsible check
+  assert.equal(isUserResponsibleForRow(assignedRow, responsibleUser), true);
+  assert.equal(isUserResponsibleForRow(assignedRow, otherResponsibleUser), true);
+  assert.equal(isUserResponsibleForRow(assignedRow, unassignedUser), false);
+
+  // Column edit permissions for responsible staff:
+  // Allowed: Root cause, Counter Measure, Image after, Std. Duration in Min, Response Date, No. of time Revised
+  for (const col of EDITABLE_RESPONSIBLE_COLUMNS) {
+    assert.equal(canUserEditPDCARow(assignedRow, responsibleUser, null, col), true, `Responsible user should edit ${col}`);
+  }
+
+  // Denied: Other columns (Date, Shift, Status, Department, Line, Staff Name, Confirmation, etc.)
+  const nonEditableCols = ['date', 'shift', 'status', 'department', 'unit', 'observation', 'imageBefore', 'staffEmployee', 'confirmation'];
+  for (const col of nonEditableCols) {
+    assert.equal(canUserEditPDCARow(assignedRow, responsibleUser, null, col), false, `Responsible user should NOT edit ${col}`);
+  }
+
+  // Admin user can edit all columns
+  for (const col of [...EDITABLE_RESPONSIBLE_COLUMNS, ...nonEditableCols]) {
+    assert.equal(canUserEditPDCARow(assignedRow, adminUser, null, col), true, `Admin should edit ${col}`);
+  }
+
+  // Unassigned user cannot edit any column
+  for (const col of [...EDITABLE_RESPONSIBLE_COLUMNS, ...nonEditableCols]) {
+    assert.equal(canUserEditPDCARow(assignedRow, unassignedUser, null, col), false, `Unassigned user should NOT edit ${col}`);
+  }
+});
+
+test('8. Response Date & Revision logic (1st time blank, 2nd time revision with reason)', () => {
+  let row = createEmptyRow();
+
+  // First time response date selection
+  const firstDate = '2026-10-25';
+  row = {
+    ...row,
+    initialResponseDate: firstDate,
+    responseDate: firstDate,
+    revisedDates: [],
+    noOfTimeRevised: 0
+  };
+
+  assert.equal(row.responseDate, '2026-10-25');
+  assert.equal(row.initialResponseDate, '2026-10-25');
+  assert.deepEqual(row.revisedDates, []);
+  assert.equal(row.noOfTimeRevised, 0);
+
+  // Second time response date selection: becomes Revision 1
+  const secondDate = '2026-10-28';
+  const newRevisedDates = [...row.revisedDates, { date: secondDate, reason: '' }];
+  row = {
+    ...row,
+    responseDate: secondDate,
+    revisedDates: newRevisedDates,
+    noOfTimeRevised: newRevisedDates.length
+  };
+
+  assert.equal(row.responseDate, '2026-10-28');
+  assert.equal(row.revisedDates.length, 1);
+  assert.equal(row.revisedDates[0].date, '2026-10-28');
+  assert.equal(row.revisedDates[0].reason, '');
+  assert.equal(row.noOfTimeRevised, 1);
+
+  // Entering a reason for revision 1
+  row.revisedDates[0].reason = 'Supplier delayed part delivery';
+  assert.equal(row.revisedDates[0].reason, 'Supplier delayed part delivery');
+
+  // Third time response date selection: becomes Revision 2
+  const thirdDate = '2026-10-31';
+  row.revisedDates.push({ date: thirdDate, reason: 'Trial rescheduled' });
+  row.responseDate = thirdDate;
+  row.noOfTimeRevised = row.revisedDates.length;
+
+  assert.equal(row.responseDate, '2026-10-31');
+  assert.equal(row.revisedDates.length, 2);
+  assert.equal(row.revisedDates[1].date, '2026-10-31');
+  assert.equal(row.revisedDates[1].reason, 'Trial rescheduled');
+  assert.equal(row.noOfTimeRevised, 2);
+});
+

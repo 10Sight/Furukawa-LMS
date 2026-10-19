@@ -37,8 +37,12 @@ import SendMailModal from '../common/SendMailModal';
 import PDCAMonthlyGraph from './PDCAMonthlyGraph';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
-import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
+import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+import {
+  isRecordCreator,
+  isUserResponsibleForRow,
+  isUserResponsibleForAnyRow
+} from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
   findEmployeeDepartment,
@@ -63,7 +67,7 @@ export const MAX_COUNTER_MEASURE_WIDTH = 550;
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status || 'Open',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
   department: customDefaults.department || '',
   departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
@@ -92,9 +96,10 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
   stdDurationMin: customDefaults.stdDurationMin !== undefined ? customDefaults.stdDurationMin : (customDefaults.stdDuration !== undefined ? customDefaults.stdDuration : ''),
+  initialResponseDate: customDefaults.initialResponseDate || customDefaults.responseDate || '',
   responseDate: customDefaults.responseDate || '',
-  revisedDates: Array.isArray(customDefaults.revisedDates) ? customDefaults.revisedDates : (customDefaults.responseDate ? [customDefaults.responseDate] : []),
-  noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : (customDefaults.noOfTimesRevised !== undefined ? customDefaults.noOfTimesRevised : 0),
+  revisedDates: Array.isArray(customDefaults.revisedDates) ? customDefaults.revisedDates : [],
+  noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : 0,
   respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
   responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
   responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
@@ -186,6 +191,50 @@ function AutoResizeTextarea({
         wordBreak: 'break-word',
         overflowWrap: 'break-word',
       }}
+    />
+  );
+}
+
+// Auto-adjusting input for revision reason with dynamic width based on content
+function AutoWidthInput({
+  value = '',
+  onChange,
+  placeholder = 'Why revised...',
+  readOnly = false,
+  className = '',
+  title = '',
+  minChars = 8,
+  maxChars = 40,
+}) {
+  const currentLen = (value || '').length;
+  const placeholderLen = (placeholder || '').length;
+  const chLen = Math.min(maxChars, Math.max(minChars, currentLen, placeholderLen));
+
+  if (readOnly) {
+    return (
+      <span
+        className="text-[10px] text-slate-700 italic px-1 py-0.5 truncate block max-w-full select-text text-center"
+        title={title || value || '-'}
+      >
+        {value || '-'}
+      </span>
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      title={title || value || placeholder}
+      style={{
+        fieldSizing: 'content',
+        width: `${chLen + 2}ch`,
+        maxWidth: '100%',
+        minWidth: '65px',
+      }}
+      className={className}
     />
   );
 }
@@ -574,7 +623,7 @@ export default function PDCASheet({
   currentDate,
   onDateChange,
   readOnly = false,
-  isCreator = true,
+  isCreator: propIsCreator = undefined,
   currentUser = null
 }) {
   const { data, setData, showToast, userContext } = usePDCA();
@@ -611,9 +660,11 @@ export default function PDCASheet({
     return false;
   }, [effectiveUser, userContext?.user]);
 
-  const effectiveReadOnly = Boolean(
-    readOnly || (topic?.id && !isRecordCreator(topic, effectiveUser))
-  );
+  const isCreator = propIsCreator !== undefined
+    ? Boolean(propIsCreator)
+    : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
+  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
+  const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
     ? (cftAssignedMembers.length === 1
@@ -728,9 +779,17 @@ export default function PDCASheet({
       : (lineArea ? [{ lineArea, lineAreaId, lineAreaCode, sectionId: lineAreaSectionId }] : []);
 
     const responseDate = row.responseDate || '';
-    const revisedDates = Array.isArray(row.revisedDates) && row.revisedDates.length > 0
-      ? row.revisedDates
-      : (responseDate ? [responseDate] : []);
+    let normalizedRevisedDates = [];
+    if (Array.isArray(row.revisedDates) && row.revisedDates.length > 0) {
+      if (row.revisedDates.length === 1 && typeof row.revisedDates[0] === 'string' && row.revisedDates[0] === responseDate) {
+        normalizedRevisedDates = [];
+      } else {
+        normalizedRevisedDates = row.revisedDates.map((item) => {
+          if (typeof item === 'string') return { date: item, reason: '' };
+          return { date: item?.date || '', reason: item?.reason || '' };
+        }).filter((r) => r.date);
+      }
+    }
 
     const resolvedDbDept = staffEmployees[0]?.department || (staffEmployee ? (findEmployeeDepartment(staffEmployee, dbEmployees) || findEmployeeDepartment(staffEmployee, VERIFIED_EMPLOYEE_MASTER)) : '') || '';
     const responsiblePersonDept = (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
@@ -743,14 +802,11 @@ export default function PDCASheet({
       confirmation = row.responsiblePersonConfirmation.trim();
     }
 
-    let status = row.status || 'Open';
-    if (status === 'In Progress') {
-      status = 'In - Progress';
-    }
+    let status = normalizePDCAStatus(row.status);
     if (confirmation === 'Confirmed') {
-      status = 'Closed';
+      status = 'Done';
     } else if (confirmation === 'Not - Confirmed') {
-      status = 'In - Progress';
+      status = 'In- Progress';
     }
 
     // Section P Unit
@@ -758,23 +814,20 @@ export default function PDCASheet({
     const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
       ? row.stdDurationMin
       : (row.stdDuration !== undefined && row.stdDuration !== null ? row.stdDuration : '');
-    const noOfTimeRevised = revisedDates.length > 1
-      ? revisedDates.length - 1
-      : ((row.noOfTimeRevised !== undefined && row.noOfTimeRevised !== null)
-        ? row.noOfTimeRevised
-        : (row.noOfTimesRevised !== undefined && row.noOfTimesRevised !== null ? row.noOfTimesRevised : 0));
+    const noOfTimeRevised = normalizedRevisedDates.length;
     const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
       ? row.respUnit
       : (row.responsiblePersonUnit || row.respUnit || '');
 
     return {
       ...row,
+      initialResponseDate: row.initialResponseDate || responseDate || '',
       department,
       departments,
       unit,
       stdDurationMin,
       responseDate,
-      revisedDates,
+      revisedDates: normalizedRevisedDates,
       noOfTimeRevised,
       respUnit,
       responsiblePersonUnit: respUnit,
@@ -836,6 +889,10 @@ export default function PDCASheet({
 
   // Initialize rows with 10 empty items by default
   const [rows, setRows] = useState(initialRows);
+
+  const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
+  const hasEditAccess = Boolean(!readOnly && (isCreatorOrAdmin || hasAnyRowResponsible));
+  const effectiveReadOnly = Boolean(readOnly || !hasEditAccess);
 
   const [activePreviewImage, setActivePreviewImage] = useState(null);
   const [selectedImageAction, setSelectedImageAction] = useState(null);
@@ -1155,7 +1212,7 @@ export default function PDCASheet({
 
   const saveSheet = async () => {
     if (effectiveReadOnly) {
-      showToast('You are in view-only mode. Only the record creator can save changes.');
+      showToast('You are in view-only mode. Only the record creator or assigned responsible staff can save changes.');
       return false;
     }
     if (isSaving) return false;
@@ -2212,30 +2269,66 @@ export default function PDCASheet({
       if (!curr) return prev;
 
       const oldDate = curr.responseDate || '';
-      let revisedDates = Array.isArray(curr.revisedDates) && curr.revisedDates.length > 0
-        ? [...curr.revisedDates]
-        : (oldDate ? [oldDate] : []);
+      let revisions = [];
+      if (Array.isArray(curr.revisedDates) && curr.revisedDates.length > 0) {
+        if (curr.revisedDates.length === 1 && typeof curr.revisedDates[0] === 'string' && curr.revisedDates[0] === oldDate) {
+          revisions = [];
+        } else {
+          revisions = curr.revisedDates.map((item) => {
+            if (typeof item === 'string') return { date: item, reason: '' };
+            return { date: item?.date || '', reason: item?.reason || '' };
+          }).filter((r) => r.date);
+        }
+      }
 
       if (!newDate) {
         updated[rowIndex] = {
           ...curr,
           responseDate: '',
-          revisedDates
+          revisedDates: revisions,
+          noOfTimeRevised: revisions.length
         };
         return updated;
       }
 
-      if (revisedDates.length === 0) {
-        revisedDates = [newDate];
-      } else if (curr.responseDate !== newDate) {
-        revisedDates = [...revisedDates, newDate];
+      // Check if this is the first time selecting a response date
+      const isFirstTime = !curr.initialResponseDate && !oldDate && revisions.length === 0;
+
+      let nextRevisions = revisions;
+      if (!isFirstTime && oldDate && oldDate !== newDate) {
+        // User selected response date for second or subsequent time: record revision
+        nextRevisions = [...revisions, { date: newDate, reason: '' }];
       }
 
       updated[rowIndex] = {
         ...curr,
+        initialResponseDate: curr.initialResponseDate || oldDate || newDate,
         responseDate: newDate,
-        revisedDates,
-        noOfTimeRevised: revisedDates.length > 1 ? revisedDates.length - 1 : 0
+        revisedDates: nextRevisions,
+        noOfTimeRevised: nextRevisions.length
+      };
+      return updated;
+    });
+  };
+
+  // Update why revised input reason
+  const handleRevisionReasonChange = (rowIndex, revIndex, reason) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      const revisions = Array.isArray(curr.revisedDates) ? [...curr.revisedDates] : [];
+      if (!revisions[revIndex]) return prev;
+
+      const target = revisions[revIndex];
+      revisions[revIndex] = typeof target === 'string'
+        ? { date: target, reason }
+        : { ...target, reason };
+
+      updated[rowIndex] = {
+        ...curr,
+        revisedDates: revisions
       };
       return updated;
     });
@@ -2256,13 +2349,17 @@ export default function PDCASheet({
       if (!curr || !Array.isArray(curr.revisedDates)) return prev;
 
       const remaining = curr.revisedDates.filter((_, i) => i !== dateIndex);
-      const latestDate = remaining.length > 0 ? remaining[remaining.length - 1] : '';
+      let latestDate = curr.initialResponseDate || '';
+      if (remaining.length > 0) {
+        const lastRev = remaining[remaining.length - 1];
+        latestDate = typeof lastRev === 'string' ? lastRev : (lastRev.date || latestDate);
+      }
 
       updated[rowIndex] = {
         ...curr,
         revisedDates: remaining,
         responseDate: latestDate,
-        noOfTimeRevised: remaining.length > 1 ? remaining.length - 1 : 0
+        noOfTimeRevised: remaining.length
       };
       return updated;
     });
@@ -2273,8 +2370,8 @@ export default function PDCASheet({
   };
 
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
-  // Rule A: Confirmed -> Status = Closed
-  // Rule B: Not - Confirmed -> Status = In - Progress
+  // Rule A: Confirmed -> Status = Done
+  // Rule B: Not - Confirmed -> Status = In- Progress
   // Rule C: Changing between them updates Status immediately
   // Rule D: If cleared, do not assign arbitrary status
   const handleConfirmationChange = (rowIndex, value) => {
@@ -2285,9 +2382,9 @@ export default function PDCASheet({
 
       let nextStatus = curr.status;
       if (value === 'Confirmed') {
-        nextStatus = 'Closed';
+        nextStatus = 'Done';
       } else if (value === 'Not - Confirmed') {
-        nextStatus = 'In - Progress';
+        nextStatus = 'In- Progress';
       }
 
       updated[rowIndex] = {
@@ -2302,18 +2399,18 @@ export default function PDCASheet({
 
   // Column 4: Status change handler
   const handleStatusChange = (rowIndex, value) => {
-    const normalizedStatus = (value === 'In Progress' || value === 'In - Progress') ? 'In - Progress' : value;
+    const normalizedStatus = normalizePDCAStatus(value);
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
       if (!curr) return prev;
 
       let nextConfirmation = curr.confirmation;
-      if (normalizedStatus === 'Closed') {
+      if (normalizedStatus === 'Done' || normalizedStatus === 'Closed') {
         nextConfirmation = 'Confirmed';
-      } else if (normalizedStatus === 'In - Progress') {
+      } else if (normalizedStatus === 'In- Progress' || normalizedStatus === 'In - Progress' || normalizedStatus === 'In Progress') {
         nextConfirmation = 'Not - Confirmed';
-      } else if (normalizedStatus === 'Open' || normalizedStatus === 'Delay') {
+      } else if (normalizedStatus === 'Not-Started' || normalizedStatus === 'Open' || normalizedStatus === 'Delay') {
         nextConfirmation = '';
       }
 
@@ -2998,7 +3095,21 @@ export default function PDCASheet({
     return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
-  const totalCols = effectiveReadOnly ? 21 : 22;
+  const totalCols = canEditEntireSheet ? 22 : 21;
+
+  const canUserEditActionColsForModalRow = Boolean(
+    !readOnly && (
+      canEditEntireSheet ||
+      (evidenceModal.rowIndex !== null && rows[evidenceModal.rowIndex] && isUserResponsibleForRow(rows[evidenceModal.rowIndex], effectiveUser))
+    )
+  );
+
+  const canUserEditActionColsForSelectedImage = Boolean(
+    !readOnly && (
+      canEditEntireSheet ||
+      (selectedImageAction?.rowIndex !== undefined && rows[selectedImageAction.rowIndex] && isUserResponsibleForRow(rows[selectedImageAction.rowIndex], effectiveUser))
+    )
+  );
 
   return (
     <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
@@ -3028,6 +3139,12 @@ export default function PDCASheet({
                 <span>{isSaving ? 'Saving...' : 'Save'}</span>
               </button>
             )}
+            {!canEditEntireSheet && !effectiveReadOnly && hasAnyRowResponsible && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-300 text-blue-800 text-xs font-bold shadow-2xs">
+                <User className="w-3.5 h-3.5 text-blue-600" />
+                <span>Responsible Staff Mode</span>
+              </span>
+            )}
             {effectiveReadOnly && (
               <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold shadow-2xs">
                 <Eye className="w-3.5 h-3.5 text-amber-600" />
@@ -3041,7 +3158,7 @@ export default function PDCASheet({
               <input
                 type="date"
                 value={formDate || ''}
-                disabled={effectiveReadOnly}
+                disabled={!canEditEntireSheet}
                 onChange={(e) => {
                   const val = e.target.value;
                   setFormDate(val);
@@ -3106,8 +3223,8 @@ export default function PDCASheet({
               />
             </div>
 
-            {/* Add Row Button (Only when not read-only) */}
-            {!effectiveReadOnly && (
+            {/* Add Row Button (Only for creator/admin) */}
+            {canEditEntireSheet && (
               <button
                 onClick={handleAddRow}
                 className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
@@ -3151,13 +3268,13 @@ export default function PDCASheet({
             <col style={{ width: '150px', minWidth: '140px' }} />
             <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '56px', minWidth: '52px' }} />
-            <col style={{ width: '80px', minWidth: '75px' }} />
+            <col style={{ width: '120px', minWidth: '110px' }} />
             <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '85px', minWidth: '75px' }} />
             <col style={{ width: '155px', minWidth: '140px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
             <col style={{ width: '120px', minWidth: '110px' }} />
-            {!effectiveReadOnly && <col style={{ width: '44px', minWidth: '40px' }} />}
+            {canEditEntireSheet && <col style={{ width: '44px', minWidth: '40px' }} />}
           </colgroup>
 
           {/* Table Column Headers - Frozen on vertical scroll */}
@@ -3467,7 +3584,7 @@ export default function PDCASheet({
               </th>
               <th
                 rowSpan={2}
-                className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]"
+                className="py-1 px-1 w-[120px] min-w-[110px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]"
                 title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
               >
                 <div className="font-semibold text-slate-800">No. of time</div>
@@ -3488,7 +3605,7 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[120px] min-w-[110px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[9.5px]">
                 (Responsible person instructions, etc.)
               </th>
-              {!effectiveReadOnly && (
+              {canEditEntireSheet && (
                 <th rowSpan={2} className="py-1.5 px-1 w-[44px] min-w-[40px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] font-semibold select-none">
                   Actions
                 </th>
@@ -3515,6 +3632,9 @@ export default function PDCASheet({
             <tbody className="bg-white">
               {rows.map((row, idx) => {
                 const sNo = idx + 1;
+                const canEditEntireRow = canEditEntireSheet;
+                const isRowResponsible = isUserResponsibleForRow(row, effectiveUser);
+                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
 
                 return (
                   <tr
@@ -3526,7 +3646,7 @@ export default function PDCASheet({
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.date}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditEntireRow}
                           onChange={(val) => handleCellChange(idx, 'date', val)}
                         />
                       </div>
@@ -3536,10 +3656,10 @@ export default function PDCASheet({
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
-                          disabled={effectiveReadOnly}
+                          disabled={!canEditEntireRow}
                           value={row.shift === 'General' ? 'G' : (row.shift || '')}
                           onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
+                          className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
                         >
                           <option value="">-</option>
                           <option value="A">A</option>
@@ -3547,7 +3667,7 @@ export default function PDCASheet({
                           <option value="C">C</option>
                           <option value="G">G</option>
                         </select>
-                        {!effectiveReadOnly && (
+                        {canEditEntireRow && (
                           <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         )}
                       </div>
@@ -3562,20 +3682,20 @@ export default function PDCASheet({
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
                       <div className="w-full flex items-center justify-center">
                         <select
-                          disabled={effectiveReadOnly}
+                          disabled={!canEditEntireRow}
                           aria-label={`Status for row ${sNo}`}
-                          value={row.status === 'In Progress' ? 'In - Progress' : (row.status || 'Open')}
+                          value={normalizePDCAStatus(row.status)}
                           onChange={event => handleStatusChange(idx, event.target.value)}
-                          className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${
-                            row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
-                            (row.status === 'In Progress' || row.status === 'In - Progress') ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                            row.status === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                          className={`w-full rounded-md border px-1 py-1 text-[11px] font-medium outline-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${
+                            normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                            normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
                             'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                         >
-                          <option value="Open" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Open</option>
-                          <option value="Closed" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Closed</option>
-                          <option value="In - Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In - Progress</option>
+                          <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
+                          <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
+                          <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
                           <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
                         </select>
                       </div>
@@ -3585,17 +3705,17 @@ export default function PDCASheet({
                     <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
                       <div className="relative w-full flex items-center justify-center">
                         <select
-                          disabled={effectiveReadOnly}
+                          disabled={!canEditEntireRow}
                           value={row.unit || ''}
                           onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                           title={row.unit || 'Select Unit'}
                         >
                           <option value="">Unit...</option>
                           <option value="Bawal">Bawal</option>
                           <option value="Gujrat">Gujrat</option>
                         </select>
-                        {!effectiveReadOnly && (
+                        {canEditEntireRow && (
                           <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         )}
                       </div>
@@ -3609,10 +3729,10 @@ export default function PDCASheet({
                             <div key={dIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/dept focus-within:bg-blue-50/30">
                               <div className="relative w-full flex items-center justify-center">
                                 <select
-                                  disabled={effectiveReadOnly}
+                                  disabled={!canEditEntireRow}
                                   value={dVal || ''}
                                   onChange={(e) => handleUpdateDepartment(idx, dIdx, e.target.value)}
-                                  className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                                  className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate font-medium`}
                                   title={dVal || 'Select Department'}
                                 >
                                   <option value="">Dept...</option>
@@ -3622,11 +3742,11 @@ export default function PDCASheet({
                                     </option>
                                   ))}
                                 </select>
-                                {!effectiveReadOnly && (
+                                {canEditEntireRow && (
                                   <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 )}
                               </div>
-                              {arr.length > 1 && !effectiveReadOnly && (
+                              {arr.length > 1 && canEditEntireRow && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveDepartment(idx, dIdx)}
@@ -3639,7 +3759,7 @@ export default function PDCASheet({
                             </div>
                           ))}
                         </div>
-                        {!effectiveReadOnly && (
+                        {canEditEntireRow && (
                           <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
                             <button
                               type="button"
@@ -3669,7 +3789,7 @@ export default function PDCASheet({
                             <div key={sIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/sec">
                               <div className="w-full flex items-center justify-center">
                                 <SearchableSectionSelect
-                                  disabled={effectiveReadOnly}
+                                  disabled={!canEditEntireRow}
                                   value={sVal.section}
                                   sectionId={sVal.sectionId}
                                   sectionCode={sVal.sectionCode}
@@ -3678,7 +3798,7 @@ export default function PDCASheet({
                                   placeholder="Section..."
                                 />
                               </div>
-                              {arr.length > 1 && !effectiveReadOnly && (
+                              {arr.length > 1 && canEditEntireRow && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveSection(idx, sIdx)}
@@ -3691,7 +3811,7 @@ export default function PDCASheet({
                             </div>
                           ))}
                         </div>
-                        {!effectiveReadOnly && (
+                        {canEditEntireRow && (
                           <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
                             <button
                               type="button"
@@ -3721,14 +3841,14 @@ export default function PDCASheet({
                             <div key={laIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/line">
                               <div className="w-full flex items-center justify-center">
                                 <SearchableLineAreaSelect
-                                  disabled={effectiveReadOnly}
+                                  disabled={!canEditEntireRow}
                                   value={laVal.lineArea}
                                   sectionId={laVal.sectionId ?? row.sections?.[laIdx]?.sectionId ?? row.sectionId}
                                   lineId={laVal.lineAreaId}
                                   onChange={(val, meta) => handleUpdateLineArea(idx, laIdx, val, meta)}
                                 />
                               </div>
-                              {arr.length > 1 && !effectiveReadOnly && (
+                              {arr.length > 1 && canEditEntireRow && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveLineArea(idx, laIdx)}
@@ -3741,7 +3861,7 @@ export default function PDCASheet({
                             </div>
                           ))}
                         </div>
-                        {!effectiveReadOnly && (
+                        {canEditEntireRow && (
                           <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
                             <button
                               type="button"
@@ -3769,7 +3889,7 @@ export default function PDCASheet({
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'observation', el)}
                         value={row.observation}
-                        readOnly={effectiveReadOnly}
+                        readOnly={!canEditEntireRow}
                         onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
                         placeholder="Observation details..."
@@ -3860,7 +3980,7 @@ export default function PDCASheet({
                           );
                         }
 
-                        if (effectiveReadOnly) {
+                        if (!canEditEntireRow) {
                           return (
                             <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
                               -
@@ -3897,7 +4017,7 @@ export default function PDCASheet({
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'rootCause', el)}
                           value={row.rootCause}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditActionCols}
                           onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                           placeholder="Root cause..."
@@ -3919,7 +4039,7 @@ export default function PDCASheet({
                         <AutoResizeTextarea
                           inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                           value={row.counterMeasure}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditActionCols}
                           onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                           placeholder="Counter measure..."
@@ -4011,7 +4131,7 @@ export default function PDCASheet({
                           );
                         }
 
-                        if (effectiveReadOnly) {
+                        if (!canEditActionCols) {
                           return (
                             <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
                               -
@@ -4040,7 +4160,7 @@ export default function PDCASheet({
                       <div className="w-full flex items-center justify-center">
                         <DurationMinCell
                           value={row.stdDurationMin}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditActionCols}
                           onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
                         />
                       </div>
@@ -4051,40 +4171,52 @@ export default function PDCASheet({
                       <div className="w-full flex items-center justify-center">
                         <CompactDateCell
                           value={row.responseDate}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditActionCols}
                           onChange={(val) => handleResponseDateChange(idx, val)}
                         />
                       </div>
                     </td>
 
                     {/* No. of time Revised - Stacked past and current response dates */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[110px]">
                       {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {row.revisedDates.map((rDate, rIdx) => (
-                            <div
-                              key={rIdx}
-                              className="group/rev w-full py-1 px-1 flex items-center justify-between text-center min-h-[26px] hover:bg-slate-50 transition-colors"
-                              title={`Revision ${rIdx + 1}: ${formatDisplayDate(rDate)}${isAdmin ? ' (Admin: Click ✕ to delete)' : ''}`}
-                            >
-                              <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
-                                {formatDisplayDate(rDate)}
-                              </span>
-                              {isAdmin && !effectiveReadOnly && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteRevisedDate(idx, rIdx);
-                                  }}
-                                  title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(rDate)}) - Admin only`}
-                                  className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
-                                >
-                                  <X className="w-3 h-3 stroke-[2.5]" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                          {row.revisedDates.map((rItem, rIdx) => {
+                            const revDate = typeof rItem === 'object' && rItem !== null ? rItem.date : rItem;
+                            const revReason = typeof rItem === 'object' && rItem !== null ? (rItem.reason || '') : '';
+                            return (
+                              <div
+                                key={rIdx}
+                                className="group/rev w-full py-1 px-1 flex flex-col items-center justify-center text-center gap-1 hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="w-full flex items-center justify-between gap-1">
+                                  <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                    {rIdx + 1}. {formatDisplayDate(revDate)}
+                                  </span>
+                                  {isAdmin && !readOnly && canEditEntireRow && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteRevisedDate(idx, rIdx);
+                                      }}
+                                      title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`}
+                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
+                                    >
+                                      <X className="w-3 h-3 stroke-[2.5]" />
+                                    </button>
+                                  )}
+                                </div>
+                                <AutoWidthInput
+                                  value={revReason}
+                                  readOnly={!canEditActionCols}
+                                  onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
+                                  placeholder="Why revised..."
+                                  className="text-[10px] text-slate-700 bg-white border border-slate-200 focus:border-blue-500 rounded px-1 py-0.5"
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
@@ -4103,7 +4235,7 @@ export default function PDCASheet({
                               className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                             >
                               <select
-                                disabled={effectiveReadOnly}
+                                disabled={!canEditEntireRow}
                                 value={emp.unit || row.respUnit || ''}
                                 onChange={(e) => {
                                   const newUnit = e.target.value;
@@ -4121,14 +4253,14 @@ export default function PDCASheet({
                                     return updated;
                                   });
                                 }}
-                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                                 title={emp.unit || row.respUnit || 'Select Unit'}
                               >
                                 <option value="">Unit...</option>
                                 <option value="Bawal">Bawal</option>
                                 <option value="Gujrat">Gujrat</option>
                               </select>
-                              {!effectiveReadOnly && (
+                              {canEditEntireRow && (
                                 <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                               )}
                             </div>
@@ -4137,7 +4269,7 @@ export default function PDCASheet({
                       ) : (
                         <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                           <select
-                            disabled={effectiveReadOnly}
+                            disabled={!canEditEntireRow}
                             value={row.respUnit || row.responsiblePersonUnit || ''}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -4151,14 +4283,14 @@ export default function PDCASheet({
                                 return updated;
                               });
                             }}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                             title={row.respUnit || row.responsiblePersonUnit || 'Select Unit'}
                           >
                             <option value="">Unit...</option>
                             <option value="Bawal">Bawal</option>
                             <option value="Gujrat">Gujrat</option>
                           </select>
-                          {!effectiveReadOnly && (
+                          {canEditEntireRow && (
                             <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           )}
                         </div>
@@ -4175,7 +4307,7 @@ export default function PDCASheet({
                               className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                             >
                               <select
-                                disabled={effectiveReadOnly}
+                                disabled={!canEditEntireRow}
                                 value={
                                   (emp.department && emp.department !== 'CFT')
                                     ? emp.department
@@ -4199,7 +4331,7 @@ export default function PDCASheet({
                                     return updated;
                                   });
                                 }}
-                                className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                                className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                                 title={((emp.department && emp.department !== 'CFT') ? emp.department : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) || row.responsiblePersonDept)) || 'Select Department'}
                               >
                                 <option value="">Dept...</option>
@@ -4218,7 +4350,7 @@ export default function PDCASheet({
                       ) : (
                         <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                           <select
-                            disabled={effectiveReadOnly}
+                            disabled={!canEditEntireRow}
                             value={
                               (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
                                 ? row.responsiblePersonDept
@@ -4229,7 +4361,7 @@ export default function PDCASheet({
                                        ''))
                             }
                             onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${effectiveReadOnly ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
                             title={row.responsiblePersonDept || 'Select Department'}
                           >
                             <option value="">Dept...</option>
@@ -4242,7 +4374,7 @@ export default function PDCASheet({
                               </option>
                             ))}
                           </select>
-                          {!effectiveReadOnly && (
+                          {canEditEntireRow && (
                             <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           )}
                         </div>
@@ -4263,13 +4395,13 @@ export default function PDCASheet({
                                 >
                                   <button
                                     type="button"
-                                    onClick={effectiveReadOnly ? undefined : () => handleOpenAddStaffModal(idx)}
-                                    className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${effectiveReadOnly ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
+                                    onClick={canEditEntireRow ? () => handleOpenAddStaffModal(idx) : undefined}
+                                    className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${!canEditEntireRow ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
                                     title={`Group: ${empDisplay}`}
                                   >
                                     {empDisplay}
                                   </button>
-                                  {!effectiveReadOnly && (
+                                  {canEditEntireRow && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -4288,7 +4420,7 @@ export default function PDCASheet({
                           </div>
                         ) : row.staffEmployee ? (
                           <div className="relative w-full pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
-                            {effectiveReadOnly ? (
+                            {!canEditEntireRow ? (
                               <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center select-text">
                                 {row.staffEmployee}
                               </span>
@@ -4318,7 +4450,7 @@ export default function PDCASheet({
                               </>
                             )}
                           </div>
-                        ) : effectiveReadOnly ? (
+                        ) : !canEditEntireRow ? (
                           <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[10px] select-none">
                             -
                           </div>
@@ -4337,8 +4469,8 @@ export default function PDCASheet({
                           </button>
                         )}
 
-                        {/* Down right side '+' option button (Only if not readOnly) */}
-                        {!effectiveReadOnly && (
+                        {/* Down right side '+' option button (Only if creator/admin) */}
+                        {canEditEntireRow && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -4362,8 +4494,8 @@ export default function PDCASheet({
                             {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
                             <button
                               type="button"
-                              onClick={(e) => handleToggleCFTDropdown(idx, e, 'members')}
-                              className="cft-trigger-btn flex-1 min-w-0 text-left cursor-pointer flex flex-col justify-center py-0.5 hover:opacity-85 transition-opacity"
+                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
+                              className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
                               title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                             >
                               <span
@@ -4388,8 +4520,8 @@ export default function PDCASheet({
                               )}
                             </button>
 
-                            {/* Right: Edit & Delete buttons (Only when not read-only) */}
-                            {!effectiveReadOnly && (
+                            {/* Right: Edit & Delete buttons (Only when creator/admin) */}
+                            {canEditEntireRow && (
                               <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
                                 <button
                                   type="button"
@@ -4410,7 +4542,7 @@ export default function PDCASheet({
                               </div>
                             )}
                           </div>
-                        ) : effectiveReadOnly ? (
+                        ) : !canEditEntireRow ? (
                           <span className="text-slate-300 text-[10px] select-none">-</span>
                         ) : (
                           <button
@@ -4434,14 +4566,14 @@ export default function PDCASheet({
                           row={row}
                           dbEmployees={dbEmployees}
                           currentUser={effectiveUser}
-                          readOnly={effectiveReadOnly}
+                          readOnly={!canEditEntireRow}
                           sNo={sNo}
                         />
                       </div>
                     </td>
 
                     {/* 16. Actions Column (Insert Row Above / Delete Row) */}
-                    {!effectiveReadOnly && (
+                    {canEditEntireSheet && (
                       <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <button
@@ -4477,7 +4609,7 @@ export default function PDCASheet({
             <span>Infinite rows active</span>
           </div>
 
-          {!effectiveReadOnly && (
+          {canEditEntireSheet && (
             <button
               onClick={handleAddRow}
               className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded shadow-2xs cursor-pointer text-xs"
@@ -4537,7 +4669,7 @@ export default function PDCASheet({
         isOpen={evidenceModal.isOpen}
         onClose={() => setEvidenceModal({ isOpen: false, rowIndex: null, field: null })}
         field={evidenceModal.field}
-        readOnly={effectiveReadOnly}
+        readOnly={evidenceModal.field === 'imageAfter' ? !canUserEditActionColsForModalRow : !canEditEntireSheet}
         rowIndex={evidenceModal.rowIndex ?? 0}
         images={
           evidenceModal.rowIndex !== null && evidenceModal.field
@@ -4592,8 +4724,8 @@ export default function PDCASheet({
 
               {/* Right: Actions (Replace, Edit, Download, Delete, Close) */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Replace Button (Only if not read-only) */}
-                {!effectiveReadOnly && (
+                {/* Replace Button (Only if user has edit permission for this field) */}
+                {canUserEditActionColsForSelectedImage && (
                   <button
                     type="button"
                     onClick={() => {
@@ -4609,8 +4741,8 @@ export default function PDCASheet({
                   </button>
                 )}
 
-                {/* Edit Button (visible for images and only if not read-only) */}
-                {!effectiveReadOnly && selectedImageAction.fileType === 'image' && (
+                {/* Edit Button (visible for images and only if user has edit permission for this field) */}
+                {canUserEditActionColsForSelectedImage && selectedImageAction.fileType === 'image' && (
                   <button
                     type="button"
                     onClick={() => {
@@ -4644,8 +4776,8 @@ export default function PDCASheet({
                   <span className="hidden sm:inline">Download</span>
                 </button>
 
-                {/* Delete Button (Only if not read-only) */}
-                {!effectiveReadOnly && (
+                {/* Delete Button (Only if user has edit permission for this field) */}
+                {canUserEditActionColsForSelectedImage && (
                   <button
                     type="button"
                     onClick={() => {

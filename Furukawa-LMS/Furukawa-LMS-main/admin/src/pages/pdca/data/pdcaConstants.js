@@ -44,3 +44,19 @@ export const DEFAULT_LINE_AREAS = [
   'Packaging Area',
   'Maintenance Area'
 ];
+
+export const PDCA_STATUS_OPTIONS = [
+  'Not-Started',
+  'Done',
+  'In- Progress',
+  'Delay'
+];
+
+export const normalizePDCAStatus = (status) => {
+  const s = String(status || '').trim();
+  if (!s || s === 'Open' || s === 'Not-Started') return 'Not-Started';
+  if (s === 'Closed' || s === 'Done') return 'Done';
+  if (s === 'In Progress' || s === 'In - Progress' || s === 'In- Progress') return 'In- Progress';
+  if (s === 'Delay' || s === 'Delayed') return 'Delay';
+  return s;
+};

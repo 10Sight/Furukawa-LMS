@@ -78,7 +78,7 @@ export default function PDCAMonthlyGraph({
         r.department ||
         r.staffEmployee ||
         r.date ||
-        (r.status && r.status !== 'Open')
+        (r.status && r.status !== 'Open' && r.status !== 'Not-Started')
       );
       if (!hasContent && !r.date) return null;
 

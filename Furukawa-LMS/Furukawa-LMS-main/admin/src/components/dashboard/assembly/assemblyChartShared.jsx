@@ -1,10 +1,10 @@
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React from 'react';
-import { IconCalendar, IconAlertTriangle } from "@tabler/icons-react";
+import { IconCalendar, IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate.js";
 import {
-    TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, AXIS_TICK,
-    formatCount, formatPercent, getIstDateString, wrapLabel,
+    TOTAL_COLOR, PRESENT_COLOR, ABSENT_COLOR, AXIS_TICK, PRESENT_SHIFT_COLORS, SHIFT_OPTIONS,
+    formatCount, formatPercent, getIstDateString, wrapLabel, getPresentShiftLabel,
 } from "./assemblyChartUtils.jsx";
 
 // FME logo, pulsing, centred in its chart while that chart's data loads
@@ -50,6 +50,29 @@ export const ChartDateFilter = ({ value, onChange }) => {
     );
 };
 
+// Shift filter owned by a single chart
+export const ChartShiftFilter = ({ value, onChange }) => {
+    const { t } = useTranslate();
+    return (
+        <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label={t('assembly.shift')}>
+            {SHIFT_OPTIONS.map(option => (
+                <button
+                    key={option}
+                    type="button"
+                    onClick={() => onChange(option)}
+                    aria-pressed={value === option}
+                    title={option === "ALL" ? t('assembly.allShifts') : `${t('assembly.shift')} ${option}`}
+                    className={`min-w-[32px] rounded px-2 py-1 text-xs font-bold transition-colors ${value === option
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"}`}
+                >
+                    {option}
+                </button>
+            ))}
+        </div>
+    );
+};
+
 // Holiday / missing-upload / error message for the date a chart is showing
 export const ChartStatusNotice = ({ stats, error }) => {
     const { t } = useTranslate();
@@ -68,6 +91,18 @@ export const ChartStatusNotice = ({ stats, error }) => {
     );
 };
 
+// Explains how a single-shift headcount is formed
+export const ShiftNote = ({ shift }) => {
+    const { t } = useTranslate();
+    if (shift === "ALL") return null;
+    return (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            <IconInfoCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{t('assembly.shiftNote')}</span>
+        </div>
+    );
+};
+
 // Horizontal, word-wrapped category label; the full name shows on hover.
 export const WrappedNameTick = ({ x, y, payload, charsPerLine = 14, maxLines = 2 }) => {
     const name = String(payload?.value || '');
@@ -81,32 +116,51 @@ export const WrappedNameTick = ({ x, y, payload, charsPerLine = 14, maxLines = 2
     );
 };
 
-export const SeriesLegend = () => {
-    const { t } = useTranslate();
-    return (
-        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600">
-            <span className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: TOTAL_COLOR }} />
-                {t('assembly.totalUsers')}
+// series: [{ dataKey, label, color }], the same list the chart draws its bars from
+export const SeriesLegend = ({ series }) => (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
+        {series.map(item => (
+            <span key={item.dataKey} className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: item.color }} />
+                {item.label}
             </span>
-            <span className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: PRESENT_COLOR }} />
-                {t('assembly.presentUsers')}
-            </span>
-        </div>
-    );
-};
+        ))}
+    </div>
+);
 
-export const AttendanceTooltip = ({ active, payload, nameLabel }) => {
+const TooltipRow = ({ color, label, value, indent = false }) => (
+    <div className={`flex items-center justify-between gap-4 py-0.5 ${indent ? "pl-4" : ""}`}>
+        <span className="flex items-center gap-1.5 text-slate-500">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
+            {label}
+        </span>
+        <span className="font-semibold text-slate-900 tabular-nums">{value}</span>
+    </div>
+);
+
+// shiftKeys: on ALL, the shifts whose present count is listed under Present
+export const AttendanceTooltip = ({ active, payload, nameLabel, shift, shiftKeys = [] }) => {
     const { t } = useTranslate();
     if (!active || !payload?.length) return null;
     const row = payload[0].payload;
+    const presentColor = shift === "ALL" ? PRESENT_COLOR : (PRESENT_SHIFT_COLORS[shift] || PRESENT_COLOR);
     return (
-        <div className="min-w-[200px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{nameLabel}</div>
+        <div className="min-w-[210px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                {nameLabel}{shift !== "ALL" ? ` · ${t('assembly.shift')} ${shift}` : ""}
+            </div>
             <div className="mb-2 text-sm font-bold text-slate-900">{row.name}</div>
             <TooltipRow color={TOTAL_COLOR} label={t('assembly.totalUsers')} value={formatCount(row.totalUsers)} />
-            <TooltipRow color={PRESENT_COLOR} label={t('assembly.presentUsers')} value={formatCount(row.presentUsers)} />
+            <TooltipRow color={presentColor} label={t('assembly.presentUsers')} value={formatCount(row.presentUsers)} />
+            {shift === "ALL" && shiftKeys.map(key => (
+                <TooltipRow
+                    key={key}
+                    indent
+                    color={PRESENT_SHIFT_COLORS[key]}
+                    label={getPresentShiftLabel(t, key)}
+                    value={formatCount(row[`present_${key}`])}
+                />
+            ))}
             <TooltipRow color={ABSENT_COLOR} label={t('assembly.absentUsers')} value={formatCount(row.absentUsers)} />
             <div className="mt-1.5 flex justify-between gap-4 border-t border-slate-100 pt-1.5">
                 <span className="text-slate-500">{t('assembly.attendanceRate')}</span>
@@ -116,18 +170,9 @@ export const AttendanceTooltip = ({ active, payload, nameLabel }) => {
     );
 };
 
-const TooltipRow = ({ color, label, value }) => (
-    <div className="flex items-center justify-between gap-4 py-0.5">
-        <span className="flex items-center gap-1.5 text-slate-500">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
-            {label}
-        </span>
-        <span className="font-semibold text-slate-900 tabular-nums">{value}</span>
-    </div>
-);
-
-export const AttendanceTable = ({ rows, nameLabel }) => {
+export const AttendanceTable = ({ rows, nameLabel, shift, shiftKeys = [] }) => {
     const { t } = useTranslate();
+    const perShiftKeys = shift === "ALL" ? shiftKeys : [];
     return (
         <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-left text-xs">
@@ -136,6 +181,9 @@ export const AttendanceTable = ({ rows, nameLabel }) => {
                         <th className="px-3 py-2 font-semibold">{nameLabel}</th>
                         <th className="px-3 py-2 text-right font-semibold">{t('assembly.totalUsers')}</th>
                         <th className="px-3 py-2 text-right font-semibold">{t('assembly.presentUsers')}</th>
+                        {perShiftKeys.map(key => (
+                            <th key={key} className="whitespace-nowrap px-3 py-2 text-right font-semibold">{getPresentShiftLabel(t, key)}</th>
+                        ))}
                         <th className="px-3 py-2 text-right font-semibold">{t('assembly.absentUsers')}</th>
                         <th className="px-3 py-2 text-right font-semibold">{t('assembly.attendanceRate')}</th>
                     </tr>
@@ -146,6 +194,9 @@ export const AttendanceTable = ({ rows, nameLabel }) => {
                             <td className="px-3 py-1.5 font-medium text-slate-900">{row.name}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums">{formatCount(row.totalUsers)}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums">{formatCount(row.presentUsers)}</td>
+                            {perShiftKeys.map(key => (
+                                <td key={key} className="px-3 py-1.5 text-right tabular-nums">{formatCount(row[`present_${key}`])}</td>
+                            ))}
                             <td className="px-3 py-1.5 text-right tabular-nums">{formatCount(row.absentUsers)}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums">{formatPercent(row.attendancePercentage)}</td>
                         </tr>

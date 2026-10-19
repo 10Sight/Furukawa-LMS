@@ -1,19 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LabelList, Tooltip } from 'recharts';
 import { IconBuildingFactory2 } from "@tabler/icons-react";
 import useTranslate from "@/hooks/useTranslate.js";
 import { useGetAssemblyDashboardStatsQuery } from "@/services/api/DashboardApi.js";
 import {
-    TOTAL_COLOR, PRESENT_COLOR, AXIS_TICK, GRID_STROKE,
-    formatCount, formatPercent, renderBarValueLabel,
+    TOTAL_COLOR, PRESENT_COLOR, PRESENT_SHIFT_COLORS,
+    formatCount, formatPercent, getShiftCounts, getVisibleShiftKeys, getBarSeries,
 } from "./assemblyChartUtils.jsx";
 import {
-    SeriesLegend, AttendanceTooltip, AttendanceTable, TableToggle,
-    ChartLoader, ChartDateFilter, ChartStatusNotice, WrappedNameTick,
+    AttendanceTable, TableToggle, ChartLoader, ChartDateFilter, ChartShiftFilter,
+    ChartStatusNotice, ShiftNote,
 } from "./assemblyChartShared.jsx";
-
-// Wide enough for a 14-character label line at the axis font size
-const MIN_WIDTH_PER_LINE = 120;
+import AssemblyAttendanceBarChart from "./AssemblyAttendanceBarChart.jsx";
 
 const Badge = ({ color, children }) => (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
@@ -22,32 +19,35 @@ const Badge = ({ color, children }) => (
     </span>
 );
 
-// sectionId is null for the Unassigned bucket. Each card keeps its own date; cards
-// on the same date share one cached request.
-const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, shift, defaultDate }) => {
+// sectionId is null for the Unassigned bucket. Each card keeps its own date and shift;
+// cards on the same date share one cached request.
+const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, defaultDate }) => {
     const { t } = useTranslate();
     const [date, setDate] = useState(defaultDate);
+    const [shift, setShift] = useState("ALL");
     const [showTable, setShowTable] = useState(false);
 
-    const { data, error, isFetching } = useGetAssemblyDashboardStatsQuery({ date, shift });
+    // Shift is applied in the browser from byShift, so changing it needs no request.
+    const { data, error, isFetching } = useGetAssemblyDashboardStatsQuery({ date });
     const stats = data?.data;
     const section = useMemo(
         () => (stats?.sections || []).find(item => (item.sectionId ?? null) === (sectionId ?? null)) || null,
         [stats, sectionId]
     );
+    const sectionCounts = section ? getShiftCounts(section, shift) : null;
 
     const rows = useMemo(() => (section?.lines || []).map(line => ({
         key: line.lineId ?? 'unassigned',
         name: line.isUnassigned ? t('assembly.unassignedLine') : line.lineName,
-        totalUsers: line.totalUsers,
-        presentUsers: line.presentUsers,
-        absentUsers: line.absentUsers,
-        attendancePercentage: line.attendancePercentage,
-    })), [section, t]);
+        ...getShiftCounts(line, shift),
+    })), [section, shift, t]);
+    const shiftKeys = useMemo(() => getVisibleShiftKeys(rows), [rows]);
+    const series = useMemo(() => getBarSeries(t, shift, rows), [t, shift, rows]);
 
     const sectionName = sectionId == null
         ? t('assembly.unassignedSection')
         : section?.sectionName || fallbackName;
+    const presentColor = shift === "ALL" ? PRESENT_COLOR : PRESENT_SHIFT_COLORS[shift];
 
     return (
         <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
@@ -61,12 +61,15 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, shift,
                         <TableToggle open={showTable} onToggle={() => setShowTable(v => !v)} />
                     )}
                 </div>
-                <ChartDateFilter value={date} onChange={setDate} />
+                <div className="flex flex-wrap items-center gap-2">
+                    <ChartDateFilter value={date} onChange={setDate} />
+                    <ChartShiftFilter value={shift} onChange={setShift} />
+                </div>
                 {!isFetching && (
                     <div className="flex flex-wrap gap-1.5">
-                        <Badge color={TOTAL_COLOR}>{t('assembly.totalUsers')}: {formatCount(section?.totalUsers)}</Badge>
-                        <Badge color={PRESENT_COLOR}>{t('assembly.presentUsers')}: {formatCount(section?.presentUsers)}</Badge>
-                        <Badge>{formatPercent(section?.attendancePercentage)}</Badge>
+                        <Badge color={TOTAL_COLOR}>{t('assembly.totalUsers')}: {formatCount(sectionCounts?.totalUsers)}</Badge>
+                        <Badge color={presentColor}>{t('assembly.presentUsers')}: {formatCount(sectionCounts?.presentUsers)}</Badge>
+                        <Badge>{formatPercent(sectionCounts?.attendancePercentage)}</Badge>
                         <Badge>{rows.length} {t('assembly.lines')}</Badge>
                     </div>
                 )}
@@ -77,43 +80,25 @@ const AssemblySectionLineChart = ({ sectionId, sectionName: fallbackName, shift,
             ) : (
                 <>
                     <ChartStatusNotice stats={stats} error={error} />
+                    <ShiftNote shift={shift} />
                     {rows.length === 0 ? (
                         <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-200 py-10 text-sm text-slate-400">
                             {t('assembly.noLines')}
                         </div>
                     ) : showTable ? (
-                        <AttendanceTable rows={rows} nameLabel={t('assembly.line')} />
+                        <AttendanceTable rows={rows} nameLabel={t('assembly.line')} shift={shift} shiftKeys={shiftKeys} />
                     ) : (
-                        <>
-                            <div className="mt-3 w-full overflow-x-auto pb-1">
-                                <div style={{ width: '100%', minWidth: Math.max(320, rows.length * MIN_WIDTH_PER_LINE), height: 320 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={rows} margin={{ top: 24, right: 8, left: -12, bottom: 4 }} barGap={2} barCategoryGap="20%">
-                                            <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
-                                            <XAxis
-                                                dataKey="name"
-                                                interval={0}
-                                                tick={<WrappedNameTick charsPerLine={14} maxLines={2} />}
-                                                height={44}
-                                                tickLine={false}
-                                                axisLine={{ stroke: '#cbd5e1' }}
-                                            />
-                                            <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
-                                            <Tooltip cursor={{ fill: '#f1f5f9' }} content={<AttendanceTooltip nameLabel={t('assembly.line')} />} />
-                                            <Bar dataKey="totalUsers" name={t('assembly.totalUsers')} fill={TOTAL_COLOR} radius={[4, 4, 0, 0]} maxBarSize={36} minPointSize={2}>
-                                                <LabelList dataKey="totalUsers" content={renderBarValueLabel()} />
-                                            </Bar>
-                                            <Bar dataKey="presentUsers" name={t('assembly.presentUsers')} fill={PRESENT_COLOR} radius={[4, 4, 0, 0]} maxBarSize={36} minPointSize={2}>
-                                                <LabelList dataKey="presentUsers" content={renderBarValueLabel()} />
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
-                            <div className="mt-2 flex justify-center">
-                                <SeriesLegend />
-                            </div>
-                        </>
+                        <AssemblyAttendanceBarChart
+                            rows={rows}
+                            series={series}
+                            shift={shift}
+                            shiftKeys={shiftKeys}
+                            nameLabel={t('assembly.line')}
+                            groupWidth={120}
+                            height={330}
+                            labelCharsPerLine={14}
+                            labelMaxLines={2}
+                        />
                     )}
                 </>
             )}

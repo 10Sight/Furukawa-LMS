@@ -7,6 +7,61 @@ export const ABSENT_COLOR = '#e11d48';
 export const RATE_COLOR = '#059669';
 
 export const SHIFT_OPTIONS = ["ALL", "A", "B", "C", "G"];
+export const SHIFT_BAR_KEYS = ["A", "B", "C", "G", "OTHER"];
+
+// One fixed colour per shift (validated with Total amber for colour-blind separation).
+// A shift keeps its colour on every chart and date; A is the standard present blue.
+export const PRESENT_SHIFT_COLORS = {
+    A: '#2563eb',
+    B: '#0d9488',
+    C: '#7c3aed',
+    G: '#db2777',
+    OTHER: '#4d7c0f',
+};
+
+const toCountRow = (counts = {}) => ({
+    totalUsers: counts.totalUsers || 0,
+    presentUsers: counts.presentUsers || 0,
+    absentUsers: counts.absentUsers || 0,
+    attendancePercentage: counts.attendancePercentage || 0,
+});
+
+// Counts of a department / section / line node for the chart's shift filter, plus
+// present_<shift> fields for the per-shift bars on ALL.
+export const getShiftCounts = (node, shift) => {
+    const base = toCountRow(shift === "ALL" ? node : node?.byShift?.[shift]);
+    const perShift = Object.fromEntries(
+        SHIFT_BAR_KEYS.map(key => [`present_${key}`, node?.byShift?.[key]?.presentUsers || 0])
+    );
+    return { ...base, ...perShift };
+};
+
+// Shifts that have anybody present somewhere in the chart; empty shifts get no bar.
+export const getVisibleShiftKeys = (rows) =>
+    SHIFT_BAR_KEYS.filter(key => rows.some(row => row[`present_${key}`] > 0));
+
+export const getPresentShiftLabel = (t, key) => (key === "OTHER"
+    ? t('assembly.presentOther')
+    : t('assembly.presentShift').replace('{shift}', key));
+
+// Bar series for a chart: Total, then one Present bar per visible shift on ALL,
+// or a single Present bar in that shift's colour for a picked shift.
+export const getBarSeries = (t, shift, rows) => {
+    const totalSeries = { dataKey: 'totalUsers', label: t('assembly.totalUsers'), color: TOTAL_COLOR };
+    if (shift !== "ALL") {
+        return [totalSeries, {
+            dataKey: 'presentUsers',
+            label: getPresentShiftLabel(t, shift),
+            color: PRESENT_SHIFT_COLORS[shift] || PRESENT_COLOR,
+        }];
+    }
+    return [totalSeries, ...getVisibleShiftKeys(rows).map(key => ({
+        dataKey: `present_${key}`,
+        label: getPresentShiftLabel(t, key),
+        color: PRESENT_SHIFT_COLORS[key],
+        hideZeroLabel: true,
+    }))];
+};
 
 // Sections with more lines than this get a full-width card
 export const WIDE_SECTION_LINE_COUNT = 6;
@@ -48,10 +103,11 @@ export const wrapLabel = (name, charsPerLine, maxLines) => {
 };
 
 // Value label above a bar. Text stays in ink colour; the bar carries the series identity.
-export const renderBarValueLabel = () => ({ x, y, width, value }) => {
-    if (value == null) return null;
+// Per-shift bars skip "0" so a row of empty shifts doesn't fill the chart with zeros.
+export const renderBarValueLabel = (hideZero = false) => ({ x, y, width, value }) => {
+    if (value == null || (hideZero && !value)) return null;
     return (
-        <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#1e293b" fontSize={12} fontWeight={700}>
+        <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#1e293b" fontSize={11} fontWeight={700}>
             {formatCount(value)}
         </text>
     );

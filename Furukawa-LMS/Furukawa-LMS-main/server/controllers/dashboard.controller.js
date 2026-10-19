@@ -5246,9 +5246,24 @@ export const getDashboardLines = asyncHandler(async (req, res) => {
 |   lowest section id whose sections.users JSON lists the user.
 | - Users with no resolvable section / line are reported in "Unassigned"
 |   buckets so line totals always add up to the section and department totals.
+|
+| Every department / section / line also carries `byShift` with the counts for
+| A, B, C, G and OTHER, so one response per date serves every shift filter.
+| A user has at most one attendance row per date (UC_User_Date), so the
+| per-shift present counts add up to the ALL present count. OTHER holds
+| present rows whose shift is none of A/B/C/G and is present-only
+| (its totalUsers equals its presentUsers). Top-level counts follow `shift`.
 */
 const ASSEMBLY_DEPARTMENT_NAME = "ASSEMBLY";
 const ASSEMBLY_SHIFT_OPTIONS = ["ALL", "A", "B", "C", "G"];
+const ASSEMBLY_SHIFT_KEYS = ["A", "B", "C", "G"];
+const ASSEMBLY_OTHER_SHIFT_KEY = "OTHER";
+const ASSEMBLY_BUCKET_KEYS = ["ALL", ...ASSEMBLY_SHIFT_KEYS, ASSEMBLY_OTHER_SHIFT_KEY];
+
+const ASSEMBLY_SHIFT_KEY_BY_COMPACT = new Map(
+    ASSEMBLY_SHIFT_KEYS.flatMap(shiftKey =>
+        getAcceptedShiftCompacts(shiftKey).map(compact => [compact, shiftKey]))
+);
 
 const toPositiveInt = (value) => {
     const parsed = Number(value);
@@ -5312,8 +5327,6 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
     if (!ASSEMBLY_SHIFT_OPTIONS.includes(requestedShift)) {
         return res.status(400).json({ success: false, message: `Invalid shift. Use one of: ${ASSEMBLY_SHIFT_OPTIONS.join(", ")}.` });
     }
-    const selectedShift = requestedShift === "ALL" ? null : requestedShift;
-    const acceptedShiftCompacts = selectedShift ? new Set(getAcceptedShiftCompacts(selectedShift)) : null;
 
     const requestedDepartmentId = toPositiveInt(departmentId);
     const [departmentRows] = requestedDepartmentId
@@ -5336,8 +5349,9 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
         END
     `;
 
-    let attendanceSql = `
-        SELECT al.userId, al.payCode, al.status
+    // All shifts are fetched; rows are split into shift buckets in Node.
+    const attendanceSql = `
+        SELECT al.userId, al.payCode, al.status, al.shift
         FROM attendance_logs al
         INNER JOIN users u ON al.userId = u.id
         WHERE al.[date] >= CONVERT(DATE, ?, 23)
@@ -5345,15 +5359,8 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
           AND u.departmentId = ?
     `;
     const attendanceParams = [selectedDate, selectedDate, deptId];
-    if (acceptedShiftCompacts) {
-        attendanceSql += `
-          AND REPLACE(REPLACE(REPLACE(UPPER(LTRIM(RTRIM(CAST(al.shift AS NVARCHAR(100))))), ' ', ''), '-', ''), '_', '')
-              IN (${[...acceptedShiftCompacts].map(() => "?").join(",")})
-        `;
-        attendanceParams.push(...acceptedShiftCompacts);
-    }
 
-    // PERFORMANCE: every query below depends only on deptId/date/shift, so run them
+    // PERFORMANCE: every query below depends only on deptId/date, so run them
     // together. Attendance is fetched alongside the holiday lookup and discarded
     // afterwards when the date turns out to be a holiday.
     const [
@@ -5467,8 +5474,11 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
     };
 
     // ---- Buckets -------------------------------------------------------------------
+    // Each bucket holds one { totalUsers, presentUsers } pair per ASSEMBLY_BUCKET_KEYS entry.
     const UNASSIGNED_KEY = "unassigned";
-    const newBucket = () => ({ totalUsers: new Set(), presentUsers: new Set() });
+    const newBucket = () => Object.fromEntries(
+        ASSEMBLY_BUCKET_KEYS.map(key => [key, { totalUsers: new Set(), presentUsers: new Set() }])
+    );
     const departmentBucket = newBucket();
     const sectionBuckets = new Map();
     const getSectionBucket = (sectionId) => {
@@ -5483,12 +5493,13 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
         if (!sectionBucket.lines.has(key)) sectionBucket.lines.set(key, newBucket());
         return sectionBucket.lines.get(key);
     };
-    const addToBuckets = (placement, field, userId) => {
+    const addToBuckets = (placement, bucketKey, field, userId) => {
         const sectionBucket = getSectionBucket(placement.sectionId);
-        departmentBucket[field].add(userId);
-        sectionBucket[field].add(userId);
-        getLineBucket(sectionBucket, placement.lineId)[field].add(userId);
+        departmentBucket[bucketKey][field].add(userId);
+        sectionBucket[bucketKey][field].add(userId);
+        getLineBucket(sectionBucket, placement.lineId)[bucketKey][field].add(userId);
     };
+    const getShiftKey = (compactValue) => ASSEMBLY_SHIFT_KEY_BY_COMPACT.get(compactValue) || null;
 
     // Every active section and line gets a card / bar even when it has nobody in it.
     for (const sectionId of sectionsById.keys()) getSectionBucket(sectionId);
@@ -5509,20 +5520,22 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
             placement,
         });
 
-        if (acceptedShiftCompacts) {
-            const userShift = compactShiftValue(userRow.scheduledShift) || compactShiftValue(userRow.shift);
-            if (!acceptedShiftCompacts.has(userShift)) continue;
-        }
+        addToBuckets(placement, "ALL", "totalUsers", userId);
 
-        addToBuckets(placement, "totalUsers", userId);
+        const rosterShiftKey = getShiftKey(
+            compactShiftValue(userRow.scheduledShift) || compactShiftValue(userRow.shift)
+        );
+        if (rosterShiftKey) addToBuckets(placement, rosterShiftKey, "totalUsers", userId);
     }
 
     // ---- Present Users ---------------------------------------------------------
-    let attendanceRecords = 0;
+    const attendanceRecordsByShift = Object.fromEntries(ASSEMBLY_BUCKET_KEYS.map(key => [key, 0]));
     if (!holiday) {
-        attendanceRecords = (attendanceRows || []).length;
-
         for (const row of attendanceRows || []) {
+            const rowShiftKey = getShiftKey(compactShiftValue(row.shift));
+            attendanceRecordsByShift.ALL += 1;
+            if (rowShiftKey) attendanceRecordsByShift[rowShiftKey] += 1;
+
             const userId = Number(row.userId);
             const userInfo = populationById.get(userId);
             if (!userInfo) continue;
@@ -5530,19 +5543,30 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
             const payCodeKey = String(row.payCode || "").trim().toUpperCase();
             if (!payCodeKey || payCodeKey !== userInfo.empIdKey) continue;
 
-            // Rows here are already limited to the selected shift, so anyone who
-            // worked (or was marked absent in) that shift belongs to its headcount.
-            if (acceptedShiftCompacts) addToBuckets(userInfo.placement, "totalUsers", userId);
+            // Anyone who worked (or was marked absent in) a shift belongs to its headcount.
+            if (rowShiftKey) addToBuckets(userInfo.placement, rowShiftKey, "totalUsers", userId);
 
             const attendanceStatus = String(row.status || "").trim().toUpperCase();
             if (!["P", "PRESENT"].includes(attendanceStatus)) continue;
 
-            addToBuckets(userInfo.placement, "presentUsers", userId);
+            addToBuckets(userInfo.placement, "ALL", "presentUsers", userId);
+            if (!rowShiftKey) {
+                attendanceRecordsByShift[ASSEMBLY_OTHER_SHIFT_KEY] += 1;
+                addToBuckets(userInfo.placement, ASSEMBLY_OTHER_SHIFT_KEY, "totalUsers", userId);
+            }
+            addToBuckets(userInfo.placement, rowShiftKey || ASSEMBLY_OTHER_SHIFT_KEY, "presentUsers", userId);
         }
     }
 
     // ---- Response -------------------------------------------------------------
-    const hasUsers = (bucket) => bucket.totalUsers.size > 0 || bucket.presentUsers.size > 0;
+    // ALL holds every user of the node, so it decides whether an Unassigned bucket is shown.
+    const hasUsers = (bucket) => bucket.ALL.totalUsers.size > 0 || bucket.ALL.presentUsers.size > 0;
+    const buildShiftCounts = (bucket) => ({
+        ...buildAttendanceCounts(bucket[requestedShift]),
+        byShift: Object.fromEntries(
+            [...ASSEMBLY_SHIFT_KEYS, ASSEMBLY_OTHER_SHIFT_KEY].map(key => [key, buildAttendanceCounts(bucket[key])])
+        ),
+    });
     const sections = [...sectionBuckets.entries()]
         .filter(([key, bucket]) => key !== UNASSIGNED_KEY || hasUsers(bucket))
         .map(([key, bucket]) => {
@@ -5552,7 +5576,7 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
                     lineId: lineKey === UNASSIGNED_KEY ? null : lineKey,
                     lineName: lineKey === UNASSIGNED_KEY ? null : linesById.get(lineKey)?.lineName || "",
                     isUnassigned: lineKey === UNASSIGNED_KEY,
-                    ...buildAttendanceCounts(lineBucket),
+                    ...buildShiftCounts(lineBucket),
                 }))
                 .sort((a, b) => Number(a.isUnassigned) - Number(b.isUnassigned) || compareNamesNaturally(a.lineName, b.lineName));
 
@@ -5560,7 +5584,7 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
                 sectionId: key === UNASSIGNED_KEY ? null : key,
                 sectionName: key === UNASSIGNED_KEY ? null : sectionsById.get(key)?.sectionName || "",
                 isUnassigned: key === UNASSIGNED_KEY,
-                ...buildAttendanceCounts(bucket),
+                ...buildShiftCounts(bucket),
                 lines,
             };
         })
@@ -5574,11 +5598,12 @@ export const getAssemblyDashboardStats = asyncHandler(async (req, res) => {
                 shift: requestedShift,
                 availableShifts: ASSEMBLY_SHIFT_OPTIONS,
                 holiday: holiday ? { name: holiday.holidayName, shortCode: holiday.shortCode } : null,
-                attendanceRecords,
+                attendanceRecords: attendanceRecordsByShift[requestedShift],
+                attendanceRecordsByShift,
                 department: {
                     id: deptId,
                     name: String(department.name || "").trim(),
-                    ...buildAttendanceCounts(departmentBucket),
+                    ...buildShiftCounts(departmentBucket),
                 },
                 sections,
             },

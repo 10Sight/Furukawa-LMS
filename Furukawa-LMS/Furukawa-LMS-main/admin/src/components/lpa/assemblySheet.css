@@ -17,15 +17,20 @@
 .assembly-form-table {
   width: 100%;
   table-layout: fixed;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 11px;
   line-height: 1.25;
+  border-top: 1px solid #475569;
+  border-left: 1px solid #475569;
 }
 
-.assembly-form-table td {
+.assembly-form-table td,
+.assembly-form-table th {
   position: relative;
   padding: 0;
-  border: 1px solid #475569;
+  border-right: 1px solid #475569;
+  border-bottom: 1px solid #475569;
   vertical-align: middle;
 }
 
@@ -677,30 +682,66 @@
 }
 
 /* Sticky Table Header for LPA Assembly Form */
+/* Sticky Table Header for LPA Assembly Form (Row 1 & Row 2 fixed with screen) */
 .assembly-audit-table thead {
   position: sticky;
   top: 0;
   z-index: 30;
 }
 
+.assembly-audit-table thead tr.assembly-header-row-1 {
+  height: 32px !important;
+}
+
 .assembly-audit-table thead tr.assembly-header-row-1 th,
-.assembly-audit-table thead tr.assembly-header-row-1 td,
-.assembly-sticky-th {
-  position: sticky;
-  top: 0;
-  z-index: 32;
-  background: #ffffff;
+.assembly-audit-table thead tr.assembly-header-row-1 td {
+  position: sticky !important;
+  top: 0px !important;
+  z-index: 32 !important;
+  height: 32px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff;
   border: 1px solid #555;
 }
 
-.assembly-audit-table thead tr.assembly-header-row-2 th,
-.assembly-audit-table thead tr.assembly-header-row-2 td {
-  position: sticky;
-  top: 25px;
-  z-index: 31;
-  background: #f8fafc;
+/* Base columns spanning row 1 and row 2 (Sl No, Focus, CHECKS POINTS, Area, Marks) */
+.assembly-audit-table thead tr.assembly-header-row-1 th.assembly-sticky-th,
+.assembly-sticky-th {
+  position: sticky !important;
+  top: 0px !important;
+  z-index: 33 !important;
+  height: 58px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff !important;
   border: 1px solid #555;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  border-bottom: 2px solid #334155 !important;
+  box-shadow: 0 3px 6px -1px rgba(0, 0, 0, 0.12);
+}
+
+.assembly-audit-table thead tr.assembly-header-row-1 th.assembly-level-group-th {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-bottom: 1px solid #bfdbfe !important;
+}
+
+/* Subheaders: Observation & Score Row (Row 2 in Assembly Form - FIXED WITH SCREEN AT TOP 32px) */
+.assembly-audit-table thead tr.assembly-header-row-2 {
+  height: 26px !important;
+}
+
+.assembly-audit-table thead tr.assembly-header-row-2 th,
+.assembly-audit-table thead tr.assembly-header-row-2 td,
+.assembly-header-sub-th {
+  position: sticky !important;
+  top: 32px !important;
+  z-index: 32 !important;
+  height: 26px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid #555;
+  border-bottom: 2px solid #334155 !important;
+  box-shadow: 0 3px 6px -1px rgba(0, 0, 0, 0.12) !important;
 }
 
 .assembly-header-th {

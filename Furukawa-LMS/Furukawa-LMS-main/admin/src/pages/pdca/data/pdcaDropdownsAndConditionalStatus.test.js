@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmptyRow, createDefaultRows } from './pdcaStore.js';
-import { PDCA_STATUS_OPTIONS, normalizePDCAStatus } from './pdcaConstants.js';
-import { isUserResponsibleForRow, canUserEditPDCARow, EDITABLE_RESPONSIBLE_COLUMNS } from './recordFilters.js';
+import { PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from './pdcaConstants.js';
+import { isUserResponsibleForRow, canUserEditPDCARow, EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment } from './recordFilters.js';
 
 test('1. Section P Department and dependent Unit dropdown rules', () => {
   const row = createEmptyRow();
@@ -298,5 +298,105 @@ test('8. Response Date & Revision logic (1st time blank, 2nd time revision with 
   assert.equal(row.revisedDates[1].date, '2026-10-31');
   assert.equal(row.revisedDates[1].reason, 'Trial rescheduled');
   assert.equal(row.noOfTimeRevised, 2);
+});
+
+test('9. User requested status rule: if response date not selected -> Not-Started, if passed -> Delay, if done -> Done', () => {
+  const todayStr = '2026-10-20';
+
+  // Case 1: Response Date is empty / not selected -> Must be 'Not-Started'
+  const rowNoDate = {
+    ...createEmptyRow(),
+    responseDate: '',
+    confirmation: '',
+    status: 'In- Progress' // Even if previously set, empty date forces Not-Started
+  };
+  assert.equal(computePDCAStatus(rowNoDate, todayStr), 'Not-Started');
+
+  // Case 2: Response Date is in the past (e.g. 2026-10-15) and not done -> Must be 'Delay'
+  const rowPassedDate = {
+    ...createEmptyRow(),
+    responseDate: '2026-10-15',
+    confirmation: '',
+    status: 'In- Progress'
+  };
+  assert.equal(computePDCAStatus(rowPassedDate, todayStr), 'Delay');
+
+  // Case 3: Response Date is in the past but work IS done -> Must remain 'Done'
+  const rowPassedDateDone = {
+    ...createEmptyRow(),
+    responseDate: '2026-10-15',
+    confirmation: 'Confirmed',
+    status: 'Done'
+  };
+  assert.equal(computePDCAStatus(rowPassedDateDone, todayStr), 'Done');
+
+  // Case 4: Response Date is in the future (e.g. 2026-10-25) -> Must be 'In- Progress'
+  const rowFutureDate = {
+    ...createEmptyRow(),
+    responseDate: '2026-10-25',
+    confirmation: '',
+    status: 'Not-Started'
+  };
+  assert.equal(computePDCAStatus(rowFutureDate, todayStr), 'In- Progress');
+
+  // Case 5: Response Date is today -> Must be 'In- Progress' if not done
+  const rowTodayDate = {
+    ...createEmptyRow(),
+    responseDate: '2026-10-20',
+    confirmation: '',
+    status: ''
+  };
+  assert.equal(computePDCAStatus(rowTodayDate, todayStr), 'In- Progress');
+});
+
+test('10. Permissions: whole selected Responsible Person Confirmation department can edit action columns', () => {
+  const row = {
+    ...createEmptyRow(),
+    responsiblePersonDept: 'Quality',
+    staffEmployees: [{ name: 'John Doe', code: 'EMP101', department: 'Quality' }]
+  };
+
+  const qualityUser = {
+    empId: 'EMP999',
+    fullName: 'Jane Smith',
+    department: 'Quality',
+    role: 'User'
+  };
+
+  const maintenanceUser = {
+    empId: 'EMP555',
+    fullName: 'Bob Brown',
+    department: 'Maintenance',
+    role: 'User'
+  };
+
+  const adminUser = {
+    empId: 'ADMIN1',
+    fullName: 'System Admin',
+    role: 'admin',
+    department: 'IT'
+  };
+
+  // Quality user is in the assigned department -> Can edit action columns
+  assert.equal(isUserInResponsibleDepartment(row, qualityUser), true);
+  const qualityPerms = canUserEditPDCARow(row, qualityUser);
+  assert.equal(qualityPerms.canEditActionCols, true);
+  assert.equal(qualityPerms.canEditEntireRow, false);
+  assert.equal(canUserEditPDCARow(row, qualityUser, null, 'rootCause'), true);
+  assert.equal(canUserEditPDCARow(row, qualityUser, null, 'responseDate'), true);
+  assert.equal(canUserEditPDCARow(row, qualityUser, null, 'date'), false);
+
+  // Maintenance user is NOT in the assigned department -> Cannot edit
+  assert.equal(isUserInResponsibleDepartment(row, maintenanceUser), false);
+  const maintPerms = canUserEditPDCARow(row, maintenanceUser);
+  assert.equal(maintPerms.canEditActionCols, false);
+  assert.equal(maintPerms.canEditEntireRow, false);
+  assert.equal(canUserEditPDCARow(row, maintenanceUser, null, 'rootCause'), false);
+
+  // Admin user can edit regardless of department
+  const adminPerms = canUserEditPDCARow(row, adminUser);
+  assert.equal(adminPerms.canEditEntireRow, true);
+  assert.equal(adminPerms.canEditActionCols, true);
+  assert.equal(canUserEditPDCARow(row, adminUser, null, 'date'), true);
 });
 

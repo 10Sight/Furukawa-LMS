@@ -437,8 +437,32 @@ export default function AssemblySheet({
   // - If sheet was created for Level 1: Level 3 and Level 2 columns are view-only (non-editable)
   const sheetTargetLevel = sheet?.targetLevel || editor?.targetLevel || editor?.level || (auditColumns.some(c => c.level === 'L1') ? 'L1' : auditColumns.some(c => c.level === 'L2') ? 'L2' : 'L3');
 
+  const sourceShiftStatus = useMemo(() => {
+    const raw = sheet?.sourceShiftStatus || editor?.sourceShiftStatus;
+    if (raw && (raw.A !== undefined || raw.B !== undefined)) return raw;
+
+    const colA = auditColumns.find(g => g.id === 'L3_A' || (g.level === 'L3' && g.shift === 'A'));
+    const colB = auditColumns.find(g => g.id === 'L3_B' || (g.level === 'L3' && g.shift === 'B'));
+    const colL2 = auditColumns.find(g => g.id === 'L2' || g.level === 'L2');
+
+    const hasA = colA ? sheet.rows.some((r, idx) => idx >= 3 && idx <= 36 && Boolean(r[colA.obsCol]?.value || r[colA.obsCol]?.formatted)) : false;
+    const hasB = colB ? sheet.rows.some((r, idx) => idx >= 3 && idx <= 36 && Boolean(r[colB.obsCol]?.value || r[colB.obsCol]?.formatted)) : false;
+    const hasL2 = colL2 ? sheet.rows.some((r, idx) => idx >= 3 && idx <= 36 && Boolean(r[colL2.obsCol]?.value || r[colL2.obsCol]?.formatted)) : false;
+
+    return { A: hasA, B: hasB, L2: hasL2 };
+  }, [sheet, editor, auditColumns]);
+
+  const hasColumnData = useCallback((colGroup) => {
+    if (!colGroup) return false;
+    if (colGroup.shift === 'A') return Boolean(sourceShiftStatus.A);
+    if (colGroup.shift === 'B') return Boolean(sourceShiftStatus.B);
+    if (colGroup.level === 'L2' && sheetTargetLevel === 'L1') return Boolean(sourceShiftStatus.L2);
+    return true;
+  }, [sourceShiftStatus, sheetTargetLevel]);
+
   const isLevelReadOnly = useCallback((colGroup) => {
     if (!colGroup) return false;
+    if (colGroup.isFetched) return true;
     if (sheetTargetLevel === 'L1') {
       return colGroup.level === 'L3' || colGroup.level === 'L2';
     }
@@ -682,7 +706,7 @@ export default function AssemblySheet({
                 ) : Boolean(activeLevelScore) ? (
                   <div className="assembly-score-container assembly-score-total" title={`${activeLevelScore.name} Total Score`}>
                     <span className="assembly-score-value font-black text-sm text-slate-900">
-                      {levelScores[activeLevelScore.id]?.totalScore ?? 0}
+                      {hasColumnData(activeLevelScore) ? (levelScores[activeLevelScore.id]?.totalScore ?? 0) : '-'}
                     </span>
                   </div>
                 ) : (
@@ -693,9 +717,36 @@ export default function AssemblySheet({
                   <div className="assembly-total-label">Percentage (%):</div>
                 ) : Boolean(activeLevelObs) ? (
                   <div className="flex items-center justify-center font-black text-sm text-blue-700 py-1.5 px-3 tracking-wide bg-blue-50/50 select-none">
-                    {levelScores[activeLevelObs.id]?.percentageText ?? '0.00%'}
+                    {hasColumnData(activeLevelObs) ? (levelScores[activeLevelObs.id]?.percentageText ?? '0.00%') : 'No data'}
                   </div>
                 ) : null
+              ) : (r === 1 && Boolean(auditColumns.find(g => g.obsCol === c))) ? (
+                (() => {
+                  const colGroupHeader = auditColumns.find(g => g.obsCol === c);
+                  const isFetched = isLevelReadOnly(colGroupHeader);
+                  const dataAvailable = hasColumnData(colGroupHeader);
+                  return (
+                    <div className="flex flex-col items-center justify-center py-1.5 px-2 text-center select-none w-full">
+                      <span className="font-bold text-xs text-slate-800 leading-tight">{colGroupHeader.name}</span>
+                      {isFetched && (
+                        dataAvailable ? (
+                          <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Synced
+                          </span>
+                        ) : (
+                          <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Shift sheet has not been created yet for this date">
+                            No data available
+                          </span>
+                        )
+                      )}
+                    </div>
+                  );
+                })()
+              ) : (r === 2 && (Boolean(activeLevelObs) || Boolean(activeLevelScore))) ? (
+                <div className="text-center font-bold text-xs text-slate-700 py-1 select-none">
+                  {Boolean(activeLevelObs) ? 'Observation' : 'Score'}
+                </div>
               ) : isLegend ? (
                 <div className={`assembly-legend-content ${isLegendHeader ? 'assembly-legend-header-box' : ''} ${isLegendSymbol ? 'assembly-legend-symbol-box' : ''} ${isLegendDesc ? 'assembly-legend-desc-box' : ''} ${isLegendFooter ? 'assembly-legend-footer-box' : ''}`}>
                   {isLegendFooter ? (
@@ -710,12 +761,28 @@ export default function AssemblySheet({
                 </div>
               ) : isObservation ? (
                 obsReadOnly ? (
-                  <div
-                    className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-700 bg-slate-100/60 h-full w-full py-1.5 px-2 select-none"
-                    title={`${activeLevelObs.name} Observation (View Only)`}
-                  >
-                    <span>{normalizeObservationSymbol(value) || '-'}</span>
-                  </div>
+                  !hasColumnData(activeLevelObs) ? (
+                    <div
+                      className="assembly-readonly-observation flex items-center justify-center font-normal italic text-[11px] text-slate-400 bg-slate-50/80 h-full w-full py-1.5 px-1 select-none text-center"
+                      title={`${activeLevelObs.name}: No data available for this date`}
+                    >
+                      <span>No data available</span>
+                    </div>
+                  ) : !value || !String(value).trim() ? (
+                    <div
+                      className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-400 bg-slate-100/60 h-full w-full py-1.5 px-2 select-none"
+                      title={`${activeLevelObs.name}: Not evaluated`}
+                    >
+                      <span>-</span>
+                    </div>
+                  ) : (
+                    <div
+                      className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-800 bg-slate-100/70 h-full w-full py-1.5 px-2 select-none"
+                      title={`${activeLevelObs.name} Observation (View Only)`}
+                    >
+                      <span>{normalizeObservationSymbol(value)}</span>
+                    </div>
+                  )
                 ) : (
                   <select
                     aria-label={`${sheet.name} ${activeLevelObs.name} Observation row ${r + 1}`}
@@ -746,7 +813,7 @@ export default function AssemblySheet({
                   rows={1}
                 />
               ) : isScore ? (
-                <div className={`assembly-score-container ${scoreReadOnly ? 'bg-slate-100/60' : ''}`}>
+                <div className={`assembly-score-container ${scoreReadOnly ? 'bg-slate-100/60 select-none' : ''}`}>
                   {isAdmin && !scoreReadOnly ? (
                     <input
                       type="text"
@@ -758,8 +825,10 @@ export default function AssemblySheet({
                       }}
                       className="assembly-score-input"
                     />
+                  ) : scoreReadOnly && !hasColumnData(activeLevelScore) ? (
+                    <span className="assembly-score-value font-normal text-xs text-slate-400">-</span>
                   ) : (
-                    <span className="assembly-score-value font-bold text-slate-700">{value}</span>
+                    <span className="assembly-score-value font-bold text-slate-800 text-xs">{value !== '' && value != null ? value : '-'}</span>
                   )}
                 </div>
               ) : (isChecklistRow && (c === 1 || c === areaColumn)) ? (
@@ -1035,7 +1104,7 @@ export default function AssemblySheet({
           </colgroup>
           <thead>
             {/* Header Row 1: Fixed / Sticky */}
-            <tr className="assembly-header-row-1" style={{ height: 26 }}>
+            <tr className="assembly-header-row-1" style={{ height: 32 }}>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">Sl No</th>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">Focus</th>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">CHECKS POINTS</th>
@@ -1062,7 +1131,7 @@ export default function AssemblySheet({
               })}
             </tr>
             {/* Header Row 2: Fixed / Sticky Subheaders */}
-            <tr className="assembly-header-row-2" style={{ height: 24 }}>
+            <tr className="assembly-header-row-2" style={{ height: 26 }}>
               {auditColumns.map((colGroup) => (
                 <React.Fragment key={colGroup.id}>
                   <th className="assembly-header-sub-th">Observation</th>

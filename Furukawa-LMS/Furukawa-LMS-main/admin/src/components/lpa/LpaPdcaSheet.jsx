@@ -27,16 +27,23 @@ import {
   RefreshCw,
   Layers,
   Mail,
-  BarChart3
+  BarChart3,
+  Lock
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
 import AddStaffEmployeeModal from '../pdca/AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
 import PDCAMonthlyGraph from '../pdca/PDCAMonthlyGraph';
+import ResponsiblePersonInstructionCell from '../pdca/ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+import {
+  isRecordCreator,
+  isUserResponsibleForRow,
+  isUserInResponsibleDepartment
+} from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER } from '../pdca/SearchableSectionSelect';
@@ -44,7 +51,7 @@ import SearchableSectionSelect, { VERIFIED_SECTION_MASTER } from '../pdca/Search
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status || 'Open',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
   department: customDefaults.department || '',
   section: customDefaults.section || '',
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
@@ -75,6 +82,9 @@ const createEmptyRow = (customDefaults = {}) => ({
   cftSelectedType: customDefaults.cftSelectedType || '',
   cftSelectedName: customDefaults.cftSelectedName || '',
   cftSelectedCode: customDefaults.cftSelectedCode || '',
+  confirmation: customDefaults.confirmation || '',
+  confirmedBy: customDefaults.confirmedBy || '',
+  instruction: customDefaults.instruction || '',
   responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || ''
 });
 
@@ -201,8 +211,56 @@ function CompactDateCell({ value, onChange }) {
   );
 }
 
-export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDateChange }) {
-  const { data, setData, showToast } = usePDCA();
+export default function LpaPdcaSheet({
+  topic,
+  onBack,
+  onSave,
+  currentDate,
+  onDateChange,
+  readOnly = false,
+  isCreator: propIsCreator = undefined,
+  currentUser = null
+}) {
+  const { data, setData, showToast, userContext } = usePDCA();
+  const effectiveUser = currentUser || userContext?.user;
+
+  // Determine if the current user has Administrator privileges
+  const isAdmin = useMemo(() => {
+    const u = effectiveUser || userContext?.user;
+    if (u) {
+      if (
+        u.isAdmin === true ||
+        u.isAdmin === 1 ||
+        String(u.role || '').toUpperCase() === 'ADMIN' ||
+        String(u.role || '').toUpperCase() === 'SUPERADMIN'
+      ) {
+        return true;
+      }
+    }
+    try {
+      const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                     (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          parsed?.isAdmin === true ||
+          parsed?.isAdmin === 1 ||
+          String(parsed?.role || '').toUpperCase() === 'ADMIN' ||
+          String(parsed?.role || '').toUpperCase() === 'SUPERADMIN'
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, [effectiveUser, userContext?.user]);
+
+  const isCreator = propIsCreator !== undefined
+    ? Boolean(propIsCreator)
+    : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
+  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
+  const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
+
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
     ? (cftAssignedMembers.length === 1
@@ -283,8 +341,27 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
 
+    let confirmation = (row.confirmation || '').trim();
+    if (!confirmation && (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' || row.responsiblePersonConfirmation === 'Not-Confirmed')) {
+      confirmation = row.responsiblePersonConfirmation.trim();
+    }
+    if (confirmation === 'Not-Confirmed') confirmation = 'Not - Confirmed';
+    const confirmedBy = (row.confirmedBy || '').trim();
+    const instruction = (row.instruction || '').trim();
+
+    const computedStatus = computePDCAStatus({
+      ...row,
+      responseDate: row.responseDate,
+      confirmation,
+      status: row.status
+    }, currentDate);
+
     return {
       ...row,
+      status: computedStatus,
+      confirmation,
+      confirmedBy,
+      instruction,
       imagesBefore,
       imagesAfter,
       imageBefore: isDocBefore ? row.imageBefore : (imagesBefore[0]?.url || row.imageBefore || null),
@@ -298,7 +375,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
       staffName,
       staffId,
       employeeId: staffId,
-      responsiblePersonConfirmation: staffEmployee || row.responsiblePersonConfirmation || ''
+      responsiblePersonConfirmation: confirmation || row.responsiblePersonConfirmation || staffEmployee || ''
     };
   };
 
@@ -1275,7 +1352,75 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
   const handleCellChange = (rowIndex, field, value) => {
     setRows((prev) => {
       const updated = [...prev];
-      updated[rowIndex] = { ...updated[rowIndex], [field]: value };
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      let updatedRow = { ...curr, [field]: value };
+
+      if (field === 'responseDate') {
+        const nextStatus = computePDCAStatus(updatedRow, currentDate);
+        updatedRow.status = nextStatus;
+      } else if (field === 'status') {
+        const normStatus = normalizePDCAStatus(value);
+        if (!curr.responseDate && normStatus !== 'Not-Started') {
+          updatedRow.status = 'Not-Started';
+          if (typeof showToast === 'function') {
+            showToast('Response date is required before updating status.');
+          }
+        } else {
+          updatedRow.status = normStatus;
+        }
+      }
+
+      updated[rowIndex] = updatedRow;
+      return updated;
+    });
+  };
+
+  const handleConfirmationChange = (rowIndex, value, userName = '') => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+
+      const resolvedUser = userName || effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
+      let nextConfirmedBy = curr.confirmedBy || '';
+
+      if (value === 'Confirmed') {
+        nextConfirmedBy = resolvedUser;
+      } else if (value === 'Not - Confirmed' || value === 'Not-Confirmed') {
+        nextConfirmedBy = resolvedUser;
+      } else {
+        nextConfirmedBy = '';
+      }
+
+      const tempRow = {
+        ...curr,
+        confirmation: value,
+        confirmedBy: nextConfirmedBy
+      };
+
+      const nextStatus = computePDCAStatus(tempRow, currentDate);
+
+      updated[rowIndex] = {
+        ...tempRow,
+        status: nextStatus,
+        responsiblePersonConfirmation: value || curr.responsiblePersonConfirmation || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleInstructionChange = (rowIndex, text) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      updated[rowIndex] = {
+        ...curr,
+        instruction: text,
+        responsiblePersonConfirmation: curr.confirmation === 'Confirmed' ? 'Confirmed' : text
+      };
       return updated;
     });
   };
@@ -1449,11 +1594,11 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
               <Mail className="w-3.5 h-3.5 text-blue-600" />
               <span>Send Mail</span>
             </button>
-            {/* Monthly Graph Button */}
+            {/* PDCA Graph Button */}
             <button
               type="button"
               onClick={() => setShowMonthlyGraph(prev => !prev)}
-              title="Toggle Monthly PDCA Graph (Total, Opened, Closed)"
+              title="Toggle PDCA Graph (In-Progress, Done, Delay, Not-Started)"
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${
                 showMonthlyGraph
                   ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
@@ -1461,7 +1606,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Monthly Graph</span>
+              <span>PDCA Graph</span>
             </button>
           </div>
 
@@ -1480,13 +1625,15 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
             </div>
 
             {/* Add Row Button */}
-            <button
-              onClick={handleAddRow}
-              className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add Row</span>
-            </button>
+            {canEditEntireSheet && (
+              <button
+                onClick={handleAddRow}
+                className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Add Row</span>
+              </button>
+            )}
             <FormZoomControls rootSelector=".pdca-form-root" />
           </div>
         </div>
@@ -1829,9 +1976,18 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                     </div>
                   </th>
 
-                  {/* 15. Instructions */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[100px] min-w-[90px] text-center border-r border-[#B0BEC5] leading-tight text-[9.5px]">
-                    (Responsible person instructions, etc.)
+                  {/* 15. Responsible Person Confirmation */}
+                  <th rowSpan={2} className="py-2 px-1 w-[185px] min-w-[175px] text-center border-r border-[#B0BEC5] leading-tight select-none">
+                    <div className="flex flex-col items-center justify-center gap-0.5">
+                      <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-800 leading-tight">
+                        <Lock className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                        <span>Responsible Person Confirmation</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-1 text-[8.5px] font-semibold text-slate-500 leading-tight">
+                        <Lock className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
+                        <span>Admin / Sheet Creator only</span>
+                      </div>
+                    </div>
                   </th>
                 </tr>
 
@@ -1854,6 +2010,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                 {filteredRows.map((row) => {
                   const idx = row.originalIndex;
                   const sNo = idx + 1;
+                  const canEditEntireRow = canEditEntireSheet;
+                  const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
+                  const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
 
                   return (
                     <tr
@@ -1865,6 +2024,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                         <CompactDateCell
                           value={row.date}
+                          readOnly={!canEditEntireRow}
                           onChange={(val) => handleCellChange(idx, 'date', val)}
                         />
                       </td>
@@ -1873,9 +2033,10 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       <td className="p-0 align-middle border-r border-[#64748B] w-[36px] min-w-[34px] focus-within:bg-blue-50/30">
                         <div className="relative w-full h-full flex items-center justify-center">
                           <select
+                            disabled={!canEditEntireRow}
                             value={row.shift === 'General' ? 'G' : (row.shift || '')}
                             onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer transition-colors appearance-none"
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors appearance-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                           >
                             <option value="">-</option>
                             <option value="A">A</option>
@@ -1883,7 +2044,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             <option value="C">C</option>
                             <option value="G">G</option>
                           </select>
-                          <ChevronDown className="w-2 h-2 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          {canEditEntireRow && (
+                            <ChevronDown className="w-2 h-2 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
                         </div>
                       </td>
 
@@ -1893,20 +2056,23 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       </td>
 
                       {/* 4. Status */}
-                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[78px] min-w-[78px]">
+                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[78px]">
                         <select
+                          disabled={!canEditEntireRow}
                           aria-label={`Status for row ${sNo}`}
-                          value={row.status || 'Open'}
+                          value={normalizePDCAStatus(row.status)}
                           onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
-                          className={`w-full rounded-md border pl-0.5 pr-0 py-1.5 text-[11px] font-medium outline-none cursor-pointer focus:ring-2 focus:ring-blue-300 ${
-                            row.status === 'Closed' ? 'bg-green-50 text-green-700 border-green-200' :
-                            row.status === 'In Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                          className={`w-full rounded-md border pl-0.5 pr-0 py-1.5 text-[11px] font-medium outline-none text-center ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
+                            normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                            normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
                             'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                         >
-                          <option value="Open">Open</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Closed">Closed</option>
+                          <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
+                          <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
+                          <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
+                          <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
                         </select>
                       </td>
 
@@ -1914,9 +2080,10 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       <td className="p-0.5 align-middle text-center border-r border-[#64748B] w-[90px] min-w-[85px] focus-within:bg-blue-50/30">
                         <div className="relative w-full flex items-center justify-center">
                           <select
+                            disabled={!canEditEntireRow}
                             value={row.department || ''}
                             onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate font-medium"
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate font-medium ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                             title={row.department || 'Select Department'}
                           >
                             <option value="">Dept...</option>
@@ -1926,7 +2093,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               </option>
                             ))}
                           </select>
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          {canEditEntireRow && (
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          )}
                         </div>
                       </td>
 
@@ -1940,6 +2109,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       >
                         <div className="w-full flex items-center justify-center">
                           <SearchableSectionSelect
+                            disabled={!canEditEntireRow}
                             value={row.section}
                             sectionId={row.sectionId ?? row.lineAreaSectionId}
                             sectionCode={row.sectionCode}
@@ -1959,6 +2129,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         className="p-0.5 align-middle border-r border-[#64748B] text-center transition-[width] duration-150"
                       >
                         <SearchableLineAreaSelect
+                          disabled={!canEditEntireRow}
                           value={row.lineArea}
                           sectionId={row.sectionId ?? row.lineAreaSectionId}
                           lineId={row.lineAreaId}
@@ -1997,6 +2168,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         }}
                       >
                         <AutoResizeTextarea
+                          readOnly={!canEditEntireRow}
                           inputRef={(el) => registerRef(idx, 'observation', el)}
                           value={row.observation}
                           onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
@@ -2057,7 +2229,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               )}
                             </button>
                           </div>
-                        ) : (
+                        ) : canEditEntireRow ? (
                           <div className="flex flex-col items-center justify-center">
                             <button
                               type="button"
@@ -2068,6 +2240,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               <span>Upload</span>
                             </button>
                           </div>
+                        ) : (
+                          <span className="text-slate-300 text-[10px] select-none">-</span>
                         )}
                       </td>
 
@@ -2081,11 +2255,12 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         }}
                       >
                         <AutoResizeTextarea
+                          readOnly={!canEditActionCols}
                           inputRef={(el) => registerRef(idx, 'rootCause', el)}
                           value={row.rootCause}
                           onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
-                          placeholder="Root cause..."
+                          placeholder={canEditActionCols ? "Root cause..." : ""}
                           className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
@@ -2100,11 +2275,12 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         }}
                       >
                         <AutoResizeTextarea
+                          readOnly={!canEditActionCols}
                           inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                           value={row.counterMeasure}
                           onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
-                          placeholder="Counter measure..."
+                          placeholder={canEditActionCols ? "Counter measure..." : ""}
                           className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
@@ -2175,7 +2351,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               />
                             )}
                           </div>
-                        ) : (
+                        ) : canEditActionCols ? (
                           <div className="flex flex-col items-center justify-center">
                             <button
                               type="button"
@@ -2186,6 +2362,8 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                               <span>Upload</span>
                             </button>
                           </div>
+                        ) : (
+                          <span className="text-slate-300 text-[10px] select-none">-</span>
                         )}
                       </td>
 
@@ -2193,6 +2371,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                       <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                         <CompactDateCell
                           value={row.responseDate}
+                          readOnly={!canEditActionCols}
                           onChange={(val) => handleCellChange(idx, 'responseDate', val)}
                         />
                       </td>
@@ -2207,6 +2386,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                               >
                                 <select
+                                  disabled={!canEditEntireRow}
                                   value={emp.department || row.department || ''}
                                   onChange={(e) => {
                                     const newDept = e.target.value;
@@ -2223,7 +2403,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                       return updated;
                                     });
                                   }}
-                                  className="w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                                  className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                                   title={emp.department || row.department || 'Select Department'}
                                 >
                                   <option value="">Dept...</option>
@@ -2242,6 +2422,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                         ) : (
                           <div className="relative w-full h-full min-h-[42px] flex items-center justify-center focus-within:bg-blue-50/30">
                             <select
+                              disabled={!canEditEntireRow}
                               value={
                                 (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
                                   ? row.responsiblePersonDept
@@ -2253,7 +2434,7 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                          ''))
                               }
                               onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                              className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 cursor-pointer appearance-none truncate"
+                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                               title={row.responsiblePersonDept || 'Select Department'}
                             >
                               <option value="">Dept...</option>
@@ -2266,7 +2447,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 </option>
                               ))}
                             </select>
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            {canEditEntireRow && (
+                              <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            )}
                           </div>
                         )}
                       </td>
@@ -2285,23 +2468,26 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                   >
                                     <button
                                       type="button"
+                                      disabled={!canEditEntireRow}
                                       onClick={() => handleOpenAddStaffModal(idx)}
-                                      className="text-[10px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors cursor-pointer"
-                                      title={`Click to view/manage group: ${empDisplay}`}
+                                      className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                                      title={canEditEntireRow ? `Click to view/manage group: ${empDisplay}` : empDisplay}
                                     >
                                       {empDisplay}
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRemoveStaffEmployee(idx, empIdx);
-                                      }}
-                                      className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
-                                      title={`Remove ${emp.name} from group`}
-                                    >
-                                      <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                                    </button>
+                                    {canEditEntireRow && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRemoveStaffEmployee(idx, empIdx);
+                                        }}
+                                        className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
+                                        title={`Remove ${emp.name} from group`}
+                                      >
+                                        <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -2310,27 +2496,30 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             <div className="relative w-full h-full min-h-[42px] pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
                               <button
                                 type="button"
-                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                                className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                                title={`Click to search/change staff: ${row.staffEmployee}`}
+                                disabled={!canEditEntireRow}
+                                onClick={(e) => canEditEntireRow && handleToggleStaffDropdown(idx, e)}
+                                className={`staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer hover:opacity-85'} transition-opacity`}
+                                title={canEditEntireRow ? `Click to search/change staff: ${row.staffEmployee}` : row.staffEmployee}
                               >
-                                <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
+                                <span className={`text-[10px] font-semibold text-slate-800 truncate w-full text-center ${canEditEntireRow ? 'hover:text-blue-600' : ''} transition-colors`}>
                                   {row.staffEmployee}
                                 </span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSelectStaffMember(idx, '');
-                                }}
-                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
-                                title="Clear staff employee"
-                              >
-                                <X className="w-3 h-3 stroke-[2.5]" />
-                              </button>
+                              {canEditEntireRow && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectStaffMember(idx, '');
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
+                                  title="Clear staff employee"
+                                >
+                                  <X className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+                              )}
                             </div>
-                          ) : (
+                          ) : canEditEntireRow ? (
                             <button
                               type="button"
                               onClick={(e) => handleToggleStaffDropdown(idx, e)}
@@ -2343,20 +2532,24 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 <ChevronDown className="w-2.5 h-2.5" />
                               </div>
                             </button>
+                          ) : (
+                            <span className="text-slate-300 text-[10px] select-none">-</span>
                           )}
 
                           {/* Down right side '+' option button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAddStaffModal(idx);
-                            }}
-                            className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                            title="Add employee to this CFT group (+)"
-                          >
-                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                          </button>
+                          {canEditEntireRow && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenAddStaffModal(idx);
+                              }}
+                              className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
+                              title="Add employee to this CFT group (+)"
+                            >
+                              <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+                            </button>
+                          )}
                         </div>
                       </td>
 
@@ -2367,8 +2560,9 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             <div className="w-full h-full min-h-[42px] px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
                               <button
                                 type="button"
-                                onClick={(e) => handleToggleCFTDropdown(idx, e, 'members')}
-                                className="cft-trigger-btn flex-1 min-w-0 text-left cursor-pointer flex flex-col justify-center py-0.5 hover:opacity-85 transition-opacity"
+                                disabled={!canEditEntireRow}
+                                onClick={(e) => canEditEntireRow && handleToggleCFTDropdown(idx, e, 'members')}
+                                className={`cft-trigger-btn flex-1 min-w-0 text-left ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer hover:opacity-85'} flex flex-col justify-center py-0.5 transition-opacity`}
                                 title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                               >
                                 <span
@@ -2393,26 +2587,28 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                                 )}
                               </button>
 
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleEditCFTTopic(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                  title="Change CFT Topic"
-                                >
-                                  <Edit3 className="w-2.5 h-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteCFT(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Delete CFT Topic & Member"
-                                >
-                                  <Trash2 className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
+                              {canEditEntireRow && (
+                                <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleEditCFTTopic(idx, e)}
+                                    className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                    title="Change CFT Topic"
+                                  >
+                                    <Edit3 className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteCFT(idx, e)}
+                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Delete CFT Topic & Member"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                          ) : (
+                          ) : canEditEntireRow ? (
                             <button
                               type="button"
                               onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
@@ -2421,20 +2617,25 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                             >
                               <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
                             </button>
+                          ) : (
+                            <span className="text-slate-300 text-[10px] select-none">-</span>
                           )}
                         </div>
                       </td>
 
-                      {/* 15. Instructions */}
-                      <td className="p-0.5 align-middle border-r border-[#64748B] w-[100px] min-w-[90px] focus-within:bg-blue-50/30 text-center">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'responsiblePersonConfirmation', el)}
-                          value={row.responsiblePersonConfirmation}
-                          onChange={(e) => handleCellChange(idx, 'responsiblePersonConfirmation', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'responsiblePersonConfirmation')}
-                          placeholder="Instructions, remarks..."
-                          className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
-                        />
+                      {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
+                      <td className="p-1.5 align-top border-r border-[#64748B] w-[185px] min-w-[175px] focus-within:bg-blue-50/30 text-left">
+                        <div className="w-full flex flex-col items-start justify-start">
+                          <ResponsiblePersonInstructionCell
+                            row={row}
+                            rowIndex={idx}
+                            currentUser={effectiveUser}
+                            readOnly={!canEditEntireRow}
+                            onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
+                            onInstructionChange={(text) => handleInstructionChange(idx, text)}
+                            sNo={sNo}
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2457,22 +2658,26 @@ export default function LpaPdcaSheet({ topic, onBack, onSave, currentDate, onDat
                   style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
                   className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
                 >
-                  <button
-                    type="button"
-                    onClick={() => handleInsertRowAbove(idx)}
-                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
-                    title="Insert row above"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteRow(idx)}
-                    className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                    title="Delete row"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
-                  </button>
+                  {canEditEntireSheet && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertRowAbove(idx)}
+                        className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                        title="Insert row above"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRow(idx)}
+                        className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                        title="Delete row"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                      </button>
+                    </>
+                  )}
                 </div>
               );
             })}

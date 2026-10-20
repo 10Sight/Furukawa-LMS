@@ -1,4 +1,5 @@
 import { getScoreForObservation, normalizeObservationSymbol } from '../../pages/lpa/lpaPdcaUtils.js';
+import assemblyTemplate from '../../pages/lpa/assemblyTemplate.json' with { type: 'json' };
 
 export const LPA_LEVEL_DEFS = {
   L3: { id: 'L3', name: 'Level 3 Daily', title: 'Level 3 (Daily)', badge: 'Level 3 (Daily)', frequency: 'Daily' },
@@ -8,82 +9,236 @@ export const LPA_LEVEL_DEFS = {
 
 /**
  * Builds the list of audit column groups (each having an observation and score column).
- * If multiple shifts have filled data on Level 3, shows separate columns per shift.
- * If only one shift has data, shows single Level 3 column.
+ * For Level 1 and Level 2 sheets:
+ * - Level 3 Shift A (Observation & Score)
+ * - Level 3 Shift B (Observation & Score)
+ * - Level 2 (Observation & Score)
+ * - Level 1 (Observation & Score, if Level 1 sheet)
+ * For Level 3 sheets:
+ * - Shift-specific column pair
  */
-export function buildAuditColumnGroups(levels = ['L3'], shifts = ['A'], isCc = false) {
+export function buildAuditColumnGroups(levels = ['L3'], shifts = ['A'], isCc = false, targetLevel = null) {
   const startCol = isCc ? 7 : 5;
   const safeLevels = Array.isArray(levels) && levels.length > 0 ? levels : ['L3'];
-  const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
+  const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');
   const groups = [];
 
-  // 1. Level 3 (Daily)
-  if (safeLevels.includes('L3')) {
-    const l3Shifts = safeShifts.filter(s => ['A', 'B', 'C'].includes(s));
-    const finalShifts = l3Shifts.length > 0 ? l3Shifts : ['A'];
+  // When sheet is Level 1 or Level 2, display Level 3 Shift A and Shift B side-by-side
+  if (effectiveTarget === 'L1' || effectiveTarget === 'L2') {
+    // 1. Level 3 Shift A (Fetched & Read-only)
+    const obsColA = startCol + groups.length * 2;
+    groups.push({
+      id: 'L3_A',
+      level: 'L3',
+      shift: 'A',
+      name: 'Level 3 Daily (Shift A)',
+      badge: 'Level 3 Shift A',
+      isFetched: true,
+      obsCol: obsColA,
+      scoreCol: obsColA + 1
+    });
 
-    if (finalShifts.length > 1) {
-      // Multiple shifts have data on this day -> show separate shift columns
-      finalShifts.forEach((s) => {
-        const obsCol = startCol + groups.length * 2;
-        groups.push({
-          id: `L3_${s}`,
-          level: 'L3',
-          shift: s,
-          name: `Level 3 Daily (Shift ${s})`,
-          badge: `Level 3 Shift ${s}`,
-          obsCol,
-          scoreCol: obsCol + 1
-        });
-      });
-    } else {
-      // Single shift -> single Level 3 column pair
-      const s = finalShifts[0] || 'A';
-      const obsCol = startCol + groups.length * 2;
-      const shiftName = s && s !== 'A' ? `Level 3 Daily (Shift ${s})` : 'Level 3 Daily';
-      groups.push({
-        id: `L3_${s}`,
-        level: 'L3',
-        shift: s,
-        name: shiftName,
-        badge: `Level 3 Shift ${s}`,
-        obsCol,
-        scoreCol: obsCol + 1
-      });
-    }
-  }
+    // 2. Level 3 Shift B (Fetched & Read-only)
+    const obsColB = startCol + groups.length * 2;
+    groups.push({
+      id: 'L3_B',
+      level: 'L3',
+      shift: 'B',
+      name: 'Level 3 Daily (Shift B)',
+      badge: 'Level 3 Shift B',
+      isFetched: true,
+      obsCol: obsColB,
+      scoreCol: obsColB + 1
+    });
 
-  // 2. Level 2 (Weekly)
-  if (safeLevels.includes('L2')) {
-    const s = safeShifts[0] || 'G';
-    const obsCol = startCol + groups.length * 2;
+    // 3. Level 2 Weekly (Fetched & Read-only for L1; Active editable for L2)
+    const obsColL2 = startCol + groups.length * 2;
     groups.push({
       id: 'L2',
       level: 'L2',
-      shift: s || 'G',
+      shift: 'G',
       name: 'Level 2 Weekly',
       badge: 'Level 2 Weekly',
-      obsCol,
-      scoreCol: obsCol + 1
+      isFetched: effectiveTarget === 'L1',
+      obsCol: obsColL2,
+      scoreCol: obsColL2 + 1
     });
+
+    // 4. Level 1 Monthly (Active editable for L1)
+    if (effectiveTarget === 'L1' || safeLevels.includes('L1')) {
+      const obsColL1 = startCol + groups.length * 2;
+      groups.push({
+        id: 'L1',
+        level: 'L1',
+        shift: 'G',
+        name: 'Level 1 Monthly',
+        badge: 'Level 1 Monthly',
+        isFetched: false,
+        obsCol: obsColL1,
+        scoreCol: obsColL1 + 1
+      });
+    }
+
+    return groups;
   }
 
-  // 3. Level 1 (Monthly)
-  if (safeLevels.includes('L1')) {
-    const s = safeShifts[0] || 'G';
+  // Level 3 sheet (effectiveTarget === 'L3')
+  const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
+  safeShifts.forEach((s) => {
     const obsCol = startCol + groups.length * 2;
     groups.push({
-      id: 'L1',
-      level: 'L1',
-      shift: s || 'G',
-      name: 'Level 1 Monthly',
-      badge: 'Level 1 Monthly',
+      id: `L3_${s}`,
+      level: 'L3',
+      shift: s,
+      name: safeShifts.length > 1 ? `Level 3 Daily (Shift ${s})` : 'Level 3 Daily',
+      badge: `Level 3 Shift ${s}`,
+      isFetched: false,
       obsCol,
       scoreCol: obsCol + 1
     });
-  }
+  });
 
   return groups;
+}
+
+/**
+ * Normalizes input source sheets or records into keyed source worksheets for L3_A, L3_B, and L2.
+ */
+export function normalizeSourceSheets(input) {
+  if (!input) return { L3_A: null, L3_B: null, L2: null };
+
+  const payload = input.data || input;
+  if (typeof payload === 'object' && !Array.isArray(payload)) {
+    if (payload.L3_A || payload.L3_B || payload.L2 || payload.sourceSheets || payload.records || payload.shiftA || payload.shiftB || payload.level2) {
+      const src = payload.sourceSheets || payload;
+      const recs = payload.records || payload;
+      return {
+        L3_A: src.L3_A?.sheets?.[0] || src.L3_A || recs.l3ShiftA?.sheets?.[0] || recs.l3ShiftA || recs.shiftA?.sheets?.[0] || recs.shiftA || null,
+        L3_B: src.L3_B?.sheets?.[0] || src.L3_B || recs.l3ShiftB?.sheets?.[0] || recs.l3ShiftB || recs.shiftB?.sheets?.[0] || recs.shiftB || null,
+        L2: src.L2?.sheets?.[0] || src.L2 || recs.l2?.sheets?.[0] || recs.l2 || recs.level2?.sheets?.[0] || recs.level2 || null
+      };
+    }
+  }
+
+  const list = Array.isArray(input) ? input : [input];
+  const flattenedSheets = [];
+
+  list.forEach(item => {
+    if (!item) return;
+    if (Array.isArray(item.sheets)) {
+      item.sheets.forEach(s => {
+        flattenedSheets.push({
+          ...s,
+          shift: s.shift || item.shift || '',
+          level: s.targetLevel || s.level || item.targetLevel || item.level || 'L3',
+          targetLevel: s.targetLevel || item.targetLevel || s.level || item.level || 'L3'
+        });
+      });
+    } else {
+      flattenedSheets.push(item);
+    }
+  });
+
+  // Match Level 3 Shift A
+  const l3A = flattenedSheets.find(s => {
+    const lvl = s.targetLevel || s.level || (s.levels && s.levels[0]);
+    const sh = String(s.shift || (s.shifts && s.shifts[0]) || 'A').toUpperCase();
+    return (lvl === 'L3' || !lvl) && sh === 'A';
+  }) || null;
+
+  // Match Level 3 Shift B
+  const l3B = flattenedSheets.find(s => {
+    const lvl = s.targetLevel || s.level || (s.levels && s.levels[0]);
+    const sh = String(s.shift || (s.shifts && s.shifts[0]) || '').toUpperCase();
+    return (lvl === 'L3' || !lvl) && sh === 'B';
+  }) || null;
+
+  // Match Level 2
+  const l2 = flattenedSheets.find(s => {
+    const lvl = s.targetLevel || s.level || (s.levels && s.levels[0]);
+    return lvl === 'L2';
+  }) || null;
+
+  return { L3_A: l3A, L3_B: l3B, L2: l2 };
+}
+
+/**
+ * Synchronizes an existing Level 1 or Level 2 sheet with the latest same-day source records
+ * so that if Level 3 (Shift A or Shift B) or Level 2 was updated, the displayed read-only columns
+ * reflect the latest authoritative data.
+ */
+export function syncSheetWithLatestSameDaySources(sheet, sourceInput, targetLevel = null, isCc = false) {
+  if (!sheet || !Array.isArray(sheet.rows)) return sheet;
+
+  const effectiveTarget = targetLevel || sheet.targetLevel || sheet.level || 'L3';
+  if (effectiveTarget !== 'L1' && effectiveTarget !== 'L2') {
+    return sheet;
+  }
+
+  const sources = normalizeSourceSheets(sourceInput);
+  const startRow = isCc ? 4 : 3;
+  const endRow = isCc ? 34 : 36;
+
+  const auditColumns = getActiveAuditColumns(sheet, null, isCc);
+  const sourceShiftStatus = {
+    A: Boolean(sources.L3_A),
+    B: Boolean(sources.L3_B),
+    L2: Boolean(sources.L2)
+  };
+
+  const updatedRows = sheet.rows.map((row, rIdx) => {
+    if (!Array.isArray(row) || rIdx < startRow || rIdx > endRow) return row;
+    const nextRow = [...row];
+
+    auditColumns.forEach((colGroup) => {
+      // Only synchronize read-only/fetched columns; never overwrite active editable level!
+      const isReadOnly = (effectiveTarget === 'L1' && (colGroup.level === 'L3' || colGroup.level === 'L2')) ||
+        (effectiveTarget === 'L2' && colGroup.level === 'L3');
+
+      if (!isReadOnly) return;
+
+      let srcSheet = null;
+      if (colGroup.id === 'L3_A' || (colGroup.level === 'L3' && colGroup.shift === 'A')) {
+        srcSheet = sources.L3_A;
+      } else if (colGroup.id === 'L3_B' || (colGroup.level === 'L3' && colGroup.shift === 'B')) {
+        srcSheet = sources.L3_B;
+      } else if (colGroup.id === 'L2' || colGroup.level === 'L2') {
+        srcSheet = sources.L2;
+      }
+
+      if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
+        const srcRow = srcSheet.rows[rIdx];
+        const srcAuditCols = getActiveAuditColumns(srcSheet, null, isCc);
+        let matchedCol = null;
+
+        if (colGroup.id) {
+          matchedCol = srcAuditCols.find(c => c.id === colGroup.id);
+        }
+        if (!matchedCol && colGroup.level === 'L3') {
+          matchedCol = srcAuditCols.find(c => c.level === 'L3' && (c.shift === colGroup.shift || (!c.shift && srcAuditCols.filter(x => x.level === 'L3').length === 1)));
+        }
+        if (!matchedCol) {
+          matchedCol = srcAuditCols.find(c => c.level === colGroup.level);
+        }
+
+        if (matchedCol && srcRow[matchedCol.obsCol]) {
+          const obs = srcRow[matchedCol.obsCol];
+          const score = srcRow[matchedCol.scoreCol];
+          nextRow[colGroup.obsCol] = obs ? { ...obs } : { value: '', formatted: '', type: 'z' };
+          nextRow[colGroup.scoreCol] = score ? { ...score } : { value: '', formatted: '', type: 'z' };
+        }
+      }
+    });
+
+    return nextRow;
+  });
+
+  return {
+    ...sheet,
+    rows: updatedRows,
+    auditColumns,
+    sourceShiftStatus
+  };
 }
 
 /**
@@ -552,14 +707,22 @@ export function upgradeAssemblyRecord(record) {
  * Creates a blank Assembly check sheet supporting dynamic audit levels and multi-shift columns.
  * If existingSheet is provided, existing observations & scores for the same day are fetched and merged.
  */
-export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shifts = ['A'], existingSheet = null) {
+export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shifts = ['A'], existingSheet = null, targetLevel = null) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
-  const normalized = normalizeAssemblySheet(baseSheet);
+  const normalized = normalizeAssemblySheet(baseSheet || assemblyTemplate?.sheets?.[0]);
   const safeLevels = Array.isArray(levels) && levels.length > 0 ? levels : ['L3'];
   const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
+  const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');
 
-  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, false);
+  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, false, effectiveTarget);
   const columnCount = 5 + auditColumns.length * 2;
+  const sources = normalizeSourceSheets(existingSheet);
+
+  const sourceShiftStatus = {
+    A: Boolean(sources.L3_A),
+    B: Boolean(sources.L3_B),
+    L2: Boolean(sources.L2)
+  };
 
   // Build rows
   const newRows = normalized.rows.map((row, rIdx) => {
@@ -611,32 +774,29 @@ export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shift
         nextRow[colGroup.scoreCol] = { value: '', formatted: '', type: 'z' };
       });
 
-      // If existingSheet(s) passed, merge existing observations and scores
-      const sourceSheets = Array.isArray(existingSheet) ? existingSheet : (existingSheet ? [existingSheet] : []);
-      for (const srcSheet of sourceSheets) {
-        if (!srcSheet || !Array.isArray(srcSheet.rows?.[rIdx])) continue;
-        const prevRow = srcSheet.rows[rIdx];
-        const existingAuditCols = getActiveAuditColumns(srcSheet, null, false);
+      // Merge fetched observations and scores from normalized same-day sources
+      auditColumns.forEach((colGroup) => {
+        let srcSheet = null;
+        if (colGroup.id === 'L3_A') {
+          srcSheet = sources.L3_A;
+        } else if (colGroup.id === 'L3_B') {
+          srcSheet = sources.L3_B;
+        } else if (colGroup.id === 'L2' && effectiveTarget === 'L1') {
+          srcSheet = sources.L2;
+        }
 
-        auditColumns.forEach((colGroup) => {
+        if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
+          const prevRow = srcSheet.rows[rIdx];
+          const existingAuditCols = getActiveAuditColumns(srcSheet, null, false);
           let matchedPrevCol = null;
-          // 1. Direct ID match
+
           if (colGroup.id) {
             matchedPrevCol = existingAuditCols.find(p => p.id === colGroup.id);
           }
-          // 2. Exact level and shift match
-          if (!matchedPrevCol && colGroup.shift) {
-            matchedPrevCol = existingAuditCols.find(p => p.level === colGroup.level && p.shift === colGroup.shift);
+          if (!matchedPrevCol && colGroup.level === 'L3') {
+            matchedPrevCol = existingAuditCols.find(p => p.level === 'L3' && (p.shift === colGroup.shift || (!p.shift && existingAuditCols.filter(x => x.level === 'L3').length === 1)));
           }
-          // 3. If previous sheet had single L3 column, match it to the first L3 column only
-          if (!matchedPrevCol && colGroup.level === 'L3' && existingAuditCols.filter(x => x.level === 'L3').length === 1) {
-            const firstL3Group = auditColumns.find(x => x.level === 'L3');
-            if (colGroup.id === firstL3Group?.id) {
-              matchedPrevCol = existingAuditCols.find(x => x.level === 'L3');
-            }
-          }
-          // 4. For L2 or L1, match by level
-          if (!matchedPrevCol && (colGroup.level === 'L2' || colGroup.level === 'L1')) {
+          if (!matchedPrevCol) {
             matchedPrevCol = existingAuditCols.find(p => p.level === colGroup.level);
           }
 
@@ -650,8 +810,8 @@ export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shift
               nextRow[colGroup.scoreCol] = { ...savedScore };
             }
           }
-        });
-      }
+        }
+      });
 
       return nextRow;
     }
@@ -766,7 +926,9 @@ export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shift
     merges,
     levels: safeLevels,
     shifts: safeShifts,
+    targetLevel: effectiveTarget,
     auditColumns,
+    sourceShiftStatus,
     date: targetDate,
     shift: safeShifts[0] || '',
     department: '',

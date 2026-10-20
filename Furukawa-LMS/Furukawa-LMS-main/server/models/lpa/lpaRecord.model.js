@@ -346,6 +346,91 @@ export class LpaRecord {
     return found || null;
   }
 
+  /**
+   * Retrieves authoritative same-day records and worksheets across levels and shifts
+   * for Level 1 and Level 2 same-day data synchronization and read-only display.
+   */
+  static async getSameDaySourceData(filters = {}, user = null) {
+    const { section, unit, auditDate, department, line } = filters;
+    const targetDate = auditDate || filters.date || new Date().toISOString().slice(0, 10);
+    const targetSection = String(section || 'assembly').toLowerCase();
+    const targetUnit = unit || 'Bawal';
+
+    // Retrieve all records for this date, section, and unit
+    const result = await this.getRecords({
+      section: targetSection,
+      unit: targetUnit,
+      auditDate: targetDate,
+      limit: 100
+    }, { page: 1, limit: 100 }, user);
+
+    const allRecords = result.records || [];
+
+    // Filter matching department / line if specified, but fall back gracefully
+    let candidates = allRecords;
+    if (department) {
+      const deptFiltered = candidates.filter(r => !r.department || r.department.toLowerCase() === department.toLowerCase());
+      if (deptFiltered.length > 0) candidates = deptFiltered;
+    }
+    if (line) {
+      const lineFiltered = candidates.filter(r => !r.line || r.line === line);
+      if (lineFiltered.length > 0) candidates = lineFiltered;
+    }
+
+    // Sort by updatedAt DESC, createdAt DESC
+    candidates.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+    // Locate shift-wise Level 3 records
+    const l3Records = candidates.filter(r => {
+      const lvl = r.targetLevel || r.level;
+      return lvl === 'L3' || (!lvl && (!r.levels || r.levels.includes('L3')));
+    });
+
+    const l3ShiftA = l3Records.find(r => (r.shift || r.sheets?.[0]?.shift || 'A').toUpperCase() === 'A') || null;
+    const l3ShiftB = l3Records.find(r => (r.shift || r.sheets?.[0]?.shift || '').toUpperCase() === 'B') || null;
+    const l3ShiftC = l3Records.find(r => (r.shift || r.sheets?.[0]?.shift || '').toUpperCase() === 'C') || null;
+
+    // Locate Level 2 record
+    const l2Record = candidates.find(r => {
+      const lvl = r.targetLevel || r.level;
+      return lvl === 'L2' || (r.levels && r.levels.includes('L2') && !r.levels.includes('L1'));
+    }) || null;
+
+    // Locate Level 1 record
+    const l1Record = candidates.find(r => {
+      const lvl = r.targetLevel || r.level;
+      return lvl === 'L1' || (r.levels && r.levels.includes('L1'));
+    }) || null;
+
+    return {
+      date: targetDate,
+      section: targetSection,
+      unit: targetUnit,
+      department: department || '',
+      line: line || '',
+      records: {
+        l3ShiftA,
+        l3ShiftB,
+        l3ShiftC,
+        l2: l2Record,
+        l1: l1Record
+      },
+      sourceSheets: {
+        L3_A: l3ShiftA?.sheets?.[0] || null,
+        L3_B: l3ShiftB?.sheets?.[0] || null,
+        L3_C: l3ShiftC?.sheets?.[0] || null,
+        L2: l2Record?.sheets?.[0] || null
+      },
+      availableShifts: {
+        A: Boolean(l3ShiftA),
+        B: Boolean(l3ShiftB),
+        C: Boolean(l3ShiftC)
+      },
+      hasL2: Boolean(l2Record),
+      hasL1: Boolean(l1Record)
+    };
+  }
+
   static async createRecord(payload, user = null) {
     const section = (payload.section || "assembly").toLowerCase();
     const unit = payload.unit || "Bawal";
@@ -371,6 +456,55 @@ export class LpaRecord {
     const sheetsInput = Array.isArray(payload.sheets) && payload.sheets.length > 0
       ? payload.sheets
       : (section === "assembly" ? getDefaultTemplate("assembly").sheets : getDefaultTemplate("cc").sheets);
+
+    // Enforce backend protection: Level 1 and Level 2 records cannot tamper with or overwrite fetched columns
+    const effectiveLevel = payload.targetLevel || level;
+    if (effectiveLevel === 'L1' || effectiveLevel === 'L2') {
+      try {
+        const sameDaySources = await this.getSameDaySourceData({ section, unit, auditDate, department, line }, user);
+        sheetsInput.forEach((sheet) => {
+          if (!Array.isArray(sheet.rows)) return;
+          const isCc = section === 'cc';
+          const startRow = isCc ? 4 : 3;
+          const endRow = isCc ? 34 : 36;
+          const headerRow = sheet.rows[isCc ? 2 : 1] || [];
+          const auditCols = [];
+          const startCol = isCc ? 7 : 5;
+          for (let c = startCol; c < (sheet.columnCount || headerRow.length); c += 2) {
+            const hText = String(headerRow[c]?.value ?? headerRow[c]?.formatted ?? '').toUpperCase();
+            if (hText.includes('SHIFT A') || hText.includes('L3_A')) auditCols.push({ id: 'L3_A', level: 'L3', shift: 'A', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('SHIFT B') || hText.includes('L3_B')) auditCols.push({ id: 'L3_B', level: 'L3', shift: 'B', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('LEVEL 2') || hText.includes('L2') || hText.includes('WEEKLY')) auditCols.push({ id: 'L2', level: 'L2', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('LEVEL 1') || hText.includes('L1') || hText.includes('MONTHLY')) auditCols.push({ id: 'L1', level: 'L1', obsCol: c, scoreCol: c + 1 });
+          }
+
+          sheet.rows.forEach((row, rIdx) => {
+            if (rIdx < startRow || rIdx > endRow || !Array.isArray(row)) return;
+            auditCols.forEach(col => {
+              const isReadOnlyCol = (effectiveLevel === 'L1' && (col.level === 'L3' || col.level === 'L2')) ||
+                                    (effectiveLevel === 'L2' && col.level === 'L3');
+              if (!isReadOnlyCol) return;
+
+              let srcSheet = null;
+              if (col.id === 'L3_A') srcSheet = sameDaySources.sourceSheets?.L3_A;
+              else if (col.id === 'L3_B') srcSheet = sameDaySources.sourceSheets?.L3_B;
+              else if (col.id === 'L2') srcSheet = sameDaySources.sourceSheets?.L2;
+
+              if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
+                const srcObsCol = isCc ? 7 : 5;
+                const srcScoreCol = isCc ? 8 : 6;
+                const srcObs = srcSheet.rows[rIdx][srcObsCol];
+                const srcScore = srcSheet.rows[rIdx][srcScoreCol];
+                row[col.obsCol] = srcObs ? { ...srcObs } : { value: '', formatted: '', type: 'z' };
+                row[col.scoreCol] = srcScore ? { ...srcScore } : { value: '', formatted: '', type: 'z' };
+              }
+            });
+          });
+        });
+      } catch (syncErr) {
+        logger.warn("Backend same-day source sync note in createRecord:", syncErr.message);
+      }
+    }
 
     let authoritativeSheets = [];
     let grandTotalMarks = 0;
@@ -569,6 +703,55 @@ export class LpaRecord {
     const sheetsInput = Array.isArray(payload.sheets) && payload.sheets.length > 0
       ? payload.sheets
       : existing.sheets;
+
+    // Enforce backend protection: Level 1 and Level 2 records cannot tamper with or overwrite fetched columns
+    const effectiveLevel = payload.targetLevel || level || existing.targetLevel || existing.level;
+    if (effectiveLevel === 'L1' || effectiveLevel === 'L2') {
+      try {
+        const sameDaySources = await this.getSameDaySourceData({ section, unit, auditDate, department, line }, user);
+        sheetsInput.forEach((sheet) => {
+          if (!Array.isArray(sheet.rows)) return;
+          const isCc = section === 'cc';
+          const startRow = isCc ? 4 : 3;
+          const endRow = isCc ? 34 : 36;
+          const headerRow = sheet.rows[isCc ? 2 : 1] || [];
+          const auditCols = [];
+          const startCol = isCc ? 7 : 5;
+          for (let c = startCol; c < (sheet.columnCount || headerRow.length); c += 2) {
+            const hText = String(headerRow[c]?.value ?? headerRow[c]?.formatted ?? '').toUpperCase();
+            if (hText.includes('SHIFT A') || hText.includes('L3_A')) auditCols.push({ id: 'L3_A', level: 'L3', shift: 'A', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('SHIFT B') || hText.includes('L3_B')) auditCols.push({ id: 'L3_B', level: 'L3', shift: 'B', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('LEVEL 2') || hText.includes('L2') || hText.includes('WEEKLY')) auditCols.push({ id: 'L2', level: 'L2', obsCol: c, scoreCol: c + 1 });
+            else if (hText.includes('LEVEL 1') || hText.includes('L1') || hText.includes('MONTHLY')) auditCols.push({ id: 'L1', level: 'L1', obsCol: c, scoreCol: c + 1 });
+          }
+
+          sheet.rows.forEach((row, rIdx) => {
+            if (rIdx < startRow || rIdx > endRow || !Array.isArray(row)) return;
+            auditCols.forEach(col => {
+              const isReadOnlyCol = (effectiveLevel === 'L1' && (col.level === 'L3' || col.level === 'L2')) ||
+                                    (effectiveLevel === 'L2' && col.level === 'L3');
+              if (!isReadOnlyCol) return;
+
+              let srcSheet = null;
+              if (col.id === 'L3_A') srcSheet = sameDaySources.sourceSheets?.L3_A;
+              else if (col.id === 'L3_B') srcSheet = sameDaySources.sourceSheets?.L3_B;
+              else if (col.id === 'L2') srcSheet = sameDaySources.sourceSheets?.L2;
+
+              if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
+                const srcObsCol = isCc ? 7 : 5;
+                const srcScoreCol = isCc ? 8 : 6;
+                const srcObs = srcSheet.rows[rIdx][srcObsCol];
+                const srcScore = srcSheet.rows[rIdx][srcScoreCol];
+                row[col.obsCol] = srcObs ? { ...srcObs } : { value: '', formatted: '', type: 'z' };
+                row[col.scoreCol] = srcScore ? { ...srcScore } : { value: '', formatted: '', type: 'z' };
+              }
+            });
+          });
+        });
+      } catch (syncErr) {
+        logger.warn("Backend same-day source sync note in updateRecord:", syncErr.message);
+      }
+    }
 
     let authoritativeSheets = [];
     let grandTotalMarks = 0;

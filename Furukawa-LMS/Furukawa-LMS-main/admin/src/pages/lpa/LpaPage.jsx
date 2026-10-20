@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User, BarChart3 } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns, syncSheetWithLatestSameDaySources } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
+import lpaApi from '@/services/api/lpaApi.js';
 import PDCASheet from '../../components/pdca/PDCASheet';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
 import SendMailModal from '../../components/common/SendMailModal';
@@ -30,6 +31,7 @@ const primary = button.replace('border-slate-200', 'border-blue-600').replace('b
 const errorText = error => error.message || 'Could not save LPA data. Your edits have been retained.';
 
 function LpaPageContent({ viewContext }) {
+  const navigate = useNavigate();
   const outlet = useOutletContext();
   const layout = viewContext || outlet || {};
   const { setIsFormView = () => { } } = layout;
@@ -157,6 +159,35 @@ function LpaPageContent({ viewContext }) {
         }
       } else setDirty(needsTemplateUpgrade);
     } catch { setDirty(needsTemplateUpgrade); }
+    // For Level 1 and Level 2 sheets, synchronize fetched columns with latest same-day source data
+    const recTargetLevel = next.targetLevel || next.level || (next.levels?.includes('L1') ? 'L1' : next.levels?.includes('L2') ? 'L2' : 'L3');
+    if (recTargetLevel === 'L1' || recTargetLevel === 'L2') {
+      let sameDaySources = null;
+      try {
+        sameDaySources = await lpaApi.getSameDaySourceData({
+          section: next.section,
+          unit: next.unit || selectedUnit,
+          auditDate: next.auditDate || next.date,
+          department: next.department,
+          line: next.line
+        });
+      } catch {
+        const sameDayRecords = records.filter(r =>
+          r.id !== next.id &&
+          r.section === next.section &&
+          (r.unit === next.unit || (!r.unit && (next.unit || selectedUnit) === 'Bawal')) &&
+          (r.auditDate === (next.auditDate || next.date) || r.date === (next.auditDate || next.date))
+        );
+        sameDaySources = sameDayRecords;
+      }
+
+      if (sameDaySources && Array.isArray(next.sheets)) {
+        next.sheets = next.sheets.map(sh =>
+          syncSheetWithLatestSameDaySources(sh, sameDaySources, recTargetLevel, next.section === 'cc')
+        );
+      }
+    }
+
     setSheetIndex(index);
     setZoom(150);
     setEditor(next);
@@ -388,35 +419,42 @@ function LpaPageContent({ viewContext }) {
       targetLevels = ['L3'];
     }
 
-    const shift = formData.shift || 'A';
-    const l3Shifts = ['A', 'B', 'C'].includes(shift) ? [shift] : ['A'];
+    const isMultiShift = targetLevel === 'L1' || targetLevel === 'L2';
+    const effectiveShifts = isMultiShift ? ['A', 'B'] : [formData.shift || 'A'];
 
     // 2. Fetch existing same-day data when creating Level 1 or Level 2:
-    // This allows the newly created Level 2 or Level 1 sheet to pre-populate and display
-    // existing Level 3 (and Level 2) audit records from that same day in read-only mode.
-    const existingSourceSheets = [];
-    if (targetLevel === 'L1' || targetLevel === 'L2') {
-      const sameDayRecords = records.filter(rec =>
-        rec.section === formData.section &&
-        (rec.unit === targetUnit || (!rec.unit && targetUnit === 'Bawal')) &&
-        (rec.auditDate === formData.date || rec.date === formData.date) &&
-        (!formData.department || !rec.department || rec.department.toLowerCase() === formData.department.toLowerCase()) &&
-        (!formData.line || !rec.line || rec.line === formData.line)
-      );
+    let sameDaySources = null;
+    if (isMultiShift) {
+      try {
+        sameDaySources = await lpaApi.getSameDaySourceData({
+          section: formData.section,
+          unit: targetUnit,
+          auditDate: formData.date,
+          department: formData.department,
+          line: formData.line
+        });
+      } catch (err) {
+        console.warn('Backend same-day query fallback to memory records:', err);
+      }
 
-      sameDayRecords.forEach(rec => {
-        if (Array.isArray(rec.sheets)) {
-          rec.sheets.forEach(s => existingSourceSheets.push(s));
-        }
-      });
+      if (!sameDaySources || (!sameDaySources.sourceSheets && !sameDaySources.records)) {
+        const sameDayRecords = records.filter(rec =>
+          rec.section === formData.section &&
+          (rec.unit === targetUnit || (!rec.unit && targetUnit === 'Bawal')) &&
+          (rec.auditDate === formData.date || rec.date === formData.date) &&
+          (!formData.department || !rec.department || rec.department.toLowerCase() === formData.department.toLowerCase()) &&
+          (!formData.line || !rec.line || rec.line === formData.line)
+        );
+        sameDaySources = sameDayRecords;
+      }
     }
 
     // 3. Base Template & Clean New Sheet Creation
     const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
     const newSheets = baseTpl.sheets.map((baseSheet) => {
       const createdSheet = isAssembly
-        ? createBlankAssemblySheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets)
-        : createBlankCcSheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets);
+        ? createBlankAssemblySheet(baseSheet, formData.date, targetLevels, effectiveShifts, sameDaySources, targetLevel)
+        : createBlankCcSheet(baseSheet, formData.date, targetLevels, effectiveShifts, sameDaySources, targetLevel);
 
       return {
         ...createdSheet,
@@ -442,7 +480,7 @@ function LpaPageContent({ viewContext }) {
       targetLevel,
       level: targetLevel,
       levels: targetLevels,
-      shifts: l3Shifts,
+      shifts: effectiveShifts,
       auditDate: formData.date,
       date: formData.date,
       shift: formData.shift,
@@ -777,7 +815,15 @@ function LpaPageContent({ viewContext }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export All Records</button>
+          <button
+            type="button"
+            onClick={() => navigate('/cms/lpa/graphs')}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:from-blue-700 hover:to-indigo-700 hover:shadow-md transition-all cursor-pointer"
+            title="Open LPA Analytics & Graphs (Assembly & C&C Sheets)"
+          >
+            <BarChart3 size={16} />
+            <span>Graphs</span>
+          </button>
         </div>
       </div>
       <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />

@@ -85,6 +85,23 @@ export const getRecords = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Retrieve same-day source data across levels and shifts for L1/L2 auto-fetching & sync
+ */
+export const getSameDaySourceData = asyncHandler(async (req, res) => {
+  const user = getUserContext(req);
+  const filters = {
+    section: req.query.section,
+    unit: req.query.unit,
+    auditDate: req.query.auditDate || req.query.date,
+    department: req.query.department,
+    line: req.query.line
+  };
+
+  const data = await LpaRecord.getSameDaySourceData(filters, user);
+  return res.status(200).json(new ApiResponse(200, data, "Same-day LPA source data retrieved successfully."));
+});
+
+/**
  * Retrieve single LPA record by ID
  */
 export const getRecordById = asyncHandler(async (req, res) => {

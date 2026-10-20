@@ -209,9 +209,41 @@ export function isUserResponsibleForRow(row, user) {
   return false;
 }
 
+export function isUserInResponsibleDepartment(row, user) {
+  if (!user || !row) return false;
+
+  // 1. Direct assignment as responsible staff
+  if (isUserResponsibleForRow(row, user)) return true;
+
+  // 2. Department matching: check selected Responsible Person Confirmation department
+  const targetDepts = [
+    row.responsiblePersonDept,
+    row.department,
+    ...(Array.isArray(row.departments) ? row.departments : [])
+  ]
+    .filter(Boolean)
+    .map(d => String(d).trim().toLowerCase());
+
+  if (targetDepts.length === 0) return false;
+
+  const userDepts = [];
+  if (user.deptName) userDepts.push(user.deptName);
+  if (typeof user.department === 'string') userDepts.push(user.department);
+  if (user.department?.name) userDepts.push(user.department.name);
+  if (Array.isArray(user.departments)) {
+    user.departments.forEach(d => {
+      if (typeof d === 'string') userDepts.push(d);
+      else if (d?.name) userDepts.push(d.name);
+    });
+  }
+
+  const normalizedUserDepts = userDepts.map(d => String(d).trim().toLowerCase());
+  return normalizedUserDepts.some(ud => targetDepts.some(td => ud === td || ud.includes(td) || td.includes(ud)));
+}
+
 export function isUserResponsibleForAnyRow(rows, user) {
   if (!Array.isArray(rows) || !user) return false;
-  return rows.some(r => isUserResponsibleForRow(r, user));
+  return rows.some(r => isUserInResponsibleDepartment(r, user));
 }
 
 export function canUserEditPDCARow(row, user, record, targetColumn = null) {
@@ -233,14 +265,15 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
-  const isResponsible = isUserResponsibleForRow(row, user);
-  if (isResponsible) {
+  const isDeptMember = isUserInResponsibleDepartment(row, user);
+  if (isDeptMember) {
     if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
     return { canEditEntireRow: false, canEditActionCols: true };
   }
   if (targetColumn) return false;
   return { canEditEntireRow: false, canEditActionCols: false };
 }
+
 
 export function resolveCurrentUserId(user) {
   if (user && (user.id || user._id || user.code || user.employeeId || user.userName || user.name)) {

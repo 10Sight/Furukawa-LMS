@@ -14,7 +14,8 @@ import {
   updateRecord,
   deleteRecord,
   calculateScores,
-  uploadExcel
+  uploadExcel,
+  getSameDaySourceData
 } from "../../controllers/lpa/lpa.controller.js";
 
 const router = Router();
@@ -145,6 +146,10 @@ router.post("/calculate-scores", calculateScores);
 
 // Admin Excel Upload
 router.post("/upload", upload.single("file"), uploadExcel);
+
+// Same-day source data query for multi-level & multi-shift fetching
+router.get("/same-day-source", getSameDaySourceData);
+router.get("/records/same-day-source", getSameDaySourceData);
 
 // LPA Records (explicit endpoints)
 router.get("/records", getRecords);

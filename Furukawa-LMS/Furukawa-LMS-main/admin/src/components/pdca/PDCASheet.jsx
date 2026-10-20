@@ -27,7 +27,8 @@ import {
   Images,
   AlertCircle,
   Mail,
-  BarChart3
+  BarChart3,
+  Lock
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
@@ -35,12 +36,14 @@ import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
 import PDCAMonthlyGraph from './PDCAMonthlyGraph';
+import ResponsiblePersonInstructionCell from './ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
 import {
   isRecordCreator,
   isUserResponsibleForRow,
+  isUserInResponsibleDepartment,
   isUserResponsibleForAnyRow
 } from '../../pages/pdca/data/recordFilters.js';
 import {
@@ -115,6 +118,8 @@ const createEmptyRow = (customDefaults = {}) => ({
   cftSelectedName: customDefaults.cftSelectedName || '',
   cftSelectedCode: customDefaults.cftSelectedCode || '',
   confirmation: customDefaults.confirmation || '',
+  confirmedBy: customDefaults.confirmedBy || '',
+  instruction: customDefaults.instruction || '',
   responsiblePersonConfirmation: customDefaults.responsiblePersonConfirmation || customDefaults.staffEmployee || ''
 });
 
@@ -388,233 +393,8 @@ function DurationMinCell({ value, readOnly, onChange }) {
   );
 }
 
-// Custom Dropdown for Responsible Person Instructions, etc. column
-function ResponsiblePersonInstructionDropdown({
-  value,
-  onChange,
-  row,
-  dbEmployees = [],
-  currentUser,
-  readOnly = false,
-  sNo = 1
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [manualText, setManualText] = useState('');
-  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef(null);
-  const popoverRef = useRef(null);
 
-  // Candidate name(s) fetched by ID (showing ONLY name, no ID)
-  const candidateNames = useMemo(() => {
-    const list = [];
 
-    // Assigned staff in this row
-    if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
-      row.staffEmployees.forEach((emp) => {
-        if (emp.name && !list.includes(emp.name.trim())) {
-          list.push(emp.name.trim());
-        }
-      });
-    } else if (row.staffEmployee) {
-      const parsed = parseStaffEmployee(row.staffEmployee);
-      const name = parsed?.name || row.staffName;
-      if (name && !list.includes(name.trim())) {
-        list.push(name.trim());
-      }
-    } else if (row.staffName && !list.includes(row.staffName.trim())) {
-      list.push(row.staffName.trim());
-    }
-
-    // Lookup by employee ID in master
-    const staffId = row.staffId || row.employeeId;
-    if (staffId) {
-      const found = (dbEmployees || []).find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId))
-        || VERIFIED_EMPLOYEE_MASTER.find((e) => String(e.id) === String(staffId) || String(e.code) === String(staffId));
-      if (found?.name && !list.includes(found.name.trim())) {
-        list.push(found.name.trim());
-      }
-    }
-
-    // Current logged-in user
-    const curName = currentUser?.fullName || currentUser?.name;
-    if (curName && !list.includes(curName.trim())) {
-      list.push(curName.trim());
-    }
-
-    if (list.length === 0) {
-      list.push('Responsible User');
-    }
-
-    return list;
-  }, [row, dbEmployees, currentUser]);
-
-  const toggleDropdown = (e) => {
-    if (readOnly) return;
-    e.stopPropagation();
-    if (isOpen) {
-      setIsOpen(false);
-      return;
-    }
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const popoverWidth = 220;
-      let left = rect.left + window.scrollX - (popoverWidth - rect.width) / 2;
-      left = Math.max(10, Math.min(window.innerWidth - popoverWidth - 10, left));
-      let top = rect.bottom + window.scrollY + 4;
-      setPopoverPos({ top, left });
-      setManualText('');
-      setIsOpen(true);
-    }
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleOutsideClick = (e) => {
-      if (
-        (triggerRef.current && triggerRef.current.contains(e.target)) ||
-        (popoverRef.current && popoverRef.current.contains(e.target))
-      ) {
-        return;
-      }
-      setIsOpen(false);
-    };
-    window.addEventListener('mousedown', handleOutsideClick);
-    return () => window.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen]);
-
-  const handleSelectOption = (opt) => {
-    onChange(opt);
-    setIsOpen(false);
-  };
-
-  const handleApplyManual = () => {
-    if (manualText.trim()) {
-      onChange(manualText.trim());
-    }
-    setIsOpen(false);
-  };
-
-  const displayVal = value || row.confirmation || (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' ? row.responsiblePersonConfirmation : row.responsiblePersonConfirmation);
-
-  const isConfirmed = displayVal === 'Confirmed';
-  const isNotConfirmed = displayVal === 'Not - Confirmed';
-  const hasCustomValue = Boolean(displayVal && !isConfirmed && !isNotConfirmed);
-
-  return (
-    <div className="relative w-full flex items-center justify-center">
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={readOnly}
-        onClick={toggleDropdown}
-        aria-label={`Responsible person instructions for row ${sNo}`}
-        className={`w-full rounded-md border px-1.5 py-1 text-[10.5px] font-semibold outline-none text-center flex items-center justify-between gap-1 transition-all ${
-          readOnly ? 'cursor-default' : 'cursor-pointer hover:border-blue-400 focus:ring-2 focus:ring-blue-300'
-        } ${
-          isConfirmed
-            ? 'bg-green-50 text-green-700 border-green-300'
-            : isNotConfirmed
-            ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
-            : hasCustomValue
-            ? 'bg-blue-50 text-blue-700 border-blue-300'
-            : 'bg-slate-50 text-slate-700 border-slate-300'
-        }`}
-        title={displayVal || 'Select Instruction / Confirmation'}
-      >
-        <span className="truncate flex-1 text-center font-medium">
-          {displayVal || 'Select...'}
-        </span>
-        {!readOnly && (
-          <ChevronDown className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
-        )}
-      </button>
-
-      {isOpen && typeof document !== 'undefined' && createPortal(
-        <div
-          ref={popoverRef}
-          style={{
-            position: 'absolute',
-            top: `${popoverPos.top}px`,
-            left: `${popoverPos.left}px`,
-            width: '220px',
-            zIndex: 99999
-          }}
-          className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-in fade-in zoom-in-95 duration-100"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Upside: User name(s) fetched by ID (no ID shown) */}
-          <div className="p-1.5 bg-slate-50 border-b border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5 block">
-              Responsible Person
-            </span>
-            {candidateNames.map((name, nIdx) => (
-              <button
-                key={nIdx}
-                type="button"
-                onClick={() => handleSelectOption(name)}
-                className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
-                title={`Select ${name}`}
-              >
-                <User className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                <span className="truncate">{name}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Middle Options: Confirmed / Not Confirmed */}
-          <div className="p-1.5 space-y-0.5">
-            <button
-              type="button"
-              onClick={() => handleSelectOption('Confirmed')}
-              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
-              <span>Confirmed</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectOption('Not - Confirmed')}
-              className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Not - Confirmed</span>
-            </button>
-          </div>
-
-          {/* Downwards: Manual Input by User */}
-          <div className="p-2 border-t border-slate-200 bg-slate-50">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Manual Instruction
-            </span>
-            <div className="flex items-center gap-1">
-              <input
-                type="text"
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleApplyManual();
-                  }
-                }}
-                placeholder="Type instruction..."
-                className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={handleApplyManual}
-                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
-              >
-                Set
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
 
 export default function PDCASheet({
   topic,
@@ -796,18 +576,21 @@ export default function PDCASheet({
       ? row.responsiblePersonDept
       : (resolvedDbDept !== 'CFT' ? resolvedDbDept : '');
 
-    // Confirmation & Status conditional synchronization (Rules A, B, C, D)
+    // Confirmation & Status conditional synchronization
     let confirmation = (row.confirmation || '').trim();
-    if (!confirmation && (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed')) {
+    if (!confirmation && (row.responsiblePersonConfirmation === 'Confirmed' || row.responsiblePersonConfirmation === 'Not - Confirmed' || row.responsiblePersonConfirmation === 'Not-Confirmed')) {
       confirmation = row.responsiblePersonConfirmation.trim();
     }
+    if (confirmation === 'Not-Confirmed') confirmation = 'Not - Confirmed';
+    const confirmedBy = (row.confirmedBy || '').trim();
+    const instruction = (row.instruction || '').trim();
 
-    let status = normalizePDCAStatus(row.status);
-    if (confirmation === 'Confirmed') {
-      status = 'Done';
-    } else if (confirmation === 'Not - Confirmed') {
-      status = 'In- Progress';
-    }
+    let status = computePDCAStatus({
+      ...row,
+      responseDate,
+      confirmation,
+      status: row.status
+    }, currentDate);
 
     // Section P Unit
     const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (row.unit || '');
@@ -832,6 +615,8 @@ export default function PDCASheet({
       respUnit,
       responsiblePersonUnit: respUnit,
       confirmation,
+      confirmedBy,
+      instruction,
       status,
       section: sections[0]?.section || section,
       sectionId: sections[0]?.sectionId ?? sectionId,
@@ -2286,7 +2071,8 @@ export default function PDCASheet({
           ...curr,
           responseDate: '',
           revisedDates: revisions,
-          noOfTimeRevised: revisions.length
+          noOfTimeRevised: revisions.length,
+          status: 'Not-Started'
         };
         return updated;
       }
@@ -2300,12 +2086,19 @@ export default function PDCASheet({
         nextRevisions = [...revisions, { date: newDate, reason: '' }];
       }
 
-      updated[rowIndex] = {
+      const tempRow = {
         ...curr,
         initialResponseDate: curr.initialResponseDate || oldDate || newDate,
         responseDate: newDate,
         revisedDates: nextRevisions,
         noOfTimeRevised: nextRevisions.length
+      };
+
+      const nextStatus = computePDCAStatus(tempRow, currentDate);
+
+      updated[rowIndex] = {
+        ...tempRow,
+        status: nextStatus
       };
       return updated;
     });
@@ -2355,11 +2148,18 @@ export default function PDCASheet({
         latestDate = typeof lastRev === 'string' ? lastRev : (lastRev.date || latestDate);
       }
 
-      updated[rowIndex] = {
+      const tempRow = {
         ...curr,
         revisedDates: remaining,
         responseDate: latestDate,
         noOfTimeRevised: remaining.length
+      };
+
+      const nextStatus = computePDCAStatus(tempRow, currentDate);
+
+      updated[rowIndex] = {
+        ...tempRow,
+        status: nextStatus
       };
       return updated;
     });
@@ -2370,28 +2170,50 @@ export default function PDCASheet({
   };
 
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
-  // Rule A: Confirmed -> Status = Done
-  // Rule B: Not - Confirmed -> Status = In- Progress
-  // Rule C: Changing between them updates Status immediately
-  // Rule D: If cleared, do not assign arbitrary status
-  const handleConfirmationChange = (rowIndex, value) => {
+  const handleConfirmationChange = (rowIndex, value, userName = '') => {
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
       if (!curr) return prev;
 
-      let nextStatus = curr.status;
+      const resolvedUser = userName || effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
+      let nextConfirmedBy = curr.confirmedBy || '';
+
       if (value === 'Confirmed') {
-        nextStatus = 'Done';
-      } else if (value === 'Not - Confirmed') {
-        nextStatus = 'In- Progress';
+        nextConfirmedBy = resolvedUser;
+      } else if (value === 'Not - Confirmed' || value === 'Not-Confirmed') {
+        nextConfirmedBy = resolvedUser;
+      } else {
+        nextConfirmedBy = '';
       }
 
-      updated[rowIndex] = {
+      const tempRow = {
         ...curr,
         confirmation: value,
+        confirmedBy: nextConfirmedBy
+      };
+
+      const nextStatus = computePDCAStatus(tempRow, currentDate);
+
+      updated[rowIndex] = {
+        ...tempRow,
         status: nextStatus,
         responsiblePersonConfirmation: value || curr.responsiblePersonConfirmation || ''
+      };
+      return updated;
+    });
+  };
+
+  // Instruction change handler for Responsible Person Instruction, etc. column
+  const handleInstructionChange = (rowIndex, text) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const curr = updated[rowIndex];
+      if (!curr) return prev;
+      updated[rowIndex] = {
+        ...curr,
+        instruction: text,
+        responsiblePersonConfirmation: curr.confirmation === 'Confirmed' ? 'Confirmed' : text
       };
       return updated;
     });
@@ -2405,19 +2227,36 @@ export default function PDCASheet({
       const curr = updated[rowIndex];
       if (!curr) return prev;
 
+      let actualStatus = normalizedStatus;
+      if (!curr.responseDate && normalizedStatus !== 'Not-Started') {
+        actualStatus = 'Not-Started';
+        if (typeof showToast === 'function') {
+          showToast('Response date is required before updating status.');
+        }
+      }
+
       let nextConfirmation = curr.confirmation;
-      if (normalizedStatus === 'Done' || normalizedStatus === 'Closed') {
+      let nextConfirmedBy = curr.confirmedBy;
+      if (actualStatus === 'Done') {
         nextConfirmation = 'Confirmed';
-      } else if (normalizedStatus === 'In- Progress' || normalizedStatus === 'In - Progress' || normalizedStatus === 'In Progress') {
+        if (!nextConfirmedBy) {
+          nextConfirmedBy = effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
+        }
+      } else if (actualStatus === 'In- Progress') {
         nextConfirmation = 'Not - Confirmed';
-      } else if (normalizedStatus === 'Not-Started' || normalizedStatus === 'Open' || normalizedStatus === 'Delay') {
+        if (!nextConfirmedBy) {
+          nextConfirmedBy = effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
+        }
+      } else if (actualStatus === 'Not-Started') {
         nextConfirmation = '';
+        nextConfirmedBy = '';
       }
 
       updated[rowIndex] = {
         ...curr,
-        status: normalizedStatus,
+        status: actualStatus,
         confirmation: nextConfirmation,
+        confirmedBy: nextConfirmedBy,
         responsiblePersonConfirmation: nextConfirmation || curr.responsiblePersonConfirmation || ''
       };
       return updated;
@@ -3188,11 +3027,11 @@ export default function PDCASheet({
               <Mail className="w-3.5 h-3.5 text-blue-600" />
               <span>Send Mail</span>
             </button>
-            {/* Monthly Graph Button */}
+            {/* PDCA Graph Button */}
             <button
               type="button"
               onClick={() => setShowMonthlyGraph(prev => !prev)}
-              title="Toggle Monthly PDCA Graph (Total, Opened, Closed)"
+              title="Toggle PDCA Status Graph (Daily & Monthly analytics for In-Progress, Done, Delay, Not-Started)"
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${
                 showMonthlyGraph
                   ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
@@ -3200,7 +3039,7 @@ export default function PDCASheet({
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Monthly Graph</span>
+              <span>PDCA Graph</span>
             </button>
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
@@ -3602,8 +3441,17 @@ export default function PDCASheet({
                   Responsible Person Confirmation
                 </div>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[120px] min-w-[110px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[9.5px]">
-                (Responsible person instructions, etc.)
+              <th rowSpan={2} className="py-2 px-1 w-[185px] min-w-[175px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight select-none">
+                <div className="flex flex-col items-center justify-center gap-0.5">
+                  <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-800 leading-tight">
+                    <Lock className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                    <span>Responsible Person Confirmation</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-1 text-[8.5px] font-semibold text-slate-500 leading-tight">
+                    <Lock className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
+                    <span>Admin / Sheet Creator only</span>
+                  </div>
+                </div>
               </th>
               {canEditEntireSheet && (
                 <th rowSpan={2} className="py-1.5 px-1 w-[44px] min-w-[40px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[10.5px] font-semibold select-none">
@@ -3633,8 +3481,8 @@ export default function PDCASheet({
               {rows.map((row, idx) => {
                 const sNo = idx + 1;
                 const canEditEntireRow = canEditEntireSheet;
-                const isRowResponsible = isUserResponsibleForRow(row, effectiveUser);
-                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
+                const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
+                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
 
                 return (
                   <tr
@@ -4557,16 +4405,16 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 15. Responsible Person Instruction, etc. Column: Custom Dropdown with User fetched by ID (upside) and Manual input (downwards) */}
-                    <td className="p-1 align-middle border-r border-b border-[#64748B] w-[120px] min-w-[110px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center">
-                      <div className="w-full flex flex-col items-center justify-center gap-1">
-                        <ResponsiblePersonInstructionDropdown
-                          value={row.confirmation}
-                          onChange={(val) => handleConfirmationChange(idx, val)}
+                    {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
+                    <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
+                      <div className="w-full flex flex-col items-start justify-start">
+                        <ResponsiblePersonInstructionCell
                           row={row}
-                          dbEmployees={dbEmployees}
+                          rowIndex={idx}
                           currentUser={effectiveUser}
                           readOnly={!canEditEntireRow}
+                          onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
+                          onInstructionChange={(text) => handleInstructionChange(idx, text)}
                           sNo={sNo}
                         />
                       </div>

@@ -250,7 +250,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   const shiftListStr = '"A,B,C,General"';
 
   // Data Rows (Starting at row 7)
-  let currentRowIdx = 7;
+  let currentRowIdx = 7; 
   const displayRows = (rows && rows.length > 0) ? rows : Array.from({ length: 10 }, () => ({}));
 
   for (let idx = 0; idx < displayRows.length; idx++) {
@@ -410,9 +410,10 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
 
     // U: Responsible Person Instruction / Confirmation
     const cellRemarks = rowObj.getCell(21);
-    const confVal = r.confirmation || (r.responsiblePersonConfirmation === 'Confirmed' || r.responsiblePersonConfirmation === 'Not - Confirmed' ? r.responsiblePersonConfirmation : '');
-    const otherRemarks = r.responsiblePersonConfirmation && r.responsiblePersonConfirmation !== 'Confirmed' && r.responsiblePersonConfirmation !== 'Not - Confirmed' ? r.responsiblePersonConfirmation : (r.remarks || '');
-    cellRemarks.value = confVal ? (otherRemarks ? `${confVal} - ${otherRemarks}` : confVal) : (otherRemarks || '');
+    const confVal = r.confirmation || (r.responsiblePersonConfirmation === 'Confirmed' || r.responsiblePersonConfirmation === 'Not - Confirmed' || r.responsiblePersonConfirmation === 'Not-Confirmed' ? r.responsiblePersonConfirmation : '');
+    const otherRemarks = r.instruction || (r.responsiblePersonConfirmation && r.responsiblePersonConfirmation !== 'Confirmed' && r.responsiblePersonConfirmation !== 'Not - Confirmed' && r.responsiblePersonConfirmation !== 'Not-Confirmed' ? r.responsiblePersonConfirmation : (r.remarks || ''));
+    const confirmedByStr = r.confirmedBy ? ` (${r.confirmedBy})` : '';
+    cellRemarks.value = confVal ? (otherRemarks ? `${confVal}${confirmedByStr}: ${otherRemarks}` : `${confVal}${confirmedByStr}`) : (otherRemarks || '');
     applyCellStyle(cellRemarks, { align: 'center', size: 9 });
 
     // Embed Before Image if available (Column J is index 10, so 0-based col is 9.1)

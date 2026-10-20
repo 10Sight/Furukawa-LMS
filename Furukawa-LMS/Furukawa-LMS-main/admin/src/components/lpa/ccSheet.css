@@ -1,45 +1,384 @@
-.cc-form-stage { width: max-content; min-width: 100%; min-height: 100%; box-sizing: border-box; display: flex; justify-content: center; align-items: flex-start; padding: 18px; }
-.cc-check-sheet { box-sizing: content-box; width: max-content; padding: 8px; border: 3px solid #1e293b; border-radius: 8px; box-shadow: 0 3px 12px rgb(15 23 42 / 12%); color: #111; font-family: Arial, Calibri, sans-serif; background: #fff; }
-.cc-check-sheet-table { table-layout: fixed; border-collapse: collapse; background: #fff; font-size: 10px; line-height: 1.15; }
-.cc-check-sheet-table td { position: relative; padding: 0; border: 1px solid #444; vertical-align: middle; }
-.cc-check-sheet-table textarea { position: absolute; inset: 0; display: block; width: 100%; height: 100%; min-height: 0; box-sizing: border-box; padding: 2px 4px; resize: none; overflow: hidden; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; white-space: pre-wrap; }
-.cc-check-sheet-table textarea:focus { z-index: 1; outline: 2px solid #2563eb; outline-offset: -2px; background: #eff6ff; }
-.cc-check-sheet-table .cc-observation-select { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); box-sizing: border-box; padding: 0 16px 0 4px; border: 1px solid #bfccdd; border-radius: 5px; outline: 0; appearance: none; background: linear-gradient(135deg, #fff 0%, #f5f8fd 100%); color: #233b59; box-shadow: 0 1px 2px rgb(20 45 80 / 12%); font: 700 10px Arial, Calibri, sans-serif; text-align: center; text-align-last: center; cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease; }
-.cc-check-sheet-table .cc-observation-select:hover:not(:disabled) { border-color: #4b7ec5; background: #f1f6ff; box-shadow: 0 2px 5px rgb(20 45 80 / 18%); }
-.cc-check-sheet-table .cc-observation-select:focus-visible { z-index: 2; border-color: #2563eb; outline: 2px solid rgb(37 99 235 / 30%); outline-offset: 1px; box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
-.cc-check-sheet-table .cc-observation-select:disabled { opacity: .7; cursor: not-allowed; }
-.cc-check-sheet-table .cc-observation-select option { background: #fff; color: #233b59; }
-.cc-check-sheet-table .cc-title { text-align: center; font-size: 15px; font-weight: 700; }
-.cc-check-sheet-table .cc-title textarea { text-align: center; font-size: 15px; font-weight: 700; }
-.cc-check-sheet-table .cc-date { font-size: 10px; }
-.cc-check-sheet-table .cc-column-heading { text-align: center; font-weight: 700; }
-.cc-check-sheet-table .cc-column-heading textarea { text-align: center; font-weight: 700; }
-.cc-check-sheet-table .cc-vertical-editor { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.cc-check-sheet-table .cc-vertical-input { position: relative; inset: auto; flex: 0 0 auto; min-width: 0; min-height: 0; max-width: none; padding: 0 2px; overflow: hidden; white-space: pre; text-align: center; font-size: 8px; font-weight: 700; line-height: 10px; }
-.cc-check-sheet-table .cc-number textarea, .cc-check-sheet-table .cc-mark textarea, .cc-check-sheet-table .cc-score-cell textarea { text-align: center; }
-.cc-check-sheet-table .cc-question textarea { font-size: 9px; }
-.cc-check-sheet-table .cc-total { background: #fff; font-weight: 700; }
-.cc-check-sheet-table .cc-total textarea { text-align: center; font-weight: 700; }
-.cc-check-sheet-table .cc-legend-heading { text-align: center; font-weight: 700; }
-.cc-check-sheet-table .cc-legend-heading textarea { text-align: center; font-weight: 700; }
-.cc-check-sheet-table .cc-legend-row textarea { font-size: 9px; }
-.cc-check-sheet-table .cc-footer textarea { text-align: left; font-size: 8px; }
-.cc-check-sheet-table .cc-footer-date textarea { text-align: center; }
-.cc-check-sheet-table .cc-footer textarea { white-space: pre; }
-
-/* Sticky Header for C&C Form while scrolling */
-.cc-check-sheet-table tr.cc-header-row-2 td {
-  position: sticky;
-  top: 0;
-  z-index: 25;
-  background: #f1f5f9 !important;
-  border-bottom: 1px solid #444;
-}
-.cc-check-sheet-table tr.cc-header-row-3 td {
-  position: sticky;
-  top: 22px;
-  z-index: 24;
-  background: #f8fafc !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+.cc-form-stage {
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 4px 18px 24px 18px;
 }
 
+.cc-check-sheet {
+  box-sizing: content-box;
+  width: max-content;
+  padding: 0 4px 8px 4px;
+  border: 2px solid #172bff;
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+  font-family: Arial, Calibri, sans-serif;
+  background: #fff;
+}
+
+.cc-check-sheet-table {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #fff;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #0f172a;
+  font-family: Arial, Calibri, sans-serif;
+  border-top: 1px solid #475569;
+  border-left: 1px solid #475569;
+}
+
+.cc-check-sheet-table td,
+.cc-check-sheet-table th {
+  position: relative;
+  padding: 0;
+  border-right: 1px solid #475569;
+  border-bottom: 1px solid #475569;
+  vertical-align: middle;
+}
+
+.cc-check-sheet-table textarea {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 3px 5px;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f172a;
+  font-family: Arial, Calibri, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.cc-check-sheet-table textarea:focus {
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background: #eff6ff;
+}
+
+/* Observation Select Dropdown matching Assembly Form */
+.cc-check-sheet-table .cc-observation-select {
+  display: block;
+  position: absolute;
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+  box-sizing: border-box;
+  padding: 0 17px 0 5px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  outline: 0;
+  appearance: none;
+  color: #0f172a;
+  background: linear-gradient(135deg, #fff 0%, #f4faf6 100%);
+  box-shadow: 0 1px 2px rgb(16 48 32 / 12%);
+  font: 700 11.5px Arial, Calibri, sans-serif;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.cc-check-sheet-table .cc-observation-select:hover:not(:disabled) {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.18);
+}
+
+.cc-check-sheet-table .cc-observation-select:focus-visible {
+  z-index: 2;
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.cc-check-sheet-table .cc-observation-select:disabled {
+  opacity: .7;
+  cursor: not-allowed;
+}
+
+.cc-check-sheet-table .cc-observation-select option {
+  background: #fff;
+  color: #0f172a;
+  font-size: 11.5px;
+}
+
+/* Header & Title Styling */
+.cc-check-sheet-table .cc-title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #0f172a;
+  background: #fff;
+}
+
+.cc-check-sheet-table .cc-title textarea {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.cc-check-sheet-table .cc-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: #334155;
+  background: #fff;
+}
+
+.cc-check-sheet-table .cc-date textarea {
+  font-size: 11px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.cc-check-sheet-table .cc-column-heading {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11px;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.cc-check-sheet-table .cc-column-heading textarea {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11px;
+  color: #0f172a;
+}
+
+/* Sticky Header for C&C Form while scrolling (Row 2 & Row 3 - The Green Part fixed with screen) */
+.cc-check-sheet-table tr.cc-header-row-2 {
+  height: 48px !important;
+}
+
+.cc-check-sheet-table td.cc-sticky-row-2,
+.cc-check-sheet-table th.cc-sticky-row-2,
+.cc-check-sheet-table tr.cc-header-row-2 td,
+.cc-check-sheet-table tr.cc-header-row-2 th {
+  position: sticky !important;
+  top: 0px !important;
+  z-index: 32 !important;
+  height: 48px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff;
+}
+
+/* Base headers spanning Row 2 and Row 3 (Sl No, Focus, CHECKS POINTS, Section, Marks) */
+.cc-check-sheet-table td.cc-sticky-row-2.cc-column-heading,
+.cc-check-sheet-table tr.cc-header-row-2 td.cc-column-heading {
+  position: sticky !important;
+  top: 0px !important;
+  z-index: 33 !important;
+  height: 74px !important;
+  background-color: #ffffff !important;
+  box-sizing: border-box !important;
+  border-bottom: 2px solid #334155 !important;
+  box-shadow: 0 3px 6px -1px rgba(0, 0, 0, 0.14) !important;
+}
+
+/* Level Group Header (Row 2, Audit Columns) */
+.cc-check-sheet-table td.cc-sticky-row-2.cc-level-group-header,
+.cc-check-sheet-table tr.cc-header-row-2 td.cc-level-group-header {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-bottom: 1px solid #bfdbfe !important;
+  height: 48px !important;
+}
+
+/* Subheaders (Row 3, Observation & Score - FIXED WITH SCREEN AT TOP 48px) */
+.cc-check-sheet-table tr.cc-header-row-3 {
+  height: 26px !important;
+}
+
+.cc-check-sheet-table td.cc-sticky-row-3,
+.cc-check-sheet-table th.cc-sticky-row-3,
+.cc-check-sheet-table tr.cc-header-row-3 td,
+.cc-check-sheet-table tr.cc-header-row-3 th,
+.cc-check-sheet-table td.cc-sticky-row-3.cc-sub-header,
+.cc-check-sheet-table tr.cc-header-row-3 td.cc-sub-header {
+  position: sticky !important;
+  top: 48px !important;
+  z-index: 32 !important;
+  height: 26px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff !important;
+  color: #334155 !important;
+  box-shadow: 0 3px 6px -1px rgba(0, 0, 0, 0.14) !important;
+  border-bottom: 2px solid #334155 !important;
+}
+
+/* Vertical Cell Styling for Focus and Section */
+.cc-vertical-cell-wrapper {
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 4px 2px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.cc-vertical-cell-text {
+  writing-mode: vertical-rl !important;
+  transform: rotate(180deg) !important;
+  text-align: center !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
+  color: #0f172a !important;
+  letter-spacing: 0.04em !important;
+  line-height: 1.2 !important;
+  white-space: normal !important;
+  outline: none !important;
+}
+
+/* Checklist Rows Typography */
+.cc-check-sheet-table .cc-question {
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  color: #0f172a !important;
+  padding: 4px 8px !important;
+  text-align: left !important;
+}
+
+.cc-check-sheet-table .cc-question textarea {
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  color: #0f172a !important;
+  padding: 4px 8px !important;
+  text-align: left !important;
+}
+
+.cc-check-sheet-table .cc-number {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  text-align: center !important;
+}
+
+.cc-check-sheet-table .cc-number textarea {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  text-align: center !important;
+}
+
+.cc-check-sheet-table .cc-mark {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  text-align: center !important;
+}
+
+.cc-check-sheet-table .cc-mark textarea {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  text-align: center !important;
+}
+
+.cc-check-sheet-table .cc-observation-readonly {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  user-select: none;
+}
+
+.cc-check-sheet-table .cc-score-cell {
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px !important;
+  color: #0f172a !important;
+}
+
+.cc-check-sheet-table .cc-score-cell textarea {
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px !important;
+  color: #0f172a !important;
+}
+
+/* Summary Rows */
+.cc-check-sheet-table .cc-total {
+  background: #ffffff;
+  font-weight: 800;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.cc-check-sheet-table .cc-total textarea {
+  text-align: left;
+  font-weight: 800;
+  font-size: 12px;
+  color: #0f172a;
+  padding: 4px 8px;
+}
+
+/* Legend Section */
+.cc-check-sheet-table .cc-legend-heading {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11.5px;
+  color: #0f172a;
+  background: #f1f5f9;
+  padding: 4px 6px;
+}
+
+.cc-check-sheet-table .cc-legend-heading textarea {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11.5px;
+  color: #0f172a;
+}
+
+.cc-check-sheet-table .cc-legend-row {
+  font-size: 11.5px !important;
+  color: #1e293b;
+  background: #ffffff;
+}
+
+.cc-check-sheet-table .cc-legend-row textarea {
+  font-size: 11.5px !important;
+  color: #1e293b;
+  padding: 3px 8px;
+}
+
+.cc-check-sheet-table .cc-footer textarea {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #334155;
+  padding: 3px 6px;
+}
+
+.cc-check-sheet-table .cc-footer-date textarea {
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #334155;
+}

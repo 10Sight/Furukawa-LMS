@@ -526,33 +526,17 @@ function LpaPageContent({ viewContext }) {
 
     await openSheet(savedRecord || newRecord, 0);
   };
-
-  const blankAssemblyTemplate = useMemo(() => ({
-    ...assemblyTemplate,
-    sheets: assemblyTemplate.sheets.map(s => createBlankAssemblySheet(s, pdcaDate))
-  }), [pdcaDate]);
-
-  const blankCcTemplate = useMemo(() => ({
-    ...ccTemplate,
-    sheets: ccTemplate.sheets.map(s => createBlankCcSheet(s, pdcaDate))
-  }), [pdcaDate]);
-
   const sheet = editor?.sheets?.[sheetIndex];
   const scopedRecords = records.filter(record => record.unit === selectedUnit);
-  const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
   const sectionRecords = scopedRecords.filter(record => record.section === activeSection);
   const displayRecords = !selectedUnit ? [] : activeSection === 'assembly'
-    ? (sectionRecords.length ? sectionRecords.map(upgradeAssemblyRecord) : [...sectionRecords, { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1' }])
-    : matchingCcTemplate
-      ? sectionRecords.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
-      : [...sectionRecords, { ...blankCcTemplate, unit: selectedUnit, level: 'L1' }];
-  const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
-  const visibleRecords = baseVisibleRecords.length > 0 ? baseVisibleRecords : (
-    !selectedUnit ? [] : [
-      activeSection === 'assembly'
-        ? { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${assemblyTemplate.name.replace(/\.[^/.]+$/, '')} · ${pdcaDate}` }
-        : { ...blankCcTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
-    ]
+    ? sectionRecords.map(upgradeAssemblyRecord)
+    : sectionRecords.map(record => (record.name === ccTemplate.name ? upgradeCcTemplateRecord(record) : record));
+  const visibleRecords = displayRecords.filter(record =>
+    record.unit === selectedUnit &&
+    record.section === activeSection &&
+    (!record.auditDate || record.auditDate === pdcaDate) &&
+    `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
     const rows = records.flatMap(record => record.sheets.map(current => ({
@@ -1192,7 +1176,7 @@ function LpaPageContent({ viewContext }) {
                   </table>
                   {visibleRecords.length === 0 && (
                     <p className="p-8 text-center text-sm text-slate-500">
-                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Upload an Excel workbook to get started.
+                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Click "+ Create LPA" to create a check sheet.
                     </p>
                   )}
                 </div>

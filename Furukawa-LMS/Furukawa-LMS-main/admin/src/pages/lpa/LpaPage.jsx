@@ -445,25 +445,11 @@ function LpaPageContent({ viewContext }) {
     let effectiveShifts = [];
 
     if (targetLevel === 'L2') {
-      if (availableL3Shifts.length > 0) {
-        targetLevels = ['L3', 'L2'];
-        effectiveShifts = availableL3Shifts;
-      } else {
-        targetLevels = ['L2'];
-        effectiveShifts = [formData.shift || 'G'];
-      }
+      targetLevels = ['L3', 'L2'];
+      effectiveShifts = availableL3Shifts.length > 0 ? availableL3Shifts : [formData.shift || 'G'];
     } else if (targetLevel === 'L1') {
-      if (availableL3Shifts.length > 0) {
-        targetLevels.push('L3');
-        effectiveShifts.push(...availableL3Shifts);
-      }
-      if (hasL2Data) {
-        targetLevels.push('L2');
-      }
-      targetLevels.push('L1');
-      if (effectiveShifts.length === 0) {
-        effectiveShifts = [formData.shift || 'G'];
-      }
+      targetLevels = ['L3', 'L2', 'L1'];
+      effectiveShifts = availableL3Shifts.length > 0 ? availableL3Shifts : [formData.shift || 'G'];
     } else {
       targetLevels = ['L3'];
       effectiveShifts = [formData.shift || 'A'];

@@ -12,60 +12,58 @@ import {
   createBlankCcSheet
 } from './ccTemplate.js';
 
-test('1. Column Group Building for Level 2 Sheet', () => {
+test('1. Column Group Building for Level 2 Sheet (Direct creation without data)', () => {
   const groups = buildAuditColumnGroups(['L2'], ['G'], false, 'L2');
-  assert.equal(groups.length, 3, 'Level 2 sheet must have exactly 3 column groups (L3 Shift A, L3 Shift B, L2)');
+  assert.equal(groups.length, 2, 'Level 2 sheet without data must have 2 default groups (L3 without shift, L2)');
 
-  const [shiftA, shiftB, l2] = groups;
-  assert.equal(shiftA.id, 'L3_A');
-  assert.equal(shiftA.shift, 'A');
-  assert.equal(shiftA.isFetched, true, 'L3 Shift A must be marked as fetched (read-only)');
-  assert.equal(shiftA.obsCol, 5);
-  assert.equal(shiftA.scoreCol, 6);
-
-  assert.equal(shiftB.id, 'L3_B');
-  assert.equal(shiftB.shift, 'B');
-  assert.equal(shiftB.isFetched, true, 'L3 Shift B must be marked as fetched (read-only)');
-  assert.equal(shiftB.obsCol, 7);
-  assert.equal(shiftB.scoreCol, 8);
+  const [l3, l2] = groups;
+  assert.equal(l3.id, 'L3');
+  assert.equal(l3.shift, null, 'Default L3 must NOT have any shift assigned');
+  assert.equal(l3.name, 'Level 3');
+  assert.equal(l3.isFetched, true, 'L3 must be read-only');
+  assert.equal(l3.obsCol, 5);
+  assert.equal(l3.scoreCol, 6);
 
   assert.equal(l2.id, 'L2');
+  assert.equal(l2.name, 'Level 2');
   assert.equal(l2.isFetched, false, 'L2 group in L2 sheet must be editable by user');
-  assert.equal(l2.obsCol, 9);
-  assert.equal(l2.scoreCol, 10);
+  assert.equal(l2.obsCol, 7);
+  assert.equal(l2.scoreCol, 8);
 });
 
-test('2. Column Group Building for Level 1 Sheet', () => {
+test('2. Column Group Building for Level 1 Sheet (Direct creation without data)', () => {
   const groups = buildAuditColumnGroups(['L1'], ['G'], false, 'L1');
-  assert.equal(groups.length, 4, 'Level 1 sheet must have 4 column groups (L3 Shift A, L3 Shift B, L2, L1)');
+  assert.equal(groups.length, 3, 'Level 1 sheet without data must have 3 default groups (L3 without shift, default L2, L1)');
 
-  const [shiftA, shiftB, l2, l1] = groups;
-  assert.equal(shiftA.id, 'L3_A');
-  assert.equal(shiftA.isFetched, true);
-  assert.equal(shiftB.id, 'L3_B');
-  assert.equal(shiftB.isFetched, true);
+  const [l3, l2, l1] = groups;
+  assert.equal(l3.id, 'L3');
+  assert.equal(l3.shift, null, 'Default L3 must NOT have any shift assigned');
+  assert.equal(l3.name, 'Level 3');
+  assert.equal(l3.isFetched, true);
+  assert.equal(l3.obsCol, 5);
+  assert.equal(l3.scoreCol, 6);
 
   assert.equal(l2.id, 'L2');
-  assert.equal(l2.isFetched, true, 'L2 group in L1 sheet must be fetched (read-only)');
-  assert.equal(l2.obsCol, 9);
-  assert.equal(l2.scoreCol, 10);
+  assert.equal(l2.name, 'Level 2');
+  assert.equal(l2.isFetched, true, 'L2 group in L1 sheet must be fetched/read-only');
+  assert.equal(l2.obsCol, 7);
+  assert.equal(l2.scoreCol, 8);
 
   assert.equal(l1.id, 'L1');
+  assert.equal(l1.name, 'Level 1');
   assert.equal(l1.isFetched, false, 'L1 group in L1 sheet must be editable by user');
-  assert.equal(l1.obsCol, 11);
-  assert.equal(l1.scoreCol, 12);
+  assert.equal(l1.obsCol, 9);
+  assert.equal(l1.scoreCol, 10);
 });
 
-test('3. Column Group Building for C&C Sheet (Offset Verification)', () => {
+test('3. Column Group Building for C&C Sheet (Offset Verification without data)', () => {
   const groups = buildAuditColumnGroups(['L2'], ['G'], true, 'L2');
-  assert.equal(groups.length, 3);
+  assert.equal(groups.length, 2);
   // In C&C, metadata columns span 0-6, so audit groups start at column 7
   assert.equal(groups[0].obsCol, 7);
   assert.equal(groups[0].scoreCol, 8);
   assert.equal(groups[1].obsCol, 9);
   assert.equal(groups[1].scoreCol, 10);
-  assert.equal(groups[2].obsCol, 11);
-  assert.equal(groups[2].scoreCol, 12);
 });
 
 test('4. normalizeSourceSheets correctly segregates Shift A and Shift B', () => {

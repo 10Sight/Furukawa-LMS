@@ -50,7 +50,7 @@ export function buildAuditColumnGroups(levels = ['L3'], shifts = ['A'], isCc = f
   const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');
   const groups = [];
 
-  // When sheet is Level 1 or Level 2, only include previous levels/shifts that actually have same-day data!
+  // When sheet is Level 1 or Level 2:
   if (effectiveTarget === 'L1' || effectiveTarget === 'L2') {
     let l3ShiftsToInclude = [];
 
@@ -62,25 +62,38 @@ export function buildAuditColumnGroups(levels = ['L3'], shifts = ['A'], isCc = f
           l3ShiftsToInclude.push(sh);
         }
       });
-    } else {
-      // When sources are not provided (e.g. testing hierarchy schema without sources)
-      l3ShiftsToInclude = ['A', 'B'];
     }
 
-    // 1. Add Level 3 shifts that have data (read-only / fetched)
-    l3ShiftsToInclude.forEach(sh => {
+    // 1. Add Level 3:
+    if (l3ShiftsToInclude.length > 0) {
+      // Shifts have data on this day -> Add each shift that has data
+      l3ShiftsToInclude.forEach(sh => {
+        const obsCol = startCol + groups.length * 2;
+        groups.push({
+          id: `L3_${sh}`,
+          level: 'L3',
+          shift: sh,
+          name: `Level 3 (Shift ${sh})`,
+          badge: `Level 3 Shift ${sh}`,
+          isFetched: true,
+          obsCol,
+          scoreCol: obsCol + 1
+        });
+      });
+    } else {
+      // Level 3 has NO data on this day -> Add default Level 3 column WITHOUT shift name!
       const obsCol = startCol + groups.length * 2;
       groups.push({
-        id: `L3_${sh}`,
+        id: 'L3',
         level: 'L3',
-        shift: sh,
-        name: `Level 3 (Shift ${sh})`,
-        badge: `Level 3 Shift ${sh}`,
+        shift: null,
+        name: 'Level 3',
+        badge: 'Level 3',
         isFetched: true,
         obsCol,
         scoreCol: obsCol + 1
       });
-    });
+    }
 
     // 2. Add Level 2
     if (effectiveTarget === 'L2') {
@@ -96,21 +109,18 @@ export function buildAuditColumnGroups(levels = ['L3'], shifts = ['A'], isCc = f
         scoreCol: obsColL2 + 1
       });
     } else if (effectiveTarget === 'L1') {
-      // Level 2 (only if it has same-day data when sources are given)
-      const includeL2 = sources ? (sources.L2 && sheetHasData(sources.L2)) : true;
-      if (includeL2) {
-        const obsColL2 = startCol + groups.length * 2;
-        groups.push({
-          id: 'L2',
-          level: 'L2',
-          shift: 'G',
-          name: 'Level 2',
-          badge: 'Level 2',
-          isFetched: true,
-          obsCol: obsColL2,
-          scoreCol: obsColL2 + 1
-        });
-      }
+      // In Level 1 sheet, Level 2 must always be included (default if no data, or fetched if has data)
+      const obsColL2 = startCol + groups.length * 2;
+      groups.push({
+        id: 'L2',
+        level: 'L2',
+        shift: 'G',
+        name: 'Level 2',
+        badge: 'Level 2',
+        isFetched: true,
+        obsCol: obsColL2,
+        scoreCol: obsColL2 + 1
+      });
 
       // 3. Level 1 (active editable)
       const obsColL1 = startCol + groups.length * 2;

@@ -463,33 +463,29 @@ test('20. Percentage (%) calculation formula and zero-marks boundary', () => {
 test('21. createBlankAssemblySheet creates dynamic columns for multiple levels (L1, L2, L3)', () => {
   const baseSheet = assemblyTemplate.sheets[0];
 
-  // Test 1: L3 + L2 (Weekly) creates 11 columns (5 metadata + L3 Shift A + L3 Shift B + L2)
+  // Test 1: L3 + L2 creates 9 columns (5 metadata + default L3 without shift + L2)
   const twoLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2']);
-  assert.equal(twoLevelSheet.columnCount, 11);
+  assert.equal(twoLevelSheet.columnCount, 9);
   assert.equal(twoLevelSheet.rows[1][0].value, 'Sl No');
   assert.equal(twoLevelSheet.rows[1][1].value, 'Focus');
   assert.equal(twoLevelSheet.rows[1][2].value, 'CHECKS POINTS');
   assert.equal(twoLevelSheet.rows[1][3].value, 'Area');
   assert.equal(twoLevelSheet.rows[1][4].value, 'Marks');
-  assert.equal(twoLevelSheet.rows[1][5].value, 'Level 3 (Shift A)');
-  assert.equal(twoLevelSheet.rows[1][7].value, 'Level 3 (Shift B)');
-  assert.equal(twoLevelSheet.rows[1][9].value, 'Level 2');
+  assert.equal(twoLevelSheet.rows[1][5].value, 'Level 3');
+  assert.equal(twoLevelSheet.rows[1][7].value, 'Level 2');
   assert.equal(twoLevelSheet.rows[2][5].value, 'Observation');
   assert.equal(twoLevelSheet.rows[2][6].value, 'Score');
   assert.equal(twoLevelSheet.rows[2][7].value, 'Observation');
   assert.equal(twoLevelSheet.rows[2][8].value, 'Score');
-  assert.equal(twoLevelSheet.rows[2][9].value, 'Observation');
-  assert.equal(twoLevelSheet.rows[2][10].value, 'Score');
 
-  // Test 2: L3 + L2 + L1 (Monthly) creates 13 columns (5 metadata + L3 Shift A + L3 Shift B + L2 + L1)
+  // Test 2: L3 + L2 + L1 creates 11 columns (5 metadata + default L3 without shift + default L2 + L1)
   const threeLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1']);
-  assert.equal(threeLevelSheet.columnCount, 13);
-  assert.equal(threeLevelSheet.rows[1][5].value, 'Level 3 (Shift A)');
-  assert.equal(threeLevelSheet.rows[1][7].value, 'Level 3 (Shift B)');
-  assert.equal(threeLevelSheet.rows[1][9].value, 'Level 2');
-  assert.equal(threeLevelSheet.rows[1][11].value, 'Level 1');
-  assert.equal(threeLevelSheet.rows[2][11].value, 'Observation');
-  assert.equal(threeLevelSheet.rows[2][12].value, 'Score');
+  assert.equal(threeLevelSheet.columnCount, 11);
+  assert.equal(threeLevelSheet.rows[1][5].value, 'Level 3');
+  assert.equal(threeLevelSheet.rows[1][7].value, 'Level 2');
+  assert.equal(threeLevelSheet.rows[1][9].value, 'Level 1');
+  assert.equal(threeLevelSheet.rows[2][9].value, 'Observation');
+  assert.equal(threeLevelSheet.rows[2][10].value, 'Score');
 
   // Total Marks on row 37
   assert.equal(threeLevelSheet.rows[37][0].value, 'Total Marks:');
@@ -550,24 +546,25 @@ test('25. Level selection hierarchy: L1 includes L3 Shift A + Shift B + L2 + L1,
   assert.equal(groupsL3[0].level, 'L3');
   assert.equal(groupsL3[0].name, 'Level 3');
 
-  // L2 selection
+  // L2 selection without prior data includes default L3 (no shift) + L2
   const groupsL2 = buildAuditColumnGroups(['L3', 'L2'], ['A'], false);
-  assert.equal(groupsL2.length, 3);
+  assert.equal(groupsL2.length, 2);
   assert.equal(groupsL2[0].level, 'L3');
-  assert.equal(groupsL2[0].shift, 'A');
-  assert.equal(groupsL2[1].level, 'L3');
-  assert.equal(groupsL2[1].shift, 'B');
-  assert.equal(groupsL2[2].level, 'L2');
-  assert.equal(groupsL2[2].name, 'Level 2');
+  assert.equal(groupsL2[0].shift, null);
+  assert.equal(groupsL2[0].name, 'Level 3');
+  assert.equal(groupsL2[1].level, 'L2');
+  assert.equal(groupsL2[1].name, 'Level 2');
 
-  // L1 selection
+  // L1 selection without prior data includes default L3 (no shift) + default L2 + L1
   const groupsL1 = buildAuditColumnGroups(['L3', 'L2', 'L1'], ['A'], false);
-  assert.equal(groupsL1.length, 4);
+  assert.equal(groupsL1.length, 3);
   assert.equal(groupsL1[0].level, 'L3');
-  assert.equal(groupsL1[1].level, 'L3');
-  assert.equal(groupsL1[2].level, 'L2');
-  assert.equal(groupsL1[3].level, 'L1');
-  assert.equal(groupsL1[3].name, 'Level 1');
+  assert.equal(groupsL1[0].shift, null);
+  assert.equal(groupsL1[0].name, 'Level 3');
+  assert.equal(groupsL1[1].level, 'L2');
+  assert.equal(groupsL1[1].name, 'Level 2');
+  assert.equal(groupsL1[2].level, 'L1');
+  assert.equal(groupsL1[2].name, 'Level 1');
 });
 
 test('26. Multi-shift columns under Level 3 and same-day data merging', () => {

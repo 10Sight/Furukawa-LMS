@@ -1,5 +1,5 @@
 import template from './ccTemplate.json' with { type: 'json' };
-import { buildAuditColumnGroups, getActiveAuditColumns, normalizeSourceSheets, syncSheetWithLatestSameDaySources } from '../../components/lpa/assemblySheetUtils.js';
+import { buildAuditColumnGroups, getActiveAuditColumns, normalizeSourceSheets, syncSheetWithLatestSameDaySources, sheetHasData } from '../../components/lpa/assemblySheetUtils.js';
 
 export { syncSheetWithLatestSameDaySources };
 
@@ -46,14 +46,15 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
   const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
   const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');
 
-  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, true, effectiveTarget);
+  const sources = existingSheet ? normalizeSourceSheets(existingSheet) : null;
+  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, true, effectiveTarget, sources);
   const columnCount = 7 + auditColumns.length * 2;
-  const sources = normalizeSourceSheets(existingSheet);
 
   const sourceShiftStatus = {
-    A: Boolean(sources.L3_A),
-    B: Boolean(sources.L3_B),
-    L2: Boolean(sources.L2)
+    A: Boolean(sources?.L3_A && sheetHasData(sources.L3_A, 'A')),
+    B: Boolean(sources?.L3_B && sheetHasData(sources.L3_B, 'B')),
+    C: Boolean(sources?.L3_C && sheetHasData(sources.L3_C, 'C')),
+    L2: Boolean(sources?.L2 && sheetHasData(sources.L2))
   };
 
   // Build rows
@@ -63,7 +64,8 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
 
     // Row 0: Title
     if (rIdx === 0) {
-      nextRow[0] = row[0] || { value: 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.', formatted: 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.', type: 's' };
+      const lvlNum = effectiveTarget === 'L1' ? '1' : effectiveTarget === 'L2' ? '2' : '3';
+      nextRow[0] = { value: `LPA CHECK SHEET LEVEL-${lvlNum} C&C QA/Prod.`, formatted: `LPA CHECK SHEET LEVEL-${lvlNum} C&C QA/Prod.`, type: 's' };
       return nextRow;
     }
 
@@ -108,11 +110,11 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
       auditColumns.forEach((colGroup) => {
         let srcSheet = null;
         if (colGroup.id === 'L3_A') {
-          srcSheet = sources.L3_A;
+          srcSheet = sources?.L3_A;
         } else if (colGroup.id === 'L3_B') {
-          srcSheet = sources.L3_B;
+          srcSheet = sources?.L3_B;
         } else if (colGroup.id === 'L2' && effectiveTarget === 'L1') {
-          srcSheet = sources.L2;
+          srcSheet = sources?.L2;
         }
 
         if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {

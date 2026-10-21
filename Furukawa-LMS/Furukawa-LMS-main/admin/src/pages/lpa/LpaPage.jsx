@@ -7,7 +7,7 @@ import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns, syncSheetWithLatestSameDaySources } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns, syncSheetWithLatestSameDaySources, normalizeSourceSheets, sheetHasData } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json';
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
@@ -406,25 +406,9 @@ function LpaPageContent({ viewContext }) {
 
     const targetLevel = formData.targetLevel || formData.level || 'L3';
 
-    // 1. Hierarchy of levels:
-    // If user clicked L1 -> default columns Level 3, Level 2, Level 1
-    // If user clicked L2 -> default columns Level 3, Level 2
-    // If user clicked L3 -> default columns Level 3
-    let targetLevels = ['L3'];
-    if (targetLevel === 'L1') {
-      targetLevels = ['L3', 'L2', 'L1'];
-    } else if (targetLevel === 'L2') {
-      targetLevels = ['L3', 'L2'];
-    } else {
-      targetLevels = ['L3'];
-    }
-
-    const isMultiShift = targetLevel === 'L1' || targetLevel === 'L2';
-    const effectiveShifts = isMultiShift ? ['A', 'B'] : [formData.shift || 'A'];
-
-    // 2. Fetch existing same-day data when creating Level 1 or Level 2:
+    // 1. Fetch existing same-day data when creating Level 1 or Level 2:
     let sameDaySources = null;
-    if (isMultiShift) {
+    if (targetLevel === 'L1' || targetLevel === 'L2') {
       try {
         sameDaySources = await lpaApi.getSameDaySourceData({
           section: formData.section,
@@ -449,7 +433,43 @@ function LpaPageContent({ viewContext }) {
       }
     }
 
-    // 3. Base Template & Clean New Sheet Creation
+    // Inspect same-day sources: ONLY shifts with actual same-day data will be included!
+    const normSources = normalizeSourceSheets(sameDaySources);
+    const availableL3Shifts = ['A', 'B', 'C'].filter(sh => {
+      const s = normSources[`L3_${sh}`];
+      return Boolean(s && sheetHasData(s, sh));
+    });
+    const hasL2Data = Boolean(normSources.L2 && sheetHasData(normSources.L2));
+
+    let targetLevels = [];
+    let effectiveShifts = [];
+
+    if (targetLevel === 'L2') {
+      if (availableL3Shifts.length > 0) {
+        targetLevels = ['L3', 'L2'];
+        effectiveShifts = availableL3Shifts;
+      } else {
+        targetLevels = ['L2'];
+        effectiveShifts = [formData.shift || 'G'];
+      }
+    } else if (targetLevel === 'L1') {
+      if (availableL3Shifts.length > 0) {
+        targetLevels.push('L3');
+        effectiveShifts.push(...availableL3Shifts);
+      }
+      if (hasL2Data) {
+        targetLevels.push('L2');
+      }
+      targetLevels.push('L1');
+      if (effectiveShifts.length === 0) {
+        effectiveShifts = [formData.shift || 'G'];
+      }
+    } else {
+      targetLevels = ['L3'];
+      effectiveShifts = [formData.shift || 'A'];
+    }
+
+    // 2. Base Template & Clean New Sheet Creation
     const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
     const newSheets = baseTpl.sheets.map((baseSheet) => {
       const createdSheet = isAssembly
@@ -470,17 +490,20 @@ function LpaPageContent({ viewContext }) {
       };
     });
 
-    const levelNames = targetLevels.map(l => l === 'L3' ? 'Level 3 Daily' : l === 'L2' ? 'Level 2 Weekly' : l === 'L1' ? 'Level 1 Monthly' : l);
-    const levelLabel = levelNames.join(' + ');
+    const createdLevelName = targetLevel === 'L3'
+      ? `Level 3 (Shift ${formData.shift || 'A'})`
+      : targetLevel === 'L2'
+        ? 'Level 2'
+        : 'Level 1';
 
     const newRecord = {
       section: formData.section,
-      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${formData.date} (${levelLabel}) · Shift ${formData.shift || 'A'}`,
+      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${formData.date} (${createdLevelName}) · Shift ${formData.shift || (targetLevel === 'L3' ? 'A' : 'G')}`,
       unit: targetUnit,
       targetLevel,
       level: targetLevel,
-      levels: targetLevels,
-      shifts: effectiveShifts,
+      levels: [targetLevel],
+      shifts: [formData.shift || (targetLevel === 'L3' ? 'A' : 'G')],
       auditDate: formData.date,
       date: formData.date,
       shift: formData.shift,
@@ -722,7 +745,14 @@ function LpaPageContent({ viewContext }) {
         />
       </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
         <div style={{ zoom: `${zoom}%` }}>
-          <CcSheet sheet={sheet} editor={editor} disabled={busy || !canEditCurrentRecord} onChange={changeCell} />
+          <CcSheet
+            sheet={sheet}
+            editor={editor}
+            disabled={busy || !canEditCurrentRecord}
+            onChange={changeCell}
+            onMetadataChange={updateSheetMetadata}
+            isAdmin={isAdmin}
+          />
         </div>
       </div> : <div style={{ zoom: `${zoom}%` }} className="min-w-full w-max">
         <LpaTable sheet={sheet} onChange={changeCell} disabled={busy || !canEditCurrentRecord} zoom={zoom} />
@@ -1110,7 +1140,7 @@ function LpaPageContent({ viewContext }) {
                               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 {levelsList.map(lvl => (
                                   <span key={lvl} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                    {lvl === 'L3' ? 'Level 3 Daily' : lvl === 'L2' ? 'Level 2 Weekly' : lvl === 'L1' ? 'Level 1 Monthly' : lvl}
+                                    {lvl === 'L3' ? 'Level 3' : lvl === 'L2' ? 'Level 2' : lvl === 'L1' ? 'Level 1' : lvl}
                                   </span>
                                 ))}
                                 {shiftDisplay && (

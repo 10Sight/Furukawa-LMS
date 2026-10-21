@@ -145,8 +145,15 @@ test('5. createBlankCcSheet produces completely blank values for New LPA check s
 });
 
 test('6. createBlankCcSheet dynamically expands legend merges to lastCol without stray empty cells', () => {
-  // Test with multi-level C&C sheet (e.g. L2 sheet has 13 columns: 0 to 12)
-  const l2CcSheet = createBlankCcSheet(null, '2026-10-20', ['L2'], ['A'], null, 'L2');
+  // Test with multi-level C&C sheet where both Shift A & B have data (13 columns: 0 to 12)
+  const sheetA = createBlankCcSheet(null, '2026-10-20', ['L3'], ['A'], null, 'L3');
+  sheetA.rows[4][7] = { value: 'O', formatted: 'O' };
+  sheetA.rows[4][8] = { value: 1, formatted: '1' };
+  const sheetB = createBlankCcSheet(null, '2026-10-20', ['L3'], ['B'], null, 'L3');
+  sheetB.rows[4][7] = { value: 'O', formatted: 'O' };
+  sheetB.rows[4][8] = { value: 1, formatted: '1' };
+
+  const l2CcSheet = createBlankCcSheet(null, '2026-10-20', ['L2'], ['G'], [sheetA, sheetB], 'L2');
   const lastCol = l2CcSheet.columnCount - 1;
   assert.equal(l2CcSheet.columnCount, 13);
   assert.equal(lastCol, 12);

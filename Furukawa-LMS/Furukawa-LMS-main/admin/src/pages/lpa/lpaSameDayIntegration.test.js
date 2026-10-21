@@ -188,11 +188,12 @@ test('6. Level 2 Sheet Creation with missing Shift B shows empty state', () => {
   assert.equal(l2Sheet.sourceShiftStatus.A, true);
   assert.equal(l2Sheet.sourceShiftStatus.B, false, 'Shift B status must be false (missing)');
 
-  // Shift A populated, Shift B remains empty
+  // Shift B is omitted because it has no data; L2 is at cols 7 & 8
+  assert.equal(l2Sheet.columnCount, 9, 'Shift B without data must be omitted');
   assert.equal(l2Sheet.rows[3][5].value, 'O');
   assert.equal(l2Sheet.rows[3][6].value, 1);
-  assert.equal(l2Sheet.rows[3][7].value, '', 'Missing Shift B observation column must remain empty');
-  assert.equal(l2Sheet.rows[3][8].value, '', 'Missing Shift B score column must remain empty');
+  assert.equal(l2Sheet.rows[3][7].value, '', 'L2 observation column must start empty');
+  assert.equal(l2Sheet.rows[3][8].value, '', 'L2 score column must start empty');
 });
 
 test('7. Level 1 Sheet Creation fetches same-day Level 2 and Level 3 data', () => {
@@ -238,17 +239,22 @@ test('7. Level 1 Sheet Creation fetches same-day Level 2 and Level 3 data', () =
 });
 
 test('8. Same-Day Synchronization updates fetched data without overwriting active user input', () => {
-  // Existing Level 2 sheet where user already typed an L2 observation 'X' (col 9) and score 0 (col 10)
+  // Existing Level 2 sheet created with initial Shift A
+  const initialSheetA = createBlankAssemblySheet(null, '2026-10-20', ['L3'], ['A'], null, 'L3');
+  initialSheetA.rows[3][5] = { value: 'Δ', formatted: 'Δ' };
+  initialSheetA.rows[3][6] = { value: 0, formatted: '0' };
+
   const l2Sheet = createBlankAssemblySheet(
     null,
     '2026-10-20',
     ['L2'],
     ['G'],
-    null,
+    initialSheetA,
     'L2'
   );
-  l2Sheet.rows[3][9] = { value: 'X', formatted: 'X' };
-  l2Sheet.rows[3][10] = { value: 0, formatted: '0' };
+  // User typed an L2 observation 'X' (col 7) and score 0 (col 8)
+  l2Sheet.rows[3][7] = { value: 'X', formatted: 'X' };
+  l2Sheet.rows[3][8] = { value: 0, formatted: '0' };
 
   // New updated source sheet for Shift A arrived later
   const updatedSheetA = createBlankAssemblySheet(null, '2026-10-20', ['L3'], ['A'], null, 'L3');
@@ -262,8 +268,8 @@ test('8. Same-Day Synchronization updates fetched data without overwriting activ
   assert.equal(syncedSheet.rows[3][5].value, 'O');
   assert.equal(syncedSheet.rows[3][6].value, 1);
   // User's L2 input is untouched!
-  assert.equal(syncedSheet.rows[3][9].value, 'X', 'User L2 observation must remain intact after sync');
-  assert.equal(syncedSheet.rows[3][10].value, 0, 'User L2 score must remain intact after sync');
+  assert.equal(syncedSheet.rows[3][7].value, 'X', 'User L2 observation must remain intact after sync');
+  assert.equal(syncedSheet.rows[3][8].value, 0, 'User L2 score must remain intact after sync');
 });
 
 test('9. C&C Sheet same-day fetching matches correct column offsets', () => {
@@ -291,7 +297,8 @@ test('9. C&C Sheet same-day fetching matches correct column offsets', () => {
   // Shift A should be in cols 7 & 8
   assert.equal(ccSheetL2.rows[4][7].value, 'O');
   assert.equal(ccSheetL2.rows[4][8].value, 1);
-  // L2 column should be empty for user input in cols 11 & 12
-  assert.equal(ccSheetL2.rows[4][11].value, '');
-  assert.equal(ccSheetL2.rows[4][12].value, '');
+  // Shift B is omitted because it has no data; L2 is in cols 9 & 10
+  assert.equal(ccSheetL2.rows[4][9].value, '');
+  assert.equal(ccSheetL2.rows[4][10].value, '');
+  assert.equal(ccSheetL2.columnCount, 11);
 });

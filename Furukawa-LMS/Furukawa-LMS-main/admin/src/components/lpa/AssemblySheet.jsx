@@ -11,7 +11,7 @@ import { VERIFIED_EMPLOYEE_MASTER } from '@pages/pdca/data/pdcaEmployees';
 import pdcaApi from '@/services/api/pdcaApi';
 import './assemblySheet.css';
 
-function AuditorSearchDropdown({ value, onChange, employeeMaster = [], disabled, placeholder = 'Search auditor...' }) {
+export function AuditorSearchDropdown({ value, onChange, employeeMaster = [], disabled, placeholder = 'Search auditor...' }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef(null);
@@ -167,7 +167,7 @@ function AuditorSearchDropdown({ value, onChange, employeeMaster = [], disabled,
   );
 }
 
-const SHIFT_OPTIONS = ['A', 'B', 'C', 'G'];
+export const SHIFT_OPTIONS = ['A', 'B', 'C', 'G'];
 
 export default function AssemblySheet({
   sheet: rawSheet,
@@ -203,6 +203,19 @@ export default function AssemblySheet({
   const [formDepartment, setFormDepartment] = useState(rawSheet?.department || editor?.department || '');
   const [formSection, setFormSection] = useState(rawSheet?.sectionName || rawSheet?.section || editor?.sectionName || '');
   const [formLine, setFormLine] = useState(rawSheet?.line || rawSheet?.lineArea || editor?.line || editor?.lineArea || '');
+
+  // Created sheet's level badges (displays ONLY the level chosen by the user when creating the sheet)
+  const sheetTargetLevel = sheet?.targetLevel || sheet?.level || editor?.targetLevel || editor?.level || (auditColumns.some(c => c.level === 'L1') ? 'L1' : auditColumns.some(c => c.level === 'L2') ? 'L2' : 'L3');
+  const createdLevelBadges = useMemo(() => {
+    const activeCols = auditColumns.filter(col => !col.isFetched && (col.level === sheetTargetLevel || col.id === sheetTargetLevel));
+    if (activeCols.length > 0) {
+      return activeCols.map(col => ({ id: col.id, name: col.name }));
+    }
+    if (sheetTargetLevel === 'L2') return [{ id: 'L2', name: 'Level 2' }];
+    if (sheetTargetLevel === 'L1') return [{ id: 'L1', name: 'Level 1' }];
+    const shift = formShift || sheet?.shift || editor?.shift || 'A';
+    return [{ id: 'L3', name: `Level 3 (Shift ${shift})` }];
+  }, [auditColumns, sheetTargetLevel, formShift, sheet?.shift, editor?.shift]);
 
   // Auditors State (multiple auditors)
   const initialAuditors = useMemo(() => {
@@ -435,7 +448,7 @@ export default function AssemblySheet({
   // Determine if a column group is view-only based on sheet's target level:
   // - If sheet was created for Level 2: Level 3 columns are view-only (non-editable)
   // - If sheet was created for Level 1: Level 3 and Level 2 columns are view-only (non-editable)
-  const sheetTargetLevel = sheet?.targetLevel || editor?.targetLevel || editor?.level || (auditColumns.some(c => c.level === 'L1') ? 'L1' : auditColumns.some(c => c.level === 'L2') ? 'L2' : 'L3');
+  // (sheetTargetLevel is defined above)
 
   const sourceShiftStatus = useMemo(() => {
     const raw = sheet?.sourceShiftStatus || editor?.sourceShiftStatus;
@@ -761,28 +774,12 @@ export default function AssemblySheet({
                 </div>
               ) : isObservation ? (
                 obsReadOnly ? (
-                  !hasColumnData(activeLevelObs) ? (
-                    <div
-                      className="assembly-readonly-observation flex items-center justify-center font-normal italic text-[11px] text-slate-400 bg-slate-50/80 h-full w-full py-1.5 px-1 select-none text-center"
-                      title={`${activeLevelObs.name}: No data available for this date`}
-                    >
-                      <span>No data available</span>
-                    </div>
-                  ) : !value || !String(value).trim() ? (
-                    <div
-                      className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-400 bg-slate-100/60 h-full w-full py-1.5 px-2 select-none"
-                      title={`${activeLevelObs.name}: Not evaluated`}
-                    >
-                      <span>-</span>
-                    </div>
-                  ) : (
-                    <div
-                      className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-800 bg-slate-100/70 h-full w-full py-1.5 px-2 select-none"
-                      title={`${activeLevelObs.name} Observation (View Only)`}
-                    >
-                      <span>{normalizeObservationSymbol(value)}</span>
-                    </div>
-                  )
+                  <div
+                    className="assembly-readonly-observation flex items-center justify-center font-bold text-xs text-slate-800 bg-slate-100/70 h-full w-full py-1.5 px-2 select-none"
+                    title={`${activeLevelObs.name} Observation (View Only)`}
+                  >
+                    <span>{value && String(value).trim() ? normalizeObservationSymbol(value) : '-'}</span>
+                  </div>
                 ) : (
                   <select
                     aria-label={`${sheet.name} ${activeLevelObs.name} Observation row ${r + 1}`}
@@ -825,10 +822,10 @@ export default function AssemblySheet({
                       }}
                       className="assembly-score-input"
                     />
-                  ) : scoreReadOnly && !hasColumnData(activeLevelScore) ? (
-                    <span className="assembly-score-value font-normal text-xs text-slate-400">-</span>
                   ) : (
-                    <span className="assembly-score-value font-bold text-slate-800 text-xs">{value !== '' && value != null ? value : '-'}</span>
+                    <span className="assembly-score-value font-bold text-slate-800 text-xs">
+                      {value !== '' && value != null && String(value).trim() !== '' ? value : '-'}
+                    </span>
                   )}
                 </div>
               ) : (isChecklistRow && (c === 1 || c === areaColumn)) ? (
@@ -939,7 +936,7 @@ export default function AssemblySheet({
                   Assembly Quality & Production
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1.5">
-                  {auditColumns.map(colGroup => (
+                  {createdLevelBadges.map(colGroup => (
                     <span key={colGroup.id} className="assembly-level-badge">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
                       <span>{colGroup.name}</span>

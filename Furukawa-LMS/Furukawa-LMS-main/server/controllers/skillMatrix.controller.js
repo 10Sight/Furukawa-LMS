@@ -22,6 +22,7 @@ import {
 } from "../utils/skillMatrix.util.js";
 import { getDesignationShutterExclusionCondition } from "../utils/userEligibility.js";
 import { classifyOperatorLevel } from "../utils/levelClassification.js";
+import { normalizeShiftKey, sortShiftKeys } from "../utils/shiftKey.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = null) => {
@@ -496,23 +497,28 @@ const getSkillMatrixEfficiencyStats = asyncHandler(async (req, res) => {
     );
 });
 
+// Operators the Manpower Efficiency charts count: active STUDENT/CUSTOM users that aren't
+// temporary or behind a designation shutter. Shared by the operator and attendance queries.
+const efficiencyOperatorCondition = (alias = "u") => `
+    (${alias}.isDeleted = 0 OR ${alias}.isDeleted IS NULL)
+    AND ${alias}.role IN ('STUDENT', 'CUSTOM')
+    AND (${alias}.status IS NULL OR ${alias}.status != 'LEFT')
+    AND (${alias}.isTemporary = 0 OR ${alias}.isTemporary IS NULL)
+    AND (${alias}.designation IS NULL OR ${alias}.designation = '' OR ${alias}.isTemporary = 1 OR ${getDesignationShutterExclusionCondition(alias)})
+`;
+
 // @desc    Get Skill Matrix Efficiency Summary for all departments and sections
-// @route   GET /api/v1/skill-matrix/evaluations/summary?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+// @route   GET /api/v1/skill-matrix/evaluations/summary
 // @access  Private
-// Returns one row per operator (`users`) plus the attendance logs inside the requested
-// window only (`attendance`, as compact [userId, date, status, shift] tuples). Operators
-// used to be cross-joined with every attendance date ever logged, which sent hundreds of
-// thousands of repeated rows for a chart that by default shows a single day.
-const SUMMARY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
+// Returns one row per operator (`users`), the shift list and the default level config. It
+// doesn't depend on dates, so the charts fetch it once; a date filter change only refetches
+// the attendance window (getSkillMatrixEfficiencyAttendance below).
 const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
-    const today = new Date().toLocaleDateString("en-CA");
-    let dateFrom = SUMMARY_DATE_PATTERN.test(req.query.dateFrom || "") ? req.query.dateFrom : today;
-    let dateTo = SUMMARY_DATE_PATTERN.test(req.query.dateTo || "") ? req.query.dateTo : dateFrom;
-    if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
-
     // `shift` is the operator's shift on the latest logged date — what the shift filter
-    // matched on for the all-operators (Total) population before.
+    // matched on for the all-operators (Total) population before. The latest date is looked
+    // up once and joined, rather than re-evaluated per operator.
+    // evalData is only a fallback for operators without a stored currentEffeciency, so it is
+    // sent for those alone.
     const usersSql = `
         SELECT
             u.id as userId,
@@ -530,7 +536,7 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             l_res.lineName,
             ss_res.subSectionId,
             ss_res.subSectionName,
-            sme.evalData,
+            CASE WHEN u.currentEffeciency IS NULL THEN sme.evalData END as evalData,
             latest_shift.shift,
             u.currentEffeciency,
             COALESCE(u.isTemporary, 0) as isTemporary
@@ -553,28 +559,20 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
             WHERE d.id = COALESCE(u.departmentId, s_res.sDeptId, l_res.lDeptId)
                OR (u.departmentId IS NULL AND (u.department = d.name OR TRY_CAST(u.department AS INT) = d.id))
         ) d
-        OUTER APPLY (
-            SELECT TOP 1 [shift]
+        LEFT JOIN (
+            -- (userId, date) is unique, so this is at most one row per operator
+            SELECT userId, MAX([shift]) as [shift]
             FROM attendance_logs
-            WHERE userId = u.id AND [shift] IS NOT NULL AND [date] = (SELECT MAX([date]) FROM attendance_logs)
-        ) latest_shift
+            WHERE [shift] IS NOT NULL AND [date] = (SELECT MAX([date]) FROM attendance_logs)
+            GROUP BY userId
+        ) latest_shift ON latest_shift.userId = u.id
         LEFT JOIN skill_matrix_evaluations sme ON u.id = sme.studentId AND sme.isActive = 1
-        WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
-          AND u.role IN ('STUDENT', 'CUSTOM')
-          AND (u.status IS NULL OR u.status != 'LEFT')
-          AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-          AND (u.designation IS NULL OR u.designation = '' OR u.isTemporary = 1 OR ${getDesignationShutterExclusionCondition("u")})
-    `;
-    const attendanceSql = `
-        SELECT userId, CONVERT(VARCHAR(10), [date], 120) as attendanceDate, [status] as logStatus, [shift]
-        FROM attendance_logs
-        WHERE [date] BETWEEN ? AND ?
+        WHERE ${efficiencyOperatorCondition("u")}
     `;
     const shiftsSql = `SELECT DISTINCT [shift] FROM attendance_logs WHERE [shift] IS NOT NULL`;
 
-    const [[userRows], [attendanceRows], [shiftRows], activeConfig] = await Promise.all([
+    const [[userRows], [shiftRows], activeConfig] = await Promise.all([
         executeQuery(usersSql),
-        executeQuery(attendanceSql, [dateFrom, dateTo]),
         executeQuery(shiftsSql),
         CourseLevelConfig.getActiveConfig(),
     ]);
@@ -588,21 +586,53 @@ const getSkillMatrixEfficiencySummary = asyncHandler(async (req, res) => {
         if (seen.has(row.userId)) return;
         seen.add(row.userId);
         const lvl = classifyOperatorLevel({ currentSkill, currentLevel, subSectionId: row.subSectionId }, levels);
-        users.push({ ...row, levelName: lvl.levelName, levelOrder: lvl.levelOrder, isSkilled: lvl.isSkilled, isUnclassifiedLevel: lvl.unclassified });
+        users.push({ ...row, shift: normalizeShiftKey(row.shift), levelName: lvl.levelName, levelOrder: lvl.levelOrder, isSkilled: lvl.isSkilled, isUnclassifiedLevel: lvl.unclassified });
     });
 
-    const attendance = attendanceRows
-        .filter(a => seen.has(a.userId))
-        .map(a => [a.userId, a.attendanceDate, a.logStatus, a.shift]);
+    res.status(200).json(
+        new ApiResponse(200, {
+            users,
+            // Canonical shift codes (A/B/C/G/OTHER) — the raw column also holds "A-Shift", "GEN", "Absent"…
+            shifts: sortShiftKeys(new Set(shiftRows.map(r => normalizeShiftKey(r.shift)).filter(Boolean))),
+            // Default config's levels (sorted by order) — the charts name them in the skill labels
+            levels: levels.map(({ name, order }) => ({ name, order: Number(order) || 0 })),
+        }, "Skill matrix efficiency summary fetched successfully")
+    );
+});
+
+// @desc    Attendance logs for the Manpower Efficiency charts
+// @route   GET /api/v1/skill-matrix/evaluations/summary/attendance?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+// @access  Private
+// Logs inside the requested window only, for the operators the summary returns, as compact
+// [userId, date, status, shift] tuples (shift as a canonical code, see utils/shiftKey.js). The window is capped at SUMMARY_MAX_DAYS ending at
+// dateTo, so a stray far-off date (e.g. a year typed as "0002") can't pull the whole table.
+const SUMMARY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const SUMMARY_MAX_DAYS = 366;
+
+const getSkillMatrixEfficiencyAttendance = asyncHandler(async (req, res) => {
+    const today = new Date().toLocaleDateString("en-CA");
+    let dateFrom = SUMMARY_DATE_PATTERN.test(req.query.dateFrom || "") ? req.query.dateFrom : today;
+    let dateTo = SUMMARY_DATE_PATTERN.test(req.query.dateTo || "") ? req.query.dateTo : dateFrom;
+    if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
+    const earliest = new Date(`${dateTo}T00:00:00Z`);
+    earliest.setUTCDate(earliest.getUTCDate() - (SUMMARY_MAX_DAYS - 1));
+    const earliestText = earliest.toISOString().slice(0, 10);
+    if (dateFrom < earliestText) dateFrom = earliestText;
+
+    const [rows] = await executeQuery(`
+        SELECT al.userId, CONVERT(VARCHAR(10), al.[date], 120) as attendanceDate, al.[status] as logStatus, al.[shift]
+        FROM attendance_logs al
+        JOIN users u ON u.id = al.userId
+        WHERE al.[date] BETWEEN ? AND ?
+          AND ${efficiencyOperatorCondition("u")}
+    `, [dateFrom, dateTo]);
 
     res.status(200).json(
         new ApiResponse(200, {
             dateFrom,
             dateTo,
-            users,
-            attendance,
-            shifts: shiftRows.map(r => String(r.shift)).sort(),
-        }, "Skill matrix efficiency summary fetched successfully")
+            attendance: rows.map(a => [a.userId, a.attendanceDate, a.logStatus, normalizeShiftKey(a.shift)]),
+        }, "Skill matrix efficiency attendance fetched successfully")
     );
 });
 
@@ -1080,6 +1110,7 @@ export {
     deleteEvaluationSheet,
     getSkillMatrixEfficiencyStats,
     getSkillMatrixEfficiencySummary,
+    getSkillMatrixEfficiencyAttendance,
     getSkillMatrixDashboardConfig,
     saveSkillMatrixDashboardConfig,
     getSkillMatrixDashboardHistory

@@ -309,6 +309,7 @@ export {
     useGetSkillMatrixQuery,
     useGetSkillMatrixEfficiencyQuery,
     useGetSkillMatrixEfficiencySummaryQuery,
+    useGetSkillMatrixEfficiencyAttendanceQuery,
 } from "../SkillMatrixApi.js";
 
 // CourseLevelConfig API exports

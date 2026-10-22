@@ -1,3 +1,5 @@
+import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
+
 // Department/section scoping for Daily 5M records, stats and charts.
 //
 // Global admins (isAdmin / ADMIN / SUPERADMIN) see everything. Everyone else is
@@ -70,6 +72,23 @@ export const scope5MRequest = (user, departmentParam, sectionParam) => {
         sectionId,
         allowedDepartmentIds: scope.allowedDepartmentIds,
         allowedSectionIds: scope.allowedSectionIds.length > 0 ? scope.allowedSectionIds : undefined
+    };
+};
+
+// Read-only "every department" listing used by the 5M dashboard's Records List. Open to global admins
+// and anyone holding daily5m:read; it only widens what is listed and grants no edit/delete/approve rights.
+//   { forbidden: string } -> caller should respond 403
+//   { departmentId, sectionId, allowedDepartmentIds: undefined, allowedSectionIds: undefined }
+export const scope5MListAllRequest = (user, departmentParam, sectionParam) => {
+    const { isGlobalAdmin } = resolveUser5MScope(user);
+    if (!isGlobalAdmin && !hasAnyPermission(user, ["daily5m:read"])) {
+        return { forbidden: "You do not have permission to view all 5M records" };
+    }
+    return {
+        departmentId: departmentParam,
+        sectionId: sectionParam && sectionParam !== "all" ? String(sectionParam) : undefined,
+        allowedDepartmentIds: undefined,
+        allowedSectionIds: undefined
     };
 };
 

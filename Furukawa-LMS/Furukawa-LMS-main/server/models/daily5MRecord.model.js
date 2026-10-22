@@ -3,6 +3,7 @@ import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import { getRejectedRows } from "../../shared/daily5mRowStatus.js";
 
 class Daily5MRecord {
     constructor(data) {
@@ -16,6 +17,7 @@ class Daily5MRecord {
         this.line = data.line;
         this.formType = data.formType || 'standard';
         this.recordData = typeof data.recordData === 'string' ? JSON.parse(data.recordData) : (data.recordData || {});
+        this.rejectedRows = getRejectedRows(this.recordData);
         this.submittedBy = data.submittedBy; // User ID
         this.submittedByName = data.submittedByName || "Unknown"; // Joined Full Name
         this.sectionName = data.sectionName;

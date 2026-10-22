@@ -6,6 +6,9 @@
 //
 // Present over a date range is the average per logged day of (present operators' efficiency
 // ÷ headcount), so a 30-day range is comparable to a single day rather than 30× larger.
+//
+// The shift-wise breakdown splits Present by the shift on each attendance row, using the same
+// divisor, so a group's per-shift figures add up to its Present figure.
 
 export const PRESENT_STATUSES = new Set(['Present', 'Late', 'Half Day']);
 export const CHART_EFFICIENCY_CAP = 100;
@@ -13,6 +16,32 @@ export const CHART_EFFICIENCY_CAP = 100;
 export const getAvg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0;
 export const getSum = (arr) => arr.reduce((a, b) => a + b, 0);
 export const round2 = (v) => Math.round(v * 100) / 100;
+
+// Shift codes come normalised from the server (A/B/C/G/OTHER); a present row without one is
+// grouped as UNASSIGNED so it still counts toward the breakdown.
+export const UNASSIGNED_SHIFT = 'UNASSIGNED';
+const SHIFT_DISPLAY_ORDER = ['A', 'B', 'C', 'G', 'OTHER', UNASSIGNED_SHIFT];
+const shiftOf = (op) => op.shift || UNASSIGNED_SHIFT;
+const shiftRank = (k) => (SHIFT_DISPLAY_ORDER.includes(k) ? SHIFT_DISPLAY_ORDER.indexOf(k) : SHIFT_DISPLAY_ORDER.length);
+export const sortShiftKeys = (keys) => [...keys].sort((a, b) => shiftRank(a) - shiftRank(b) || String(a).localeCompare(String(b)));
+
+// { shift: summed chart efficiency } over attendance rows
+const sumByShift = (rows) => rows.reduce((acc, op) => {
+    const k = shiftOf(op);
+    acc[k] = (acc[k] || 0) + chartEfficiency(op);
+    return acc;
+}, {});
+const divideByShift = (sums, divisor) =>
+    Object.fromEntries(Object.entries(sums).map(([k, v]) => [k, divisor ? round2(v / divisor) : 0]));
+// a − b per shift (Skilled = Total − Unskilled, as for the un-split figures)
+const subtractByShift = (a, b) =>
+    Object.fromEntries(Object.keys(a).map(k => [k, round2(a[k] - (b[k] || 0))]));
+// Average of children's per-shift figures; a child with no rows in a shift counts as 0 there,
+// so the parent's shifts still add up to its averaged Present figure.
+const averageByShift = (list) => {
+    const keys = new Set(list.flatMap(o => Object.keys(o || {})));
+    return Object.fromEntries([...keys].map(k => [k, getAvg(list.map(o => o?.[k] || 0))]));
+};
 
 // An operator's recorded efficiency, uncapped (Chart 6)
 export const calculateUserEfficiency = (op) => {
@@ -52,19 +81,28 @@ const presentRowsWithin = (opsAll, opsAtt) => {
     return opsAtt.filter(op => PRESENT_STATUSES.has(op.logStatus) && inTotal.has(op.userId));
 };
 
-// Chart 1: Total / Unskilled / Skilled manpower, each with a Total and a Present figure.
+// Chart 1: Total / Skilled / Unskilled manpower, each with a Total and a Present figure.
 // Every figure divides by the same headcount (and Present also by the logged-day count), so
 // Unskilled + Skilled = Total Manpower for both; Skilled is derived so rounding matches too.
+// `presentByShift` splits Present by shift (same divisor), `presentCountByShift` counts operators.
 export const buildSkillSplit = (opsAll, opsAtt, dayCount) => {
     const presOps = presentRowsWithin(opsAll, opsAtt);
     const totalCount = opsAll.length;
+    const presDiv = totalCount * dayCount;
     const totalPct = (ops) => totalCount ? round2(getSum(ops.map(chartEfficiency)) / totalCount) : 0;
-    const presentPct = (ops) => totalCount && dayCount ? round2(getSum(ops.map(chartEfficiency)) / (totalCount * dayCount)) : 0;
+    const presentPct = (ops) => presDiv ? round2(getSum(ops.map(chartEfficiency)) / presDiv) : 0;
+    const presentShiftPct = (ops) => divideByShift(sumByShift(ops), presDiv);
     const countEvaluated = (ops) => ops.filter(op => op.currentEffeciency != null || op.evalData != null).length;
     const uniqueUsers = (rows) => new Set(rows.map(op => op.userId)).size;
-    const row = (name, allOps, presentOps, total, present) => ({
-        name, displayName: name, total, present,
+    const usersByShift = (rows) => {
+        const sets = {};
+        rows.forEach(op => { (sets[shiftOf(op)] ||= new Set()).add(op.userId); });
+        return Object.fromEntries(Object.entries(sets).map(([k, s]) => [k, s.size]));
+    };
+    const row = (name, allOps, presentOps, total, present, presentByShift) => ({
+        name, displayName: name, total, present, presentByShift,
         totalCount: allOps.length, presentCount: uniqueUsers(presentOps), evaluated: countEvaluated(allOps),
+        presentCountByShift: usersByShift(presentOps),
     });
 
     const unskilledAll = opsAll.filter(op => !op.isSkilled);
@@ -76,11 +114,14 @@ export const buildSkillSplit = (opsAll, opsAtt, dayCount) => {
     const tPres = presentPct(presOps);
     const tUnskilledAll = totalPct(unskilledAll);
     const tUnskilledPres = presentPct(unskilledPres);
+    const shiftPres = presentShiftPct(presOps);
+    const shiftUnskilledPres = presentShiftPct(unskilledPres);
 
     return [
-        row('Total Manpower', opsAll, presOps, tAll, tPres),
-        row('Unskilled Manpower', unskilledAll, unskilledPres, tUnskilledAll, tUnskilledPres),
-        row('Skilled Manpower', skilledAll, skilledPres, round2(tAll - tUnskilledAll), round2(tPres - tUnskilledPres)),
+        row('Total Manpower', opsAll, presOps, tAll, tPres, shiftPres),
+        row('Skilled Manpower', skilledAll, skilledPres, round2(tAll - tUnskilledAll), round2(tPres - tUnskilledPres),
+            subtractByShift(shiftPres, shiftUnskilledPres)),
+        row('Unskilled Manpower', unskilledAll, unskilledPres, tUnskilledAll, tUnskilledPres, shiftUnskilledPres),
     ];
 };
 
@@ -91,12 +132,15 @@ const shapeGroupRow = (row) => {
     const presEff = row.presEfficiency ?? 0;
     const allUnskilled = row.allUnskilled ?? 0;
     const presUnskilled = row.presUnskilled ?? 0;
+    const presShift = row.presShift || {};
+    const presUnskilledShift = row.presUnskilledShift || {};
     return {
         id: row.id, name: row.name, displayName: row.name,
         allEfficiency: allEff, presEfficiency: presEff,
         allTotal: allEff, presTotal: presEff,
         allUnskilled, presUnskilled,
         allSkilled: round2(allEff - allUnskilled), presSkilled: round2(presEff - presUnskilled),
+        presShift, presUnskilledShift, presSkilledShift: subtractByShift(presShift, presUnskilledShift),
     };
 };
 
@@ -119,11 +163,13 @@ const rollUp = (childRows, getParentId, getParentName) => {
     childRows.forEach(child => {
         const pId = getParentId(child);
         if (!pId) return;
-        if (!map[pId]) map[pId] = { id: pId, name: getParentName(child), allArr: [], presArr: [], allUnsArr: [], presUnsArr: [] };
+        if (!map[pId]) map[pId] = { id: pId, name: getParentName(child), allArr: [], presArr: [], allUnsArr: [], presUnsArr: [], presShiftArr: [], presUnsShiftArr: [] };
         map[pId].allArr.push(child.allEfficiency);
         map[pId].presArr.push(child.presEfficiency);
         map[pId].allUnsArr.push(child.allUnskilled);
         map[pId].presUnsArr.push(child.presUnskilled);
+        map[pId].presShiftArr.push(child.presShift);
+        map[pId].presUnsShiftArr.push(child.presUnskilledShift);
     });
     return Object.values(map).map(row => ({
         ...row,
@@ -131,6 +177,8 @@ const rollUp = (childRows, getParentId, getParentName) => {
         presEfficiency: getAvg(row.presArr),
         allUnskilled: getAvg(row.allUnsArr),
         presUnskilled: getAvg(row.presUnsArr),
+        presShift: averageByShift(row.presShiftArr),
+        presUnskilledShift: averageByShift(row.presUnsShiftArr),
         headcount: row.allArr.length,
     }));
 };
@@ -150,6 +198,7 @@ export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], 
                 sectionName: op.sectionCategory ? `${op.sectionName} (${op.sectionCategory})` : op.sectionName,
                 deptId: String(op.departmentId || op.departmentName || ''), deptName: op.departmentName,
                 allArr: [], presArr: [], allUnsArr: [], presUnsArr: [],
+                presShiftSum: {}, presUnsShiftSum: {},
             };
         }
         return ssMap[ssId];
@@ -169,8 +218,13 @@ export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], 
         const row = ensureSS(op);
         if (!row) return;
         const eff = chartEfficiency(op);
+        const shift = shiftOf(op);
         row.presArr.push(eff);
-        if (!op.isSkilled) row.presUnsArr.push(eff);
+        row.presShiftSum[shift] = (row.presShiftSum[shift] || 0) + eff;
+        if (!op.isSkilled) {
+            row.presUnsArr.push(eff);
+            row.presUnsShiftSum[shift] = (row.presUnsShiftSum[shift] || 0) + eff;
+        }
     });
 
     const ssRows = Object.values(ssMap).map(row => {
@@ -184,6 +238,8 @@ export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], 
             // Unskilled shares divide by the whole sub-section headcount, like Total / Present
             allUnskilled: total ? round2(getSum(row.allUnsArr) / total) : 0,
             presUnskilled: presDiv ? round2(getSum(row.presUnsArr) / presDiv) : 0,
+            presShift: divideByShift(row.presShiftSum, presDiv),
+            presUnskilledShift: divideByShift(row.presUnsShiftSum, presDiv),
             headcount: total,
         };
     });

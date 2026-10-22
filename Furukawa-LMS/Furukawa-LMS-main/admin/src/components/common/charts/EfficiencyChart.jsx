@@ -18,9 +18,14 @@ const getAttendanceColor = (status, idx) => ATTENDANCE_COLORS[status] || SHIFT_C
 const TOTAL_COLOR = '#f59e0b';
 const PRESENT_COLOR = '#2563eb';
 
-// Shift-wise Present: one shade of the Present blue per shift code (A/B/C/G/OTHER from the
-// server, UNASSIGNED for a present log with no shift), so "blue = Present" still reads.
-const SHIFT_KEY_COLORS = { A: '#1e3a8a', B: '#2563eb', C: '#60a5fa', G: '#06b6d4', OTHER: '#818cf8', [UNASSIGNED_SHIFT]: '#94a3b8' };
+// Shift-wise Present: a distinct colour per shift code (A/B/C/G/OTHER from the server,
+// UNASSIGNED for a present log with no shift). Amber (Total) and red (Chart 6 Absent) are
+// left out so a shift never reads as either.
+const SHIFT_KEY_COLORS = { A: '#2563eb', B: '#10b981', C: '#8b5cf6', G: '#ec4899', OTHER: '#0891b2', [UNASSIGNED_SHIFT]: '#94a3b8' };
+
+// Recharts 3 places stacked bars before unstacked ones in each category, so the Total bar gets
+// its own stack id — otherwise the shift-wise Present stack would be drawn ahead of it.
+const TOTAL_STACK_ID = 'total';
 const shiftColor = (key) => SHIFT_KEY_COLORS[key] || SHIFT_KEY_COLORS[UNASSIGNED_SHIFT];
 const shiftLabel = (key, t) => {
     if (key === UNASSIGNED_SHIFT) return t('charts.shiftUnassigned');
@@ -42,7 +47,7 @@ const FrozenLegend = ({ allUsersColor = TOTAL_COLOR, allUsersLabel, presentLabel
         <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
             {swatch(allUsersColor, allUsersLabel || t('charts.totalEff'))}
             {shiftKeys
-                ? shiftKeys.map(k => swatch(shiftColor(k), `${presentLabel || t('charts.presentEff')} · ${shiftLabel(k, t)}`))
+                ? shiftKeys.map(k => swatch(shiftColor(k), shiftLabel(k, t)))
                 : swatch(PRESENT_COLOR, presentLabel || t('charts.presentEff'))}
         </div>
     );
@@ -464,8 +469,41 @@ const ChartWrapper = ({ data, minW = 110, height = 340, children }) => (
     </div>
 );
 
-// Operators per page in Chart 6
-const OPERATOR_PAGE_SIZE = 50;
+// ─── Paging ───────────────────────────────────────────────────────────────────
+// Charts draw one page at a time: every line (150+) or sub-section (370+) at once is over a
+// thousand bar slots in one SVG, which froze the tab while the dashboard opened.
+const OPERATOR_PAGE_SIZE = 50; // Chart 6 operators
+const GROUP_PAGE_SIZE = 10;    // Charts 2–5 groups (each three bar pairs)
+
+// The page index is clamped, so a filter that shrinks the list never leaves an empty page
+const usePagedList = (list, pageSize) => {
+    const [page, setPage] = useState(0);
+    const lastPage = Math.max(0, Math.ceil(list.length / pageSize) - 1);
+    const pageIdx = Math.min(page, lastPage);
+    const items = useMemo(() => list.slice(pageIdx * pageSize, (pageIdx + 1) * pageSize), [list, pageIdx, pageSize]);
+    return { items, pageIdx, lastPage, pageSize, total: list.length, setPage };
+};
+
+const Pager = ({ pager }) => {
+    const { items, pageIdx, lastPage, pageSize, total, setPage } = pager;
+    if (total <= pageSize) return null;
+    const start = pageIdx * pageSize + 1;
+    return (
+        <div className="flex items-center justify-end gap-2 mt-4">
+            <button onClick={() => setPage(Math.max(0, pageIdx - 1))} disabled={pageIdx === 0} aria-label="Previous page"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                <IconChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-[13px] font-bold text-slate-600 tabular-nums">
+                {start}–{start + items.length - 1} / {total}
+            </span>
+            <button onClick={() => setPage(Math.min(lastPage, pageIdx + 1))} disabled={pageIdx === lastPage} aria-label="Next page"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                <IconChevronRight className="h-4 w-4" />
+            </button>
+        </div>
+    );
+};
 
 // ─── Present Mode Toggle (Total Present / Shift-wise) ─────────────────────────
 const PresentModeToggle = ({ mode, onChange }) => {
@@ -558,10 +596,9 @@ const EfficiencyChart = () => {
     const [statVis, setStatVis] = useState({ c1: false, c2: false, c3: false, c4: false, c5: false, c6: false });
     const toggleStat = (key) => setStatVis(prev => ({ ...prev, [key]: !prev[key] }));
     // Per chart (same keys as statVis): 'total' = one Present bar, 'shift' = Present split by shift
-    const [presentMode, setPresentMode] = useState({ c1: 'total', c2: 'total', c3: 'total', c4: 'total', c5: 'total', c6: 'total' });
+    const [presentMode, setPresentMode] = useState({ c1: 'shift', c2: 'shift', c3: 'shift', c4: 'shift', c5: 'shift', c6: 'shift' });
     const setChartPresentMode = (key) => (mode) => setPresentMode(prev => ({ ...prev, [key]: mode }));
     const isShiftMode = (key) => presentMode[key] === 'shift';
-    const [opPage, setOpPage] = useState(0);
 
     const translateStatus = (name) => {
         if (name === 'Total Manpower') return t('charts.totalManpower');
@@ -803,10 +840,15 @@ const EfficiencyChart = () => {
     const d4 = useMemo(() => buildHierarchicalData(opsAll4, opsAtt4, 'subsection', allSubSections, days4), [opsAll4, opsAtt4, allSubSections, days4]);
 
     // Charts 2–5 bars: Total / Skilled / Unskilled manpower pairs for each group
-    const d1Grouped = useMemo(() => toSkillGroups(d1), [d1]);
-    const d2Grouped = useMemo(() => toSkillGroups(d2), [d2]);
-    const d3Grouped = useMemo(() => toSkillGroups(d3), [d3]);
-    const d4Grouped = useMemo(() => toSkillGroups(d4), [d4]);
+    // (one page of groups at a time; stats panels still cover every group)
+    const pager1 = usePagedList(d1, GROUP_PAGE_SIZE);
+    const pager2 = usePagedList(d2, GROUP_PAGE_SIZE);
+    const pager3 = usePagedList(d3, GROUP_PAGE_SIZE);
+    const pager4 = usePagedList(d4, GROUP_PAGE_SIZE);
+    const d1Grouped = useMemo(() => toSkillGroups(pager1.items), [pager1.items]);
+    const d2Grouped = useMemo(() => toSkillGroups(pager2.items), [pager2.items]);
+    const d3Grouped = useMemo(() => toSkillGroups(pager3.items), [pager3.items]);
+    const d4Grouped = useMemo(() => toSkillGroups(pager4.items), [pager4.items]);
 
     // Chart 1: Total / Skilled / Unskilled manpower, each with a Total and a Present bar.
     // Skilled = default config's levels from order 1 to the last; unskilled = order 0 or
@@ -853,14 +895,9 @@ const EfficiencyChart = () => {
     }, {}), [d6]);
     const shiftKeys6 = useMemo(() => sortShiftKeys(Object.keys(d6ShiftCounts)), [d6ShiftCounts]);
 
-    // Chart 6 draws one page of operators at a time — thousands of bars in one SVG is what
-    // made the dashboard slow to render. The page index is clamped when a filter shrinks the list.
-    const d6LastPage = Math.max(0, Math.ceil(d6.length / OPERATOR_PAGE_SIZE) - 1);
-    const d6PageIdx = Math.min(opPage, d6LastPage);
-    const d6Page = useMemo(
-        () => d6.slice(d6PageIdx * OPERATOR_PAGE_SIZE, (d6PageIdx + 1) * OPERATOR_PAGE_SIZE),
-        [d6, d6PageIdx]
-    );
+    // Chart 6 draws one page of operators at a time
+    const pager6 = usePagedList(d6, OPERATOR_PAGE_SIZE);
+    const d6Page = pager6.items;
 
     if (isLoading) return (
         <Card className="col-span-1 lg:col-span-2 border border-slate-100 shadow-sm rounded-3xl bg-white">
@@ -896,7 +933,7 @@ const EfficiencyChart = () => {
                         <ReferenceLine key={row.key} x={row.key} position="end" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 4" />
                     ))}
                 {mode === 'shift' && <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ShiftTooltip shiftKeys={shiftKeys} titleOf={tooltipTitle} />} />}
-                <Bar dataKey="total" name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={44} minPointSize={3}>
+                <Bar dataKey="total" stackId={TOTAL_STACK_ID} name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={44} minPointSize={3}>
                     <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
                 </Bar>
                 {renderPresentBars({ mode, rows, shiftKeys, maxBarSize: 44, t })}
@@ -943,7 +980,7 @@ const EfficiencyChart = () => {
                                         <XAxis dataKey="displayName" tick={<CustomXAxisTick />} tickLine={false} axisLine={false} interval={0} />
                                         <YAxis domain={CAPPED_Y_DOMAIN} ticks={CAPPED_Y_TICKS} tick={axisTick} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
                                         {isShiftMode('c5') && <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ShiftTooltip shiftKeys={shiftKeys5} titleOf={tooltipTitle} />} />}
-                                        <Bar dataKey="total" name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
+                                        <Bar dataKey="total" stackId={TOTAL_STACK_ID} name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
                                         </Bar>
                                         {renderPresentBars({ mode: presentMode.c5, rows: d5Mapped, shiftKeys: shiftKeys5, maxBarSize: 56, t })}
@@ -1009,6 +1046,7 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         {d1.length > 0 ? (
                             <>
+                                <Pager pager={pager1} />
                                 {renderSkillGroupedChart(d1Grouped, presentMode.c1, shiftKeys1)}
                                 <FrozenLegend shiftKeys={isShiftMode('c1') ? shiftKeys1 : null} />
                                 {statVis.c1 && <SummaryCapsules data={d1} dotColor="#f59e0b" label={t('charts.deptEfficiency')} shiftKeys={isShiftMode('c1') ? shiftKeys1 : null} />}
@@ -1032,6 +1070,7 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         {d2.length > 0 ? (
                             <>
+                                <Pager pager={pager2} />
                                 {renderSkillGroupedChart(d2Grouped, presentMode.c2, shiftKeys2)}
                                 <FrozenLegend shiftKeys={isShiftMode('c2') ? shiftKeys2 : null} />
                                 {statVis.c2 && <SummaryCapsules data={d2} dotColor="#f59e0b" label={t('charts.sectionEfficiency')} shiftKeys={isShiftMode('c2') ? shiftKeys2 : null} />}
@@ -1055,6 +1094,7 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={true} showLine={false} hideShift={false} />
                         {d3.length > 0 ? (
                             <>
+                                <Pager pager={pager3} />
                                 {renderSkillGroupedChart(d3Grouped, presentMode.c3, shiftKeys3)}
                                 <FrozenLegend shiftKeys={isShiftMode('c3') ? shiftKeys3 : null} />
                                 {statVis.c3 && <SummaryCapsules data={d3} dotColor="#f59e0b" label={t('charts.lineEfficiency')} shiftKeys={isShiftMode('c3') ? shiftKeys3 : null} />}
@@ -1078,6 +1118,7 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={true} showLine={true} hideShift={false} />
                         {d4.length > 0 ? (
                             <>
+                                <Pager pager={pager4} />
                                 {renderSkillGroupedChart(d4Grouped, presentMode.c4, shiftKeys4)}
                                 <FrozenLegend shiftKeys={isShiftMode('c4') ? shiftKeys4 : null} />
                                 {statVis.c4 && <SummaryCapsules data={d4} dotColor="#f59e0b" label={t('charts.subsectionEfficiency')} shiftKeys={isShiftMode('c4') ? shiftKeys4 : null} />}
@@ -1101,21 +1142,7 @@ const EfficiencyChart = () => {
                             showDept={true} showSection={true} showLine={true} showSubSection={true} hideLegend={true} />
                         {d6.length > 0 ? (
                             <>
-                                {d6.length > OPERATOR_PAGE_SIZE && (
-                                    <div className="flex items-center justify-end gap-2 mt-4">
-                                        <button onClick={() => setOpPage(p => Math.max(0, Math.min(p, d6LastPage) - 1))} disabled={d6PageIdx === 0}
-                                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                                            <IconChevronLeft className="h-4 w-4" />
-                                        </button>
-                                        <span className="text-[13px] font-bold text-slate-600 tabular-nums">
-                                            {d6PageIdx * OPERATOR_PAGE_SIZE + 1}–{Math.min((d6PageIdx + 1) * OPERATOR_PAGE_SIZE, d6.length)} / {d6.length}
-                                        </span>
-                                        <button onClick={() => setOpPage(p => Math.min(d6LastPage, p + 1))} disabled={d6PageIdx === d6LastPage}
-                                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                                            <IconChevronRight className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                )}
+                                <Pager pager={pager6} />
                                 <ChartWrapper data={d6Page} minW={80}>
                                     <BarChart data={d6Page} margin={commonMargin} barCategoryGap="40%">
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
@@ -1141,7 +1168,7 @@ const EfficiencyChart = () => {
                                 <div className="flex flex-wrap justify-center items-center gap-5 mt-4">
                                     {isShiftMode('c6') ? shiftKeys6.map(k => (
                                         <span key={k} className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">
-                                            <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: shiftColor(k) }} /> {t('charts.present')} · {shiftLabel(k, t)}
+                                            <span className="w-4 h-3 rounded-sm inline-block" style={{ backgroundColor: shiftColor(k) }} /> {shiftLabel(k, t)}
                                         </span>
                                     )) : (
                                         <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500">

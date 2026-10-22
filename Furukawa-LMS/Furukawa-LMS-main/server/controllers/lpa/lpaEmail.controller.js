@@ -31,67 +31,6 @@ const parseAddresses = (value, field) => {
   return [...unique.values()];
 };
 
-const cellText = cell => cell?.formatted ?? cell?.text ?? cell?.value ?? "";
-
-const renderLpaTable = (sheet, title) => {
-  if (!sheet || !Array.isArray(sheet.rows) || !sheet.rows.length) throw new ApiError(`The selected ${title} has no saved table data.`, 422);
-  // The Assembly workbook includes title/auditor fields above the checklist
-  // and legend/signature content below it. Email only the actual checklist
-  // table, retaining its two header rows and checklist row values.
-  const tableRows = sheet.rows
-    .map((row, sourceIndex) => ({ row, sourceIndex }))
-    .filter(({ sourceIndex }) => sourceIndex >= 1 && sourceIndex <= 36);
-  if (tableRows.length < 3) throw new ApiError(`The selected ${title} has no saved checklist table.`, 422);
-  const covered = new Set();
-  const mergeByAnchor = new Map();
-  for (const merge of sheet.merges || []) {
-    const start = merge.s || { r: merge.start?.row, c: merge.start?.col };
-    const end = merge.e || { r: merge.end?.row, c: merge.end?.col };
-    if (!Number.isInteger(start.r) || !Number.isInteger(start.c) || !Number.isInteger(end.r) || !Number.isInteger(end.c)) continue;
-    if (start.r < 1 || start.r > 36 || end.r < 1 || end.r > 36) continue;
-    mergeByAnchor.set(`${start.r}:${start.c}`, { rows: end.r - start.r + 1, cols: end.c - start.c + 1, start });
-    for (let r = start.r; r <= end.r; r++) for (let c = start.c; c <= end.c; c++) {
-      if (r !== start.r || c !== start.c) covered.add(`${r}:${c}`);
-    }
-  }
-  const rows = tableRows.map(({ row, sourceIndex: r }) => `<tr>${(Array.isArray(row) ? row : []).map((cell, c) => {
-    if (covered.has(`${r}:${c}`)) return "";
-    const merge = mergeByAnchor.get(`${r}:${c}`);
-    const value = escapeHtml(cellText(cell)).replace(/\r?\n/g, "<br>");
-    const style = cell?.style || {};
-    const colorHex = String(style.font?.color?.rgb || "").replace(/^#/, "").slice(-6);
-    const fillHex = String(style.fill?.fgColor?.rgb || "").replace(/^#/, "").slice(-6);
-    const bold = style.font?.bold ? "font-weight:bold;" : "";
-    const italic = style.font?.italic ? "font-style:italic;" : "";
-    const color = /^[0-9a-f]{6}$/i.test(colorHex) ? `color:#${colorHex};` : "";
-    const fill = /^[0-9a-f]{6}$/i.test(fillHex) ? `background-color:#${fillHex};` : "";
-    const fontSize = Number(style.font?.sz);
-    const size = Number.isFinite(fontSize) && fontSize >= 8 && fontSize <= 24 ? `font-size:${fontSize}px;` : "";
-    const align = ["left", "center", "right"].includes(style.alignment?.horizontal) ? `text-align:${style.alignment.horizontal};` : "";
-    const span = merge ? ` rowspan="${merge.rows}" colspan="${merge.cols}"` : "";
-    const isHeader = r === 1 || r === 2;
-    const tag = isHeader ? "th" : "td";
-    const headerStyle = isHeader ? "background-color:#e2e8f0;text-align:left;" : "";
-    return `<${tag}${span} style="${headerStyle}${bold}${italic}${color}${fill}${size}${align}padding:5px 7px;border:1px solid #9ca3af;vertical-align:top;white-space:pre-wrap;">${value || "&nbsp;"}</${tag}>`;
-  }).join("")}</tr>`);
-  // Keep the source's two header rows at the top, followed by checklist data.
-  const thead = rows.slice(0, 2).join("");
-  const tbody = rows.slice(2).join("");
-  return `<h3 style="margin:20px 0 8px;font:600 16px Arial,sans-serif;">${escapeHtml(title)} · ${escapeHtml(sheet.name || "Worksheet")}</h3><table role="presentation" style="border-collapse:collapse;border:1px solid #9ca3af;font:12px Arial,sans-serif;width:100%;"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
-};
-
-const renderPdcaTable = (sheet, title) => {
-  if (!sheet || !Array.isArray(sheet.rows) || !sheet.rows.length) throw new ApiError(`The selected ${title} has no saved table data.`, 422);
-  const headers = ["Date", "Shift", "S.No", "Status", "Unit", "Department", "Section", "Line/Area", "Observation", "Image Before", "Root Cause", "Counter Measure", "Image After", "Std. Duration in min", "Response Date", "No. of time Revised", "Responsible Person Unit", "Responsible Person Department", "Staff Name", "CFT", "Responsible Person Confirmation"];
-  const rows = sheet.rows.map((sourceRow, index) => {
-    const row = sourceRow || {};
-    const cells = [row.date, row.shift, index + 1, row.status, row.unit, Array.isArray(row.departments) ? row.departments.join(", ") : row.department, Array.isArray(row.sections) ? row.sections.map(item => item?.section || item).join(", ") : row.section, Array.isArray(row.lineAreas) ? row.lineAreas.map(item => item?.lineArea || item).join(", ") : row.lineArea, row.observation, row.imageBeforeName || (row.imageBefore ? "Image available" : ""), row.rootCause, row.counterMeasure, row.imageAfterName || (row.imageAfter ? "Image available" : ""), row.stdDurationMin ?? row.stdDuration, row.responseDate, Array.isArray(row.revisedDates) ? row.revisedDates.map((item, i) => `${i + 1}) ${typeof item === "string" ? item : `${item?.date || ""}${item?.reason ? ` — ${item.reason}` : ""}`}`).join("; ") : "", row.respUnit || row.responsiblePersonUnit, row.responsiblePersonDept, row.staffEmployee || (row.staffEmployees || []).map(employee => employee.name).filter(Boolean).join(", "), row.cftTopic || row.cftSelectedName, row.confirmation || row.responsiblePersonConfirmation || row.instruction];
-    return `<tr>${cells.map(value => `<td style="padding:5px 7px;border:1px solid #9ca3af;vertical-align:top;white-space:pre-wrap;">${escapeHtml(value)}</td>`).join("")}</tr>`;
-  }).join("");
-  const header = headers.map(value => `<th style="padding:6px 7px;border:1px solid #64748b;background:#e2e8f0;text-align:left;">${escapeHtml(value)}</th>`).join("");
-  return `<h3 style="margin:20px 0 8px;font:600 16px Arial,sans-serif;">${escapeHtml(title)}</h3><table role="presentation" style="border-collapse:collapse;border:1px solid #9ca3af;font:12px Arial,sans-serif;width:100%;"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
-};
-
 const hasSavedPdcaRows = sheet => sheet.rows.some(row => row && [
   row.date, row.shift, row.unit, row.department, row.section, row.lineArea, row.observation,
   row.rootCause, row.counterMeasure, row.stdDurationMin, row.responseDate, row.instruction,
@@ -99,7 +38,7 @@ const hasSavedPdcaRows = sheet => sheet.rows.some(row => row && [
   row.confirmation, row.imageBefore, row.imageAfter
 ].some(value => value !== undefined && value !== null && String(value).trim() !== ""));
 
-const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FRONTEND_URL, remarks = "", assemblySheetData, pdcaSheetData) => {
+const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FRONTEND_URL, remarks = "") => {
   const baseUrl = portalBaseUrl;
   let base;
   try {
@@ -131,16 +70,18 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   const moduleName = assembly.section === "cc" || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
   const assemblyTitle = assembly.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
   const pdcaTitle = pdca.source === "lpa" ? `LPA Observation ${moduleName} PDCA` : `${moduleName} PDCA Sheet`;
-  const remarksHtml = `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong>${remarks ? ` ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}` : ""}</p>`;
+  const openButton = url => `<table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 18px;"><tr><td align="center" bgcolor="#2563eb" style="background-color:#2563eb;border:1px solid #2563eb;border-radius:6px;"><a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:12px 20px;font-family:Arial,sans-serif;font-size:14px;line-height:18px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">Click Here to Open</a></td></tr></table>`;
+  const remarksHtml = remarks
+    ? `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}</p>`
+    : "";
   const html = [
     `<p style="margin:0 0 12px;font:14px Arial,sans-serif;color:#1e293b;">Dear Sir,</p>`,
     `<p style="margin:0 0 18px;font:700 15px Arial,sans-serif;color:#1e293b;">Safety First</p>`,
-    `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(assemblyTitle)}:</strong> <a href="${escapeHtml(assemblyUrl)}" style="color:#2563eb;text-decoration:underline;">${assemblyName}</a></p>`,
-    `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(pdcaTitle)}:</strong> <a href="${escapeHtml(pdcaUrl)}" style="color:#2563eb;text-decoration:underline;">${pdcaName}</a></p>`,
-    remarksHtml,
-    `<h2 style="margin:20px 0 8px;font:700 16px Arial,sans-serif;color:#1e293b;">Sheet Data</h2>`,
-    ...(assemblySheetData ? [renderLpaTable(assemblySheetData, assemblyTitle)] : []),
-    ...(pdcaSheetData ? [pdca.source === "lpa" ? renderPdcaTable(pdcaSheetData, `${pdcaTitle} · ${pdcaName}`) : renderPdcaTable(pdcaSheetData, pdcaTitle)] : [])
+    `<p style="margin:8px 0 6px;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(assemblyTitle)}:</strong> ${assemblyName}</p>`,
+    openButton(assemblyUrl),
+    `<p style="margin:8px 0 6px;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(pdcaTitle)}:</strong> ${pdcaName}</p>`,
+    openButton(pdcaUrl),
+    remarksHtml
   ].join("");
   return { html, assemblyUrl, pdcaUrl };
 };
@@ -213,7 +154,7 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     }
 
     const subject = `${section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet"} and ${pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA Sheet"}`;
-    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly, pdca, portalBaseUrl, remarks, assemblySheetData, pdcaSheetData);
+    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly, pdca, portalBaseUrl, remarks);
     const info = await sendMailFn(to, subject, html, [], cc);
     const accepted = Array.isArray(info?.accepted) ? info.accepted.map(String) : [];
     const rejected = Array.isArray(info?.rejected) ? info.rejected.map(String) : [];

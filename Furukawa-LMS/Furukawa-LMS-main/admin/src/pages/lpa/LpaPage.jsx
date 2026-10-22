@@ -29,6 +29,23 @@ const todayIso = new Date().toISOString().slice(0, 10);
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 const primary = button.replace('border-slate-200', 'border-blue-600').replace('bg-white', 'bg-blue-600').replace('text-slate-700', 'text-white').replace('hover:bg-slate-50', 'hover:bg-blue-700');
 const errorText = error => error.message || 'Could not save LPA data. Your edits have been retained.';
+const formatLpaDate = value => {
+  if (!value) return '-';
+  const raw = String(value).trim();
+  let day; let month; let year;
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const local = raw.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})$/);
+  if (iso) [, year, month, day] = iso;
+  else if (local) [, day, month, year] = local;
+  else {
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    day = parsed.getDate();
+    month = parsed.getMonth() + 1;
+    year = parsed.getFullYear();
+  }
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${String(year).slice(-2)}`;
+};
 
 function LpaPageContent({ viewContext }) {
   const navigate = useNavigate();
@@ -1282,6 +1299,7 @@ function LpaPageContent({ viewContext }) {
                       <tr>
                         <th className="px-4 py-3 text-left">S.NO.</th>
                         <th className="px-4 py-3 text-left">Worksheet</th>
+                        <th className="px-4 py-3 text-left">Date</th>
                         <th className="px-4 py-3 text-left">Unit</th>
                         <th className="px-4 py-3 text-left">Auditor Name</th>
                         <th className="px-4 py-3 text-left">Score</th>
@@ -1294,6 +1312,7 @@ function LpaPageContent({ viewContext }) {
                     <tbody className="divide-y divide-slate-100">
                       {visibleRecords.flatMap((record) => record.sheets.map((current, index) => ({ record, current, index }))).map(({ record, current, index }, rowIndex) => {
                         const unitVal = record.unit || selectedUnit || 'Bawal';
+                        const dateVal = formatLpaDate(record.auditDate || record.date || current.auditDate || current.date);
                         const scoresList = getWorksheetScoresList(current, record);
                         const deptVal = current.department || record.department || '-';
                         const secVal = current.sectionName || current.section || record.sectionName || record.section || '-';
@@ -1337,6 +1356,7 @@ function LpaPageContent({ viewContext }) {
                                 )}
                               </div>
                             </td>
+                            <td className="px-4 py-4 text-slate-700 whitespace-nowrap">{dateVal}</td>
                             <td className="px-4 py-4 text-slate-700">{unitVal}</td>
                             <td className="px-4 py-4 text-slate-700">
                               <div className="flex items-center gap-1.5 font-medium text-xs text-slate-800">

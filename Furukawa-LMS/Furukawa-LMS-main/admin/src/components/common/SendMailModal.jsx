@@ -86,10 +86,42 @@ export default function SendMailModal({
     lpaApi.getDefaultMailRecipients()
       .then((result) => {
         if (!active) return;
-        const to = Array.isArray(result?.to) ? result.to : (Array.isArray(result?.emails) ? result.emails : []);
-        const cc = Array.isArray(result?.cc) ? result.cc : [];
+        const to = [...new Map(
+          (Array.isArray(result?.to) ? result.to : (Array.isArray(result?.emails) ? result.emails : []))
+            .map(email => String(email).trim())
+            .filter(Boolean)
+            .map(email => [email.toLowerCase(), email])
+        ).values()];
+        const cc = [...new Map(
+          (Array.isArray(result?.cc) ? result.cc : [])
+            .map(email => String(email).trim())
+            .filter(Boolean)
+            .map(email => [email.toLowerCase(), email])
+        ).values()];
         setDefaultToEmails(to);
         setDefaultCcEmails(cc);
+        setRecipients(current => {
+          const next = [...current];
+          const existing = new Set(next.map(email => email.trim().toLowerCase()));
+          to.forEach(email => {
+            if (!existing.has(email.toLowerCase())) {
+              next.push(email);
+              existing.add(email.toLowerCase());
+            }
+          });
+          return next;
+        });
+        setCcEmails(current => {
+          const next = current.filter(email => email.trim());
+          const existing = new Set(next.flatMap(value => value.split(/[,;\s]+/).map(email => email.trim().toLowerCase()).filter(Boolean)));
+          cc.forEach(email => {
+            if (!existing.has(email.toLowerCase())) {
+              next.push(email);
+              existing.add(email.toLowerCase());
+            }
+          });
+          return next.length ? next : [''];
+        });
       })
       .catch((error) => {
         if (active) toast.error(error.response?.data?.message || 'Could not load saved default email addresses.');

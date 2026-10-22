@@ -21,6 +21,11 @@ export const lpaApi = {
   },
 
   // C. Records CRUD & Queries
+  getSameDaySourceData: async (params = {}) => {
+    const response = await axiosInstance.get(`${BASE_PATH}/same-day-source`, { params });
+    return response.data?.data || response.data;
+  },
+
   getRecords: async (params = {}) => {
     const response = await axiosInstance.get(`${BASE_PATH}/records`, { params });
     return response.data?.data || response.data;

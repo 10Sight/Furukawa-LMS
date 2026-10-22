@@ -1,5 +1,7 @@
 import template from './ccTemplate.json' with { type: 'json' };
-import { buildAuditColumnGroups, getActiveAuditColumns } from '../../components/lpa/assemblySheetUtils.js';
+import { buildAuditColumnGroups, getActiveAuditColumns, normalizeSourceSheets, syncSheetWithLatestSameDaySources, sheetHasData } from '../../components/lpa/assemblySheetUtils.js';
+
+export { syncSheetWithLatestSameDaySources };
 
 export const ccTemplate = template;
 
@@ -37,14 +39,23 @@ export function upgradeCcTemplateRecord(record) {
   };
 }
 
-export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['A'], existingSheet = null) {
+export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['A'], existingSheet = null, targetLevel = null) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
   const sheet = structuredClone(baseSheet || ccTemplate.sheets[0]);
   const safeLevels = Array.isArray(levels) && levels.length > 0 ? levels : ['L3'];
   const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
+  const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');
 
-  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, true);
+  const sources = existingSheet ? normalizeSourceSheets(existingSheet) : null;
+  const auditColumns = buildAuditColumnGroups(safeLevels, safeShifts, true, effectiveTarget, sources);
   const columnCount = 7 + auditColumns.length * 2;
+
+  const sourceShiftStatus = {
+    A: Boolean(sources?.L3_A && sheetHasData(sources.L3_A, 'A')),
+    B: Boolean(sources?.L3_B && sheetHasData(sources.L3_B, 'B')),
+    C: Boolean(sources?.L3_C && sheetHasData(sources.L3_C, 'C')),
+    L2: Boolean(sources?.L2 && sheetHasData(sources.L2))
+  };
 
   // Build rows
   const newRows = sheet.rows.map((row, rIdx) => {
@@ -53,7 +64,8 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
 
     // Row 0: Title
     if (rIdx === 0) {
-      nextRow[0] = row[0] || { value: 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.', formatted: 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.', type: 's' };
+      const lvlNum = effectiveTarget === 'L1' ? '1' : effectiveTarget === 'L2' ? '2' : '3';
+      nextRow[0] = { value: `LPA CHECK SHEET LEVEL-${lvlNum} C&C QA/Prod.`, formatted: `LPA CHECK SHEET LEVEL-${lvlNum} C&C QA/Prod.`, type: 's' };
       return nextRow;
     }
 
@@ -94,19 +106,26 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
         nextRow[colGroup.scoreCol] = { value: '', formatted: '', type: 'z' };
       });
 
-      // If existingSheet(s) passed, merge previous observations & scores
-      const sourceSheets = Array.isArray(existingSheet) ? existingSheet : (existingSheet ? [existingSheet] : []);
-      for (const srcSheet of sourceSheets) {
-        if (!srcSheet || !Array.isArray(srcSheet.rows?.[rIdx])) continue;
-        const prevRow = srcSheet.rows[rIdx];
-        const existingAuditCols = getActiveAuditColumns(srcSheet, null, true);
+      // Merge fetched observations and scores from normalized same-day sources
+      auditColumns.forEach((colGroup) => {
+        let srcSheet = null;
+        if (colGroup.id === 'L3_A') {
+          srcSheet = sources?.L3_A;
+        } else if (colGroup.id === 'L3_B') {
+          srcSheet = sources?.L3_B;
+        } else if (colGroup.id === 'L2' && effectiveTarget === 'L1') {
+          srcSheet = sources?.L2;
+        }
 
-        auditColumns.forEach((colGroup) => {
+        if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
+          const prevRow = srcSheet.rows[rIdx];
+          const existingAuditCols = getActiveAuditColumns(srcSheet, null, true);
           let matchedPrevCol = null;
+
           if (colGroup.id) {
             matchedPrevCol = existingAuditCols.find(p => p.id === colGroup.id);
           }
-          if (!matchedPrevCol && colGroup.level === 'L3' && colGroup.shift) {
+          if (!matchedPrevCol && colGroup.level === 'L3') {
             matchedPrevCol = existingAuditCols.find(p => p.level === 'L3' && (p.shift === colGroup.shift || (!p.shift && existingAuditCols.filter(x => x.level === 'L3').length === 1)));
           }
           if (!matchedPrevCol) {
@@ -123,8 +142,8 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
               nextRow[colGroup.scoreCol] = { ...savedScore };
             }
           }
-        });
-      }
+        }
+      });
 
       return nextRow;
     }
@@ -157,9 +176,11 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
     return nextRow;
   });
 
+  const lastCol = columnCount - 1;
+
   // Merges for C&C
   const baseMerges = (sheet.merges || []).filter(m =>
-    m.s.r < 2 || (m.s.r >= 4 && m.s.r <= 34 && m.s.c < 7) || m.s.r >= 37
+    m.s.r < 2 || (m.s.r >= 4 && m.s.r <= 34 && m.s.c < 7)
   );
 
   const headerMerges = [
@@ -187,7 +208,24 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
     });
   });
 
-  const merges = [...baseMerges, ...headerMerges, ...summaryMerges];
+  // Dynamic Legend Merges extending across the full width to lastCol
+  const legendMerges = [
+    { s: { c: 0, r: 37 }, e: { c: 2, r: 38 } },
+    { s: { c: 3, r: 37 }, e: { c: 3, r: 38 } },
+    { s: { c: 4, r: 37 }, e: { c: lastCol, r: 38 } },
+  ];
+  for (let r = 39; r <= 43; r++) {
+    legendMerges.push(
+      { s: { c: 0, r }, e: { c: 2, r } },
+      { s: { c: 5, r }, e: { c: lastCol, r } }
+    );
+  }
+  legendMerges.push(
+    { s: { c: 0, r: 44 }, e: { c: 5, r: 44 } },
+    { s: { c: 6, r: 44 }, e: { c: lastCol, r: 44 } }
+  );
+
+  const merges = [...baseMerges, ...headerMerges, ...summaryMerges, ...legendMerges];
 
   return {
     ...sheet,
@@ -196,7 +234,9 @@ export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['
     merges,
     levels: safeLevels,
     shifts: safeShifts,
+    targetLevel: effectiveTarget,
     auditColumns,
+    sourceShiftStatus,
     date: targetDate,
     shift: '',
     department: 'C&C',

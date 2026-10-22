@@ -73,11 +73,11 @@ export function getWorksheetScoresList(sheet, record = null) {
     let level = 'L3';
     let shift = null;
 
-    if (/l1/i.test(headerText) || /monthly/i.test(headerText)) {
+    if (/l1/i.test(headerText) || /monthly/i.test(headerText) || /level\s*1/i.test(headerText)) {
       level = 'L1';
-    } else if (/l2/i.test(headerText) || /weekly/i.test(headerText)) {
+    } else if (/l2/i.test(headerText) || /weekly/i.test(headerText) || /level\s*2/i.test(headerText)) {
       level = 'L2';
-    } else if (/l3/i.test(headerText) || /daily/i.test(headerText)) {
+    } else if (/l3/i.test(headerText) || /daily/i.test(headerText) || /level\s*3/i.test(headerText)) {
       level = 'L3';
       const m = headerText.match(/shift\s*([ABC])/i);
       if (m) shift = m[1].toUpperCase();
@@ -100,7 +100,7 @@ export function getWorksheetScoresList(sheet, record = null) {
       scoreCol: startAuditCol + 1,
       level: record?.level || 'L3',
       shift: record?.shift || null,
-      headerText: 'L3 Daily'
+      headerText: 'Level 3'
     });
   }
 

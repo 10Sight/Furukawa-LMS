@@ -143,3 +143,45 @@ test('5. createBlankCcSheet produces completely blank values for New LPA check s
   // Row 36 Percentage should be '0.00%'
   assert.equal(blankSheet.rows[36][6].formatted, '0.00%');
 });
+
+test('6. createBlankCcSheet dynamically expands legend merges to lastCol without stray empty cells', () => {
+  // Test with multi-level C&C sheet where both Shift A & B have data (13 columns: 0 to 12)
+  const sheetA = createBlankCcSheet(null, '2026-10-20', ['L3'], ['A'], null, 'L3');
+  sheetA.rows[4][7] = { value: 'O', formatted: 'O' };
+  sheetA.rows[4][8] = { value: 1, formatted: '1' };
+  const sheetB = createBlankCcSheet(null, '2026-10-20', ['L3'], ['B'], null, 'L3');
+  sheetB.rows[4][7] = { value: 'O', formatted: 'O' };
+  sheetB.rows[4][8] = { value: 1, formatted: '1' };
+
+  const l2CcSheet = createBlankCcSheet(null, '2026-10-20', ['L2'], ['G'], [sheetA, sheetB], 'L2');
+  const lastCol = l2CcSheet.columnCount - 1;
+  assert.equal(l2CcSheet.columnCount, 13);
+  assert.equal(lastCol, 12);
+
+  // Row 37-38 Score Criteria merge must extend from column 4 to lastCol (12)
+  const scoreCriteriaMerge = l2CcSheet.merges.find(m => m.s.r === 37 && m.s.c === 4);
+  assert.ok(scoreCriteriaMerge, 'Score Criteria merge must exist at row 37, col 4');
+  assert.equal(scoreCriteriaMerge.e.c, lastCol);
+  assert.equal(scoreCriteriaMerge.e.r, 38);
+
+  // Row 39 Description merge must extend from col 5 to lastCol (12)
+  const r39DescMerge = l2CcSheet.merges.find(m => m.s.r === 39 && m.s.c === 5);
+  assert.ok(r39DescMerge, 'Row 39 description merge must exist at col 5');
+  assert.equal(r39DescMerge.e.c, lastCol);
+
+  // Row 44 Date merge must extend from col 6 to lastCol (12)
+  const r44DateMerge = l2CcSheet.merges.find(m => m.s.r === 44 && m.s.c === 6);
+  assert.ok(r44DateMerge, 'Row 44 date merge must exist at col 6');
+  assert.equal(r44DateMerge.e.c, lastCol);
+});
+
+test('7. C&C check sheet sticky header CSS rules ensure stable 48px/26px heights and alignment', async () => {
+  const fs = await import('node:fs');
+  const cssSource = fs.readFileSync(new URL('../../components/lpa/ccSheet.css', import.meta.url), 'utf-8');
+  assert.ok(cssSource.includes('tr.cc-header-row-2'));
+  assert.ok(cssSource.includes('height: 48px !important'));
+  assert.ok(cssSource.includes('tr.cc-header-row-3'));
+  assert.ok(cssSource.includes('top: 48px !important'));
+  assert.ok(cssSource.includes('height: 74px !important'));
+});
+

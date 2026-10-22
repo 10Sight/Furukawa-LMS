@@ -85,6 +85,23 @@ export const getRecords = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Retrieve same-day source data across levels and shifts for L1/L2 auto-fetching & sync
+ */
+export const getSameDaySourceData = asyncHandler(async (req, res) => {
+  const user = getUserContext(req);
+  const filters = {
+    section: req.query.section,
+    unit: req.query.unit,
+    auditDate: req.query.auditDate || req.query.date,
+    department: req.query.department,
+    line: req.query.line
+  };
+
+  const data = await LpaRecord.getSameDaySourceData(filters, user);
+  return res.status(200).json(new ApiResponse(200, data, "Same-day LPA source data retrieved successfully."));
+});
+
+/**
  * Retrieve single LPA record by ID
  */
 export const getRecordById = asyncHandler(async (req, res) => {
@@ -142,6 +159,35 @@ export const updateRecord = asyncHandler(async (req, res) => {
 
   if (!payload || typeof payload !== "object") {
     throw new ApiError("Invalid update payload.", 400);
+  }
+
+  // Check admin permission or creator permission
+  const existing = await LpaRecord.getRecordById(id, user);
+  if (!existing) {
+    throw new ApiError(`LPA record with ID '${id}' not found.`, 404);
+  }
+
+  const isAdmin = Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPERADMIN');
+  const userIds = [String(user.id), String(user._id), String(user.userId)].filter(Boolean);
+  const userCodes = [user.empId, user.employeeId, user.code, user.userName, user.empCode].filter(Boolean).map(s => String(s).trim().toUpperCase());
+
+  const isCreator =
+    (existing.ownerId && userIds.includes(String(existing.ownerId))) ||
+    (existing.createdById && userIds.includes(String(existing.createdById))) ||
+    (existing.createdBy && (
+      userIds.includes(String(existing.createdBy)) ||
+      (typeof existing.createdBy === 'object' && (
+        userIds.includes(String(existing.createdBy.id || existing.createdBy._id)) ||
+        userCodes.includes(String(existing.createdBy.code || existing.createdBy.empId || '').toUpperCase())
+      )) ||
+      (typeof existing.createdBy === 'string' && (
+        userIds.includes(existing.createdBy) ||
+        userCodes.includes(existing.createdBy.toUpperCase())
+      ))
+    ));
+
+  if (!isAdmin && !isCreator) {
+    throw new ApiError("You do not have permission to edit this LPA record. Only the creator or an admin can edit it.", 403);
   }
 
   // Shift validation if provided

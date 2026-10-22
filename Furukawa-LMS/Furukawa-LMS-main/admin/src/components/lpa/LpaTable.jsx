@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-export default function LpaTable({ sheet, onChange, zoom = 100 }) {
+export default function LpaTable({ sheet, onChange, disabled = false, zoom = 100 }) {
   const merged = useMemo(() => {
     const starts = new Map(), covered = new Set();
     for (const merge of sheet.merges) {
@@ -18,7 +18,7 @@ export default function LpaTable({ sheet, onChange, zoom = 100 }) {
       if (merged.covered.has(key)) return null;
       const merge = merged.starts.get(key);
       return <td key={c} rowSpan={merge ? merge.e.r - r + 1 : 1} colSpan={merge ? merge.e.c - c + 1 : 1}>
-        {onChange ? <textarea aria-label={`${sheet.columns[c].label}${sheet.startRow + r + 1}`} value={cell.text} rows={Math.min(10, Math.max(2, cell.text.split('\n').length, Math.ceil(cell.text.length / 45)))} onChange={event => onChange(r, c, event.target.value)} spellCheck={false} /> : <span>{cell.text}</span>}
+        {onChange && !disabled ? <textarea aria-label={`${sheet.columns[c].label}${sheet.startRow + r + 1}`} value={cell.text} rows={Math.min(10, Math.max(2, cell.text.split('\n').length, Math.ceil(cell.text.length / 45)))} onChange={event => onChange(r, c, event.target.value)} spellCheck={false} /> : <span>{cell.text}</span>}
       </td>;
     })}</tr>)}</tbody>
   </table>;

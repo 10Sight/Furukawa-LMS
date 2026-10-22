@@ -80,11 +80,11 @@ export function isRecordCreator(record, currentUser) {
   if (record.isCreator === true) return true;
 
   const createdBy = record.createdBy;
-  const createdById = record.createdById;
+  const createdById = record.createdById || record.ownerId || record.userId;
 
   // Older/legacy records with unknown ownership: protected as read-only for ordinary employees
   if (!createdBy && !createdById) {
-    return Boolean(currentUser.isAdmin || currentUser.role === 'ADMIN');
+    return Boolean(currentUser.isAdmin || currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN');
   }
 
   const userIds = [
@@ -136,6 +136,144 @@ export function isRecordCreator(record, currentUser) {
 
   return false;
 }
+
+export function canEditRecord(record, currentUser) {
+  if (!record || !currentUser) return false;
+  const isAdmin = Boolean(
+    currentUser?.isAdmin ||
+    currentUser?.isAdmin === 1 ||
+    String(currentUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(currentUser?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
+  if (isAdmin) return true;
+  return isRecordCreator(record, currentUser);
+}
+
+export const EDITABLE_RESPONSIBLE_COLUMNS = [
+  'rootCause',
+  'counterMeasure',
+  'imageAfter',
+  'imagesAfter',
+  'stdDurationMin',
+  'responseDate',
+  'revisedDates',
+  'revisions',
+  'noOfTimeRevised'
+];
+
+export function isUserResponsibleForRow(row, user) {
+  if (!user || !row) return false;
+
+  const userIds = [user.id, user._id, user.userId]
+    .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+    .map(String);
+
+  const userCodes = [user.empId, user.employeeId, user.userName, user.code]
+    .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+    .map(s => String(s).trim().toUpperCase());
+
+  const userNames = [user.name, user.fullName]
+    .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+    .map(s => String(s).trim().toLowerCase());
+
+  // 1. Check row.staffEmployees array (supports multiple staff in single row)
+  if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
+    for (const emp of row.staffEmployees) {
+      if (!emp) continue;
+      if (emp.id && userIds.includes(String(emp.id))) return true;
+      const code = String(emp.code || emp.empId || '').trim().toUpperCase();
+      if (code && userCodes.includes(code)) return true;
+      const name = String(emp.name || emp.fullName || '').trim().toLowerCase();
+      if (name && userNames.includes(name)) return true;
+    }
+  }
+
+  // 2. Check row.staffEmployee string
+  if (row.staffEmployee && typeof row.staffEmployee === 'string') {
+    const parts = row.staffEmployee.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const pUpper = part.toUpperCase();
+      const pLower = part.toLowerCase();
+      if (userCodes.some(c => pUpper.includes(c))) return true;
+      if (userNames.some(n => pLower.includes(n))) return true;
+    }
+  }
+
+  // 3. Check individual staff fields
+  const staffId = String(row.staffId || row.employeeId || '').trim().toUpperCase();
+  if (staffId && userCodes.includes(staffId)) return true;
+
+  const staffName = String(row.staffName || '').trim().toLowerCase();
+  if (staffName && userNames.includes(staffName)) return true;
+
+  return false;
+}
+
+export function isUserInResponsibleDepartment(row, user) {
+  if (!user || !row) return false;
+
+  // 1. Direct assignment as responsible staff
+  if (isUserResponsibleForRow(row, user)) return true;
+
+  // 2. Department matching: check selected Responsible Person Confirmation department
+  const targetDepts = [
+    row.responsiblePersonDept,
+    row.department,
+    ...(Array.isArray(row.departments) ? row.departments : [])
+  ]
+    .filter(Boolean)
+    .map(d => String(d).trim().toLowerCase());
+
+  if (targetDepts.length === 0) return false;
+
+  const userDepts = [];
+  if (user.deptName) userDepts.push(user.deptName);
+  if (typeof user.department === 'string') userDepts.push(user.department);
+  if (user.department?.name) userDepts.push(user.department.name);
+  if (Array.isArray(user.departments)) {
+    user.departments.forEach(d => {
+      if (typeof d === 'string') userDepts.push(d);
+      else if (d?.name) userDepts.push(d.name);
+    });
+  }
+
+  const normalizedUserDepts = userDepts.map(d => String(d).trim().toLowerCase());
+  return normalizedUserDepts.some(ud => targetDepts.some(td => ud === td || ud.includes(td) || td.includes(ud)));
+}
+
+export function isUserResponsibleForAnyRow(rows, user) {
+  if (!Array.isArray(rows) || !user) return false;
+  return rows.some(r => isUserInResponsibleDepartment(r, user));
+}
+
+export function canUserEditPDCARow(row, user, record, targetColumn = null) {
+  if (!user) {
+    if (targetColumn) return false;
+    return { canEditEntireRow: false, canEditActionCols: false };
+  }
+  const isAdmin = Boolean(
+    user?.isAdmin ||
+    user?.isAdmin === 1 ||
+    String(user?.role || '').toUpperCase() === 'ADMIN' ||
+    String(user?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
+  if (isAdmin) {
+    if (targetColumn) return true;
+    return { canEditEntireRow: true, canEditActionCols: true };
+  }
+  if (record && isRecordCreator(record, user)) {
+    if (targetColumn) return true;
+    return { canEditEntireRow: true, canEditActionCols: true };
+  }
+  const isDeptMember = isUserInResponsibleDepartment(row, user);
+  if (isDeptMember) {
+    if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
+    return { canEditEntireRow: false, canEditActionCols: true };
+  }
+  if (targetColumn) return false;
+  return { canEditEntireRow: false, canEditActionCols: false };
+}
+
 
 export function resolveCurrentUserId(user) {
   if (user && (user.id || user._id || user.code || user.employeeId || user.userName || user.name)) {

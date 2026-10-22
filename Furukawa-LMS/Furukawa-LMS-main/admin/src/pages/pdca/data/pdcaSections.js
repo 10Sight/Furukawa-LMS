@@ -51,3 +51,96 @@ export function findSectionByName(name) {
   const lower = name.trim().toLowerCase();
   return VERIFIED_SECTION_MASTER.find((s) => s.name?.trim().toLowerCase() === lower) || null;
 }
+
+/**
+ * Validates whether a given section belongs to or is related to a specified department.
+ * Supports section objects, IDs, or string names.
+ * When no department is specified, returns true to keep all sections available.
+ */
+export function isSectionRelatedToDepartment(sec, department) {
+  if (!department || typeof department !== 'string' || !department.trim()) {
+    return true;
+  }
+  if (!sec) return false;
+
+  const secObj =
+    typeof sec === 'string'
+      ? findSectionByName(sec) || { name: sec }
+      : typeof sec === 'number'
+      ? findSectionById(sec) || { id: sec }
+      : sec;
+
+  const dept = department.trim().toLowerCase();
+  const category = (secObj.category || '').trim().toLowerCase();
+  const secDept = (secObj.department || '').trim().toLowerCase();
+  const name = (secObj.name || '').trim().toLowerCase();
+
+  // Explicit department property match
+  if (secDept && secDept === dept) {
+    return true;
+  }
+
+  switch (dept) {
+    case 'c&c':
+    case 'crimping':
+      if (category === 'quality') return false;
+      return (
+        category === 'crimping' ||
+        category === 'c&c' ||
+        name.startsWith('c&c') ||
+        name.includes('_c&c')
+      );
+
+    case 'assembly':
+      // Assembly Quality belongs to Quality
+      if (category === 'quality') return false;
+      return category === 'assembly';
+
+    case 'quality':
+      return category === 'quality';
+
+    case 'src':
+      return category === 'src';
+
+    case 'maintenance':
+      return category === 'maintenance' || category === 'utility' || name === 'utility';
+
+    case 'store':
+    case 'stores':
+      return category === 'store' || category === 'stores';
+
+    case 'fg':
+    case 'logistics':
+      return category === 'fg' || category === 'logistics';
+
+    case 'safety':
+      return category === 'safety';
+
+    case 'pe':
+      return category === 'pe';
+
+    case 'it':
+      return category === 'it';
+
+    case 'ppc':
+      return category === 'ppc';
+
+    case 'd&d':
+    case 'dd':
+      return category === 'd&d' || category === 'dd';
+
+    case 'hr':
+    case 'training':
+    case 'ga':
+      return (
+        category === 'hr' ||
+        category === 'training' ||
+        category === 'ga' ||
+        name.includes('training') ||
+        name === 'ga'
+      );
+
+    default:
+      return category === dept || secDept === dept || name.includes(dept);
+  }
+}

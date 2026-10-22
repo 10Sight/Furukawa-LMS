@@ -106,6 +106,42 @@ export const isUserCreatorOfRecord = (user, record) => {
     return false;
 };
 
+// Helper to determine if an authenticated user is assigned as responsible staff in any PDCA row
+export const isUserResponsibleStaff = (user, rows) => {
+    if (!user || !Array.isArray(rows)) return false;
+    const userIds = [user.id, user._id, user.userId].filter(Boolean).map(String);
+    const userCodes = [user.empId, user.employeeId, user.userName, user.code].filter(Boolean).map(s => String(s).trim().toUpperCase());
+    const userNames = [user.fullName, user.name].filter(Boolean).map(s => String(s).trim().toLowerCase());
+
+    return rows.some(row => {
+        if (!row) return false;
+        if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
+            for (const emp of row.staffEmployees) {
+                if (!emp) continue;
+                if (emp.id && userIds.includes(String(emp.id))) return true;
+                const code = String(emp.code || emp.empId || '').trim().toUpperCase();
+                if (code && userCodes.includes(code)) return true;
+                const name = String(emp.name || emp.fullName || '').trim().toLowerCase();
+                if (name && userNames.includes(name)) return true;
+            }
+        }
+        if (row.staffEmployee && typeof row.staffEmployee === 'string') {
+            const parts = row.staffEmployee.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+            for (const part of parts) {
+                const pUpper = part.toUpperCase();
+                const pLower = part.toLowerCase();
+                if (userCodes.some(c => pUpper.includes(c))) return true;
+                if (userNames.some(n => pLower.includes(n))) return true;
+            }
+        }
+        const staffId = String(row.staffId || row.employeeId || '').trim().toUpperCase();
+        if (staffId && userCodes.includes(staffId)) return true;
+        const staffName = String(row.staffName || '').trim().toLowerCase();
+        if (staffName && userNames.includes(staffName)) return true;
+        return false;
+    });
+};
+
 // --- A. PDCA Record Management ---
 
 /**
@@ -271,8 +307,14 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
 
     let record = await PDCAModel.findByRecordId(id);
     if (record) {
-        if (!isUserCreatorOfRecord(user, record)) {
-            throw new ApiError("Forbidden: Only the employee who created this PDCA record can edit its sheet", 403);
+        const isCreator = isUserCreatorOfRecord(user, record);
+        const isAdmin = Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPERADMIN');
+        const existingRows = record.sheet?.rows || record.rows || [];
+        const incomingRows = Array.isArray(req.body?.rows) ? req.body.rows : (req.body?.sheetData || []);
+        const isResponsible = isUserResponsibleStaff(user, existingRows) || isUserResponsibleStaff(user, incomingRows);
+
+        if (!isCreator && !isAdmin && !isResponsible) {
+            throw new ApiError("Forbidden: Only the employee who created this PDCA record or assigned responsible staff can edit its sheet", 403);
         }
     } else {
         // Auto-create base record if saving sheet for newly initialized record
@@ -516,8 +558,13 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
-    if (!isUserCreatorOfRecord(user, record)) {
-        throw new ApiError("Forbidden: Only the employee who created this PDCA record can upload attachments", 403);
+    const isCreator = isUserCreatorOfRecord(user, record);
+    const isAdmin = Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPERADMIN');
+    const existingRows = record.sheet?.rows || record.rows || [];
+    const isResponsible = isUserResponsibleStaff(user, existingRows);
+
+    if (!isCreator && !isAdmin && !isResponsible) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record or assigned responsible staff can upload attachments", 403);
     }
 
     if (!req.file) {

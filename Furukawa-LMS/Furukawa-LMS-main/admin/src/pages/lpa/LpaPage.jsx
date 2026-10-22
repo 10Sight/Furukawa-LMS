@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User } from 'lucide-react';
+import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User, BarChart3 } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
 import { confirmFormDeletion } from '@components/shared/confirmFormDeletion';
 import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } from './lpaWorkbook';
 import AssemblySheet from '../../components/lpa/AssemblySheet';
-import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns } from '../../components/lpa/assemblySheetUtils';
+import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns, syncSheetWithLatestSameDaySources, normalizeSourceSheets, sheetHasData } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
-import assemblyTemplate from './assemblyTemplate.json';
+import assemblyTemplate from './assemblyTemplate.json' with { type: 'json' };
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
+import lpaApi from '@/services/api/lpaApi.js';
 import PDCASheet from '../../components/pdca/PDCASheet';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
 import SendMailModal from '../../components/common/SendMailModal';
@@ -18,6 +19,8 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
+import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
+import LpaTable from '../../components/lpa/LpaTable';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -28,6 +31,7 @@ const primary = button.replace('border-slate-200', 'border-blue-600').replace('b
 const errorText = error => error.message || 'Could not save LPA data. Your edits have been retained.';
 
 function LpaPageContent({ viewContext }) {
+  const navigate = useNavigate();
   const outlet = useOutletContext();
   const layout = viewContext || outlet || {};
   const { setIsFormView = () => { } } = layout;
@@ -155,6 +159,35 @@ function LpaPageContent({ viewContext }) {
         }
       } else setDirty(needsTemplateUpgrade);
     } catch { setDirty(needsTemplateUpgrade); }
+    // For Level 1 and Level 2 sheets, synchronize fetched columns with latest same-day source data
+    const recTargetLevel = next.targetLevel || next.level || (next.levels?.includes('L1') ? 'L1' : next.levels?.includes('L2') ? 'L2' : 'L3');
+    if (recTargetLevel === 'L1' || recTargetLevel === 'L2') {
+      let sameDaySources = null;
+      try {
+        sameDaySources = await lpaApi.getSameDaySourceData({
+          section: next.section,
+          unit: next.unit || selectedUnit,
+          auditDate: next.auditDate || next.date,
+          department: next.department,
+          line: next.line
+        });
+      } catch {
+        const sameDayRecords = records.filter(r =>
+          r.id !== next.id &&
+          r.section === next.section &&
+          (r.unit === next.unit || (!r.unit && (next.unit || selectedUnit) === 'Bawal')) &&
+          (r.auditDate === (next.auditDate || next.date) || r.date === (next.auditDate || next.date))
+        );
+        sameDaySources = sameDayRecords;
+      }
+
+      if (sameDaySources && Array.isArray(next.sheets)) {
+        next.sheets = next.sheets.map(sh =>
+          syncSheetWithLatestSameDaySources(sh, sameDaySources, recTargetLevel, next.section === 'cc')
+        );
+      }
+    }
+
     setSheetIndex(index);
     setZoom(150);
     setEditor(next);
@@ -169,7 +202,13 @@ function LpaPageContent({ viewContext }) {
     authUser?.role === 'admin'
   );
 
+  const canEditCurrentRecord = useMemo(() => {
+    if (!editor) return true;
+    return canEditRecord(editor, authUser);
+  }, [editor, authUser]);
+
   const updateSheetMetadata = useCallback((metadata) => {
+    if (!canEditCurrentRecord) return;
     setEditor(previous => {
       if (!previous) return previous;
       const updatedSheets = previous.sheets.map((s, idx) => {
@@ -209,6 +248,11 @@ function LpaPageContent({ viewContext }) {
   const saveEditor = async () => {
     if (!editor || requestInFlight.current) return false;
 
+    if (!canEditCurrentRecord) {
+      setMessage({ error: true, text: 'You are in view-only mode. Only the record creator or an administrator can edit and save changes.' });
+      return false;
+    }
+
     // Mandatory validation for Assembly check sheet: Date, Shift, Department
     if (editor.section === 'assembly' && isAssemblyCheckSheet(sheet)) {
       const formDate = sheet?.date || editor?.date || editor?.auditDate;
@@ -244,7 +288,12 @@ function LpaPageContent({ viewContext }) {
     finally { requestInFlight.current = false; setBusy(false); }
   };
   const deleteWorkbook = async record => {
-    if (!record.id || requestInFlight.current || !confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
+    if (!record.id || requestInFlight.current) return;
+    if (!canEditRecord(record, authUser)) {
+      setMessage({ error: true, text: 'You do not have permission to delete this LPA record. Only the creator or an admin can delete it.' });
+      return;
+    }
+    if (!confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
     requestInFlight.current = true;
     setBusy(true);
     try {
@@ -357,48 +406,61 @@ function LpaPageContent({ viewContext }) {
 
     const targetLevel = formData.targetLevel || formData.level || 'L3';
 
-    // 1. Hierarchy of levels:
-    // If user clicked L1 -> default columns Level 3, Level 2, Level 1
-    // If user clicked L2 -> default columns Level 3, Level 2
-    // If user clicked L3 -> default columns Level 3
-    let targetLevels = ['L3'];
-    if (targetLevel === 'L1') {
-      targetLevels = ['L3', 'L2', 'L1'];
-    } else if (targetLevel === 'L2') {
+    // 1. Fetch existing same-day data when creating Level 1 or Level 2:
+    let sameDaySources = null;
+    if (targetLevel === 'L1' || targetLevel === 'L2') {
+      try {
+        sameDaySources = await lpaApi.getSameDaySourceData({
+          section: formData.section,
+          unit: targetUnit,
+          auditDate: formData.date,
+          department: formData.department,
+          line: formData.line
+        });
+      } catch (err) {
+        console.warn('Backend same-day query fallback to memory records:', err);
+      }
+
+      if (!sameDaySources || (!sameDaySources.sourceSheets && !sameDaySources.records)) {
+        const sameDayRecords = records.filter(rec =>
+          rec.section === formData.section &&
+          (rec.unit === targetUnit || (!rec.unit && targetUnit === 'Bawal')) &&
+          (rec.auditDate === formData.date || rec.date === formData.date) &&
+          (!formData.department || !rec.department || rec.department.toLowerCase() === formData.department.toLowerCase()) &&
+          (!formData.line || !rec.line || rec.line === formData.line)
+        );
+        sameDaySources = sameDayRecords;
+      }
+    }
+
+    // Inspect same-day sources: ONLY shifts with actual same-day data will be included!
+    const normSources = normalizeSourceSheets(sameDaySources);
+    const availableL3Shifts = ['A', 'B', 'C'].filter(sh => {
+      const s = normSources[`L3_${sh}`];
+      return Boolean(s && sheetHasData(s, sh));
+    });
+    const hasL2Data = Boolean(normSources.L2 && sheetHasData(normSources.L2));
+
+    let targetLevels = [];
+    let effectiveShifts = [];
+
+    if (targetLevel === 'L2') {
       targetLevels = ['L3', 'L2'];
+      effectiveShifts = availableL3Shifts.length > 0 ? availableL3Shifts : [formData.shift || 'G'];
+    } else if (targetLevel === 'L1') {
+      targetLevels = ['L3', 'L2', 'L1'];
+      effectiveShifts = availableL3Shifts.length > 0 ? availableL3Shifts : [formData.shift || 'G'];
     } else {
       targetLevels = ['L3'];
+      effectiveShifts = [formData.shift || 'A'];
     }
 
-    const shift = formData.shift || 'A';
-    const l3Shifts = ['A', 'B', 'C'].includes(shift) ? [shift] : ['A'];
-
-    // 2. Fetch existing same-day data when creating Level 1 or Level 2:
-    // This allows the newly created Level 2 or Level 1 sheet to pre-populate and display
-    // existing Level 3 (and Level 2) audit records from that same day in read-only mode.
-    const existingSourceSheets = [];
-    if (targetLevel === 'L1' || targetLevel === 'L2') {
-      const sameDayRecords = records.filter(rec =>
-        rec.section === formData.section &&
-        (rec.unit === targetUnit || (!rec.unit && targetUnit === 'Bawal')) &&
-        (rec.auditDate === formData.date || rec.date === formData.date) &&
-        (!formData.department || !rec.department || rec.department.toLowerCase() === formData.department.toLowerCase()) &&
-        (!formData.line || !rec.line || rec.line === formData.line)
-      );
-
-      sameDayRecords.forEach(rec => {
-        if (Array.isArray(rec.sheets)) {
-          rec.sheets.forEach(s => existingSourceSheets.push(s));
-        }
-      });
-    }
-
-    // 3. Base Template & Clean New Sheet Creation
+    // 2. Base Template & Clean New Sheet Creation
     const baseTpl = isAssembly ? assemblyTemplate : ccTemplate;
     const newSheets = baseTpl.sheets.map((baseSheet) => {
       const createdSheet = isAssembly
-        ? createBlankAssemblySheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets)
-        : createBlankCcSheet(baseSheet, formData.date, targetLevels, l3Shifts, existingSourceSheets);
+        ? createBlankAssemblySheet(baseSheet, formData.date, targetLevels, effectiveShifts, sameDaySources, targetLevel)
+        : createBlankCcSheet(baseSheet, formData.date, targetLevels, effectiveShifts, sameDaySources, targetLevel);
 
       return {
         ...createdSheet,
@@ -414,17 +476,20 @@ function LpaPageContent({ viewContext }) {
       };
     });
 
-    const levelNames = targetLevels.map(l => l === 'L3' ? 'Level 3 Daily' : l === 'L2' ? 'Level 2 Weekly' : l === 'L1' ? 'Level 1 Monthly' : l);
-    const levelLabel = levelNames.join(' + ');
+    const createdLevelName = targetLevel === 'L3'
+      ? `Level 3 (Shift ${formData.shift || 'A'})`
+      : targetLevel === 'L2'
+        ? 'Level 2'
+        : 'Level 1';
 
     const newRecord = {
       section: formData.section,
-      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${formData.date} (${levelLabel}) · Shift ${formData.shift || 'A'}`,
+      name: `${isAssembly ? 'Assembly LPA Check Sheet' : 'C&C LPA Check Sheet'} · ${formData.date} (${createdLevelName}) · Shift ${formData.shift || (targetLevel === 'L3' ? 'A' : 'G')}`,
       unit: targetUnit,
       targetLevel,
       level: targetLevel,
-      levels: targetLevels,
-      shifts: l3Shifts,
+      levels: [targetLevel],
+      shifts: [formData.shift || (targetLevel === 'L3' ? 'A' : 'G')],
       auditDate: formData.date,
       date: formData.date,
       shift: formData.shift,
@@ -447,33 +512,17 @@ function LpaPageContent({ viewContext }) {
 
     await openSheet(savedRecord || newRecord, 0);
   };
-
-  const blankAssemblyTemplate = useMemo(() => ({
-    ...assemblyTemplate,
-    sheets: assemblyTemplate.sheets.map(s => createBlankAssemblySheet(s, pdcaDate))
-  }), [pdcaDate]);
-
-  const blankCcTemplate = useMemo(() => ({
-    ...ccTemplate,
-    sheets: ccTemplate.sheets.map(s => createBlankCcSheet(s, pdcaDate))
-  }), [pdcaDate]);
-
   const sheet = editor?.sheets?.[sheetIndex];
   const scopedRecords = records.filter(record => record.unit === selectedUnit);
-  const matchingCcTemplate = scopedRecords.find(record => record.section === 'cc' && record.name === ccTemplate.name);
   const sectionRecords = scopedRecords.filter(record => record.section === activeSection);
   const displayRecords = !selectedUnit ? [] : activeSection === 'assembly'
-    ? (sectionRecords.length ? sectionRecords.map(upgradeAssemblyRecord) : [...sectionRecords, { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1' }])
-    : matchingCcTemplate
-      ? sectionRecords.map(record => record === matchingCcTemplate ? upgradeCcTemplateRecord(record) : record)
-      : [...sectionRecords, { ...blankCcTemplate, unit: selectedUnit, level: 'L1' }];
-  const baseVisibleRecords = displayRecords.filter(record => record.unit === selectedUnit && record.section === activeSection && (!record.auditDate || record.auditDate === pdcaDate) && `${record.name} ${record.sheets.map(item => item.name).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase()));
-  const visibleRecords = baseVisibleRecords.length > 0 ? baseVisibleRecords : (
-    !selectedUnit ? [] : [
-      activeSection === 'assembly'
-        ? { ...blankAssemblyTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${assemblyTemplate.name.replace(/\.[^/.]+$/, '')} · ${pdcaDate}` }
-        : { ...blankCcTemplate, unit: selectedUnit, level: 'L1', auditDate: pdcaDate, name: `${ccTemplate.name} · ${pdcaDate}` }
-    ]
+    ? sectionRecords.map(upgradeAssemblyRecord)
+    : sectionRecords.map(record => (record.name === ccTemplate.name ? upgradeCcTemplateRecord(record) : record));
+  const visibleRecords = displayRecords.filter(record =>
+    record.unit === selectedUnit &&
+    record.section === activeSection &&
+    (!record.auditDate || record.auditDate === pdcaDate) &&
+    `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
     const rows = records.flatMap(record => record.sheets.map(current => ({
@@ -496,6 +545,7 @@ function LpaPageContent({ viewContext }) {
     return { anchors, hidden };
   }, [sheet?.merges]);
   const changeCell = (rowIndex, columnIndex, value, extraUpdates = []) => {
+    if (!canEditCurrentRecord) return;
     setEditor(previous => ({
       ...previous, sheets: previous.sheets.map((current, index) => index !== sheetIndex ? current : {
         ...current, rows: (() => {
@@ -529,6 +579,139 @@ function LpaPageContent({ viewContext }) {
       templates: { assemblyTemplate, ccTemplate }
     });
   }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, pdcaSaveVersion]);
+
+  // Custom PDCA Sheets created by Admin (isolated per section & plant)
+  const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
+      setCustomPdcaSheets(saved ? JSON.parse(saved) : []);
+    } catch {
+      setCustomPdcaSheets([]);
+    }
+  }, [activeSection, selectedUnit]);
+
+  const [isCreatePdcaModalOpen, setIsCreatePdcaModalOpen] = useState(false);
+  const [newPdcaForm, setNewPdcaForm] = useState({
+    title: '',
+    date: todayIso,
+    unit: 'Bawal',
+    department: 'Assembly'
+  });
+
+  const allPdcaSheets = useMemo(() => {
+    const baseSheet = {
+      id: `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`,
+      title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+      date: pdcaDate || todayIso,
+      unit: selectedUnit || 'Bawal',
+      department: activeSection === 'assembly' ? 'Assembly' : 'C&C',
+      isDefault: true
+    };
+    return [baseSheet, ...customPdcaSheets];
+  }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets]);
+
+  const handleOpenSpecificPdcaSheet = (sheetItem) => {
+    let sheetData = null;
+    try {
+      const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
+      if (saved) {
+        sheetData = JSON.parse(saved);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    if (!sheetData) {
+      const fallbackTopic = getLpaPdcaTopic({
+        section: activeSection,
+        unit: sheetItem.unit || selectedUnit,
+        level: 'L1',
+        date: sheetItem.date || pdcaDate,
+        records,
+        templates: { assemblyTemplate, ccTemplate }
+      });
+      sheetData = fallbackTopic.sheet;
+      if (sheetData?.headerInfo) {
+        sheetData.headerInfo.topicName = sheetItem.title;
+      }
+    }
+    setCustomPdcaTopic({
+      id: sheetItem.id,
+      topic: sheetItem.title,
+      section: activeSection,
+      scope: 'Company',
+      plant: sheetItem.unit || selectedUnit || 'Bawal',
+      sheet: sheetData
+    });
+    setIsPdcaSheetOpen(true);
+  };
+
+  const handleCreateCustomPdcaSheet = (e) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      alert('Only administrators are authorized to add new PDCA sheets.');
+      return;
+    }
+    const targetUnit = newPdcaForm.unit || selectedUnit || 'Bawal';
+    const newId = `PDCA-LPA-${activeSection.toUpperCase()}-${targetUnit}-${Date.now()}`;
+    const newSheet = {
+      id: newId,
+      title: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+      date: newPdcaForm.date || pdcaDate || todayIso,
+      unit: targetUnit,
+      department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      createdAt: new Date().toISOString()
+    };
+
+    const initialTopic = getLpaPdcaTopic({
+      section: activeSection,
+      unit: targetUnit,
+      level: 'L1',
+      date: newSheet.date,
+      records,
+      templates: { assemblyTemplate, ccTemplate }
+    });
+    const customSnapshot = {
+      ...initialTopic.sheet,
+      headerInfo: {
+        ...(initialTopic.sheet?.headerInfo || {}),
+        topicName: newSheet.title
+      }
+    };
+    saveLpaPdcaSnapshot(newId, customSnapshot);
+
+    const updated = [...customPdcaSheets, newSheet];
+    setCustomPdcaSheets(updated);
+    try {
+      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
+    } catch (err) {
+      console.error(err);
+    }
+    setIsCreatePdcaModalOpen(false);
+    setMessage({ text: `✓ PDCA Sheet "${newSheet.title}" created successfully.` });
+  };
+
+  const handleDeleteCustomPdcaSheet = (sheetId) => {
+    if (!isAdmin) return;
+    if (!confirm('Are you sure you want to delete this PDCA sheet?')) return;
+    const updated = customPdcaSheets.filter(s => s.id !== sheetId);
+    setCustomPdcaSheets(updated);
+    try {
+      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
+      localStorage.removeItem(`lpa_pdca_saved_${sheetId}`);
+    } catch (err) {
+      console.error(err);
+    }
+    setMessage({ text: 'PDCA sheet deleted.' });
+  };
 
   const handleBackFromPDCA = () => {
     setCustomPdcaTopic(null);
@@ -627,7 +810,14 @@ function LpaPageContent({ viewContext }) {
 
   if (editor && sheet) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden">
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 bg-white shrink-0">
-      <button type="button" disabled={busy} onClick={saveEditor} className={primary}><Save size={16} />{busy ? 'Saving…' : 'Save'}</button>
+      {canEditCurrentRecord ? (
+        <button type="button" disabled={busy} onClick={saveEditor} className={primary}><Save size={16} />{busy ? 'Saving…' : 'Save'}</button>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold" title="Only the creator and admin can edit this form">
+          <Eye size={14} className="text-amber-600" />
+          View Only
+        </span>
+      )}
       <button type="button" disabled={busy} onClick={handleBack} className={button}><ArrowLeft size={16} />Back</button>
       <span className="text-xs text-slate-500 truncate max-w-xs">{editor.name} · {sheet.name}{dirty ? ' · Unsaved changes' : ''}</span>
       <div className="ml-auto flex items-center gap-2">
@@ -651,33 +841,24 @@ function LpaPageContent({ viewContext }) {
         <AssemblySheet
           sheet={sheet}
           editor={editor}
-          disabled={busy}
+          disabled={busy || !canEditCurrentRecord}
           onChange={changeCell}
           onMetadataChange={updateSheetMetadata}
           isAdmin={isAdmin}
         />
       </div> : editor.section === 'cc' && isCcCheckSheet(sheet) ? <div className="cc-form-stage">
         <div style={{ zoom: `${zoom}%` }}>
-          <CcSheet sheet={sheet} editor={editor} disabled={busy} onChange={changeCell} />
+          <CcSheet
+            sheet={sheet}
+            editor={editor}
+            disabled={busy || !canEditCurrentRecord}
+            onChange={changeCell}
+            onMetadataChange={updateSheetMetadata}
+            isAdmin={isAdmin}
+          />
         </div>
       </div> : <div style={{ zoom: `${zoom}%` }} className="min-w-full w-max">
-        <table className="border-collapse text-xs table-fixed bg-white" aria-label={`${sheet.name} editable LPA worksheet`}>
-          <colgroup><col style={{ width: 40 }} />{Array.from({ length: sheet.columnCount }, (_, c) => <col key={c} style={{ width: Math.max(100, Math.min(380, (sheet.columns?.[c]?.wch || 20) * 7)) }} />)}</colgroup>
-          <thead><tr><th className="border border-slate-300 bg-slate-100" />{Array.from({ length: sheet.columnCount }, (_, c) => <th key={c} className="border border-slate-300 bg-slate-100 p-1 sticky top-0 z-10">{columnName(c)}</th>)}</tr></thead>
-          <tbody>{sheet.rows.map((row, r) => <tr key={r} style={{ height: sheet.rowSizes?.[r]?.hpt ? `${sheet.rowSizes[r].hpt}pt` : undefined }}>
-            <th className="border border-slate-300 bg-slate-100 p-1 text-slate-500">{r + 1}</th>
-            {Array.from({ length: sheet.columnCount }, (_, c) => {
-              const key = `${r}:${c}`;
-              if (mergeMap.hidden.has(key)) return null;
-              const merge = mergeMap.anchors.get(key);
-              const cell = row[c];
-              const fill = cell?.style?.fgColor?.rgb;
-              return <td key={c} rowSpan={merge ? merge.e.r - r + 1 : 1} colSpan={merge ? merge.e.c - c + 1 : 1} className="border border-slate-300 align-top p-0" style={{ backgroundColor: fill && /^[0-9A-F]{6,8}$/i.test(fill) ? `#${fill.slice(-6)}` : undefined }}>
-                <textarea disabled={busy} aria-label={`${sheet.name} ${columnName(c)}${r + 1}`} value={cell?.formatted ?? String(cell?.value ?? '')} onChange={event => changeCell(r, c, event.target.value)} rows={Math.max(2, Math.min(8, String(cell?.formatted || '').split('\n').length))} title={cell?.formula ? `Imported formula: =${cell.formula}. Editing replaces this calculated value.` : undefined} className="block w-full min-h-10 h-full resize-y bg-transparent p-2 outline-none focus:bg-blue-50 focus:ring-2 focus:ring-inset focus:ring-blue-500 whitespace-pre-wrap" />
-              </td>;
-            })}
-          </tr>)}</tbody>
-        </table>
+        <LpaTable sheet={sheet} onChange={changeCell} disabled={busy || !canEditCurrentRecord} zoom={zoom} />
       </div>}
     </div>
 
@@ -767,7 +948,15 @@ function LpaPageContent({ viewContext }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <button type="button" onClick={exportAllRecords} className={button}><Download size={16} />Export All Records</button>
+          <button
+            type="button"
+            onClick={() => navigate('/cms/lpa/graphs')}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:from-blue-700 hover:to-indigo-700 hover:shadow-md transition-all cursor-pointer"
+            title="Open LPA Analytics & Graphs (Assembly & C&C Sheets)"
+          >
+            <BarChart3 size={16} />
+            <span>Graphs</span>
+          </button>
         </div>
       </div>
       <input ref={fileInput} type="file" accept=".xlsx,.xls" onChange={selectFile} className="hidden" aria-label="Upload LPA Excel" />
@@ -860,8 +1049,28 @@ function LpaPageContent({ viewContext }) {
                       />
                     </label>
                   </div>
-                  <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                    Single PDCA sheet for {activeSection === 'assembly' ? 'Assembly' : 'C&C'} · Add observations via rows inside the sheet
+
+                  <div className="flex items-center gap-2.5">
+                    {/* Create PDCA Option - Admin Only */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewPdcaForm({
+                            title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - PDCA Sheet #${allPdcaSheets.length + 1}`,
+                            date: pdcaDate || todayIso,
+                            unit: selectedUnit || 'Bawal',
+                            department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
+                          });
+                          setIsCreatePdcaModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
+                        title="Create new PDCA Sheet (Admin Only)"
+                      >
+                        <Plus size={15} />
+                        <span>Create PDCA</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -880,14 +1089,17 @@ function LpaPageContent({ viewContext }) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
-                        const sheetTitle = `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`;
                         const query = searchQuery.trim().toLowerCase();
-                        const matchesSearch = !query ||
-                          sheetTitle.toLowerCase().includes(query) ||
-                          (selectedUnit || '').toLowerCase().includes(query) ||
-                          (activeSection === 'assembly' ? 'assembly' : 'c&c').includes(query);
+                        const filteredSheets = allPdcaSheets.filter(sh => {
+                          if (!query) return true;
+                          return (
+                            sh.title.toLowerCase().includes(query) ||
+                            (sh.unit || '').toLowerCase().includes(query) ||
+                            (sh.department || '').toLowerCase().includes(query)
+                          );
+                        });
 
-                        if (!matchesSearch) {
+                        if (filteredSheets.length === 0) {
                           return (
                             <tr>
                               <td colSpan={7} className="p-8 text-center text-sm text-slate-500">
@@ -897,60 +1109,83 @@ function LpaPageContent({ viewContext }) {
                           );
                         }
 
-                        const rows = pdcaTopic?.sheet?.rows || [];
-                        const activeCount = rows.filter(r =>
-                          Boolean(
-                            r.observation?.trim() ||
-                            r.lineArea?.trim() ||
-                            (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-                            r.rootCause?.trim() ||
-                            r.counterMeasure?.trim()
-                          )
-                        ).length;
+                        return filteredSheets.map((sh, idx) => {
+                          let rows = [];
+                          try {
+                            const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
+                            if (saved) {
+                              rows = JSON.parse(saved)?.rows || [];
+                            } else if (sh.isDefault) {
+                              rows = pdcaTopic?.sheet?.rows || [];
+                            }
+                          } catch {}
 
-                        return (
-                          <tr className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-4 text-slate-500 font-medium">1</td>
-                            <td className="px-4 py-4 font-semibold">
-                              <button
-                                type="button"
-                                onClick={() => setIsPdcaSheetOpen(true)}
-                                className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
-                                title={`Open ${sheetTitle}`}
-                              >
-                                {sheetTitle}
-                              </button>
-                            </td>
-                            <td className="px-4 py-4 text-slate-700">{selectedUnit || 'Bawal'}</td>
-                            <td className="px-4 py-4 text-slate-700">{activeSection === 'assembly' ? 'Assembly' : 'C&C'}</td>
-                            <td className="px-4 py-4 text-slate-700">
-                              {activeCount > 0 ? (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                                  {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
+                          const activeCount = rows.filter(r =>
+                            Boolean(
+                              r.observation?.trim() ||
+                              r.lineArea?.trim() ||
+                              (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
+                              r.rootCause?.trim() ||
+                              r.counterMeasure?.trim()
+                            )
+                          ).length;
+
+                          return (
+                            <tr key={sh.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-4 text-slate-500 font-medium">{idx + 1}</td>
+                              <td className="px-4 py-4 font-semibold">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSpecificPdcaSheet(sh)}
+                                  className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                  title={`Open ${sh.title}`}
+                                >
+                                  {sh.title}
+                                </button>
+                              </td>
+                              <td className="px-4 py-4 text-slate-700">{sh.unit || selectedUnit || 'Bawal'}</td>
+                              <td className="px-4 py-4 text-slate-700">{sh.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C')}</td>
+                              <td className="px-4 py-4 text-slate-700">
+                                {activeCount > 0 ? (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
+                                    {rows.length || 10} rows (Click to add observations)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-slate-700">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Active
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
-                                  {rows.length} rows (Click to add observations)
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-4 text-slate-700">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Active
-                              </span>
-                            </td>
-                            <td className="px-4 py-4 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setIsPdcaSheetOpen(true)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
-                                title="Open PDCA Sheet"
-                              >
-                                <Eye size={14} /> Open
-                              </button>
-                            </td>
-                          </tr>
-                        );
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                <div className="inline-flex items-center gap-1.5 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSpecificPdcaSheet(sh)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                                    title="Open PDCA Sheet"
+                                  >
+                                    <Eye size={14} /> Open
+                                  </button>
+                                  {isAdmin && !sh.isDefault && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCustomPdcaSheet(sh.id)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer transition-colors"
+                                      title="Delete PDCA Sheet"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
                       })()}
                     </tbody>
                   </table>
@@ -1054,7 +1289,7 @@ function LpaPageContent({ viewContext }) {
                               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 {levelsList.map(lvl => (
                                   <span key={lvl} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                    {lvl === 'L3' ? 'Level 3 Daily' : lvl === 'L2' ? 'Level 2 Weekly' : lvl === 'L1' ? 'Level 1 Monthly' : lvl}
+                                    {lvl === 'L3' ? 'Level 3' : lvl === 'L2' ? 'Level 2' : lvl === 'L1' ? 'Level 1' : lvl}
                                   </span>
                                 ))}
                                 {shiftDisplay && (
@@ -1085,7 +1320,7 @@ function LpaPageContent({ viewContext }) {
                             <td className="px-4 py-4 text-slate-700">{secVal}</td>
                             <td className="px-4 py-4 text-slate-700">{lineVal}</td>
                             <td className="px-4 py-4 text-right">
-                              {record.id ? (
+                              {record.id && canEditRecord(record, authUser) ? (
                                 <button
                                   type="button"
                                   disabled={busy}
@@ -1106,7 +1341,7 @@ function LpaPageContent({ viewContext }) {
                   </table>
                   {visibleRecords.length === 0 && (
                     <p className="p-8 text-center text-sm text-slate-500">
-                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Upload an Excel workbook to get started.
+                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Click "+ Create LPA" to create a check sheet.
                     </p>
                   )}
                 </div>
@@ -1138,6 +1373,84 @@ function LpaPageContent({ viewContext }) {
         initialUnit={selectedUnit}
         initialDate={pdcaDate}
       />
+
+      {/* Create New PDCA Sheet Modal (Admin Only) */}
+      {isCreatePdcaModalOpen && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <ClipboardList className="text-blue-600" size={18} />
+                <span>Create New PDCA Sheet</span>
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Admin Only
+              </span>
+            </div>
+            <form onSubmit={handleCreateCustomPdcaSheet} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Sheet / Topic Title</label>
+                <input
+                  type="text"
+                  required
+                  value={newPdcaForm.title}
+                  onChange={e => setNewPdcaForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder={`e.g. ${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA) #2`}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Audit Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={newPdcaForm.date}
+                    onChange={e => setNewPdcaForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Unit</label>
+                  <select
+                    value={newPdcaForm.unit}
+                    onChange={e => setNewPdcaForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none cursor-pointer"
+                  >
+                    {UNITS.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                <input
+                  type="text"
+                  value={newPdcaForm.department}
+                  onChange={e => setNewPdcaForm(prev => ({ ...prev, department: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none bg-slate-50"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatePdcaModalOpen(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 shadow-xs cursor-pointer"
+                >
+                  Create Sheet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   </div>;
 }

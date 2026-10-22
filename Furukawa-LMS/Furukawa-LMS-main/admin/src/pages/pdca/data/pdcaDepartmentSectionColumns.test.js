@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmptyRow, createDefaultRows } from './pdcaStore.js';
 import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
-import { VERIFIED_SECTION_MASTER } from './pdcaSections.js';
+import { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from './pdcaSections.js';
 
 test('1. PDCA row schema contains Department, Section, and Line/Area fields', () => {
   const row = createEmptyRow();
@@ -281,3 +281,48 @@ test('6. Form row round-trip serialization retains all Department, Section, and 
   assert.equal(parsed.lineAreaSectionId, 70);
   assert.equal(parsed.responsiblePersonDept, 'Quality');
 });
+
+test('7. isSectionRelatedToDepartment strictly filters section options to only related sections per department', () => {
+  // When no department is chosen, all sections are accessible
+  const allForEmpty = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, ''));
+  assert.equal(allForEmpty.length, VERIFIED_SECTION_MASTER.length);
+
+  // When C&C is chosen, strictly C&C crimping sections are returned (no Assembly, no Quality, no Store)
+  const ccSections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'C&C'));
+  assert.equal(ccSections.length, 4);
+  assert.ok(ccSections.every((s) => s.category === 'CRIMPING' || s.name.toLowerCase().includes('c&c')));
+  assert.ok(!ccSections.some((s) => s.name === 'Assembly Production'));
+  assert.ok(!ccSections.some((s) => s.name === 'Store'));
+  assert.ok(!ccSections.some((s) => s.name === 'Assembly Quality'));
+
+  // When Assembly is chosen, only assembly sections are returned
+  const assemblySections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'Assembly'));
+  assert.equal(assemblySections.length, 9);
+  assert.ok(assemblySections.every((s) => s.category === 'Assembly'));
+  assert.ok(!assemblySections.some((s) => s.name === 'Assembly Quality')); // Belongs to Quality
+  assert.ok(!assemblySections.some((s) => s.name === 'C&C machine'));
+
+  // When Quality is chosen, all quality sections including Assembly Quality are returned
+  const qualitySections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'Quality'));
+  assert.equal(qualitySections.length, 7);
+  assert.ok(qualitySections.every((s) => s.category === 'Quality'));
+  assert.ok(qualitySections.some((s) => s.name === 'Assembly Quality'));
+
+  // Maintenance includes Maintenance and Utility
+  const maintSections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'Maintenance'));
+  assert.equal(maintSections.length, 2);
+  assert.ok(maintSections.some((s) => s.name === 'Maintenance'));
+  assert.ok(maintSections.some((s) => s.name === 'Utility'));
+
+  // HR includes Training cell and GA
+  const hrSections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'HR'));
+  assert.equal(hrSections.length, 2);
+  assert.ok(hrSections.some((s) => s.name === 'Training cell'));
+  assert.ok(hrSections.some((s) => s.name === 'GA'));
+
+  // Store includes Store
+  const storeSections = VERIFIED_SECTION_MASTER.filter((s) => isSectionRelatedToDepartment(s, 'Store'));
+  assert.equal(storeSections.length, 1);
+  assert.equal(storeSections[0].name, 'Store');
+});
+

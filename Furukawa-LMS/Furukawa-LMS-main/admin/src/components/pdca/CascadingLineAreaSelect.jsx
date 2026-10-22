@@ -312,11 +312,11 @@ export default function CascadingLineAreaSelect({
       if (compact) {
         return (
           <span
-            className="font-medium text-slate-800 text-[10px] truncate block text-center whitespace-nowrap"
+            className="font-medium text-slate-800 text-[12.5px] truncate block text-center whitespace-nowrap"
             title={`${sectionName} / ${withCode(lineName, lineCode)}`}
           >
             {lineName}
-            {lineCode && <span className="ml-0.5 font-mono text-[8.5px] font-normal text-slate-400">({lineCode})</span>}
+            {lineCode && <span className="ml-0.5 font-mono text-[10px] font-normal text-slate-400">({lineCode})</span>}
           </span>
         );
       }
@@ -383,11 +383,11 @@ export default function CascadingLineAreaSelect({
         title={hasValue ? withCode(selection.sectionName || value, selection.sectionCode) : placeholder}
       >
         <div className="flex items-center gap-1 min-w-0 flex-1 justify-center">
-          <Layers className="w-3 h-3 text-blue-600 shrink-0" />
+          <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           {hasValue && displayLabel ? (
             displayLabel
           ) : (
-            <span className="text-slate-400 font-normal text-[10px] italic truncate whitespace-nowrap">{placeholder}</span>
+            <span className="text-slate-400 font-normal text-[12px] italic truncate whitespace-nowrap">{placeholder}</span>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">

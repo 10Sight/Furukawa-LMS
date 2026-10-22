@@ -10,32 +10,32 @@ export const LPA_LEVEL_OPTIONS = [
   {
     id: 'L3',
     key: 'L3',
-    name: 'Level 3 Daily',
-    title: 'Level 3 (Daily)',
-    badge: 'Daily',
-    freqText: 'Daily basis',
+    name: 'Level 3',
+    title: 'Level 3',
+    badge: 'L3',
+    freqText: 'Level 3',
     levelsIncluded: ['L3'],
-    columnsDesc: 'Level 3 Daily columns'
+    columnsDesc: 'Shift A / Shift B check'
   },
   {
     id: 'L2',
     key: 'L2',
-    name: 'Level 2 (Weekly)',
-    title: 'Level 2 (Weekly)',
-    badge: 'Weekly',
-    freqText: 'Weekly basis',
+    name: 'Level 2',
+    title: 'Level 2',
+    badge: 'L2',
+    freqText: 'Level 2',
     levelsIncluded: ['L2'],
-    columnsDesc: 'Level 2 Weekly columns'
+    columnsDesc: 'Fetches same-day L3 Shift A & B'
   },
   {
     id: 'L1',
     key: 'L1',
-    name: 'Level 1 (Monthly)',
-    title: 'Level 1 (Monthly)',
-    badge: 'Monthly',
-    freqText: 'Monthly basis',
+    name: 'Level 1',
+    title: 'Level 1',
+    badge: 'L1',
+    freqText: 'Level 1',
     levelsIncluded: ['L1'],
-    columnsDesc: 'Level 1 Monthly columns'
+    columnsDesc: 'Fetches same-day L2 & L3 shifts'
   }
 ];
 

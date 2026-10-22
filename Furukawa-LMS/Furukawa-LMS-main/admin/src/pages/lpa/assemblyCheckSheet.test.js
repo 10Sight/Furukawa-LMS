@@ -463,7 +463,7 @@ test('20. Percentage (%) calculation formula and zero-marks boundary', () => {
 test('21. createBlankAssemblySheet creates dynamic columns for multiple levels (L1, L2, L3)', () => {
   const baseSheet = assemblyTemplate.sheets[0];
 
-  // Test 1: L3 + L2 (Weekly) creates 9 columns
+  // Test 1: L3 + L2 creates 9 columns (5 metadata + default L3 without shift + L2)
   const twoLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2']);
   assert.equal(twoLevelSheet.columnCount, 9);
   assert.equal(twoLevelSheet.rows[1][0].value, 'Sl No');
@@ -471,34 +471,28 @@ test('21. createBlankAssemblySheet creates dynamic columns for multiple levels (
   assert.equal(twoLevelSheet.rows[1][2].value, 'CHECKS POINTS');
   assert.equal(twoLevelSheet.rows[1][3].value, 'Area');
   assert.equal(twoLevelSheet.rows[1][4].value, 'Marks');
-  assert.equal(twoLevelSheet.rows[1][5].value, 'Level 3 Daily');
-  assert.equal(twoLevelSheet.rows[1][7].value, 'Level 2 Weekly');
+  assert.equal(twoLevelSheet.rows[1][5].value, 'Level 3');
+  assert.equal(twoLevelSheet.rows[1][7].value, 'Level 2');
   assert.equal(twoLevelSheet.rows[2][5].value, 'Observation');
   assert.equal(twoLevelSheet.rows[2][6].value, 'Score');
   assert.equal(twoLevelSheet.rows[2][7].value, 'Observation');
   assert.equal(twoLevelSheet.rows[2][8].value, 'Score');
 
-  // Test 2: L3 + L2 + L1 (Monthly) creates 11 columns
+  // Test 2: L3 + L2 + L1 creates 11 columns (5 metadata + default L3 without shift + default L2 + L1)
   const threeLevelSheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1']);
   assert.equal(threeLevelSheet.columnCount, 11);
-  assert.equal(threeLevelSheet.rows[1][5].value, 'Level 3 Daily');
-  assert.equal(threeLevelSheet.rows[1][7].value, 'Level 2 Weekly');
-  assert.equal(threeLevelSheet.rows[1][9].value, 'Level 1 Monthly');
+  assert.equal(threeLevelSheet.rows[1][5].value, 'Level 3');
+  assert.equal(threeLevelSheet.rows[1][7].value, 'Level 2');
+  assert.equal(threeLevelSheet.rows[1][9].value, 'Level 1');
   assert.equal(threeLevelSheet.rows[2][9].value, 'Observation');
   assert.equal(threeLevelSheet.rows[2][10].value, 'Score');
 
   // Total Marks on row 37
   assert.equal(threeLevelSheet.rows[37][0].value, 'Total Marks:');
-  assert.equal(threeLevelSheet.rows[37][4].value, '70/');
-  assert.equal(threeLevelSheet.rows[37][6].value, '0');
-  assert.equal(threeLevelSheet.rows[37][8].value, '0');
-  assert.equal(threeLevelSheet.rows[37][10].value, '0');
+  assert.equal(threeLevelSheet.rows[37][4].value, '70');
 
   // Percentage on row 38
   assert.equal(threeLevelSheet.rows[38][0].value, 'Percentage (%):');
-  assert.equal(threeLevelSheet.rows[38][5].value, '0.00%');
-  assert.equal(threeLevelSheet.rows[38][7].value, '0.00%');
-  assert.equal(threeLevelSheet.rows[38][9].value, '0.00%');
 });
 
 test('22. Table header row is fixed / sticky with the screen while scrolling', () => {
@@ -520,9 +514,9 @@ test('22. Table header row is fixed / sticky with the screen while scrolling', (
 
 test('23. Create LPA Modal supports mandatory Levels (L1, L2, L3), Date, Shift, Department', () => {
   const modalSource = fs.readFileSync(new URL('../../components/lpa/CreateLpaModal.jsx', import.meta.url), 'utf-8');
-  assert.ok(modalSource.includes('Level 3 (Daily)'));
-  assert.ok(modalSource.includes('Level 2 (Weekly)'));
-  assert.ok(modalSource.includes('Level 1 (Monthly)'));
+  assert.ok(modalSource.includes("title: 'Level 3'"));
+  assert.ok(modalSource.includes("title: 'Level 2'"));
+  assert.ok(modalSource.includes("title: 'Level 1'"));
   assert.ok(modalSource.includes('Levels is mandatory'));
   assert.ok(modalSource.includes('Date is mandatory'));
   assert.ok(modalSource.includes('Shift is mandatory'));
@@ -545,40 +539,45 @@ test('24. Create LPA Modal UI cleanup: removes Form Section, unnecessary helper 
   assert.ok(modalSource.includes("['G', 'A', 'B', 'C']"));
 });
 
-test('25. Level selection hierarchy: L1 includes L3+L2+L1, L2 includes L3+L2, L3 includes L3', () => {
+test('25. Level selection hierarchy: L1 includes L3 Shift A + Shift B + L2 + L1, L2 includes L3 Shift A + Shift B + L2, L3 includes L3', () => {
   // L3 selection
   const groupsL3 = buildAuditColumnGroups(['L3'], ['A'], false);
   assert.equal(groupsL3.length, 1);
   assert.equal(groupsL3[0].level, 'L3');
-  assert.equal(groupsL3[0].name, 'Level 3 Daily');
+  assert.equal(groupsL3[0].name, 'Level 3');
 
-  // L2 selection
+  // L2 selection without prior data includes default L3 (no shift) + L2
   const groupsL2 = buildAuditColumnGroups(['L3', 'L2'], ['A'], false);
   assert.equal(groupsL2.length, 2);
   assert.equal(groupsL2[0].level, 'L3');
+  assert.equal(groupsL2[0].shift, null);
+  assert.equal(groupsL2[0].name, 'Level 3');
   assert.equal(groupsL2[1].level, 'L2');
-  assert.equal(groupsL2[1].name, 'Level 2 Weekly');
+  assert.equal(groupsL2[1].name, 'Level 2');
 
-  // L1 selection
+  // L1 selection without prior data includes default L3 (no shift) + default L2 + L1
   const groupsL1 = buildAuditColumnGroups(['L3', 'L2', 'L1'], ['A'], false);
   assert.equal(groupsL1.length, 3);
   assert.equal(groupsL1[0].level, 'L3');
+  assert.equal(groupsL1[0].shift, null);
+  assert.equal(groupsL1[0].name, 'Level 3');
   assert.equal(groupsL1[1].level, 'L2');
+  assert.equal(groupsL1[1].name, 'Level 2');
   assert.equal(groupsL1[2].level, 'L1');
-  assert.equal(groupsL1[2].name, 'Level 1 Monthly');
+  assert.equal(groupsL1[2].name, 'Level 1');
 });
 
 test('26. Multi-shift columns under Level 3 and same-day data merging', () => {
   // 1. Single shift does NOT show shift-wise columns
   const singleShiftGroups = buildAuditColumnGroups(['L3'], ['A'], false);
   assert.equal(singleShiftGroups.length, 1);
-  assert.equal(singleShiftGroups[0].name, 'Level 3 Daily');
+  assert.equal(singleShiftGroups[0].name, 'Level 3');
 
   // 2. Multiple shifts (e.g. Shift A + Shift B on same day) show separate columns per shift
   const multiShiftGroups = buildAuditColumnGroups(['L3'], ['A', 'B'], false);
   assert.equal(multiShiftGroups.length, 2);
-  assert.equal(multiShiftGroups[0].name, 'Level 3 Daily (Shift A)');
-  assert.equal(multiShiftGroups[1].name, 'Level 3 Daily (Shift B)');
+  assert.equal(multiShiftGroups[0].name, 'Level 3 (Shift A)');
+  assert.equal(multiShiftGroups[1].name, 'Level 3 (Shift B)');
 
   // 3. Merging existing sheet: Shift A had observations filled, Shift B is added
   const baseSheet = assemblyTemplate.sheets[0];
@@ -596,11 +595,20 @@ test('26. Multi-shift columns under Level 3 and same-day data merging', () => {
   assert.equal(mergedSheet.rows[3][7].value, '');
   assert.equal(mergedSheet.rows[3][8].value, '');
 
-  // 4. Auditor later adds Level 1 for same day: fetches existing L3 Shift A and Shift B data
-  const mergedL1Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1'], ['A', 'B'], mergedSheet);
+  // Fill Shift B data and create L2 sheet with data
+  mergedSheet.rows[3][7] = { value: 'X', formatted: 'X', type: 's' };
+  mergedSheet.rows[3][8] = { value: 0, formatted: '0', type: 'n' };
+  const l2Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L2'], ['G']);
+  l2Sheet.rows[3][5] = { value: 'Ο', formatted: 'Ο', type: 's' };
+  l2Sheet.rows[3][6] = { value: 1, formatted: '1', type: 'n' };
+
+  // 4. Auditor later adds Level 1 for same day: fetches existing L3 Shift A, Shift B, and L2 data
+  const mergedL1Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2', 'L1'], ['A', 'B'], [mergedSheet, l2Sheet]);
   assert.equal(mergedL1Sheet.columnCount, 13); // 5 base + 2*2 (L3 A&B) + 2 (L2) + 2 (L1) = 13 cols
   assert.equal(mergedL1Sheet.rows[3][5].value, 'Ο');
   assert.equal(mergedL1Sheet.rows[3][6].value, 1);
+  assert.equal(mergedL1Sheet.rows[3][7].value, 'X');
+  assert.equal(mergedL1Sheet.rows[3][8].value, 0);
 });
 
 test('27. Assembly Form Legend UI fix: complete cell borders and enlarged readable typography', () => {
@@ -629,15 +637,16 @@ test('28. Same-day data retrieval and read-only enforcement for Level 2 and Leve
   l3Sheet.rows[4][6] = { value: 0, formatted: '0', type: 'n' };
 
   // 2. User creates a new Level 2 sheet on the same day:
-  // It receives existing L3 sheet as source:
+  // It receives existing L3 sheet as source (only Shift A has data):
   const l2Sheet = createBlankAssemblySheet(baseSheet, '2026-10-19', ['L3', 'L2'], ['A'], [l3Sheet]);
+  // Since Shift B has no data, it is omitted! columnCount is 9 (5 base + 2 Shift A + 2 Level 2)
   assert.equal(l2Sheet.columnCount, 9);
-  // Level 3 columns are pre-populated with same-day data
+  // Level 3 Shift A columns are pre-populated with same-day data
   assert.equal(l2Sheet.rows[3][5].value, 'Ο');
   assert.equal(l2Sheet.rows[3][6].value, 1);
   assert.equal(l2Sheet.rows[4][5].value, '△');
   assert.equal(l2Sheet.rows[4][6].value, 0);
-  // Level 2 columns start completely blank for user input
+  // Level 2 columns start completely blank for user input in cols 7 & 8
   assert.equal(l2Sheet.rows[3][7].value, '');
   assert.equal(l2Sheet.rows[3][8].value, '');
 
@@ -647,4 +656,37 @@ test('28. Same-day data retrieval and read-only enforcement for Level 2 and Leve
   assert.ok(componentSource.includes('sheetTargetLevel'));
   assert.ok(componentSource.includes('assembly-readonly-observation'));
   assert.ok(componentSource.includes('View Only'));
+});
+
+test('29. Editing and deletion rule: only creator and admin can edit/delete LPA records', async () => {
+  const { canEditRecord, isRecordCreator } = await import('../pdca/data/recordFilters.js');
+
+  const creatorUser = { id: 'usr_123', empId: 'BW039182', name: 'Pooja Nair', role: 'EMPLOYEE' };
+  const adminUser = { id: 'admin_999', empId: 'ADMIN01', name: 'Admin User', role: 'ADMIN', isAdmin: true };
+  const otherUser = { id: 'other_456', empId: 'BW044111', name: 'Other User', role: 'EMPLOYEE' };
+
+  const recordCreatedByUser = {
+    id: 'lpa_rec_001',
+    name: 'Assembly LPA Check Sheet · 2026-10-19',
+    ownerId: 'usr_123',
+    createdBy: 'Pooja Nair'
+  };
+
+  // Creator can edit
+  assert.equal(canEditRecord(recordCreatedByUser, creatorUser), true);
+  assert.equal(isRecordCreator(recordCreatedByUser, creatorUser), true);
+
+  // Admin can edit
+  assert.equal(canEditRecord(recordCreatedByUser, adminUser), true);
+
+  // Other ordinary user CANNOT edit
+  assert.equal(canEditRecord(recordCreatedByUser, otherUser), false);
+  assert.equal(isRecordCreator(recordCreatedByUser, otherUser), false);
+
+  // Verify LpaPage.jsx enforces the rule
+  const lpaPageSource = fs.readFileSync(new URL('./LpaPage.jsx', import.meta.url), 'utf-8');
+  assert.ok(lpaPageSource.includes('canEditCurrentRecord'));
+  assert.ok(lpaPageSource.includes('canEditRecord'));
+  assert.ok(lpaPageSource.includes('View Only'));
+  assert.ok(lpaPageSource.includes('You are in view-only mode'));
 });

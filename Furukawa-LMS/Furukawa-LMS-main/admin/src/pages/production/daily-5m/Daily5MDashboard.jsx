@@ -20,6 +20,7 @@ import { cn } from "@/utils/classNames.js";
 import { Input } from "@/components/forms/primitives/input.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
+import RejectedReasonsCell from "./components/RejectedReasonsCell.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { Calendar } from "@/components/forms/primitives/calendar.jsx";
 import {
@@ -160,18 +161,25 @@ const Daily5MDashboard = () => {
     const [totalPages, setTotalPages] = useState(1);
     const [totalRecords, setTotalRecords] = useState(0);
     const [pageSize, setPageSize] = useState(10);
+    // The Records List spans every department, independent of the user's assignment-scoped filters above
+    const [listDepartment, setListDepartment] = useState("all");
+    const [listSection, setListSection] = useState("all");
     const chartScrollRef = useRef(null);
 
     // Fetch sections if department is selected
     const { data: sectionsData, isFetching: sectionsFetching } = useGetSectionsByDepartmentQuery(selectedDepartment, {
         skip: !selectedDepartment || selectedDepartment === 'all'
     });
+    const { data: listSectionsData, isFetching: listSectionsFetching } = useGetSectionsByDepartmentQuery(listDepartment, {
+        skip: listDepartment === 'all'
+    });
+    const listSections = listSectionsFetching ? [] : (listSectionsData?.data || []);
 
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
     const canView5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:read');
-    const canEdit5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:update');
-    const canDelete5M = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:delete');
+    // Edit/Delete in the Records List are admin-only, since non-admins now see other departments' sheets
+    const canManageRecords = isAdmin;
 
     // Non-admin users are scoped to the departments/sections they are assigned to
     // (the server enforces the same scope; this keeps the UI consistent with it).
@@ -204,6 +212,25 @@ const Daily5MDashboard = () => {
         return deptSections.filter(sec => assignedIds.includes(String(sec.id)));
     }, [sectionsData, sectionsFetching, authUser, isRestricted]);
 
+    // Mirrors the server's canView5MRecord: non-admins can only open sheets of their own departments/sections
+    const assignedScope = React.useMemo(() => {
+        const toIds = (single, many) => [single, ...(Array.isArray(many) ? many : [])]
+            .map(id => id?.id ?? id?._id ?? id)
+            .filter(id => id !== null && id !== undefined && id !== "")
+            .map(String);
+        return {
+            departmentIds: new Set(toIds(authUser?.departmentId, authUser?.departments)),
+            sectionIds: new Set(toIds(authUser?.sectionId, authUser?.sections))
+        };
+    }, [authUser]);
+
+    const canOpenRecord = (record) => {
+        if (!canView5M) return false;
+        if (isAdmin) return true;
+        if (!assignedScope.departmentIds.has(String(record.departmentId))) return false;
+        return assignedScope.sectionIds.size === 0 || assignedScope.sectionIds.has(String(record.sectionId));
+    };
+
     const lockedDepartment = isRestricted && assignableDepartments.length === 1;
     const lockedSection = isRestricted && selectedDepartment !== 'all' && assignableSections.length === 1;
 
@@ -216,7 +243,7 @@ const Daily5MDashboard = () => {
     // Reset page when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [selectedDepartment, selectedSection, startDate, endDate, searchTerm]);
+    }, [listDepartment, listSection, startDate, endDate, searchTerm]);
 
     // Auto-select department if ONLY one is available for restricted users
     useEffect(() => {
@@ -232,17 +259,20 @@ const Daily5MDashboard = () => {
         }
     }, [lockedSection, assignableSections, selectedSection]);
 
-    // Fetch records when filters change
+    // Fetch chart data when filters change
     useEffect(() => {
         if (!scopeReady) return;
         if (selectedDepartment) {
-            fetchRecords();
             fetchChartData();
         } else {
-            setRecords([]);
             setChartData([]);
         }
-    }, [scopeReady, selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize, selectedChartDepts, chartStartDate, chartEndDate]);
+    }, [scopeReady, selectedDepartment, selectedSection, startDate, endDate, selectedChartDepts, chartStartDate, chartEndDate]);
+
+    // Records List is not assignment-scoped, so it doesn't wait for the department auto-selection
+    useEffect(() => {
+        if (authUser) fetchRecords();
+    }, [authUser, listDepartment, listSection, startDate, endDate, currentPage, pageSize]);
 
     // Fetch Row Stats (Pie Charts) - Independent triggers
     useEffect(() => {
@@ -257,7 +287,7 @@ const Daily5MDashboard = () => {
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (scopeReady && selectedDepartment) fetchRecords();
+            if (authUser) fetchRecords();
         }, 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
@@ -272,10 +302,8 @@ const Daily5MDashboard = () => {
     const fetchRecords = async () => {
         try {
             setLoading(true);
-            const deptId = selectedDepartment === 'all' ? 'all' : selectedDepartment;
-
-            let query = `/api/daily-5m/records/${deptId}?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&groupBySession=true&t=${Date.now()}`;
-            if (selectedSection && selectedSection !== 'all') query += `&sectionId=${selectedSection}`;
+            let query = `/api/daily-5m/records/${listDepartment}?scope=all&limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&groupBySession=true&t=${Date.now()}`;
+            if (listDepartment !== 'all' && listSection !== 'all') query += `&sectionId=${listSection}`;
             if (startDate) query += `&startDate=${startDate}`;
             if (endDate) query += `&endDate=${endDate}`;
             if (searchTerm) query += `&search=${encodeURIComponent(searchTerm)}`;
@@ -290,7 +318,7 @@ const Daily5MDashboard = () => {
             }
         } catch (error) {
             console.error("Error fetching records:", error);
-            toast.error("Failed to fetch records");
+            toast.error(error.response?.data?.message || "Failed to fetch records");
         } finally {
             setLoading(false);
         }
@@ -997,18 +1025,49 @@ const Daily5MDashboard = () => {
             {/* Records Table Card */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3">
-                    <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                        <Plus className="w-4 h-4 text-blue-600" />
-                        Records List
-                    </CardTitle>
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                        <div>
+                            <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <Plus className="w-4 h-4 text-blue-600" />
+                                Records List
+                            </CardTitle>
+                            <p className="text-xs text-slate-500 mt-1">Sheets from all departments · date range and search above apply here</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Select value={listDepartment} onValueChange={(val) => { setListDepartment(val); setListSection("all"); }}>
+                                <SelectTrigger className="h-8 w-[200px] text-xs bg-white">
+                                    <SelectValue placeholder="All Departments" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Departments</SelectItem>
+                                    {(departmentsData?.data?.departments || []).map((dept) => (
+                                        <SelectItem key={dept._id || dept.id} value={String(dept._id || dept.id)}>
+                                            {dept.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Select value={listSection} onValueChange={setListSection} disabled={listDepartment === 'all'}>
+                                <SelectTrigger className="h-8 w-[180px] text-xs bg-white">
+                                    <SelectValue placeholder="All Sections" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Sections</SelectItem>
+                                    {listSections.map((sec) => (
+                                        <SelectItem key={sec.id} value={String(sec.id)}>
+                                            {sec.name} {sec.category && `(${sec.category})`}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    {!selectedDepartment ? (
-                        <div className="text-center py-10 text-gray-500">Please select a department to view records.</div>
-                    ) : loading ? (
+                    {loading ? (
                         <div className="flex justify-center py-10"><Loader2 className="animate-spin w-8 h-8" /></div>
                     ) : records.length === 0 ? (
-                        <div className="text-center py-10 text-gray-500">No records found for this department.</div>
+                        <div className="text-center py-10 text-gray-500">No records found for the selected filters.</div>
                     ) : (
                         <Table>
                             <TableHeader>
@@ -1020,18 +1079,22 @@ const Daily5MDashboard = () => {
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead className="min-w-[200px]">Rejected Reason</TableHead>
                                     <TableHead className="whitespace-nowrap">Dimension Checks (2h)</TableHead>
                                     <TableHead className="min-w-[180px]">Admin Remarks</TableHead>
                                     <TableHead>Last Saved</TableHead>
-                                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                                    {canManageRecords && <TableHead className="text-right whitespace-nowrap">Actions</TableHead>}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {records.map((record) => (
+                                {records.map((record) => {
+                                    const openable = canOpenRecord(record);
+                                    return (
                                     <TableRow
                                         key={record.id}
-                                        className={cn("group hover:bg-slate-50/50 transition-colors", canView5M && "cursor-pointer")}
-                                        onClick={() => canView5M && handleRowClick(record)}
+                                        className={cn("group hover:bg-slate-50/50 transition-colors", openable && "cursor-pointer")}
+                                        onClick={() => openable && handleRowClick(record)}
+                                        title={openable ? undefined : "View only — this sheet belongs to a department you are not assigned to"}
                                     >
                                         <TableCell className="font-mono text-xs text-blue-600 font-bold">#{record.id}</TableCell>
                                         <TableCell className="whitespace-nowrap">{format(parseLocalDate(record.date), "PPP")}</TableCell>
@@ -1057,6 +1120,9 @@ const Daily5MDashboard = () => {
                                             ) : (
                                                 <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">Pending</span>
                                             )}
+                                        </TableCell>
+                                        <TableCell className="max-w-[220px]">
+                                            <RejectedReasonsCell rejectedRows={record.rejectedRows} />
                                         </TableCell>
                                         <TableCell onClick={(e) => e.stopPropagation()}>
                                             {(() => {
@@ -1115,20 +1181,19 @@ const Daily5MDashboard = () => {
                                         <TableCell className="text-[10px] text-gray-400 whitespace-nowrap">
                                             {format(new Date(record.updatedAt || record.createdAt), "PP p")}
                                         </TableCell>
-                                        <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {canEdit5M && (
+                                        {canManageRecords && (
+                                            <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Button variant="ghost" size="sm" onClick={(e) => handleEdit(e, record)}>
                                                     <Edit className="w-4 h-4 text-blue-600" />
                                                 </Button>
-                                            )}
-                                            {canDelete5M && (
                                                 <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(record.id); }}>
                                                     <Trash2 className="w-4 h-4 text-red-600" />
                                                 </Button>
-                                            )}
-                                        </TableCell>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
-                                ))}
+                                    );
+                                })}
                             </TableBody>
                         </Table>
                     )}

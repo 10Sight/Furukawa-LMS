@@ -6,7 +6,8 @@ import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
-import { scope5MRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
+import { enforceRejectReasons, rowKey } from "../../shared/daily5mRowStatus.js";
+import { scope5MRequest, scope5MListAllRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 
@@ -111,6 +112,16 @@ export const create5MRecord = async (req, res, next) => {
             return next(dateCheck.error);
         }
 
+        // Every rejected row must say why; a saved reason is frozen and approved rows carry none.
+        // Runs on first saves too, so a sheet can't be created with an unexplained rejection.
+        const reasonCheck = enforceRejectReasons(recordData, previousRecordData);
+        if (reasonCheck.error) {
+            return next(new ApiError(`Row ${reasonCheck.error.rowNo}: ${reasonCheck.error.message}`, 400));
+        }
+        if (reasonCheck.tampered.length > 0) {
+            console.warn(`create5MRecord: ignored rewrite of saved reject reason (session ${sessionId}, rows ${reasonCheck.tampered.map(t => t.rowNo).join(', ')}) by user ${userId}`);
+        }
+
         // Server-side Segregation of Duties check: validate every row transitioning to
         // APPROVED/REJECTED against the source department's configured approval routing.
         // Self-approval is blocked for everyone, including admins; the routing check alone
@@ -170,7 +181,8 @@ export const create5MRecord = async (req, res, next) => {
                     logAudit(userId, "ROW_CHECK_DAILY_5M", {
                         rowIndex: i,
                         outcome: newStatus,
-                        actionBy: recordData[`rec_${i}_ActionBy`] || null
+                        actionBy: recordData[`rec_${i}_ActionBy`] || null,
+                        reason: recordData[rowKey(i, 'RejectReason')] || null
                     }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
                         .catch(err => console.error("logAudit(ROW_CHECK_DAILY_5M) failed:", err.message));
                 }
@@ -209,11 +221,15 @@ export const create5MRecord = async (req, res, next) => {
 export const get5MRecords = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search } = req.query;
+        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search, scope } = req.query;
         const { id: userId, role } = req.user;
 
         const limitInt = parseInt(limit) || 50;
-        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        // scope=all: the dashboard's read-only Records List across every department
+        const listAllDepartments = scope === 'all';
+        const scoped = listAllDepartments
+            ? scope5MListAllRequest(req.user, departmentId, sectionId)
+            : scope5MRequest(req.user, departmentId, sectionId);
         if (scoped.forbidden) {
             return next(new ApiError(scoped.forbidden, 403));
         }
@@ -234,7 +250,7 @@ export const get5MRecords = async (req, res, next) => {
 
         const { records, totalCount } = await Daily5MRecord.findAll(filters);
 
-        logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType }, { resourceType: "DAILY_5M_RECORD", req })
+        logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType, allDepartments: listAllDepartments }, { resourceType: "DAILY_5M_RECORD", req })
             .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORDS_LIST) failed:", err.message));
 
         res.status(200).json({

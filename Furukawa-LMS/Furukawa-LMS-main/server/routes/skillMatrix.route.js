@@ -19,7 +19,8 @@ import {
     saveSkillMatrixDashboardConfig,
     getSkillMatrixDashboardHistory,
     getSkillMatrixEfficiencyStats,
-    getSkillMatrixEfficiencySummary
+    getSkillMatrixEfficiencySummary,
+    getSkillMatrixEfficiencyAttendance
 } from "../controllers/skillMatrix.controller.js";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import { authorizeAnyPermission } from "../middlewares/roleAuth.middleware.js";
@@ -32,6 +33,7 @@ router.use(verifyJWT);
 
 router.route("/evaluations/efficiency").get(getSkillMatrixEfficiencyStats);
 router.route("/evaluations/summary").get(getSkillMatrixEfficiencySummary);
+router.route("/evaluations/summary/attendance").get(getSkillMatrixEfficiencyAttendance);
 router.route("/evaluations/list").get(
     authorizeAnyPermission([
         SYSTEM_PERMISSIONS.EVALUATION_MANAGE,

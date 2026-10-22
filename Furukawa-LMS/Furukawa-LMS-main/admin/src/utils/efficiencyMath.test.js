@@ -57,12 +57,58 @@ test('Unskilled + Skilled adds up to Total and Present', () => {
     near(u.present + s.present, t.present);
 });
 
+test('Chart 1 bars run Total, then Skilled, then Unskilled', () => {
+    const users = [op(1, 80, true), op(2, 40, false)];
+    const names = buildSkillSplit(users, users.map(u => att(u, 'd1')), 1).map(r => r.name);
+    assert.deepEqual(names, ['Total Manpower', 'Skilled Manpower', 'Unskilled Manpower']);
+});
+
 test('Present only counts operators in the Total population (shift filter mismatch)', () => {
     const inTotal = op(1, 90, true);
     const notInTotal = op(2, 90, true);
     const split = byName(buildSkillSplit([inTotal], [att(inTotal, 'd1'), att(notInTotal, 'd1')], 1));
     assert.equal(split['Total Manpower'].present, 90);
     assert.ok(split['Total Manpower'].present <= split['Total Manpower'].total);
+});
+
+const sumShifts = (byShift) => Object.values(byShift || {}).reduce((a, b) => a + b, 0);
+
+test('Chart 1 shift breakdown adds up to Present for Total, Skilled and Unskilled', () => {
+    const users = [op(1, 91.3, true), op(2, 47.7, false), op(3, 66.1, true), op(4, 12.9, false), op(5, 101, false)];
+    const rows = [
+        { ...att(users[0], 'd1'), shift: 'A' }, { ...att(users[1], 'd1'), shift: 'B' }, { ...att(users[2], 'd1'), shift: 'A' },
+        { ...att(users[3], 'd2'), shift: 'C' }, { ...att(users[4], 'd2'), shift: null }, { ...att(users[0], 'd2'), shift: 'B' },
+    ];
+    const split = buildSkillSplit(users, rows, 2);
+    split.forEach(r => near(sumShifts(r.presentByShift), r.present));
+    const total = byName(split)['Total Manpower'];
+    assert.deepEqual(Object.keys(total.presentByShift).sort(), ['A', 'B', 'C', 'UNASSIGNED']);
+    // Operator 1 worked A on d1 and B on d2, so counts in both
+    assert.deepEqual(total.presentCountByShift, { A: 2, B: 2, C: 1, UNASSIGNED: 1 });
+});
+
+test('hierarchical shift breakdown adds up at every level, with missing shifts counted as 0', () => {
+    const users = [
+        op(1, 80, true), op(2, 60, false),
+        op(3, 70, true, { subSectionId: 1001, subSectionName: 'SS2', lineId: 101, lineName: 'L2' }),
+        op(4, 30, false, { subSectionId: 1001, subSectionName: 'SS2', lineId: 101, lineName: 'L2' }),
+    ];
+    // SS1 works only shift A; SS2 works A and B
+    const rows = [
+        { ...att(users[0], 'd1'), shift: 'A' }, { ...att(users[1], 'd1'), shift: 'A' },
+        { ...att(users[2], 'd1'), shift: 'A' }, { ...att(users[3], 'd1'), shift: 'B' },
+    ];
+    for (const level of ['subsection', 'line', 'section', 'department']) {
+        buildHierarchicalData(users, rows, level, [], 1).forEach(r => {
+            near(sumShifts(r.presShift), r.presEfficiency);
+            near(sumShifts(r.presUnskilledShift), r.presUnskilled);
+            near(sumShifts(r.presSkilledShift), r.presSkilled);
+        });
+    }
+    // Section = avg of L1 (A 70) and L2 (A 35, B 15): B averages 15 with L1's 0, not 15 alone
+    const [section] = buildHierarchicalData(users, rows, 'section', [], 1);
+    assert.equal(section.presShift.A, 52.5);
+    assert.equal(section.presShift.B, 7.5);
 });
 
 test('hierarchical rollup: per-day Present, capped values, and Unskilled + Skilled = group', () => {

@@ -23,6 +23,10 @@ import { useLazyGetAllUsersQuery } from "@/services/api/UserApi.js";
 import { useGetSubSectionsQuery } from "@/services/api/SubSectionApi.js";
 import { useLogActionMutation } from "@/services/api/AuditApi.js";
 import { canActOnRow as canActOnRowShared } from "../../../../../shared/daily5mRouting.js";
+import { ROW_STATUS, rowKey, isRejectedStatus, normalizeRejectReason } from "../../../../../shared/daily5mRowStatus.js";
+import RejectReasonDialog from "./components/RejectReasonDialog.jsx";
+import RejectReasonRow from "./components/RejectReasonRow.jsx";
+import RejectedReasonsCell from "./components/RejectedReasonsCell.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
 import {
     IconSettings,
@@ -576,6 +580,23 @@ const DaysInput = ({ value, onChange, baseDate, disabled }) => {
             disabled={disabled}
         />
     );
+};
+
+// Real column count of a header layout. Layouts are admin-editable, so a title row's colSpan can't be
+// trusted; instead each row's width is its own colSpans plus the cells still spanning down from above.
+const countHeaderColumns = (headers = []) => {
+    let carried = []; // remaining rowSpan of each cell started in an earlier row, with its width
+    let maxColumns = 0;
+    headers.forEach((row) => {
+        const ownWidth = row.reduce((n, h) => n + (h.colSpan || 1), 0);
+        const carriedWidth = carried.reduce((n, c) => n + c.width, 0);
+        maxColumns = Math.max(maxColumns, ownWidth + carriedWidth);
+        carried = [
+            ...carried.map(c => ({ ...c, rows: c.rows - 1 })),
+            ...row.map(h => ({ rows: (h.rowSpan || 1) - 1, width: h.colSpan || 1 }))
+        ].filter(c => c.rows > 0);
+    });
+    return maxColumns;
 };
 
 const DEFAULT_CRIMPING_CONFIG = {
@@ -1355,6 +1376,7 @@ const Daily5MRecording = () => {
     const [isAdminRemarkDialogOpen, setIsAdminRemarkDialogOpen] = useState(false);
     const [adminRemarkText, setAdminRemarkText] = useState('');
     const [pendingSaveParams, setPendingSaveParams] = useState(null);
+    const [rejectTargetRow, setRejectTargetRow] = useState(null); // recIndex awaiting a rejection reason
     const [emailForPDF, setEmailForPDF] = useState("");
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const tableRef = React.useRef(null);
@@ -2137,9 +2159,11 @@ const Daily5MRecording = () => {
         });
     };
 
+    // options.onAbort runs whenever this save ends without persisting (validation, cancelled remark, request error)
     const handleSaveRecord = async (currentData = null, options = {}) => {
         if (!selectedDepartment) {
             toast.error("Please select a department");
+            options.onAbort?.();
             return;
         }
 
@@ -2192,12 +2216,14 @@ const Daily5MRecording = () => {
             }
             if (!hasActiveRows) {
                 toast.error("The form is empty. Please fill at least one row before saving.");
+                options.onAbort?.();
                 return;
             }
             if (rowErrors.length > 0) {
                 rowErrors.forEach(({ row, missing }) => {
                     toast.error(`Row ${row}: Missing — ${missing.join(', ')}`, { duration: 7000 });
                 });
+                options.onAbort?.();
                 return;
             }
         }
@@ -2244,6 +2270,7 @@ const Daily5MRecording = () => {
         } catch (error) {
             console.error("Save error:", error);
             toast.error(error.response?.data?.message || "Failed to save record");
+            options.onAbort?.();
         }
     };
 
@@ -2349,26 +2376,44 @@ const Daily5MRecording = () => {
             return;
         }
 
-        const status = action === 'approve' ? 'APPROVED' : 'REJECTED';
-        const actionAt = new Date().toISOString();
+        // A rejection needs a reason first; RejectReasonDialog calls applyRowAction on confirm
+        if (action === 'reject') {
+            setRejectTargetRow(recIndex);
+            return;
+        }
+        applyRowAction(recIndex, ROW_STATUS.APPROVED);
+    };
 
-        // Prepare updated data object
+    const applyRowAction = (recIndex, status, reason = null) => {
+        const previousData = formData;
         const updatedData = {
             ...formData,
-            [`rec_${recIndex}_RowStatus`]: status,
-            [`rec_${recIndex}_ActionBy`]: authUser.fullName,
-            [`rec_${recIndex}_ActionById`]: authUser.empId,
-            [`rec_${recIndex}_ActionAt`]: actionAt,
-            [`rec_${recIndex}_Approved_By`]: authUser.fullName
+            [rowKey(recIndex, 'RowStatus')]: status,
+            [rowKey(recIndex, 'ActionBy')]: authUser.fullName,
+            [rowKey(recIndex, 'ActionById')]: authUser.empId,
+            [rowKey(recIndex, 'ActionAt')]: new Date().toISOString(),
+            [rowKey(recIndex, 'Approved_By')]: authUser.fullName
         };
+        if (status === ROW_STATUS.REJECTED) updatedData[rowKey(recIndex, 'RejectReason')] = normalizeRejectReason(reason);
+        else delete updatedData[rowKey(recIndex, 'RejectReason')];
 
-        // Update local state
         setFormData(updatedData);
-
         toast.success(`Row ${recIndex + 1} ${status.toLowerCase()} successfully! Saving...`);
 
-        // Trigger auto-save in background
-        handleSaveRecord(updatedData, { skipNavigate: true });
+        // Save in the background; if it fails or is cancelled, put the row back as it was
+        handleSaveRecord(updatedData, {
+            skipNavigate: true,
+            onAbort: () => {
+                setFormData(previousData);
+                toast.error(`Row ${recIndex + 1} was not ${status.toLowerCase()} — the change was not saved.`);
+            }
+        });
+    };
+
+    const handleConfirmReject = (reason) => {
+        const recIndex = rejectTargetRow;
+        setRejectTargetRow(null);
+        if (recIndex !== null) applyRowAction(recIndex, ROW_STATUS.REJECTED, reason);
     };
 
     // Helper to process text (existing)
@@ -2420,6 +2465,22 @@ const Daily5MRecording = () => {
                         </tbody>
                     </table>
                 </div>
+            );
+        };
+
+        // Non-crimping layouts also get the injected "Approve or Reject" column
+        const totalColumns = countHeaderColumns(activeConfig.headers) + (formType !== 'crimping' ? 1 : 0);
+
+        const renderRejectReasonRow = (recIndex) => {
+            if (!isRejectedStatus(formData[rowKey(recIndex, 'RowStatus')])) return null;
+            return (
+                <RejectReasonRow
+                    colSpan={totalColumns}
+                    rowNo={recIndex + 1}
+                    reason={normalizeRejectReason(formData[rowKey(recIndex, 'RejectReason')]) || null}
+                    actionBy={formData[rowKey(recIndex, 'ActionBy')]}
+                    actionAt={formData[rowKey(recIndex, 'ActionAt')]}
+                />
             );
         };
 
@@ -2492,9 +2553,9 @@ const Daily5MRecording = () => {
                         </thead>
                         <tbody>
                             {[...Array(rowCount)].map((_, recIndex) =>
-                                formType === 'crimping' ?
+                                <React.Fragment key={recIndex}>
+                                {formType === 'crimping' ? (
                                     <CrimpingRecord
-                                        key={recIndex}
                                         recIndex={recIndex}
                                         formData={formData}
                                         initialFormData={initialFormData}
@@ -2516,9 +2577,8 @@ const Daily5MRecording = () => {
                                         dateMin={dateMin}
                                         dateMax={todayStr}
                                     />
-                                    :
-                                    <React.Fragment key={recIndex}>
-                                        {(() => {
+                                ) : (
+                                        (() => {
                                             const rowStatus = formData[`rec_${recIndex}_RowStatus`];
                                             const isRowInitiallyFilled = checkIsRowFilled(initialFormData, recIndex);
                                             const isLocked = isReview || !hasEditPermission || (rowStatus === 'APPROVED' && !isAdmin) || ((!!rowStatus || isRowInitiallyFilled) && !canEditSubmitted5M);
@@ -2909,8 +2969,10 @@ const Daily5MRecording = () => {
                                                     </tr>
                                                 </>
                                             );
-                                        })()}
-                                    </React.Fragment>
+                                        })()
+                                )}
+                                {renderRejectReasonRow(recIndex)}
+                                </React.Fragment>
                             )}
                         </tbody>
                     </table>
@@ -3443,14 +3505,16 @@ const Daily5MRecording = () => {
                                     <TableHead className="font-bold p-4">Line</TableHead>
                                     <TableHead className="font-bold p-4">Shift</TableHead>
                                     <TableHead className="font-bold p-4">Created Time</TableHead>
+                                    <TableHead className="font-bold p-4">Submitted By</TableHead>
                                     <TableHead className="font-bold p-4 text-center">Status</TableHead>
+                                    <TableHead className="font-bold p-4 min-w-[200px]">Rejected Reason</TableHead>
                                     <TableHead className="text-right font-bold p-4">Action</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {todayRecords.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="h-64 text-center">
+                                        <TableCell colSpan={9} className="h-64 text-center">
                                             <div className="flex flex-col items-center justify-center space-y-3 opacity-60">
                                                 <IconClipboardList size={48} className="text-slate-300" />
                                                 <div className="font-medium text-lg">No sessions found for this date</div>
@@ -3509,6 +3573,9 @@ const Daily5MRecording = () => {
                                                 >
                                                     {record.status || 'PENDING'}
                                                 </Badge>
+                                            </TableCell>
+                                            <TableCell className="p-4 max-w-[240px]">
+                                                <RejectedReasonsCell rejectedRows={record.rejectedRows} />
                                             </TableCell>
                                             <TableCell className="text-right p-4">
                                                 <Button size="sm" variant="ghost" className="text-blue-600 font-bold group-hover:bg-blue-50">
@@ -3843,7 +3910,7 @@ const Daily5MRecording = () => {
 
             {/* Admin Remark Dialog — required when editing an approved session */}
             <Dialog open={isAdminRemarkDialogOpen} onOpenChange={(open) => {
-                if (!open) { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }
+                if (!open) { pendingSaveParams?.options?.onAbort?.(); setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }
             }}>
                 <DialogContent className="sm:max-w-[480px]">
                     <DialogHeader>
@@ -3880,7 +3947,7 @@ const Daily5MRecording = () => {
                     <DialogFooter className="gap-2">
                         <Button
                             variant="ghost"
-                            onClick={() => { setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }}
+                            onClick={() => { pendingSaveParams?.options?.onAbort?.(); setIsAdminRemarkDialogOpen(false); setPendingSaveParams(null); setAdminRemarkText(''); }}
                         >
                             Cancel
                         </Button>
@@ -3901,6 +3968,12 @@ const Daily5MRecording = () => {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <RejectReasonDialog
+                rowIndex={rejectTargetRow}
+                onConfirm={handleConfirmReject}
+                onCancel={() => setRejectTargetRow(null)}
+            />
         </div>
     );
 };

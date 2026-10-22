@@ -57,13 +57,21 @@ export const skillMatrixApi = createApi({
             }),
             providesTags: ["SkillMatrix"],
         }),
+        // Operators, shifts and levels — date-independent, so the charts fetch it once
         getSkillMatrixEfficiencySummary: builder.query({
-            query: ({ dateFrom, dateTo } = {}) => ({
+            query: () => ({
                 url: "/api/skill-matrix/evaluations/summary",
+                method: "GET",
+            }),
+            providesTags: ["SkillMatrix"],
+        }),
+        // Attendance logs for the charts' date window; the only refetch a date filter causes
+        getSkillMatrixEfficiencyAttendance: builder.query({
+            query: ({ dateFrom, dateTo } = {}) => ({
+                url: "/api/skill-matrix/evaluations/summary/attendance",
                 method: "GET",
                 params: { dateFrom, dateTo },
             }),
-            providesTags: ["SkillMatrix"],
         }),
         getEvaluationList: builder.query({
             query: ({ departmentId, sectionId, lineId, subSectionId, search } = {}) => ({
@@ -103,6 +111,7 @@ export const {
     useGetSkillMatrixListQuery,
     useGetSkillMatrixEfficiencyQuery,
     useGetSkillMatrixEfficiencySummaryQuery,
+    useGetSkillMatrixEfficiencyAttendanceQuery,
     useGetEvaluationListQuery,
     useDeleteEvaluationSheetMutation,
     useDeleteSkillMatrixMutation,
